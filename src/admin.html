@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel Administrativo — 3ª Cia PM MAmb</title>
+  <link rel="stylesheet" href="styles/global.css">
+  <script src="auth.js"></script>
+  <script>
+    /* Verificação imediata — antes do DOM carregar */
+    (function(){
+      try {
+        const raw = (localStorage.getItem('poe_sessao') || sessionStorage.getItem('poe_sessao'));
+        if (!raw) { window.location.replace('index.html'); return; }
+        const s = JSON.parse(raw);
+        /* Verifica também no banco */
+        const db = JSON.parse(localStorage.getItem('poe_usuarios') || '[]');
+        const u = db.find(x => x.id === s.id);
+        const perfil = u ? u.perfil : s.perfil;
+        if (perfil !== 'admin') { window.location.replace('painel.html'); }
+      } catch(e) { window.location.replace('index.html'); }
+    })();
+  </script>
+  <!-- SheetJS para leitura de Excel -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    body{display:flex;flex-direction:column;min-height:100vh;}
+
+    /* TOPBAR */
+    .topbar{background:#111;border-bottom:3px solid var(--gold);padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+    .topbar-left{display:flex;align-items:center;gap:12px;}
+    .topbar-left img{height:36px;border-radius:3px;}
+    .topbar-title h1{font-size:14px;font-weight:700;color:var(--gold);letter-spacing:.5px;}
+    .topbar-title p{font-size:11px;color:var(--text-muted);margin-top:1px;}
+    .topbar-right{display:flex;align-items:center;gap:8px;}
+
+    /* TABS */
+    .tabs-bar{background:#1a1a1a;border-bottom:1px solid var(--border);padding:0 24px;display:flex;}
+    .tab{padding:11px 18px;font-size:12px;font-weight:600;color:var(--text-muted);cursor:pointer;border-bottom:3px solid transparent;transition:all .2s;white-space:nowrap;}
+    .tab.active{color:var(--gold);border-bottom-color:var(--gold);}
+    .tab:hover:not(.active){color:var(--text-white);border-bottom-color:var(--border-hover);}
+
+    .content{flex:1;padding:16px 24px;max-width:1300px;margin:0 auto;width:100%;}
+    .tab-pane{display:none;}.tab-pane.active{display:block;}
+
+    /* BOTÕES */
+    .btn-gold{background:var(--gold);color:#1a1000;border:none;padding:8px 16px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;transition:background .15s;white-space:nowrap;}
+    .btn-gold:hover{background:var(--gold-light);}
+    .btn-outline{background:none;border:1px solid var(--border-hover);color:var(--text-muted);padding:8px 14px;border-radius:6px;font-size:12px;cursor:pointer;transition:all .15s;}
+    .btn-outline:hover{border-color:var(--gold);color:var(--gold);}
+    .btn-danger{background:none;border:1px solid rgba(239,83,80,.4);color:var(--danger);padding:6px 12px;border-radius:5px;font-size:11px;cursor:pointer;transition:all .15s;}
+    .btn-danger:hover{background:rgba(239,83,80,.1);}
+    .btn-sm{padding:4px 10px;font-size:11px;border-radius:4px;}
+
+    /* CARDS TOPO */
+    .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:16px;}
+    .stat-card{background:var(--bg-card);border-radius:8px;padding:14px 16px;border-top:3px solid var(--border);}
+    .stat-card.gold{border-top-color:var(--gold);}
+    .stat-card.blue{border-top-color:var(--info);}
+    .stat-card.green{border-top-color:var(--success);}
+    .stat-card.orange{border-top-color:#ff9800;}
+    .stat-card.red{border-top-color:var(--danger);}
+    .sc-lbl{font-size:10px;color:var(--text-hint);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;}
+    .sc-val{font-size:26px;font-weight:700;color:var(--text-white);}
+    .sc-sub{font-size:10px;color:var(--text-hint);margin-top:2px;}
+
+    /* SEÇÃO */
+    .sec{background:var(--bg-card);border-radius:8px;margin-bottom:14px;overflow:hidden;}
+    .sec-head{padding:12px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px;}
+    .sec-head-left{display:flex;align-items:center;gap:10px;}
+    .sec-icon{font-size:18px;}
+    .sec-title{font-size:13px;font-weight:700;color:var(--gold);}
+    .sec-sub{font-size:11px;color:var(--text-muted);margin-top:1px;}
+    .sec-body{padding:16px 18px;}
+
+    /* FORMULÁRIO INLINE */
+    .form-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
+    .fg{display:flex;flex-direction:column;gap:4px;flex:1;min-width:120px;}
+    .fg label{font-size:11px;font-weight:600;color:var(--text-muted);}
+    .fg input,.fg select{padding:8px 10px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:5px;color:var(--text-white);font-size:12px;outline:none;transition:border-color .2s;}
+    .fg input:focus,.fg select:focus{border-color:var(--gold);}
+    .fg select option{background:var(--bg-card);}
+    .fg input::placeholder{color:var(--text-hint);}
+
+    /* MENSAGEM INLINE */
+    .inline-msg{font-size:11px;padding:7px 12px;border-radius:4px;margin-top:8px;display:none;}
+    .inline-msg.show{display:block;}
+    .inline-msg.ok{background:rgba(102,187,106,.12);border:1px solid rgba(102,187,106,.3);color:#66bb6a;}
+    .inline-msg.err{background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.3);color:#ef9a9a;}
+    .inline-msg.warn{background:rgba(255,152,0,.12);border:1px solid rgba(255,152,0,.3);color:#ffb74d;}
+
+    /* TABELA USUÁRIOS */
+    .tbl-wrap{overflow-x:auto;}
+    table.utbl{width:100%;border-collapse:collapse;font-size:12px;}
+    table.utbl thead th{background:#1a1a1a;padding:8px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border);white-space:nowrap;}
+    table.utbl tbody td{padding:8px 12px;border-bottom:1px solid #2a2a2a;color:#ccc;vertical-align:middle;}
+    table.utbl tbody tr:last-child td{border-bottom:none;}
+    table.utbl tbody tr:hover td{background:#333;}
+    .badge{display:inline-block;padding:2px 9px;border-radius:4px;font-size:10px;font-weight:700;}
+    .badge-admin{background:rgba(155,138,92,.2);color:var(--gold);border:1px solid var(--gold-border);}
+    .badge-op{background:rgba(66,165,245,.15);color:var(--info);border:1px solid rgba(66,165,245,.3);}
+    .badge-pending{background:rgba(255,152,0,.15);color:#ffb74d;border:1px solid rgba(255,152,0,.3);}
+    .badge-active{background:rgba(102,187,106,.12);color:var(--success);border:1px solid rgba(102,187,106,.3);}
+    .acoes{display:flex;gap:4px;flex-wrap:wrap;}
+
+    /* BUSCA */
+    .search-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+    .search-inp{padding:7px 12px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:5px;color:var(--text-white);font-size:12px;outline:none;min-width:200px;transition:border-color .2s;}
+    .search-inp:focus{border-color:var(--gold);}
+    .search-inp::placeholder{color:var(--text-hint);}
+    .filter-sel{padding:7px 10px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:5px;color:var(--text-white);font-size:12px;outline:none;}
+    .filter-sel option{background:var(--bg-card);}
+
+    /* IMPORTAÇÃO */
+    .import-box{border:2px dashed var(--border-hover);border-radius:8px;padding:28px 20px;text-align:center;transition:all .2s;cursor:pointer;}
+    .import-box:hover,.import-box.drag-over{border-color:var(--gold);background:var(--gold-bg);}
+    .import-icon{font-size:32px;margin-bottom:8px;}
+    .import-txt{font-size:13px;color:var(--text-muted);margin-bottom:4px;}
+    .import-sub{font-size:11px;color:var(--text-hint);}
+    .preview-table-wrap{margin-top:14px;overflow-x:auto;border-radius:6px;border:1px solid var(--border);}
+    table.pvw{width:100%;border-collapse:collapse;font-size:11px;}
+    table.pvw th{background:#1a1a1a;padding:6px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--text-muted);border-bottom:1px solid var(--border);}
+    table.pvw td{padding:6px 10px;border-bottom:1px solid #2a2a2a;color:#ccc;}
+    table.pvw tr:last-child td{border-bottom:none;}
+    .pvw-ok td:first-child::before{content:'✔ ';color:var(--success);}
+    .pvw-err{background:rgba(239,83,80,.06);}
+    .pvw-err td:first-child::before{content:'✗ ';color:var(--danger);}
+    .pvw-dup{background:rgba(255,152,0,.06);}
+    .pvw-dup td:first-child::before{content:'⚠ ';color:#ffb74d;}
+    .import-summary{display:flex;gap:12px;margin-top:10px;flex-wrap:wrap;}
+    .is-item{font-size:12px;padding:4px 12px;border-radius:4px;}
+    .is-ok{background:rgba(102,187,106,.12);color:var(--success);}
+    .is-dup{background:rgba(255,152,0,.12);color:#ffb74d;}
+    .is-err{background:rgba(239,83,80,.12);color:var(--danger);}
+
+    /* MODAL EDITAR */
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:999;display:none;}
+    .modal-overlay.show{display:flex;}
+    .modal{background:var(--bg-card);border-radius:10px;width:100%;max-width:500px;overflow:hidden;box-shadow:0 16px 48px rgba(0,0,0,.6);}
+    .modal-head{background:#1a1a1a;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);}
+    .modal-head h3{font-size:14px;font-weight:700;color:var(--gold);}
+    .modal-close{background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;line-height:1;padding:0;}
+    .modal-close:hover{color:var(--text-white);}
+    .modal-body{padding:20px;}
+    .modal-foot{padding:12px 20px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;}
+    .mfg{margin-bottom:14px;}
+    .mfg label{display:block;font-size:11px;font-weight:600;color:var(--text-muted);margin-bottom:5px;}
+    .mfg input,.mfg select{width:100%;padding:9px 11px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:5px;color:var(--text-white);font-size:13px;outline:none;transition:border-color .2s;}
+    .mfg input:focus,.mfg select:focus{border-color:var(--gold);}
+    .mfg input:disabled{opacity:.5;}
+    .mfg select option{background:var(--bg-card);}
+
+    /* SPINNER */
+    .spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite;margin-right:6px;vertical-align:middle;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+    .empty-row td{text-align:center;color:var(--text-hint);padding:24px!important;}
+  </style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="topbar-left">
+    <img src="assets/header-pmmg.png" alt="PMMG">
+    <div class="topbar-title">
+      <h1>⚙️ PAINEL ADMINISTRATIVO</h1>
+      <p>3ª Cia PM MAmb — Gestão de Usuários</p>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <div id="user-info" style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:6px;">
+      <span id="user-avatar" style="width:22px;height:22px;border-radius:50%;background:var(--gold);color:#1a1000;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;">?</span>
+      <span id="user-nome-hdr">—</span>
+    </div>
+    <button class="btn-outline" onclick="window.location.href='painel.html'">← Painel</button>
+    <button class="btn-outline" onclick="_aset('poe_sessao','');window.location.href='index.html'">Sair</button>
+  </div>
+</div>
+
+<!-- TABS -->
+<nav class="tabs-bar">
+  <div class="tab active" onclick="switchTab(this,'usuarios')">👥 Usuários</div>
+  <div class="tab" onclick="switchTab(this,'importar')">📥 Importar Excel</div>
+</nav>
+
+<div class="content">
+
+  <!-- ===== ABA USUÁRIOS ===== -->
+  <div class="tab-pane active" id="tab-usuarios">
+
+    <!-- STATS -->
+    <div class="stats-row" id="stats-row"></div>
+
+    <!-- ADICIONAR USUÁRIO -->
+    <div class="sec">
+      <div class="sec-head">
+        <div class="sec-head-left">
+          <span class="sec-icon">➕</span>
+          <div><div class="sec-title">Adicionar Usuário</div><div class="sec-sub">Cadastre manualmente um militar</div></div>
+        </div>
+      </div>
+      <div class="sec-body">
+        <div class="form-row">
+          <div class="fg" style="max-width:120px;">
+            <label>Nº PM *</label>
+            <input type="text" id="new-npm" placeholder="000.000-0" maxlength="9" oninput="fmtNP(this)">
+          </div>
+          <div class="fg" style="max-width:120px;">
+            <label>P/G *</label>
+            <select id="new-pg">
+              <option value="">Selecione</option>
+              <option>CEL PM</option><option>TC PM</option><option>MAJ PM</option>
+              <option>CAP PM</option><option>1 TEN PM</option><option>2 TEN PM</option>
+              <option>SUBTEN PM</option><option>1 SGT PM</option><option>2 SGT PM</option>
+              <option>3 SGT PM</option><option>CB PM</option><option>SD PM</option>
+            </select>
+          </div>
+          <div class="fg" style="min-width:200px;">
+            <label>Nome Completo *</label>
+            <input type="text" id="new-nome" placeholder="Nome completo do militar">
+          </div>
+          <div class="fg" style="max-width:160px;">
+            <label>Nome de Guerra</label>
+            <input type="text" id="new-guerra" placeholder="Nome de guerra">
+          </div>
+          <div class="fg" style="max-width:160px;">
+            <label>Função</label>
+            <select id="new-funcao">      <option value="">Selecione a Função</option>
+      <option value="CMT CIA">CMT CIA</option>
+      <option value="CMT PEL">CMT PEL</option>
+      <option value="AUX P1">AUX P1</option>
+      <option value="AUX P2">AUX P2</option>
+      <option value="AUX P3">AUX P3</option>
+      <option value="AUX P4">AUX P4</option>
+      <option value="AUX P5">AUX P5</option>
+      <option value="SRAI">SRAI</option>
+      <option value="OPERACIONAL">OPERACIONAL</option>
+      </select>
+          </div>
+          <div class="fg" style="max-width:160px;">
+            <label>Lotação</label>
+            <select id="new-lotacao">      <option value="">Selecione a Lotação</option>
+      <optgroup label="─── ADMINISTRAÇÃO ───">
+        <option value="ADM">ADM — Administração</option>
+      </optgroup>
+      <optgroup label="─── 1º PELOTÃO ───">
+        <option value="1 GP / 1 PEL / 3 CIA PM MAMB / GOVERNADOR VALADARES">1 GP / 1 PEL — GOVERNADOR VALADARES</option>
+        <option value="2 GP / 1 PEL / 3 CIA PM MAMB / MANTENA">2 GP / 1 PEL — MANTENA</option>
+        <option value="3 GP / 1 PEL / 3 CIA PM MAMB / AIMORES">3 GP / 1 PEL — AIMORES</option>
+        <option value="4 GP / 1 PEL / 3 CIA PM MAMB / CONSELHEIRO PENA">4 GP / 1 PEL — CONSELHEIRO PENA</option>
+        <option value="5 GP / 1 PEL / 3 CIA PM MAMB / GUANHAES">5 GP / 1 PEL — GUANHAES</option>
+        <option value="6 GP / 1 PEL / 3 CIA PM MAMB / SANTA MARIA DO SUACUI">6 GP / 1 PEL — SANTA MARIA DO SUACUI</option>
+        <option value="7 GP / 1 PEL / 3 CIA PM MAMB / SAO JOAO EVANGELISTA">7 GP / 1 PEL — SAO JOAO EVANGELISTA</option>
+      </optgroup>
+      <optgroup label="─── 2º PELOTÃO ───">
+        <option value="1 GP / 2 PEL / 3 CIA PM MAMB / IPATINGA">1 GP / 2 PEL — IPATINGA</option>
+        <option value="2 GP / 2 PEL / 3 CIA PM MAMB / IPATINGA">2 GP / 2 PEL — IPATINGA (2)</option>
+        <option value="2 GP / 2 PEL / 3 CIA PM MAMB / MARILIERIA">2 GP / 2 PEL — MARILIERIA</option>
+        <option value="3 GP / 2 PEL / 3 CIA PM MAMB / PINGO D AGUA">3 GP / 2 PEL — PINGO D AGUA</option>
+        <option value="4 GP / 2 PEL / 3 CIA PM MAMB / JOAO MOLEVADE">4 GP / 2 PEL — JOAO MOLEVADE</option>
+        <option value="5 GP / 2 PEL / 3 CIA PM MAMB / BARAO DE COCAIS">5 GP / 2 PEL — BARAO DE COCAIS</option>
+        <option value="6 GP / 2 PEL / 3 CIA PM MAMB / ITABIRA">6 GP / 2 PEL — ITABIRA</option>
+      </optgroup>
+      <optgroup label="─── 3º PELOTÃO ───">
+        <option value="1 GP / 3 PEL / 3 CIA PM MAMB / MANHUACU">1 GP / 3 PEL — MANHUACU</option>
+        <option value="2 GP / 3 PEL / 3 CIA PM MAMB / ALTO CAPARAO">2 GP / 3 PEL — ALTO CAPARAO</option>
+        <option value="3 GP / 3 PEL / 3 CIA PM MAMB / MUTUM">3 GP / 3 PEL — MUTUM</option>
+        <option value="4 GP / 3 PEL / 3 CIA PM MAMB / IPANEMA">4 GP / 3 PEL — IPANEMA</option>
+        <option value="5 GP / 3 PEL / 3 CIA PM MAMB / CARATINGA">5 GP / 3 PEL — CARATINGA</option>
+        <option value="6 GP / 3 PEL / 3 CIA PM MAMB / PONTE NOVA">6 GP / 3 PEL — PONTE NOVA</option>
+        <option value="7 GP / 3 PEL / 3 CIA PM MAMB / RAUL SOARES">7 GP / 3 PEL — RAUL SOARES</option>
+      </optgroup>
+      <optgroup label="─── 4º PELOTÃO ───">
+        <option value="1 GP / 4 PEL / 3 CIA PM MAMB / TEOFILO OTONI">1 GP / 4 PEL — TEOFILO OTONI</option>
+        <option value="2 GP / 4 PEL / 3 CIA PM MAMB / AGUAS FORMOSAS">2 GP / 4 PEL — AGUAS FORMOSAS</option>
+        <option value="3 GP / 4 PEL / 3 CIA PM MAMB / ITAMBACURI">3 GP / 4 PEL — ITAMBACURI</option>
+        <option value="4 GP / 4 PEL / 3 CIA PM MAMB / MALACACHETA">4 GP / 4 PEL — MALACACHETA</option>
+        <option value="5 GP / 4 PEL / 3 CIA PM MAMB / NANUQUE">5 GP / 4 PEL — NANUQUE</option>
+        <option value="6 GP / 4 PEL / 3 CIA PM MAMB / NOVO CRUZEIRO">6 GP / 4 PEL — NOVO CRUZEIRO</option>
+      </optgroup>
+      <optgroup label="─── 5º PELOTÃO ───">
+        <option value="1 GP / 5 PEL / 3 CIA PM MAMB / ALMENARA">1 GP / 5 PEL — ALMENARA</option>
+        <option value="2 GP / 5 PEL / 3 CIA PM MAMB / ARACUAI">2 GP / 5 PEL — ARACUAI</option>
+        <option value="3 GP / 5 PEL / 3 CIA PM MAMB / ITAOBIM">3 GP / 5 PEL — ITAOBIM</option>
+        <option value="4 GP / 5 PEL / 3 CIA PM MAMB / JEQUITINHONHA">4 GP / 5 PEL — JEQUITINHONHA</option>
+        <option value="5 GP / 5 PEL / 3 CIA PM MAMB / PEDRA AZUL">5 GP / 5 PEL — PEDRA AZUL</option>
+        <option value="6 GP / 5 PEL / 3 CIA PM MAMB / RIO DO PRADO">6 GP / 5 PEL — RIO DO PRADO</option>
+        <option value="7 GP / 5 PEL / 3 CIA PM MAMB / SALTO DA DIVISA">7 GP / 5 PEL — SALTO DA DIVISA</option>
+      </optgroup>
+      </select>
+          </div>
+          <div class="fg" style="max-width:140px;">
+            <label>Perfil *</label>
+            <select id="new-perfil">
+              <option value="operacional">Operacional</option>
+              <option value="admin">Administrador</option>
+            </select>
+          </div>
+          <button class="btn-gold" style="align-self:flex-end;" onclick="adicionarUsuario()">+ Adicionar</button>
+        </div>
+        <div class="inline-msg" id="msg-add"></div>
+      </div>
+    </div>
+
+    <!-- LISTA DE USUÁRIOS -->
+    <div class="sec">
+      <div class="sec-head">
+        <div class="sec-head-left">
+          <span class="sec-icon">👥</span>
+          <div><div class="sec-title">Usuários Cadastrados</div><div class="sec-sub" id="total-label">—</div></div>
+        </div>
+        <div class="search-bar">
+          <input class="search-inp" id="busca" placeholder="Buscar por nome, nº PM..." oninput="renderTabela()">
+          <select class="filter-sel" id="filtro-perfil" onchange="renderTabela()">
+            <option value="">Todos os perfis</option>
+            <option value="admin">Administrador</option>
+            <option value="operacional">Operacional</option>
+          </select>
+          <select class="filter-sel" id="filtro-status" onchange="renderTabela()">
+            <option value="">Todos</option>
+            <option value="pendente">1º Acesso Pendente</option>
+            <option value="ativo">Ativos</option>
+          </select>
+        </div>
+      </div>
+      <div class="tbl-wrap">
+        <table class="utbl">
+          <thead><tr>
+            <th>Nº PM</th><th>P/G</th><th>Nome Completo</th>
+            <th>Nome de Guerra</th><th>Função</th><th>Lotação</th>
+            <th>Perfil</th><th>Status</th><th>Ações</th>
+          </tr></thead>
+          <tbody id="usr-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /tab-usuarios -->
+
+  <!-- ===== ABA IMPORTAR ===== -->
+  <div class="tab-pane" id="tab-importar">
+
+    <!-- DOWNLOAD MODELO -->
+    <div class="sec">
+      <div class="sec-head">
+        <div class="sec-head-left">
+          <span class="sec-icon">📄</span>
+          <div><div class="sec-title">Planilha Modelo</div><div class="sec-sub">Baixe o modelo, preencha e importe</div></div>
+        </div>
+        <button class="btn-gold" onclick="downloadModelo()">⬇ Baixar Planilha Modelo (.xlsx)</button>
+      </div>
+      <div class="sec-body">
+        <div style="font-size:12px;color:var(--text-muted);line-height:1.8;">
+          A planilha modelo contém os campos: <strong style="color:var(--gold);">Nº PM · P/G · Nome Completo · Nome de Guerra · Função · Lotação · Perfil</strong><br>
+          Preencha a partir da linha 7 (não altere as linhas de cabeçalho). O campo <strong>PERFIL</strong> deve conter <code style="background:#222;padding:1px 5px;border-radius:3px;color:var(--gold);">admin</code> ou <code style="background:#222;padding:1px 5px;border-radius:3px;color:var(--info);">operacional</code>.<br>
+          A senha padrão <strong>Mudar@123</strong> será atribuída automaticamente a todos os importados.
+        </div>
+      </div>
+    </div>
+
+    <!-- UPLOAD -->
+    <div class="sec">
+      <div class="sec-head">
+        <div class="sec-head-left">
+          <span class="sec-icon">📥</span>
+          <div><div class="sec-title">Importar Excel</div><div class="sec-sub">Arraste ou clique para selecionar o arquivo</div></div>
+        </div>
+        <button class="btn-outline" onclick="limparImportacao()">✕ Limpar</button>
+      </div>
+      <div class="sec-body">
+
+        <!-- Zona de drag-and-drop -->
+        <div class="import-box" id="import-box"
+          ondragover="event.preventDefault();this.classList.add('drag-over')"
+          ondragleave="this.classList.remove('drag-over')"
+          ondrop="handleDrop(event)"
+          onclick="document.getElementById('file-input').click()">
+          <div class="import-icon">📊</div>
+          <div class="import-txt">Arraste o arquivo Excel aqui</div>
+          <div class="import-sub" style="margin-bottom:12px;">ou clique no botão abaixo para selecionar</div>
+          <button type="button" class="btn-gold" style="font-size:13px;padding:8px 20px;"
+            onclick="event.stopPropagation();document.getElementById('file-input').click()">
+            📂 Selecionar Arquivo
+          </button>
+        </div>
+
+        <!-- Input file FORA da div para evitar conflitos de z-index -->
+        <input type="file" id="file-input" accept=".xlsx,.xls,.csv"
+          style="display:none;"
+          onchange="handleFile(this.files[0])">
+
+        <div id="import-preview" style="display:none;">
+          <div class="import-summary" id="import-summary"></div>
+          <div class="preview-table-wrap">
+            <table class="pvw">
+              <thead><tr id="pvw-head"></tr></thead>
+              <tbody id="pvw-body"></tbody>
+            </table>
+          </div>
+          <div style="margin-top:12px;display:flex;gap:8px;">
+            <button class="btn-gold" id="btn-confirmar-import" onclick="confirmarImportacao()">✔ Confirmar Importação</button>
+            <button class="btn-outline" onclick="limparImportacao()">✕ Cancelar</button>
+          </div>
+          <div class="inline-msg" id="msg-import" style="margin-top:8px;"></div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /tab-importar -->
+
+</div><!-- /content -->
+
+<!-- MODAL EDITAR -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>✏️ Editar Usuário</h3>
+      <button class="modal-close" onclick="fecharModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-id">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="mfg">
+          <label>Nº PM</label>
+          <input type="text" id="edit-npm" disabled>
+        </div>
+        <div class="mfg">
+          <label>P/G</label>
+          <select id="edit-pg">
+            <option value="">Selecione</option>
+            <option>CEL PM</option><option>TC PM</option><option>MAJ PM</option>
+            <option>CAP PM</option><option>1 TEN PM</option><option>2 TEN PM</option>
+            <option>SUBTEN PM</option><option>1 SGT PM</option><option>2 SGT PM</option>
+            <option>3 SGT PM</option><option>CB PM</option><option>SD PM</option>
+          </select>
+        </div>
+        <div class="mfg" style="grid-column:1/-1;">
+          <label>Nome Completo *</label>
+          <input type="text" id="edit-nome" placeholder="Nome completo">
+        </div>
+        <div class="mfg">
+          <label>Nome de Guerra</label>
+          <input type="text" id="edit-guerra" placeholder="Nome de guerra">
+        </div>
+        <div class="mfg">
+          <label>Função</label>
+          <select id="edit-funcao">      <option value="">Selecione a Função</option>
+      <option value="CMT CIA">CMT CIA</option>
+      <option value="CMT PEL">CMT PEL</option>
+      <option value="AUX P1">AUX P1</option>
+      <option value="AUX P2">AUX P2</option>
+      <option value="AUX P3">AUX P3</option>
+      <option value="AUX P4">AUX P4</option>
+      <option value="AUX P5">AUX P5</option>
+      <option value="SRAI">SRAI</option>
+      <option value="OPERACIONAL">OPERACIONAL</option>
+            </select>
+        </div>
+        <div class="mfg">
+          <label>Lotação</label>
+          <select id="edit-lotacao">      <option value="">Selecione a Lotação</option>
+      <optgroup label="─── ADMINISTRAÇÃO ───">
+        <option value="ADM">ADM — Administração</option>
+      </optgroup>
+      <optgroup label="─── 1º PELOTÃO ───">
+        <option value="1 GP / 1 PEL / 3 CIA PM MAMB / GOVERNADOR VALADARES">1 GP / 1 PEL — GOVERNADOR VALADARES</option>
+        <option value="2 GP / 1 PEL / 3 CIA PM MAMB / MANTENA">2 GP / 1 PEL — MANTENA</option>
+        <option value="3 GP / 1 PEL / 3 CIA PM MAMB / AIMORES">3 GP / 1 PEL — AIMORES</option>
+        <option value="4 GP / 1 PEL / 3 CIA PM MAMB / CONSELHEIRO PENA">4 GP / 1 PEL — CONSELHEIRO PENA</option>
+        <option value="5 GP / 1 PEL / 3 CIA PM MAMB / GUANHAES">5 GP / 1 PEL — GUANHAES</option>
+        <option value="6 GP / 1 PEL / 3 CIA PM MAMB / SANTA MARIA DO SUACUI">6 GP / 1 PEL — SANTA MARIA DO SUACUI</option>
+        <option value="7 GP / 1 PEL / 3 CIA PM MAMB / SAO JOAO EVANGELISTA">7 GP / 1 PEL — SAO JOAO EVANGELISTA</option>
+      </optgroup>
+      <optgroup label="─── 2º PELOTÃO ───">
+        <option value="1 GP / 2 PEL / 3 CIA PM MAMB / IPATINGA">1 GP / 2 PEL — IPATINGA</option>
+        <option value="2 GP / 2 PEL / 3 CIA PM MAMB / IPATINGA">2 GP / 2 PEL — IPATINGA (2)</option>
+        <option value="2 GP / 2 PEL / 3 CIA PM MAMB / MARILIERIA">2 GP / 2 PEL — MARILIERIA</option>
+        <option value="3 GP / 2 PEL / 3 CIA PM MAMB / PINGO D AGUA">3 GP / 2 PEL — PINGO D AGUA</option>
+        <option value="4 GP / 2 PEL / 3 CIA PM MAMB / JOAO MOLEVADE">4 GP / 2 PEL — JOAO MOLEVADE</option>
+        <option value="5 GP / 2 PEL / 3 CIA PM MAMB / BARAO DE COCAIS">5 GP / 2 PEL — BARAO DE COCAIS</option>
+        <option value="6 GP / 2 PEL / 3 CIA PM MAMB / ITABIRA">6 GP / 2 PEL — ITABIRA</option>
+      </optgroup>
+      <optgroup label="─── 3º PELOTÃO ───">
+        <option value="1 GP / 3 PEL / 3 CIA PM MAMB / MANHUACU">1 GP / 3 PEL — MANHUACU</option>
+        <option value="2 GP / 3 PEL / 3 CIA PM MAMB / ALTO CAPARAO">2 GP / 3 PEL — ALTO CAPARAO</option>
+        <option value="3 GP / 3 PEL / 3 CIA PM MAMB / MUTUM">3 GP / 3 PEL — MUTUM</option>
+        <option value="4 GP / 3 PEL / 3 CIA PM MAMB / IPANEMA">4 GP / 3 PEL — IPANEMA</option>
+        <option value="5 GP / 3 PEL / 3 CIA PM MAMB / CARATINGA">5 GP / 3 PEL — CARATINGA</option>
+        <option value="6 GP / 3 PEL / 3 CIA PM MAMB / PONTE NOVA">6 GP / 3 PEL — PONTE NOVA</option>
+        <option value="7 GP / 3 PEL / 3 CIA PM MAMB / RAUL SOARES">7 GP / 3 PEL — RAUL SOARES</option>
+      </optgroup>
+      <optgroup label="─── 4º PELOTÃO ───">
+        <option value="1 GP / 4 PEL / 3 CIA PM MAMB / TEOFILO OTONI">1 GP / 4 PEL — TEOFILO OTONI</option>
+        <option value="2 GP / 4 PEL / 3 CIA PM MAMB / AGUAS FORMOSAS">2 GP / 4 PEL — AGUAS FORMOSAS</option>
+        <option value="3 GP / 4 PEL / 3 CIA PM MAMB / ITAMBACURI">3 GP / 4 PEL — ITAMBACURI</option>
+        <option value="4 GP / 4 PEL / 3 CIA PM MAMB / MALACACHETA">4 GP / 4 PEL — MALACACHETA</option>
+        <option value="5 GP / 4 PEL / 3 CIA PM MAMB / NANUQUE">5 GP / 4 PEL — NANUQUE</option>
+        <option value="6 GP / 4 PEL / 3 CIA PM MAMB / NOVO CRUZEIRO">6 GP / 4 PEL — NOVO CRUZEIRO</option>
+      </optgroup>
+      <optgroup label="─── 5º PELOTÃO ───">
+        <option value="1 GP / 5 PEL / 3 CIA PM MAMB / ALMENARA">1 GP / 5 PEL — ALMENARA</option>
+        <option value="2 GP / 5 PEL / 3 CIA PM MAMB / ARACUAI">2 GP / 5 PEL — ARACUAI</option>
+        <option value="3 GP / 5 PEL / 3 CIA PM MAMB / ITAOBIM">3 GP / 5 PEL — ITAOBIM</option>
+        <option value="4 GP / 5 PEL / 3 CIA PM MAMB / JEQUITINHONHA">4 GP / 5 PEL — JEQUITINHONHA</option>
+        <option value="5 GP / 5 PEL / 3 CIA PM MAMB / PEDRA AZUL">5 GP / 5 PEL — PEDRA AZUL</option>
+        <option value="6 GP / 5 PEL / 3 CIA PM MAMB / RIO DO PRADO">6 GP / 5 PEL — RIO DO PRADO</option>
+        <option value="7 GP / 5 PEL / 3 CIA PM MAMB / SALTO DA DIVISA">7 GP / 5 PEL — SALTO DA DIVISA</option>
+      </optgroup>
+            </select>
+        </div>
+        <div class="mfg">
+          <label>Perfil</label>
+          <select id="edit-perfil">
+            <option value="operacional">Operacional</option>
+            <option value="admin">Administrador</option>
+          </select>
+        </div>
+      </div>
+      <div class="inline-msg" id="msg-edit"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-outline" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-gold" onclick="salvarEdicao()">Salvar Alterações</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let sessao = null;
+let dadosImport = [];
+
+/* ── Storage direto ── */
+function _aget(k){ try{const v=localStorage.getItem(k);if(v!==null)return v;}catch(e){} return null; }
+function _aset(k,v){ try{localStorage.setItem(k,v);}catch(e){} }
+
+function _getUsuariosDB(){ try{return JSON.parse(_aget('poe_usuarios')||'[]');}catch(e){return[];} }
+function _saveUsuariosDB(l){ _aset('poe_usuarios',JSON.stringify(l)); }
+
+function lerSessaoAdmin(){
+  const raw = _aget('poe_sessao');
+  if(!raw){ window.location.replace('index.html'); return null; }
+  try{
+    const s = JSON.parse(raw);
+    const db = _getUsuariosDB();
+    const u = db.find(x => x.id === s.id);
+    const perfil = u ? u.perfil : s.perfil;
+    if(perfil !== 'admin'){
+      document.body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#1a1a1a;flex-direction:column;gap:16px;"><div style="color:#ef5350;font-size:48px;">🔒</div><div style="color:#ef5350;font-size:18px;font-weight:700;">ACESSO RESTRITO</div><div style="color:#999;font-size:13px;">Apenas administradores podem acessar esta área.</div><button onclick="window.location.href=\'painel.html\'" style="margin-top:12px;background:#9b8a5c;color:#1a1000;border:none;padding:10px 24px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;">← Voltar ao Painel</button></div>';
+      return null;
+    }
+    s.perfil = perfil;
+    return s;
+  }catch(e){ window.location.replace('index.html'); return null; }
+}
+
+/* ── Campos extras no auth.js (patch local) ── */
+function auth_atualizarUsuario(id, dados) {
+  const usuarios = JSON.parse(localStorage.getItem('poe_usuarios') || '[]');
+  const idx = usuarios.findIndex(u => u.id === id);
+  if (idx === -1) return { ok: false, erro: 'Usuário não encontrado.' };
+  /* Verifica admin mínimo ao mudar perfil */
+  if (dados.perfil === 'operacional') {
+    const admins = usuarios.filter(u => u.perfil === 'admin' && u.id !== id);
+    if (admins.length === 0) return { ok: false, erro: 'Precisa haver pelo menos um administrador.' };
+  }
+  Object.assign(usuarios[idx], dados);
+  localStorage.setItem('poe_usuarios', JSON.stringify(usuarios));
+  return { ok: true };
+}
+
+/* ══ FUNÇÕES DE USUÁRIO ══ */
+function auth_listarUsuarios(){ return _getUsuariosDB(); }
+
+function auth_criarUsuarioCompleto(npm, pg, nome, guerra, funcao, lotacao, perfil) {
+  const lista = _getUsuariosDB();
+  const clean = String(npm).replace(/[^0-9]/g,'');
+  if(lista.find(u => u.numeroClean === clean)) return {ok:false, erro:'Nº PM já cadastrado.', dup:true};
+  const novo = {
+    id: Date.now().toString()+Math.random().toString(36).slice(2,6),
+    numeroPolicia: formatNP(clean), numeroClean: clean,
+    nome, pg, guerra, funcao, lotacao, perfil,
+    senha:'Mudar@123', primeiroAcesso:true, ativo:true,
+    criadoEm: new Date().toISOString()
+  };
+  lista.push(novo);
+  _saveUsuariosDB(lista);
+  return {ok:true, user:novo};
+}
+
+function auth_alterarPerfil(id, perfil) {
+  const lista = _getUsuariosDB();
+  const admins = lista.filter(u => u.perfil==='admin' && u.id!==id);
+  if(perfil!=='admin' && admins.length===0) return {ok:false, erro:'Não é possível rebaixar o único administrador.'};
+  const idx = lista.findIndex(u => u.id===id);
+  if(idx===-1) return {ok:false, erro:'Usuário não encontrado.'};
+  lista[idx].perfil = perfil;
+  _saveUsuariosDB(lista);
+  return {ok:true};
+}
+
+function auth_resetarSenha(id) {
+  const lista = _getUsuariosDB();
+  const idx = lista.findIndex(u => u.id===id);
+  if(idx===-1) return {ok:false, erro:'Usuário não encontrado.'};
+  lista[idx].senha = 'Mudar@123';
+  lista[idx].primeiroAcesso = true;
+  _saveUsuariosDB(lista);
+  return {ok:true};
+}
+
+function auth_excluirUsuario(id) {
+  let lista = _getUsuariosDB();
+  const u = lista.find(x => x.id===id);
+  if(!u) return {ok:false, erro:'Usuário não encontrado.'};
+  const admins = lista.filter(x => x.perfil==='admin' && x.id!==id);
+  if(u.perfil==='admin' && admins.length===0) return {ok:false, erro:'Não é possível excluir o único administrador.'};
+  lista = lista.filter(x => x.id!==id);
+  _saveUsuariosDB(lista);
+  return {ok:true};
+}
+
+function auth_atualizarUsuario(id, dados) {
+  const lista = _getUsuariosDB();
+  const idx = lista.findIndex(u => u.id===id);
+  if(idx===-1) return {ok:false, erro:'Usuário não encontrado.'};
+  if(dados.perfil && dados.perfil!=='admin') {
+    const admins = lista.filter(u => u.perfil==='admin' && u.id!==id);
+    if(admins.length===0) return {ok:false, erro:'Não é possível rebaixar o único administrador.'};
+  }
+  Object.assign(lista[idx], dados);
+  _saveUsuariosDB(lista);
+  return {ok:true};
+}
+
+function formatNP(clean) {
+  clean = String(clean || '').replace(/[^0-9]/g,'');
+  while(clean.length < 7) clean = '0' + clean;
+  if(clean.length === 7) return clean.slice(0,3)+'.'+clean.slice(3,6)+'-'+clean.slice(6);
+  return clean;
+}
+
+function fmtNP(el) {
+  let v = el.value.replace(/\D/g,'');
+  if (v.length > 7) v = v.slice(0,7);
+  if (v.length > 6) v = v.slice(0,3)+'.'+v.slice(3,6)+'-'+v.slice(6);
+  else if (v.length > 3) v = v.slice(0,3)+'.'+v.slice(3);
+  el.value = v;
+}
+
+/* ══ INIT ══ */
+window.addEventListener('DOMContentLoaded', () => {
+  sessao = lerSessaoAdmin();
+  if (!sessao) return;
+  document.getElementById('user-nome-hdr').textContent = sessao.nome || sessao.numeroPolicia;
+  const initials = (sessao.nome||'A').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+  document.getElementById('user-avatar').textContent = initials;
+  renderStats();
+  renderTabela();
+});
+
+/* ══ STATS ══ */
+function renderStats() {
+  const lista = auth_listarUsuarios();
+  const total = lista.length;
+  const admins = lista.filter(u => u.perfil === 'admin').length;
+  const ops = lista.filter(u => u.perfil === 'operacional').length;
+  const pendentes = lista.filter(u => u.primeiroAcesso).length;
+
+  document.getElementById('stats-row').innerHTML = `
+    <div class="stat-card gold"><div class="sc-lbl">Total Usuários</div><div class="sc-val">${total}</div><div class="sc-sub">cadastrados</div></div>
+    <div class="stat-card blue"><div class="sc-lbl">Administradores</div><div class="sc-val">${admins}</div><div class="sc-sub">com acesso total</div></div>
+    <div class="stat-card green"><div class="sc-lbl">Operacionais</div><div class="sc-val">${ops}</div><div class="sc-sub">somente leitura</div></div>
+    <div class="stat-card orange"><div class="sc-lbl">1º Acesso Pendente</div><div class="sc-val">${pendentes}</div><div class="sc-sub">aguardando senha</div></div>`;
+  document.getElementById('total-label').textContent = `${total} usuário${total!==1?'s':''} cadastrado${total!==1?'s':''}`;
+}
+
+/* ══ TABELA ══ */
+function renderTabela() {
+  const busca = (document.getElementById('busca').value || '').toLowerCase();
+  const filPerfil = document.getElementById('filtro-perfil').value;
+  const filStatus = document.getElementById('filtro-status').value;
+  let lista = auth_listarUsuarios();
+
+  if (busca) lista = lista.filter(u =>
+    u.nome.toLowerCase().includes(busca) ||
+    u.numeroPolicia.includes(busca) ||
+    (u.guerra||'').toLowerCase().includes(busca)
+  );
+  if (filPerfil) lista = lista.filter(u => u.perfil === filPerfil);
+  if (filStatus === 'pendente') lista = lista.filter(u => u.primeiroAcesso);
+  if (filStatus === 'ativo') lista = lista.filter(u => !u.primeiroAcesso);
+
+  const isSelf = (id) => sessao && sessao.id === id;
+  const tbody = document.getElementById('usr-tbody');
+
+  if (!lista.length) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="9">Nenhum usuário encontrado.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = lista.map(u => {
+    const self = isSelf(u.id);
+    const bPerfil = u.perfil === 'admin'
+      ? '<span class="badge badge-admin">Admin</span>'
+      : '<span class="badge badge-op">Operacional</span>';
+    const bStatus = u.primeiroAcesso
+      ? '<span class="badge badge-pending">⚠ Pendente</span>'
+      : '<span class="badge badge-active">✔ Ativo</span>';
+
+    const btnPromover = u.perfil === 'operacional'
+      ? `<button class="btn-gold btn-sm" onclick="alterarPerfil('${u.id}','admin')" title="Promover a Administrador">↑ Promover</button>`
+      : (!self ? `<button class="btn-outline btn-sm" onclick="alterarPerfil('${u.id}','operacional')" title="Rebaixar">↓ Rebaixar</button>` : '');
+    const btnReset = !self ? `<button class="btn-outline btn-sm" onclick="resetarSenha('${u.id}','${u.nome}')" title="Resetar senha">🔑</button>` : '';
+    const btnEdit = `<button class="btn-outline btn-sm" onclick="abrirModal('${u.id}')" title="Editar">✏️</button>`;
+    const btnDel = !self ? `<button class="btn-danger btn-sm" onclick="excluirUsuario('${u.id}','${u.nome}')" title="Excluir">✕</button>` : '';
+
+    return `<tr>
+      <td style="font-family:monospace;font-size:11px;">${u.numeroPolicia}${self?' <span style="color:var(--gold);font-size:10px;">(você)</span>':''}</td>
+      <td style="font-size:11px;">${u.pg||'—'}</td>
+      <td style="font-weight:600;color:var(--text-white);">${u.nome}</td>
+      <td style="font-size:11px;">${u.guerra||'—'}</td>
+      <td style="font-size:11px;">${u.funcao||'—'}</td>
+      <td style="font-size:11px;">${u.lotacao||'—'}</td>
+      <td>${bPerfil}</td>
+      <td>${bStatus}</td>
+      <td><div class="acoes">${btnEdit}${btnPromover}${btnReset}${btnDel}</div></td>
+    </tr>`;
+  }).join('');
+}
+
+/* ══ ADICIONAR ══ */
+function adicionarUsuario() {
+  const npm    = document.getElementById('new-npm').value.trim();
+  const pg     = document.getElementById('new-pg').value;
+  const nome   = document.getElementById('new-nome').value.trim();
+  const guerra = document.getElementById('new-guerra').value.trim();
+  const funcao = document.getElementById('new-funcao').value.trim();
+  const lotacao= document.getElementById('new-lotacao').value.trim();
+  const perfil = document.getElementById('new-perfil').value;
+  const msg    = document.getElementById('msg-add');
+
+  if (!npm || !nome || !perfil) {
+    showMsg('msg-add','err','Preencha os campos obrigatórios: Nº PM, Nome Completo e Perfil.');
+    return;
+  }
+  if (npm.replace(/\D/g,'').length < 7) {
+    showMsg('msg-add','err','Nº PM deve ter 7 dígitos.');
+    return;
+  }
+
+  const r = auth_criarUsuarioCompleto(npm, pg, nome, guerra, funcao, lotacao, perfil);
+  if (!r.ok) { showMsg('msg-add','err',r.erro); return; }
+
+  showMsg('msg-add','ok',`✔ ${nome} cadastrado com sucesso. Senha padrão: Mudar@123`);
+  ['new-npm','new-nome','new-guerra'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('new-pg').selectedIndex = 0;
+  document.getElementById('new-funcao').selectedIndex = 0;
+  document.getElementById('new-lotacao').selectedIndex = 0;
+  document.getElementById('new-perfil').value = 'operacional';
+  renderStats();
+  renderTabela();
+}
+
+/* ══ AÇÕES ══ */
+function alterarPerfil(id, perfil) {
+  const r = auth_alterarPerfil(id, perfil);
+  if (!r.ok) { alert(r.erro); return; }
+  renderStats(); renderTabela();
+}
+
+function resetarSenha(id, nome) {
+  if (!confirm(`Resetar a senha de "${nome}" para Mudar@123?`)) return;
+  const r = auth_resetarSenha(id);
+  if (r.ok) showMsg('msg-add','ok',`Senha de ${nome} resetada para: Mudar@123`);
+  else alert(r.erro);
+  renderTabela();
+}
+
+function excluirUsuario(id, nome) {
+  if (!confirm(`Excluir o usuário "${nome}"? Esta ação não pode ser desfeita.`)) return;
+  const r = auth_excluirUsuario(id);
+  if (!r.ok) { alert(r.erro); return; }
+  renderStats(); renderTabela();
+}
+
+/* ══ MODAL EDITAR ══ */
+function abrirModal(id) {
+  const lista = auth_listarUsuarios();
+  const u = lista.find(u => u.id === id);
+  if (!u) return;
+  document.getElementById('edit-id').value = id;
+  document.getElementById('edit-npm').value = u.numeroPolicia;
+  document.getElementById('edit-pg').value = u.pg || '';
+  document.getElementById('edit-nome').value = u.nome;
+  document.getElementById('edit-guerra').value = u.guerra || '';
+  document.getElementById('edit-funcao').value = u.funcao || '';
+  document.getElementById('edit-lotacao').value = u.lotacao || '';
+  document.getElementById('edit-perfil').value = u.perfil;
+  document.getElementById('msg-edit').classList.remove('show');
+  document.getElementById('modal-overlay').classList.add('show');
+}
+
+function fecharModal() {
+  document.getElementById('modal-overlay').classList.remove('show');
+}
+
+function salvarEdicao() {
+  const id     = document.getElementById('edit-id').value;
+  const nome   = document.getElementById('edit-nome').value.trim();
+  const pg     = document.getElementById('edit-pg').value;
+  const guerra = document.getElementById('edit-guerra').value.trim();
+  const funcao = document.getElementById('edit-funcao').value.trim();
+  const lotacao= document.getElementById('edit-lotacao').value.trim();
+  const perfil = document.getElementById('edit-perfil').value;
+  if (!nome) { showMsg('msg-edit','err','Nome é obrigatório.'); return; }
+  const r = auth_atualizarUsuario(id, { nome, pg, guerra, funcao, lotacao, perfil });
+  if (!r.ok) { showMsg('msg-edit','err',r.erro); return; }
+  fecharModal();
+  renderStats(); renderTabela();
+}
+
+/* Fecha modal clicando fora */
+document.getElementById('modal-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-overlay')) fecharModal();
+});
+
+/* ══ IMPORTAÇÃO EXCEL ══ */
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('import-box').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) handleFile(file);
+}
+
+function handleFile(file) {
+  if (!file) return;
+
+  /* Verificar se SheetJS está carregado */
+  if (typeof XLSX === 'undefined') {
+    showMsg('msg-import', 'err', '⚠ Biblioteca XLSX não carregada. Verifique sua conexão e recarregue a página.');
+    return;
+  }
+
+  showMsg('msg-import', 'warn', '⏳ Lendo arquivo...');
+  document.getElementById('msg-import').classList.add('show');
+
+  const ext = file.name.split('.').pop().toLowerCase();
+
+  if (ext === 'csv') {
+    /* CSV: lê como texto */
+    const reader = new FileReader();
+    reader.onload = e => processarCSV(e.target.result);
+    reader.onerror = () => showMsg('msg-import', 'err', 'Erro ao ler o arquivo.');
+    reader.readAsText(file, 'UTF-8');
+  } else {
+    /* XLSX/XLS: lê como ArrayBuffer */
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        processarExcel(e.target.result, file.name);
+      } catch(err) {
+        showMsg('msg-import', 'err', 'Erro ao processar Excel: ' + err.message);
+      }
+    };
+    reader.onerror = () => showMsg('msg-import', 'err', 'Erro ao ler o arquivo.');
+    reader.readAsArrayBuffer(file);
+  }
+}
+
+function processarCSV(texto) {
+  const linhas = texto.split(/\r?\n/).filter(l => l.trim());
+  const rows = linhas.map(l => l.split(/[;,\t]/).map(c => c.replace(/^"|"$/g,'').trim()));
+  processarRows(rows);
+}
+
+function processarExcel(buffer, filename) {
+  const wb = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
+  processarRows(rows);
+}
+
+function processarRows(rows) {
+  if (!rows || rows.length < 2) {
+    showMsg('msg-import', 'err', 'Arquivo vazio ou sem dados suficientes.');
+    return;
+  }
+
+  /* ── Encontra linha do cabeçalho ──
+     Procura nas primeiras 10 linhas por uma linha que tenha
+     ao menos 3 colunas não-vazias E contenha algo parecido com NPM/NOME/PG */
+  let headerRow = 6; /* padrão do modelo: linha 7 (índice 6) */
+  for (let i = 0; i < Math.min(rows.length, 10); i++) {
+    const r = rows[i].map(c =>
+      String(c ?? '').toUpperCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+        .replace(/[^A-Z0-9]/g,'')
+    );
+    const naoVazias = r.filter(c => c.length > 0).length;
+    const temNPM  = r.some(c => c === 'NPM' || c === 'NPM' || c === 'N' || c.startsWith('NPM') || c === 'NUMERO' || (c.startsWith('N') && c.length <= 4));
+    const temNome = r.some(c => c.includes('NOME'));
+    if (naoVazias >= 3 && (temNPM || temNome)) {
+      headerRow = i;
+      break;
+    }
+  }
+
+  const headers = rows[headerRow].map(c =>
+    String(c ?? '').trim().toUpperCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+  );
+
+  /* ── Mapeamento por posição do modelo (mais confiável que por nome) ── */
+  /* Modelo padrão: col 0=NPM, 1=PG, 2=NOME, 3=GUERRA, 4=FUNCAO, 5=LOTACAO, 6=PERFIL */
+  const idx = { npm:0, pg:1, nome:2, guerra:3, funcao:4, lotacao:5, perfil:6 };
+
+  /* Tenta refinar pelo nome das colunas */
+  const MAPS = {
+    npm:    ['N PM','NPM','NUMERO PM','NUMERO','NR PM','N.PM','NUM PM','N PM'],
+    pg:     ['P/G','PG','POSTO','GRAD','POSTO GRAD','POSTO/GRAD','P G'],
+    nome:   ['NOME COMPLETO','NOME','NOME DO MILITAR','NOME MILITAR'],
+    guerra: ['NOME DE GUERRA','GUERRA','NOME GUERRA','NOME.GUERRA'],
+    funcao: ['FUNCAO','FUNC','FUNCOES','CARGO','FUNCAO'],
+    lotacao:['LOTACAO','LOTAC','UNIDADE','LOCAL','LOTACAO'],
+    perfil: ['PERFIL','ACESSO','TIPO','NIVEL'],
+  };
+  headers.forEach((h, i) => {
+    const hu = h.replace(/[^A-Z0-9/]/g,'');
+    if (!hu) return;
+    for (const [k, aliases] of Object.entries(MAPS)) {
+      if (aliases.some(a => {
+        const ac = a.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9/]/g,'');
+        return hu === ac || hu.startsWith(ac) || ac.startsWith(hu);
+      })) {
+        idx[k] = i;
+        break;
+      }
+    }
+  });
+
+  /* ── Dados ── */
+  const dataRows = rows.slice(headerRow + 1).filter(r =>
+    r && r.some(c => String(c ?? '').trim() !== '' && String(c ?? '').trim() !== 'null')
+  );
+
+  if (!dataRows.length) {
+    showMsg('msg-import', 'err', 'Nenhuma linha de dados encontrada. Verifique se preencheu a partir da linha 8 do modelo.');
+    return;
+  }
+
+  const existentes = auth_listarUsuarios().map(u => u.numeroClean);
+  dadosImport = [];
+
+  dataRows.forEach((row, ri) => {
+    const get = (k) => {
+      const pos = idx[k];
+      if (pos === undefined || pos >= row.length) return '';
+      const v = row[pos];
+      if (v === null || v === undefined) return '';
+      return String(v).trim();
+    };
+
+    /* NPM — aceita número ou string, remove não-dígitos */
+    const npmRaw = get('npm');
+    const npm = npmRaw.replace(/\D/g,'');
+    const nome = get('nome');
+
+    /* Pula linha se tudo vazio */
+    if (!npmRaw && !nome) return;
+
+    let status = 'ok', erro = '';
+    if (!npm || npm.length < 5)    { status = 'err'; erro = 'Nº PM inválido (mínimo 5 dígitos)'; }
+    else if (!nome)                  { status = 'err'; erro = 'Nome obrigatório'; }
+    else if (existentes.includes(npm)) { status = 'dup'; erro = 'Já cadastrado'; }
+
+    const perfilRaw = get('perfil').toLowerCase();
+    const perfil = perfilRaw.includes('admin') ? 'admin' : 'operacional';
+
+    dadosImport.push({
+      npm, pg: get('pg'), nome,
+      guerra: get('guerra'),
+      funcao: get('funcao'),
+      lotacao: get('lotacao'),
+      perfil, status, erro
+    });
+  });
+
+  if (!dadosImport.length) {
+    showMsg('msg-import', 'err', 'Nenhum dado válido encontrado. Verifique o formato do arquivo.');
+    return;
+  }
+
+  mostrarPreview();
+}
+
+function mostrarPreview() {
+  const ok   = dadosImport.filter(d => d.status === 'ok').length;
+  const dup  = dadosImport.filter(d => d.status === 'dup').length;
+  const err  = dadosImport.filter(d => d.status === 'err').length;
+
+  document.getElementById('import-summary').innerHTML = `
+    <span class="is-item is-ok">✔ ${ok} novo${ok!==1?'s':''} para importar</span>
+    ${dup ? `<span class="is-item is-dup">🔄 ${dup} será${dup!==1?'ão':''} atualizado${dup!==1?'s':''}</span>` : ''}
+    ${err ? `<span class="is-item is-err">✗ ${err} com erro (serão ignorados)</span>` : ''}`;
+
+  const head = document.getElementById('pvw-head');
+  head.innerHTML = '<th>Status</th><th>Nº PM</th><th>P/G</th><th>Nome Completo</th><th>Nome de Guerra</th><th>Função</th><th>Lotação</th><th>Perfil</th>';
+
+  const tbody = document.getElementById('pvw-body');
+  tbody.innerHTML = dadosImport.map(d => {
+    const cls = d.status === 'ok' ? 'pvw-ok' : d.status === 'dup' ? 'pvw-dup' : 'pvw-err';
+    const statusTxt = d.status === 'ok' ? '✔ Novo' : d.status === 'dup' ? '🔄 Atualizar' : '✗ ' + d.erro;
+    return `<tr class="${cls}">
+      <td>${statusTxt}</td>
+      <td style="font-family:monospace;">${formatNP(d.npm)||d.npm}</td>
+      <td>${d.pg}</td><td>${d.nome}</td><td>${d.guerra}</td>
+      <td>${d.funcao}</td><td>${d.lotacao}</td>
+      <td><span class="badge ${d.perfil==='admin'?'badge-admin':'badge-op'}">${d.perfil==='admin'?'Admin':'Operacional'}</span></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('import-preview').style.display = ok + dup > 0 ? 'block' : 'none';
+  if (ok + dup === 0) showMsg('msg-import','warn','Nenhum registro válido para processar.');
+  document.getElementById('btn-confirmar-import').disabled = ok + dup === 0;
+}
+
+function confirmarImportacao() {
+  let importados = 0, atualizados = 0;
+
+  /* Novos usuários */
+  dadosImport.filter(d => d.status === 'ok').forEach(d => {
+    const r = auth_criarUsuarioCompleto(d.npm, d.pg, d.nome, d.guerra, d.funcao, d.lotacao, d.perfil);
+    if (r.ok) importados++;
+  });
+
+  /* Atualizar existentes */
+  dadosImport.filter(d => d.status === 'dup').forEach(d => {
+    const lista = _getUsuariosDB();
+    const idx = lista.findIndex(u => u.numeroClean === d.npm);
+    if (idx !== -1) {
+      if (d.pg)      lista[idx].pg      = d.pg;
+      if (d.nome)    lista[idx].nome    = d.nome;
+      if (d.guerra)  lista[idx].guerra  = d.guerra;
+      if (d.funcao)  lista[idx].funcao  = d.funcao;
+      if (d.lotacao) lista[idx].lotacao = d.lotacao;
+      if (d.perfil) {
+        if (d.perfil === 'operacional') {
+          const admins = lista.filter(u => u.perfil === 'admin' && u.id !== lista[idx].id);
+          if (admins.length > 0) lista[idx].perfil = d.perfil;
+        } else {
+          lista[idx].perfil = d.perfil;
+        }
+      }
+      _saveUsuariosDB(lista);
+      atualizados++;
+    }
+  });
+
+  let msg = '';
+  if (importados > 0) msg += `✔ ${importados} usuário${importados!==1?'s':''} importado${importados!==1?'s':''}. Senha: Mudar@123`;
+  if (atualizados > 0) msg += (msg?'  |  ':'') + `🔄 ${atualizados} usuário${atualizados!==1?'s':''} atualizado${atualizados!==1?'s':''}`;
+  if (!msg) msg = 'Nenhum dado processado.';
+
+  showMsg('msg-import', importados+atualizados > 0 ? 'ok' : 'warn', msg);
+  dadosImport = [];
+  document.getElementById('import-preview').style.display = 'none';
+  /* Reseta o input */
+  const inp = document.getElementById('file-input');
+  if (inp) inp.value = '';
+  renderStats();
+  renderTabela();
+  setTimeout(() => switchTab(document.querySelector('.tab'), 'usuarios'), 2000);
+}
+
+function limparImportacao() {
+  dadosImport = [];
+  document.getElementById('import-preview').style.display = 'none';
+  document.getElementById('import-box').classList.remove('drag-over');
+  document.getElementById('msg-import').classList.remove('show');
+  /* Reseta o input para permitir selecionar o mesmo arquivo novamente */
+  const inp = document.getElementById('file-input');
+  if (inp) inp.value = '';
+}
+
+/* ══ DOWNLOAD MODELO ══ */
+function downloadModelo() {
+  window.open('assets/modelo_importacao.xlsx', '_blank');
+}
+
+/* ══ HELPERS ══ */
+function showMsg(id, tipo, txt) {
+  const el = document.getElementById(id);
+  el.textContent = txt;
+  el.className = `inline-msg ${tipo} show`;
+  if (tipo === 'ok') setTimeout(() => el.classList.remove('show'), 5000);
+}
+
+function switchTab(el, id) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-pane').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+  document.getElementById('tab-' + id)?.classList.add('active');
+}
+</script>
+</body>
+</html>

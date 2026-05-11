@@ -1,0 +1,2133 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel de Controle de Operações — 3ª Cia PM MAmb</title>
+  <link rel="stylesheet" href="styles/global.css">
+  <script src="auth.js"></script>
+  <script src="assets/kml_data.js"></script>
+  <script src="assets/ibge_data.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  <style>
+    body{display:flex;flex-direction:column;min-height:100vh;}
+
+    /* HEADER */
+    .header{background:#111;border-bottom:3px solid var(--gold);padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:56px;flex-shrink:0;}
+    .header-left{display:flex;align-items:center;gap:12px;}
+    .header-logo img{height:36px;border-radius:3px;}
+    .header-title h1{font-size:13px;font-weight:700;color:var(--gold);letter-spacing:.5px;}
+    .header-title p{font-size:11px;color:var(--text-muted);margin-top:1px;}
+    .header-right{display:flex;align-items:center;gap:8px;}
+    .last-update{font-size:11px;color:var(--text-hint);}
+
+    /* TABS */
+    .tabs-bar{background:#1a1a1a;border-bottom:1px solid var(--border);padding:0 20px;display:flex;}
+    .tab{padding:11px 18px;font-size:12px;font-weight:600;color:var(--text-muted);cursor:pointer;border-bottom:3px solid transparent;transition:all .2s;white-space:nowrap;}
+    .tab.active{color:var(--gold);border-bottom-color:var(--gold);}
+    .tab:hover:not(.active):not(.disabled){color:var(--text-white);border-bottom-color:var(--border-hover);}
+    .tab.disabled{opacity:.35;cursor:default;}
+
+    .content{flex:1;padding:14px 20px;width:100%;max-width:1500px;margin:0 auto;}
+    .tab-pane{display:none;}.tab-pane.active{display:block;}
+
+    /* STATUS */
+    .status-bar{background:var(--bg-card);border-left:4px solid var(--gold);border-radius:0 6px 6px 0;padding:7px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;font-size:12px;}
+    .s-ok{color:var(--success);font-weight:600;}
+    .s-err{color:var(--danger);font-weight:600;}
+    .s-load{color:var(--text-muted);}
+
+    /* CARDS TOPO */
+    .top-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px;}
+    .top-card{background:var(--bg-card);border-radius:7px;padding:12px 14px;border-top:3px solid var(--border);}
+    .top-card.gold{border-top-color:var(--gold);}
+    .top-card.green{border-top-color:var(--success);}
+    .top-card.red{border-top-color:var(--danger);}
+    .top-card.blue{border-top-color:var(--info);}
+    .top-card.orange{border-top-color:#ff9800;}
+    .tc-label{font-size:10px;color:var(--text-hint);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;}
+    .tc-val{font-size:24px;font-weight:700;color:var(--text-white);line-height:1;}
+    .tc-sub{font-size:10px;color:var(--text-hint);margin-top:3px;}
+
+    /* TOGGLE MODO */
+    .modo-toggle{display:flex;gap:4px;background:#1a1a1a;border-radius:6px;padding:3px;}
+    .modo-btn{padding:5px 14px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;border:none;background:none;color:var(--text-muted);transition:all .15s;}
+    .modo-btn.active{background:var(--gold);color:#1a1000;}
+
+    /* FILTER BOX */
+    .filter-box{background:var(--bg-card);border-radius:7px;padding:12px 16px;margin-bottom:14px;}
+    .filter-box.sticky{position:sticky;top:0;z-index:50;box-shadow:0 4px 16px rgba(0,0,0,.5);border-bottom:2px solid var(--gold-border);}
+    .filter-box-title{font-size:11px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;}
+    .filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
+    .fg{display:flex;flex-direction:column;gap:4px;min-width:150px;flex:1;}
+    .fg label{font-size:11px;color:var(--text-muted);font-weight:600;}
+    .fg select,.fg input{padding:7px 9px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:5px;color:var(--text-white);font-size:12px;outline:none;transition:border-color .2s;}
+    .fg select:focus,.fg input:focus{border-color:var(--gold);}
+    .fg select option{background:var(--bg-card);}
+    .fg input::placeholder{color:var(--text-hint);}
+
+    /* DROPDOWN MESES */
+    .mes-dropdown-wrap{position:relative;}
+    .mes-dropdown-btn{width:100%;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:5px;padding:7px 10px;color:var(--text-white);font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px;text-align:left;transition:border-color .2s;}
+    .mes-dropdown-btn:hover,.mes-dropdown-btn.open{border-color:var(--gold);}
+    .mes-dropdown{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--bg-card);border:1px solid var(--gold-border);border-radius:7px;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.5);min-width:200px;}
+    .mes-dd-header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border);}
+    .mes-dd-link{font-size:10px;color:var(--gold);cursor:pointer;font-weight:700;}
+    .mes-dd-link:hover{text-decoration:underline;}
+    .mes-dd-list{padding:6px 4px;display:grid;grid-template-columns:1fr 1fr;gap:2px;}
+    .mes-chk{display:flex;align-items:center;gap:7px;padding:5px 8px;border-radius:4px;cursor:pointer;font-size:12px;color:#ccc;transition:background .15s;}
+    .mes-chk:hover{background:var(--bg-hover);}
+    .mes-chk input{accent-color:var(--gold);width:13px;height:13px;cursor:pointer;}
+    .mes-chk input:checked+span,.mes-chk:has(input:checked){color:var(--gold);}
+    .mes-pill-tag{display:inline-block;background:var(--gold);color:#1a1000;padding:2px 8px;border-radius:3px;font-weight:700;font-size:11px;margin-right:4px;}
+    /* NATUREZAS */
+    .nat-section{margin-top:12px;padding-top:12px;border-top:1px solid var(--border);}
+    .nat-section-title{font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;}
+    .nat-wrap{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+    .nat-tag{display:inline-flex;align-items:center;gap:5px;background:var(--gold-bg);border:1px solid var(--gold-border);color:var(--gold);padding:3px 9px;border-radius:4px;font-size:11px;font-weight:700;cursor:grab;user-select:none;transition:opacity .15s,transform .15s;}
+    .nat-tag:active{cursor:grabbing;}
+    .nat-tag.dragging{opacity:.4;transform:scale(.95);}
+    .nat-tag.drag-over-nat{border-color:var(--gold-light);box-shadow:0 0 0 2px var(--gold-border);}
+    .nat-tag .drag-handle{font-size:10px;color:var(--text-hint);margin-right:2px;cursor:grab;}
+    .nat-rm{cursor:pointer;color:var(--text-hint);font-size:12px;margin-left:2px;}
+    .nat-rm:hover{color:var(--danger);}
+    .nat-add-row{display:flex;gap:6px;align-items:center;margin-top:8px;}
+    .nat-hint{font-size:10px;color:var(--text-hint);margin-top:5px;}
+    .nat-inp{padding:5px 9px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:5px;color:var(--text-white);font-size:12px;width:100px;outline:none;}
+    .nat-inp:focus{border-color:var(--gold);}
+
+    /* BOTÕES */
+    .btn-gold{background:var(--gold);color:#1a1000;border:none;padding:7px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;transition:background .15s;}
+    .btn-gold:hover{background:var(--gold-light);}
+    .btn-outline{background:none;border:1px solid var(--border-hover);color:var(--text-muted);padding:7px 12px;border-radius:5px;font-size:12px;cursor:pointer;transition:all .15s;}
+    .btn-outline:hover{border-color:var(--gold);color:var(--gold);}
+
+    /* PELOTÃO BLOCO */
+    .pel-block{background:var(--bg-card);border-radius:8px;margin-bottom:14px;overflow:hidden;}
+    .pel-header{background:#1a1a1a;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid var(--gold-border);flex-wrap:wrap;gap:8px;}
+    .pel-title-area{display:flex;align-items:center;gap:12px;}
+    .pel-num{width:30px;height:30px;border-radius:50%;background:var(--gold);color:#1a1000;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+    .pel-name{font-size:14px;font-weight:700;color:var(--text-white);}
+    .pel-meta{font-size:11px;color:var(--text-muted);margin-top:3px;}
+    /* MÊS PILL SEPARADO DO NOME */
+    .mes-pill{display:inline-block;background:var(--gold);color:#1a1000;padding:2px 10px;border-radius:4px;font-weight:700;font-size:11px;margin-left:8px;vertical-align:middle;}
+    .acum-pill{display:inline-block;background:rgba(66,165,245,.2);color:var(--info);border:1px solid rgba(66,165,245,.3);padding:2px 10px;border-radius:4px;font-weight:700;font-size:11px;margin-left:6px;vertical-align:middle;}
+    .pel-stats{display:flex;gap:16px;align-items:center;flex-wrap:wrap;}
+    .pel-stat{text-align:center;}
+    .ps-val{font-size:18px;font-weight:700;}
+    .ps-lbl{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.3px;}
+
+    /* TABELA */
+    .pel-table-wrap{overflow-x:auto;}
+    table.pt{width:100%;border-collapse:collapse;font-size:11px;}
+    table.pt thead th{
+      background:#1e1e1e;padding:7px 8px;text-align:center;
+      font-size:10px;font-weight:700;color:var(--text-muted);
+      text-transform:uppercase;letter-spacing:.4px;
+      border-bottom:1px solid var(--border);border-right:1px solid #2a2a2a;
+      white-space:nowrap;
+    }
+    table.pt thead th.th-gp{text-align:left;min-width:160px;position:sticky;left:0;z-index:2;background:#1e1e1e;}
+    table.pt thead th.th-nat{color:var(--gold) !important;background:#191919 !important;font-size:11px !important;}
+    table.pt thead th.th-tot{background:rgba(155,138,92,.15) !important;color:var(--gold) !important;}
+    table.pt thead th.th-acum{background:rgba(66,165,245,.12) !important;color:var(--info) !important;}
+    table.pt tbody td{padding:7px 8px;border-bottom:1px solid #252525;border-right:1px solid #252525;text-align:center;color:#bbb;}
+    table.pt tbody td.td-gp{text-align:left;font-weight:600;color:var(--text-white);position:sticky;left:0;background:var(--bg-card);z-index:1;font-size:11px;}
+    table.pt tbody tr:hover td{background:#333;}
+    table.pt tbody tr:hover td.td-gp{background:#333;}
+    table.pt tbody tr.tr-total td{background:#1a1a1a;font-weight:700;border-top:2px solid var(--gold-border);}
+    table.pt tbody tr.tr-total td.td-gp{background:#1a1a1a;color:var(--gold);}
+    td.sep-nat{border-right:2px solid #3a3a3a !important;}
+
+    /* SALDO CORES */
+    .c-meta{color:var(--text-hint);font-size:11px;}
+    .c-real{color:var(--text-white);font-weight:600;}
+    /* Saldo 0 = verde, negativo = vermelho com destaque, positivo = laranja com destaque */
+    .saldo-zero{color:#66bb6a;font-weight:700;background:rgba(102,187,106,.1);border-radius:3px;padding:1px 5px;}
+    .saldo-neg{color:#ef5350;font-weight:700;background:rgba(239,83,80,.15);border-radius:3px;padding:1px 5px;}
+    .saldo-pos{color:#ff9800;font-weight:700;background:rgba(255,152,0,.15);border-radius:3px;padding:1px 5px;}
+
+    /* TOTAIS COLUNAS */
+    .ct-meta{background:rgba(155,138,92,.08) !important;color:var(--gold) !important;font-weight:700 !important;}
+    .ct-real{background:rgba(155,138,92,.08) !important;color:var(--text-white) !important;font-weight:700 !important;}
+    .ct-saldo-zero{background:rgba(102,187,106,.12) !important;color:#66bb6a !important;font-weight:700 !important;}
+    .ct-saldo-neg{background:rgba(239,83,80,.15) !important;color:#ef5350 !important;font-weight:700 !important;}
+    .ct-saldo-pos{background:rgba(255,152,0,.15) !important;color:#ff9800 !important;font-weight:700 !important;}
+
+    /* ACUMULADO */
+    .ca-meta{background:rgba(66,165,245,.08) !important;color:var(--info) !important;font-weight:700 !important;}
+    .ca-real{background:rgba(66,165,245,.08) !important;color:#90caf9 !important;font-weight:600 !important;}
+    .ca-saldo-zero{background:rgba(102,187,106,.12) !important;color:#66bb6a !important;font-weight:700 !important;}
+    .ca-saldo-neg{background:rgba(239,83,80,.12) !important;color:#ef5350 !important;font-weight:700 !important;}
+    .ca-saldo-pos{background:rgba(255,152,0,.12) !important;color:#ff9800 !important;font-weight:700 !important;}
+
+    /* PROGRESS */
+    .prog-wrap{display:flex;align-items:center;gap:5px;min-width:80px;}
+    .prog-bar{flex:1;height:5px;background:#333;border-radius:3px;min-width:40px;}
+    .prog-fill{height:100%;border-radius:3px;transition:width .4s;}
+    .prog-pct{font-size:10px;font-weight:700;min-width:28px;text-align:right;}
+
+    /* GRUPOS TAB */
+    .grp-table-wrap{background:var(--bg-card);border-radius:8px;overflow:hidden;}
+    .grp-table-header{padding:11px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);}
+    .grp-table-header h3{font-size:13px;font-weight:700;color:var(--gold);}
+    .badge-count{background:var(--gold);color:#1a1000;font-size:10px;font-weight:700;padding:2px 9px;border-radius:10px;}
+    table.gt{width:100%;border-collapse:collapse;font-size:12px;}
+    table.gt thead th{background:#222;padding:8px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border);}
+    table.gt tbody td{padding:8px 12px;border-bottom:1px solid var(--border);color:#ccc;}
+    table.gt tbody tr:last-child td{border-bottom:none;}
+    table.gt tbody tr:hover td{background:var(--bg-hover);}
+    .bgp{display:inline-block;background:var(--gold-bg);color:var(--gold);border:1px solid var(--gold-border);padding:2px 7px;border-radius:3px;font-size:10px;font-weight:700;}
+    .bpel{display:inline-block;background:var(--purple-bg);color:var(--purple);border:1px solid rgba(206,147,216,.25);padding:2px 7px;border-radius:3px;font-size:10px;}
+    .mun{font-weight:600;color:var(--text-white);}
+
+    /* PAG */
+    .pagination{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-top:1px solid var(--border);font-size:12px;color:var(--text-muted);}
+    .pag-btns{display:flex;gap:3px;}
+    .pag-btn{border:1px solid var(--border-hover);background:none;color:var(--text-muted);padding:3px 10px;border-radius:4px;cursor:pointer;font-size:11px;transition:all .15s;}
+    .pag-btn:hover:not(:disabled){border-color:var(--gold);color:var(--gold);}
+    .pag-btn:disabled{opacity:.3;cursor:default;}
+    .pag-btn.active{background:var(--gold);color:#1a1000;border-color:var(--gold);font-weight:700;}
+
+    .loading-state,.empty-state{padding:36px 20px;text-align:center;color:var(--text-muted);font-size:13px;}
+    .spinner{display:inline-block;width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite;margin-right:7px;vertical-align:middle;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+    .footer-bar{font-size:10px;color:var(--text-hint);padding:5px 16px;border-top:1px solid var(--border);text-align:right;}
+
+    /* LEGENDA */
+    .legenda{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:8px 16px;background:#1a1a1a;border-bottom:1px solid var(--border);font-size:11px;position:sticky;top:var(--filter-h, 140px);z-index:49;}
+
+    /* ── GDO Rural ── */
+    .gdo-table{width:100%;border-collapse:collapse;font-size:12px;}
+    .gdo-table thead{position:sticky;top:0;z-index:10;}
+    .gdo-table thead th{background:#1e1e1e !important;}
+    .gdo-table th{background:#1e1e1e;color:var(--gold);font-size:11px;font-weight:700;padding:7px 10px;text-align:center;border:1px solid var(--border);white-space:nowrap;}
+    .gdo-table th.th-left{text-align:left;}
+    .gdo-table td{padding:6px 10px;border:1px solid var(--border);text-align:center;font-size:11px;color:var(--text);}
+    .gdo-table td.td-left{text-align:left;font-weight:600;color:var(--text-white);}
+    .gdo-table tr:nth-child(even) td{background:var(--bg-card);}
+    .gdo-table tr.tr-total td{background:var(--bg-head);color:var(--gold);font-weight:700;}
+    .gdo-table tr.tr-pel th{background:#3a3218;color:var(--gold);font-size:11px;font-weight:700;padding:5px 10px;}
+    /* Marcadores do mapa */
+    .mapa-tooltip{background:#1e1e1e;border:1px solid var(--gold-border);border-radius:6px;padding:10px 13px;font-size:11px;color:var(--text);min-width:200px;max-width:280px;box-shadow:0 4px 16px rgba(0,0,0,.6);}
+    .mapa-tooltip strong{color:var(--gold);display:block;margin-bottom:4px;font-size:12px;}
+    .mapa-tooltip .tt-row{display:flex;justify-content:space-between;gap:8px;margin:2px 0;}
+    .mapa-tooltip .tt-label{color:var(--text-muted);font-size:10px;}
+    .mapa-tooltip .tt-val{color:var(--text-white);font-size:11px;font-weight:600;}
+    /* Cores natureza no mapa */
+    .nat-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:middle;}
+    .leaflet-tooltip-pel{background:rgba(0,0,0,.75);color:#fff;border:none;font-size:11px;font-weight:600;padding:3px 7px;border-radius:4px;}
+    .leaflet-tooltip-rat .leaflet-tooltip-content-wrapper{background:#fff;border:1px solid #ccc;border-radius:6px;padding:0;box-shadow:0 2px 10px rgba(0,0,0,.25);}
+    .leaflet-tooltip-rat .leaflet-tooltip-tip{background:#fff;}
+    .leg-item{display:flex;align-items:center;gap:5px;color:var(--text-muted);}
+    .leg-dot{width:10px;height:10px;border-radius:2px;}
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header">
+  <div class="header-left">
+    <div class="header-logo"><img src="assets/header-pmmg.png" alt="PMMG"></div>
+    <div class="header-title">
+      <h1>PAINEL DE CONTROLE DE OPERAÇÕES</h1>
+      <p>3ª Cia PM MAmb — Acompanhamento 2026</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <span class="last-update" id="last-update">—</span>
+    <div id="user-info" style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);cursor:pointer;padding:5px 10px;border:1px solid var(--border);border-radius:5px;transition:all .2s;" onclick="window.location.href='perfil.html'" title="Meu Perfil">
+      <span id="user-avatar" style="width:22px;height:22px;border-radius:50%;background:var(--gold);color:#1a1000;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">?</span>
+      <span id="user-nome">—</span>
+      <span id="user-badge" style="font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;"></span>
+    </div>
+    <button class="btn-gold" onclick="recarregarTudo()">↻ Atualizar</button>
+    <button id="btn-admin" style="display:none;" class="btn-outline" onclick="window.location.href='admin.html'" title="Painel Administrativo">⚙️ Admin</button>
+    <button class="btn-outline" onclick="_pset('poe_sessao','');window.location.href='index.html'">Sair</button>
+  </div>
+</header>
+
+<!-- TABS -->
+<nav class="tabs-bar">
+  <div class="tab active" onclick="switchTab(this,'operacoes')">🛡 OP POE</div>
+  <div class="tab" onclick="switchTab(this,'gdo-rural');renderGdoRural()">🌿 OP GDO RURAL</div>
+  <div class="tab" onclick="switchTab(this,'grupamentos')">📍 Grupamentos</div>
+  <div class="tab disabled" title="Em breve">📋 Relatórios</div>
+</nav>
+
+<main class="content">
+
+<!-- ===== ABA OPERAÇÕES ===== -->
+<div class="tab-pane active" id="tab-operacoes">
+
+  <div class="status-bar">
+    <span class="s-load" id="status-msg">Carregando dados...</span>
+    <span style="font-size:11px;color:var(--text-hint);display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
+      <span id="status-time"></span>
+      <span id="status-dados" style="color:var(--gold);font-weight:600;"></span>
+    </span>
+  </div>
+
+  <!-- CARDS TOPO -->
+  <div class="top-cards">
+    <div class="top-card gold">
+      <div class="tc-label">Meta do Mês</div>
+      <div class="tc-val" id="c-meta">—</div>
+      <div class="tc-sub" id="c-meta-sub">mês selecionado</div>
+    </div>
+    <div class="top-card blue">
+      <div class="tc-label">Meta Acumulada</div>
+      <div class="tc-val" id="c-meta-acum">—</div>
+      <div class="tc-sub" id="c-meta-acum-sub">jan → mês sel.</div>
+    </div>
+    <div class="top-card green">
+      <div class="tc-label">Realizado Mês</div>
+      <div class="tc-val" id="c-real">—</div>
+      <div class="tc-sub">operações</div>
+    </div>
+    <div class="top-card green" style="border-top-color:#42a5f5;">
+      <div class="tc-label">Realizado Acumulado</div>
+      <div class="tc-val" id="c-real-acum">—</div>
+      <div class="tc-sub">jan → mês sel.</div>
+    </div>
+    <div class="top-card red">
+      <div class="tc-label">Saldo do Mês</div>
+      <div class="tc-val" id="c-saldo">—</div>
+      <div class="tc-sub">meta − realizado</div>
+    </div>
+    <div class="top-card orange">
+      <div class="tc-label">Saldo Acumulado</div>
+      <div class="tc-val" id="c-saldo-acum">—</div>
+      <div class="tc-sub">acumulado</div>
+    </div>
+  </div>
+
+  <!-- FILTROS -->
+  <div class="filter-box sticky">
+    <div class="filter-box-title">🔍 Filtros & Configurações</div>
+    <div class="filter-row">
+
+      <!-- MESES — seleção múltipla -->
+      <div class="fg" style="min-width:220px;max-width:320px;">
+        <label>Mês(es) — selecione um ou mais para comparar</label>
+        <div class="mes-dropdown-wrap" id="mes-dropdown-wrap">
+          <button type="button" class="mes-dropdown-btn" id="mes-dropdown-btn" onclick="toggleMesDropdown()">
+            <span id="mes-btn-label">Maio</span>
+            <span style="font-size:10px;margin-left:auto;">▼</span>
+          </button>
+          <div class="mes-dropdown" id="mes-dropdown" style="display:none;">
+            <div class="mes-dd-header">
+              <span style="font-size:10px;font-weight:700;color:var(--text-muted);">SELECIONAR MESES</span>
+              <div style="display:flex;gap:6px;">
+                <span class="mes-dd-link" onclick="selecionarTodosMeses()">Todos</span>
+                <span class="mes-dd-link" onclick="limparMeses()">Limpar</span>
+              </div>
+            </div>
+            <div class="mes-dd-list" id="mes-dd-list">
+              <label class="mes-chk"><input type="checkbox" value="JANEIRO" onchange="onMesChange()"> Janeiro</label>
+              <label class="mes-chk"><input type="checkbox" value="FEVEREIRO" onchange="onMesChange()"> Fevereiro</label>
+              <label class="mes-chk"><input type="checkbox" value="MARÇO" onchange="onMesChange()"> Março</label>
+              <label class="mes-chk"><input type="checkbox" value="ABRIL" onchange="onMesChange()"> Abril</label>
+              <label class="mes-chk"><input type="checkbox" value="MAIO" checked onchange="onMesChange()"> Maio</label>
+              <label class="mes-chk"><input type="checkbox" value="JUNHO" onchange="onMesChange()"> Junho</label>
+              <label class="mes-chk"><input type="checkbox" value="JULHO" onchange="onMesChange()"> Julho</label>
+              <label class="mes-chk"><input type="checkbox" value="AGOSTO" onchange="onMesChange()"> Agosto</label>
+              <label class="mes-chk"><input type="checkbox" value="SETEMBRO" onchange="onMesChange()"> Setembro</label>
+              <label class="mes-chk"><input type="checkbox" value="OUTUBRO" onchange="onMesChange()"> Outubro</label>
+              <label class="mes-chk"><input type="checkbox" value="NOVEMBRO" onchange="onMesChange()"> Novembro</label>
+              <label class="mes-chk"><input type="checkbox" value="DEZEMBRO" onchange="onMesChange()"> Dezembro</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="fg" style="max-width:200px;">
+        <label>Pelotão</label>
+        <select id="f-pel" onchange="renderOperacoes()">
+          <option value="">Todos os Pelotões</option>
+          <option value="1">1º Pelotão</option>
+          <option value="2">2º Pelotão</option>
+          <option value="3">3º Pelotão</option>
+          <option value="4">4º Pelotão</option>
+          <option value="5">5º Pelotão</option>
+        </select>
+      </div>
+      <div class="fg" style="max-width:240px;">
+        <label>Grupamento</label>
+        <select id="f-gp" onchange="renderOperacoes()">
+          <option value="">Todos os Grupamentos</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:6px;align-self:flex-end;flex-wrap:wrap;">
+        <button class="btn-gold" onclick="gerarPDF()">⬇ PDF</button>
+        <button class="btn-outline" onclick="limparFiltros()">✕ Limpar</button>
+      </div>
+    </div>
+
+    <!-- NATUREZAS — só admin vê -->
+    <div class="nat-section" id="nat-section" style="display:none;">
+      <div class="nat-section-title">Naturezas Monitoradas <span style="font-weight:400;color:var(--text-hint);font-size:10px;margin-left:6px;">⠿ arraste para reordenar</span></div>
+      <div class="nat-wrap" id="nat-tags"></div>
+      <div class="nat-add-row" id="nat-add-row" style="margin-top:8px;">
+        <input class="nat-inp" id="nat-nova" placeholder="Ex: Y12001" maxlength="10" onkeydown="if(event.key==='Enter')addNat()">
+        <button class="btn-gold" style="padding:5px 12px;font-size:11px;" onclick="addNat()">+ Adicionar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LEGENDA -->
+  <div class="legenda">
+    <span style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;">Legenda Saldo:</span>
+    <div class="leg-item"><div class="leg-dot" style="background:rgba(239,83,80,.6);"></div> Faltando (negativo)</div>
+    <div class="leg-item"><div class="leg-dot" style="background:rgba(102,187,106,.6);"></div> Exato (zero)</div>
+    <div class="leg-item"><div class="leg-dot" style="background:rgba(255,152,0,.6);"></div> Ultrapassou (positivo)</div>
+    <span style="margin-left:8px;font-size:10px;font-weight:700;color:var(--info);text-transform:uppercase;letter-spacing:.4px;">Acum. = acumulado jan→mês</span>
+  </div>
+
+  <div id="operacoes-body">
+    <div class="loading-state"><span class="spinner"></span>Carregando dados da planilha...</div>
+  </div>
+
+</div>
+
+<!-- ===== ABA GRUPAMENTOS ===== -->
+<!-- ════════════════════════════════════════════
+     ABA: OP GDO RURAL
+     ════════════════════════════════════════════ -->
+<div class="tab-pane" id="tab-gdo-rural">
+
+  <!-- Filtros -->
+  <div class="filter-box sticky" style="margin-bottom:12px;">
+    <div class="filter-box-title">🔍 Filtros — GDO Rural</div>
+    <div class="filter-row">
+      <div class="fg">
+        <label>Mês</label>
+        <select id="gdo-mes" onchange="renderGdoRural()">
+          <option value="">Todos os Meses</option>
+          <option>JANEIRO</option><option>FEVEREIRO</option><option>MARÇO</option>
+          <option>ABRIL</option><option>MAIO</option><option>JUNHO</option>
+          <option>JULHO</option><option>AGOSTO</option><option>SETEMBRO</option>
+          <option>OUTUBRO</option><option>NOVEMBRO</option><option>DEZEMBRO</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>Pelotão</label>
+        <select id="gdo-pel" onchange="renderGdoRural()">
+          <option value="">Todos os Pelotões</option>
+          <option value="1">1º Pelotão</option><option value="2">2º Pelotão</option>
+          <option value="3">3º Pelotão</option><option value="4">4º Pelotão</option>
+          <option value="5">5º Pelotão</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>Natureza</label>
+        <select id="gdo-nat" onchange="renderGdoRural()">
+          <option value="">Todas</option>
+          <option value="Y07001">Y07001</option>
+          <option value="Y07002">Y07002</option>
+          <option value="Y07014">Y07014</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>Visualização</label>
+        <select id="gdo-view" onchange="renderGdoRural()">
+          <option value="tabela">📊 Tabela</option>
+          <option value="mapa">🗺 Mapa</option>
+          <option value="ambos">📊🗺 Tabela + Mapa</option>
+        </select>
+      </div>
+      <div class="fg" style="align-self:flex-end;display:flex;gap:8px;">
+        <button class="btn-gold" onclick="gerarPdfGdo()">⬇ PDF</button>
+      </div>
+    </div>
+    <!-- Camadas do mapa -->
+    <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+      <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">🗺 Camadas do Mapa</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;">
+          <input type="checkbox" id="layer-ibge" onchange="toggleLayer('ibge')" checked> <span style="width:12px;height:12px;background:#A0784A;opacity:.7;display:inline-block;border-radius:2px;border:1px solid #8B5E3C;"></span> Área Urbana IBGE 2022
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;">
+          <input type="checkbox" id="layer-1PEL" onchange="toggleLayer('1PEL')" checked> <span style="width:12px;height:12px;background:#3388ff;opacity:.5;display:inline-block;border-radius:2px;"></span> 1º Pelotão
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;">
+          <input type="checkbox" id="layer-2PEL" onchange="toggleLayer('2PEL')" checked> <span style="width:12px;height:12px;background:#33aa33;opacity:.5;display:inline-block;border-radius:2px;"></span> 2º Pelotão
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;">
+          <input type="checkbox" id="layer-3PEL" onchange="toggleLayer('3PEL')" checked> <span style="width:12px;height:12px;background:#ff8800;opacity:.5;display:inline-block;border-radius:2px;"></span> 3º Pelotão
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;">
+          <input type="checkbox" id="layer-4PEL" onchange="toggleLayer('4_PEL')" checked> <span style="width:12px;height:12px;background:#ee3344;opacity:.5;display:inline-block;border-radius:2px;"></span> 4º Pelotão
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;">
+          <input type="checkbox" id="layer-5PEL" onchange="toggleLayer('5_PEL')" checked> <span style="width:12px;height:12px;background:#9933cc;opacity:.5;display:inline-block;border-radius:2px;"></span> 5º Pelotão
+        </label>
+      </div>
+    </div>
+
+    <!-- Naturezas GDO — só admin vê -->
+    <div class="nat-section" id="gdo-nat-section" style="display:none;">
+      <div class="nat-section-title">Naturezas Monitoradas (GDO Rural) <span style="font-weight:400;color:var(--text-hint);font-size:10px;margin-left:6px;">⠿ arraste para reordenar</span></div>
+      <div class="nat-wrap" id="gdo-nat-tags"></div>
+      <div class="nat-add-row" style="margin-top:8px;">
+        <input class="nat-inp" id="gdo-nat-nova" placeholder="Ex: Y07001" maxlength="10" onkeydown="if(event.key==='Enter')addGdoNat()">
+        <button class="btn-gold" style="padding:5px 12px;font-size:11px;" onclick="addGdoNat()">+ Adicionar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cards resumo -->
+  <!-- cards GDO removidos -->
+
+  <!-- Tabela -->
+  <div id="gdo-tabela-wrap">
+    <div id="gdo-tabela-body"><div class="empty-state">⏳ Carregue os dados primeiro (clique em Atualizar)</div></div>
+  </div>
+
+  <!-- Mapa -->
+  <div id="gdo-mapa-wrap" style="display:none;margin-top:12px;">
+    <div id="gdo-mapa" style="width:100%;height:580px;border-radius:8px;border:1px solid var(--border);overflow:hidden;position:relative;">
+      <div id="gdo-mapa-inner" style="width:100%;height:100%;"></div>
+    </div>
+    <div id="gdo-mapa-legenda" style="margin-top:8px;display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--text-muted);"></div>
+  </div>
+
+</div>
+
+<div class="tab-pane" id="tab-grupamentos">
+  <div class="filter-box">
+    <div class="filter-box-title">🔍 Filtros</div>
+    <div class="filter-row">
+      <div class="fg">
+        <label>Grupamento Completo (Col K)</label>
+        <select id="fg-grp" onchange="renderGrupos()"><option value="">Todos</option></select>
+      </div>
+      <div class="fg">
+        <label>Pelotão</label>
+        <select id="fg-pel" onchange="renderGrupos()"><option value="">Todos</option></select>
+      </div>
+      <div class="fg">
+        <label>RPM</label>
+        <select id="fg-rpm" onchange="renderGrupos()"><option value="">Todos</option></select>
+      </div>
+      <div class="fg" style="max-width:190px;">
+        <label>Buscar Município</label>
+        <input type="text" id="fg-mun" placeholder="Digite o nome..." oninput="renderGrupos()">
+      </div>
+      <button class="btn-outline" onclick="limparFiltrosGrp()" style="align-self:flex-end;">✕</button>
+    </div>
+  </div>
+  <div class="grp-table-wrap">
+    <div class="grp-table-header">
+      <h3>Municípios por Grupamento</h3>
+      <span class="badge-count" id="badge-grp">—</span>
+    </div>
+    <div id="grp-body"><div class="loading-state"><span class="spinner"></span>Carregando...</div></div>
+    <div class="pagination" id="pag-grp" style="display:none;">
+      <span id="pag-grp-info"></span>
+      <div class="pag-btns" id="pag-grp-btns"></div>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<script>
+const API_KEY  = 'AIzaSyCBbKDtyNO2RmtpYNWipjC0OAQ07GFnbKU';
+const SHEET_ID = '17qgczIngwb6RYbFx0JqCOuctpTNMe2I3FQ9r6h24DSo';
+const PAGE_SZ  = 25;
+
+/* ── Storage com fallback em memória ── */
+const _pmem = {};
+function _pget(k){ try{const v=localStorage.getItem(k);if(v!==null){_pmem[k]=v;return v;}}catch(e){} return _pmem[k]||null; }
+function _pset(k,v){ try{localStorage.setItem(k,v);}catch(e){} _pmem[k]=v; }
+
+/* ── Lê sessão diretamente ── */
+function lerSessao(){
+  const raw = _pget('poe_sessao');
+  if(!raw){ window.location.href='index.html'; return null; }
+  try{
+    const s = JSON.parse(raw);
+    /* Confirma perfil no banco local */
+    const db = JSON.parse(_pget('poe_usuarios')||'[]');
+    const u = db.find(x => x.id === s.id);
+    if(u) s.perfil = u.perfil; /* usa perfil do banco, mais confiável */
+    return s;
+  }catch(e){ window.location.href='index.html'; return null; }
+}
+
+/* ── Sessão ── */
+let sessaoPainel = null;
+
+window.addEventListener('DOMContentLoaded', () => {
+  sessaoPainel = lerSessao();
+  if (!sessaoPainel) return;
+  document.getElementById('user-nome').textContent = sessaoPainel.nome || sessaoPainel.numeroPolicia;
+  const initials = (sessaoPainel.nome||'U').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+  document.getElementById('user-avatar').textContent = initials;
+  const badge = document.getElementById('user-badge');
+  if (sessaoPainel.perfil === 'admin') {
+    badge.textContent='ADMIN';
+    badge.style.cssText='font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;background:rgba(155,138,92,.2);color:var(--gold);border:1px solid var(--gold-border);';
+    document.getElementById('nat-section').style.display='block';
+    document.getElementById('btn-admin').style.display='inline-block';
+  } else {
+    badge.textContent='OPERACIONAL';
+    badge.style.cssText='font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;background:rgba(66,165,245,.15);color:var(--info);border:1px solid rgba(66,165,245,.3);';
+  }
+  _initDropdownClose();
+  renderNatTags();
+
+  /* Inicializa GDO Rural — naturezas e mês atual */
+  const gdoSec = document.getElementById('gdo-nat-section');
+  if(gdoSec) gdoSec.style.display = (sessaoPainel.perfil === 'admin') ? 'block' : 'none';
+  renderGdoNatTags();
+
+  /* Seleciona mês atual no filtro GDO */
+  const gdoMesSel = document.getElementById('gdo-mes');
+  if(gdoMesSel){
+    const mesAtual = MESES[new Date().getMonth()];
+    for(let op of gdoMesSel.options){ if(op.value === mesAtual){ op.selected=true; break; } }
+  }
+
+  recarregarTudo();
+
+  /* Ajusta o top da legenda conforme altura real do filter-box */
+  function ajustarLegenda() {
+    const fb = document.querySelector('.filter-box.sticky');
+    const leg = document.querySelector('.legenda');
+    if (fb && leg) {
+      const h = fb.offsetHeight;
+      leg.style.top = h + 'px';
+    }
+  }
+  ajustarLegenda();
+  window.addEventListener('resize', ajustarLegenda);
+  /* Reajusta quando naturezas mudam de altura */
+  const _obs = new MutationObserver(ajustarLegenda);
+  const _natSection = document.getElementById('nat-section');
+  if (_natSection) _obs.observe(_natSection, { childList: true, subtree: true });
+});
+
+let dadosGrupos  = [];
+let dadosMetas   = [];
+let dadosRatreds = {};
+let munParaGrup  = {}; /* lookup: MUNICIPIO_NORM → colK completo da aba GRUPOS */
+let naturezas    = ['Y12001','Y12012','Y12013','Y11001','Y04011','Y02999','Y02007','Y02005','Y02002'];
+let grpPage      = 1;
+
+const MESES = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
+
+function norm(s){return(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/-/g,' ').replace(/\s+/g,' ').trim().toUpperCase();}
+
+function gpDoColk(colK){
+  /* Extrai "GP CIDADE" da string "X GP / Y PEL / 3 CIA PM MAMB / CIDADE" */
+  const p = colK.split('/');
+  return 'GP ' + p[p.length-1].trim();
+}
+
+function gpNumDoColk(colK){
+  /* Extrai o número ordinal do GP: "3 GP / 1 PEL / ..." → 3 */
+  const m = colK.match(/^(\d+)\s*GP/i);
+  return m ? parseInt(m[1]) : 99;
+}
+
+function pelDoColk(colK){
+  const m=colK.match(/(\d+)\s*PEL/i);
+  return m?parseInt(m[1]):99;
+}
+
+/* Meses acumulados até mesIdx (inclusive) */
+function mesesAte(mesIdx){return MESES.slice(0,mesIdx+1);}
+
+async function fetchSheet(range){
+  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(range)}?key=${API_KEY}`;
+  const r=await fetch(url);
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  return (await r.json()).values||[];
+}
+
+function setStatus(t,m){
+  const el=document.getElementById('status-msg');
+  el.textContent=m;
+  el.className=t==='ok'?'s-ok':t==='err'?'s-err':'s-load';
+}
+
+/* ══ LOAD ══ */
+async function recarregarTudo(){
+  setStatus('load','Carregando dados...');
+  document.getElementById('status-dados').textContent='';
+  try{
+    await Promise.all([loadGrupos(),loadMetas(),loadRatreds()]);
+    const now=new Date().toLocaleTimeString('pt-BR');
+    document.getElementById('last-update').textContent='Painel carregado: '+now;
+    document.getElementById('status-time').textContent='Carregado às '+now;
+    setStatus('ok','✔ Dados carregados com sucesso');
+    popularFiltroGP();
+    popularFiltrosGrupos();
+    renderOperacoes();
+    renderGrupos();
+    /* Renderiza GDO Rural — envolvido em try para não bloquear POE em caso de erro */
+    try{ renderGdoRural(); } catch(e){ console.warn('renderGdoRural:', e); }
+  }catch(e){
+    setStatus('err','✗ Erro: '+e.message);
+    document.getElementById('operacoes-body').innerHTML='<div class="empty-state">⚠️ '+e.message+'</div>';
+  }
+}
+
+async function loadGrupos(){
+  const rows=await fetchSheet('GRUPOS!A2:O');
+  const seen=new Set();
+  dadosGrupos=[];
+  munParaGrup={};
+  rows.slice(1).forEach(r=>{
+    if(!r[0]||!r[0].trim()) return;
+    const colK=(r[10]||'').trim();
+    const key=norm(r[0])+'|'+colK;
+    /* Popula o dicionário municipio → colK (para uso no loadRatreds) */
+    const munNorm = norm(r[0]);
+    if(colK && !munParaGrup[munNorm]) munParaGrup[munNorm]=colK;
+    if(seen.has(key)) return;
+    seen.add(key);
+    dadosGrupos.push({
+      municipio:(r[0]||'').trim(),
+      gp:(r[1]||'').trim(),
+      pelotao:(r[2]||'').trim(),
+      rpm:(r[6]||'').trim(),
+      bpm:(r[7]||'').trim(),
+      gpResp:(r[8]||'').trim(),
+      grupamento:colK,
+      pelNum:pelDoColk(colK),
+      munNorm:norm(r[0])
+    });
+  });
+}
+
+async function loadMetas(){
+  const rows=await fetchSheet('BD_NMETAS!A2:N');
+  dadosMetas=[];
+  rows.forEach(r=>{
+    if(!r[0]||!r[1]) return;
+    const obj={gp:(r[0]||'').trim(),nat:(r[1]||'').trim()};
+    MESES.forEach((m,i)=>obj[m]=parseInt(r[i+2])||0);
+    dadosMetas.push(obj);
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ADAPTER DE MAPEAMENTO — DADOS (nova aba)
+   Altere apenas este objeto quando o layout da planilha mudar.
+   Índices baseados em 0 (col A=0, B=1, ... Z=25, AT=45, etc.)
+   ══════════════════════════════════════════════════════════════ */
+const SCHEMA_DADOS = {
+  NUM_RAT:       0,   /* col A — chave única (dedup) */
+  ANO_FATO:      1,   /* col B */
+  MES_DESCRICAO: 3,   /* col D — "JANEIRO", "FEVEREIRO"... */
+  DATA_FATO:     5,   /* col F — para "dados atualizados até" */
+  MUNICIPIO:     12,  /* col M */
+  LOCALIZACAO:   24,  /* col Y — "PERIMETRO URBANO" / "ZONA RURAL" */
+  NATUREZA:      25,  /* col Z — CODIGO_NATUREZA_PRINCIPAL */
+  DESCR_NATUREZA:26,  /* col AA — DESCR_NATUREZA_PRINCIPAL */
+  LATITUDE:      32,  /* col AG */
+  LONGITUDE:     33,  /* col AH */
+  UNID_REGISTRO: 45,  /* col AT — grupamento no formato novo */
+};
+
+/* Normaliza UNID_REGISTRO de qualquer formato para
+   "X GP / Y PEL / 3 CIA PM MAMB" (padrão interno do painel) */
+function normalizarGrupamento(s) {
+  if(!s) return '';
+  s = s.trim().toUpperCase()
+       .replace(/\s*\/\s*/g, '/')        /* remove espaços ao redor de / */
+       .replace(/(\d+\s*PEL)\s+MAMB/g, '$1') /* remove "MAMB" colado no PEL */
+       .replace(/(3\s*CIA\s*PM\s*MAMB).*/g, '3 CIA PM MAMB') /* remove sufixo */
+       .replace(/\//g, ' / ')            /* padroniza espaços ao redor de / */
+       .replace(/  +/g, ' ')             /* remove duplo espaço */
+       .trim();
+  return s;
+}
+
+async function loadRatreds(){
+  /* Busca toda a aba DADOS de uma vez — inclui até col AT */
+  const rows = await fetchSheet('DADOS!A2:AT');
+
+  const S = SCHEMA_DADOS;
+  const get = (r, idx) => (r[idx] || '').toString().trim();
+
+  /* ── Data mais recente para o banner "dados atualizados até" ── */
+  let maxData = null;
+  rows.forEach(r => {
+    const val = get(r, S.DATA_FATO);
+    if(!val) return;
+    /* Aceita DD/MM/AAAA ou DD/MM/AAAA HH:MM */
+    const p = val.match(/(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/);
+    if(p){
+      const d = new Date(p[3], p[2]-1, p[1], p[4]||0, p[5]||0);
+      if(!maxData || d > maxData) maxData = d;
+    }
+  });
+  if(maxData){
+    document.getElementById('status-dados').textContent =
+      '📅 DADOS ATUALIZADOS ATÉ: ' + maxData.toLocaleString('pt-BR').toUpperCase();
+  }
+
+  /* ── Processa operações — cada linha = 1 RAT ── */
+  dadosRatreds = {};
+  const ratsVistos = new Set();
+
+  rows.forEach(r => {
+    const rat       = get(r, S.NUM_RAT);
+    const mes       = get(r, S.MES_DESCRICAO).toUpperCase();
+    const nat       = get(r, S.NATUREZA);
+    const municipio = get(r, S.MUNICIPIO);
+
+    if(!rat || !mes || !nat || !municipio) return;
+
+    /* Dedup por NUM_RAT */
+    if(ratsVistos.has(rat)) return;
+    ratsVistos.add(rat);
+
+    /* Resolve o grupamento via dicionário GRUPOS (coluna K)
+       Usa município normalizado como chave de lookup */
+    const colK = munParaGrup[norm(municipio)];
+    if(!colK) return; /* município não encontrado na aba GRUPOS — ignora */
+
+    const gpKey = gpDoColk(colK); /* → "GP TEOFILO OTONI" */
+    const key   = gpKey + '|' + nat + '|' + mes;
+    dadosRatreds[key] = (dadosRatreds[key] || 0) + 1;
+  });
+
+  /* ── Dados brutos para uso futuro (mapa, GDO Rural etc.) ── */
+  window._dadosBrutos = rows.map(r => {
+    const municipio = get(r, S.MUNICIPIO);
+    const colK = munParaGrup[norm(municipio)] || '';
+    return {
+      rat:          get(r, S.NUM_RAT),
+      ano:          get(r, S.ANO_FATO),
+      mes:          get(r, S.MES_DESCRICAO).toUpperCase(),
+      data:         get(r, S.DATA_FATO),
+      municipio,
+      localizacao:  get(r, S.LOCALIZACAO),
+      natureza:     get(r, S.NATUREZA),
+      descrNatureza:get(r, S.DESCR_NATUREZA),
+      lat:          parseFloat(get(r, S.LATITUDE).replace(',','.'))  || null,
+      lng:          parseFloat(get(r, S.LONGITUDE).replace(',','.')) || null,
+      grupamento:   colK,
+    };
+  }).filter(d => d.rat);
+}
+
+/* ── Helpers de cálculo ── */
+function getMeta(gp,nat,mes){
+  const o=dadosMetas.find(r=>r.gp===gp&&r.nat===nat);
+  return o?(o[mes]||0):0;
+}
+function getReal(gp,nat,mes){
+  return dadosRatreds[gp+'|'+nat+'|'+mes]||0;
+}
+function getMetaAcum(gp,nat,mesIdx){
+  return mesesAte(mesIdx).reduce((s,m)=>s+getMeta(gp,nat,m),0);
+}
+function getRealAcum(gp,nat,mesIdx){
+  return mesesAte(mesIdx).reduce((s,m)=>s+getReal(gp,nat,m),0);
+}
+
+/* ── Classe do saldo ── */
+function saldoClass(saldo,prefix=''){
+  if(saldo===0) return prefix+'saldo-zero';
+  if(saldo<0)   return prefix+'saldo-neg';
+  return prefix+'saldo-pos';
+}
+function saldoStr(saldo){
+  if(saldo===0) return '✔ 0';
+  return (saldo>0?'+':'')+saldo;
+}
+
+/* ── Cor da barra de progresso ── */
+function progColor(pct){
+  if(pct>=100) return '#66bb6a';
+  if(pct>=70)  return 'var(--gold)';
+  return '#ef5350';
+}
+
+/* ══ FILTROS ══ */
+function popularFiltroGP(){
+  const gps=[...new Set(dadosMetas.map(r=>r.gp))].filter(Boolean).sort();
+  const el=document.getElementById('f-gp');
+  const cur=el.value;
+  el.innerHTML='<option value="">Todos os Grupamentos</option>'+
+    gps.map(g=>`<option value="${g}"${g===cur?' selected':''}>${g}</option>`).join('');
+}
+
+function popularFiltrosGrupos(){
+  const fill=(id,vals)=>{
+    const el=document.getElementById(id);const cur=el.value;
+    el.innerHTML='<option value="">Todos</option>'+vals.map(v=>`<option value="${v}"${v===cur?' selected':''}>${v}</option>`).join('');
+  };
+  fill('fg-grp',[...new Set(dadosGrupos.map(r=>r.grupamento))].filter(Boolean).sort());
+  fill('fg-pel',[...new Set(dadosGrupos.map(r=>r.pelotao))].filter(Boolean).sort());
+  fill('fg-rpm',[...new Set(dadosGrupos.map(r=>r.rpm))].filter(Boolean).sort());
+}
+
+/* ══ MESES MÚLTIPLOS ══ */
+function getMesesSelecionados(){
+  return [...document.querySelectorAll('#mes-dd-list input:checked')].map(c=>c.value);
+}
+
+function toggleMesDropdown(){
+  const dd=document.getElementById('mes-dropdown');
+  const btn=document.getElementById('mes-dropdown-btn');
+  const open=dd.style.display==='none';
+  dd.style.display=open?'block':'none';
+  btn.classList.toggle('open',open);
+}
+
+/* Fecha dropdown ao clicar fora — registrado no DOMContentLoaded */
+function _initDropdownClose(){
+  document.addEventListener('click',e=>{
+    const wrap=document.getElementById('mes-dropdown-wrap');
+    if(wrap&&!wrap.contains(e.target)){
+      document.getElementById('mes-dropdown').style.display='none';
+      document.getElementById('mes-dropdown-btn').classList.remove('open');
+    }
+  });
+}
+
+function onMesChange(){
+  const sel=getMesesSelecionados();
+  const btn=document.getElementById('mes-btn-label');
+  if(sel.length===0) btn.textContent='Nenhum mês';
+  else if(sel.length===1) btn.textContent=sel[0].charAt(0)+sel[0].slice(1).toLowerCase();
+  else if(sel.length===MESES.length) btn.textContent='Todos os meses';
+  else btn.textContent=sel.length+' meses selecionados';
+  renderOperacoes();
+}
+
+function selecionarTodosMeses(){
+  document.querySelectorAll('#mes-dd-list input').forEach(c=>c.checked=true);
+  onMesChange();
+}
+
+function limparMeses(){
+  document.querySelectorAll('#mes-dd-list input').forEach(c=>c.checked=false);
+  onMesChange();
+}
+
+
+function limparFiltros(){
+  document.getElementById('f-gp').value='';
+  document.getElementById('f-pel').value='';
+  limparMeses();
+}
+function limparFiltrosGrp(){
+  ['fg-grp','fg-pel','fg-rpm'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('fg-mun').value='';
+  grpPage=1;renderGrupos();
+}
+
+/* ══ NATUREZAS — com drag-and-drop para reordenar ══ */
+let natDragIdx = null;
+
+function renderNatTags(){
+  const isAdmin = sessaoPainel && sessaoPainel.perfil === 'admin';
+  const wrap = document.getElementById('nat-tags');
+  wrap.innerHTML = naturezas.map((n, i) =>
+    `<span class="nat-tag" draggable="${isAdmin}"
+       data-idx="${i}"
+       ondragstart="natDragStart(event,${i})"
+       ondragover="natDragOver(event,${i})"
+       ondragleave="natDragLeave(event)"
+       ondrop="natDrop(event,${i})"
+       ondragend="natDragEnd(event)">
+       ${isAdmin ? '<span class="drag-handle">⠿</span>' : ''}
+       ${n}
+       ${isAdmin ? `<span class="nat-rm" onclick="removeNat('${n}')" title="Remover">✕</span>` : ''}
+     </span>`
+  ).join('');
+}
+
+function natDragStart(e, idx){
+  natDragIdx = idx;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+function natDragOver(e, idx){
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  if(idx !== natDragIdx) e.currentTarget.classList.add('drag-over-nat');
+}
+function natDragLeave(e){ e.currentTarget.classList.remove('drag-over-nat'); }
+function natDrop(e, toIdx){
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over-nat');
+  if(natDragIdx === null || natDragIdx === toIdx) return;
+  const moved = naturezas.splice(natDragIdx, 1)[0];
+  naturezas.splice(toIdx, 0, moved);
+  natDragIdx = null;
+  renderNatTags();
+  renderOperacoes();
+}
+function natDragEnd(e){
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.nat-tag').forEach(t => t.classList.remove('drag-over-nat'));
+  natDragIdx = null;
+}
+
+function addNat(){
+  const inp = document.getElementById('nat-nova');
+  const v   = inp.value.trim().toUpperCase();
+  if(v && !naturezas.includes(v)){
+    /* Insere em ordem alfabética/numérica */
+    const pos = naturezas.findIndex(n => n > v);
+    if(pos === -1) naturezas.push(v);
+    else naturezas.splice(pos, 0, v);
+    renderNatTags();
+    renderOperacoes();
+  }
+  inp.value = '';
+}
+function removeNat(n){ naturezas = naturezas.filter(x => x !== n); renderNatTags(); renderOperacoes(); }
+
+/* ══ RENDER OPERAÇÕES ══ */
+function renderOperacoes(){
+  const mesesSel = getMesesSelecionados();
+  const pelF   = document.getElementById('f-pel').value;
+  const gpF    = document.getElementById('f-gp').value;
+
+  if(!mesesSel.length){
+    document.getElementById('operacoes-body').innerHTML='<div class="empty-state">Selecione ao menos um mês no filtro.</div>';
+    ['c-meta','c-meta-acum','c-real','c-real-acum','c-saldo','c-saldo-acum'].forEach(id=>document.getElementById(id).textContent='—');
+    return;
+  }
+
+  /* Para acumulado usa o MAIOR índice entre os selecionados */
+  const mesIdxAcum = Math.max(...mesesSel.map(m=>MESES.indexOf(m)));
+  const mesAcumNome = MESES[mesIdxAcum];
+
+  /* Mapa gpResp → pelNum e número ordinal do GP */
+  const gpPelMap={};
+  const gpNumMap={};
+  dadosGrupos.forEach(r=>{
+    if(r.gpResp){
+      if(!gpPelMap[r.gpResp]) gpPelMap[r.gpResp]=r.pelNum;
+      if(!gpNumMap[r.gpResp]) gpNumMap[r.gpResp]=gpNumDoColk(r.grupamento);
+    }
+  });
+
+  let todosGPs=[...new Set(dadosMetas.map(r=>r.gp))].filter(Boolean);
+  /* Ordena por pelotão e depois pelo número do GP dentro do pelotão */
+  todosGPs.sort((a,b)=>{
+    const pelA=gpPelMap[a]||99, pelB=gpPelMap[b]||99;
+    if(pelA!==pelB) return pelA-pelB;
+    return (gpNumMap[a]||99)-(gpNumMap[b]||99);
+  });
+  if(gpF) todosGPs=todosGPs.filter(g=>g===gpF);
+
+  const pelotoes={};
+  todosGPs.forEach(gp=>{
+    const pel=gpPelMap[gp]||99;
+    if(pelF&&pel!==parseInt(pelF)) return;
+    if(!pelotoes[pel]) pelotoes[pel]=[];
+    pelotoes[pel].push(gp);
+  });
+
+  const pelNums=Object.keys(pelotoes).map(Number).sort((a,b)=>a-b);
+
+  let gMeta=0,gReal=0,gMetaAcum=0,gRealAcum=0;
+  let html='';
+
+  /* Helper: soma de múltiplos meses */
+  const getMetaMeses=(gp,nat)=>mesesSel.reduce((s,m)=>s+getMeta(gp,nat,m),0);
+  const getRealMeses=(gp,nat)=>mesesSel.reduce((s,m)=>s+getReal(gp,nat,m),0);
+
+  /* Label dos meses selecionados */
+  const mesLabel = mesesSel.length===1
+    ? mesesSel[0]
+    : mesesSel.map(m=>m.substring(0,3)).join(' + ');
+
+  pelNums.forEach(pelN=>{
+    const gps=pelotoes[pelN]; /* ordem já definida pelo sort numérico acima */
+    let pMeta=0,pReal=0,pMetaAcum=0,pRealAcum=0;
+    gps.forEach(gp=>{
+      naturezas.forEach(nat=>{
+        pMeta     +=getMetaMeses(gp,nat);
+        pReal     +=getRealMeses(gp,nat);
+        pMetaAcum +=getMetaAcum(gp,nat,mesIdxAcum);
+        pRealAcum +=getRealAcum(gp,nat,mesIdxAcum);
+      });
+    });
+    gMeta+=pMeta; gReal+=pReal; gMetaAcum+=pMetaAcum; gRealAcum+=pRealAcum;
+
+    const pSaldo=pReal-pMeta;
+    const pSaldoAcum=pRealAcum-pMetaAcum;
+    const pPct=pMeta>0?Math.round(pReal/pMeta*100):0;
+    const pColor=progColor(pPct);
+    const pSaldoC=pSaldo===0?'var(--success)':pSaldo<0?'var(--danger)':'#ff9800';
+    const pSaldoAcumC=pSaldoAcum===0?'var(--success)':pSaldoAcum<0?'var(--danger)':'#ff9800';
+
+    html+=`<div class="pel-block">
+      <div class="pel-header">
+        <div class="pel-title-area">
+          <div class="pel-num">${pelN}</div>
+          <div>
+            <div class="pel-name">${pelN}º Pelotão — 3ª CIA PM MAMB
+              ${mesesSel.map(m=>`<span class="mes-pill-tag">${m.substring(0,3)}</span>`).join('')}
+              <span class="acum-pill">ACUM. JAN→${mesAcumNome.substring(0,3)}</span>
+            </div>
+            <div class="pel-meta">${gps.length} grupamento${gps.length>1?'s':''}</div>
+          </div>
+        </div>
+        <div class="pel-stats">
+          <div class="pel-stat"><div class="ps-val" style="color:var(--gold)">${pMeta}</div><div class="ps-lbl">Meta${mesesSel.length>1?' (soma)':' Mês'}</div></div>
+          <div class="pel-stat"><div class="ps-val" style="color:var(--success)">${pReal}</div><div class="ps-lbl">Realizado</div></div>
+          <div class="pel-stat"><div class="ps-val" style="color:${pSaldoC}">${saldoStr(pSaldo)}</div><div class="ps-lbl">Saldo</div></div>
+          <div class="pel-stat"><div class="ps-val" style="color:var(--info)">${pMetaAcum}</div><div class="ps-lbl">Meta Acum.</div></div>
+          <div class="pel-stat"><div class="ps-val" style="color:#90caf9">${pRealAcum}</div><div class="ps-lbl">Real. Acum.</div></div>
+          <div class="pel-stat"><div class="ps-val" style="color:${pSaldoAcumC}">${saldoStr(pSaldoAcum)}</div><div class="ps-lbl">Saldo Acum.</div></div>
+          <div class="pel-stat">
+            <div class="prog-wrap" style="min-width:90px;">
+              <div class="prog-bar"><div class="prog-fill" style="width:${Math.min(pPct,100)}%;background:${pColor};"></div></div>
+              <span class="prog-pct" style="color:${pColor};font-size:13px;">${pPct}%</span>
+            </div>
+            <div class="ps-lbl">Cumprimento</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pel-table-wrap">
+        <table class="pt"><thead>
+          <tr><th class="th-gp" rowspan="2">Grupamento</th>`;
+
+    naturezas.forEach(n=>{ html+=`<th colspan="3" class="th-nat">${n}</th>`; });
+    html+=`<th colspan="3" class="th-tot">TOTAL${mesesSel.length>1?' SOMA':' MÊS'}</th>
+            <th colspan="3" class="th-acum">ACUMULADO</th>
+            <th class="th-tot" rowspan="2" style="min-width:90px;">Cumprimento</th>
+          </tr><tr>`;
+    naturezas.forEach(()=>{ html+=`<th>Meta</th><th>Real.</th><th class="sep-nat">Saldo</th>`; });
+    html+=`<th class="th-tot">Meta</th><th class="th-tot">Real.</th><th class="th-tot sep-nat">Saldo</th>
+           <th class="th-acum">Meta</th><th class="th-acum">Real.</th><th class="th-acum sep-nat">Saldo</th>
+           </tr></thead><tbody>`;
+
+    gps.forEach(gp=>{
+      let rowMeta=0,rowReal=0,rowMetaAcum=0,rowRealAcum=0;
+      let cells='';
+      naturezas.forEach(nat=>{
+        const meta=getMetaMeses(gp,nat);
+        const real=getRealMeses(gp,nat);
+        const saldo=real-meta;
+        const sc=saldoClass(saldo,'');
+        rowMeta+=meta; rowReal+=real;
+        cells+=`<td class="c-meta">${meta||'—'}</td>
+                <td class="c-real">${real||'—'}</td>
+                <td class="${sc} sep-nat"><span class="${sc}">${saldoStr(saldo)}</span></td>`;
+      });
+      naturezas.forEach(nat=>{
+        rowMetaAcum+=getMetaAcum(gp,nat,mesIdxAcum);
+        rowRealAcum+=getRealAcum(gp,nat,mesIdxAcum);
+      });
+      const rSaldo=rowReal-rowMeta;
+      const rSaldoAcum=rowRealAcum-rowMetaAcum;
+      const rPct=rowMeta>0?Math.round(rowReal/rowMeta*100):0;
+      const rColor=progColor(rPct);
+      html+=`<tr>
+        <td class="td-gp">${gp.replace('GP ','')}</td>
+        ${cells}
+        <td class="ct-meta">${rowMeta}</td>
+        <td class="ct-real">${rowReal}</td>
+        <td class="ct-${rSaldo===0?'saldo-zero':rSaldo<0?'saldo-neg':'saldo-pos'} sep-nat">${saldoStr(rSaldo)}</td>
+        <td class="ca-meta">${rowMetaAcum}</td>
+        <td class="ca-real">${rowRealAcum}</td>
+        <td class="ca-${rSaldoAcum===0?'saldo-zero':rSaldoAcum<0?'saldo-neg':'saldo-pos'} sep-nat">${saldoStr(rSaldoAcum)}</td>
+        <td><div class="prog-wrap"><div class="prog-bar"><div class="prog-fill" style="width:${Math.min(rPct,100)}%;background:${rColor};"></div></div><span class="prog-pct" style="color:${rColor}">${rPct}%</span></div></td>
+      </tr>`;
+    });
+
+    let totCells='';
+    naturezas.forEach(nat=>{
+      const tM=gps.reduce((s,g)=>s+getMetaMeses(g,nat),0);
+      const tR=gps.reduce((s,g)=>s+getRealMeses(g,nat),0);
+      const ts=tR-tM;
+      totCells+=`<td>${tM||'—'}</td><td>${tR||'—'}</td>
+                 <td class="${saldoClass(ts,'')} sep-nat"><span class="${saldoClass(ts,'')}">${saldoStr(ts)}</span></td>`;
+    });
+    const totPct=pMeta>0?Math.round(pReal/pMeta*100):0;
+    const totColor=progColor(totPct);
+    const tSaldoAcum=pRealAcum-pMetaAcum;
+    html+=`<tr class="tr-total">
+      <td class="td-gp">TOTAL ${pelN}º PEL</td>
+      ${totCells}
+      <td class="ct-meta">${pMeta}</td><td class="ct-real">${pReal}</td>
+      <td class="ct-${pSaldo===0?'saldo-zero':pSaldo<0?'saldo-neg':'saldo-pos'} sep-nat">${saldoStr(pSaldo)}</td>
+      <td class="ca-meta">${pMetaAcum}</td><td class="ca-real">${pRealAcum}</td>
+      <td class="ca-${tSaldoAcum===0?'saldo-zero':tSaldoAcum<0?'saldo-neg':'saldo-pos'} sep-nat">${saldoStr(tSaldoAcum)}</td>
+      <td><div class="prog-wrap"><div class="prog-bar"><div class="prog-fill" style="width:${Math.min(totPct,100)}%;background:${totColor};"></div></div><span class="prog-pct" style="color:${totColor}">${totPct}%</span></div></td>
+    </tr></tbody></table>
+    </div>
+    <div class="footer-bar">Meses: ${mesLabel} · Acumulado: JAN → ${mesAcumNome} · Atualizado: ${new Date().toLocaleString('pt-BR')}</div>
+    </div>`;
+  });
+
+  /* Cards topo */
+  const gSaldo=gReal-gMeta;
+  const gSaldoAcum=gRealAcum-gMetaAcum;
+  const gC=gSaldo===0?'var(--success)':gSaldo<0?'var(--danger)':'#ff9800';
+  const gCA=gSaldoAcum===0?'var(--success)':gSaldoAcum<0?'var(--danger)':'#ff9800';
+  document.getElementById('c-meta').textContent=gMeta;
+  document.getElementById('c-meta-acum').textContent=gMetaAcum;
+  document.getElementById('c-real').textContent=gReal;
+  document.getElementById('c-real-acum').textContent=gRealAcum;
+  document.getElementById('c-saldo').textContent=saldoStr(gSaldo);
+  document.getElementById('c-saldo').style.color=gC;
+  document.getElementById('c-saldo-acum').textContent=saldoStr(gSaldoAcum);
+  document.getElementById('c-saldo-acum').style.color=gCA;
+  document.getElementById('c-meta-acum-sub').textContent='JAN → '+mesAcumNome.substring(0,3);
+  document.getElementById('operacoes-body').innerHTML=html||'<div class="empty-state">Nenhum dado encontrado.</div>';
+}
+
+/* ══ PDF ══ */
+function gerarPDF(){
+  const {jsPDF}=window.jspdf;
+  const mesesSel=getMesesSelecionados();
+  if(!mesesSel.length){alert('Selecione ao menos um mês.');return;}
+
+  const mes=mesesSel.length===1?mesesSel[0]:mesesSel.map(m=>m.substring(0,3)).join('_');
+  const mesIdxAcum=Math.max(...mesesSel.map(m=>MESES.indexOf(m)));
+  const mesAcumNome=MESES[mesIdxAcum];
+  const getMetaMeses=(gp,nat)=>mesesSel.reduce((s,m)=>s+getMeta(gp,nat,m),0);
+  const getRealMeses=(gp,nat)=>mesesSel.reduce((s,m)=>s+getReal(gp,nat,m),0);
+
+  /* Nome com hora formatada */
+  const now=new Date();
+  const dd=String(now.getDate()).padStart(2,'0');
+  const mm2=String(now.getMonth()+1).padStart(2,'0');
+  const yyyy=now.getFullYear();
+  const hh=String(now.getHours()).padStart(2,'0');
+  const mi=String(now.getMinutes()).padStart(2,'0');
+  const nomeArq=`PAINEL_POE_3CIA_PMAMB_${mes}_EXTRAIDO_${dd}-${mm2}-${yyyy}_${hh}h${mi}min.pdf`;
+
+  /* A4 paisagem: 297 x 210 mm */
+  const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  const PW=297, PH=210;
+
+  /* Mapa pelotão + número ordinal do GP */
+  const gpPelMap={};
+  const gpNumMap={};
+  dadosGrupos.forEach(r=>{
+    if(r.gpResp){
+      if(!gpPelMap[r.gpResp]) gpPelMap[r.gpResp]=r.pelNum;
+      if(!gpNumMap[r.gpResp]) gpNumMap[r.gpResp]=gpNumDoColk(r.grupamento);
+    }
+  });
+  const gpF=document.getElementById('f-gp').value;
+  const pelF=document.getElementById('f-pel').value;
+  let todosGPs=[...new Set(dadosMetas.map(r=>r.gp))].filter(Boolean);
+  todosGPs.sort((a,b)=>{
+    const pelA=gpPelMap[a]||99, pelB=gpPelMap[b]||99;
+    if(pelA!==pelB) return pelA-pelB;
+    return (gpNumMap[a]||99)-(gpNumMap[b]||99);
+  });
+  if(gpF) todosGPs=todosGPs.filter(g=>g===gpF);
+  const pelotoes={};
+  todosGPs.forEach(gp=>{
+    const pel=gpPelMap[gp]||99;
+    if(pelF&&pel!==parseInt(pelF)) return;
+    if(!pelotoes[pel]) pelotoes[pel]=[];
+    pelotoes[pel].push(gp);
+  });
+  const pelNums=Object.keys(pelotoes).map(Number).sort((a,b)=>a-b);
+
+  /* Cores */
+  const GOLD=[70,50,0];
+  const BG_PAGE=[255,255,255];
+  const BG_HEAD=[245,241,232];
+  const BG_ROW=[255,255,255];
+  const BG_ALT=[242,238,225];
+  const BG_TOT=[220,205,170];
+  const BG_PEL=[120,100,60];
+  const TXT=[20,20,20];
+  const TXT_W=[0,0,0];
+  const TXT_M=[60,45,0];
+  const RED=[160,0,0];
+  const GRN=[0,100,20];
+  const ORG=[140,70,0];
+  const BLU=[10,50,140];
+  const BRD=[180,165,130];
+
+  /* Constantes de layout */
+  const ML=5, MR=5; /* margens */
+  const TW=PW-ML-MR; /* largura total da tabela: 287mm */
+  const HDR_H=12; /* altura do cabeçalho da página */
+  const PEL_H=8;  /* altura da barra do pelotão */
+  const ROW_H=5.5; /* altura de cada linha de dados */
+  const COL_GP=26; /* largura coluna grupamento */
+  const COL_TOT=6.2; /* largura colunas total mês e acumulado */
+  const COL_PCT=6.5; /* largura coluna % */
+  const N=naturezas.length;
+  /* Distribui TODO o espaço restante nas colunas de natureza */
+  const NAT_TOTAL=TW - COL_GP - (COL_TOT*6) - COL_PCT;
+  const COL_N_REAL=NAT_TOTAL/(N*3);
+
+  /* ── Cabeçalho de página ── */
+  let pageNum=0;
+  function addPage(){
+    if(pageNum>0) doc.addPage();
+    pageNum++;
+    doc.setFillColor(255,255,255);
+    doc.rect(0,0,PW,PH,'F');
+    doc.setFillColor(...BG_HEAD);
+    doc.rect(0,0,PW,HDR_H,'F');
+    doc.setDrawColor(100,80,30); doc.setLineWidth(0.5);
+    doc.line(0,HDR_H,PW,HDR_H);
+    /* Rodapé com legenda */
+    doc.setFontSize(5.5); doc.setFont('helvetica','normal');
+    doc.setTextColor(100,80,30);
+    doc.text('Nas colunas TOTAL MÊS e ACUMULADO:  M = META  |  R = REALIZADO  |  S = SALDO', ML+1, PH-2);
+    /* Título */
+    doc.setFont('helvetica','bold'); doc.setFontSize(9);
+    doc.setTextColor(...GOLD);
+    doc.text('3ª CIA PM MAMB — ACOMPANHAMENTO DE METAS POE',ML+1,7.5);
+    /* Info */
+    doc.setFont('helvetica','normal'); doc.setFontSize(6.5);
+    doc.setTextColor(...TXT_M);
+    doc.text(`MESES: ${mes}  |  ACUM. ATÉ: ${mesAcumNome}  |  EXTRAÍDO: ${dd}/${mm2}/${yyyy} às ${hh}h${mi}min  |  PÁG. ${pageNum}`,PW-MR,7.5,{align:'right'});
+    return HDR_H+2;
+  }
+
+  /* ── Barra resumo do pelotão ── */
+  function drawPelHeader(y, pelN, gps){
+    let pMeta=0,pReal=0,pMetaAcum=0,pRealAcum=0;
+    gps.forEach(gp=>naturezas.forEach(nat=>{
+      pMeta+=getMetaMeses(gp,nat); pReal+=getRealMeses(gp,nat);
+      pMetaAcum+=getMetaAcum(gp,nat,mesIdxAcum); pRealAcum+=getRealAcum(gp,nat,mesIdxAcum);
+    }));
+    const pSaldo=pReal-pMeta;
+    const pSaldoAcum=pRealAcum-pMetaAcum;
+    const pPct=pMeta>0?Math.round(pReal/pMeta*100):0;
+    const saldoColor=pSaldo===0?GRN:pSaldo<0?RED:ORG;
+    const pctColor=pPct>=100?GRN:pPct>=80?GOLD:RED;
+
+    doc.setFillColor(...BG_PEL);
+    doc.rect(0,y,PW,PEL_H,'F');
+    doc.setDrawColor(150,130,80); doc.setLineWidth(0.4);
+    doc.line(0,y,PW,y);
+    doc.line(0,y+PEL_H,PW,y+PEL_H);
+
+    /* Círculo com número */
+    doc.setFillColor(...GOLD);
+    doc.circle(ML+3.5,y+PEL_H/2,3.2,'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(7);
+    doc.setTextColor(255,255,255);
+    doc.text(String(pelN),ML+3.5,y+PEL_H/2+0.8,{align:'center'});
+
+    /* Nome */
+    doc.setFont('helvetica','bold'); doc.setFontSize(8);
+    doc.setTextColor(255,255,255);
+    doc.text(`${pelN}º PELOTÃO — 3ª CIA PM MAMB`,ML+9,y+PEL_H/2+0.8);
+
+    /* Stats lado direito — 2 linhas */
+    const stats=[
+      {l:'META MÊS',v:pMeta,c:[255,240,180]},
+      {l:'REALIZADO',v:pReal,c:[150,255,170]},
+      {l:'SALDO',v:(pSaldo>=0?'+':'')+pSaldo,c:pSaldo===0?[150,255,170]:pSaldo<0?[255,150,150]:[255,210,100]},
+      {l:'META ACUM.',v:pMetaAcum,c:[255,240,180]},
+      {l:'REAL. ACUM.',v:pRealAcum,c:[150,200,255]},
+      {l:'SLD. ACUM.',v:(pSaldoAcum>=0?'+':'')+pSaldoAcum,c:pSaldoAcum===0?[150,255,170]:pSaldoAcum<0?[255,150,150]:[255,210,100]},
+      {l:'CUMPR.',v:pPct+'%',c:pPct>=100?[150,255,170]:pPct>=80?[255,240,180]:[255,150,150]},
+    ];
+    let sx=PW-MR;
+    stats.slice().reverse().forEach(s=>{
+      doc.setFont('helvetica','bold'); doc.setFontSize(8);
+      doc.setTextColor(s.c[0],s.c[1],s.c[2]);
+      doc.text(String(s.v),sx,y+PEL_H/2-0.5,{align:'right'});
+      doc.setFont('helvetica','normal'); doc.setFontSize(5.5);
+      doc.setTextColor(255,245,210);
+      doc.text(s.l,sx,y+PEL_H/2+3,{align:'right'});
+      sx-=26;
+    });
+    return y+PEL_H;
+  }
+
+  /* ── Cabeçalho da tabela ── */
+  function drawTableHead(y){
+    const h1=4.5, h2=4;
+    /* Fundo linha 1 (nomes naturezas) */
+    doc.setFillColor(...BG_HEAD);
+    doc.rect(0,y,PW,h1,'F');
+    /* Fundo linha 2 (META/REAL/SLD) */
+    doc.setFillColor(235,228,210);
+    doc.rect(0,y+h1,PW,h2,'F');
+
+    doc.setFont('helvetica','bold');
+    doc.setDrawColor(...BRD); doc.setLineWidth(0.15);
+
+    /* Col grupamento */
+    doc.setFontSize(6.5); doc.setTextColor(...GOLD);
+    doc.text('GRUPAMENTO',ML+COL_GP/2,y+h1+h2/2+1,{align:'center'});
+    doc.rect(ML,y,COL_GP,h1+h2,'D');
+
+    /* Naturezas */
+    let cx=ML+COL_GP;
+    naturezas.forEach(nat=>{
+      const w=COL_N_REAL*3;
+      doc.setFontSize(6); doc.setTextColor(...GOLD);
+      doc.text(nat,cx+w/2,y+h1-0.8,{align:'center'});
+      doc.rect(cx,y,w,h1,'D');
+      /* Sub-colunas */
+      ['META','REAL.','SLD'].forEach((sub,si)=>{
+        const sx2=cx+si*COL_N_REAL;
+        doc.setFontSize(6.5); doc.setTextColor(...TXT_M);
+        doc.text(sub,sx2+COL_N_REAL/2,y+h1+h2/2+1,{align:'center'});
+        doc.rect(sx2,y+h1,COL_N_REAL,h2,'D');
+      });
+      cx+=w;
+    });
+
+    /* Total mês */
+    const totW=COL_TOT*3;
+    doc.setFontSize(6); doc.setTextColor(...GOLD);
+    doc.text('TOTAL MÊS',cx+totW/2,y+h1-0.8,{align:'center'});
+    doc.rect(cx,y,totW,h1,'D');
+    ['M','R','S'].forEach((sub,si)=>{
+      const sx2=cx+si*COL_TOT;
+      doc.setFontSize(6); doc.setTextColor(...TXT_M);
+      doc.text(sub,sx2+COL_TOT/2,y+h1+h2/2+1,{align:'center'});
+      doc.rect(sx2,y+h1,COL_TOT,h2,'D');
+    });
+    cx+=totW;
+
+    /* Acumulado */
+    doc.setFontSize(6); doc.setTextColor(...BLU);
+    doc.text('ACUMULADO',cx+totW/2,y+h1-0.8,{align:'center'});
+    doc.rect(cx,y,totW,h1,'D');
+    ['M','R','S'].forEach((sub,si)=>{
+      const sx2=cx+si*COL_TOT;
+      doc.setFontSize(6); doc.setTextColor(...TXT_M);
+      doc.text(sub,sx2+COL_TOT/2,y+h1+h2/2+1,{align:'center'});
+      doc.rect(sx2,y+h1,COL_TOT,h2,'D');
+    });
+    cx+=totW;
+
+    /* % */
+    doc.setFontSize(6); doc.setTextColor(...GOLD);
+    doc.text('%',cx+COL_PCT/2,y+h1+h2/2+1,{align:'center'});
+    doc.rect(cx,y,COL_PCT,h1+h2,'D');
+
+    return y+h1+h2;
+  }
+
+  /* ── Linha de dados ── */
+  function drawRow(y, label, values, isTotal, isBold){
+    const bgColor=isTotal?BG_TOT:values._alt?BG_ALT:BG_ROW;
+    doc.setFillColor(...bgColor);
+    doc.rect(0,y,PW,ROW_H,'F');
+    doc.setDrawColor(...BRD); doc.setLineWidth(0.12);
+
+    /* Grupamento */
+    doc.setFont('helvetica', isBold||isTotal?'bold':'normal');
+    doc.setFontSize(isTotal?5:5.2);
+    if(isTotal){doc.setTextColor(...GOLD);}else{doc.setTextColor(...TXT_W);}
+    doc.text(label,ML+1,y+ROW_H/2+1);
+    doc.rect(ML,y,COL_GP,ROW_H,'D');
+
+    /* Naturezas */
+    let cx=ML+COL_GP;
+    naturezas.forEach(nat=>{
+      const m=values.nat[nat]?.m||0;
+      const r=values.nat[nat]?.r||0;
+      const s=r-m;
+      const cells=[m,r,s];
+      cells.forEach((v,ci)=>{
+        const isS=ci===2;
+        const color=isS?(s===0?GRN:s<0?RED:ORG):TXT;
+        doc.setFont('helvetica',isS&&s!==0?'bold':'normal');
+        doc.setFontSize(5.5);
+        let _c1=isTotal?GOLD:color; doc.setTextColor(_c1[0],_c1[1],_c1[2]);
+        const txt=isS?(s>0?'+':'')+s:(v||'0');
+        doc.text(String(txt),cx+ci*COL_N_REAL+COL_N_REAL/2,y+ROW_H/2+1,{align:'center'});
+        doc.rect(cx+ci*COL_N_REAL,y,COL_N_REAL,ROW_H,'D');
+      });
+      cx+=COL_N_REAL*3;
+    });
+
+    /* Total mês */
+    const tm=values.totMeta, tr=values.totReal, ts=tr-tm;
+    [[tm,TXT_M],[tr,GRN],[(ts>0?'+':'')+ts, ts===0?GRN:ts<0?RED:ORG]].forEach(([v,c],ci)=>{
+      doc.setFont('helvetica','bold'); doc.setFontSize(5.5);
+      let _c2=isTotal?GOLD:c; doc.setTextColor(_c2[0],_c2[1],_c2[2]);
+      doc.text(String(v),cx+ci*COL_TOT+COL_TOT/2,y+ROW_H/2+1,{align:'center'});
+      doc.rect(cx+ci*COL_TOT,y,COL_TOT,ROW_H,'D');
+    });
+    cx+=COL_TOT*3;
+
+    /* Acumulado */
+    const am=values.acumMeta, ar=values.acumReal, as2=ar-am;
+    [[am,TXT_M],[ar,BLU],[(as2>0?'+':'')+as2, as2===0?GRN:as2<0?RED:ORG]].forEach(([v,c],ci)=>{
+      doc.setFont('helvetica','bold'); doc.setFontSize(5.5);
+      let _c3=isTotal?GOLD:c; doc.setTextColor(_c3[0],_c3[1],_c3[2]);
+      doc.text(String(v),cx+ci*COL_TOT+COL_TOT/2,y+ROW_H/2+1,{align:'center'});
+      doc.rect(cx+ci*COL_TOT,y,COL_TOT,ROW_H,'D');
+    });
+    cx+=COL_TOT*3;
+
+    /* % */
+    const pct=tm>0?Math.round(tr/tm*100):0;
+    const pctC=pct>=100?GRN:pct>=80?GOLD:RED;
+    doc.setFont('helvetica','bold'); doc.setFontSize(5.5);
+    let _c4=isTotal?GOLD:pctC; doc.setTextColor(_c4[0],_c4[1],_c4[2]);
+    doc.text(pct+'%',cx+COL_PCT/2,y+ROW_H/2+1,{align:'center'});
+    doc.rect(cx,y,COL_PCT,ROW_H,'D');
+
+    return y+ROW_H;
+  }
+
+  /* ── Renderiza pelotão ── */
+  function renderPeloTao(pelN, y){
+    const gps=pelotoes[pelN]; /* ordem numérica já definida */
+    y=drawPelHeader(y,pelN,gps);
+    y=drawTableHead(y);
+
+    gps.forEach((gp,gi)=>{
+      let totMeta=0, totReal=0, acumMeta=0, acumReal=0;
+      const natVals={};
+      naturezas.forEach(nat=>{
+        const m=getMetaMeses(gp,nat), r=getRealMeses(gp,nat);
+        natVals[nat]={m,r};
+        totMeta+=m; totReal+=r;
+        acumMeta+=getMetaAcum(gp,nat,mesIdxAcum);
+        acumReal+=getRealAcum(gp,nat,mesIdxAcum);
+      });
+      y=drawRow(y, gp.replace('GP ',''), {nat:natVals,totMeta,totReal,acumMeta,acumReal,_alt:gi%2===1}, false, false);
+    });
+
+    /* Linha total */
+    let tMeta=0,tReal=0,tAcumMeta=0,tAcumReal=0;
+    const tNat={};
+    gps.forEach(gp=>{
+      naturezas.forEach(nat=>{
+        const m=getMetaMeses(gp,nat), r=getRealMeses(gp,nat);
+        if(!tNat[nat]) tNat[nat]={m:0,r:0};
+        tNat[nat].m+=m; tNat[nat].r+=r;
+        tMeta+=m; tReal+=r;
+        tAcumMeta+=getMetaAcum(gp,nat,mesIdxAcum);
+        tAcumReal+=getRealAcum(gp,nat,mesIdxAcum);
+      });
+    });
+    y=drawRow(y, `TOTAL ${pelN}º PEL`, {nat:tNat,totMeta:tMeta,totReal:tReal,acumMeta:tAcumMeta,acumReal:tAcumReal}, true, true);
+
+    /* Linha de separação */
+    doc.setDrawColor(150,130,80); doc.setLineWidth(0.4);
+    doc.line(0,y,PW,y);
+    return y+3;
+  }
+
+  /* ── Calcula altura estimada de um pelotão ── */
+  function estimaAltura(pelN){
+    const gps=pelotoes[pelN];
+    return PEL_H + (4.5+4) + (gps.length+1)*ROW_H + 3;
+  }
+
+  /* ── Loop principal: 2 por página ── */
+  let y=addPage();
+  pelNums.forEach((pelN,i)=>{
+    const h=estimaAltura(pelN);
+    /* Verifica se cabe na área restante */
+    if(i>0 && y+h > PH-4){
+      y=addPage();
+    }
+    y=renderPeloTao(pelN,y);
+  });
+
+  doc.save(nomeArq);
+}
+
+/* ══ TABS ══ */
+/* ══ RENDER GRUPOS ══ */
+function renderGrupos(){
+  const gpF  = document.getElementById('fg-grp').value;
+  const pelF = document.getElementById('fg-pel').value;
+  const rpmF = document.getElementById('fg-rpm').value;
+  const munF = norm(document.getElementById('fg-mun').value);
+
+  let data = dadosGrupos.filter(r=>{
+    if(gpF  && r.grupamento!==gpF) return false;
+    if(pelF && r.pelotao!==pelF)   return false;
+    if(rpmF && r.rpm!==rpmF)       return false;
+    if(munF && !r.munNorm.includes(munF)) return false;
+    return true;
+  });
+
+  document.getElementById('badge-grp').textContent = data.length+' registros';
+
+  if(!data.length){
+    document.getElementById('grp-body').innerHTML='<div class="empty-state">Nenhum município encontrado.</div>';
+    document.getElementById('pag-grp').style.display='none';
+    return;
+  }
+
+  const total=data.length, totPg=Math.ceil(total/PAGE_SZ);
+  if(grpPage>totPg) grpPage=1;
+  const start=(grpPage-1)*PAGE_SZ, slice=data.slice(start,start+PAGE_SZ);
+
+  let html=`<table class="gt"><thead><tr>
+    <th style="width:34px">#</th>
+    <th>Município</th>
+    <th>GP</th>
+    <th>Grupamento Completo</th>
+    <th>GP Responsável</th>
+    <th>Pelotão</th>
+    <th>RPM</th>
+    <th>BPM</th>
+  </tr></thead><tbody>`;
+
+  slice.forEach((r,i)=>{
+    html+=`<tr>
+      <td style="color:var(--text-hint);font-size:11px;">${start+i+1}</td>
+      <td><span class="mun">${r.municipio}</span></td>
+      <td><span class="bgp">${r.gp}</span></td>
+      <td style="font-size:11px;color:#aaa;">${r.grupamento}</td>
+      <td style="font-size:11px;color:var(--text-muted);">${r.gpResp}</td>
+      <td><span class="bpel">${r.pelotao}</span></td>
+      <td style="font-size:11px;">${r.rpm}</td>
+      <td style="font-size:11px;">${r.bpm}</td>
+    </tr>`;
+  });
+  html+='</tbody></table>';
+  document.getElementById('grp-body').innerHTML=html;
+
+  const pag=document.getElementById('pag-grp');
+  pag.style.display='flex';
+  document.getElementById('pag-grp-info').textContent=`Exibindo ${start+1}–${Math.min(start+PAGE_SZ,total)} de ${total}`;
+  let btns=`<button class="pag-btn" onclick="goGrpPage(${grpPage-1})" ${grpPage===1?'disabled':''}>‹</button>`;
+  for(let p=Math.max(1,grpPage-2);p<=Math.min(totPg,grpPage+2);p++)
+    btns+=`<button class="pag-btn ${p===grpPage?'active':''}" onclick="goGrpPage(${p})">${p}</button>`;
+  btns+=`<button class="pag-btn" onclick="goGrpPage(${grpPage+1})" ${grpPage===totPg?'disabled':''}>›</button>`;
+  document.getElementById('pag-grp-btns').innerHTML=btns;
+}
+
+function goGrpPage(p){
+  const tot=Math.ceil(dadosGrupos.length/PAGE_SZ);
+  if(p<1||p>tot) return;
+  grpPage=p; renderGrupos();
+}
+
+/* ══════════════════════════════════════════
+   ABA: OP GDO RURAL
+   ══════════════════════════════════════════ */
+let   gdoNats      = ['Y07001','Y07002','Y07014'];
+const GDO_NAT_COR  = {'Y07001':'#4caf50','Y07002':'#ff9800','Y07014':'#2196f3'};
+let   _leafletMap  = null;
+let   _gdoNatDragIdx = null;
+
+/* ── Naturezas GDO (drag-and-drop igual ao POE) ── */
+function renderGdoNatTags(){
+  const isAdmin = sessaoPainel && sessaoPainel.perfil === 'admin';
+  /* Controla visibilidade da seção inteira */
+  const sec = document.getElementById('gdo-nat-section');
+  if(sec) sec.style.display = isAdmin ? 'block' : 'none';
+  if(!isAdmin) return; /* operacional não vê as naturezas */
+  const wrap = document.getElementById('gdo-nat-tags');
+  if(!wrap) return;
+  wrap.innerHTML = gdoNats.map((n,i) =>
+    `<span class="nat-tag" draggable="${isAdmin}" data-idx="${i}"
+       ondragstart="gdoNatDragStart(event,${i})"
+       ondragover="gdoNatDragOver(event,${i})"
+       ondragleave="gdoNatDragLeave(event)"
+       ondrop="gdoNatDrop(event,${i})"
+       ondragend="gdoNatDragEnd(event)">
+       ${isAdmin ? '<span class="drag-handle">⠿</span>' : ''}
+       ${n}
+       ${isAdmin ? `<span class="nat-rm" onclick="removeGdoNat('${n}')" title="Remover">✕</span>` : ''}
+     </span>`
+  ).join('');
+  /* Atualiza select de filtro */
+  const sel = document.getElementById('gdo-nat');
+  if(sel){
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">Todas</option>' +
+      gdoNats.map(n=>`<option value="${n}"${n===cur?' selected':''}>${n}</option>`).join('');
+  }
+}
+function gdoNatDragStart(e,idx){ _gdoNatDragIdx=idx; e.currentTarget.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; }
+function gdoNatDragOver(e,idx){ e.preventDefault(); if(idx!==_gdoNatDragIdx) e.currentTarget.classList.add('drag-over-nat'); }
+function gdoNatDragLeave(e){ e.currentTarget.classList.remove('drag-over-nat'); }
+function gdoNatDrop(e,toIdx){
+  e.preventDefault(); e.currentTarget.classList.remove('drag-over-nat');
+  if(_gdoNatDragIdx===null||_gdoNatDragIdx===toIdx) return;
+  const moved=gdoNats.splice(_gdoNatDragIdx,1)[0];
+  gdoNats.splice(toIdx,0,moved);
+  _gdoNatDragIdx=null;
+  renderGdoNatTags(); renderGdoRural();
+}
+function gdoNatDragEnd(e){ e.currentTarget.classList.remove('dragging'); document.querySelectorAll('#gdo-nat-tags .nat-tag').forEach(t=>t.classList.remove('drag-over-nat')); _gdoNatDragIdx=null; }
+function addGdoNat(){
+  const inp=document.getElementById('gdo-nat-nova');
+  const v=inp.value.trim().toUpperCase();
+  if(v&&!gdoNats.includes(v)){ const pos=gdoNats.findIndex(n=>n>v); if(pos===-1) gdoNats.push(v); else gdoNats.splice(pos,0,v); renderGdoNatTags(); renderGdoRural(); }
+  inp.value='';
+}
+function removeGdoNat(n){ gdoNats=gdoNats.filter(x=>x!==n); renderGdoNatTags(); renderGdoRural(); }
+
+function getDadosGdoFiltrados(){
+  const mes = document.getElementById('gdo-mes').value;
+  const pel = document.getElementById('gdo-pel').value;
+  const nat = document.getElementById('gdo-nat').value;
+  return (window._dadosBrutos || []).filter(d => {
+    if(!d.localizacao || !d.localizacao.toUpperCase().includes('RURAL')) return false;
+    const nats = nat ? [nat] : gdoNats;
+    if(!nats.includes(d.natureza)) return false;
+    if(mes && d.mes !== mes) return false;
+    if(pel){ if(!d.grupamento) return false; const pelNum=pelDoColk(d.grupamento); if(pelNum===99||pelNum!==parseInt(pel)) return false; }
+    return true;
+  });
+}
+
+function renderGdoRural(){
+  if(!window._dadosBrutos || !window._dadosBrutos.length){
+    const el = document.getElementById('gdo-tabela-body');
+    if(el) el.innerHTML='<div class="empty-state">⏳ Dados ainda não carregados. Clique em Atualizar.</div>';
+    return;
+  }
+  const viewEl = document.getElementById('gdo-view');
+  const natEl  = document.getElementById('gdo-nat');
+  if(!viewEl || !natEl) return; /* elementos ainda não existem no DOM */
+  const view  = viewEl.value;
+  const dados = getDadosGdoFiltrados();
+  const natF  = natEl.value;
+
+  /* Totais para uso interno */
+  const total=dados.length;
+  const porNat={};
+  gdoNats.forEach(n=>porNat[n]=dados.filter(d=>d.natureza===n).length);
+
+  const showTab=view!=='mapa', showMapa=view!=='tabela';
+  const tabelaWrap = document.getElementById('gdo-tabela-wrap');
+  const mapaWrap   = document.getElementById('gdo-mapa-wrap');
+  if(tabelaWrap) tabelaWrap.style.display=showTab?'block':'none';
+  if(mapaWrap)   mapaWrap.style.display=showMapa?'block':'none';
+  if(showTab)  renderGdoTabela(dados, natF);
+  if(showMapa) renderGdoMapa(dados);
+}
+
+function renderGdoTabela(dados, natF){
+  const nats=natF?[natF]:gdoNats;
+  const pel_gp={};
+  dados.forEach(d=>{
+    /* Ignora registros sem grupamento válido */
+    if(!d.grupamento) return;
+    const gpKey=gpDoColk(d.grupamento);
+    const pelNum=pelDoColk(d.grupamento);
+    if(pelNum===99) return; /* pula se pelotão não identificado */
+    if(!pel_gp[pelNum]) pel_gp[pelNum]={};
+    if(!pel_gp[pelNum][gpKey]) pel_gp[pelNum][gpKey]={};
+    pel_gp[pelNum][gpKey][d.natureza]=(pel_gp[pelNum][gpKey][d.natureza]||0)+1;
+  });
+  const pelNums=Object.keys(pel_gp).map(Number).sort((a,b)=>a-b);
+  if(!pelNums.length){
+    document.getElementById('gdo-tabela-body').innerHTML='<div class="empty-state">Nenhuma operação em Zona Rural encontrada para os filtros selecionados.</div>';
+    return;
+  }
+  /* Linha de totais gerais para o sticky header */
+  const totGerais=nats.map(n=>dados.filter(d=>d.natureza===n).length);
+  const totGeral=dados.length;
+  let html=`<div style="overflow-x:auto;max-height:calc(100vh - 320px);overflow-y:auto;"><table class="gdo-table" style="border-collapse:collapse;"><thead style="position:sticky;top:0;z-index:10;background:#1e1e1e;">
+    <tr style="background:#1e1e1e;">
+      <th class="th-left" style="width:180px;background:#1e1e1e;">GRUPAMENTO</th>
+      ${nats.map(n=>`<th style="color:${GDO_NAT_COR[n]||'var(--gold)'};background:#1e1e1e;">${n}</th>`).join('')}
+      <th style="background:#1e1e1e;">TOTAL</th>
+    </tr>
+    </thead><tbody>`;
+  pelNums.forEach(pelN=>{
+    html+=`<tr class="tr-pel"><th class="th-left" colspan="${nats.length+2}">${pelN}º Pelotão — 3ª CIA PM MAMB</th></tr>`;
+    const gpMap=pel_gp[pelN];
+    const gps=Object.keys(gpMap).sort((a,b)=>{
+      const ga=dadosGrupos.find(r=>r.gpResp===a);
+      const gb=dadosGrupos.find(r=>r.gpResp===b);
+      return (ga?gpNumDoColk(ga.grupamento):99)-(gb?gpNumDoColk(gb.grupamento):99);
+    });
+    let pelTotal=0; const pelNatTot={};
+    gps.forEach(gp=>{
+      let rowTotal=0;
+      const cells=nats.map(n=>{ const v=gpMap[gp][n]||0; rowTotal+=v; pelNatTot[n]=(pelNatTot[n]||0)+v; const cor=v>0?(GDO_NAT_COR[n]||'var(--gold)'):'var(--text-muted)'; return `<td style="color:${cor};font-weight:${v>0?'700':'400'}">${v||'—'}</td>`; }).join('');
+      pelTotal+=rowTotal;
+      html+=`<tr><td class="td-left">${gp.replace('GP ','')}</td>${cells}<td style="font-weight:700;color:var(--gold)">${rowTotal}</td></tr>`;
+    });
+    html+=`<tr class="tr-total"><td class="td-left">TOTAL ${pelN}º PEL</td>${nats.map(n=>`<td style="color:${GDO_NAT_COR[n]||'var(--gold)'}">${pelNatTot[n]||0}</td>`).join('')}<td>${pelTotal}</td></tr>`;
+  });
+  const totNats=nats.map(n=>`<td style="color:${GDO_NAT_COR[n]||'var(--gold)'};font-size:13px">${dados.filter(d=>d.natureza===n).length}</td>`).join('');
+  html+=`<tr class="tr-total" style="border-top:2px solid var(--gold-border)"><td class="td-left" style="font-size:13px">TOTAL GERAL</td>${totNats}<td style="font-size:13px">${dados.length}</td></tr>`;
+  html+='</tbody></table></div>';
+  document.getElementById('gdo-tabela-body').innerHTML=html;
+}
+
+/* ── Mapa Leaflet ── */
+function renderGdoMapa(dados){
+  if(!window.L){
+    if(!document.getElementById('leaflet-css')){
+      const css=document.createElement('link'); css.id='leaflet-css'; css.rel='stylesheet';
+      css.href='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
+      document.head.appendChild(css);
+    }
+    const sc=document.createElement('script');
+    sc.src='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
+    sc.onload=()=>_initMapaGdo(dados);
+    document.head.appendChild(sc);
+    return;
+  }
+  _initMapaGdo(dados);
+}
+
+let _kmlLayers = {}; /* key → L.LayerGroup */
+
+function toggleLayer(key){
+  if(!_leafletMap) return;
+  const cbId = 'layer-'+key.replace('_','');
+  const cb = document.getElementById(cbId) || document.getElementById('layer-'+key);
+  const vis = cb ? cb.checked : true;
+  if(_kmlLayers[key]){
+    if(vis) _kmlLayers[key].addTo(_leafletMap);
+    else _leafletMap.removeLayer(_kmlLayers[key]);
+  }
+}
+
+function _initMapaGdo(dados){
+  const dadosCoord=dados.filter(d=>d.lat&&d.lng);
+  const el=document.getElementById('gdo-mapa-inner');
+  if(_leafletMap){ _leafletMap.remove(); _leafletMap=null; _kmlLayers={}; }
+
+  _leafletMap=L.map(el,{zoomControl:true,scrollWheelZoom:true});
+
+  /* Tile OpenStreetMap claro */
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    attribution:'&copy; OpenStreetMap contributors', maxZoom:19
+  }).addTo(_leafletMap);
+
+  /* ── Camadas KML ── */
+  if(typeof KML_DATA !== 'undefined'){
+
+    /* IBGE Urbana — marrom claro, alta fidelidade */
+    if(typeof IBGE_DATA !== 'undefined' && IBGE_DATA.length){
+      const group = L.layerGroup();
+      IBGE_DATA.forEach(poly => {
+        L.polygon(poly.map(p=>[p[1],p[0]]),{
+          color:'#8B5E3C', weight:0.8, opacity:0.9,
+          fillColor:'#A0784A', fillOpacity:0.25
+        }).bindTooltip('Área Urbana IBGE 2022',{sticky:true,className:'leaflet-tooltip-pel'}).addTo(group);
+      });
+      _kmlLayers['ibge'] = group;
+      const cb = document.getElementById('layer-ibge');
+      if(!cb || cb.checked) group.addTo(_leafletMap);
+    }
+
+    /* Pelotões — cada GP com sua cor */
+    if(KML_DATA.pelotoes){
+      /* Monta mapa gpNum → cidade usando dadosGrupos */
+      /* Ex: pelKey='1PEL', gpKey='1GP' → pelNum=1, gpNum=1 → cidade do 1º GP do 1º PEL */
+      Object.entries(KML_DATA.pelotoes).forEach(([pelKey, pelData]) => {
+        const group = L.layerGroup();
+        const pelNum = parseInt(pelKey.replace(/\D/g,''));
+
+        if(pelData.gps){
+          Object.entries(pelData.gps).forEach(([gpKey, gpData]) => {
+            const gpNum = parseInt(gpKey.replace(/\D/g,''));
+            /* Busca a cidade correspondente em dadosGrupos */
+            const gpInfo = dadosGrupos.find(r =>
+              r.pelNum === pelNum && gpNumDoColk(r.grupamento) === gpNum
+            );
+            const cidade = gpInfo ? gpInfo.gpResp.replace('GP ','') : '';
+            const tooltipLabel = cidade
+              ? `${pelData.label} — ${gpData.label} — ${cidade}`
+              : `${pelData.label} — ${gpData.label}`;
+
+            gpData.polys.forEach(poly => {
+              L.polygon(poly.map(p=>[p[1],p[0]]),{
+                color:    gpData.cor,
+                weight:   1.5,
+                opacity:  0.9,
+                fillColor:gpData.cor,
+                fillOpacity:0.15
+              })
+              .bindTooltip(tooltipLabel,{
+                sticky:true, className:'leaflet-tooltip-pel'
+              })
+              .addTo(group);
+            });
+          });
+        }
+
+        _kmlLayers[pelKey] = group;
+        const cbKey = pelKey.replace('_','');
+        const cb = document.getElementById('layer-'+cbKey) || document.getElementById('layer-'+pelKey);
+        if(!cb || cb.checked) group.addTo(_leafletMap);
+      });
+    }
+  }
+
+  /* ── Marcadores das operações ── */
+  if(!dadosCoord.length){
+    _leafletMap.setView([-18.5,-41.5],7);
+  } else {
+    dadosCoord.forEach(d=>{
+      const cor=GDO_NAT_COR[d.natureza]||'#9b8a5c';
+      const icon=L.divIcon({
+        className:'',
+        html:`<div style="width:13px;height:13px;background:${cor};border:2.5px solid #fff;border-radius:50%;box-shadow:0 1px 6px rgba(0,0,0,.4);"></div>`,
+        iconSize:[13,13],iconAnchor:[6,6],popupAnchor:[0,-10]
+      });
+      const tooltipHtml=`<div style="font-size:12px;line-height:1.75;padding:4px 2px;min-width:200px;">
+        <b style="color:${cor};font-size:13px;display:block;margin-bottom:4px;">RAT: ${d.rat}</b>
+        <table style="width:100%;border-collapse:collapse;">
+          <tr><td style="color:#555;font-size:11px;padding-right:8px;">Data</td><td style="font-weight:600">${d.data||'—'}</td></tr>
+          <tr><td style="color:#555;font-size:11px;">Município</td><td style="font-weight:600">${d.municipio||'—'}</td></tr>
+          <tr><td style="color:#555;font-size:11px;">Natureza</td><td style="font-weight:700;color:${cor}">${d.natureza}</td></tr>
+          <tr><td style="color:#555;font-size:11px;">Descrição</td><td>${d.descrNatureza||'—'}</td></tr>
+          <tr><td style="color:#555;font-size:11px;">Localização</td><td>${d.localizacao||'—'}</td></tr>
+        </table>
+      </div>`;
+      L.marker([d.lat,d.lng],{icon,zIndexOffset:1000})
+        .bindTooltip(tooltipHtml,{sticky:true,direction:'top',offset:[0,-10],className:'leaflet-tooltip-rat'})
+        .addTo(_leafletMap);
+    });
+    const bounds=L.featureGroup(dadosCoord.map(d=>L.marker([d.lat,d.lng]))).getBounds();
+    _leafletMap.fitBounds(bounds,{padding:[50,50]});
+  }
+
+  /* Legenda operações */
+  document.getElementById('gdo-mapa-legenda').innerHTML=
+    gdoNats.map(n=>`<span><span class="nat-dot" style="background:${GDO_NAT_COR[n]||'#9b8a5c'}"></span>${n}</span>`).join('')+
+    `<span style="margin-left:12px;color:var(--text-hint)">Pontos com coord.: ${dadosCoord.length} de ${dados.length}</span>`;
+}
+
+/* ── PDF GDO Rural ── */
+function gerarPdfGdo(){
+  const {jsPDF}=window.jspdf;
+  if(!jsPDF){ alert('Biblioteca PDF não carregada.'); return; }
+  const mesF=document.getElementById('gdo-mes').value;
+  const natF=document.getElementById('gdo-nat').value;
+  const dados=getDadosGdoFiltrados();
+  if(!dados.length){ alert('Nenhum dado para gerar PDF.'); return; }
+  const nats=natF?[natF]:gdoNats;
+  const mesLabel=mesF||'TODOS OS MESES';
+  const now=new Date();
+  const dd=String(now.getDate()).padStart(2,'0'),mm2=String(now.getMonth()+1).padStart(2,'0');
+  const yyyy=now.getFullYear(),hh=String(now.getHours()).padStart(2,'0'),mi=String(now.getMinutes()).padStart(2,'0');
+  const nomeArq=`GDO_RURAL_3CIA_PMAMB_${mesLabel}_EXTRAIDO_${dd}-${mm2}-${yyyy}_${hh}h${mi}min.pdf`;
+
+  /* A4 paisagem */
+  const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  const PW=297,PH=210,ML=6,MR=6,TW=PW-ML-MR;
+
+  /* Cores (fundo branco) */
+  const GOLD=[100,80,30],GOLD2=[70,50,0];
+  const BG_HEAD=[245,241,232],BG_ROW=[255,255,255],BG_ALT=[250,248,242],BG_TOT=[235,228,210],BG_PEL=[120,100,60];
+  const TXT=[20,20,20],TXT_M=[100,80,30],BRD=[190,175,145];
+  const NAT_CORS={'Y07001':[56,142,60],'Y07002':[230,130,0],'Y07014':[25,118,210]};
+  function natCor(n){ return NAT_CORS[n]||GOLD; }
+
+  /* Coluna por natureza, largura dinâmica */
+  const COL_GP=42;
+  const nNat=nats.length;
+  const COL_N=Math.floor((TW-COL_GP-16)/nNat);
+  const COL_TOT=TW-COL_GP-nNat*COL_N;
+
+  /* Monta dados */
+  const pel_gp={};
+  dados.forEach(d=>{
+    if(!d.grupamento) return;
+    const gpKey=gpDoColk(d.grupamento), pelNum=pelDoColk(d.grupamento);
+    if(pelNum===99) return;
+    if(!pel_gp[pelNum]) pel_gp[pelNum]={};
+    if(!pel_gp[pelNum][gpKey]) pel_gp[pelNum][gpKey]={};
+    pel_gp[pelNum][gpKey][d.natureza]=(pel_gp[pelNum][gpKey][d.natureza]||0)+1;
+  });
+  const pelNums=Object.keys(pel_gp).map(Number).sort((a,b)=>a-b);
+
+  let page=0;
+  function addPage(){
+    if(page>0) doc.addPage();
+    page++;
+    /* Cabeçalho */
+    doc.setFillColor(...BG_HEAD); doc.rect(0,0,PW,11,'F');
+    doc.setDrawColor(...GOLD); doc.setLineWidth(0.5); doc.line(0,11,PW,11);
+    doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...GOLD);
+    doc.text('3ª CIA PM MAMB — OP GDO RURAL — ZONA RURAL',ML+1,7.5);
+    doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(...TXT_M);
+    doc.text(`MÊS: ${mesLabel}  |  EXTRAÍDO: ${dd}/${mm2}/${yyyy} às ${hh}h${mi}min  |  PÁG. ${page}  |  TOTAL: ${dados.length} operações`,PW-MR,7.5,{align:'right'});
+    /* Legenda naturezas */
+    doc.setFontSize(5.5);
+    let lx=ML+1;
+    nats.forEach(n=>{ const c=natCor(n); doc.setTextColor(...c); doc.setFont('helvetica','bold'); doc.text(n,lx,PH-2); lx+=20; });
+    return 13;
+  }
+
+  function drawPelHeader(y,pelN,pelTotal){
+    const h=7;
+    doc.setFillColor(...BG_PEL); doc.rect(0,y,PW,h,'F');
+    doc.setFillColor(...GOLD); doc.circle(ML+3,y+h/2,2.8,'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(6.5); doc.setTextColor(255,255,255);
+    doc.text(String(pelN),ML+3,y+h/2+0.8,{align:'center'});
+    doc.setFontSize(8); doc.setTextColor(255,240,180);
+    doc.text(`${pelN}º PELOTÃO — 3ª CIA PM MAMB`,ML+8,y+h/2+0.8);
+    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(150,255,170);
+    doc.text(String(pelTotal),PW-MR,y+h/2-0.5,{align:'right'});
+    doc.setFontSize(5); doc.setTextColor(240,230,200);
+    doc.text('TOTAL',PW-MR,y+h/2+2.8,{align:'right'});
+    return y+h;
+  }
+
+  function drawTableHead(y){
+    const h=5;
+    doc.setFillColor(...BG_HEAD); doc.rect(0,y,PW,h,'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.setTextColor(...GOLD);
+    doc.text('GRUPAMENTO',ML+1,y+h*0.68);
+    doc.setDrawColor(...BRD); doc.setLineWidth(0.15);
+    doc.rect(ML,y,COL_GP,h,'D');
+    let cx=ML+COL_GP;
+    nats.forEach(n=>{ const c=natCor(n); doc.setTextColor(...c); doc.text(n,cx+COL_N/2,y+h*0.68,{align:'center'}); doc.rect(cx,y,COL_N,h,'D'); cx+=COL_N; });
+    doc.setTextColor(...GOLD); doc.text('TOTAL',cx+COL_TOT/2,y+h*0.68,{align:'center'});
+    doc.rect(cx,y,COL_TOT,h,'D');
+    return y+h;
+  }
+
+  function drawRow(y,label,vals,totRow,isTotal,alt){
+    const h=5.5;
+    doc.setFillColor(...(isTotal?BG_TOT:alt?BG_ALT:BG_ROW)); doc.rect(0,y,PW,h,'F');
+    doc.setFont('helvetica',isTotal?'bold':'normal'); doc.setFontSize(isTotal?6:5.8);
+    doc.setTextColor(...(isTotal?GOLD2:TXT));
+    doc.text(label.replace('GP ',''),ML+1.5,y+h*0.68);
+    doc.setDrawColor(...BRD); doc.setLineWidth(0.12); doc.rect(ML,y,COL_GP,h,'D');
+    let cx=ML+COL_GP;
+    vals.forEach((v,i)=>{
+      const cor=isTotal?natCor(nats[i]):v>0?natCor(nats[i]):[180,180,180];
+      doc.setFont('helvetica',v>0?'bold':'normal'); doc.setFontSize(isTotal?6.5:6);
+      doc.setTextColor(...cor); doc.text(v>0?String(v):'—',cx+COL_N/2,y+h*0.68,{align:'center'});
+      doc.rect(cx,y,COL_N,h,'D'); cx+=COL_N;
+    });
+    doc.setFont('helvetica','bold'); doc.setFontSize(isTotal?7:6.5);
+    doc.setTextColor(...(isTotal?GOLD2:GOLD));
+    doc.text(String(totRow),cx+COL_TOT/2,y+h*0.68,{align:'center'});
+    doc.rect(cx,y,COL_TOT,h,'D');
+    return y+h;
+  }
+
+  let y=addPage();
+
+  /* Totais gerais para o cabeçalho da página */
+  const totGeral=dados.length;
+  const totPorNat={}; nats.forEach(n=>totPorNat[n]=dados.filter(d=>d.natureza===n).length);
+
+  pelNums.forEach(pelN=>{
+    const gpMap=pel_gp[pelN];
+    const pelTotal=Object.values(gpMap).reduce((s,g)=>s+nats.reduce((s2,n)=>s2+(g[n]||0),0),0);
+
+    /* Estima altura necessária */
+    const nGps=Object.keys(gpMap).length;
+    const altNec=7+5+nGps*5.5+6+4;
+    if(y+altNec>PH-8){ y=addPage(); }
+
+    y=drawPelHeader(y,pelN,pelTotal);
+    y=drawTableHead(y);
+
+    const gps=Object.keys(gpMap).sort((a,b)=>{
+      const ga=dadosGrupos.find(r=>r.gpResp===a),gb=dadosGrupos.find(r=>r.gpResp===b);
+      return (ga?gpNumDoColk(ga.grupamento):99)-(gb?gpNumDoColk(gb.grupamento):99);
+    });
+
+    const pelNatTot={}; nats.forEach(n=>pelNatTot[n]=0);
+    gps.forEach((gp,gi)=>{
+      const vals=nats.map(n=>gpMap[gp][n]||0);
+      const totR=vals.reduce((s,v)=>s+v,0);
+      vals.forEach((v,i)=>pelNatTot[nats[i]]+=v);
+      y=drawRow(y,gp.replace('GP ',''),vals,totR,false,gi%2===1);
+    });
+
+    const pelVals=nats.map(n=>pelNatTot[n]);
+    y=drawRow(y,`TOTAL ${pelN}º PEL`,pelVals,pelTotal,true,false);
+
+    /* Separador */
+    doc.setDrawColor(...GOLD); doc.setLineWidth(0.3); doc.line(0,y,PW,y);
+    y+=3;
+  });
+
+  /* Total geral */
+  if(y+7>PH-8){ y=addPage(); }
+  const totVals=nats.map(n=>totPorNat[n]);
+  y=drawRow(y,'TOTAL GERAL',totVals,totGeral,true,false);
+
+  doc.save(nomeArq);
+}
+
+/* ── Mapa Leaflet ── */
+function _initMapa(dados){
+  const dadosComCoord = dados.filter(d => d.lat && d.lng);
+
+  if(!dadosComCoord.length){
+    document.getElementById('gdo-mapa-inner').innerHTML =
+      '<div class="empty-state" style="height:100%;display:flex;align-items:center;justify-content:center;">Nenhum ponto com coordenadas disponível.</div>';
+    return;
+  }
+
+  /* Cria ou recria o mapa */
+  if(_leafletMap){ _leafletMap.remove(); _leafletMap=null; _gdoMarkers=null; }
+
+  _leafletMap = L.map('gdo-mapa-inner', {zoomControl:true, scrollWheelZoom:true});
+
+  /* Tile escuro */
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+    attribution:'&copy; OpenStreetMap &copy; CARTO', maxZoom:19
+  }).addTo(_leafletMap);
+
+  /* Grupo de marcadores */
+  _gdoMarkers = L.layerGroup().addTo(_leafletMap);
+
+  dadosComCoord.forEach(d => {
+    const cor = GDO_NAT_COR[d.natureza] || '#999';
+
+    /* Ícone colorido */
+    const icon = L.divIcon({
+      className:'',
+      html:`<div style="width:12px;height:12px;background:${cor};border:2px solid #fff;border-radius:50%;box-shadow:0 0 6px ${cor}88;"></div>`,
+      iconSize:[12,12], iconAnchor:[6,6], popupAnchor:[0,-8]
+    });
+
+    const popup = L.popup({maxWidth:280, className:'leaflet-dark-popup'}).setContent(`
+      <div class="mapa-tooltip">
+        <strong>RAT: ${d.rat}</strong>
+        <div class="tt-row"><span class="tt-label">Data</span><span class="tt-val">${d.data||'—'}</span></div>
+        <div class="tt-row"><span class="tt-label">Município</span><span class="tt-val">${d.municipio||'—'}</span></div>
+        <div class="tt-row"><span class="tt-label">Natureza</span><span class="tt-val" style="color:${cor}">${d.natureza}</span></div>
+        <div class="tt-row"><span class="tt-label">Descrição</span><span class="tt-val">${d.descrNatureza||'—'}</span></div>
+        <div class="tt-row"><span class="tt-label">Localização</span><span class="tt-val">${d.localizacao||'—'}</span></div>
+      </div>`);
+
+    L.marker([d.lat, d.lng], {icon}).bindPopup(popup).addTo(_gdoMarkers);
+  });
+
+  /* Ajusta zoom para mostrar todos os pontos */
+  const bounds = L.featureGroup(dadosComCoord.map(d=>L.marker([d.lat,d.lng]))).getBounds();
+  _leafletMap.fitBounds(bounds, {padding:[40,40]});
+
+  /* Legenda */
+  document.getElementById('gdo-mapa-legenda').innerHTML =
+    GDO_NATS.map(n=>`<span><span class="nat-dot" style="background:${GDO_NAT_COR[n]}"></span>${n}</span>`).join('') +
+    `<span style="margin-left:8px;color:var(--text-hint)">Total com coord.: ${dadosComCoord.length} de ${dados.length}</span>`;
+}
+
+/* Estilo do popup do Leaflet para tema escuro */
+(function(){
+  const s=document.createElement('style');
+  s.textContent=`.leaflet-dark-popup .leaflet-popup-content-wrapper{background:#1e1e1e;border:1px solid rgba(155,138,92,.4);border-radius:8px;padding:0;box-shadow:0 4px 20px rgba(0,0,0,.7);}.leaflet-dark-popup .leaflet-popup-content{margin:0;}.leaflet-dark-popup .leaflet-popup-tip{background:#1e1e1e;}.leaflet-dark-popup .leaflet-popup-close-button{color:var(--gold)!important;top:6px!important;right:8px!important;}`;
+  document.head.appendChild(s);
+})();
+
+function switchTab(el,id){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-pane').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-'+id).classList.add('active');
+}
+
+</script>
+</body>
+</html>
+<!-- placeholder -->
