@@ -79,18 +79,30 @@ function getUsuarios() {
   const ver = _storageGet(DB_KEY + '_ver');
   let lista;
 
-  if (!raw || ver !== DB_VERSION) {
-    /* Primeira vez OU versão desatualizada: faz merge mantendo usuários existentes */
-    lista = raw ? JSON.parse(raw) : [];
-    /* Insere cada usuário inicial se ainda não existir */
-    USUARIOS_INICIAIS.forEach(u => {
-      if (!lista.find(x => x.numeroClean === u.numeroClean)) {
-        lista.unshift({...u});
-      }
-    });
+  if (!raw) {
+    /* Primeira vez: cria banco com usuários iniciais */
+    lista = [...USUARIOS_INICIAIS.map(u => ({...u}))];
     _storageSet(DB_KEY, JSON.stringify(lista));
     _storageSet(DB_KEY + '_ver', DB_VERSION);
     return lista;
+  }
+
+  /* Banco já existe — carrega sem sobrescrever dados do usuário */
+  lista = JSON.parse(raw);
+
+  /* Apenas garante que novos usuários iniciais sejam adicionados se não existirem */
+  let changed = false;
+  USUARIOS_INICIAIS.forEach(u => {
+    if (!lista.find(x => x.numeroClean === u.numeroClean)) {
+      lista.unshift({...u});
+      changed = true;
+    }
+  });
+
+  /* Atualiza versão sem mexer nos dados existentes */
+  if (ver !== DB_VERSION || changed) {
+    _storageSet(DB_KEY, JSON.stringify(lista));
+    _storageSet(DB_KEY + '_ver', DB_VERSION);
   }
 
   lista = JSON.parse(raw);
