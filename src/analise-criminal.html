@@ -4722,6 +4722,24 @@ async function salvarConclusao(){
 
 function abrirModalMissao(id){
   const modalTitle = document.querySelector('#modal-missao .modal-header h3');
+  /* Deriva perfil diretamente da sessao — isCmdo pode não estar no escopo */
+  const _isAdmin = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
+  /* Restringe select de GP para operacional */
+  const gpSelect = document.getElementById('m-gp');
+  if(gpSelect){
+    if(!_isAdmin && sessao && sessao.lotacao){
+      /* Operacional só vê o próprio GP */
+      gpSelect.innerHTML = `<option value="${sessao.lotacao}">${sessao.lotacao}</option>`;
+      gpSelect.disabled = true;
+    } else {
+      /* Admin: restaura todas as opções */
+      gpSelect.disabled = false;
+      /* As opções são repopuladas pelo populaSelectsGP */
+      if(!gpSelect.options.length || (gpSelect.options.length === 1 && gpSelect.options[0].value === '')){
+        popularFiltrosGPs(); /* garante opções carregadas */
+      }
+    }
+  }
   if(id !== undefined){
     if(modalTitle) modalTitle.textContent = '✏️ Editar Missão Operacional';
     const m = missoes.find(x=>x.id===id);
@@ -4739,12 +4757,18 @@ function abrirModalMissao(id){
   } else {
     if(modalTitle) modalTitle.textContent = '🎯 Nova Missão Operacional';
     ['m-id','m-titulo','m-rat','m-descricao','m-obs'].forEach(fid=>{ document.getElementById(fid).value=''; });
-    document.getElementById('m-gp').value = '';
     document.getElementById('m-prio').value = 'media';
     document.getElementById('m-prazo').value = '';
     document.getElementById('m-militares-wrap').style.display='none';
     document.getElementById('m-militares-lista').innerHTML='';
     document.getElementById('m-militares-selecionados').innerHTML='';
+    /* Operacional: pré-seleciona o próprio GP e carrega militares automaticamente */
+    if(!_isAdmin && sessao && sessao.lotacao){
+      document.getElementById('m-gp').value = sessao.lotacao;
+      carregarMilitaresDoGP([]);
+    } else {
+      document.getElementById('m-gp').value = '';
+    }
   }
   abrirModal('modal-missao');
 }
@@ -4838,7 +4862,7 @@ function renderMissoes(){
 
   /* Mostra/oculta botão Nova Missão conforme perfil */
   const btnNovaMissao = document.getElementById('btn-nova-missao');
-  if(btnNovaMissao) btnNovaMissao.style.display = isCmdo ? '' : 'none';
+  if(btnNovaMissao) btnNovaMissao.style.display = ''; /* todos podem criar */
   const el = document.getElementById('missoes-body');
   if(!lista.length){
     el.innerHTML = '<div class="empty-state" style="grid-column:1/-1;">Nenhuma missão encontrada.</div>';
@@ -4859,8 +4883,18 @@ function renderMissoes(){
       <div class="missao-header">
         <div class="missao-titulo">${m.titulo}</div>
         <div style="display:flex;gap:4px;">
-          ${(isCmdo || (sessao && m.criadoPor && m.criadoPor === (sessao.nome||sessao.guerra||'')))?`
-          <button class="btn-outline" style="padding:2px 8px;font-size:10px;" onclick="abrirModalMissao('${m.id}')">✏</button>
+          ${(()=>{
+            if(isCmdo) return true;
+            if(!sessao) return false;
+            /* Criador: compara nome, guerra ou numeroPolicia */
+            const criadorMatch = m.criadoPor && (
+              m.criadoPor === sessao.nome ||
+              m.criadoPor === sessao.guerra ||
+              (sessao.guerra && m.criadoPor.toUpperCase().includes(sessao.guerra.toUpperCase()))
+            );
+            return !!criadorMatch;
+          })()?`
+          <button class="btn-outline" style="padding:2px 8px;font-size:10px;" onclick="abrirModalMissao('${m.id}')">✏ Editar</button>
           <button class="btn-danger" style="padding:2px 8px;" onclick="excluirMissao('${m.id}')">✕</button>`:''}
         </div>
       </div>
