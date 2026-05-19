@@ -70,8 +70,6 @@
       <p>O cadastro de novos usuários é feito exclusivamente pelo administrador.<br>
          Caso não possua acesso, entre em contato com o responsável.</p>
     </div>
-
-    <div class="debug" id="debug"></div>
   </div>
 </div>
 
@@ -133,40 +131,121 @@ function getUsuariosLogin(){
   }
 }
 
+const SYNC_SHEET_ID_LOGIN = '1kVxEMYJr0RoaE5h8qUWDTI9v81VbRHGyWnqqbLcB0Nc';
+const SYNC_API_KEY_LOGIN  = 'AIzaSyB_paTPVM8SO4kUvjYg5Z3JwE4bfAMKrdc';
+
+let _syncLoginDone = false;
+
+async function sincronizarBancoLogin(){
+  try {
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SYNC_SHEET_ID_LOGIN}/values/MILITARES!A3:J300?key=${SYNC_API_KEY_LOGIN}`;
+    const resp = await fetch(url);
+    if(!resp.ok) return;
+    const data  = await resp.json();
+    const rows  = data.values || [];
+    if(!rows.length) return;
+
+    const lista = JSON.parse(_get('poe_usuarios') || '[]');
+    let changed = false;
+
+    rows.forEach(row => {
+      const get = (i) => (row[i]||'').toString().trim();
+      const npmRaw   = get(0);
+      const npmClean = npmRaw.replace(/\D/g,'');
+      const nome     = get(2);
+      if(!npmClean || npmClean.length < 5 || !nome) return;
+
+      const perfil      = get(6).toLowerCase().includes('admin') ? 'admin' : 'operacional';
+      const senhaPlan   = get(7) || 'Mudar@123';
+      const trocarSenha = get(8).toUpperCase() !== 'FALSE';
+      const ativoRaw    = get(9).toUpperCase();
+      const ativo       = ativoRaw === '' || ativoRaw === 'TRUE';
+
+      const existIdx = lista.findIndex(u =>
+        (u.numeroClean||'').replace(/\D/g,'') === npmClean ||
+        (u.numeroPolicia||'').replace(/\D/g,'') === npmClean
+      );
+
+      if(existIdx === -1){
+        lista.push({
+          id: 'u'+npmClean+Math.random().toString(36).slice(2,5),
+          numeroPolicia: npmRaw, numeroClean: npmClean,
+          pg: get(1), nome, guerra: get(3), funcao: get(4), lotacao: get(5),
+          perfil, senha: senhaPlan, primeiroAcesso: trocarSenha, ativo,
+        });
+        changed = true;
+      } else {
+        /* Atualiza ativo — campo crítico para controle de acesso */
+        if(lista[existIdx].ativo !== ativo){
+          lista[existIdx].ativo = ativo;
+          changed = true;
+        }
+      }
+    });
+
+    if(changed) _set('poe_usuarios', JSON.stringify(lista));
+  } catch(e){ /* silencioso */ }
+  _syncLoginDone = true;
+}
+
+/* Sincroniza ao carregar a página */
+window.addEventListener('DOMContentLoaded', () => {
+  sincronizarBancoLogin();
+});
+
 function handleLogin(){
   const np  = document.getElementById('np').value.trim();
   const pw  = document.getElementById('pw').value;
   const err = document.getElementById('err');
   const btn = document.getElementById('btn-enter');
-  const dbg = document.getElementById('debug');
-
   err.classList.remove('show');
-  dbg.style.display = 'none';
-
   if(!np || !pw){
     err.textContent = 'Preencha o número de polícia e a senha.';
     err.classList.add('show');
     return;
   }
+  /* Se sync ainda não terminou, aguarda até 4s */
+  if(!_syncLoginDone){
+    btn.textContent = '⏳ Sincronizando...';
+    btn.disabled = true;
+    const t0 = Date.now();
+    const wait = setInterval(() => {
+      if(_syncLoginDone || Date.now()-t0 > 4000){
+        clearInterval(wait);
+        btn.textContent = 'Entrar';
+        btn.disabled = false;
+        _executarLogin(np, pw);
+      }
+    }, 300);
+    return;
+  }
+  _executarLogin(np, pw);
+}
 
+function _executarLogin(np, pw){
+  const err = document.getElementById('err');
+  const btn = document.getElementById('btn-enter');
+  err.classList.remove('show');
   btn.textContent = 'Entrando...';
   btn.disabled = true;
 
-  /* Limpa NPM para apenas dígitos */
+  /* Limpa NPM para apenas dígitos — aceita qualquer formato digitado */
   const clean = np.replace(/[^0-9]/g, '');
   const usuarios = getUsuariosLogin();
-  const user = usuarios.find(u => u.numeroClean === clean && u.ativo !== false);
 
-  /* Debug visível */
-  dbg.style.display = 'block';
-  dbg.textContent = 'NPM digitado: "' + np + '" → clean: "' + clean + '" | Usuários no banco: ' + usuarios.length + ' | Encontrado: ' + (user ? user.nome : 'NÃO');
+  /* Busca por numeroClean OU por numeroPolicia limpo (garante compatibilidade) */
+  const user = usuarios.find(u => {
+    const uClean = (u.numeroClean || '').replace(/[^0-9]/g,'');
+    const uNPClean = (u.numeroPolicia || '').replace(/[^0-9]/g,'');
+    return (uClean === clean || uNPClean === clean) && u.ativo !== false;
+  });
 
   setTimeout(() => {
     btn.textContent = 'Entrar';
     btn.disabled = false;
 
     if(!user){
-      err.textContent = 'Número de polícia não encontrado. (NPM: ' + clean + ')';
+      err.textContent = 'Número de polícia não encontrado. Verifique o número ou contate o administrador.';
       err.classList.add('show');
       return;
     }
@@ -177,7 +256,7 @@ function handleLogin(){
     }
 
     /* Salva sessão */
-    const sessao = { id:user.id, numeroPolicia:user.numeroPolicia, nome:user.nome, perfil:user.perfil, primeiroAcesso:user.primeiroAcesso };
+    const sessao = { id:user.id, numeroPolicia:user.numeroPolicia, nome:user.nome, guerra:user.guerra||'', pg:user.pg||'', lotacao:user.lotacao||'', perfil:user.perfil, primeiroAcesso:user.primeiroAcesso };
     _set('poe_sessao', JSON.stringify(sessao));
 
     if(user.primeiroAcesso){
