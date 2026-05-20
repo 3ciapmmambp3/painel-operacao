@@ -598,9 +598,13 @@
         <button class="btn-outline" onclick="exportarRelPDF()" id="btn-rel-pdf">📄 PDF</button>
       </div>
     </div>
+    <!-- Badge de restrição para não-admin -->
+    <div id="rel-gp-badge" style="display:none;margin-top:8px;padding:6px 12px;background:rgba(155,138,92,.1);border:1px solid var(--gold-border);border-radius:5px;font-size:11px;color:var(--text-muted);">
+      🔒 Visualizando apenas dados do seu grupamento: <span id="rel-gp-badge-txt" style="color:var(--gold);font-weight:700;"></span>
+    </div>
   </div>
-  <div id="rel-acesso-neg" style="display:none;padding:32px;text-align:center;color:var(--danger);font-size:14px;background:rgba(239,83,80,.08);border-radius:8px;border:1px solid rgba(239,83,80,.2);">
-    🔒 Acesso restrito — apenas Administradores podem gerar relatórios.
+  <div id="rel-acesso-neg" style="display:none;padding:16px 20px;font-size:12px;background:rgba(155,138,92,.07);border-radius:8px;border:1px solid var(--gold-border);color:var(--text-muted);">
+    <span style="color:var(--gold);font-weight:700;">📋 Relatório do seu Grupamento</span> — exibindo dados filtrados pelo seu grupamento de lotação.
   </div>
   <div id="rel-body" style="display:none;"></div>
 </div>
@@ -633,6 +637,25 @@ function lerSessao(){
 
 /* ── Sessão ── */
 let sessaoPainel = null;
+
+/* ── Retorna {pelNum, gpNum, gpStr} da lotação do usuário logado ──
+   A lotacao já é a chave exata do grupamento:
+   Ex: "1 GP / 4 PEL / 3 CIA PM MAMB / TEOFILO OTONI"
+   gpStr = lotacao diretamente; pelNum/gpNum extraídos para uso nos filtros. */
+function _getUserGP(){
+  if(!sessaoPainel) return { pelNum:'', gpNum:'', gpStr:'' };
+  const lot = (sessaoPainel.lotacao||'').trim();
+  /* Sem lotação ou ADM/CMDO = sem restrição */
+  if(!lot || lot.toUpperCase() === 'ADM' || lot.toUpperCase().startsWith('CMDO'))
+    return { pelNum:'', gpNum:'', gpStr:'' };
+  const lotUp = lot.toUpperCase();
+  const gpM   = lotUp.match(/(\d+)\s*GP/);
+  const pelM  = lotUp.match(/(\d+)\s*PEL/);
+  const gpNum  = gpM  ? gpM[1]  : '';
+  const pelNum = pelM ? pelM[1] : '';
+  /* gpStr é a própria lotação — já é a chave exata em dadosGrupos */
+  return { pelNum, gpNum, gpStr: lot };
+}
 
 window.addEventListener('DOMContentLoaded', () => {
   sessaoPainel = lerSessao();
@@ -763,6 +786,11 @@ async function recarregarTudo(){
     renderOperacoes();
     /* Renderiza GDO Rural — envolvido em try para não bloquear POE em caso de erro */
     try{ renderGdoRural(); } catch(e){ console.warn('renderGdoRural:', e); }
+    /* Re-renderiza Relatórios para não-admin: agora dadosGrupos está carregado,
+       então o grupamento do usuário pode ser resolvido corretamente */
+    if(sessaoPainel?.perfil !== 'admin'){
+      try{ initRelatorios(); } catch(e){ console.warn('initRelatorios:', e); }
+    }
   }catch(e){
     setStatus('err','✗ Erro: '+e.message);
     setStatusGdo('err','✗ Erro: '+e.message);
@@ -2680,6 +2708,27 @@ function initRelatorios(){
   if(cb) cb.checked = true;
   atualizarRelMesesLabel();
   popularRelGP();
+  /* Para não-admin: pré-filtra pelo GP do usuário */
+  if(sessaoPainel?.perfil !== 'admin'){
+    const userGP = _getUserGP();
+    const pelEl  = document.getElementById('rel-pel');
+    const gpEl   = document.getElementById('rel-gp');
+    const pelFg  = pelEl?.closest('.fg');
+    if(pelFg) pelFg.style.display = 'none';
+    if(pelEl && userGP.pelNum){ pelEl.value = userGP.pelNum; pelEl.disabled = true; }
+    /* Popula GPs filtrados pelo pelotão do usuário */
+    popularRelGP();
+    if(gpEl){
+      /* lotacao já é a chave exata — garante que existe e seleciona */
+      if(userGP.gpStr && ![...gpEl.options].some(o=>o.value===userGP.gpStr)){
+        const opt = document.createElement('option');
+        opt.value = userGP.gpStr; opt.textContent = userGP.gpStr;
+        gpEl.appendChild(opt);
+      }
+      if(userGP.gpStr) gpEl.value = userGP.gpStr;
+      gpEl.disabled = true;
+    }
+  }
   renderRelatorio();
 }
 
@@ -2687,13 +2736,57 @@ function renderRelatorio(){
   const isAdmin = sessaoPainel?.perfil === 'admin';
   const body    = document.getElementById('rel-body');
   const negado  = document.getElementById('rel-acesso-neg');
+
+  /* Pelotão/GP do usuário operacional (extraído da lotação) */
+  const userGP = _getUserGP();
+
   if(!isAdmin){
-    if(negado) negado.style.display = 'block';
-    if(body)   body.style.display   = 'none';
-    return;
+    /* Usuário operacional: esconde filtro de Pelotão e trava Grupamento */
+    const pelEl = document.getElementById('rel-pel');
+    const gpEl  = document.getElementById('rel-gp');
+    const pelFg = pelEl?.closest('.fg');
+
+    /* 1. Esconde o filtro de Pelotão */
+    if(pelFg) pelFg.style.display = 'none';
+
+    /* 2. Seta pelotão no select (necessário para popularRelGP filtrar corretamente) */
+    if(pelEl){ pelEl.value = userGP.pelNum || ''; pelEl.disabled = true; }
+
+    /* 3. Re-popula o select de Grupamento filtrado pelo pelotão do usuário */
+    popularRelGP();
+
+    /* 4. Força a opção do grupamento do usuário no select e a seleciona */
+    if(gpEl){
+      if(userGP.gpStr && ![...gpEl.options].some(o => o.value === userGP.gpStr)){
+        const opt = document.createElement('option');
+        opt.value = userGP.gpStr;
+        opt.textContent = userGP.gpStr;
+        gpEl.appendChild(opt);
+      }
+      if(userGP.gpStr) gpEl.value = userGP.gpStr;
+      gpEl.disabled = true;
+    }
+
+    /* 5. Badge informativo */
+    const badge    = document.getElementById('rel-gp-badge');
+    const badgeTxt = document.getElementById('rel-gp-badge-txt');
+    if(badge) badge.style.display = 'block';
+    if(badgeTxt) badgeTxt.textContent = userGP.gpStr || 'Não definido';
+    if(negado) negado.style.display = 'none';
+    if(body)   body.style.display   = 'block';
+  } else {
+    /* Admin: filtros livres */
+    const pelEl  = document.getElementById('rel-pel');
+    const gpEl   = document.getElementById('rel-gp');
+    const pelFg2 = pelEl?.closest('.fg');
+    if(pelFg2) pelFg2.style.display = '';  /* restaura visibilidade */
+    if(pelEl)  pelEl.disabled = false;
+    if(gpEl)   gpEl.disabled  = false;
+    const _badgeAdm = document.getElementById('rel-gp-badge');
+    if(_badgeAdm) _badgeAdm.style.display = 'none';
+    if(negado) negado.style.display = 'none';
+    if(body)   body.style.display   = 'block';
   }
-  if(negado) negado.style.display = 'none';
-  if(body)   body.style.display   = 'block';
 
   /* Garante que os checkboxes de mês foram criados */
   const grid = document.getElementById('rel-meses-grid');
@@ -2709,8 +2802,14 @@ function renderRelatorio(){
     if(cb){ cb.checked = true; atualizarRelMesesLabel(); }
     mesesSel = getRelMesesSelecionados();
   }
-  const pelF      = document.getElementById('rel-pel').value;
-  const gpF       = document.getElementById('rel-gp')?.value || '';
+  /* Para não-admin: usa diretamente a lotação como filtro de grupamento */
+  let pelF = document.getElementById('rel-pel').value;
+  let gpF  = document.getElementById('rel-gp')?.value || '';
+  if(!isAdmin){
+    const _ug = _getUserGP();
+    if(_ug.pelNum) pelF = _ug.pelNum;
+    if(_ug.gpStr)  gpF  = _ug.gpStr; /* lotacao = chave exata do grupamento */
+  }
   const ano       = new Date().getFullYear();
 
   if(!mesesSel.length){
@@ -2994,8 +3093,10 @@ async function exportarRelPDF(){
   const mesNome     = mesesSel.length ? mesesSel[mesesSel.length-1] : MESES[new Date().getMonth()];
   const mesIdx      = MESES.indexOf(mesNome);
   const tipoVal     = document.getElementById('rel-tipo').value;
-  const pelF        = document.getElementById('rel-pel').value;
-  const gpF         = document.getElementById('rel-gp')?.value||'';
+  const _isAdmPDF = sessaoPainel?.perfil === 'admin';
+  let   pelF      = document.getElementById('rel-pel').value;
+  let   gpF       = document.getElementById('rel-gp')?.value||'';
+  if(!_isAdmPDF){ const _ug2=_getUserGP(); if(_ug2.pelNum) pelF=_ug2.pelNum; if(_ug2.gpStr) gpF=_ug2.gpStr; /* lotacao = chave exata */ }
   const ano         = new Date().getFullYear();
   const filtroLabel = gpF ? gpF : (pelF ? pelF+'\u00ba Pelot\u00e3o' : 'Todos os Grupamentos');
   /* Formato profissional: "MAIO/2026" ou "JANEIRO a ABRIL/2026" */
