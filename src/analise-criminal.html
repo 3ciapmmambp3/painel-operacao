@@ -288,9 +288,16 @@
 ════════════════════════════════ -->
 <div class="tab-pane active" id="tab-dashboard">
 
-  <div class="status-bar">
+  <div id="ac-status-bar" style="background:var(--bg-card);border-left:4px solid var(--gold);border-radius:0 6px 6px 0;padding:8px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
     <span id="ac-status-msg" class="s-load">Carregando dados criminais...</span>
-    <span id="ac-status-dados" style="font-size:11px;color:var(--gold);font-weight:600;"></span>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:10px;">
+      <span id="ac-upd-IMV"  style="color:var(--text-muted);">💀 IMV: —</span>
+      <span id="ac-upd-CVPE" style="color:var(--text-muted);">👤 CVPE: —</span>
+      <span id="ac-upd-CVPA" style="color:var(--text-muted);">🏠 CVPA: —</span>
+      <span id="ac-upd-IF"   style="color:var(--text-muted);">🔑 IF: —</span>
+      <span id="ac-upd-VIS"  style="color:var(--text-muted);">🤝 VISITAS: —</span>
+      <span id="ac-status-time" style="color:var(--text-hint);margin-left:4px;"></span>
+    </div>
   </div>
 
   <!-- FILTROS -->
@@ -1471,8 +1478,32 @@ async function fetchSheet(sheetId, range){
   return (await r.json()).values||[];
 }
 
+/* ── Atualiza badge de "atualizado até" para cada indicador ── */
+function _setUpdatedBadge(indId, dataStr){
+  const el = document.getElementById('ac-upd-'+indId);
+  if(!el) return;
+  const icons = {IMV:'💀',CVPE:'👤',CVPA:'🏠',IF:'🔑',VIS:'🤝'};
+  const labels = {IMV:'IMV',CVPE:'CVPE',CVPA:'CVPA',IF:'IF',VIS:'VISITAS'};
+  if(!dataStr){ el.style.color='var(--text-muted)'; el.textContent=(icons[indId]||'')+' '+(labels[indId]||indId)+': —'; return; }
+  el.style.color='var(--gold)';
+  el.textContent=(icons[indId]||'')+' '+(labels[indId]||indId)+' até '+dataStr;
+}
+
+function _ultimaDataColF(rows, colF){
+  /* Percorre do fim para o início buscando a última data não vazia */
+  for(let i=rows.length-1;i>=1;i--){
+    const v = (rows[i][colF]||'').toString().trim();
+    if(v && v.match(/\d/)) return v;
+  }
+  return null;
+}
+
+
 function setStatus(t, m){
   const el = document.getElementById('ac-status-msg');
+  if(!el) return;
+  const timeEl = document.getElementById('ac-status-time');
+  if(timeEl && t === 'ok') timeEl.textContent = '⏱ '+new Date().toLocaleTimeString('pt-BR');
   el.textContent = m;
   el.className = t==='ok'?'s-ok':t==='err'?'s-err':'s-load';
 }
@@ -1610,6 +1641,10 @@ async function carregarCrimes(){
     }
     if(!rows || rows.length < 2){ console.warn('['+aba.nome+'] vazia'); continue; }
 
+    /* Última data da coluna F para o badge de atualização */
+    const _lastDate = _ultimaDataColF(rows, 5);
+    _setUpdatedBadge(aba.indicador, _lastDate);
+
     /* Pula linha 1 se for cabeçalho (col A contém texto, não número de BO) */
     const col0Row1 = (rows[0][COL.bo]||'').toString().trim();
     /* Cabeçalho tem texto; dado real tem número de BO (ex: "2026-020...") */
@@ -1723,8 +1758,7 @@ async function carregarCrimes(){
     console.log(`[${aba.nome}] ✔ ${contAba} registros`);
   }
 
-  document.getElementById('ac-status-dados').textContent =
-    '📊 '+dadosCrimes.length+' ocorrências carregadas';
+  /* ac-status-dados removido — info já no setStatus */
 }
 
 async function carregarGrupos(){
@@ -1801,6 +1835,8 @@ async function carregarVisitas(){
   window._visitasPorBO = {};
   try {
     const rows = await fetchSheet(AC_SHEET_ID, 'BD_VISITA_REUNIAO!A1:AZ');
+    const _lastVisDate = _ultimaDataColF(rows, 9); /* col J = índice 9 */
+    _setUpdatedBadge('VIS', _lastVisDate);
     if(!rows || rows.length < 2){ console.warn('[BD_VISITA_REUNIAO] vazia'); return; }
     const get = (r,i) => (r&&r[i]!=null) ? r[i].toString().trim() : '';
     const col0 = get(rows[0],0).toUpperCase();
