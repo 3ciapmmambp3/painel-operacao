@@ -405,6 +405,14 @@
      ════════════════════════════════════════════ -->
 <div class="tab-pane" id="tab-gdo-rural">
 
+  <div class="status-bar">
+    <span class="s-load" id="gdo-status-msg">Carregando dados...</span>
+    <span style="font-size:11px;color:var(--text-hint);display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
+      <span id="gdo-status-time"></span>
+      <span id="gdo-status-dados" style="color:var(--gold);font-weight:600;"></span>
+    </span>
+  </div>
+
   <!-- Filtros -->
   <div class="filter-box sticky" style="margin-bottom:12px;">
     <div class="filter-box-title">🔍 Filtros — GDO Rural</div>
@@ -676,6 +684,20 @@ async function fetchSheet(range){
   return (await r.json()).values||[];
 }
 
+function setStatusGdo(t,m,maxData){
+  const el=document.getElementById('gdo-status-msg');
+  if(!el) return;
+  el.textContent=m;
+  el.className=t==='ok'?'s-ok':t==='err'?'s-err':'s-load';
+  const now=new Date().toLocaleTimeString('pt-BR');
+  const timeEl=document.getElementById('gdo-status-time');
+  if(timeEl && t==='ok') timeEl.textContent='Carregado às '+now;
+  const dadosEl=document.getElementById('gdo-status-dados');
+  if(dadosEl && t==='ok' && maxData){
+    dadosEl.textContent='📅 DADOS ATUALIZADOS ATÉ: '+maxData.toLocaleString('pt-BR').toUpperCase();
+  }
+}
+
 function setStatus(t,m){
   const el=document.getElementById('status-msg');
   el.textContent=m;
@@ -685,6 +707,7 @@ function setStatus(t,m){
 /* ══ LOAD ══ */
 async function recarregarTudo(){
   setStatus('load','Carregando dados...');
+  setStatusGdo('load','Carregando dados GDO Rural...');
   document.getElementById('status-dados').textContent='';
   try{
     /* loadGrupos DEVE ser o primeiro — loadMetas e loadRatreds dependem de dadosGrupos e munParaGrup */
@@ -694,6 +717,7 @@ async function recarregarTudo(){
     document.getElementById('last-update').textContent='Painel carregado: '+now;
     document.getElementById('status-time').textContent='Carregado às '+now;
     setStatus('ok','✔ Dados carregados com sucesso');
+    setStatusGdo('ok','✔ Dados GDO Rural carregados com sucesso');
     popularFiltroGP();
     popularFiltrosGrupos();
     renderOperacoes();
@@ -701,6 +725,7 @@ async function recarregarTudo(){
     try{ renderGdoRural(); } catch(e){ console.warn('renderGdoRural:', e); }
   }catch(e){
     setStatus('err','✗ Erro: '+e.message);
+    setStatusGdo('err','✗ Erro: '+e.message);
     document.getElementById('operacoes-body').innerHTML='<div class="empty-state">⚠️ '+e.message+'</div>';
   }
 }
@@ -810,6 +835,9 @@ async function loadRatreds(){
   if(maxData){
     document.getElementById('status-dados').textContent =
       '📅 DADOS ATUALIZADOS ATÉ: ' + maxData.toLocaleString('pt-BR').toUpperCase();
+    /* GDO Rural usa a mesma planilha — atualiza seu badge também */
+    const gdoDados=document.getElementById('gdo-status-dados');
+    if(gdoDados) gdoDados.textContent='📅 DADOS ATUALIZADOS ATÉ: '+maxData.toLocaleString('pt-BR').toUpperCase();
   }
 
   /* ── Processa operações — cada linha = 1 RAT ── */
