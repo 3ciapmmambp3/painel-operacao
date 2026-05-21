@@ -1088,8 +1088,12 @@
         <input type="text" id="intel-busca-facao" placeholder="Nome da facção..." oninput="renderIntel()">
       </div>
       <div class="fg">
-        <label>Município</label>
-        <select id="intel-busca-mun" onchange="renderIntel()"><option value="">Todos</option></select>
+        <label>Município de Atuação</label>
+        <input type="text" id="intel-busca-mun" placeholder="Digite parte do nome..." oninput="renderIntel()">
+      </div>
+      <div class="fg">
+        <label>Grupamento</label>
+        <select id="intel-busca-gp" onchange="renderIntel()"><option value="">Todos</option></select>
       </div>
       <div style="align-self:flex-end;"><button class="btn-outline" onclick="limparFiltrosIntel()">✕</button></div>
     </div>
@@ -1324,7 +1328,7 @@
      MODAL: INTELIGÊNCIA
 ════════════════════════════════ -->
 <div class="modal-overlay hidden" id="modal-intel">
-  <div class="modal-box" style="max-width:820px;">
+  <div class="modal-box" style="max-width:860px;">
     <div class="modal-header">
       <h3>🕵 Ficha de Inteligência</h3>
       <button class="modal-close" onclick="fecharModal('modal-intel')">✕</button>
@@ -1337,8 +1341,14 @@
             <input type="text" id="i-rat" placeholder="Ex: 2026-020361740-001">
           </div>
           <div class="intel-field">
-            <label>Município</label>
-            <input type="text" id="i-mun" placeholder="Município do crime">
+            <label>Município de Atuação <span style="color:var(--text-muted);font-weight:400;">(um ou mais, separados por vírgula)</span></label>
+            <input type="text" id="i-mun" placeholder="Ex: Governador Valadares, Ipatinga...">
+          </div>
+          <div class="intel-field">
+            <label>Área de Atuação do Criminoso <span style="color:var(--text-muted);font-weight:400;">(grupamentos que verão esta ficha)</span></label>
+            <div id="i-gp-wrap" style="background:var(--bg-input);border:1px solid var(--border-hover);border-radius:5px;padding:8px;max-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;">
+              <span style="font-size:11px;color:var(--text-muted);">Carregando grupamentos...</span>
+            </div>
           </div>
           <div class="intel-field">
             <label>Suspeitos</label>
@@ -1381,18 +1391,28 @@
         </div>
       </div>
 
-      <!-- FOTOS -->
+      <!-- ANEXOS -->
       <div style="margin-top:14px;background:#1a1a1a;border:1px solid var(--border);border-radius:7px;padding:12px 14px;">
-        <div style="font-size:12px;font-weight:700;color:var(--gold);margin-bottom:10px;">📸 Fotos de Inteligência</div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;" id="intel-fotos-wrap">
-          <!-- Slots de foto gerados dinamicamente -->
+        <div style="font-size:12px;font-weight:700;color:var(--gold);margin-bottom:10px;">📎 Anexos</div>
+        <div id="intel-anexos-wrap" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;margin-bottom:10px;">
+          <span style="font-size:11px;color:var(--text-muted);">Nenhum anexo adicionado.</span>
         </div>
-        <div style="margin-top:8px;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
           <label style="cursor:pointer;background:rgba(155,138,92,.15);border:1px dashed var(--gold-border);border-radius:5px;padding:6px 14px;font-size:11px;color:var(--gold);display:inline-block;transition:all .2s;" onmouseover="this.style.background='rgba(155,138,92,.25)'" onmouseout="this.style.background='rgba(155,138,92,.15)'">
-            + Adicionar Foto
-            <input type="file" id="intel-foto-input" accept="image/*" multiple style="display:none;" onchange="adicionarFotosIntel(this)">
+            📸 Foto / PDF / KML
+            <input type="file" id="intel-anexo-input" accept="image/*,.pdf,.kml,.kmz" multiple style="display:none;" onchange="adicionarAnexosIntel(this,'intel')">
           </label>
-          <span style="font-size:10px;color:var(--text-hint);margin-left:10px;">JPG, PNG, WEBP — múltiplas fotos aceitas</span>
+          <label style="cursor:pointer;background:rgba(66,165,245,.1);border:1px dashed rgba(66,165,245,.4);border-radius:5px;padding:6px 14px;font-size:11px;color:var(--info);display:inline-block;transition:all .2s;" onmouseover="this.style.background='rgba(66,165,245,.2)'" onmouseout="this.style.background='rgba(66,165,245,.1)'">
+            🎥 Vídeo
+            <input type="file" id="intel-video-input" accept="video/*" multiple style="display:none;" onchange="adicionarVideosIntel(this,'intel')">
+          </label>
+          <span style="font-size:10px;color:var(--text-hint);">Fotos, PDF, KML/KMZ e vídeos (max 15MB por vídeo)</span>
+        </div>
+        <div id="intel-video-progress" style="display:none;margin-top:8px;">
+          <div style="font-size:11px;color:var(--info);margin-bottom:4px;">🎥 Processando vídeo...</div>
+          <div style="background:var(--bg-input);border-radius:4px;height:6px;overflow:hidden;">
+            <div id="intel-video-progress-bar" style="height:100%;background:var(--info);width:0%;transition:width .3s;border-radius:4px;"></div>
+          </div>
         </div>
       </div>
 
@@ -1457,6 +1477,32 @@
         <label>Observações</label>
         <textarea id="m-obs" placeholder="Informações adicionais para o pelotão..."></textarea>
       </div>
+
+      <!-- ANEXOS MISSÃO -->
+      <div style="margin-top:10px;background:#1a1a1a;border:1px solid var(--border);border-radius:7px;padding:12px 14px;">
+        <div style="font-size:12px;font-weight:700;color:var(--gold);margin-bottom:10px;">📎 Anexos da Missão</div>
+        <div id="missao-anexos-wrap" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;margin-bottom:10px;">
+          <span style="font-size:11px;color:var(--text-muted);">Nenhum anexo adicionado.</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <label style="cursor:pointer;background:rgba(155,138,92,.15);border:1px dashed var(--gold-border);border-radius:5px;padding:6px 14px;font-size:11px;color:var(--gold);display:inline-block;transition:all .2s;" onmouseover="this.style.background='rgba(155,138,92,.25)'" onmouseout="this.style.background='rgba(155,138,92,.15)'">
+            📸 Foto / PDF / KML
+            <input type="file" id="missao-anexo-input" accept="image/*,.pdf,.kml,.kmz" multiple style="display:none;" onchange="adicionarAnexosIntel(this,'missao')">
+          </label>
+          <label style="cursor:pointer;background:rgba(66,165,245,.1);border:1px dashed rgba(66,165,245,.4);border-radius:5px;padding:6px 14px;font-size:11px;color:var(--info);display:inline-block;transition:all .2s;" onmouseover="this.style.background='rgba(66,165,245,.2)'" onmouseout="this.style.background='rgba(66,165,245,.1)'">
+            🎥 Vídeo
+            <input type="file" id="missao-video-input" accept="video/*" multiple style="display:none;" onchange="adicionarVideosIntel(this,'missao')">
+          </label>
+          <span style="font-size:10px;color:var(--text-hint);">Fotos, PDF, KML/KMZ e vídeos (max 15MB por vídeo)</span>
+        </div>
+        <div id="missao-video-progress" style="display:none;margin-top:8px;">
+          <div style="font-size:11px;color:var(--info);margin-bottom:4px;">🎥 Processando vídeo...</div>
+          <div style="background:var(--bg-input);border-radius:4px;height:6px;overflow:hidden;">
+            <div id="missao-video-progress-bar" style="height:100%;background:var(--info);width:0%;transition:width .3s;border-radius:4px;"></div>
+          </div>
+        </div>
+      </div>
+
       <input type="hidden" id="m-id">
     </div>
     <div class="modal-footer">
@@ -1581,10 +1627,14 @@ window.addEventListener('DOMContentLoaded', () => {
     badge.style.cssText='font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;background:rgba(66,165,245,.15);color:var(--info);border:1px solid rgba(66,165,245,.3);';
   }
 
-  /* Carrega dados persistidos localmente */
+  /* Carrega dados persistidos localmente — fichas e missões com anexos do IndexedDB */
+  auditoriasMap = JSON.parse(_pget('ac_auditorias') || '{}');
   fichasIntel  = JSON.parse(_pget('ac_intel') || '[]');
   missoes      = JSON.parse(_pget('ac_missoes') || '[]');
-  auditoriasMap = JSON.parse(_pget('ac_auditorias') || '{}');
+  /* Reintegra base64 dos anexos a partir do IndexedDB ANTES de renderizar */
+  Promise.all([_carregarFichasComAnexos(), _carregarMissoesComAnexos()])
+    .catch(()=>{})
+    .then(()=>{ renderIntel(); renderMissoes(); });
 
   recarregarTudo();
 
@@ -2073,7 +2123,7 @@ function pontoEmPoligono(lat, lng, poligono){
 ══════════════════════════════════ */
 function popularFiltrosMunicipios(){
   const muns = [...new Set(dadosCrimes.map(d=>d.municipio).filter(Boolean))].sort();
-  ['f-mun-dash','cr-mun','intel-busca-mun'].forEach(id => {
+  ['f-mun-dash','cr-mun'].forEach(id => {
     const el = document.getElementById(id);
     if(!el) return;
     const cur = el.value;
@@ -2094,7 +2144,7 @@ function popularFiltrosGPs(){
       .map(r => [r.grupamento, r.grupamento])
   ).values()];
 
-  ['mis-gp','m-gp','cr-gp','f-gp-dash','mapa-gp','cx-gp','vt-gp'].forEach(id => {
+  ['mis-gp','m-gp','cr-gp','f-gp-dash','mapa-gp','cx-gp','vt-gp','intel-busca-gp'].forEach(id => {
     const el = document.getElementById(id);
     if(!el) return;
     const isModal = id === 'm-gp';
@@ -2295,6 +2345,7 @@ function limparFiltrosIntel(){
   document.getElementById('intel-busca-rat').value='';
   document.getElementById('intel-busca-facao').value='';
   document.getElementById('intel-busca-mun').value='';
+  document.getElementById('intel-busca-gp').value='';
   renderIntel();
 }
 function limparFiltrosMissoes(){
@@ -4193,7 +4244,11 @@ function renderVisitas(){
   else if(tipo==='A20001') inds = ['IMV','CVPE','CVPA'];
   else                     inds = ['IMV','CVPE','CVPA','IF'];
 
-  const crimes = getDadosFiltrados(mes,'','','','','').filter(d => inds.includes(d.indicador));
+  const crimes = getDadosFiltrados(mes,'','',vtPel,'','').filter(d => {
+    if(!inds.includes(d.indicador)) return false;
+    if(vtGp && gpDoColk(d.grupamento) !== vtGp) return false;
+    return true;
+  });
 
   if(!crimes.length){
     document.getElementById('visitas-body').innerHTML = '<div class="empty-state">Nenhum crime encontrado para os filtros selecionados.</div>';
@@ -4787,42 +4842,303 @@ function gerarPDFAuditoria(){
    INTELIGÊNCIA
 ══════════════════════════════════ */
 /* Buffer de fotos em memória para o modal aberto */
-let _intelFotosBuffer = []; /* [{id, base64, nome}] */
+let _intelFotosBuffer  = []; /* [{id, base64, nome, tipo}] — ficha intel */
+let _missaoAnexosBuffer = []; /* [{id, base64, nome, tipo}] — missão */
 
-function adicionarFotosIntel(input){
+/* ══════════════════════════════════
+   INDEXEDDB — armazenamento de anexos (sem limite de 5MB do localStorage)
+══════════════════════════════════ */
+let _idb = null;
+function _abrirIDB(){
+  if(_idb) return Promise.resolve(_idb);
+  return new Promise((res, rej) => {
+    const req = indexedDB.open('ac_anexos', 1);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains('anexos')) db.createObjectStore('anexos', {keyPath:'id'});
+    };
+    req.onsuccess = e => { _idb = e.target.result; res(_idb); };
+    req.onerror   = e => rej(e.target.error);
+  });
+}
+async function _idbSalvar(lista){ /* lista: [{id, base64, nome, tipo}] */
+  const db = await _abrirIDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction('anexos','readwrite');
+    const st = tx.objectStore('anexos');
+    lista.forEach(a => st.put(a));
+    tx.oncomplete = res; tx.onerror = e => rej(e.target.error);
+  });
+}
+async function _idbCarregar(ids){ /* retorna [{id,base64,nome,tipo}] */
+  if(!ids||!ids.length) return [];
+  const db = await _abrirIDB();
+  return Promise.all(ids.map(id => new Promise((res) => {
+    const req = db.transaction('anexos','readonly').objectStore('anexos').get(id);
+    req.onsuccess = e => res(e.target.result || null);
+    req.onerror   = () => res(null);
+  }))).then(r => r.filter(Boolean));
+}
+async function _idbExcluir(ids){
+  if(!ids||!ids.length) return;
+  const db = await _abrirIDB();
+  const tx = db.transaction('anexos','readwrite');
+  const st = tx.objectStore('anexos');
+  ids.forEach(id => st.delete(id));
+}
+/* Salva ficha no localStorage sem base64, e anexos no IndexedDB */
+async function _salvarFichasComAnexos(){
+  /* Salva todos os anexos no IDB */
+  const todosAnexos = fichasIntel.flatMap(f => (f.fotos||[]));
+  if(todosAnexos.length) await _idbSalvar(todosAnexos).catch(()=>{});
+  /* Salva ficha sem base64 no localStorage */
+  const fichasSemBase64 = fichasIntel.map(f => ({
+    ...f,
+    fotos: (f.fotos||[]).map(a => ({id:a.id, nome:a.nome, tipo:a.tipo||''}))
+  }));
+  _pset('ac_intel', JSON.stringify(fichasSemBase64));
+}
+/* Carrega fichas e reintegra base64 do IDB */
+async function _carregarFichasComAnexos(){
+  const raw = _pget('ac_intel');
+  if(!raw) return;
+  try{
+    const fichas = JSON.parse(raw);
+    /* Coleta todos os IDs de anexos */
+    const allIds = fichas.flatMap(f => (f.fotos||[]).map(a => a.id));
+    const idbData = await _idbCarregar(allIds);
+    const idbMap = Object.fromEntries(idbData.map(a => [a.id, a]));
+    fichasIntel = fichas.map(f => ({
+      ...f,
+      fotos: (f.fotos||[]).map(a => idbMap[a.id] ? {...idbMap[a.id]} : a)
+    }));
+  }catch(e){ console.warn('_carregarFichasComAnexos:', e); }
+}
+
+/* Mesma abordagem para missões */
+async function _salvarMissoesComAnexos(){
+  const todosAnexos = missoes.flatMap(m => (m.anexos||[]));
+  if(todosAnexos.length) await _idbSalvar(todosAnexos).catch(()=>{});
+  const missoesSemBase64 = missoes.map(m => ({
+    ...m,
+    anexos: (m.anexos||[]).map(a => ({id:a.id, nome:a.nome, tipo:a.tipo||''}))
+  }));
+  _pset('ac_missoes', JSON.stringify(missoesSemBase64));
+}
+async function _carregarMissoesComAnexos(){
+  const raw = _pget('ac_missoes');
+  if(!raw) return;
+  try{
+    const ms = JSON.parse(raw);
+    const allIds = ms.flatMap(m => (m.anexos||[]).map(a => a.id));
+    const idbData = await _idbCarregar(allIds);
+    const idbMap = Object.fromEntries(idbData.map(a => [a.id, a]));
+    missoes = ms.map(m => ({
+      ...m,
+      anexos: (m.anexos||[]).map(a => idbMap[a.id] ? {...idbMap[a.id]} : a)
+    }));
+  }catch(e){ console.warn('_carregarMissoesComAnexos:', e); }
+}
+
+async function _abrirAnexo(id){
+  /* Tenta memória primeiro, depois IDB */
+  const emBuf = [..._intelFotosBuffer, ..._missaoAnexosBuffer].find(a=>a.id===id);
+  if(emBuf && emBuf.base64){ window.open(emBuf.base64,'_blank'); return; }
+  try{
+    const db = await _abrirIDB();
+    const req = db.transaction('anexos','readonly').objectStore('anexos').get(id);
+    req.onsuccess = e => {
+      const a = e.target.result;
+      if(a && a.base64) window.open(a.base64,'_blank');
+      else alert('Anexo não encontrado no armazenamento local.');
+    };
+    req.onerror = () => alert('Erro ao carregar anexo.');
+  }catch(e){ alert('Erro ao acessar armazenamento: '+e.message); }
+}
+
+/* ── Renderiza o seletor de grupamentos no modal intel ── */
+function _renderGpCheckboxes(selecionados){
+  const wrap = document.getElementById('i-gp-wrap');
+  if(!wrap) return;
+  /* Usa a mesma ordenação de popularFiltrosGPs: pelotão → nº GP */
+  const gps = [...new Map(
+    dadosGrupos
+      .filter(r => r.grupamento)
+      .sort((a,b) => {
+        if(a.pelNum !== b.pelNum) return a.pelNum - b.pelNum;
+        return gpNumDoColk(a.grupamento) - gpNumDoColk(b.grupamento);
+      })
+      .map(r => [gpDoColk(r.grupamento), gpDoColk(r.grupamento)])
+  ).values()].filter(g => g && g !== '—');
+
+  if(!gps.length){
+    wrap.innerHTML = '<span style="font-size:11px;color:var(--text-muted);">Nenhum grupamento carregado.</span>';
+    return;
+  }
+  wrap.innerHTML = gps.map(g => {
+    const checked = (selecionados||[]).includes(g) ? 'checked' : '';
+    return `<label style="display:flex;align-items:center;gap:7px;padding:3px 4px;border-radius:4px;cursor:pointer;font-size:11px;color:#ccc;transition:background .15s;"
+      onmouseover="this.style.background='rgba(155,138,92,.1)'" onmouseout="this.style.background='transparent'">
+      <input type="checkbox" value="${g}" ${checked} style="accent-color:var(--gold);cursor:pointer;">
+      <span>${g}</span>
+    </label>`;
+  }).join('');
+}
+
+function _getGpsSelecionados(){
+  const cbs = document.querySelectorAll('#i-gp-wrap input[type=checkbox]');
+  const sel = [];
+  cbs.forEach(cb => { if(cb.checked) sel.push(cb.value); });
+  return sel;
+}
+
+/* ── Compressão de vídeo via Canvas (similar ao WhatsApp) ── */
+async function _comprimirVideo(file, prefixo){
+  return new Promise((resolve) => {
+    const MAX_MB = 15;
+    const MAX_BYTES = MAX_MB * 1024 * 1024;
+    const progressBar = document.getElementById(prefixo+'-video-progress-bar');
+    const progressWrap = document.getElementById(prefixo+'-video-progress');
+
+    if(file.size <= MAX_BYTES){
+      /* Arquivo já está dentro do limite — lê direto */
+      const reader = new FileReader();
+      reader.onload = e => resolve({ base64: e.target.result, nome: file.name, comprimido: false });
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    /* Vídeo maior que 15MB — comprime via canvas */
+    if(progressWrap) progressWrap.style.display = 'block';
+    if(progressBar)  progressBar.style.width = '10%';
+
+    const video = document.createElement('video');
+    video.muted = true;
+    video.playsInline = true;
+    video.src = URL.createObjectURL(file);
+
+    video.onloadedmetadata = () => {
+      const origW = video.videoWidth;
+      const origH = video.videoHeight;
+      /* Reduz resolução para caber em ~15MB — escala pela raiz do ratio */
+      const ratio = Math.sqrt(MAX_BYTES / file.size);
+      const w = Math.round(origW * ratio / 2) * 2;
+      const h = Math.round(origH * ratio / 2) * 2;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+
+      const stream = canvas.captureStream(15); /* 15fps */
+      const recorder = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm',
+        videoBitsPerSecond: Math.round((MAX_BYTES * 8) / Math.max(video.duration, 1) * 0.8),
+      });
+
+      const chunks = [];
+      recorder.ondataavailable = e => { if(e.data.size) chunks.push(e.data); };
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        const reader = new FileReader();
+        reader.onload = e => {
+          URL.revokeObjectURL(video.src);
+          if(progressWrap) progressWrap.style.display = 'none';
+          resolve({ base64: e.target.result, nome: file.name.replace(/\.[^.]+$/, '.webm'), comprimido: true });
+        };
+        reader.readAsDataURL(blob);
+      };
+
+      recorder.start();
+      let prog = 10;
+      const draw = () => {
+        if(video.ended || video.paused) { recorder.stop(); return; }
+        ctx.drawImage(video, 0, 0, w, h);
+        prog = Math.min(90, prog + 1);
+        if(progressBar) progressBar.style.width = prog + '%';
+        requestAnimationFrame(draw);
+      };
+      video.play().then(() => { draw(); });
+      video.onended = () => { recorder.stop(); if(progressBar) progressBar.style.width = '100%'; };
+    };
+    video.onerror = () => {
+      /* Fallback: lê original sem comprimir */
+      URL.revokeObjectURL(video.src);
+      const reader = new FileReader();
+      reader.onload = e => { if(progressWrap) progressWrap.style.display='none'; resolve({ base64: e.target.result, nome: file.name, comprimido: false }); };
+      reader.readAsDataURL(file);
+    };
+  });
+}
+
+/* ── Renderiza lista de anexos (fotos, pdf, kml, vídeos) ── */
+function _renderAnexos(prefixo){
+  const buf  = prefixo === 'intel' ? _intelFotosBuffer : _missaoAnexosBuffer;
+  const wrap = document.getElementById(prefixo+'-anexos-wrap');
+  if(!wrap) return;
+  if(!buf.length){
+    wrap.innerHTML = '<span style="font-size:11px;color:var(--text-muted);">Nenhum anexo adicionado.</span>';
+    return;
+  }
+  wrap.innerHTML = buf.map(f => {
+    const isImg   = f.tipo && f.tipo.startsWith('image');
+    const isVideo = f.tipo && f.tipo.startsWith('video');
+    const isPdf   = f.tipo === 'application/pdf' || f.nome.endsWith('.pdf');
+    const isKml   = f.nome.endsWith('.kml') || f.nome.endsWith('.kmz');
+    let preview = '';
+    if(isImg)   preview = `<img src="${f.base64}" style="width:100px;height:75px;object-fit:cover;display:block;border-radius:4px 4px 0 0;" alt="${f.nome}">`;
+    else if(isVideo) preview = `<video src="${f.base64}" style="width:100px;height:75px;object-fit:cover;display:block;border-radius:4px 4px 0 0;" muted playsinline></video>`;
+    else if(isPdf) preview = `<div style="width:100px;height:75px;display:flex;align-items:center;justify-content:center;background:#1a1a1a;border-radius:4px 4px 0 0;font-size:28px;">📄</div>`;
+    else if(isKml) preview = `<div style="width:100px;height:75px;display:flex;align-items:center;justify-content:center;background:#1a1a1a;border-radius:4px 4px 0 0;font-size:28px;">🗺</div>`;
+    else preview = `<div style="width:100px;height:75px;display:flex;align-items:center;justify-content:center;background:#1a1a1a;border-radius:4px 4px 0 0;font-size:28px;">📎</div>`;
+    return `
+    <div style="position:relative;border:1px solid var(--border);border-radius:6px;overflow:hidden;width:100px;flex-shrink:0;cursor:pointer;" onclick="_abrirAnexo('${f.id}')">
+      ${preview}
+      <div style="padding:3px 5px;background:#1a1a1a;font-size:9px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${f.nome}">${f.nome}</div>
+      <button onclick="event.stopPropagation();_removerAnexo('${prefixo}','${f.id}')" style="position:absolute;top:3px;right:3px;background:rgba(239,83,80,.85);border:none;color:#fff;border-radius:50%;width:18px;height:18px;font-size:10px;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center;">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function _removerAnexo(prefixo, fid){
+  if(prefixo === 'intel') _intelFotosBuffer = _intelFotosBuffer.filter(f=>f.id!==fid);
+  else _missaoAnexosBuffer = _missaoAnexosBuffer.filter(f=>f.id!==fid);
+  _renderAnexos(prefixo);
+}
+
+/* ── Adiciona fotos/pdf/kml ── */
+function adicionarAnexosIntel(input, prefixo){
   const files = Array.from(input.files);
   if(!files.length) return;
   files.forEach(file => {
     const reader = new FileReader();
     reader.onload = e => {
-      const foto = { id: 'f'+Date.now()+Math.random().toString(36).slice(2,6), base64: e.target.result, nome: file.name };
-      _intelFotosBuffer.push(foto);
-      renderFotosIntelModal();
+      const anexo = { id:'a'+Date.now()+Math.random().toString(36).slice(2,6), base64:e.target.result, nome:file.name, tipo:file.type };
+      if(prefixo==='intel') _intelFotosBuffer.push(anexo);
+      else _missaoAnexosBuffer.push(anexo);
+      _renderAnexos(prefixo);
     };
     reader.readAsDataURL(file);
   });
-  input.value = ''; /* permite selecionar o mesmo arquivo novamente */
+  input.value='';
 }
 
-function renderFotosIntelModal(){
-  const wrap = document.getElementById('intel-fotos-wrap');
-  if(!wrap) return;
-  if(!_intelFotosBuffer.length){
-    wrap.innerHTML = '<span style="font-size:11px;color:var(--text-muted);">Nenhuma foto adicionada.</span>';
-    return;
+/* ── Adiciona vídeos com compressão ── */
+async function adicionarVideosIntel(input, prefixo){
+  const files = Array.from(input.files);
+  if(!files.length) return;
+  for(const file of files){
+    const result = await _comprimirVideo(file, prefixo);
+    const anexo = { id:'v'+Date.now()+Math.random().toString(36).slice(2,6), base64:result.base64, nome:result.nome, tipo:'video/webm' };
+    if(prefixo==='intel') _intelFotosBuffer.push(anexo);
+    else _missaoAnexosBuffer.push(anexo);
+    _renderAnexos(prefixo);
   }
-  wrap.innerHTML = _intelFotosBuffer.map(f => `
-    <div style="position:relative;border:1px solid var(--border);border-radius:6px;overflow:hidden;width:120px;flex-shrink:0;">
-      <img src="${f.base64}" style="width:120px;height:90px;object-fit:cover;display:block;" alt="${f.nome}">
-      <div style="padding:3px 6px;background:#1a1a1a;font-size:10px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${f.nome}</div>
-      <button onclick="removerFotoIntel('${f.id}')" style="position:absolute;top:4px;right:4px;background:rgba(239,83,80,.85);border:none;color:#fff;border-radius:50%;width:20px;height:20px;font-size:11px;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center;">✕</button>
-    </div>`).join('');
+  input.value='';
 }
 
-function removerFotoIntel(fid){
-  _intelFotosBuffer = _intelFotosBuffer.filter(f=>f.id!==fid);
-  renderFotosIntelModal();
-}
+/* ── Mantém compatibilidade com código antigo que chama adicionarFotosIntel ── */
+function adicionarFotosIntel(input){ adicionarAnexosIntel(input,'intel'); }
+function renderFotosIntelModal(){ _renderAnexos('intel'); }
 
 function abrirModalIntel(id){
   _intelFotosBuffer = [];
@@ -4831,7 +5147,7 @@ function abrirModalIntel(id){
     if(f){
       document.getElementById('i-id').value         = f.id;
       document.getElementById('i-rat').value        = f.rat||'';
-      document.getElementById('i-mun').value        = f.municipio||'';
+      document.getElementById('i-mun').value        = Array.isArray(f.municipio) ? f.municipio.join(', ') : (f.municipio||'');
       document.getElementById('i-suspeitos').value  = f.suspeitos||'';
       document.getElementById('i-veiculos').value   = f.veiculos||'';
       document.getElementById('i-facao').value      = f.facao||'';
@@ -4840,7 +5156,6 @@ function abrirModalIntel(id){
       document.getElementById('i-reincidencia').value = f.reincidencia||'nao';
       document.getElementById('i-conexoes').value   = f.conexoes||'';
       document.getElementById('i-obs').value        = f.obs||'';
-      /* Carrega fotos salvas */
       _intelFotosBuffer = (f.fotos||[]).map(fb=>({...fb}));
     }
   } else {
@@ -4850,7 +5165,8 @@ function abrirModalIntel(id){
     document.getElementById('i-reincidencia').value='nao';
   }
   abrirModal('modal-intel');
-  setTimeout(()=>renderFotosIntelModal(), 50);
+  const fichaGps = id !== undefined ? (fichasIntel.find(x=>x.id===id)?.gpsAtuacao||[]) : [];
+  setTimeout(()=>{ _renderGpCheckboxes(fichaGps); _renderAnexos('intel'); }, 50);
 }
 
 function abrirIntelPorRat(rat, mun){
@@ -4865,16 +5181,19 @@ function abrirIntelPorRat(rat, mun){
     document.getElementById('i-rat').value = rat;
     document.getElementById('i-mun').value = mun||'';
     abrirModal('modal-intel');
-    setTimeout(()=>renderFotosIntelModal(), 50);
+    setTimeout(()=>{ _renderGpCheckboxes([]); _renderAnexos('intel'); }, 50);
   }
 }
 
-function salvarIntel(){
+async function salvarIntel(){
   const id = document.getElementById('i-id').value || ('intel-'+Date.now());
+  const munRaw = document.getElementById('i-mun').value.trim();
+  const municipios = munRaw ? munRaw.split(',').map(m=>m.trim()).filter(Boolean) : [];
   const ficha = {
     id,
     rat:          document.getElementById('i-rat').value.trim(),
-    municipio:    document.getElementById('i-mun').value.trim(),
+    municipio:    municipios,
+    gpsAtuacao:   _getGpsSelecionados(),
     suspeitos:    document.getElementById('i-suspeitos').value.trim(),
     veiculos:     document.getElementById('i-veiculos').value.trim(),
     facao:        document.getElementById('i-facao').value.trim(),
@@ -4883,21 +5202,14 @@ function salvarIntel(){
     reincidencia: document.getElementById('i-reincidencia').value,
     conexoes:     document.getElementById('i-conexoes').value.trim(),
     obs:          document.getElementById('i-obs').value.trim(),
-    fotos:        _intelFotosBuffer.map(f=>({id:f.id, base64:f.base64, nome:f.nome})),
+    fotos:        _intelFotosBuffer.map(f=>({id:f.id, base64:f.base64||'', nome:f.nome, tipo:f.tipo||''})),
     criadoPor:    sessao?.nome || '—',
     criadoEm:     new Date().toLocaleString('pt-BR'),
   };
   const idx = fichasIntel.findIndex(x=>x.id===id);
   if(idx >= 0) fichasIntel[idx] = ficha;
   else fichasIntel.push(ficha);
-  try {
-    _pset('ac_intel', JSON.stringify(fichasIntel));
-  } catch(e) {
-    /* localStorage cheio (fotos pesadas) — salva sem base64 e avisa */
-    const semFotos = fichasIntel.map(f=>({...f, fotos:(f.fotos||[]).map(p=>({...p, base64:'[foto_removida_storage_cheio]'}))}));
-    _pset('ac_intel', JSON.stringify(semFotos));
-    alert('⚠ Ficha salva, mas as fotos foram removidas por falta de espaço no armazenamento local.\nReducione o tamanho das imagens antes de salvar.');
-  }
+  await _salvarFichasComAnexos();
   fecharModal('modal-intel');
   renderIntel();
 }
@@ -4910,14 +5222,32 @@ function excluirIntel(id){
 }
 
 function renderIntel(){
-  const busca = norm(document.getElementById('intel-busca-rat').value);
-  const facao = norm(document.getElementById('intel-busca-facao').value);
-  const mun   = document.getElementById('intel-busca-mun').value;
+  const busca   = norm(document.getElementById('intel-busca-rat').value);
+  const facao   = norm(document.getElementById('intel-busca-facao').value);
+  const mun     = norm(document.getElementById('intel-busca-mun').value);
+  const gpBusca = document.getElementById('intel-busca-gp').value;
+
+    /* Grupamento do usuário logado (operacional só vê fichas do seu GP) */
+  const _isAdmin = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
+  const gpUsuario = !_isAdmin && sessao?.lotacao ? gpDoColk(
+    dadosGrupos.find(r => norm(r.grupamento).includes(norm(sessao.lotacao)))?.grupamento || ''
+  ) : '';
 
   let fichas = fichasIntel.filter(f => {
     if(busca && !norm(f.rat).includes(busca)) return false;
     if(facao && !norm(f.facao).includes(facao)) return false;
-    if(mun   && f.municipio !== mun) return false;
+    if(mun){
+      /* Busca normalizada: funciona com múltiplos municípios, acentos e grafias diferentes */
+      const munNorm = norm(mun);
+      const muns = Array.isArray(f.municipio) ? f.municipio : (f.municipio ? f.municipio.split(',') : []);
+      if(!muns.some(m => norm(m).includes(munNorm))) return false;
+    }
+    if(gpBusca && !(f.gpsAtuacao||[]).includes(gpBusca)) return false;
+    /* Visibilidade por grupamento: se a ficha tem GPs definidos,
+       admin vê tudo; operacional só vê se seu GP está na lista */
+    if(!_isAdmin && gpUsuario && f.gpsAtuacao && f.gpsAtuacao.length){
+      if(!f.gpsAtuacao.includes(gpUsuario)) return false;
+    }
     return true;
   });
 
@@ -4930,33 +5260,48 @@ function renderIntel(){
   const reincLbl = { nao:'Não', sim:'Sim — Suspeito', local:'Sim — Local' };
   el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px;">` +
     fichas.map(f => {
-      const fotosHtml = (f.fotos||[]).length
+      const muns = Array.isArray(f.municipio) ? f.municipio : (f.municipio ? [f.municipio] : []);
+      const munLabel = muns.join(', ') || '—';
+      const gpsLabel = (f.gpsAtuacao||[]).length
+        ? `<div class="intel-field" style="margin-bottom:6px;"><label>Área de Atuação</label><div style="display:flex;flex-wrap:wrap;gap:4px;">${(f.gpsAtuacao||[]).map(g=>`<span style="font-size:10px;background:rgba(155,138,92,.15);color:var(--gold);border:1px solid var(--gold-border);padding:1px 7px;border-radius:3px;">${g}</span>`).join('')}</div></div>`
+        : '';
+      const anexosHtml = (f.fotos||[]).length
         ? `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">
-             <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:6px;">📸 Fotos (${f.fotos.length})</div>
+             <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:6px;">📎 Anexos (${f.fotos.length})</div>
              <div style="display:flex;gap:6px;flex-wrap:wrap;">
-               ${f.fotos.map(ft=>`
-                 <div style="border:1px solid var(--border);border-radius:4px;overflow:hidden;cursor:pointer;" onclick="window.open('${ft.base64}','_blank')">
-                   <img src="${ft.base64}" style="width:80px;height:60px;object-fit:cover;display:block;" title="${ft.nome}" alt="${ft.nome}">
-                 </div>`).join('')}
+               ${f.fotos.map(ft=>{
+                 const isImg = ft.tipo && ft.tipo.startsWith('image');
+                 const isVid = ft.tipo && ft.tipo.startsWith('video');
+                 const isPdf = ft.tipo==='application/pdf'||ft.nome.endsWith('.pdf');
+                 const isKml = ft.nome.endsWith('.kml')||ft.nome.endsWith('.kmz');
+                 let thumb='';
+                 if(isImg)      thumb=ft.base64?`<img src="${ft.base64}" style="width:60px;height:45px;object-fit:cover;display:block;" title="${ft.nome}">`:`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;font-size:20px;">🖼</div>`;
+                 else if(isVid) thumb=ft.base64?`<video src="${ft.base64}" style="width:60px;height:45px;object-fit:cover;display:block;" muted></video>`:`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;font-size:20px;">🎥</div>`;
+                 else if(isPdf) thumb=`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;font-size:20px;">📄</div>`;
+                 else if(isKml) thumb=`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;font-size:20px;">🗺</div>`;
+                 else           thumb=`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;font-size:20px;">📎</div>`;
+                 return `<div style="border:1px solid var(--border);border-radius:4px;overflow:hidden;cursor:pointer;" onclick="_abrirAnexo('${ft.id}')" title="${ft.nome}">${thumb}</div>`;
+               }).join('')}
              </div>
            </div>`
         : '';
       return `
       <div class="intel-card" style="border-left:3px solid var(--gold);">
         <div class="intel-card-title" style="display:flex;align-items:center;justify-content:space-between;">
-          <span>🕵 BO: ${f.rat||'—'} · ${f.municipio||'—'}</span>
+          <span>🕵 BO: ${f.rat||'—'} · ${munLabel}</span>
           <div style="display:flex;gap:4px;">
             <button class="btn-outline" style="padding:2px 8px;font-size:10px;" onclick="abrirModalIntel('${f.id}')">✏ Editar</button>
             <button class="btn-danger" style="padding:2px 8px;" onclick="excluirIntel('${f.id}')">✕</button>
           </div>
         </div>
+        ${gpsLabel}
         ${f.suspeitos?`<div class="intel-field" style="margin-bottom:6px;"><label>Suspeitos</label><div style="font-size:12px;color:var(--text-white)">${f.suspeitos}</div></div>`:''}
         ${f.facao?`<div class="intel-field" style="margin-bottom:6px;"><label>Facção / Vínculo</label><div style="font-size:12px;color:var(--danger);font-weight:700">${f.facao}</div></div>`:''}
         ${f.modus?`<div class="intel-field" style="margin-bottom:6px;"><label>Modus Operandi</label><div style="font-size:11px;color:#bbb">${f.modus}</div></div>`:''}
         ${f.armas?`<div class="intel-field" style="margin-bottom:6px;"><label>Armas</label><div style="font-size:11px;color:#ff9800">${f.armas}</div></div>`:''}
         ${f.reincidencia&&f.reincidencia!=='nao'?`<div style="font-size:10px;background:rgba(239,83,80,.12);color:var(--danger);padding:3px 8px;border-radius:3px;font-weight:700;display:inline-block;margin-bottom:6px;">⚠ Reincidência: ${reincLbl[f.reincidencia]}</div>`:''}
         ${f.obs?`<div style="font-size:11px;color:var(--text-muted);background:var(--bg-input);border-radius:4px;padding:6px 8px;margin-top:4px;">${f.obs}</div>`:''}
-        ${fotosHtml}
+        ${anexosHtml}
         <div style="font-size:10px;color:var(--text-hint);margin-top:8px;border-top:1px solid var(--border);padding-top:6px;">Criado por ${f.criadoPor} em ${f.criadoEm}</div>
       </div>`;
     }).join('') +
@@ -5270,6 +5615,7 @@ function abrirModalMissao(id){
       document.getElementById('m-prazo').value   = m.prazo||'';
       document.getElementById('m-descricao').value = m.descricao||'';
       document.getElementById('m-obs').value     = m.obs||'';
+      _missaoAnexosBuffer = (m.anexos||[]).map(a=>({...a}));
     }
   } else {
     if(modalTitle) modalTitle.textContent = '🎯 Nova Missão Operacional';
@@ -5279,6 +5625,7 @@ function abrirModalMissao(id){
     document.getElementById('m-militares-wrap').style.display='none';
     document.getElementById('m-militares-lista').innerHTML='';
     document.getElementById('m-militares-selecionados').innerHTML='';
+    _missaoAnexosBuffer = [];
     /* Operacional: pré-seleciona o próprio GP e carrega militares automaticamente */
     if(!_isAdmin && sessao && sessao.lotacao){
       document.getElementById('m-gp').value = sessao.lotacao;
@@ -5288,6 +5635,7 @@ function abrirModalMissao(id){
     }
   }
   abrirModal('modal-missao');
+  setTimeout(()=>_renderAnexos('missao'), 50);
 }
 
 async function salvarMissao(){
@@ -5304,6 +5652,7 @@ async function salvarMissao(){
     prazo:      document.getElementById('m-prazo').value,
     descricao:  document.getElementById('m-descricao').value.trim(),
     obs:        document.getElementById('m-obs').value.trim(),
+    anexos:     _missaoAnexosBuffer.map(f=>({id:f.id, base64:f.base64||'', nome:f.nome, tipo:f.tipo||''})),
     status:     (missoes.find(x=>x.id===id)?.status) || 'pendente',
     criadoPor:  (missoes.find(x=>x.id===id)?.criadoPor) || sessao?.nome || '—',
     criadoEm:   (missoes.find(x=>x.id===id)?.criadoEm)  || new Date().toLocaleString('pt-BR'),
@@ -5313,7 +5662,7 @@ async function salvarMissao(){
   const idx = missoes.findIndex(x=>x.id===id);
   if(idx >= 0) missoes[idx] = mis;
   else missoes.push(mis);
-  _pset('ac_missoes', JSON.stringify(missoes));
+  await _salvarMissoesComAnexos();
   await _missoesSyncToSheet().catch(()=>{});
   fecharModal('modal-missao');
   renderMissoes();
@@ -5424,6 +5773,28 @@ function renderMissoes(){
       ${m.militares&&m.militares.length?`<div style="display:flex;flex-wrap:wrap;gap:3px;margin-bottom:6px;">${m.militares.map(mil=>`<span style="background:rgba(66,165,245,.12);color:#42a5f5;border:1px solid rgba(66,165,245,.3);padding:1px 7px;border-radius:3px;font-size:10px;">👮 ${mil.guerra||mil.nome}</span>`).join('')}</div>`:''}
       ${m.descricao?`<div style="font-size:12px;color:#ccc;margin-bottom:6px;">${m.descricao}</div>`:''}
       ${m.obs?`<div class="missao-obs">${m.obs}</div>`:''}
+      ${(m.anexos||[]).length?`
+      <div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">
+        <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:6px;">📎 Anexos (${m.anexos.length})</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${m.anexos.map(a=>{
+            const isImg=a.tipo&&a.tipo.startsWith('image');
+            const isVid=a.tipo&&a.tipo.startsWith('video');
+            const isPdf=a.tipo==='application/pdf'||a.nome.endsWith('.pdf');
+            const isKml=a.nome.endsWith('.kml')||a.nome.endsWith('.kmz');
+            let thumb='';
+            if(isImg)      thumb=a.base64?`<img src="${a.base64}" style="width:60px;height:45px;object-fit:cover;display:block;" title="${a.nome}">`:`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;font-size:20px;">🖼</div>`;
+            else if(isVid) thumb=a.base64?`<video src="${a.base64}" style="width:60px;height:45px;object-fit:cover;display:block;" muted></video>`:`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;font-size:20px;">🎥</div>`;
+            else if(isPdf) thumb=`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;border-radius:4px 4px 0 0;font-size:20px;">📄</div>`;
+            else if(isKml) thumb=`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;border-radius:4px 4px 0 0;font-size:20px;">🗺</div>`;
+            else           thumb=`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;border-radius:4px 4px 0 0;font-size:20px;">📎</div>`;
+            return `<div style="border:1px solid var(--border);border-radius:4px;overflow:hidden;cursor:pointer;" onclick="_abrirAnexo('${a.id}')" title="${a.nome}">
+              ${thumb}
+              <div style="padding:2px 4px;background:#1a1a1a;font-size:9px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60px;">${a.nome}</div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`:''}
       <div class="missao-actions">
         ${m.status!=='em_execucao'&&m.status!=='concluida'?`<button class="btn-outline" style="font-size:10px;padding:4px 10px;" onclick="atualizarStatusMissao('${m.id}','em_execucao')">▶ Iniciar</button>`:''}
         ${m.status!=='concluida'?`<button class="btn-success" style="font-size:10px;padding:4px 10px;" onclick="abrirModalConclusao('${m.id}')">✔ Concluir</button>`:`<span style="font-size:11px;color:var(--success);">✔ Concluída</span>`}
