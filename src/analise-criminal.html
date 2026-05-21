@@ -59,8 +59,8 @@
     .tc-icon{position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:28px;opacity:.15;}
 
     /* FILTROS */
-    .filter-box{background:var(--bg-card);border-radius:7px;padding:12px 16px;margin-bottom:14px;}
-    .filter-box.sticky{position:sticky;top:0;z-index:50;box-shadow:0 4px 16px rgba(0,0,0,.5);border-bottom:2px solid var(--gold-border);}
+    .filter-box{background:var(--bg-card);border-radius:7px;padding:12px 16px;margin-bottom:14px;overflow:visible;}
+    .filter-box.sticky{position:sticky;top:0;z-index:50;box-shadow:0 4px 16px rgba(0,0,0,.5);border-bottom:2px solid var(--gold-border);overflow:visible;}
     .filter-box-title{font-size:11px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;}
     .filter-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
     .fg{display:flex;flex-direction:column;gap:4px;min-width:160px;flex:1;}
@@ -210,7 +210,11 @@
     .spinner{display:inline-block;width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite;margin-right:7px;vertical-align:middle;}
     @keyframes spin{to{transform:rotate(360deg);}}
 
-    /* Tooltips do mapa */
+    /* Garante que o mapa Leaflet fique abaixo dos dropdowns */
+    #tab-mapa .leaflet-container { z-index: 1 !important; }
+    #tab-mapa .leaflet-pane,
+    #tab-mapa .leaflet-control { z-index: 1 !important; }
+    #tab-mapa .mes-dropdown-wrap { z-index: 10001; position: relative; }
     .leaflet-tooltip-crime {
       background: transparent !important;
       border: none !important;
@@ -247,7 +251,7 @@
     .mes-dropdown-wrap{position:relative;}
     .mes-dropdown-btn{width:100%;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:5px;padding:7px 10px;color:var(--text-white);font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px;text-align:left;transition:border-color .2s;}
     .mes-dropdown-btn:hover,.mes-dropdown-btn.open{border-color:var(--gold);}
-    .mes-dropdown{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--bg-card);border:1px solid var(--gold-border);border-radius:7px;z-index:500;box-shadow:0 8px 24px rgba(0,0,0,.5);min-width:200px;}
+    .mes-dropdown{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--bg-card);border:1px solid var(--gold-border);border-radius:7px;z-index:10000;box-shadow:0 8px 24px rgba(0,0,0,.5);min-width:220px;max-height:420px;overflow-y:auto;}
     .mes-dd-header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border);}
     .mes-dd-link{font-size:10px;color:var(--gold);cursor:pointer;font-weight:700;}
     .mes-dd-link:hover{text-decoration:underline;}
@@ -372,9 +376,9 @@
 
   <!-- CARDS INDICADORES -->
   <div class="top-cards" id="ac-cards">
-    <div class="top-card red"><div class="tc-label">IMV</div><div class="tc-val" id="c-imv">—</div><div class="tc-sub">Mortes Violentas</div><div class="tc-icon">💀</div></div>
-    <div class="top-card blue"><div class="tc-label">CVPE</div><div class="tc-val" id="c-cvpe">—</div><div class="tc-sub">Crimes Contra Pessoa</div><div class="tc-icon">👤</div></div>
-    <div class="top-card orange"><div class="tc-label">CVPA</div><div class="tc-val" id="c-cvpa">—</div><div class="tc-sub">Crimes Contra Patrimônio</div><div class="tc-icon">🏠</div></div>
+    <div class="top-card red"><div class="tc-label">IMV</div><div class="tc-val" id="c-imv">—</div><div class="tc-sub">Mortes Violentas (vítimas)</div><div class="tc-icon">💀</div></div>
+    <div class="top-card blue"><div class="tc-label">CVPE</div><div class="tc-val" id="c-cvpe">—</div><div class="tc-sub">Crimes Contra Pessoa (vítimas)</div><div class="tc-icon">👤</div></div>
+    <div class="top-card orange"><div class="tc-label">CVPA</div><div class="tc-val" id="c-cvpa">—</div><div class="tc-sub">Crimes Contra Patrimônio (vítimas)</div><div class="tc-icon">🏠</div></div>
     <div class="top-card purple"><div class="tc-label">IF</div><div class="tc-val" id="c-if">—</div><div class="tc-sub">Indicadores de Furto</div><div class="tc-icon">🤏</div></div>
     <div class="top-card gold"><div class="tc-label">Total Geral</div><div class="tc-val" id="c-total">—</div><div class="tc-sub">todas as naturezas</div><div class="tc-icon">📊</div></div>
     <div class="top-card red"><div class="tc-label">⚠ Alertas Urbanos</div><div class="tc-val" id="c-alertas">—</div><div class="tc-sub">pendentes de auditoria</div><div class="tc-icon">🔴</div></div>
@@ -1640,14 +1644,13 @@ function setStatus(t, m){
 async function recarregarTudo(){
   setStatus('load','Carregando dados criminais...');
   try {
-    /* 1. Carrega grupos da planilha de crimes (lookup município → grupamento) */
-    await carregarGruposCrimes();
-    /* 2. Carrega grupos do POE (para mapa KML e missões) */
-    await carregarGrupos();
-    /* 3. Carrega crimes e operações em paralelo */
-    await Promise.all([carregarCrimes(), carregarOpsGdo(), carregarVisitas()]);
-    await _missoesSyncFromSheet();
-    setTimeout(_verificarMissoesPendentes, 500);
+    /* 1. Carrega os dois grupos em paralelo (lookup município → grupamento) */
+    await Promise.all([carregarGruposCrimes(), carregarGrupos()]);
+
+    /* 2. Carrega crimes — essencial para o dashboard */
+    await carregarCrimes();
+
+    /* 3. Renderiza o dashboard imediatamente com os dados de crimes */
     popularFiltrosMunicipios();
     popularFiltrosGPs();
     renderDashboard();
@@ -1656,6 +1659,8 @@ async function recarregarTudo(){
     renderMissoes();
     const now = new Date().toLocaleTimeString('pt-BR');
     document.getElementById('last-update').textContent = 'Atualizado: '+now;
+    setStatus('ok','✔ Dados criminais carregados — '+dadosCrimes.length+' BOs');
+
     /* Salva crimes no localStorage para uso no painel.html (Relatórios) */
     try{
       const crimesSalvar = dadosCrimes.map(d=>({
@@ -1666,7 +1671,22 @@ async function recarregarTudo(){
       }));
       _pset('ac_dados_crimes', JSON.stringify(crimesSalvar));
     }catch(e){ console.warn('Erro ao salvar crimes no storage:', e); }
-    setStatus('ok','✔ Dados criminais carregados — '+dadosCrimes.length+' BOs');
+
+    /* 4. Carrega ops, visitas e missões em background sem bloquear a UI */
+    Promise.all([carregarOpsGdo(), carregarVisitas()])
+      .then(() => {
+        /* Atualiza abas que dependem de ops/visitas */
+        try{ renderDashboard(); } catch(e){}
+      })
+      .catch(e => console.warn('Ops/Visitas background:', e.message));
+
+    _missoesSyncFromSheet()
+      .then(() => {
+        try{ renderMissoes(); } catch(e){}
+        setTimeout(_verificarMissoesPendentes, 500);
+      })
+      .catch(e => console.warn('Missoes background:', e.message));
+
   } catch(e){
     setStatus('err','✗ Erro: '+e.message);
     console.error(e);
@@ -1718,6 +1738,13 @@ async function carregarGruposCrimes(){
   }
 }
 
+/* Converte o campo de vítimas (pode vir como "2", "2,0", "2.0", etc.) para inteiro */
+function parseVit(v){
+  if(!v && v !== 0) return 0;
+  const n = parseInt(String(v).replace(',','.')) || 0;
+  return n > 0 ? n : 0;
+}
+
 async function carregarCrimes(){
   dadosCrimes = [];
 
@@ -1759,16 +1786,17 @@ async function carregarCrimes(){
   const get = (r, i) => (r && r[i] !== undefined && r[i] !== null)
     ? r[i].toString().trim() : '';
 
-  for(const aba of abas){
-    let rows;
-    try {
-      /* Lê até coluna CJ (índice 87) para cobrir CF (83) = maior col de vítimas */
-      rows = await fetchSheet(AC_SHEET_ID, aba.nome+'!A1:CJ');
-    } catch(e){
-      console.warn('['+aba.nome+'] não encontrada:', e.message);
-      continue;
-    }
-    if(!rows || rows.length < 2){ console.warn('['+aba.nome+'] vazia'); continue; }
+  /* Busca todas as abas em paralelo */
+  const fetchResults = await Promise.all(
+    abas.map(aba =>
+      fetchSheet(AC_SHEET_ID, aba.nome+'!A1:CJ')
+        .then(rows => ({ aba, rows, ok: true }))
+        .catch(e => { console.warn('['+aba.nome+'] não encontrada:', e.message); return { aba, rows: null, ok: false }; })
+    )
+  );
+
+  for(const { aba, rows, ok } of fetchResults){
+    if(!ok || !rows || rows.length < 2){ if(ok) console.warn('['+aba.nome+'] vazia'); continue; }
 
     /* Última data da coluna F para o badge de atualização */
     const _lastDate = _ultimaDataColF(rows, 5);
@@ -1784,6 +1812,10 @@ async function carregarCrimes(){
     const startIdx = isHeaderRow ? 1 : 0;
 
     console.log(`[${aba.nome}] linhas=${rows.length} início=${startIdx} col0="${col0Row1}"`);
+    /* DEBUG: mostra cabeçalho e primeiros valores da coluna de vítimas */
+    if(aba.colVitimas >= 0 && rows[0]){
+      console.log(`[${aba.nome}] col${aba.colVitimas} header="${rows[0][aba.colVitimas]||''}" | row1="${(rows[startIdx]||[])[aba.colVitimas]||''}" | row2="${(rows[startIdx+1]||[])[aba.colVitimas]||''}" | rowLen=${(rows[startIdx]||[]).length}`);
+    }
 
     let contAba = 0;
     rows.slice(startIdx).forEach(r => {
@@ -2161,13 +2193,16 @@ function toggleMesDd(prefix){
   const btn = document.getElementById(prefix+'-mes-btn');
   if(!dd) return;
   const open = dd.style.display === 'none' || dd.style.display === '';
+  /* Fecha todos os outros dropdowns abertos */
+  document.querySelectorAll('.mes-dropdown').forEach(el => { el.style.display = 'none'; });
+  document.querySelectorAll('.mes-dropdown-btn.open').forEach(el => { el.classList.remove('open'); });
   dd.style.display = open ? 'block' : 'none';
   if(btn) btn.classList.toggle('open', open);
   if(open){
     setTimeout(() => {
       const close = (e) => {
         const wrap = document.getElementById(prefix+'-mes-wrap');
-        if(wrap && !wrap.contains(e.target)){
+        if(wrap && !wrap.contains(e.target) && !dd.contains(e.target)){
           dd.style.display = 'none';
           if(btn) btn.classList.remove('open');
           document.removeEventListener('click', close);
@@ -2185,6 +2220,8 @@ function getMesDd(prefix){
   cbs.forEach(cb => { if(cb.checked) sel.push(cb.value); });
   return sel;
 }
+
+/* Move todos os .mes-dropdown para o <body> para escapar do stacking context do Leaflet */
 
 function _mesDdUpdateLabel(prefix){
   const sel = getMesDd(prefix);
@@ -2280,10 +2317,17 @@ function renderDashboard(){
   /* Filtra por grupamento usando gpResp (col I) via gpDoColk */
   if(gp) dados = dados.filter(d => d.grupamento && gpDoColk(d.grupamento) === gp);
 
-  /* Contagens por indicador */
+  /* Contagens por indicador: IMV/CVPE/CVPA somam qtdVitimas; IF conta ocorrências */
   const contagem = {IMV:0, CVPE:0, CVPA:0, IF:0};
-  dados.forEach(d => { if(contagem[d.indicador] !== undefined) contagem[d.indicador]++; });
-  const total = dados.length;
+  dados.forEach(d => {
+    if(d.indicador === 'IF'){
+      contagem.IF++;
+    } else if(contagem[d.indicador] !== undefined){
+      const v = parseVit(d.qtdVitimas);
+      contagem[d.indicador] += v;
+    }
+  });
+  const total = contagem.IMV + contagem.CVPE + contagem.CVPA + contagem.IF;
   const alertas = dados.filter(d=>d._auditoriaPendente).length;
 
   document.getElementById('c-imv').textContent   = contagem.IMV;
@@ -2334,7 +2378,12 @@ function renderUrgencia(dados){
   dadosRural.forEach(d => {
     if(!d.municipio) return;
     if(!bdMun[d.municipio]) bdMun[d.municipio] = {bd:{IMV:0,CVPE:0,CVPA:0,IF:0}, gp:''};
-    if(bdMun[d.municipio].bd.hasOwnProperty(d.indicador)) bdMun[d.municipio].bd[d.indicador]++;
+    if(d.indicador === 'IF'){
+      bdMun[d.municipio].bd.IF++;
+    } else if(bdMun[d.municipio].bd.hasOwnProperty(d.indicador)){
+      const v = parseVit(d.qtdVitimas);
+      bdMun[d.municipio].bd[d.indicador] += v;
+    }
     if(!bdMun[d.municipio].gp && d.grupamento){
       const gi = dadosGrupos.find(g => g.munNorm === norm(d.municipio||''));
       bdMun[d.municipio].gp = gi ? gi.gpResp : gpDoColk(d.grupamento);
@@ -2352,7 +2401,12 @@ function renderUrgencia(dados){
     const gp = gpDoColk(d.grupamento);
     if(!gp || gp==='—') return;
     if(!bdGP[gp]) bdGP[gp] = {bd:{IMV:0,CVPE:0,CVPA:0,IF:0}, muns:new Set()};
-    if(bdGP[gp].bd.hasOwnProperty(d.indicador)) bdGP[gp].bd[d.indicador]++;
+    if(d.indicador === 'IF'){
+      bdGP[gp].bd.IF++;
+    } else if(bdGP[gp].bd.hasOwnProperty(d.indicador)){
+      const v = parseVit(d.qtdVitimas);
+      bdGP[gp].bd[d.indicador] += v;
+    }
     if(d.municipio) bdGP[gp].muns.add(d.municipio);
   });
   const topGP = Object.entries(bdGP)
@@ -2473,7 +2527,14 @@ function renderChartEvolucao(dados, mesAtual){
     const mesKey = mesLookup[mesRaw]
       || mesLookup[mesRaw.normalize('NFD').replace(/[\u0300-\u036f]/g,'')]
       || MESES.find(m => m === mesRaw);
-    if(mesKey && porMes[mesKey]) porMes[mesKey][d.indicador]++;
+    if(mesKey && porMes[mesKey]){
+      if(d.indicador === 'IF'){
+        porMes[mesKey].IF++;
+      } else if(porMes[mesKey][d.indicador] !== undefined){
+        const v = parseVit(d.qtdVitimas);
+        porMes[mesKey][d.indicador] += v;
+      }
+    }
   });
 
   const labels  = MESES.map(m => m.substring(0,3));
@@ -2510,7 +2571,7 @@ function renderChartComparativo(contagem){
     data: {
       labels: ['IMV','CVPE','CVPA','IF'],
       datasets: [{
-        label: 'Ocorrências',
+        label: 'Vítimas / Ocorrências (IF)',
         data: [contagem.IMV, contagem.CVPE, contagem.CVPA, contagem.IF],
         backgroundColor: [
           CORES_INDICADOR.IMV+'bb',
@@ -2560,7 +2621,7 @@ function renderRankings(dados){
           <span style="color:${IND_COR[ind]};font-weight:700;font-size:13px;">${bd[ind]||0}</span>
         </div>`).join('')}
       <div style="border-top:1px solid #333;margin-top:6px;padding-top:6px;display:flex;justify-content:space-between;">
-        <span style="font-size:10px;color:#888;">Total de ocorrências</span>
+        <span style="font-size:10px;color:#888;">Total (vítimas/ocorrências)</span>
         <span style="font-size:13px;font-weight:800;color:#fff;">${total}</span>
       </div>
       <div style="position:absolute;bottom:-5px;left:50%;
@@ -2598,7 +2659,12 @@ function renderRankings(dados){
   dados.forEach(d=>{
     if(!d.municipio) return;
     if(!bdMun[d.municipio]) bdMun[d.municipio]={IMV:0,CVPE:0,CVPA:0,IF:0};
-    if(bdMun[d.municipio].hasOwnProperty(d.indicador)) bdMun[d.municipio][d.indicador]++;
+    if(d.indicador === 'IF'){
+      bdMun[d.municipio].IF++;
+    } else if(bdMun[d.municipio].hasOwnProperty(d.indicador)){
+      const v = parseVit(d.qtdVitimas);
+      bdMun[d.municipio][d.indicador] += v;
+    }
   });
   const topMun = Object.entries(bdMun)
     .map(([m,bd])=>({m,bd}))
@@ -2614,7 +2680,12 @@ function renderRankings(dados){
     const gp = d.grupamento ? gpDoColk(d.grupamento) : null;
     if(!gp||gp==='—') return;
     if(!bdGP[gp]) bdGP[gp]={IMV:0,CVPE:0,CVPA:0,IF:0};
-    if(bdGP[gp].hasOwnProperty(d.indicador)) bdGP[gp][d.indicador]++;
+    if(d.indicador === 'IF'){
+      bdGP[gp].IF++;
+    } else if(bdGP[gp].hasOwnProperty(d.indicador)){
+      const v = parseVit(d.qtdVitimas);
+      bdGP[gp][d.indicador] += v;
+    }
   });
   const topGP = Object.entries(bdGP)
     .map(([g,bd])=>({g,bd}))
@@ -2630,7 +2701,12 @@ function renderRankings(dados){
     const p = d.grupamento ? pelDoColk(d.grupamento) : 0;
     if(!p||p===99) return;
     if(!bdPel[p]) bdPel[p]={IMV:0,CVPE:0,CVPA:0,IF:0};
-    if(bdPel[p].hasOwnProperty(d.indicador)) bdPel[p][d.indicador]++;
+    if(d.indicador === 'IF'){
+      bdPel[p].IF++;
+    } else if(bdPel[p].hasOwnProperty(d.indicador)){
+      const v = parseVit(d.qtdVitimas);
+      bdPel[p][d.indicador] += v;
+    }
   });
   const topPel = Object.entries(bdPel)
     .map(([p,bd])=>({p,bd}))
@@ -2764,7 +2840,7 @@ function renderMapaFS(){
   if(elNormal) elNormal.id = '_ac-mapa-normal-hidden';
 
   try {
-    _renderMapaCriminalInterno(dados);
+    _renderMapaCriminalInterno(dados, '');
   } finally {
     /* ── Sempre restaura IDs e globals, mesmo em caso de erro ── */
     elFS.id = 'mapa-fullscreen-inner';
@@ -2810,10 +2886,11 @@ function renderMapaCriminal(){
       '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#ef5350;font-size:13px;background:#1a1a1a;border-radius:8px;">⚠ Leaflet não carregado. Verifique a conexão com internet e recarregue a página.</div>';
     return;
   }
-  _renderMapaCriminalInterno(dados);
+  _renderMapaCriminalInterno(dados, gp);
 }
 
-function _renderMapaCriminalInterno(dados){
+function _renderMapaCriminalInterno(dados, gpFiltro){
+  gpFiltro = gpFiltro || '';
   const el = document.getElementById('ac-mapa-inner');
   /* Remove instância anterior e limpa o container completamente */
   if(_acMap){
@@ -2972,6 +3049,10 @@ function _renderMapaCriminalInterno(dados){
   }
 
   /* ── Camadas KML dos Pelotões (igual ao GDO Rural) ── */
+  /* Descobrir qual pelotão pertence ao grupamento filtrado */
+  const gpFiltroInfo = gpFiltro ? dadosGrupos.find(r => gpDoColk(r.grupamento) === gpFiltro) : null;
+  const gpFiltroPelNum = gpFiltroInfo ? gpFiltroInfo.pelNum : null;
+
   if(typeof KML_DATA !== 'undefined' && KML_DATA.pelotoes){
     Object.entries(KML_DATA.pelotoes).forEach(([pelKey, pelData]) => {
       const group   = L.layerGroup();
@@ -2999,7 +3080,9 @@ function _renderMapaCriminalInterno(dados){
       _acLayers[pelKey] = group;
       const cbId = 'ml-'+pelKey.replace('_','');
       const cb   = document.getElementById(cbId) || document.getElementById('ml-'+pelKey);
-      if(!cb || cb.checked) group.addTo(_acMap);
+      /* Se filtro de grupamento ativo, mostra só o pelotão correspondente */
+      const pelVisivelPorGp = !gpFiltro || pelNum === gpFiltroPelNum;
+      if(pelVisivelPorGp && (!cb || cb.checked)) group.addTo(_acMap);
     });
   }
 
@@ -3014,12 +3097,13 @@ function _renderMapaCriminalInterno(dados){
     if(mesF==='_MULTI_'){ if(!_mesMF.includes(op.mes)) return; } else if(mesF && op.mes!==mesF) return;
     const opPel = op.grupamento ? pelDoColk(op.grupamento) : 0;
     if(pelF && opPel !== parseInt(pelF)) return;
+    const gpLongoOp = op.grupamento ? gpDoColk(op.grupamento) : '—';
+    if(gpFiltro && gpLongoOp !== gpFiltro) return;
     const corOp  = COR_NAT_OPS[op.natureza]  || '#607d8b';
     const letra  = LETRA_NAT_OPS[op.natureza] || '?';
     const label  = LABEL_NAT_OPS[op.natureza] || op.natureza;
     /* gpCurto = col I (ex: "GP GOVERNADOR VALADARES"); grupamento = col K longo */
     const gpCurtoOp = op.gpCurto || '';
-    const gpLongoOp = op.grupamento ? gpDoColk(op.grupamento) : '—';
     const gpLabel = gpCurtoOp || gpLongoOp;
     /* Ícone por natureza: viatura / policial / escudo */
     const svgOp = {
@@ -3233,6 +3317,8 @@ function _renderMapaCriminalInterno(dados){
     /* Determina pelotão via município */
     const _vGrupInfo = dadosGrupos.find(g => g.munNorm === norm(v.municipio||''));
     const _vPelN = _vGrupInfo ? pelDoColk(_vGrupInfo.grupamento) : 0;
+    /* Filtra por grupamento se selecionado */
+    if(gpFiltro && _vGrupInfo && gpDoColk(_vGrupInfo.grupamento) !== gpFiltro) return;
     const alerta=v.alertaUrbano, isFurto=v.natCode==='A20028';
     const cor=alerta?'#ff9800':isFurto?'#4caf50':'#ab47bc';
     const borda=alerta?'#ff9800':'#fff';
