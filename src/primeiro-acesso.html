@@ -147,7 +147,59 @@ function checkReqs(){
   set('req-dif', p1!=='Mudar@123' && p1.length>0);
 }
 
-function salvar(){
+
+/* ══ SERVICE ACCOUNT — grava senha na planilha ══ */
+const _SA_EMAIL = 'analise-criminal@analise-criminal-496115.iam.gserviceaccount.com';
+const _SA_KEY   = '-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQC0V7JH4eyEtvaM\naQlQPHQF+SPZUkkvgNSL8pKY7L2RcMTKvDQWVGCF7fpeuO3cHreiX3oU0vIoX/yu\nGFprFgVLKdJtRMq0jC0DSMTMcpUIbKn0/+/V3vuxj34SfLzj3b/QY5mCLQIijkRa\nRFAPXg3gqYPgh2hwOx+RqC/xK3SAiVL0XRE3+am1rG5ftI7K+FrGG4Jfe96ccNoC\nUh8ibU+EPbO3AhpetxTQdN6sE2NoLhB9gGuuxiuz7CygCFv0NLTp23UdtUqE6am6\n630m92NGdh97t7BSDD7jJMRRTisKqOE9goD6LsYnmFV4cnVe/voYKsHJ0WplzHy2\nCGPUoh5BAgMBAAECggEAD+zBCVQvxane5Ff3mrJV5/ufsOZxYDya+DctvwuDs1q/\nA+yB2Hlvsw/oSJJBrcr4GgJelkVo3QwZ1NlBbbyab9BT/LJjCHWq2WQE/c098Aoh\naWkqyWrY9K1YO4NwjhoUIK+U3AADtN+1dTecTrkWVmD9rFdkr2lnIJ52ilA1J87i\nlVApbMJeLNiuGe+k1augQeZNTV1DkB0zZOTtp5ApBxE7uYMAMClgdDOJeXvv5WSs\netlY4KgZCthj6UxF/zAGBw5V36CSchk5zs5a7x+gZ/iuqquktc61bD1FgCmVezmN\n88HByDMhcIinljriy0mn7Vw2qmdtKeHLDbjlBthcOQKBgQDZYmHsN5J2O5yZr3Xe\nIITfOdX1LZQzGF2GJOPDXOBUDFJABRCAGqObo8M53JMlC5RgTq/AYDTPiIFOfnph\nh4Zpou8asAehi1LZaTBsjGwuMkWWa9xytrhp/M1JiltUm31shBortLIHFX+7pbFX\nuG890YCQvl8cgaWNiH6oslKbuQKBgQDUYNRShL04nBo3seBVYbkedoKqd2Q26MuG\nxsuqul9o1995IBODBhIbo62uskadYJss/RLenA3Tf8MbgBh6xC3SpEA+oK9djk2q\n/PNT/5T6B8WcTj5HkUzugl7bPhKe1oD2S3A3afmTFlEEypPRJGBy1ns2L/+AxAWg\nmOVWqcWqyQKBgEvkbQtq21cruKBvAVdrQvgr2Oaf4v1zpDMQ7fNmmWq+Yni3S+tt\nYXEU2zN4LmbghAybbABdlhJeNcaRoWgrSGHY4GEQ05kyato8Pwumep4mLuU1AuGJ\nqRhXidQC2Z/QKRmZhQl9LCoM92srjZ5yZWPPoHLoA4yQNpwS6yU6HF0BAoGAI5kL\nXb2EHf4EYvt8t7MGnXWN11blxFJm8vNVZguRPHiaq6nVu2uEE3/u985ICc8Mk5Dj\n3c5Yfu/2WyCwebtyVtFTN2wlmM/mctetTZIUfYhZ9iYjSEmxlHTjw2n3IwqfWSkx\n6QfpXl8qO1xdRHwNcpJC2sVW1VWF//JA1rLkQAkCgYBRlyPaCutQGQFX2ZyGNQLT\nM/3gyNmGicaxHjEsT9BpVXwn4eThmaXohwpMH1bMWIgQsA+elZ/Uu/RJKZkaJapT\nMuovMhCd1Vobs5rLMNo7SGXVBJVE9gbhUzlZ2npELYmeoqtrRA3rAHgnLiceIl0n\n/efXnwJUUUrByR/PrljLLg==\n-----END PRIVATE KEY-----\n';
+const _SHEET_ID = '1kVxEMYJr0RoaE5h8qUWDTI9v81VbRHGyWnqqbLcB0Nc';
+const _API_KEY  = 'AIzaSyB_paTPVM8SO4kUvjYg5Z3JwE4bfAMKrdc';
+
+async function _getToken(){
+  const now=Math.floor(Date.now()/1000);
+  const b64u=o=>btoa(JSON.stringify(o)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const si=b64u({alg:'RS256',typ:'JWT'})+'.'+b64u({iss:_SA_EMAIL,scope:'https://www.googleapis.com/auth/spreadsheets',aud:'https://oauth2.googleapis.com/token',exp:now+3600,iat:now});
+  const pem=_SA_KEY.replace('-----BEGIN PRIVATE KEY-----','').replace('-----END PRIVATE KEY-----','').replace(/\n/g,'').trim();
+  const key=await crypto.subtle.importKey('pkcs8',Uint8Array.from(atob(pem),c=>c.charCodeAt(0)).buffer,{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['sign']);
+  const sig=await crypto.subtle.sign('RSASSA-PKCS1-v1_5',key,new TextEncoder().encode(si));
+  const jwt=si+'.'+btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const r=await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:`grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`});
+  const d=await r.json();
+  return d.access_token||null;
+}
+
+async function _gravarSenhaNaPlanilha(npm, novaSenha){
+  try{
+    /* Busca a linha do militar na aba MILITARES */
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${_SHEET_ID}/values/MILITARES!A3:J300?key=${_API_KEY}`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    const rows = data.values || [];
+    const npmClean = npm.replace(/\D/g,'');
+    let rowIndex = -1;
+    for(let i=0;i<rows.length;i++){
+      if((rows[i][0]||'').replace(/\D/g,'') === npmClean){
+        rowIndex = i + 3; /* +3 porque começa na linha 3 */
+        break;
+      }
+    }
+    if(rowIndex === -1){ console.warn('Militar não encontrado na planilha:', npm); return false; }
+    
+    const token = await _getToken();
+    if(!token) return false;
+    
+    /* Atualiza col H (senha) = índice 7, col I (trocar_senha) = índice 8 */
+    const range = `MILITARES!H${rowIndex}:I${rowIndex}`;
+    await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${_SHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,{
+      method:'PUT',
+      headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},
+      body:JSON.stringify({range,majorDimension:'ROWS',values:[[novaSenha,'FALSE']]})
+    });
+    console.log('[SENHA] Gravada na planilha, linha', rowIndex);
+    return true;
+  }catch(e){ console.warn('[SENHA] Erro ao gravar na planilha:', e.message); return false; }
+}
+
+async function salvar(){
   if(!sessao) return;
   const pw1 = document.getElementById('pw1').value;
   const pw2 = document.getElementById('pw2').value;
@@ -160,10 +212,10 @@ function salvar(){
   if(pw1 === 'Mudar@123'){ err.textContent='Defina uma senha diferente da senha padrão.'; err.classList.add('show'); return; }
 
   btn.disabled = true;
-  btn.textContent = 'Salvando...';
+  btn.textContent = '⏳ Salvando...';
 
-  /* Atualiza no banco */
   try {
+    /* 1. Atualiza localStorage */
     const raw = _get('poe_usuarios');
     const lista = raw ? JSON.parse(raw) : [];
     const idx = lista.findIndex(u => u.id === sessao.id);
@@ -172,7 +224,16 @@ function salvar(){
       lista[idx].primeiroAcesso = false;
       _set('poe_usuarios', JSON.stringify(lista));
     }
-    /* Atualiza sessão */
+
+    /* 2. Grava na planilha Google Sheets */
+    btn.textContent = '⏳ Sincronizando...';
+    const gravou = await _gravarSenhaNaPlanilha(sessao.numeroPolicia, pw1);
+    if(!gravou){
+      /* Avisa mas não bloqueia — senha local já foi salva */
+      console.warn('Senha salva localmente mas não sincronizada com a planilha.');
+    }
+
+    /* 3. Atualiza sessão */
     sessao.primeiroAcesso = false;
     _set('poe_sessao', JSON.stringify(sessao));
     window.location.href = 'painel.html';

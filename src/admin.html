@@ -153,6 +153,7 @@
     /* SPINNER */
     .spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite;margin-right:6px;vertical-align:middle;}
     @keyframes spin{to{transform:rotate(360deg);}}
+    @keyframes pulse-sync{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(1.4);}}
     .empty-row td{text-align:center;color:var(--text-hint);padding:24px!important;}
   </style>
 </head>
@@ -180,7 +181,7 @@
 <!-- TABS -->
 <nav class="tabs-bar">
   <div class="tab active" onclick="switchTab(this,'usuarios')">👥 Usuários</div>
-  <div class="tab" onclick="switchTab(this,'importar')">📥 Importar Excel</div>
+  <div class="tab" onclick="switchTab(this,'grupamentos');renderGruposAdmin()">📍 Grupamentos</div>
 </nav>
 
 <div class="content">
@@ -191,6 +192,22 @@
     <!-- STATS -->
     <div class="stats-row" id="stats-row"></div>
 
+    <!-- BARRA DE SINCRONIZAÇÃO -->
+    <div id="sync-bar" style="background:#1a1a1a;border:1px solid var(--border);border-radius:7px;padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div id="sync-dot" style="width:10px;height:10px;border-radius:50%;background:#555;flex-shrink:0;"></div>
+        <div>
+          <span id="sync-status" style="font-size:12px;color:var(--text-muted);">Aguardando sincronização...</span>
+          <span id="sync-proxima" style="font-size:10px;color:var(--text-hint);margin-left:10px;"></span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:10px;color:var(--text-hint);">Planilha MILITARES · sincroniza a cada 1 min</span>
+        <button onclick="sincronizarAgora()" style="background:none;border:1px solid var(--border-hover);color:var(--text-muted);padding:4px 12px;border-radius:4px;font-size:11px;cursor:pointer;transition:all .2s;" onmouseover="this.style.borderColor='var(--gold)';this.style.color='var(--gold)'" onmouseout="this.style.borderColor='var(--border-hover)';this.style.color='var(--text-muted)'">↻ Sincronizar Agora</button>
+        <button onclick="gravarTudoNaPlanilha()" style="background:none;border:1px solid var(--success);color:var(--success);padding:4px 12px;border-radius:4px;font-size:11px;cursor:pointer;transition:all .2s;" title="Grava todos os usuários do sistema local na planilha" onmouseover="this.style.background='rgba(102,187,106,.15)'" onmouseout="this.style.background='none'">📤 Restaurar Planilha</button>
+      </div>
+    </div>
+
     <!-- ADICIONAR USUÁRIO -->
     <div class="sec">
       <div class="sec-head">
@@ -200,13 +217,13 @@
         </div>
       </div>
       <div class="sec-body">
-        <div class="form-row">
-          <div class="fg" style="max-width:120px;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;">
+          <div class="mfg">
             <label>Nº PM *</label>
-            <input type="text" id="new-npm" placeholder="000.000-0" maxlength="9" oninput="fmtNP(this)">
+            <input type="text" id="new-npm" placeholder="Ex: 138.988-1" maxlength="9" oninput="fmtNP(this)" autocomplete="off">
           </div>
-          <div class="fg" style="max-width:120px;">
-            <label>P/G *</label>
+          <div class="mfg">
+            <label>P/G</label>
             <select id="new-pg">
               <option value="">Selecione</option>
               <option>CEL PM</option><option>TC PM</option><option>MAJ PM</option>
@@ -215,90 +232,94 @@
               <option>3 SGT PM</option><option>CB PM</option><option>SD PM</option>
             </select>
           </div>
-          <div class="fg" style="min-width:200px;">
+          <div class="mfg" style="grid-column:span 2;">
             <label>Nome Completo *</label>
             <input type="text" id="new-nome" placeholder="Nome completo do militar">
           </div>
-          <div class="fg" style="max-width:160px;">
+          <div class="mfg">
             <label>Nome de Guerra</label>
             <input type="text" id="new-guerra" placeholder="Nome de guerra">
           </div>
-          <div class="fg" style="max-width:160px;">
+          <div class="mfg">
             <label>Função</label>
-            <select id="new-funcao">      <option value="">Selecione a Função</option>
-      <option value="CMT CIA">CMT CIA</option>
-      <option value="CMT PEL">CMT PEL</option>
-      <option value="AUX P1">AUX P1</option>
-      <option value="AUX P2">AUX P2</option>
-      <option value="AUX P3">AUX P3</option>
-      <option value="AUX P4">AUX P4</option>
-      <option value="AUX P5">AUX P5</option>
-      <option value="SRAI">SRAI</option>
-      <option value="OPERACIONAL">OPERACIONAL</option>
-      </select>
+            <select id="new-funcao">
+              <option value="">Selecione</option>
+              <option value="CMT CIA">CMT CIA</option>
+              <option value="CMT PEL">CMT PEL</option>
+              <option value="CMT GP">CMT GP</option>
+              <option value="AUX P1">AUX P1</option>
+              <option value="AUX P2">AUX P2</option>
+              <option value="AUX P3">AUX P3</option>
+              <option value="AUX P4">AUX P4</option>
+              <option value="AUX P5">AUX P5</option>
+              <option value="SRAI">SRAI</option>
+              <option value="OPERACIONAL">OPERACIONAL</option>
+            </select>
           </div>
-          <div class="fg" style="max-width:160px;">
+          <div class="mfg" style="grid-column:span 2;">
             <label>Lotação</label>
-            <select id="new-lotacao">      <option value="">Selecione a Lotação</option>
-      <optgroup label="─── ADMINISTRAÇÃO ───">
-        <option value="ADM">ADM — Administração</option>
-      </optgroup>
-      <optgroup label="─── 1º PELOTÃO ───">
-        <option value="1 GP / 1 PEL / 3 CIA PM MAMB / GOVERNADOR VALADARES">1 GP / 1 PEL — GOVERNADOR VALADARES</option>
-        <option value="2 GP / 1 PEL / 3 CIA PM MAMB / MANTENA">2 GP / 1 PEL — MANTENA</option>
-        <option value="3 GP / 1 PEL / 3 CIA PM MAMB / AIMORES">3 GP / 1 PEL — AIMORES</option>
-        <option value="4 GP / 1 PEL / 3 CIA PM MAMB / CONSELHEIRO PENA">4 GP / 1 PEL — CONSELHEIRO PENA</option>
-        <option value="5 GP / 1 PEL / 3 CIA PM MAMB / GUANHAES">5 GP / 1 PEL — GUANHAES</option>
-        <option value="6 GP / 1 PEL / 3 CIA PM MAMB / SANTA MARIA DO SUACUI">6 GP / 1 PEL — SANTA MARIA DO SUACUI</option>
-        <option value="7 GP / 1 PEL / 3 CIA PM MAMB / SAO JOAO EVANGELISTA">7 GP / 1 PEL — SAO JOAO EVANGELISTA</option>
-      </optgroup>
-      <optgroup label="─── 2º PELOTÃO ───">
-        <option value="1 GP / 2 PEL / 3 CIA PM MAMB / IPATINGA">1 GP / 2 PEL — IPATINGA</option>
-        <option value="2 GP / 2 PEL / 3 CIA PM MAMB / IPATINGA">2 GP / 2 PEL — IPATINGA (2)</option>
-        <option value="2 GP / 2 PEL / 3 CIA PM MAMB / MARILIERIA">2 GP / 2 PEL — MARILIERIA</option>
-        <option value="3 GP / 2 PEL / 3 CIA PM MAMB / PINGO D AGUA">3 GP / 2 PEL — PINGO D AGUA</option>
-        <option value="4 GP / 2 PEL / 3 CIA PM MAMB / JOAO MOLEVADE">4 GP / 2 PEL — JOAO MOLEVADE</option>
-        <option value="5 GP / 2 PEL / 3 CIA PM MAMB / BARAO DE COCAIS">5 GP / 2 PEL — BARAO DE COCAIS</option>
-        <option value="6 GP / 2 PEL / 3 CIA PM MAMB / ITABIRA">6 GP / 2 PEL — ITABIRA</option>
-      </optgroup>
-      <optgroup label="─── 3º PELOTÃO ───">
-        <option value="1 GP / 3 PEL / 3 CIA PM MAMB / MANHUACU">1 GP / 3 PEL — MANHUACU</option>
-        <option value="2 GP / 3 PEL / 3 CIA PM MAMB / ALTO CAPARAO">2 GP / 3 PEL — ALTO CAPARAO</option>
-        <option value="3 GP / 3 PEL / 3 CIA PM MAMB / MUTUM">3 GP / 3 PEL — MUTUM</option>
-        <option value="4 GP / 3 PEL / 3 CIA PM MAMB / IPANEMA">4 GP / 3 PEL — IPANEMA</option>
-        <option value="5 GP / 3 PEL / 3 CIA PM MAMB / CARATINGA">5 GP / 3 PEL — CARATINGA</option>
-        <option value="6 GP / 3 PEL / 3 CIA PM MAMB / PONTE NOVA">6 GP / 3 PEL — PONTE NOVA</option>
-        <option value="7 GP / 3 PEL / 3 CIA PM MAMB / RAUL SOARES">7 GP / 3 PEL — RAUL SOARES</option>
-      </optgroup>
-      <optgroup label="─── 4º PELOTÃO ───">
-        <option value="1 GP / 4 PEL / 3 CIA PM MAMB / TEOFILO OTONI">1 GP / 4 PEL — TEOFILO OTONI</option>
-        <option value="2 GP / 4 PEL / 3 CIA PM MAMB / AGUAS FORMOSAS">2 GP / 4 PEL — AGUAS FORMOSAS</option>
-        <option value="3 GP / 4 PEL / 3 CIA PM MAMB / ITAMBACURI">3 GP / 4 PEL — ITAMBACURI</option>
-        <option value="4 GP / 4 PEL / 3 CIA PM MAMB / MALACACHETA">4 GP / 4 PEL — MALACACHETA</option>
-        <option value="5 GP / 4 PEL / 3 CIA PM MAMB / NANUQUE">5 GP / 4 PEL — NANUQUE</option>
-        <option value="6 GP / 4 PEL / 3 CIA PM MAMB / NOVO CRUZEIRO">6 GP / 4 PEL — NOVO CRUZEIRO</option>
-      </optgroup>
-      <optgroup label="─── 5º PELOTÃO ───">
-        <option value="1 GP / 5 PEL / 3 CIA PM MAMB / ALMENARA">1 GP / 5 PEL — ALMENARA</option>
-        <option value="2 GP / 5 PEL / 3 CIA PM MAMB / ARACUAI">2 GP / 5 PEL — ARACUAI</option>
-        <option value="3 GP / 5 PEL / 3 CIA PM MAMB / ITAOBIM">3 GP / 5 PEL — ITAOBIM</option>
-        <option value="4 GP / 5 PEL / 3 CIA PM MAMB / JEQUITINHONHA">4 GP / 5 PEL — JEQUITINHONHA</option>
-        <option value="5 GP / 5 PEL / 3 CIA PM MAMB / PEDRA AZUL">5 GP / 5 PEL — PEDRA AZUL</option>
-        <option value="6 GP / 5 PEL / 3 CIA PM MAMB / RIO DO PRADO">6 GP / 5 PEL — RIO DO PRADO</option>
-        <option value="7 GP / 5 PEL / 3 CIA PM MAMB / SALTO DA DIVISA">7 GP / 5 PEL — SALTO DA DIVISA</option>
-      </optgroup>
-      </select>
+            <select id="new-lotacao">
+              <option value="">Selecione a Lotação</option>
+              <optgroup label="─── ADMINISTRAÇÃO ───">
+                <option value="ADM">ADM — Administração</option>
+              </optgroup>
+              <optgroup label="─── 1º PELOTÃO ───">
+                <option value="1 GP / 1 PEL / 3 CIA PM MAMB / GOVERNADOR VALADARES">1 GP / 1 PEL — GOVERNADOR VALADARES</option>
+                <option value="2 GP / 1 PEL / 3 CIA PM MAMB / MANTENA">2 GP / 1 PEL — MANTENA</option>
+                <option value="3 GP / 1 PEL / 3 CIA PM MAMB / AIMORES">3 GP / 1 PEL — AIMORES</option>
+                <option value="4 GP / 1 PEL / 3 CIA PM MAMB / CONSELHEIRO PENA">4 GP / 1 PEL — CONSELHEIRO PENA</option>
+                <option value="5 GP / 1 PEL / 3 CIA PM MAMB / GUANHAES">5 GP / 1 PEL — GUANHAES</option>
+                <option value="6 GP / 1 PEL / 3 CIA PM MAMB / SANTA MARIA DO SUACUI">6 GP / 1 PEL — SANTA MARIA DO SUACUI</option>
+                <option value="7 GP / 1 PEL / 3 CIA PM MAMB / SAO JOAO EVANGELISTA">7 GP / 1 PEL — SAO JOAO EVANGELISTA</option>
+              </optgroup>
+              <optgroup label="─── 2º PELOTÃO ───">
+                <option value="1 GP / 2 PEL / 3 CIA PM MAMB / IPATINGA">1 GP / 2 PEL — IPATINGA</option>
+                <option value="2 GP / 2 PEL / 3 CIA PM MAMB / MARILIERIA">2 GP / 2 PEL — MARILIERIA</option>
+                <option value="3 GP / 2 PEL / 3 CIA PM MAMB / PINGO D AGUA">3 GP / 2 PEL — PINGO D AGUA</option>
+                <option value="4 GP / 2 PEL / 3 CIA PM MAMB / JOAO MOLEVADE">4 GP / 2 PEL — JOAO MOLEVADE</option>
+                <option value="5 GP / 2 PEL / 3 CIA PM MAMB / BARAO DE COCAIS">5 GP / 2 PEL — BARAO DE COCAIS</option>
+                <option value="6 GP / 2 PEL / 3 CIA PM MAMB / ITABIRA">6 GP / 2 PEL — ITABIRA</option>
+              </optgroup>
+              <optgroup label="─── 3º PELOTÃO ───">
+                <option value="1 GP / 3 PEL / 3 CIA PM MAMB / MANHUACU">1 GP / 3 PEL — MANHUACU</option>
+                <option value="2 GP / 3 PEL / 3 CIA PM MAMB / ALTO CAPARAO">2 GP / 3 PEL — ALTO CAPARAO</option>
+                <option value="3 GP / 3 PEL / 3 CIA PM MAMB / MUTUM">3 GP / 3 PEL — MUTUM</option>
+                <option value="4 GP / 3 PEL / 3 CIA PM MAMB / IPANEMA">4 GP / 3 PEL — IPANEMA</option>
+                <option value="5 GP / 3 PEL / 3 CIA PM MAMB / CARATINGA">5 GP / 3 PEL — CARATINGA</option>
+                <option value="6 GP / 3 PEL / 3 CIA PM MAMB / PONTE NOVA">6 GP / 3 PEL — PONTE NOVA</option>
+                <option value="7 GP / 3 PEL / 3 CIA PM MAMB / RAUL SOARES">7 GP / 3 PEL — RAUL SOARES</option>
+              </optgroup>
+              <optgroup label="─── 4º PELOTÃO ───">
+                <option value="1 GP / 4 PEL / 3 CIA PM MAMB / TEOFILO OTONI">1 GP / 4 PEL — TEOFILO OTONI</option>
+                <option value="2 GP / 4 PEL / 3 CIA PM MAMB / AGUAS FORMOSAS">2 GP / 4 PEL — AGUAS FORMOSAS</option>
+                <option value="3 GP / 4 PEL / 3 CIA PM MAMB / ITAMBACURI">3 GP / 4 PEL — ITAMBACURI</option>
+                <option value="4 GP / 4 PEL / 3 CIA PM MAMB / MALACACHETA">4 GP / 4 PEL — MALACACHETA</option>
+                <option value="5 GP / 4 PEL / 3 CIA PM MAMB / NANUQUE">5 GP / 4 PEL — NANUQUE</option>
+                <option value="6 GP / 4 PEL / 3 CIA PM MAMB / NOVO CRUZEIRO">6 GP / 4 PEL — NOVO CRUZEIRO</option>
+              </optgroup>
+              <optgroup label="─── 5º PELOTÃO ───">
+                <option value="1 GP / 5 PEL / 3 CIA PM MAMB / ALMENARA">1 GP / 5 PEL — ALMENARA</option>
+                <option value="2 GP / 5 PEL / 3 CIA PM MAMB / ARACUAI">2 GP / 5 PEL — ARACUAI</option>
+                <option value="3 GP / 5 PEL / 3 CIA PM MAMB / ITAOBIM">3 GP / 5 PEL — ITAOBIM</option>
+                <option value="4 GP / 5 PEL / 3 CIA PM MAMB / JEQUITINHONHA">4 GP / 5 PEL — JEQUITINHONHA</option>
+                <option value="5 GP / 5 PEL / 3 CIA PM MAMB / PEDRA AZUL">5 GP / 5 PEL — PEDRA AZUL</option>
+                <option value="6 GP / 5 PEL / 3 CIA PM MAMB / RIO DO PRADO">6 GP / 5 PEL — RIO DO PRADO</option>
+                <option value="7 GP / 5 PEL / 3 CIA PM MAMB / SALTO DA DIVISA">7 GP / 5 PEL — SALTO DA DIVISA</option>
+              </optgroup>
+            </select>
           </div>
-          <div class="fg" style="max-width:140px;">
+          <div class="mfg">
             <label>Perfil *</label>
             <select id="new-perfil">
               <option value="operacional">Operacional</option>
               <option value="admin">Administrador</option>
             </select>
           </div>
-          <button class="btn-gold" style="align-self:flex-end;" onclick="adicionarUsuario()">+ Adicionar</button>
         </div>
-        <div class="inline-msg" id="msg-add"></div>
+        <div style="margin-top:12px;display:flex;gap:8px;align-items:center;">
+          <button class="btn-gold" onclick="adicionarUsuario()">➕ Adicionar Usuário</button>
+          <div class="inline-msg" id="msg-add"></div>
+        </div>
       </div>
     </div>
 
@@ -307,106 +328,94 @@
       <div class="sec-head">
         <div class="sec-head-left">
           <span class="sec-icon">👥</span>
-          <div><div class="sec-title">Usuários Cadastrados</div><div class="sec-sub" id="total-label">—</div></div>
+          <div>
+            <div class="sec-title">Lista de Usuários</div>
+            <div class="sec-sub" id="total-label">carregando...</div>
+          </div>
         </div>
-        <div class="search-bar">
+        <div style="display:flex;gap:8px;align-items:center;">
           <input class="search-inp" id="busca" placeholder="Buscar por nome, nº PM..." oninput="renderTabela()">
           <select class="filter-sel" id="filtro-perfil" onchange="renderTabela()">
             <option value="">Todos os perfis</option>
-            <option value="admin">Administrador</option>
+            <option value="admin">Admin</option>
             <option value="operacional">Operacional</option>
           </select>
           <select class="filter-sel" id="filtro-status" onchange="renderTabela()">
-            <option value="">Todos</option>
+            <option value="">Todos os status</option>
             <option value="pendente">1º Acesso Pendente</option>
-            <option value="ativo">Ativos</option>
+            <option value="ativo">Ativo</option>
           </select>
         </div>
       </div>
-      <div class="tbl-wrap">
-        <table class="utbl">
-          <thead><tr>
-            <th>Nº PM</th><th>P/G</th><th>Nome Completo</th>
-            <th>Nome de Guerra</th><th>Função</th><th>Lotação</th>
-            <th>Perfil</th><th>Status</th><th>Ações</th>
-          </tr></thead>
-          <tbody id="usr-tbody"></tbody>
-        </table>
+      <div class="sec-body" style="padding:0;">
+        <div class="table-wrap">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>Nº PM</th>
+                <th>P/G</th>
+                <th>Nome Completo</th>
+                <th>Nome de Guerra</th>
+                <th>Função</th>
+                <th>Lotação</th>
+                <th>Perfil</th>
+                <th>Status</th>
+                <th style="text-align:center;">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="tabela-body"></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
   </div><!-- /tab-usuarios -->
 
-  <!-- ===== ABA IMPORTAR ===== -->
-  <div class="tab-pane" id="tab-importar">
-
-    <!-- DOWNLOAD MODELO -->
+  <!-- ===== ABA GRUPAMENTOS ===== -->
+  <div class="tab-pane" id="tab-grupamentos">
     <div class="sec">
       <div class="sec-head">
         <div class="sec-head-left">
-          <span class="sec-icon">📄</span>
-          <div><div class="sec-title">Planilha Modelo</div><div class="sec-sub">Baixe o modelo, preencha e importe</div></div>
+          <span class="sec-icon">📍</span>
+          <div><div class="sec-title">Municípios por Grupamento</div><div class="sec-sub">Conforme aba GRUPOS da planilha</div></div>
         </div>
-        <button class="btn-gold" onclick="downloadModelo()">⬇ Baixar Planilha Modelo (.xlsx)</button>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <select id="fg-grp" onchange="renderGruposAdmin()" style="padding:6px 10px;background:#1e1e1e;border:1px solid var(--border-hover);border-radius:5px;color:#fff;font-size:12px;min-width:220px;">
+            <option value="">Todos os Grupamentos</option>
+          </select>
+          <select id="fg-pel" onchange="renderGruposAdmin()" style="padding:6px 10px;background:#1e1e1e;border:1px solid var(--border-hover);border-radius:5px;color:#fff;font-size:12px;">
+            <option value="">Todos os Pelotões</option>
+            <option>1º Pelotão</option><option>2º Pelotão</option><option>3º Pelotão</option>
+            <option>4º Pelotão</option><option>5º Pelotão</option>
+          </select>
+          <input id="fg-mun" placeholder="Buscar município..." oninput="renderGruposAdmin()"
+            style="padding:6px 10px;background:#1e1e1e;border:1px solid var(--border-hover);border-radius:5px;color:#fff;font-size:12px;width:180px;">
+          <button class="btn-outline" onclick="limparFiltrosGrpAdmin()">✕ Limpar</button>
+        </div>
       </div>
-      <div class="sec-body">
-        <div style="font-size:12px;color:var(--text-muted);line-height:1.8;">
-          A planilha modelo contém os campos: <strong style="color:var(--gold);">Nº PM · P/G · Nome Completo · Nome de Guerra · Função · Lotação · Perfil</strong><br>
-          Preencha a partir da linha 7 (não altere as linhas de cabeçalho). O campo <strong>PERFIL</strong> deve conter <code style="background:#222;padding:1px 5px;border-radius:3px;color:var(--gold);">admin</code> ou <code style="background:#222;padding:1px 5px;border-radius:3px;color:var(--info);">operacional</code>.<br>
-          A senha padrão <strong>Mudar@123</strong> será atribuída automaticamente a todos os importados.
+      <div class="sec-body" style="padding:0;">
+        <div class="table-wrap">
+          <table class="tbl">
+            <thead><tr>
+              <th>#</th>
+              <th>Município</th>
+              <th>GP</th>
+              <th>Grupamento (Col K)</th>
+              <th>GP Responsável</th>
+              <th>Pelotão</th>
+              <th>RPM</th>
+              <th>BPM</th>
+            </tr></thead>
+            <tbody id="grp-tbody"><tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text-muted);">Carregando...</td></tr></tbody>
+          </table>
         </div>
-      </div>
-    </div>
-
-    <!-- UPLOAD -->
-    <div class="sec">
-      <div class="sec-head">
-        <div class="sec-head-left">
-          <span class="sec-icon">📥</span>
-          <div><div class="sec-title">Importar Excel</div><div class="sec-sub">Arraste ou clique para selecionar o arquivo</div></div>
-        </div>
-        <button class="btn-outline" onclick="limparImportacao()">✕ Limpar</button>
-      </div>
-      <div class="sec-body">
-
-        <!-- Zona de drag-and-drop -->
-        <div class="import-box" id="import-box"
-          ondragover="event.preventDefault();this.classList.add('drag-over')"
-          ondragleave="this.classList.remove('drag-over')"
-          ondrop="handleDrop(event)"
-          onclick="document.getElementById('file-input').click()">
-          <div class="import-icon">📊</div>
-          <div class="import-txt">Arraste o arquivo Excel aqui</div>
-          <div class="import-sub" style="margin-bottom:12px;">ou clique no botão abaixo para selecionar</div>
-          <button type="button" class="btn-gold" style="font-size:13px;padding:8px 20px;"
-            onclick="event.stopPropagation();document.getElementById('file-input').click()">
-            📂 Selecionar Arquivo
-          </button>
-        </div>
-
-        <!-- Input file FORA da div para evitar conflitos de z-index -->
-        <input type="file" id="file-input" accept=".xlsx,.xls,.csv"
-          style="display:none;"
-          onchange="handleFile(this.files[0])">
-
-        <div id="import-preview" style="display:none;">
-          <div class="import-summary" id="import-summary"></div>
-          <div class="preview-table-wrap">
-            <table class="pvw">
-              <thead><tr id="pvw-head"></tr></thead>
-              <tbody id="pvw-body"></tbody>
-            </table>
-          </div>
-          <div style="margin-top:12px;display:flex;gap:8px;">
-            <button class="btn-gold" id="btn-confirmar-import" onclick="confirmarImportacao()">✔ Confirmar Importação</button>
-            <button class="btn-outline" onclick="limparImportacao()">✕ Cancelar</button>
-          </div>
-          <div class="inline-msg" id="msg-import" style="margin-top:8px;"></div>
+        <div class="pagination" id="pag-grp-admin" style="display:none;">
+          <span id="pag-grp-info-admin"></span>
+          <div class="pag-btns" id="pag-grp-btns-admin"></div>
         </div>
       </div>
     </div>
-
-  </div><!-- /tab-importar -->
+  </div><!-- /tab-grupamentos -->
 
 </div><!-- /content -->
 
@@ -534,7 +543,7 @@ function _aget(k){ try{const v=localStorage.getItem(k);if(v!==null)return v;}cat
 function _aset(k,v){ try{localStorage.setItem(k,v);}catch(e){} }
 
 function _getUsuariosDB(){ try{return JSON.parse(_aget('poe_usuarios')||'[]');}catch(e){return[];} }
-function _saveUsuariosDB(l){ _aset('poe_usuarios',JSON.stringify(l)); }
+/* _saveUsuariosDB definida abaixo junto ao motor de escrita na planilha */
 
 function lerSessaoAdmin(){
   const raw = _aget('poe_sessao');
@@ -656,7 +665,152 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('user-avatar').textContent = initials;
   renderStats();
   renderTabela();
+
+  /* ── Sincronização automática com planilha MILITARES ── */
+  sincronizarAgora(); /* sincroniza imediatamente ao abrir */
+  setInterval(sincronizarAgora, 60 * 1000); /* repete a cada 1 minuto */
 });
+
+/* ══════════════════════════════════════════
+   SINCRONIZAÇÃO AUTOMÁTICA — PLANILHA → PAINEL
+   Lê da aba MILITARES (somente leitura via API Key)
+   e atualiza o banco local sem sobrescrever senhas
+══════════════════════════════════════════ */
+const SYNC_SHEET_ID = '1kVxEMYJr0RoaE5h8qUWDTI9v81VbRHGyWnqqbLcB0Nc';
+const SYNC_API_KEY  = 'AIzaSyB_paTPVM8SO4kUvjYg5Z3JwE4bfAMKrdc';
+let _syncEmAndamento = false;
+let _syncContador = 60;
+
+function _atualizarBarraSync(estado, msg, proxima){
+  const dot    = document.getElementById('sync-dot');
+  const status = document.getElementById('sync-status');
+  const prox   = document.getElementById('sync-proxima');
+  if(!dot) return;
+  const cores = { ok:'#4caf50', erro:'#ef5350', andamento:'#ff9800', idle:'#555' };
+  dot.style.background = cores[estado] || '#555';
+  if(estado === 'andamento') dot.style.animation = 'pulse-sync 1s infinite';
+  else dot.style.animation = '';
+  if(status) status.textContent = msg || '';
+  if(prox)   prox.textContent   = proxima || '';
+}
+
+/* Contador regressivo visível */
+setInterval(() => {
+  if(_syncContador > 0) _syncContador--;
+  const prox = document.getElementById('sync-proxima');
+  if(prox && !_syncEmAndamento){
+    prox.textContent = `próxima em ${_syncContador}s`;
+  }
+}, 1000);
+
+async function sincronizarAgora(){
+  if(_syncEmAndamento) return;
+  _syncEmAndamento = true;
+  _syncContador = 60;
+  _atualizarBarraSync('andamento','⏳ Sincronizando com a planilha...','');
+
+  try {
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SYNC_SHEET_ID}/values/MILITARES!A3:J300?key=${SYNC_API_KEY}`;
+    const resp = await fetch(url);
+    if(!resp.ok){
+      const err = await resp.json().catch(()=>({}));
+      throw new Error(err?.error?.message || `HTTP ${resp.status}`);
+    }
+    const data  = await resp.json();
+    const rows  = data.values || [];
+
+    if(!rows.length){
+      _atualizarBarraSync('idle','⚠ Planilha sem dados (a partir da linha 3)','');
+      return;
+    }
+
+    const lista = _getUsuariosDB();
+    let novos = 0, atualizados = 0;
+
+    rows.forEach(row => {
+      const get = (i) => (row[i]||'').toString().trim();
+      const npmRaw   = get(0);
+      const npmClean = npmRaw.replace(/\D/g,'');
+      const nome     = get(2);
+      if(!npmClean || npmClean.length < 5 || !nome) return;
+
+      const perfilRaw   = get(6).toLowerCase();
+      const perfil      = perfilRaw.includes('admin') ? 'admin' : 'operacional';
+      const senhaPlan   = get(7) || 'Mudar@123';
+      const trocarSenha = get(8).toUpperCase() !== 'FALSE';
+      const ativoRaw    = get(9).toUpperCase();
+      const ativo       = ativoRaw === '' || ativoRaw === 'TRUE';
+
+      const existIdx = lista.findIndex(u => u.numeroClean === npmClean);
+
+      if(existIdx === -1){
+        /* Novo usuário — cria direto no array sem chamar auth_criarUsuarioCompleto
+           para evitar duplicatas ao salvar */
+        const novoId = 'u' + Date.now() + Math.random().toString(36).slice(2,6);
+        lista.push({
+          id: novoId,
+          numeroPolicia: npmRaw,
+          numeroClean:   npmClean,
+          pg:            get(1),
+          nome,
+          guerra:        get(3),
+          funcao:        get(4),
+          lotacao:       get(5),
+          perfil,
+          senha:         senhaPlan,
+          primeiroAcesso: trocarSenha,
+          ativo,
+        });
+        novos++;
+      } else {
+        /* Atualiza dados — preserva senha a menos que a planilha traga senha nova */
+        const u = lista[existIdx];
+        if(get(1))  u.pg      = get(1);
+        if(nome)    u.nome    = nome;
+        if(get(3))  u.guerra  = get(3);
+        if(get(4))  u.funcao  = get(4);
+        if(get(5))  u.lotacao = get(5);
+        /* Perfil — só rebaixa se houver outro admin */
+        if(perfil === 'operacional'){
+          const temOutroAdmin = lista.filter(x=>x.perfil==='admin'&&x.id!==u.id).length > 0;
+          if(temOutroAdmin) u.perfil = perfil;
+        } else {
+          u.perfil = perfil;
+        }
+        /* Ativo — aplica sempre */
+        u.ativo = ativo;
+        /* Trocar senha — só ativa, nunca desativa */
+        if(trocarSenha) u.primeiroAcesso = true;
+        /* Senha — atualiza se a planilha trouxer senha diferente da atual */
+        if(senhaPlan && senhaPlan !== u.senha){
+          u.senha = senhaPlan;
+          u.primeiroAcesso = true;
+        }
+        atualizados++;
+      }
+    });
+
+    /* Salva APENAS localmente — não dispara gravação na planilha
+       (a planilha já é a fonte, não faz sentido gravar de volta) */
+    _saveLocalOriginal(lista);
+    renderStats();
+    renderTabela();
+
+    const agora = new Date().toLocaleTimeString('pt-BR');
+    const msg = `✔ Sincronizado às ${agora}`;
+    const detalhe = novos || atualizados
+      ? `${novos} novo${novos!==1?'s':''} · ${atualizados} atualizado${atualizados!==1?'s':''}`
+      : 'Sem alterações';
+    _atualizarBarraSync('ok', msg, detalhe);
+
+  } catch(e){
+    const agora = new Date().toLocaleTimeString('pt-BR');
+    _atualizarBarraSync('erro',`✗ Erro às ${agora}: ${e.message}`, 'tentará novamente em 1 min');
+    console.warn('Sync erro:', e);
+  } finally {
+    _syncEmAndamento = false;
+  }
+}
 
 /* ══ STATS ══ */
 function renderStats() {
@@ -691,7 +845,7 @@ function renderTabela() {
   if (filStatus === 'ativo') lista = lista.filter(u => !u.primeiroAcesso);
 
   const isSelf = (id) => sessao && sessao.id === id;
-  const tbody = document.getElementById('usr-tbody');
+  const tbody = document.getElementById('tabela-body');
 
   if (!lista.length) {
     tbody.innerHTML = '<tr class="empty-row"><td colspan="9">Nenhum usuário encontrado.</td></tr>';
@@ -824,272 +978,285 @@ document.getElementById('modal-overlay').addEventListener('click', e => {
   if (e.target === document.getElementById('modal-overlay')) fecharModal();
 });
 
-/* ══ IMPORTAÇÃO EXCEL ══ */
-function handleDrop(e) {
-  e.preventDefault();
-  document.getElementById('import-box').classList.remove('drag-over');
-  const file = e.dataTransfer.files[0];
-  if (file) handleFile(file);
-}
+/* ══════════════════════════════════════════════════════════
+   CREDENCIAIS DA SERVICE ACCOUNT — PREENCHA NO SEU COMPUTADOR
+   Não compartilhe estes valores publicamente.
+══════════════════════════════════════════════════════════ */
+const SA_CLIENT_EMAIL = 'analise-criminal@analise-criminal-496115.iam.gserviceaccount.com';
+const SA_PRIVATE_KEY  = '-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQC0V7JH4eyEtvaM\naQlQPHQF+SPZUkkvgNSL8pKY7L2RcMTKvDQWVGCF7fpeuO3cHreiX3oU0vIoX/yu\nGFprFgVLKdJtRMq0jC0DSMTMcpUIbKn0/+/V3vuxj34SfLzj3b/QY5mCLQIijkRa\nRFAPXg3gqYPgh2hwOx+RqC/xK3SAiVL0XRE3+am1rG5ftI7K+FrGG4Jfe96ccNoC\nUh8ibU+EPbO3AhpetxTQdN6sE2NoLhB9gGuuxiuz7CygCFv0NLTp23UdtUqE6am6\n630m92NGdh97t7BSDD7jJMRRTisKqOE9goD6LsYnmFV4cnVe/voYKsHJ0WplzHy2\nCGPUoh5BAgMBAAECggEAD+zBCVQvxane5Ff3mrJV5/ufsOZxYDya+DctvwuDs1q/\nA+yB2Hlvsw/oSJJBrcr4GgJelkVo3QwZ1NlBbbyab9BT/LJjCHWq2WQE/c098Aoh\naWkqyWrY9K1YO4NwjhoUIK+U3AADtN+1dTecTrkWVmD9rFdkr2lnIJ52ilA1J87i\nlVApbMJeLNiuGe+k1augQeZNTV1DkB0zZOTtp5ApBxE7uYMAMClgdDOJeXvv5WSs\netlY4KgZCthj6UxF/zAGBw5V36CSchk5zs5a7x+gZ/iuqquktc61bD1FgCmVezmN\n88HByDMhcIinljriy0mn7Vw2qmdtKeHLDbjlBthcOQKBgQDZYmHsN5J2O5yZr3Xe\nIITfOdX1LZQzGF2GJOPDXOBUDFJABRCAGqObo8M53JMlC5RgTq/AYDTPiIFOfnph\nh4Zpou8asAehi1LZaTBsjGwuMkWWa9xytrhp/M1JiltUm31shBortLIHFX+7pbFX\nuG890YCQvl8cgaWNiH6oslKbuQKBgQDUYNRShL04nBo3seBVYbkedoKqd2Q26MuG\nxsuqul9o1995IBODBhIbo62uskadYJss/RLenA3Tf8MbgBh6xC3SpEA+oK9djk2q\n/PNT/5T6B8WcTj5HkUzugl7bPhKe1oD2S3A3afmTFlEEypPRJGBy1ns2L/+AxAWg\nmOVWqcWqyQKBgEvkbQtq21cruKBvAVdrQvgr2Oaf4v1zpDMQ7fNmmWq+Yni3S+tt\nYXEU2zN4LmbghAybbABdlhJeNcaRoWgrSGHY4GEQ05kyato8Pwumep4mLuU1AuGJ\nqRhXidQC2Z/QKRmZhQl9LCoM92srjZ5yZWPPoHLoA4yQNpwS6yU6HF0BAoGAI5kL\nXb2EHf4EYvt8t7MGnXWN11blxFJm8vNVZguRPHiaq6nVu2uEE3/u985ICc8Mk5Dj\n3c5Yfu/2WyCwebtyVtFTN2wlmM/mctetTZIUfYhZ9iYjSEmxlHTjw2n3IwqfWSkx\n6QfpXl8qO1xdRHwNcpJC2sVW1VWF//JA1rLkQAkCgYBRlyPaCutQGQFX2ZyGNQLT\nM/3gyNmGicaxHjEsT9BpVXwn4eThmaXohwpMH1bMWIgQsA+elZ/Uu/RJKZkaJapT\nMuovMhCd1Vobs5rLMNo7SGXVBJVE9gbhUzlZ2npELYmeoqtrRA3rAHgnLiceIl0n\n/efXnwJUUUrByR/PrljLLg==\n-----END PRIVATE KEY-----\n';
+const SA_SHEET_ID     = '1kVxEMYJr0RoaE5h8qUWDTI9v81VbRHGyWnqqbLcB0Nc';
+const SA_RANGE_WRITE  = 'MILITARES!A3:J';
 
-function handleFile(file) {
-  if (!file) return;
-
-  /* Verificar se SheetJS está carregado */
-  if (typeof XLSX === 'undefined') {
-    showMsg('msg-import', 'err', '⚠ Biblioteca XLSX não carregada. Verifique sua conexão e recarregue a página.');
-    return;
-  }
-
-  showMsg('msg-import', 'warn', '⏳ Lendo arquivo...');
-  document.getElementById('msg-import').classList.add('show');
-
-  const ext = file.name.split('.').pop().toLowerCase();
-
-  if (ext === 'csv') {
-    /* CSV: lê como texto */
-    const reader = new FileReader();
-    reader.onload = e => processarCSV(e.target.result);
-    reader.onerror = () => showMsg('msg-import', 'err', 'Erro ao ler o arquivo.');
-    reader.readAsText(file, 'UTF-8');
-  } else {
-    /* XLSX/XLS: lê como ArrayBuffer */
-    const reader = new FileReader();
-    reader.onload = e => {
-      try {
-        processarExcel(e.target.result, file.name);
-      } catch(err) {
-        showMsg('msg-import', 'err', 'Erro ao processar Excel: ' + err.message);
-      }
-    };
-    reader.onerror = () => showMsg('msg-import', 'err', 'Erro ao ler o arquivo.');
-    reader.readAsArrayBuffer(file);
-  }
-}
-
-function processarCSV(texto) {
-  const linhas = texto.split(/\r?\n/).filter(l => l.trim());
-  const rows = linhas.map(l => l.split(/[;,\t]/).map(c => c.replace(/^"|"$/g,'').trim()));
-  processarRows(rows);
-}
-
-function processarExcel(buffer, filename) {
-  const wb = XLSX.read(new Uint8Array(buffer), { type: 'array' });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
-  processarRows(rows);
-}
-
-function processarRows(rows) {
-  if (!rows || rows.length < 2) {
-    showMsg('msg-import', 'err', 'Arquivo vazio ou sem dados suficientes.');
-    return;
-  }
-
-  /* ── Encontra linha do cabeçalho ──
-     Procura nas primeiras 10 linhas por uma linha que tenha
-     ao menos 3 colunas não-vazias E contenha algo parecido com NPM/NOME/PG */
-  let headerRow = 6; /* padrão do modelo: linha 7 (índice 6) */
-  for (let i = 0; i < Math.min(rows.length, 10); i++) {
-    const r = rows[i].map(c =>
-      String(c ?? '').toUpperCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-        .replace(/[^A-Z0-9]/g,'')
-    );
-    const naoVazias = r.filter(c => c.length > 0).length;
-    const temNPM  = r.some(c => c === 'NPM' || c === 'NPM' || c === 'N' || c.startsWith('NPM') || c === 'NUMERO' || (c.startsWith('N') && c.length <= 4));
-    const temNome = r.some(c => c.includes('NOME'));
-    if (naoVazias >= 3 && (temNPM || temNome)) {
-      headerRow = i;
-      break;
-    }
-  }
-
-  const headers = rows[headerRow].map(c =>
-    String(c ?? '').trim().toUpperCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-  );
-
-  /* ── Mapeamento por posição do modelo (mais confiável que por nome) ── */
-  /* Modelo padrão: col 0=NPM, 1=PG, 2=NOME, 3=GUERRA, 4=FUNCAO, 5=LOTACAO, 6=PERFIL */
-  const idx = { npm:0, pg:1, nome:2, guerra:3, funcao:4, lotacao:5, perfil:6 };
-
-  /* Tenta refinar pelo nome das colunas */
-  const MAPS = {
-    npm:    ['N PM','NPM','NUMERO PM','NUMERO','NR PM','N.PM','NUM PM','N PM'],
-    pg:     ['P/G','PG','POSTO','GRAD','POSTO GRAD','POSTO/GRAD','P G'],
-    nome:   ['NOME COMPLETO','NOME','NOME DO MILITAR','NOME MILITAR'],
-    guerra: ['NOME DE GUERRA','GUERRA','NOME GUERRA','NOME.GUERRA'],
-    funcao: ['FUNCAO','FUNC','FUNCOES','CARGO','FUNCAO'],
-    lotacao:['LOTACAO','LOTAC','UNIDADE','LOCAL','LOTACAO'],
-    perfil: ['PERFIL','ACESSO','TIPO','NIVEL'],
+/* ── JWT mínimo para Google Sheets API (RS256) ── */
+async function _gerarJWT(){
+  const now   = Math.floor(Date.now()/1000);
+  const header  = { alg:'RS256', typ:'JWT' };
+  const payload = {
+    iss: SA_CLIENT_EMAIL,
+    scope: 'https://www.googleapis.com/auth/spreadsheets',
+    aud: 'https://oauth2.googleapis.com/token',
+    exp: now + 3600,
+    iat: now,
   };
-  headers.forEach((h, i) => {
-    const hu = h.replace(/[^A-Z0-9/]/g,'');
-    if (!hu) return;
-    for (const [k, aliases] of Object.entries(MAPS)) {
-      if (aliases.some(a => {
-        const ac = a.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9/]/g,'');
-        return hu === ac || hu.startsWith(ac) || ac.startsWith(hu);
-      })) {
-        idx[k] = i;
-        break;
-      }
-    }
-  });
+  const b64u = (obj) => btoa(JSON.stringify(obj))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const sigInput = b64u(header) + '.' + b64u(payload);
 
-  /* ── Dados ── */
-  const dataRows = rows.slice(headerRow + 1).filter(r =>
-    r && r.some(c => String(c ?? '').trim() !== '' && String(c ?? '').trim() !== 'null')
+  /* Importa chave privada PEM */
+  const pemBody  = SA_PRIVATE_KEY
+    .replace('-----BEGIN PRIVATE KEY-----','')
+    .replace('-----END PRIVATE KEY-----','')
+    .replace(/\n/g,'').trim();
+  const keyData  = Uint8Array.from(atob(pemBody), c=>c.charCodeAt(0));
+  const cryptoKey = await crypto.subtle.importKey(
+    'pkcs8', keyData.buffer,
+    { name:'RSASSA-PKCS1-v1_5', hash:'SHA-256' },
+    false, ['sign']
   );
+  const enc = new TextEncoder();
+  const sig  = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', cryptoKey, enc.encode(sigInput));
+  const b64sig = btoa(String.fromCharCode(...new Uint8Array(sig)))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  return sigInput + '.' + b64sig;
+}
 
-  if (!dataRows.length) {
-    showMsg('msg-import', 'err', 'Nenhuma linha de dados encontrada. Verifique se preencheu a partir da linha 8 do modelo.');
-    return;
-  }
-
-  const existentes = auth_listarUsuarios().map(u => u.numeroClean);
-  dadosImport = [];
-
-  dataRows.forEach((row, ri) => {
-    const get = (k) => {
-      const pos = idx[k];
-      if (pos === undefined || pos >= row.length) return '';
-      const v = row[pos];
-      if (v === null || v === undefined) return '';
-      return String(v).trim();
-    };
-
-    /* NPM — aceita número ou string, remove não-dígitos */
-    const npmRaw = get('npm');
-    const npm = npmRaw.replace(/\D/g,'');
-    const nome = get('nome');
-
-    /* Pula linha se tudo vazio */
-    if (!npmRaw && !nome) return;
-
-    let status = 'ok', erro = '';
-    if (!npm || npm.length < 5)    { status = 'err'; erro = 'Nº PM inválido (mínimo 5 dígitos)'; }
-    else if (!nome)                  { status = 'err'; erro = 'Nome obrigatório'; }
-    else if (existentes.includes(npm)) { status = 'dup'; erro = 'Já cadastrado'; }
-
-    const perfilRaw = get('perfil').toLowerCase();
-    const perfil = perfilRaw.includes('admin') ? 'admin' : 'operacional';
-
-    dadosImport.push({
-      npm, pg: get('pg'), nome,
-      guerra: get('guerra'),
-      funcao: get('funcao'),
-      lotacao: get('lotacao'),
-      perfil, status, erro
+async function _getAccessToken(){
+  try {
+    const jwt = await _gerarJWT();
+    const resp = await fetch('https://oauth2.googleapis.com/token', {
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,
     });
-  });
+    const data = await resp.json();
+    if(!data.access_token) throw new Error(data.error_description || 'Token inválido');
+    return data.access_token;
+  } catch(e){
+    console.error('Erro ao obter token:', e);
+    return null;
+  }
+}
 
-  if (!dadosImport.length) {
-    showMsg('msg-import', 'err', 'Nenhum dado válido encontrado. Verifique o formato do arquivo.');
+/* ── Converte lista de usuários para linhas da planilha ── */
+function _usuariosParaLinhas(lista){
+  return lista.map(u => [
+    u.numeroPolicia || '',          /* A — Nº PM        */
+    u.pg            || '',          /* B — P/G          */
+    u.nome          || '',          /* C — Nome Completo*/
+    u.guerra        || '',          /* D — Nome Guerra  */
+    u.funcao        || '',          /* E — Função       */
+    u.lotacao       || '',          /* F — Lotação      */
+    u.perfil        || 'operacional',/* G — Perfil      */
+    u.senha         || 'Mudar@123', /* H — Senha        */
+    u.primeiroAcesso ? 'TRUE':'FALSE', /* I — Trocar Senha */
+    u.ativo !== false ? 'TRUE':'FALSE', /* J — Ativo    */
+  ]);
+}
+
+/* ── Grava lista completa na planilha (sobrescreve a partir de A3) ── */
+let _gravaTimeout = null;
+async function _gravarNaPlanilha(listaParam){
+  /* Credenciais não preenchidas — silencioso */
+  if(SA_CLIENT_EMAIL.startsWith('COLE_') || SA_PRIVATE_KEY.startsWith('COLE_')) return;
+
+  /* Debounce: agrupa múltiplas gravações em 2s para evitar flood */
+  clearTimeout(_gravaTimeout);
+  _gravaTimeout = setTimeout(async () => {
+    /* Sempre lê o banco completo atualizado — não usa o parâmetro que pode estar desatualizado */
+    const lista = _getUsuariosDB();
+
+    /* Segurança: nunca grava se a lista estiver vazia */
+    if(!lista || lista.length === 0){
+      console.warn('_gravarNaPlanilha: lista vazia, abortando gravação para proteger a planilha.');
+      return;
+    }
+
+    _setBtnSync('gravando');
+    try {
+      const token = await _getAccessToken();
+      if(!token){ _setBtnSync('erro','Erro de autenticação'); return; }
+
+      const linhas = _usuariosParaLinhas(lista);
+
+      /* Só limpa APÓS confirmar que temos dados para gravar */
+      const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SA_SHEET_ID}/values/${encodeURIComponent(SA_RANGE_WRITE)}:clear`;
+      await fetch(clearUrl, { method:'POST', headers:{ Authorization:`Bearer ${token}` } });
+
+      const writeUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SA_SHEET_ID}/values/${encodeURIComponent('MILITARES!A3')}?valueInputOption=USER_ENTERED`;
+      const resp = await fetch(writeUrl, {
+        method:'PUT',
+        headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+        body: JSON.stringify({ range:'MILITARES!A3', majorDimension:'ROWS', values: linhas }),
+      });
+      if(!resp.ok){ const e=await resp.json(); throw new Error(e.error?.message||'Erro na escrita'); }
+      console.log(`✔ Planilha atualizada — ${lista.length} usuários gravados`);
+      _setBtnSync('ok');
+    } catch(e){
+      _setBtnSync('erro', e.message);
+      console.error('Erro ao gravar na planilha:', e);
+    }
+  }, 2000);
+}
+
+function _setBtnSync(estado, msg){
+  const dot    = document.getElementById('sync-dot');
+  const status = document.getElementById('sync-status');
+  if(!dot) return;
+  const conf = {
+    ok:       { cor:'#4caf50', txt:'✔ Planilha atualizada às '+new Date().toLocaleTimeString('pt-BR') },
+    gravando: { cor:'#ff9800', txt:'📤 Gravando na planilha...' },
+    erro:     { cor:'#ef5350', txt:'✗ Erro ao gravar: '+(msg||'') },
+    andamento:{ cor:'#ff9800', txt:'⏳ Sincronizando...' },
+  };
+  const c = conf[estado] || conf.ok;
+  dot.style.background = c.cor;
+  if(status) status.textContent = c.txt;
+}
+
+/* ── Força gravação imediata de todos os usuários locais na planilha ── */
+async function gravarTudoNaPlanilha(){
+  const lista = _getUsuariosDB();
+  if(!lista || lista.length === 0){
+    alert('Nenhum usuário no banco local para restaurar.');
     return;
   }
+  if(!confirm(`Gravar ${lista.length} usuários do sistema local na planilha?\n\nIsso sobrescreverá o conteúdo atual da aba MILITARES.`)) return;
 
-  mostrarPreview();
+  _setBtnSync('gravando');
+  clearTimeout(_gravaTimeout);
+  try {
+    const token = await _getAccessToken();
+    if(!token){ _setBtnSync('erro','Erro de autenticação'); return; }
+    const linhas = _usuariosParaLinhas(lista);
+    const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SA_SHEET_ID}/values/${encodeURIComponent(SA_RANGE_WRITE)}:clear`;
+    await fetch(clearUrl, { method:'POST', headers:{ Authorization:`Bearer ${token}` } });
+    const writeUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SA_SHEET_ID}/values/${encodeURIComponent('MILITARES!A3')}?valueInputOption=USER_ENTERED`;
+    const resp = await fetch(writeUrl, {
+      method:'PUT',
+      headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+      body: JSON.stringify({ range:'MILITARES!A3', majorDimension:'ROWS', values: linhas }),
+    });
+    if(!resp.ok){ const e=await resp.json(); throw new Error(e.error?.message||'Erro na escrita'); }
+    _setBtnSync('ok');
+    alert(`✔ ${lista.length} usuários restaurados na planilha com sucesso!`);
+  } catch(e){
+    _setBtnSync('erro', e.message);
+    alert('✗ Erro: ' + e.message);
+  }
+}
+/* Usa variavel para guardar referencia antes do override */
+const _saveLocalOriginal = (lista) => { _aset('poe_usuarios', JSON.stringify(lista)); };
+
+function _saveUsuariosDB(lista){
+  _saveLocalOriginal(lista);         /* salva localmente como antes */
+  _gravarNaPlanilha(lista);          /* dispara escrita na planilha */
 }
 
-function mostrarPreview() {
-  const ok   = dadosImport.filter(d => d.status === 'ok').length;
-  const dup  = dadosImport.filter(d => d.status === 'dup').length;
-  const err  = dadosImport.filter(d => d.status === 'err').length;
+/* ══ FIM DO MOTOR BIDIRECIONAL ══ */
+/* ══════════════════════════════════
+   GRUPAMENTOS — ABA ADMIN
+══════════════════════════════════ */
+const ADMIN_GRUPOS_SID    = '17qgczIngwb6RYbFx0JqCOuctpTNMe2I3FQ9r6h24DSo';
+const ADMIN_GRUPOS_APIKEY = 'AIzaSyCBbKDtyNO2RmtpYNWipjC0OAQ07GFnbKU';
+let _adminGrupos = [];
+let _grpAdminPage = 1;
+const GRP_PAGE_SZ = 30;
 
-  document.getElementById('import-summary').innerHTML = `
-    <span class="is-item is-ok">✔ ${ok} novo${ok!==1?'s':''} para importar</span>
-    ${dup ? `<span class="is-item is-dup">🔄 ${dup} será${dup!==1?'ão':''} atualizado${dup!==1?'s':''}</span>` : ''}
-    ${err ? `<span class="is-item is-err">✗ ${err} com erro (serão ignorados)</span>` : ''}`;
-
-  const head = document.getElementById('pvw-head');
-  head.innerHTML = '<th>Status</th><th>Nº PM</th><th>P/G</th><th>Nome Completo</th><th>Nome de Guerra</th><th>Função</th><th>Lotação</th><th>Perfil</th>';
-
-  const tbody = document.getElementById('pvw-body');
-  tbody.innerHTML = dadosImport.map(d => {
-    const cls = d.status === 'ok' ? 'pvw-ok' : d.status === 'dup' ? 'pvw-dup' : 'pvw-err';
-    const statusTxt = d.status === 'ok' ? '✔ Novo' : d.status === 'dup' ? '🔄 Atualizar' : '✗ ' + d.erro;
-    return `<tr class="${cls}">
-      <td>${statusTxt}</td>
-      <td style="font-family:monospace;">${formatNP(d.npm)||d.npm}</td>
-      <td>${d.pg}</td><td>${d.nome}</td><td>${d.guerra}</td>
-      <td>${d.funcao}</td><td>${d.lotacao}</td>
-      <td><span class="badge ${d.perfil==='admin'?'badge-admin':'badge-op'}">${d.perfil==='admin'?'Admin':'Operacional'}</span></td>
-    </tr>`;
-  }).join('');
-
-  document.getElementById('import-preview').style.display = ok + dup > 0 ? 'block' : 'none';
-  if (ok + dup === 0) showMsg('msg-import','warn','Nenhum registro válido para processar.');
-  document.getElementById('btn-confirmar-import').disabled = ok + dup === 0;
+async function renderGruposAdmin(){
+  if(!_adminGrupos.length) await _carregarGruposAdmin();
+  _filtrarRenderGrp();
 }
 
-function confirmarImportacao() {
-  let importados = 0, atualizados = 0;
+async function _carregarGruposAdmin(){
+  try{
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${ADMIN_GRUPOS_SID}/values/GRUPOS!A2:O?key=${ADMIN_GRUPOS_APIKEY}`;
+    const r = await fetch(url);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const data = await r.json();
+    const rows = (data.values||[]).slice(1);
+    _adminGrupos = [];
+    const seen = new Set();
+    rows.forEach(row => {
+      if(!row[0]) return;
+      const colK = (row[10]||'').trim();
+      const key  = (row[0]||'').trim()+'|'+colK;
+      if(seen.has(key)) return;
+      seen.add(key);
+      _adminGrupos.push({
+        municipio:  (row[0]||'').trim(),
+        gp:         (row[1]||'').trim(),
+        pelotao:    (row[2]||'').trim(),
+        rpm:        (row[6]||'').trim(),
+        bpm:        (row[7]||'').trim(),
+        gpResp:     (row[8]||'').trim(),
+        grupamento: colK,
+        pelNum:     parseInt((colK.match(/(\d+)\s*PEL/i)||[])[1]||99),
+      });
+    });
+    const grps = [...new Set(_adminGrupos.map(r=>r.grupamento).filter(Boolean))].sort((a,b)=>{
+      const pa=parseInt((a.match(/(\d+)\s*PEL/i)||[])[1]||99);
+      const pb=parseInt((b.match(/(\d+)\s*PEL/i)||[])[1]||99);
+      return pa!==pb ? pa-pb : a.localeCompare(b);
+    });
+    const sel = document.getElementById('fg-grp');
+    if(sel) sel.innerHTML = '<option value="">Todos os Grupamentos</option>' +
+      grps.map(g=>`<option value="${g}">${g}</option>`).join('');
+  }catch(e){
+    const tb = document.getElementById('grp-tbody');
+    if(tb) tb.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--danger);">✗ Erro ao carregar: ${e.message}</td></tr>`;
+  }
+}
 
-  /* Novos usuários */
-  dadosImport.filter(d => d.status === 'ok').forEach(d => {
-    const r = auth_criarUsuarioCompleto(d.npm, d.pg, d.nome, d.guerra, d.funcao, d.lotacao, d.perfil);
-    if (r.ok) importados++;
+function _filtrarRenderGrp(){
+  const gpF  = (document.getElementById('fg-grp')?.value)||'';
+  const pelF = (document.getElementById('fg-pel')?.value)||'';
+  const munF = ((document.getElementById('fg-mun')?.value)||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+
+  let data = _adminGrupos.filter(r => {
+    if(gpF  && r.grupamento !== gpF) return false;
+    if(pelF){ const n=pelF.replace(/\D/g,''); if(!r.grupamento.includes(n+' PEL')&&r.pelotao!==pelF) return false; }
+    if(munF && !r.municipio.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').includes(munF)) return false;
+    return true;
   });
 
-  /* Atualizar existentes */
-  dadosImport.filter(d => d.status === 'dup').forEach(d => {
-    const lista = _getUsuariosDB();
-    const idx = lista.findIndex(u => u.numeroClean === d.npm);
-    if (idx !== -1) {
-      if (d.pg)      lista[idx].pg      = d.pg;
-      if (d.nome)    lista[idx].nome    = d.nome;
-      if (d.guerra)  lista[idx].guerra  = d.guerra;
-      if (d.funcao)  lista[idx].funcao  = d.funcao;
-      if (d.lotacao) lista[idx].lotacao = d.lotacao;
-      if (d.perfil) {
-        if (d.perfil === 'operacional') {
-          const admins = lista.filter(u => u.perfil === 'admin' && u.id !== lista[idx].id);
-          if (admins.length > 0) lista[idx].perfil = d.perfil;
-        } else {
-          lista[idx].perfil = d.perfil;
-        }
-      }
-      _saveUsuariosDB(lista);
-      atualizados++;
-    }
-  });
+  const total=data.length, totPg=Math.ceil(total/GRP_PAGE_SZ)||1;
+  if(_grpAdminPage>totPg) _grpAdminPage=1;
+  const start=(_grpAdminPage-1)*GRP_PAGE_SZ;
+  const slice=data.slice(start,start+GRP_PAGE_SZ);
+  const tbody = document.getElementById('grp-tbody');
+  if(!tbody) return;
+  if(!slice.length){
+    tbody.innerHTML='<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text-muted);">Nenhum registro encontrado.</td></tr>';
+    const pag=document.getElementById('pag-grp-admin'); if(pag) pag.style.display='none';
+    return;
+  }
+  tbody.innerHTML = slice.map((r,i) => `<tr>
+    <td style="color:var(--text-hint);font-size:11px;">${start+i+1}</td>
+    <td style="font-weight:600;color:#fff;">${r.municipio}</td>
+    <td><span style="background:rgba(155,138,92,.15);color:var(--gold);padding:2px 7px;border-radius:3px;font-size:11px;">${r.gp}</span></td>
+    <td style="font-size:10px;color:#aaa;max-width:260px;">${r.grupamento}</td>
+    <td style="font-size:11px;color:var(--text-muted);">${r.gpResp}</td>
+    <td style="font-size:11px;">${r.pelotao}</td>
+    <td style="font-size:11px;">${r.rpm}</td>
+    <td style="font-size:11px;">${r.bpm}</td>
+  </tr>`).join('');
 
-  let msg = '';
-  if (importados > 0) msg += `✔ ${importados} usuário${importados!==1?'s':''} importado${importados!==1?'s':''}. Senha: Mudar@123`;
-  if (atualizados > 0) msg += (msg?'  |  ':'') + `🔄 ${atualizados} usuário${atualizados!==1?'s':''} atualizado${atualizados!==1?'s':''}`;
-  if (!msg) msg = 'Nenhum dado processado.';
-
-  showMsg('msg-import', importados+atualizados > 0 ? 'ok' : 'warn', msg);
-  dadosImport = [];
-  document.getElementById('import-preview').style.display = 'none';
-  /* Reseta o input */
-  const inp = document.getElementById('file-input');
-  if (inp) inp.value = '';
-  renderStats();
-  renderTabela();
-  setTimeout(() => switchTab(document.querySelector('.tab'), 'usuarios'), 2000);
+  const pag=document.getElementById('pag-grp-admin');
+  if(pag){ pag.style.display='flex';
+    document.getElementById('pag-grp-info-admin').textContent=`${start+1}–${Math.min(start+GRP_PAGE_SZ,total)} de ${total}`;
+    let btns=`<button class="pag-btn" onclick="goGrpAdminPage(${_grpAdminPage-1})" ${_grpAdminPage===1?'disabled':''}>‹</button>`;
+    for(let p=Math.max(1,_grpAdminPage-2);p<=Math.min(totPg,_grpAdminPage+2);p++)
+      btns+=`<button class="pag-btn ${p===_grpAdminPage?'active':''}" onclick="goGrpAdminPage(${p})">${p}</button>`;
+    btns+=`<button class="pag-btn" onclick="goGrpAdminPage(${_grpAdminPage+1})" ${_grpAdminPage===totPg?'disabled':''}>›</button>`;
+    document.getElementById('pag-grp-btns-admin').innerHTML=btns;
+  }
 }
+function goGrpAdminPage(p){ const t=Math.ceil(_adminGrupos.length/GRP_PAGE_SZ)||1; if(p<1||p>t) return; _grpAdminPage=p; _filtrarRenderGrp(); }
+function limparFiltrosGrpAdmin(){ ['fg-grp','fg-pel','fg-mun'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; }); _grpAdminPage=1; _filtrarRenderGrp(); }
 
-function limparImportacao() {
-  dadosImport = [];
-  document.getElementById('import-preview').style.display = 'none';
-  document.getElementById('import-box').classList.remove('drag-over');
-  document.getElementById('msg-import').classList.remove('show');
-  /* Reseta o input para permitir selecionar o mesmo arquivo novamente */
-  const inp = document.getElementById('file-input');
-  if (inp) inp.value = '';
-}
-
-/* ══ DOWNLOAD MODELO ══ */
-function downloadModelo() {
-  window.open('assets/modelo_importacao.xlsx', '_blank');
-}
-
-/* ══ HELPERS ══ */
 function showMsg(id, tipo, txt) {
   const el = document.getElementById(id);
+  if(!el) return;
   el.textContent = txt;
   el.className = `inline-msg ${tipo} show`;
   if (tipo === 'ok') setTimeout(() => el.classList.remove('show'), 5000);

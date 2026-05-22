@@ -70,8 +70,8 @@ const USUARIOS_INICIAIS = [
   }
 ];
 
-/* Versão do banco — ao incrementar, força reset para pegar novos usuários iniciais */
-const DB_VERSION = '2';
+/* Versão do banco — ao incrementar, força atualização dos dados dos usuários iniciais */
+const DB_VERSION = '3';
 
 /* ══ BANCO LOCAL ══ */
 function getUsuarios() {
@@ -90,12 +90,21 @@ function getUsuarios() {
   /* Banco já existe — carrega sem sobrescrever dados do usuário */
   lista = JSON.parse(raw);
 
-  /* Apenas garante que novos usuários iniciais sejam adicionados se não existirem */
+  /* Garante que novos usuários iniciais sejam adicionados se não existirem
+     E atualiza nome/guerra dos existentes caso estejam incorretos (versão nova) */
   let changed = false;
   USUARIOS_INICIAIS.forEach(u => {
-    if (!lista.find(x => x.numeroClean === u.numeroClean)) {
+    const existente = lista.find(x => x.numeroClean === u.numeroClean);
+    if (!existente) {
       lista.unshift({...u});
       changed = true;
+    } else if (ver !== DB_VERSION) {
+      /* Na mudança de versão: corrige nome completo e guerra se estiverem trocados */
+      if (u.nome && (!existente.nome || existente.nome.trim() === (existente.guerra||'').trim())) {
+        existente.nome   = u.nome;
+        existente.guerra = u.guerra || existente.guerra;
+        changed = true;
+      }
     }
   });
 
@@ -127,12 +136,81 @@ function cleanNP(np) {
 function auth_login(numeroPolicia, senha) {
   const usuarios = getUsuarios();
   const clean = cleanNP(numeroPolicia);
-  const user = usuarios.find(u => u.numeroClean === clean && u.ativo);
+  /* Busca por numeroClean OU por numeroPolicia limpo — garante compatibilidade */
+  const user = usuarios.find(u => {
+    const uClean   = (u.numeroClean   || '').replace(/[^0-9]/g,'');
+    const uNPClean = (u.numeroPolicia || '').replace(/[^0-9]/g,'');
+    return (uClean === clean || uNPClean === clean) && u.ativo !== false;
+  });
   if (!user) return { ok: false, erro: 'Número de polícia não encontrado.' };
   if (user.senha !== senha) return { ok: false, erro: 'Senha incorreta.' };
-  const sessao = { id: user.id, numeroPolicia: user.numeroPolicia, nome: user.nome, perfil: user.perfil, primeiroAcesso: user.primeiroAcesso };
+  /* Sempre prioriza nome completo.
+     Se nome == guerra (cadastro incorreto), usa guerra temporariamente
+     e agenda busca do nome completo na planilha MILITARES */
+  const nomeExibir = (user.nome && user.nome.trim() &&
+                      user.nome.trim().toUpperCase() !== (user.guerra||'').trim().toUpperCase())
+    ? user.nome.trim()
+    : (user.guerra || user.nome || user.numeroPolicia);
+  const sessao = {
+    id: user.id,
+    numeroPolicia: user.numeroPolicia,
+    nome: nomeExibir,
+    guerra: user.guerra || '',
+    pg: user.pg || '',
+    lotacao: user.lotacao || '',
+    perfil: user.perfil,
+    primeiroAcesso: user.primeiroAcesso
+  };
   _storageSet(SESS_KEY, JSON.stringify(sessao));
   return { ok: true, user: sessao };
+}
+
+/* Sincroniza nome completo da aba MILITARES (col C) após login
+   Chamada pelo painel.html logo após DOMContentLoaded */
+async function auth_sincNomeMilitares(sessao, sheetId, apiKey){
+  if(!sessao || !sheetId || !apiKey) return;
+  /* Só sincroniza se o nome parece ser nome de guerra (curto, sem espaço ou igual ao guerra) */
+  const nomeAtual = sessao.nome || '';
+  const guerra    = sessao.guerra || '';
+  const precisaSync = !nomeAtual.includes(' ') ||
+                      nomeAtual.toUpperCase() === guerra.toUpperCase();
+  if(!precisaSync) return;
+
+  try {
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/MILITARES!A3:D?key=${apiKey}`;
+    const r   = await fetch(url);
+    if(!r.ok) return;
+    const data = await r.json();
+    const rows = data.values || [];
+    const npmClean = cleanNP(sessao.numeroPolicia);
+    for(const row of rows){
+      const npm = (row[0]||'').replace(/\D/g,'');
+      if(npm === npmClean){
+        const nomeCompleto = (row[2]||'').trim(); /* col C */
+        const nomeGuerra   = (row[3]||'').trim(); /* col D */
+        if(nomeCompleto && nomeCompleto !== nomeAtual){
+          /* Atualiza banco local */
+          const lista = JSON.parse(_storageGet(DB_KEY)||'[]');
+          const idx   = lista.findIndex(u => u.numeroClean === npmClean);
+          if(idx >= 0){
+            lista[idx].nome   = nomeCompleto;
+            lista[idx].guerra = nomeGuerra || lista[idx].guerra;
+            _storageSet(DB_KEY, JSON.stringify(lista));
+          }
+          /* Atualiza sessão ativa */
+          sessao.nome   = nomeCompleto;
+          sessao.guerra = nomeGuerra || guerra;
+          _storageSet(SESS_KEY, JSON.stringify(sessao));
+          /* Atualiza display imediatamente se elemento existir */
+          const elNome = document.getElementById('user-nome');
+          if(elNome) elNome.textContent = nomeCompleto;
+          const elAv = document.getElementById('user-avatar');
+          if(elAv) elAv.textContent = nomeCompleto.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+        }
+        break;
+      }
+    }
+  } catch(e){ /* silencioso — não bloqueia o login */ }
 }
 
 function auth_logout() {
