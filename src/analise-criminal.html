@@ -2242,7 +2242,6 @@ function popularFiltrosMunicipios(){
 }
 
 function popularFiltrosGPs(){
-  /* Usa coluna K diretamente, ordenada por: pelotão → número do GP */
   const gpsUnicos = [...new Map(
     dadosGrupos
       .filter(r => r.grupamento)
@@ -2253,12 +2252,27 @@ function popularFiltrosGPs(){
       .map(r => [r.grupamento, r.grupamento])
   ).values()];
 
+  /* Grupamento do usuário logado */
+  const _isAdminGP = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
+  const gpUsuarioLot = sessao?.lotacao || '';
+
   ['mis-gp','m-gp','cr-gp','f-gp-dash','mapa-gp','cx-gp','vt-gp','intel-busca-gp'].forEach(id => {
     const el = document.getElementById(id);
     if(!el) return;
+    const cur = el.value;
     const isModal = id === 'm-gp';
-    el.innerHTML = `<option value="">${isModal?'Selecione...':'Todos'}</option>` +
-      gpsUnicos.map(g=>`<option value="${g}">${g}</option>`).join('');
+    /* Para filtros de Intel e Missão: não-admin vê apenas seu grupamento */
+    const isIntelOuMissao = id === 'intel-busca-gp' || id === 'mis-gp';
+    let lista = gpsUnicos;
+    if(!_isAdminGP && isIntelOuMissao && gpUsuarioLot){
+      lista = gpsUnicos.filter(g => g === gpUsuarioLot);
+    }
+    el.innerHTML = `<option value="">${isModal ? 'Selecione...' : 'Todos'}</option>` +
+      lista.map(g=>`<option value="${g}"${g===cur?' selected':''}>${g}</option>`).join('');
+    /* Se não-admin e tem apenas 1 GP, pré-seleciona automaticamente */
+    if(!_isAdminGP && isIntelOuMissao && lista.length === 1 && !isModal){
+      el.value = lista[0];
+    }
   });
 }
 
