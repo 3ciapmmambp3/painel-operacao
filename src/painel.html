@@ -128,6 +128,15 @@
 
     /* TABELA */
     .pel-table-wrap{overflow-x:auto;}
+    /* TOOLTIP RAT */
+    .rat-cell{position:relative;cursor:pointer;}
+    .rat-cell .rat-tip{display:none;position:fixed;z-index:99999;background:#1e1e1e;border:1px solid var(--gold-border);border-radius:7px;padding:8px 12px;width:max-content;min-width:220px;max-width:380px;box-shadow:0 8px 28px rgba(0,0,0,.85);pointer-events:none;}
+    .rat-tip-title{color:var(--gold);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;border-bottom:1px solid var(--border);padding-bottom:4px;white-space:nowrap;}
+    .rat-tip-item{display:flex;align-items:center;gap:20px;padding:4px 0;font-size:11px;white-space:nowrap;border-bottom:1px solid rgba(255,255,255,.05);}
+    .rat-tip-item:last-child{border-bottom:none;}
+    .rat-tip-rat{color:var(--text-white);font-weight:600;flex:1;}
+    .rat-tip-date{color:var(--gold);font-size:10px;font-weight:500;flex-shrink:0;}
+    .rat-tip-empty{color:var(--text-hint);font-size:10px;font-style:italic;}
     table.pt{width:100%;border-collapse:collapse;font-size:11px;}
     table.pt thead th{
       background:#1e1e1e;padding:7px 8px;text-align:center;
@@ -711,6 +720,7 @@ window.addEventListener('DOMContentLoaded', () => {
 let dadosGrupos  = [];
 let dadosMetas   = [];
 let dadosRatreds = {};
+let dadosRatsList = {}; /* chave gp|nat|mes → [{rat, data}] */
 let munParaGrup  = {}; /* lookup: MUNICIPIO_NORM → colK completo da aba GRUPOS */
 let naturezas    = ['Y12001','Y12012','Y12013','Y11001','Y04011','Y02999','Y02007','Y02005','Y02002'];
 let grpPage      = 1;
@@ -910,6 +920,7 @@ async function loadRatreds(){
 
   /* ── Processa operações — cada linha = 1 RAT ── */
   dadosRatreds = {};
+  dadosRatsList = {};
   const ratsVistos = new Set();
 
   rows.forEach(r => {
@@ -932,6 +943,9 @@ async function loadRatreds(){
     /* Usa colK completo como chave */
     const key = colK + '|' + nat + '|' + mes;
     dadosRatreds[key] = (dadosRatreds[key] || 0) + 1;
+    /* Armazena RAT e data para o tooltip */
+    if(!dadosRatsList[key]) dadosRatsList[key] = [];
+    dadosRatsList[key].push({ rat, data: get(r, S.DATA_FATO) });
   });
 
   /* Diagnóstico */
@@ -979,6 +993,20 @@ function getMetaAcum(gp,nat,mesIdx){
 }
 function getRealAcum(gp,nat,mesIdx){
   return mesesAte(mesIdx).reduce((s,m)=>s+getReal(gp,nat,m),0);
+}
+
+/* ── Gera HTML do tooltip com lista de RATs ── */
+function ratTipHtml(gp, nat, meses){
+  const rats = [];
+  meses.forEach(m => {
+    const key = gp + '|' + nat + '|' + m;
+    (dadosRatsList[key] || []).forEach(e => rats.push(e));
+  });
+  if(!rats.length) return '';
+  const items = rats.map(e =>
+    `<div class="rat-tip-item"><span class="rat-tip-rat">RAT ${e.rat}</span><span class="rat-tip-date">${e.data||'—'}</span></div>`
+  ).join('');
+  return `<div class="rat-tip"><div class="rat-tip-title">📋 Ocorrências (${rats.length})</div>${items}</div>`;
 }
 
 /* ── Classe do saldo ── */
@@ -1285,8 +1313,9 @@ function renderOperacoes(){
         const saldo=real-meta;
         const sc=saldoClass(saldo,'');
         rowMeta+=meta; rowReal+=real;
+        const tip=real>0?ratTipHtml(gp,nat,mesesSel):'';
         cells+=`<td class="c-meta">${meta||'—'}</td>
-                <td class="c-real">${real||'—'}</td>
+                <td class="c-real${tip?' rat-cell':''}">${real||'—'}${tip}</td>
                 <td class="${sc} sep-nat"><span class="${sc}">${saldoStr(saldo)}</span></td>`;
       });
       naturezas.forEach(nat=>{
@@ -2052,6 +2081,7 @@ function renderGdoTabela(dados, natF){
   });
 
   /* ── Passo 2: soma as operações reais ── */
+  const gdo_rats = {}; /* chave gpKey|nat → [{rat, data}] */
   dados.forEach(d => {
     if(!d.grupamento) return;
     const gpKey  = gpDoColk(d.grupamento);
@@ -2060,6 +2090,9 @@ function renderGdoTabela(dados, natF){
     if(!pel_gp[pelNum]) pel_gp[pelNum] = {};
     if(!pel_gp[pelNum][gpKey]) pel_gp[pelNum][gpKey] = {};
     pel_gp[pelNum][gpKey][d.natureza] = (pel_gp[pelNum][gpKey][d.natureza]||0) + 1;
+    const rk = gpKey + '|' + d.natureza;
+    if(!gdo_rats[rk]) gdo_rats[rk] = [];
+    gdo_rats[rk].push({ rat: d.rat, data: d.data });
   });
 
   const pelNums = Object.keys(pel_gp).map(Number).sort((a,b)=>a-b);
@@ -2093,7 +2126,13 @@ function renderGdoTabela(dados, natF){
         pelNatTot[n] = (pelNatTot[n]||0) + v;
         const cor = v > 0 ? (GDO_NAT_COR[n]||'var(--gold)') : 'var(--text-muted)';
         const fw  = v > 0 ? '700' : '400';
-        /* Mostra 0 quando não tem registro (em vez de "—") */
+        if(v > 0){
+          const rk = gp + '|' + n;
+          const rats = gdo_rats[rk] || [];
+          const items = rats.map(e=>`<div class="rat-tip-item"><span class="rat-tip-rat">RAT ${e.rat}</span><span class="rat-tip-date">${e.data||'—'}</span></div>`).join('');
+          const tip = `<div class="rat-tip"><div class="rat-tip-title">📋 Ocorrências (${rats.length})</div>${items}</div>`;
+          return `<td class="rat-cell" style="color:${cor};font-weight:${fw}">${v}${tip}</td>`;
+        }
         return `<td style="color:${cor};font-weight:${fw}">${v}</td>`;
       }).join('');
       pelTotal += rowTotal;
@@ -3495,3 +3534,36 @@ async function exportarRelPDF(){
 </body>
 </html>
 <!-- placeholder -->
+<script>
+/* ── Posicionamento inteligente do tooltip RAT ── */
+document.addEventListener('mousemove', function(e){
+  const cell = e.target.closest('.rat-cell');
+  if(!cell) return;
+  const tip = cell.querySelector('.rat-tip');
+  if(!tip) return;
+  const GAP = 12;
+  const tw = tip.offsetWidth  || 240;
+  const th = tip.offsetHeight || 80;
+  let x = e.clientX + GAP;
+  let y = e.clientY - th - GAP;
+  /* evita sair pela direita */
+  if(x + tw > window.innerWidth - 8) x = e.clientX - tw - GAP;
+  /* evita sair pelo topo */
+  if(y < 8) y = e.clientY + GAP;
+  tip.style.left = x + 'px';
+  tip.style.top  = y + 'px';
+});
+document.addEventListener('mouseover', function(e){
+  const cell = e.target.closest('.rat-cell');
+  if(!cell) return;
+  const tip = cell.querySelector('.rat-tip');
+  if(tip) tip.style.display = 'block';
+});
+document.addEventListener('mouseout', function(e){
+  const cell = e.target.closest('.rat-cell');
+  if(!cell) return;
+  if(cell.contains(e.relatedTarget)) return;
+  const tip = cell.querySelector('.rat-tip');
+  if(tip) tip.style.display = 'none';
+});
+</script>
