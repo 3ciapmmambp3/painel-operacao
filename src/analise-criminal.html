@@ -238,6 +238,10 @@
     }
     .leaflet-tooltip-pel::before { border-top-color: #3a3a3a !important; }
     .leaflet-tooltip-vis::before { border-top-color: #3a3a3a !important; }
+    /* Popup de crimes sobrepostos */
+    .leaflet-popup-crime .leaflet-popup-content-wrapper{background:transparent;border:none;box-shadow:none;padding:0;}
+    .leaflet-popup-crime .leaflet-popup-content{margin:0;}
+    .leaflet-popup-crime .leaflet-popup-tip-container{display:none;}
     .section-title{font-size:13px;font-weight:700;color:var(--gold);margin-bottom:10px;display:flex;align-items:center;gap:6px;}
     .divider{height:1px;background:var(--border);margin:14px 0;}
     .tag{display:inline-block;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:700;}
@@ -1533,13 +1537,18 @@ function lerSessao(){
   if(!raw){ window.location.href='index.html'; return null; }
   try{
     const s = JSON.parse(raw);
+    if(!s || !s.id){ window.location.href='index.html'; return null; }
     const db = JSON.parse(_pget('poe_usuarios')||'[]');
-    const u = db.find(x => x.id === s.id);
+    const u  = db.find(x => x.id === s.id);
     if(u){
-      s.perfil  = u.perfil;
-      s.lotacao = u.lotacao || '';
-      s.guerra  = s.guerra || u.guerra || '';
-      s.pg      = u.pg || '';
+      s.perfil  = u.perfil  || s.perfil  || 'operacional';
+      s.lotacao = u.lotacao || s.lotacao || '';
+      s.guerra  = s.guerra  || u.guerra  || '';
+      s.pg      = u.pg      || s.pg      || '';
+    } else {
+      /* poe_usuarios não disponível neste dispositivo — usa o que tem na sessão */
+      s.perfil  = s.perfil  || 'operacional';
+      s.lotacao = s.lotacao || '';
     }
     return s;
   }catch(e){ window.location.href='index.html'; return null; }
@@ -1611,7 +1620,32 @@ function gpDoColk(colK){
 /* ══════════════════════════════════
    INIT
 ══════════════════════════════════ */
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
+  /* Se poe_usuarios não existir, sincroniza do Google Sheets antes de continuar */
+  if(!_pget('poe_usuarios')){
+    try{
+      const url = `https://sheets.googleapis.com/v4/spreadsheets/1kVxEMYJr0RoaE5h8qUWDTI9v81VbRHGyWnqqbLcB0Nc/values/MILITARES!A3:J300?key=AIzaSyB_paTPVM8SO4kUvjYg5Z3JwE4bfAMKrdc`;
+      const r   = await fetch(url);
+      if(r.ok){
+        const data = await r.json();
+        const rows = data.values||[];
+        const lista = rows.map(r=>({
+          id:             r[0]||'',
+          numeroPolicia:  r[1]||'',
+          nome:           r[2]||'',
+          guerra:         r[3]||'',
+          pg:             r[4]||'',
+          lotacao:        r[5]||'',
+          perfil:         (r[6]||'operacional').toLowerCase(),
+          senha:          r[7]||'',
+          primeiroAcesso: r[8]==='TRUE'||r[8]==='true',
+        })).filter(u=>u.id);
+        if(lista.length) _pset('poe_usuarios', JSON.stringify(lista));
+        console.log('[AC] poe_usuarios sincronizado:', lista.length, 'usuários');
+      }
+    }catch(e){ console.warn('[AC] sync usuarios:', e.message); }
+  }
+
   sessao = lerSessao();
   if(!sessao) return;
 
@@ -1627,14 +1661,15 @@ window.addEventListener('DOMContentLoaded', () => {
     badge.style.cssText='font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;background:rgba(66,165,245,.15);color:var(--info);border:1px solid rgba(66,165,245,.3);';
   }
 
-  /* Carrega dados persistidos localmente — fichas e missões com anexos do IndexedDB */
+  /* Carrega dados locais como fallback imediato */
   auditoriasMap = JSON.parse(_pget('ac_auditorias') || '{}');
-  fichasIntel  = JSON.parse(_pget('ac_intel') || '[]');
-  missoes      = JSON.parse(_pget('ac_missoes') || '[]');
-  /* Reintegra base64 dos anexos a partir do IndexedDB ANTES de renderizar */
+  fichasIntel   = JSON.parse(_pget('ac_intel') || '[]');
+  missoes       = JSON.parse(_pget('ac_missoes') || '[]');
+
+  /* Carrega do Supabase em paralelo com os crimes */
   Promise.all([_carregarFichasComAnexos(), _carregarMissoesComAnexos()])
-    .catch(()=>{})
-    .then(()=>{ renderIntel(); renderMissoes(); });
+    .then(() => { renderIntel(); renderMissoes(); })
+    .catch(() => { renderIntel(); renderMissoes(); });
 
   recarregarTudo();
 
@@ -1979,8 +2014,8 @@ async function carregarGrupos(){
     const seen = new Set();
     rows.slice(1).forEach(r => {
       if(!r[0]) return;
-      const colK  = (r[10]||'').trim();  /* col K — grupamento completo */
-      const gpRes = (r[8]||'').trim();   /* col I — GP RESPONSAVEL      */
+      const colK  = (r[10]||'').trim();
+      const gpRes = (r[8]||'').trim();
       const key   = norm(r[0])+'|'+colK;
       if(seen.has(key)) return;
       seen.add(key);
@@ -1988,13 +2023,15 @@ async function carregarGrupos(){
         municipio:  (r[0]||'').trim(),
         gp:         (r[1]||'').trim(),
         pelotao:    (r[2]||'').trim(),
-        gpResp:     gpRes,               /* nome legível: "GP GOVERNADOR VALADARES" */
-        grupamento: colK,                /* coluna K completa — chave interna        */
+        gpResp:     gpRes,
+        grupamento: colK,
         pelNum:     pelDoColk(colK),
         munNorm:    norm(r[0]),
       });
     });
     console.log('carregarGrupos: '+dadosGrupos.length+' entradas, '+[...new Set(dadosGrupos.map(r=>r.gpResp).filter(Boolean))].length+' GPs únicos');
+    /* Atualiza filtros imediatamente após carregar grupos */
+    popularFiltrosGPs();
   } catch(e){ console.warn('carregarGrupos:', e.message); }
 }
 
@@ -2922,13 +2959,12 @@ function renderMapaFS(){
 }
 function renderMapaCriminal(){
   const _mesMapa = getMesDd('mapa');
-  const mes = _mesMapa.length === 1 ? _mesMapa[0] : '';
   const ind = document.getElementById('mapa-indicador').value;
   const pel = document.getElementById('mapa-pel').value;
   const loc = document.getElementById('mapa-loc').value;
   const gp  = document.getElementById('mapa-gp')?.value || '';
 
-  let dados = getDadosFiltrados(mes, ind, '', pel, loc, '');
+  let dados = getDadosFiltradosMultiMes(_mesMapa, ind, '', pel, loc, '');
   if(gp) dados = dados.filter(d => d.grupamento && gpDoColk(d.grupamento) === gp);
 
   if(typeof L === 'undefined'){
@@ -3272,44 +3308,112 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
   const gCrimes = L.layerGroup();
   const _gCrimesPel = {};
   const dadosComCoord = dados.filter(d=>d.lat&&d.lng);
+
+  /* Agrupa crimes por coordenada exata para tratar sobreposição */
+  const coordMap = new Map();
   dadosComCoord.forEach(d => {
-    const cor    = CORES_INDICADOR[d.indicador] || '#9b8a5c';
-    const isUrb  = d._auditoriaPendente;
-    const svgFn  = ICONES_IND[d.indicador] || ICONES_IND['CVPE'];
-    const icon   = L.divIcon({
+    const key = `${d.lat.toFixed(5)},${d.lng.toFixed(5)}`;
+    if(!coordMap.has(key)) coordMap.set(key, []);
+    coordMap.get(key).push(d);
+  });
+
+  coordMap.forEach((grupo, key) => {
+    const d0   = grupo[0];
+    const multi = grupo.length > 1;
+
+    /* Ícone: se múltiplos crimes, badge com contador */
+    const cor0   = CORES_INDICADOR[d0.indicador] || '#9b8a5c';
+    const isUrb0 = grupo.some(d => d._auditoriaPendente);
+    const svgFn0 = ICONES_IND[d0.indicador] || ICONES_IND['CVPE'];
+
+    let iconHtml;
+    if(multi){
+      /* Empilha os ícones levemente deslocados + badge com total */
+      const cores = [...new Set(grupo.map(d => CORES_INDICADOR[d.indicador]||'#9b8a5c'))];
+      iconHtml = `<div style="position:relative;width:34px;height:34px;">
+        ${grupo.slice(0,3).map((d,i) => {
+          const c = CORES_INDICADOR[d.indicador]||'#9b8a5c';
+          const fn = ICONES_IND[d.indicador]||ICONES_IND['CVPE'];
+          return `<div style="position:absolute;left:${i*5}px;top:${i*-3}px;opacity:${1-i*0.15};">${fn(c,d._auditoriaPendente)}</div>`;
+        }).join('')}
+        <div style="position:absolute;top:-4px;right:-4px;background:#ef5350;color:#fff;font-size:9px;font-weight:800;border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center;border:1px solid #fff;z-index:10;">${grupo.length}</div>
+      </div>`;
+    } else {
+      iconHtml = svgFn0(cor0, isUrb0);
+    }
+
+    const icon = L.divIcon({
       className:'',
-      html: svgFn(cor, isUrb),
-      iconSize:[28,30], iconAnchor:[14,15], popupAnchor:[0,-18],
+      html: iconHtml,
+      iconSize:[34,34], iconAnchor:[17,17], popupAnchor:[0,-20],
     });
-    const gp     = d.grupamento ? gpDoColk(d.grupamento) : '—';
-    const pel    = d.grupamento ? pelDoColk(d.grupamento) : 99;
-    /* Busca gpResp (curto) para exibição no tooltip */
-    const gpInfo2 = dadosGrupos.find(g => g.munNorm === norm(d.municipio||''));
-    const gpCurto2 = gpInfo2 ? gpInfo2.gpResp : '';
 
-    const indLabel = {
-      IMV:'Morte Violenta', CVPE:'Crime Contra Pessoa',
-      CVPA:'Crime Contra Patrimônio', IF:'Indicador de Furto'
-    }[d.indicador] || d.indicador;
+    const _mCrime = L.marker([d0.lat, d0.lng], {icon, zIndexOffset:1000});
 
-    const auditBadge = isUrb
-      ? `<div style="margin-top:8px;background:rgba(239,83,80,.18);border:1px solid #ef5350;border-radius:5px;padding:5px 8px;font-size:10px;color:#ef5350;font-weight:700;text-align:center;letter-spacing:.3px;">
-           ⚠ ÁREA URBANA — NECESSÁRIA AUDITORIA
-         </div>` : '';
-
-    const vitRow = d.indicador !== 'IF' && d.qtdVitimas
-      ? `<tr><td style="color:#888;padding:2px 4px 2px 0;">Vítimas</td><td style="color:#ef5350;font-weight:700;padding:2px 0;">${d.qtdVitimas}</td></tr>`
-      : '';
-
-    const _mCrime = L.marker([d.lat, d.lng], {icon, zIndexOffset:1000});
-    _mCrime.bindTooltip(`
+    if(multi){
+      /* Múltiplos crimes — popup ao clicar listando todos */
+      const popupHtml = `<div style="width:340px;max-width:min(340px,calc(100vw-32px));background:#1e1e1e;border-radius:8px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.6);">
+        <div style="background:#333;padding:8px 12px;font-size:12px;font-weight:700;color:#fff;border-bottom:1px solid #444;">
+          📍 ${grupo.length} crimes neste local — ${d0.municipio||'—'}
+        </div>
+        <div style="max-height:340px;overflow-y:auto;">
+        ${grupo.map(d => {
+          const cor = CORES_INDICADOR[d.indicador]||'#9b8a5c';
+          const indLabel = {IMV:'Morte Violenta',CVPE:'Crime Contra Pessoa',CVPA:'Crime Contra Patrimônio',IF:'Indicador de Furto'}[d.indicador]||d.indicador;
+          const pel = d.grupamento ? pelDoColk(d.grupamento) : 99;
+          const gp  = d.grupamento ? gpDoColk(d.grupamento) : '—';
+          const vitRow = d.indicador !== 'IF' && d.qtdVitimas
+            ? `<tr><td style="color:#888;padding:1px 4px 1px 0;">Vítimas</td><td style="color:#ef5350;font-weight:700;">${d.qtdVitimas}</td></tr>` : '';
+          const auditBadge = d._auditoriaPendente
+            ? `<div style="margin:4px 0 2px;background:rgba(239,83,80,.18);border:1px solid #ef5350;border-radius:4px;padding:3px 7px;font-size:9px;color:#ef5350;font-weight:700;">⚠ ÁREA URBANA — NECESSÁRIA AUDITORIA</div>` : '';
+          return `<div style="border-bottom:1px solid #2a2a2a;padding:8px 12px;">
+            <div style="background:${cor}22;border-left:3px solid ${cor};padding:4px 8px;border-radius:0 4px 4px 0;margin-bottom:6px;display:flex;align-items:center;gap:8px;">
+              <span style="background:${cor};color:#fff;font-size:9px;font-weight:800;padding:1px 7px;border-radius:3px;">${d.indicador}</span>
+              <span style="color:#ddd;font-size:11px;">${indLabel}</span>
+            </div>
+            <table style="width:100%;border-collapse:collapse;font-size:11px;line-height:1.8;">
+              <tr><td style="color:#888;width:80px;padding:1px 4px 1px 0;">Nº BO</td><td style="color:#fff;font-weight:700;">${d.bo}</td></tr>
+              <tr><td style="color:#888;padding:1px 4px 1px 0;">Data</td><td style="color:#ccc;">${d.data||'—'} <span style="color:#666;font-size:10px;">${d.mes||''}</span></td></tr>
+              <tr><td style="color:#888;padding:1px 4px 1px 0;">Grupamento</td><td style="color:#c9a84c;font-size:10px;line-height:1.4;">${gp}</td></tr>
+              <tr><td style="color:#888;padding:1px 4px 1px 0;">Localização</td><td style="color:${(d.localizacao||'').includes('URBAN')?'#ef5350':'#66bb6a'};font-weight:600;">${d.localizacao||'—'}</td></tr>
+              ${vitRow}
+              ${d.rpm?`<tr><td style="color:#888;padding:1px 4px 1px 0;">RPM</td><td style="color:#ccc;">${d.rpm}</td></tr>`:''}
+            </table>
+            ${auditBadge}
+          </div>`;
+        }).join('')}
+        </div>
+      </div>`;
+      _mCrime.bindPopup(popupHtml, {maxWidth:360, className:'leaflet-popup-crime'});
+      /* Tooltip simples mostrando quantidade */
+      _mCrime.bindTooltip(
+        `<div style="background:#1e1e1e;border:1px solid #555;border-radius:5px;padding:5px 10px;font-size:11px;color:#fff;">
+          <b>${grupo.length} crimes</b> neste local<br>
+          <span style="color:#aaa;font-size:10px;">${grupo.map(d=>`<span style="color:${CORES_INDICADOR[d.indicador]||'#9b8a5c'};font-weight:700;">${d.indicador}</span>`).join(' · ')}</span><br>
+          <span style="color:#888;font-size:10px;">Clique para ver detalhes</span>
+        </div>`,
+        {sticky:true, direction:'top', className:'leaflet-tooltip-crime', opacity:1}
+      );
+    } else {
+      /* Crime único — tooltip normal */
+      const d    = grupo[0];
+      const cor  = CORES_INDICADOR[d.indicador] || '#9b8a5c';
+      const isUrb = d._auditoriaPendente;
+      const gp   = d.grupamento ? gpDoColk(d.grupamento) : '—';
+      const pel  = d.grupamento ? pelDoColk(d.grupamento) : 99;
+      const gpInfo2  = dadosGrupos.find(g => g.munNorm === norm(d.municipio||''));
+      const gpCurto2 = gpInfo2 ? gpInfo2.gpResp : '';
+      const indLabel = {IMV:'Morte Violenta',CVPE:'Crime Contra Pessoa',CVPA:'Crime Contra Patrimônio',IF:'Indicador de Furto'}[d.indicador]||d.indicador;
+      const auditBadge = isUrb
+        ? `<div style="margin-top:8px;background:rgba(239,83,80,.18);border:1px solid #ef5350;border-radius:5px;padding:5px 8px;font-size:10px;color:#ef5350;font-weight:700;text-align:center;letter-spacing:.3px;">⚠ ÁREA URBANA — NECESSÁRIA AUDITORIA</div>` : '';
+      const vitRow = d.indicador !== 'IF' && d.qtdVitimas
+        ? `<tr><td style="color:#888;padding:2px 4px 2px 0;">Vítimas</td><td style="color:#ef5350;font-weight:700;padding:2px 0;">${d.qtdVitimas}</td></tr>` : '';
+      _mCrime.bindTooltip(`
         <div style="width:320px;max-width:min(320px,calc(100vw - 32px));background:#1e1e1e;border:1px solid ${cor}55;border-radius:8px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.6);">
-          <!-- Cabeçalho colorido -->
           <div style="background:${cor}22;border-bottom:2px solid ${cor};padding:8px 12px;display:flex;align-items:center;gap:8px;">
             <span style="background:${cor};color:#fff;font-size:10px;font-weight:800;padding:2px 8px;border-radius:3px;letter-spacing:.5px;">${d.indicador}</span>
             <span style="color:#ddd;font-size:11px;font-weight:600;">${indLabel}</span>
           </div>
-          <!-- Dados -->
           <div style="padding:8px 12px;">
             <table style="width:100%;border-collapse:collapse;font-size:11px;line-height:1.9;">
               <tr><td style="color:#888;width:85px;padding:1px 4px 1px 0;white-space:nowrap;">Nº BO</td><td style="color:#fff;font-weight:700;">${d.bo}</td></tr>
@@ -3317,7 +3421,7 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
               <tr><td style="color:#888;padding:1px 4px 1px 0;white-space:nowrap;">Município</td><td style="color:#fff;font-weight:600;">${d.municipio||'—'}</td></tr>
               <tr><td style="color:#888;padding:1px 4px 1px 0;white-space:nowrap;vertical-align:top;">Grupamento</td><td style="color:#c9a84c;font-size:11px;line-height:1.5;word-break:break-word;white-space:normal;">${gpCurto2||gp}${gpCurto2&&gpCurto2!==gp?`<br><span style="color:#666;font-size:10px;">${gp}</span>`:''}</td></tr>
               <tr><td style="color:#888;padding:1px 4px 1px 0;white-space:nowrap;">Pelotão</td><td style="color:#ccc;">${(pel&&pel!==99)?pel+'º Pelotão':'—'}</td></tr>
-              <tr><td style="color:#888;padding:1px 4px 1px 0;white-space:nowrap;">Localização</td><td style="color:${d.localizacao.includes('URBAN')?'#ef5350':'#66bb6a'};font-weight:600;">${d.localizacao||'—'}</td></tr>
+              <tr><td style="color:#888;padding:1px 4px 1px 0;white-space:nowrap;">Localização</td><td style="color:${(d.localizacao||'').includes('URBAN')?'#ef5350':'#66bb6a'};font-weight:600;">${d.localizacao||'—'}</td></tr>
               ${vitRow}
               ${d.rpm?`<tr><td style="color:#888;padding:1px 4px 1px 0;white-space:nowrap;">RPM</td><td style="color:#ccc;">${d.rpm}</td></tr>`:''}
             </table>
@@ -3325,10 +3429,12 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
           ${auditBadge}
         </div>`,
         {sticky:true, direction:'top', className:'leaflet-tooltip-crime', opacity:1}
-      )
+      );
+    }
+
     _mCrime.addTo(gCrimes);
     /* Sub-layer por pelotão */
-    const _pelCrime = d.grupamento ? pelDoColk(d.grupamento) : 0;
+    const _pelCrime = d0.grupamento ? pelDoColk(d0.grupamento) : 0;
     if(!_gCrimesPel[_pelCrime]) _gCrimesPel[_pelCrime] = L.layerGroup();
     _gCrimesPel[_pelCrime].addLayer(_mCrime);
   });
@@ -3361,15 +3467,24 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
   /* ── Camada Visitas Tranquilizadoras ── */
   const gVFurto=L.layerGroup(), gVViolento=L.layerGroup(), gVUrbano=L.layerGroup();
   const _gVisPel = {}; /* pelNum → layerGroup para controle de visibilidade */
-  const _mesVF = getMesDd('mapa'); const mesVF = _mesVF.length===1?_mesVF[0]:'';
+  const _indFiltroMapa = document.getElementById('mapa-indicador').value;
+  const _mesVF = getMesDd('mapa');
+  const mesVF  = _mesVF.length===1 ? _mesVF[0] : '_MULTI_';
+  const pelFVis = document.getElementById('mapa-pel').value;
   dadosVisitas.forEach(v => {
     if(!v.lat||!v.lng) return;
-    if(mesVF && v.mes!==mesVF) return;
+    /* Oculta visitas quando indicador específico está filtrado */
+    if(_indFiltroMapa) return;
+    /* Filtro de mês */
+    if(mesVF==='_MULTI_'){ if(_mesVF.length && !_mesVF.includes(v.mes)) return; }
+    else if(mesVF && v.mes!==mesVF) return;
     /* Determina pelotão via município */
     const _vGrupInfo = dadosGrupos.find(g => g.munNorm === norm(v.municipio||''));
     const _vPelN = _vGrupInfo ? pelDoColk(_vGrupInfo.grupamento) : 0;
-    /* Filtra por grupamento se selecionado */
-    if(gpFiltro && _vGrupInfo && gpDoColk(_vGrupInfo.grupamento) !== gpFiltro) return;
+    /* Filtro de pelotão */
+    if(pelFVis){ if(!_vGrupInfo || _vPelN !== parseInt(pelFVis)) return; }
+    /* Filtro de grupamento */
+    if(gpFiltro && (!_vGrupInfo || gpDoColk(_vGrupInfo.grupamento) !== gpFiltro)) return;
     const alerta=v.alertaUrbano, isFurto=v.natCode==='A20028';
     const cor=alerta?'#ff9800':isFurto?'#4caf50':'#ab47bc';
     const borda=alerta?'#ff9800':'#fff';
@@ -4846,121 +4961,310 @@ let _intelFotosBuffer  = []; /* [{id, base64, nome, tipo}] — ficha intel */
 let _missaoAnexosBuffer = []; /* [{id, base64, nome, tipo}] — missão */
 
 /* ══════════════════════════════════
-   INDEXEDDB — armazenamento de anexos (sem limite de 5MB do localStorage)
+   SUPABASE — banco de dados em nuvem
 ══════════════════════════════════ */
-let _idb = null;
-function _abrirIDB(){
-  if(_idb) return Promise.resolve(_idb);
-  return new Promise((res, rej) => {
-    const req = indexedDB.open('ac_anexos', 1);
-    req.onupgradeneeded = e => {
-      const db = e.target.result;
-      if(!db.objectStoreNames.contains('anexos')) db.createObjectStore('anexos', {keyPath:'id'});
-    };
-    req.onsuccess = e => { _idb = e.target.result; res(_idb); };
-    req.onerror   = e => rej(e.target.error);
+const SB_URL = 'https://zrnbebjszwkmquzthjfa.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpybmJlYmpzendrbXF1enRoamZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkzOTA4MzEsImV4cCI6MjA5NDk2NjgzMX0.di9t2SOCTLZ2uPFOnTOiy6srvt7GC5cdqenZZScXve4';
+
+function _sbHeaders(extra){
+  return { 'Content-Type':'application/json', 'apikey': SB_KEY, 'Authorization': 'Bearer '+SB_KEY, ...(extra||{}) };
+}
+
+/* ── REST helpers ── */
+async function _sbSelect(tabela, filtro){
+  const qs = filtro ? '?'+filtro : '';
+  const r = await fetch(`${SB_URL}/rest/v1/${tabela}${qs}`, { headers: _sbHeaders({'Prefer':'return=representation'}) });
+  if(!r.ok){ const e=await r.text(); throw new Error(tabela+' select: '+e); }
+  return r.json();
+}
+async function _sbUpsert(tabela, obj){
+  const r = await fetch(`${SB_URL}/rest/v1/${tabela}`, {
+    method: 'POST',
+    headers: _sbHeaders({'Prefer':'resolution=merge-duplicates,return=representation'}),
+    body: JSON.stringify(obj)
   });
+  if(!r.ok){ const e=await r.text(); throw new Error(tabela+' upsert: '+e); }
+  return r.json();
 }
-async function _idbSalvar(lista){ /* lista: [{id, base64, nome, tipo}] */
-  const db = await _abrirIDB();
-  return new Promise((res, rej) => {
-    const tx = db.transaction('anexos','readwrite');
-    const st = tx.objectStore('anexos');
-    lista.forEach(a => st.put(a));
-    tx.oncomplete = res; tx.onerror = e => rej(e.target.error);
+async function _sbDelete(tabela, id){
+  const r = await fetch(`${SB_URL}/rest/v1/${tabela}?id=eq.${encodeURIComponent(id)}`, {
+    method: 'DELETE', headers: _sbHeaders()
   });
+  if(!r.ok){ const e=await r.text(); throw new Error(tabela+' delete: '+e); }
 }
-async function _idbCarregar(ids){ /* retorna [{id,base64,nome,tipo}] */
-  if(!ids||!ids.length) return [];
-  const db = await _abrirIDB();
-  return Promise.all(ids.map(id => new Promise((res) => {
-    const req = db.transaction('anexos','readonly').objectStore('anexos').get(id);
-    req.onsuccess = e => res(e.target.result || null);
-    req.onerror   = () => res(null);
-  }))).then(r => r.filter(Boolean));
+
+/* ── Storage (upload/download de anexos) ── */
+const SB_BUCKET = 'anexos-operacionais';
+async function _sbUpload(path, base64, tipo){
+  /* Converte base64 para Blob de forma robusta */
+  let blob;
+  try{
+    const arr = base64.split(',');
+    const mime = arr[0].match(/:(.*?);/)?.[1] || tipo || 'application/octet-stream';
+    const bstr = atob(arr[1] || arr[0]);
+    const bytes = new Uint8Array(bstr.length);
+    for(let i=0; i<bstr.length; i++) bytes[i] = bstr.charCodeAt(i);
+    blob = new Blob([bytes], {type: mime});
+  }catch(e){
+    throw new Error('Erro ao converter arquivo: ' + e.message);
+  }
+  const r = await fetch(`${SB_URL}/storage/v1/object/${SB_BUCKET}/${path}`, {
+    method: 'POST',
+    headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer '+SB_KEY, 'Content-Type': blob.type, 'x-upsert': 'true' },
+    body: blob
+  });
+  if(!r.ok){ const e=await r.text(); throw new Error('upload storage: '+e); }
+  return `${SB_URL}/storage/v1/object/public/${SB_BUCKET}/${path}`;
 }
-async function _idbExcluir(ids){
-  if(!ids||!ids.length) return;
-  const db = await _abrirIDB();
-  const tx = db.transaction('anexos','readwrite');
-  const st = tx.objectStore('anexos');
-  ids.forEach(id => st.delete(id));
+/* Extrai extensão do nome ou tipo MIME */
+function _getExt(nome, tipo){
+  if(nome && nome.includes('.')){
+    return nome.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g,'');
+  }
+  const mimeMap = {
+    'image/jpeg':'jpg','image/jpg':'jpg','image/png':'png','image/gif':'gif',
+    'image/webp':'webp','application/pdf':'pdf','video/mp4':'mp4',
+    'video/webm':'webm','video/quicktime':'mov','application/vnd.google-earth.kml+xml':'kml',
+    'application/vnd.google-earth.kmz':'kmz'
+  };
+  return mimeMap[tipo] || (tipo||'').split('/').pop().split(';')[0] || 'bin';
 }
-/* Salva ficha no localStorage sem base64, e anexos no IndexedDB */
-async function _salvarFichasComAnexos(){
-  /* Salva todos os anexos no IDB */
-  const todosAnexos = fichasIntel.flatMap(f => (f.fotos||[]));
-  if(todosAnexos.length) await _idbSalvar(todosAnexos).catch(()=>{});
-  /* Salva ficha sem base64 no localStorage */
-  const fichasSemBase64 = fichasIntel.map(f => ({
-    ...f,
-    fotos: (f.fotos||[]).map(a => ({id:a.id, nome:a.nome, tipo:a.tipo||''}))
+
+/* ── Salva UMA ficha de inteligência no Supabase ── */
+async function _salvarFichasComAnexos(fichaId){
+  const ficha = fichasIntel.find(f => f.id === fichaId);
+  if(!ficha) return;
+
+  /* Faz upload dos anexos novos (que têm base64 mas ainda não têm storage_url) */
+  const fotosComUrl = await Promise.all((ficha.fotos||[]).map(async a => {
+    if(a.storage_url) return { id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url };
+    if(!a.base64) return { id:a.id, nome:a.nome, tipo:a.tipo||'' };
+    try{
+      const ext  = _getExt(a.nome, a.tipo);
+      const path = `intel/${ficha.id}/${a.id}.${ext}`;
+      const url  = await _sbUpload(path, a.base64, a.tipo);
+      return { id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:url };
+    }catch(e){
+      console.warn('upload anexo intel:', e);
+      return { id:a.id, nome:a.nome, tipo:a.tipo||'' };
+    }
   }));
-  _pset('ac_intel', JSON.stringify(fichasSemBase64));
+
+  await _sbUpsert('fichas_intel', {
+    id:           ficha.id,
+    rat:          ficha.rat||'',
+    municipio:    ficha.municipio||[],
+    gps_atuacao:  ficha.gpsAtuacao||[],
+    suspeitos:    ficha.suspeitos||'',
+    veiculos:     ficha.veiculos||'',
+    facao:        ficha.facao||'',
+    modus:        ficha.modus||'',
+    armas:        ficha.armas||'',
+    reincidencia: ficha.reincidencia||'nao',
+    conexoes:     ficha.conexoes||'',
+    obs:          ficha.obs||'',
+    /* NUNCA envia base64 para o banco — só metadados e URL do storage */
+    fotos:        fotosComUrl.map(a => ({id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url||''})),
+    criado_por:   ficha.criadoPor||'',
+    criado_em:    ficha.criadoEm||'',
+    updated_at:   new Date().toISOString(),
+  });
+
+  /* Atualiza em memória com URLs */
+  const idx = fichasIntel.findIndex(f => f.id === fichaId);
+  if(idx >= 0) fichasIntel[idx].fotos = fotosComUrl;
+
+  /* Backup local sem base64 */
+  try{
+    _pset('ac_intel', JSON.stringify(fichasIntel.map(f => ({
+      ...f, fotos: (f.fotos||[]).map(a => ({id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url||''}))
+    }))));
+  }catch(e){}
 }
-/* Carrega fichas e reintegra base64 do IDB */
+
+/* ── Carrega fichas do Supabase ── */
 async function _carregarFichasComAnexos(){
-  const raw = _pget('ac_intel');
-  if(!raw) return;
   try{
-    const fichas = JSON.parse(raw);
-    /* Coleta todos os IDs de anexos */
-    const allIds = fichas.flatMap(f => (f.fotos||[]).map(a => a.id));
-    const idbData = await _idbCarregar(allIds);
-    const idbMap = Object.fromEntries(idbData.map(a => [a.id, a]));
-    fichasIntel = fichas.map(f => ({
-      ...f,
-      fotos: (f.fotos||[]).map(a => idbMap[a.id] ? {...idbMap[a.id]} : a)
+    const rows = await _sbSelect('fichas_intel', 'order=updated_at.desc');
+    fichasIntel = rows.map(r => ({
+      id:           r.id,
+      rat:          r.rat||'',
+      municipio:    r.municipio||[],
+      gpsAtuacao:   r.gps_atuacao||[],
+      suspeitos:    r.suspeitos||'',
+      veiculos:     r.veiculos||'',
+      facao:        r.facao||'',
+      modus:        r.modus||'',
+      armas:        r.armas||'',
+      reincidencia: r.reincidencia||'nao',
+      conexoes:     r.conexoes||'',
+      obs:          r.obs||'',
+      fotos:        (r.fotos||[]),
+      criadoPor:    r.criado_por||'',
+      criadoEm:     r.criado_em||'',
     }));
-  }catch(e){ console.warn('_carregarFichasComAnexos:', e); }
+    console.log('[Supabase] fichas_intel: '+fichasIntel.length+' fichas');
+  }catch(e){
+    console.warn('[Supabase] erro ao carregar fichas:', e.message);
+    /* Fallback: usa localStorage */
+    try{ fichasIntel = JSON.parse(_pget('ac_intel')||'[]'); }catch(e2){}
+  }
 }
 
-/* Mesma abordagem para missões */
-async function _salvarMissoesComAnexos(){
-  const todosAnexos = missoes.flatMap(m => (m.anexos||[]));
-  if(todosAnexos.length) await _idbSalvar(todosAnexos).catch(()=>{});
-  const missoesSemBase64 = missoes.map(m => ({
-    ...m,
-    anexos: (m.anexos||[]).map(a => ({id:a.id, nome:a.nome, tipo:a.tipo||''}))
+/* ── Salva UMA missão no Supabase ── */
+async function _salvarMissoesComAnexos(missaoId){
+  const mis = missoes.find(m => m.id === missaoId);
+  if(!mis) return;
+
+  const anexosComUrl = await Promise.all((mis.anexos||[]).map(async a => {
+    if(a.storage_url) return { id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url };
+    if(!a.base64) return { id:a.id, nome:a.nome, tipo:a.tipo||'' };
+    try{
+      const ext  = _getExt(a.nome, a.tipo);
+      const path = `missoes/${mis.id}/${a.id}.${ext}`;
+      const url  = await _sbUpload(path, a.base64, a.tipo);
+      return { id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:url };
+    }catch(e){
+      console.warn('upload anexo missao:', e);
+      return { id:a.id, nome:a.nome, tipo:a.tipo||'' };
+    }
   }));
-  _pset('ac_missoes', JSON.stringify(missoesSemBase64));
-}
-async function _carregarMissoesComAnexos(){
-  const raw = _pget('ac_missoes');
-  if(!raw) return;
+
+  await _sbUpsert('missoes', {
+    id:          mis.id,
+    titulo:      mis.titulo||'',
+    rat:         mis.rat||'',
+    gp:          mis.gp||'',
+    militares:   mis.militares||[],
+    prioridade:  mis.prioridade||'media',
+    prazo:       mis.prazo||'',
+    descricao:   mis.descricao||'',
+    obs:         mis.obs||'',
+    /* NUNCA envia base64 para o banco — só metadados e URL do storage */
+    anexos:      anexosComUrl.map(a => ({id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url||''})),
+    status:      mis.status||'pendente',
+    criado_por:  mis.criadoPor||'',
+    criado_em:   mis.criadoEm||'',
+    editado_por: mis.editadoPor||null,
+    editado_em:  mis.editadoEm||null,
+    updated_at:  new Date().toISOString(),
+  });
+
+  const idx = missoes.findIndex(m => m.id === missaoId);
+  if(idx >= 0) missoes[idx].anexos = anexosComUrl;
+
   try{
-    const ms = JSON.parse(raw);
-    const allIds = ms.flatMap(m => (m.anexos||[]).map(a => a.id));
-    const idbData = await _idbCarregar(allIds);
-    const idbMap = Object.fromEntries(idbData.map(a => [a.id, a]));
-    missoes = ms.map(m => ({
-      ...m,
-      anexos: (m.anexos||[]).map(a => idbMap[a.id] ? {...idbMap[a.id]} : a)
-    }));
-  }catch(e){ console.warn('_carregarMissoesComAnexos:', e); }
+    _pset('ac_missoes', JSON.stringify(missoes.map(m => ({
+      ...m, anexos: (m.anexos||[]).map(a => ({id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url||''}))
+    }))));
+  }catch(e){}
 }
 
-async function _abrirAnexo(id){
-  /* Tenta memória primeiro, depois IDB */
-  const emBuf = [..._intelFotosBuffer, ..._missaoAnexosBuffer].find(a=>a.id===id);
-  if(emBuf && emBuf.base64){ window.open(emBuf.base64,'_blank'); return; }
+/* ── Carrega missões do Supabase ── */
+async function _carregarMissoesComAnexos(){
   try{
-    const db = await _abrirIDB();
-    const req = db.transaction('anexos','readonly').objectStore('anexos').get(id);
-    req.onsuccess = e => {
-      const a = e.target.result;
-      if(a && a.base64) window.open(a.base64,'_blank');
-      else alert('Anexo não encontrado no armazenamento local.');
-    };
-    req.onerror = () => alert('Erro ao carregar anexo.');
-  }catch(e){ alert('Erro ao acessar armazenamento: '+e.message); }
+    const rows = await _sbSelect('missoes', 'order=updated_at.desc');
+    missoes = rows.map(r => ({
+      id:         r.id,
+      titulo:     r.titulo||'',
+      rat:        r.rat||'',
+      gp:         r.gp||'',
+      militares:  r.militares||[],
+      prioridade: r.prioridade||'media',
+      prazo:      r.prazo||'',
+      descricao:  r.descricao||'',
+      obs:        r.obs||'',
+      anexos:     (r.anexos||[]),
+      status:     r.status||'pendente',
+      criadoPor:  r.criado_por||'',
+      criadoEm:   r.criado_em||'',
+      editadoPor: r.editado_por||'',
+      editadoEm:  r.editado_em||'',
+    }));
+    console.log('[Supabase] missoes: '+missoes.length+' missões');
+  }catch(e){
+    console.warn('[Supabase] erro ao carregar missões:', e.message);
+    try{ missoes = JSON.parse(_pget('ac_missoes')||'[]'); }catch(e2){}
+  }
+}
+
+/* ── Exclui ficha do Supabase ── */
+async function _excluirFichaSupabase(id){
+  try{ await _sbDelete('fichas_intel', id); }catch(e){ console.warn('excluir ficha:', e); }
+}
+
+/* ── Abre anexo: usa storage_url se disponível, senão base64 ── */
+async function _abrirAnexo(id){
+  /* Busca em memória (buffer do modal aberto) */
+  const emBuf = [..._intelFotosBuffer, ..._missaoAnexosBuffer].find(a=>a.id===id);
+  if(emBuf && emBuf.base64){ _abrirOuBaixar(emBuf.base64, emBuf.nome, emBuf.tipo, true); return; }
+
+  /* Busca nas fichas e missões carregadas */
+  const todos = [
+    ...fichasIntel.flatMap(f=>f.fotos||[]),
+    ...missoes.flatMap(m=>m.anexos||[])
+  ];
+  const a = todos.find(x=>x.id===id);
+  if(!a){ alert('Anexo não encontrado.'); return; }
+
+  if(a.storage_url){
+    _abrirOuBaixar(a.storage_url, a.nome, a.tipo, false);
+  } else if(a.base64){
+    _abrirOuBaixar(a.base64, a.nome, a.tipo, true);
+  } else {
+    alert('Arquivo não disponível.');
+  }
+}
+
+function _abrirOuBaixar(src, nome, tipo, isBase64){
+  const isImg   = (tipo||'').startsWith('image');
+  const isPdf   = (tipo||'').includes('pdf');
+  const isVideo = (tipo||'').startsWith('video');
+
+  if(isImg || isPdf || isVideo){
+    /* Abre direto no browser para visualizar */
+    if(isBase64){
+      const w = window.open('');
+      if(w) w.document.write(`<html><body style="margin:0;background:#000;">${isImg?`<img src="${src}" style="max-width:100%;max-height:100vh;">`:isVideo?`<video src="${src}" controls autoplay style="max-width:100%;max-height:100vh;"></video>`:`<embed src="${src}" width="100%" height="100%" type="${tipo}">`}</body></html>`);
+    } else {
+      window.open(src, '_blank');
+    }
+  } else {
+    /* KML, KMZ e outros — força download com nome correto */
+    if(isBase64){
+      try{
+        const arr   = src.split(',');
+        const mime  = arr[0].match(/:(.*?);/)?.[1] || tipo || 'application/octet-stream';
+        const bstr  = atob(arr[1]||arr[0]);
+        const bytes = new Uint8Array(bstr.length);
+        for(let i=0;i<bstr.length;i++) bytes[i]=bstr.charCodeAt(i);
+        const blob  = new Blob([bytes],{type:mime});
+        const url   = URL.createObjectURL(blob);
+        _forcDownload(url, nome);
+        setTimeout(()=>URL.revokeObjectURL(url),5000);
+      }catch(e){ alert('Erro: '+e.message); }
+    } else {
+      /* Busca via fetch para forçar o Content-Disposition */
+      fetch(src)
+        .then(r=>r.blob())
+        .then(blob=>{ const url=URL.createObjectURL(blob); _forcDownload(url,nome); setTimeout(()=>URL.revokeObjectURL(url),5000); })
+        .catch(()=>window.open(src,'_blank'));
+    }
+  }
+}
+
+function _forcDownload(url, nome){
+  const a = document.createElement('a');
+  a.href = url; a.download = nome||'anexo';
+  a.style.display='none';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 
 /* ── Renderiza o seletor de grupamentos no modal intel ── */
 function _renderGpCheckboxes(selecionados){
   const wrap = document.getElementById('i-gp-wrap');
   if(!wrap) return;
-  /* Usa a mesma ordenação de popularFiltrosGPs: pelotão → nº GP */
+
   const gps = [...new Map(
     dadosGrupos
       .filter(r => r.grupamento)
@@ -4972,7 +5276,9 @@ function _renderGpCheckboxes(selecionados){
   ).values()].filter(g => g && g !== '—');
 
   if(!gps.length){
-    wrap.innerHTML = '<span style="font-size:11px;color:var(--text-muted);">Nenhum grupamento carregado.</span>';
+    /* dadosGrupos ainda não carregou — tenta novamente em 1s */
+    wrap.innerHTML = '<span style="font-size:11px;color:var(--text-muted);">⏳ Carregando grupamentos...</span>';
+    setTimeout(() => _renderGpCheckboxes(selecionados), 1000);
     return;
   }
   wrap.innerHTML = gps.map(g => {
@@ -5085,8 +5391,8 @@ function _renderAnexos(prefixo){
     const isPdf   = f.tipo === 'application/pdf' || f.nome.endsWith('.pdf');
     const isKml   = f.nome.endsWith('.kml') || f.nome.endsWith('.kmz');
     let preview = '';
-    if(isImg)   preview = `<img src="${f.base64}" style="width:100px;height:75px;object-fit:cover;display:block;border-radius:4px 4px 0 0;" alt="${f.nome}">`;
-    else if(isVideo) preview = `<video src="${f.base64}" style="width:100px;height:75px;object-fit:cover;display:block;border-radius:4px 4px 0 0;" muted playsinline></video>`;
+    if(isImg)   preview = f.base64 ? `<img src="${f.base64}" style="width:100px;height:75px;object-fit:cover;display:block;border-radius:4px 4px 0 0;" alt="${f.nome}">` : `<div style="width:100px;height:75px;display:flex;align-items:center;justify-content:center;background:#1a1a1a;border-radius:4px 4px 0 0;font-size:28px;">🖼</div>`;
+    else if(isVideo) preview = f.base64 ? `<video src="${f.base64}" style="width:100px;height:75px;object-fit:cover;display:block;border-radius:4px 4px 0 0;" muted playsinline></video>` : `<div style="width:100px;height:75px;display:flex;align-items:center;justify-content:center;background:#1a1a1a;border-radius:4px 4px 0 0;font-size:28px;">🎥</div>`;
     else if(isPdf) preview = `<div style="width:100px;height:75px;display:flex;align-items:center;justify-content:center;background:#1a1a1a;border-radius:4px 4px 0 0;font-size:28px;">📄</div>`;
     else if(isKml) preview = `<div style="width:100px;height:75px;display:flex;align-items:center;justify-content:center;background:#1a1a1a;border-radius:4px 4px 0 0;font-size:28px;">🗺</div>`;
     else preview = `<div style="width:100px;height:75px;display:flex;align-items:center;justify-content:center;background:#1a1a1a;border-radius:4px 4px 0 0;font-size:28px;">📎</div>`;
@@ -5186,38 +5492,48 @@ function abrirIntelPorRat(rat, mun){
 }
 
 async function salvarIntel(){
-  const id = document.getElementById('i-id').value || ('intel-'+Date.now());
-  const munRaw = document.getElementById('i-mun').value.trim();
-  const municipios = munRaw ? munRaw.split(',').map(m=>m.trim()).filter(Boolean) : [];
-  const ficha = {
-    id,
-    rat:          document.getElementById('i-rat').value.trim(),
-    municipio:    municipios,
-    gpsAtuacao:   _getGpsSelecionados(),
-    suspeitos:    document.getElementById('i-suspeitos').value.trim(),
-    veiculos:     document.getElementById('i-veiculos').value.trim(),
-    facao:        document.getElementById('i-facao').value.trim(),
-    modus:        document.getElementById('i-modus').value.trim(),
-    armas:        document.getElementById('i-armas').value.trim(),
-    reincidencia: document.getElementById('i-reincidencia').value,
-    conexoes:     document.getElementById('i-conexoes').value.trim(),
-    obs:          document.getElementById('i-obs').value.trim(),
-    fotos:        _intelFotosBuffer.map(f=>({id:f.id, base64:f.base64||'', nome:f.nome, tipo:f.tipo||''})),
-    criadoPor:    sessao?.nome || '—',
-    criadoEm:     new Date().toLocaleString('pt-BR'),
-  };
-  const idx = fichasIntel.findIndex(x=>x.id===id);
-  if(idx >= 0) fichasIntel[idx] = ficha;
-  else fichasIntel.push(ficha);
-  await _salvarFichasComAnexos();
-  fecharModal('modal-intel');
-  renderIntel();
+  const btnSalvar = document.querySelector('#modal-intel .btn-gold');
+  if(btnSalvar){ btnSalvar.disabled = true; btnSalvar.textContent = '⏳ Salvando...'; }
+  try{
+    const id = document.getElementById('i-id').value || ('intel-'+Date.now());
+    const munRaw = document.getElementById('i-mun').value.trim();
+    const municipios = munRaw ? munRaw.split(',').map(m=>m.trim()).filter(Boolean) : [];
+    const ficha = {
+      id,
+      rat:          document.getElementById('i-rat').value.trim(),
+      municipio:    municipios,
+      gpsAtuacao:   _getGpsSelecionados(),
+      suspeitos:    document.getElementById('i-suspeitos').value.trim(),
+      veiculos:     document.getElementById('i-veiculos').value.trim(),
+      facao:        document.getElementById('i-facao').value.trim(),
+      modus:        document.getElementById('i-modus').value.trim(),
+      armas:        document.getElementById('i-armas').value.trim(),
+      reincidencia: document.getElementById('i-reincidencia').value,
+      conexoes:     document.getElementById('i-conexoes').value.trim(),
+      obs:          document.getElementById('i-obs').value.trim(),
+      fotos:        _intelFotosBuffer.map(f=>({id:f.id, base64:f.base64||'', nome:f.nome, tipo:f.tipo||''})),
+      criadoPor:    sessao?.nome || '—',
+      criadoEm:     new Date().toLocaleString('pt-BR'),
+    };
+    const idx = fichasIntel.findIndex(x=>x.id===id);
+    if(idx >= 0) fichasIntel[idx] = ficha;
+    else fichasIntel.push(ficha);
+    await _salvarFichasComAnexos(id);
+    fecharModal('modal-intel');
+    renderIntel();
+  } catch(e){
+    console.error('salvarIntel erro:', e);
+    alert('Erro ao salvar ficha: ' + e.message);
+  } finally {
+    if(btnSalvar){ btnSalvar.disabled = false; btnSalvar.textContent = '💾 Salvar Ficha'; }
+  }
 }
 
-function excluirIntel(id){
+async function excluirIntel(id){
   if(!confirm('Excluir esta ficha?')) return;
   fichasIntel = fichasIntel.filter(x=>x.id!==id);
-  _pset('ac_intel', JSON.stringify(fichasIntel));
+  await _excluirFichaSupabase(id);
+  try{ _pset('ac_intel', JSON.stringify(fichasIntel)); }catch(e){}
   renderIntel();
 }
 
@@ -5641,31 +5957,44 @@ function abrirModalMissao(id){
 async function salvarMissao(){
   const titulo = document.getElementById('m-titulo').value.trim();
   if(!titulo){ alert('Informe o título da missão.'); return; }
-  const id = document.getElementById('m-id').value || ('mis-'+Date.now());
-  const mis = {
-    id,
-    titulo,
-    rat:        document.getElementById('m-rat').value.trim(),
-    gp:         document.getElementById('m-gp').value,
-    militares:  _getMilitaresSelecionados(),
-    prioridade: document.getElementById('m-prio').value,
-    prazo:      document.getElementById('m-prazo').value,
-    descricao:  document.getElementById('m-descricao').value.trim(),
-    obs:        document.getElementById('m-obs').value.trim(),
-    anexos:     _missaoAnexosBuffer.map(f=>({id:f.id, base64:f.base64||'', nome:f.nome, tipo:f.tipo||''})),
-    status:     (missoes.find(x=>x.id===id)?.status) || 'pendente',
-    criadoPor:  (missoes.find(x=>x.id===id)?.criadoPor) || sessao?.nome || '—',
-    criadoEm:   (missoes.find(x=>x.id===id)?.criadoEm)  || new Date().toLocaleString('pt-BR'),
-    editadoPor: id !== ('mis-'+Date.now()) ? (sessao?.nome||'—') : undefined,
-    editadoEm:  id !== ('mis-'+Date.now()) ? new Date().toLocaleString('pt-BR') : undefined,
-  };
-  const idx = missoes.findIndex(x=>x.id===id);
-  if(idx >= 0) missoes[idx] = mis;
-  else missoes.push(mis);
-  await _salvarMissoesComAnexos();
-  await _missoesSyncToSheet().catch(()=>{});
-  fecharModal('modal-missao');
-  renderMissoes();
+
+  const btnSalvar = document.querySelector('#modal-missao .btn-gold');
+  if(btnSalvar){ btnSalvar.disabled = true; btnSalvar.textContent = '⏳ Salvando...'; }
+
+  try{
+    const idExistente = document.getElementById('m-id').value;
+    const id = idExistente || ('mis-'+Date.now());
+    const misExistente = missoes.find(x=>x.id===id);
+    const mis = {
+      id,
+      titulo,
+      rat:        document.getElementById('m-rat').value.trim(),
+      gp:         document.getElementById('m-gp').value,
+      militares:  _getMilitaresSelecionados(),
+      prioridade: document.getElementById('m-prio').value,
+      prazo:      document.getElementById('m-prazo').value,
+      descricao:  document.getElementById('m-descricao').value.trim(),
+      obs:        document.getElementById('m-obs').value.trim(),
+      anexos:     _missaoAnexosBuffer.map(f=>({id:f.id, base64:f.base64||'', nome:f.nome, tipo:f.tipo||''})),
+      status:     misExistente?.status || 'pendente',
+      criadoPor:  misExistente?.criadoPor || sessao?.nome || '—',
+      criadoEm:   misExistente?.criadoEm  || new Date().toLocaleString('pt-BR'),
+      editadoPor: idExistente ? (sessao?.nome||'—') : undefined,
+      editadoEm:  idExistente ? new Date().toLocaleString('pt-BR') : undefined,
+    };
+    const idx = missoes.findIndex(x=>x.id===id);
+    if(idx >= 0) missoes[idx] = mis;
+    else missoes.push(mis);
+    await _salvarMissoesComAnexos(id);
+    await _missoesSyncToSheet().catch(()=>{});
+    fecharModal('modal-missao');
+    renderMissoes();
+  } catch(e){
+    console.error('salvarMissao erro:', e);
+    alert('Erro ao salvar missão: ' + e.message);
+  } finally {
+    if(btnSalvar){ btnSalvar.disabled = false; btnSalvar.textContent = '🎯 Salvar Missão'; }
+  }
 }
 
 async function atualizarStatusMissao(id, status){
@@ -5680,7 +6009,8 @@ async function atualizarStatusMissao(id, status){
 async function excluirMissao(id){
   if(!confirm('Excluir esta missão?')) return;
   missoes = missoes.filter(x=>x.id!==id);
-  _pset('ac_missoes', JSON.stringify(missoes));
+  try{ await _sbDelete('missoes', id); }catch(e){ console.warn('excluir missao supabase:', e); }
+  try{ _pset('ac_missoes', JSON.stringify(missoes)); }catch(e){}
   await _missoesSyncToSheet().catch(()=>{});
   renderMissoes();
 }
