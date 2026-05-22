@@ -1430,6 +1430,31 @@
 </div>
 
 <!-- ════════════════════════════════
+     MODAL: COMPLEMENTAR FICHA INTEL
+════════════════════════════════ -->
+<div class="modal-overlay hidden" id="modal-complementar-intel">
+  <div class="modal-box" style="max-width:600px;">
+    <div class="modal-header">
+      <h3>➕ Complementar Ficha de Inteligência</h3>
+      <button class="modal-close" onclick="fecharModal('modal-complementar-intel')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">As informações serão acrescentadas à ficha existente. Preencha apenas os campos que deseja complementar.</div>
+      <div class="intel-field"><label>Suspeitos (acrescentar)</label><textarea id="comp-suspeitos" placeholder="Novos suspeitos identificados..."></textarea></div>
+      <div class="intel-field"><label>Veículos (acrescentar)</label><textarea id="comp-veiculos" placeholder="Novos veículos identificados..."></textarea></div>
+      <div class="intel-field"><label>Modus Operandi (acrescentar)</label><textarea id="comp-modus" placeholder="Novas informações sobre o modus operandi..."></textarea></div>
+      <div class="intel-field"><label>Conexões com Outros BOs (acrescentar)</label><textarea id="comp-conexoes" placeholder="Novos BOs relacionados..."></textarea></div>
+      <div class="intel-field"><label>Observações (acrescentar)</label><textarea id="comp-obs" placeholder="Informações adicionais..."></textarea></div>
+      <input type="hidden" id="comp-ficha-id">
+    </div>
+    <div class="modal-footer">
+      <button class="btn-outline" onclick="fecharModal('modal-complementar-intel')">Cancelar</button>
+      <button class="btn-gold" onclick="salvarComplemento()">💾 Salvar Complemento</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════
      MODAL: MISSÃO
 ════════════════════════════════ -->
 <div class="modal-overlay hidden" id="modal-missao">
@@ -5196,7 +5221,7 @@ async function _excluirFichaSupabase(id){
 /* ── Abre anexo: usa storage_url se disponível, senão base64 ── */
 async function _abrirAnexo(id){
   /* Busca em memória (buffer do modal aberto) */
-  const emBuf = [..._intelFotosBuffer, ..._missaoAnexosBuffer].find(a=>a.id===id);
+  const emBuf = [...(_intelFotosBuffer||[]), ...(_missaoAnexosBuffer||[])].find(a=>a.id===id);
   if(emBuf && emBuf.base64){ _abrirOuBaixar(emBuf.base64, emBuf.nome, emBuf.tipo, true); return; }
 
   /* Busca nas fichas e missões carregadas */
@@ -5208,11 +5233,12 @@ async function _abrirAnexo(id){
   if(!a){ alert('Anexo não encontrado.'); return; }
 
   if(a.storage_url){
+    /* Todos os usuários podem acessar via storage_url público */
     _abrirOuBaixar(a.storage_url, a.nome, a.tipo, false);
   } else if(a.base64){
     _abrirOuBaixar(a.base64, a.nome, a.tipo, true);
   } else {
-    alert('Arquivo não disponível.');
+    alert('Arquivo não disponível — pode não ter sido carregado corretamente.');
   }
 }
 
@@ -5260,7 +5286,73 @@ function _forcDownload(url, nome){
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 
-/* ── Renderiza o seletor de grupamentos no modal intel ── */
+/* ── Complementar ficha de inteligência ── */
+function abrirComplementarIntel(id){
+  document.getElementById('comp-ficha-id').value = id;
+  ['comp-suspeitos','comp-veiculos','comp-modus','comp-conexoes','comp-obs'].forEach(fid=>{
+    document.getElementById(fid).value = '';
+  });
+  abrirModal('modal-complementar-intel');
+}
+
+async function salvarComplemento(){
+  const btn = document.querySelector('#modal-complementar-intel .btn-gold');
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Salvando...'; }
+  try{
+    const id = document.getElementById('comp-ficha-id').value;
+    const ficha = fichasIntel.find(x=>x.id===id);
+    if(!ficha){ alert('Ficha não encontrada.'); return; }
+    /* Acrescenta separando com linha se já houver conteúdo */
+    const sep = ' | ';
+    const campos = ['suspeitos','veiculos','modus','conexoes','obs'];
+    const ids    = ['comp-suspeitos','comp-veiculos','comp-modus','comp-conexoes','comp-obs'];
+    campos.forEach((campo, i) => {
+      const val = document.getElementById(ids[i]).value.trim().toUpperCase();
+      if(val){
+        ficha[campo] = ficha[campo] ? ficha[campo] + sep + val : val;
+      }
+    });
+    /* Registra quem complementou */
+    const quem = sessao?.nome || sessao?.guerra || '—';
+    const quando = new Date().toLocaleString('pt-BR');
+    ficha.obs = (ficha.obs||'') + (ficha.obs ? ' | ' : '') + `[COMPLEMENTADO POR ${quem.toUpperCase()} EM ${quando}]`;
+    const idx = fichasIntel.findIndex(x=>x.id===id);
+    if(idx>=0) fichasIntel[idx] = ficha;
+    await _salvarFichasComAnexos(id);
+    fecharModal('modal-complementar-intel');
+    renderIntel();
+  }catch(e){
+    alert('Erro ao salvar complemento: '+e.message);
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent='💾 Salvar Complemento'; }
+  }
+}
+
+/* ── Força caixa alta em todos os campos de texto dos modais intel e missão ── */
+function _forcaUpperCase(e){
+  const el = e.target;
+  const start = el.selectionStart;
+  const end   = el.selectionEnd;
+  el.value = el.value.toUpperCase();
+  el.setSelectionRange(start, end);
+}
+function _aplicarUpperCaseModais(){
+  ['modal-intel','modal-missao','modal-complementar-intel'].forEach(modalId => {
+    const modal = document.getElementById(modalId);
+    if(!modal) return;
+    modal.querySelectorAll('input[type=text], input[type=date], textarea').forEach(el => {
+      el.removeEventListener('input', _forcaUpperCase);
+      el.addEventListener('input', _forcaUpperCase);
+    });
+  });
+}
+/* Aplica quando os modais abrem */
+const _origAbrirModal = window.abrirModal;
+window.abrirModal = function(id){
+  if(typeof _origAbrirModal === 'function') _origAbrirModal(id);
+  else { const el=document.getElementById(id); if(el) el.classList.remove('hidden'); }
+  setTimeout(_aplicarUpperCaseModais, 50);
+};
 function _renderGpCheckboxes(selecionados){
   const wrap = document.getElementById('i-gp-wrap');
   if(!wrap) return;
@@ -5530,6 +5622,17 @@ async function salvarIntel(){
 }
 
 async function excluirIntel(id){
+  const ficha = fichasIntel.find(x=>x.id===id);
+  const _isAdmin = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
+  const criadorMatch = ficha && (
+    ficha.criadoPor === sessao?.nome ||
+    ficha.criadoPor === sessao?.guerra ||
+    (sessao?.guerra && ficha.criadoPor?.toUpperCase().includes(sessao.guerra.toUpperCase()))
+  );
+  if(!_isAdmin && !criadorMatch){
+    alert('Apenas quem criou a ficha pode excluí-la.');
+    return;
+  }
   if(!confirm('Excluir esta ficha?')) return;
   fichasIntel = fichasIntel.filter(x=>x.id!==id);
   await _excluirFichaSupabase(id);
@@ -5601,13 +5704,19 @@ function renderIntel(){
              </div>
            </div>`
         : '';
+      const _isAdminCard = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
+      const _criadorCard = f.criadoPor === sessao?.nome || f.criadoPor === sessao?.guerra ||
+        (sessao?.guerra && f.criadoPor?.toUpperCase().includes(sessao.guerra.toUpperCase()));
+      const _podeEditarExcluir = _isAdminCard || _criadorCard;
       return `
       <div class="intel-card" style="border-left:3px solid var(--gold);">
         <div class="intel-card-title" style="display:flex;align-items:center;justify-content:space-between;">
           <span>🕵 BO: ${f.rat||'—'} · ${munLabel}</span>
           <div style="display:flex;gap:4px;">
+            <button class="btn-outline" style="padding:2px 8px;font-size:10px;" onclick="abrirComplementarIntel('${f.id}')">➕ Complementar</button>
+            ${_podeEditarExcluir ? `
             <button class="btn-outline" style="padding:2px 8px;font-size:10px;" onclick="abrirModalIntel('${f.id}')">✏ Editar</button>
-            <button class="btn-danger" style="padding:2px 8px;" onclick="excluirIntel('${f.id}')">✕</button>
+            <button class="btn-danger" style="padding:2px 8px;" onclick="excluirIntel('${f.id}')">✕</button>` : ''}
           </div>
         </div>
         ${gpsLabel}
