@@ -3569,27 +3569,17 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
     _mCrime._lat = d0.lat;
     _mCrime._lng = d0.lng;
 
-    _mCrime.addTo(gCrimes);
-    /* Sub-layer por pelotão */
-    const _pelCrime = d0.grupamento ? pelDoColk(d0.grupamento) : 0;
-    if(!_gCrimesPel[_pelCrime]) _gCrimesPel[_pelCrime] = L.layerGroup();
-    _gCrimesPel[_pelCrime].addLayer(_mCrime);
-  });
-  /* ── Hover inteligente: ao passar o mouse, mostra todos os crimes próximos ── */
-  const RAIO_HOVER = 0.003; /* ~330m — detecta pontos visualmente próximos no zoom atual */
-  gCrimes.eachLayer(m => {
-    if(!m._crimeData) return;
-    m.on('mouseover', function(){
-      /* Coleta todos os crimes próximos de todos os marcadores */
+    /* Hover inteligente — mostra todos os crimes próximos */
+    _mCrime.on('mouseover', function(e){
+      const RAIO = 0.003;
       const todosCrimes = [];
       gCrimes.eachLayer(m2 => {
         if(!m2._crimeData) return;
-        if(Math.abs(m._lat - m2._lat) < RAIO_HOVER && Math.abs(m._lng - m2._lng) < RAIO_HOVER){
+        if(Math.abs(this._lat - m2._lat) < RAIO && Math.abs(this._lng - m2._lng) < RAIO){
           todosCrimes.push(...m2._crimeData);
         }
       });
-      if(todosCrimes.length <= 1) return; /* apenas 1 = tooltip normal já funciona */
-      /* Atualiza tooltip para mostrar todos os crimes próximos */
+      if(todosCrimes.length <= 1) return;
       const linhas = todosCrimes.map(d => {
         const cor = CORES_INDICADOR[d.indicador]||'#9b8a5c';
         return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid #2a2a2a;">
@@ -3598,18 +3588,22 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
           <span style="color:#666;font-size:9px;">${d.data||''}</span>
         </div>`;
       }).join('');
-      m.unbindTooltip();
-      m.bindTooltip(
+      this.unbindTooltip();
+      this.bindTooltip(
         `<div style="background:#1e1e1e;border:1px solid #555;border-radius:6px;padding:8px 10px;min-width:240px;">
           <div style="font-size:11px;font-weight:700;color:#fff;margin-bottom:6px;">📍 ${todosCrimes.length} crimes nesta área</div>
           ${linhas}
-          <div style="font-size:9px;color:#666;margin-top:4px;text-align:center;">Clique para ver detalhes</div>
         </div>`,
         {sticky:true, direction:'top', className:'leaflet-tooltip-crime', opacity:1}
-      ).openTooltip();
+      ).openTooltip(e.latlng);
     });
-  });
 
+    _mCrime.addTo(gCrimes);
+    /* Sub-layer por pelotão */
+    const _pelCrime = d0.grupamento ? pelDoColk(d0.grupamento) : 0;
+    if(!_gCrimesPel[_pelCrime]) _gCrimesPel[_pelCrime] = L.layerGroup();
+    _gCrimesPel[_pelCrime].addLayer(_mCrime);
+  });
   _acLayers['crimes'] = gCrimes;
   /* Registra sub-layers e aplica visibilidade dos pelotões */
   Object.entries(_gCrimesPel).forEach(([pelN,grp]) => {
