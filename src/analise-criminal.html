@@ -2258,7 +2258,8 @@ function popularFiltrosGPs(){
 
   /* Grupamento do usuário logado */
   const _isAdminGP = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
-  const gpUsuarioLot = sessao?.lotacao || '';
+  /* Normaliza a lotação — remove espaços extras ao redor das barras */
+  const gpUsuarioLot = (sessao?.lotacao||'').replace(/\s*\/\s*/g,' / ').trim();
   console.log('[GP Filter] isAdmin:', _isAdminGP, '| lotacao:', gpUsuarioLot);
 
   ['mis-gp','m-gp','cr-gp','f-gp-dash','mapa-gp','cx-gp','vt-gp','intel-busca-gp'].forEach(id => {
@@ -5394,6 +5395,48 @@ function abrirComplementarIntel(id){
   abrirModal('modal-complementar-intel');
 }
 
+function verComplemento(fichaId, compId){
+  const ficha = fichasIntel.find(x=>x.id===fichaId);
+  if(!ficha) return;
+  const comp = (ficha.complementos||[]).find(c=>c.id===compId);
+  if(!comp) return;
+  const labelMap = {suspeitos:'Suspeitos',veiculos:'Veículos',modus:'Modus Operandi',conexoes:'Conexões',obs:'Observações'};
+  const camposHtml = Object.entries(comp.campos||{}).filter(([k,v])=>v)
+    .map(([k,v])=>`<div style="margin-bottom:10px;"><div style="font-size:10px;font-weight:700;color:var(--gold);text-transform:uppercase;margin-bottom:3px;">${labelMap[k]||k}</div><div style="font-size:12px;color:#ddd;line-height:1.6;">${v}</div></div>`)
+    .join('');
+  const anexosHtml = (comp.anexos||[]).length ? `
+    <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;">
+      <div style="font-size:10px;font-weight:700;color:var(--gold);margin-bottom:6px;">📎 Anexos (${comp.anexos.length})</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        ${comp.anexos.map(a=>{
+          const icon=(a.tipo&&a.tipo.startsWith('image'))?'🖼':(a.tipo&&a.tipo.startsWith('video'))?'🎥':a.nome.endsWith('.pdf')?'📄':a.nome.endsWith('.kml')||a.nome.endsWith('.kmz')?'🗺':'📎';
+          return `<div style="border:1px solid var(--border);border-radius:4px;padding:4px 8px;cursor:pointer;font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:4px;" onclick="_abrirAnexo('${a.id}')">${icon} ${a.nome}</div>`;
+        }).join('')}
+      </div>
+    </div>` : '';
+  /* Cria modal dinâmico */
+  let m = document.getElementById('modal-ver-comp');
+  if(!m){ m=document.createElement('div'); m.id='modal-ver-comp'; m.className='modal-overlay'; document.body.appendChild(m); }
+  m.innerHTML = `<div class="modal-box" style="max-width:560px;">
+    <div class="modal-header">
+      <h3>👁 Complemento — ${comp.por}</h3>
+      <button class="modal-close" onclick="document.getElementById('modal-ver-comp').classList.add('hidden')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:10px;color:var(--text-hint);margin-bottom:12px;">
+        Inserido por <strong>${comp.por}</strong> em ${comp.em}
+        ${comp.editadoPor?`<br>Editado por <strong>${comp.editadoPor}</strong> em ${comp.editadoEm}`:''}
+      </div>
+      ${camposHtml||'<div style="color:var(--text-muted);font-size:12px;">Nenhum campo preenchido.</div>'}
+      ${anexosHtml}
+    </div>
+    <div class="modal-footer">
+      <button class="btn-outline" onclick="document.getElementById('modal-ver-comp').classList.add('hidden')">Fechar</button>
+    </div>
+  </div>`;
+  m.classList.remove('hidden');
+}
+
 function editarComplemento(fichaId, compId){
   const ficha = fichasIntel.find(x=>x.id===fichaId);
   if(!ficha) return;
@@ -5945,13 +5988,15 @@ function renderIntel(){
 
       return `
       <div class="intel-card" style="border-left:3px solid var(--gold);">
-        <div class="intel-card-title" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-          <span>🕵 BO: <strong>${f.rat||'—'}</strong>${munLabel !== '—' ? ' · '+munLabel : ''}</span>
-          <div style="display:flex;gap:4px;">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;">
+          <div>
+            <div style="font-size:13px;font-weight:700;color:#fff;">🕵 BO: ${f.rat||'—'}</div>
+            ${munLabel!=='—'?`<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">📍 ${munLabel}</div>`:''}
+          </div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;">
             <button class="btn-outline" style="padding:2px 8px;font-size:10px;" onclick="abrirComplementarIntel('${f.id}')">➕ Complementar</button>
-            ${_podeEditarExcluir ? `
-            <button class="btn-outline" style="padding:2px 8px;font-size:10px;" onclick="abrirModalIntel('${f.id}')">✏ Editar</button>
-            <button class="btn-danger" style="padding:2px 8px;" onclick="excluirIntel('${f.id}')">✕</button>` : ''}
+            ${_podeEditarExcluir?`<button class="btn-outline" style="padding:2px 8px;font-size:10px;" onclick="abrirModalIntel('${f.id}')">✏ Editar</button>
+            <button class="btn-danger" style="padding:2px 8px;" onclick="excluirIntel('${f.id}')">✕</button>`:''}
           </div>
         </div>
         ${gpsLabel}
@@ -5982,6 +6027,7 @@ function renderIntel(){
                 </div>
                 <div style="display:flex;gap:4px;">
                   ${ehAutor?`<button class="btn-outline" style="padding:1px 7px;font-size:9px;" onclick="editarComplemento('${f.id}','${comp.id}')">✏ Editar</button>`:''}
+                  <button class="btn-outline" style="padding:1px 7px;font-size:9px;" onclick="verComplemento('${f.id}','${comp.id}')">👁 Ver</button>
                 </div>
               </div>
               ${camposComp.map(([k,v])=>`<div style="margin-bottom:4px;"><span style="font-size:9px;color:var(--text-muted);text-transform:uppercase;">${labelMap[k]||k}:</span> <span style="font-size:11px;color:#ddd;">${v}</span></div>`).join('')}
