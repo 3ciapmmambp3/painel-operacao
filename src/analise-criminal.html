@@ -5464,8 +5464,17 @@ async function salvarComplemento(){
   try{
     const id     = document.getElementById('comp-ficha-id').value;
     const compId = document.getElementById('comp-comp-id').value;
-    const ficha  = fichasIntel.find(x=>x.id===id);
-    if(!ficha){ alert('Ficha não encontrada.'); return; }
+
+    /* IMPORTANTE: busca versão mais recente do Supabase para não perder complementos de outros */
+    let fichaAtual = null;
+    try{
+      const rows = await _sbSelect('fichas_intel', `id=eq.${id}`);
+      if(rows && rows.length){
+        fichaAtual = { ...fichasIntel.find(x=>x.id===id), complementos: rows[0].complementos||[] };
+      }
+    }catch(e){ console.warn('Não foi possível buscar versão atualizada:', e.message); }
+    if(!fichaAtual) fichaAtual = fichasIntel.find(x=>x.id===id);
+    if(!fichaAtual){ alert('Ficha não encontrada.'); return; }
 
     const quem   = (sessao?.nome || sessao?.guerra || '—').toUpperCase();
     const quando = new Date().toLocaleString('pt-BR');
@@ -5478,36 +5487,41 @@ async function salvarComplemento(){
       obs:       document.getElementById('comp-obs').value.trim().toUpperCase(),
     };
 
-    if(!ficha.complementos) ficha.complementos = [];
+    if(!fichaAtual.complementos) fichaAtual.complementos = [];
 
     if(compId){
-      /* Editando complemento existente */
-      const ci = ficha.complementos.findIndex(c=>c.id===compId);
+      /* Edita apenas o complemento específico, preservando todos os outros */
+      const ci = fichaAtual.complementos.findIndex(c=>c.id===compId);
       if(ci>=0){
-        ficha.complementos[ci] = {
-          ...ficha.complementos[ci],
+        fichaAtual.complementos[ci] = {
+          ...fichaAtual.complementos[ci],
           campos,
-          anexos:    _compAnexosBuffer.map(a=>({id:a.id, nome:a.nome, tipo:a.tipo||'', base64:a.base64||'', anexadoPor:a.anexadoPor||quem, anexadoEm:a.anexadoEm||quando})),
+          anexos:     _compAnexosBuffer.map(a=>({id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url||'', anexadoPor:a.anexadoPor||quem, anexadoEm:a.anexadoEm||quando})),
           editadoPor: quem,
           editadoEm:  quando,
         };
       }
     } else {
       /* Novo complemento */
-      ficha.complementos.push({
+      fichaAtual.complementos.push({
         id:      'comp-'+Date.now(),
         por:     quem,
         em:      quando,
         _emISO:  new Date().toISOString(),
         campos,
-        anexos:  _compAnexosBuffer.map(a=>({id:a.id, nome:a.nome, tipo:a.tipo||'', base64:a.base64||'', anexadoPor:a.anexadoPor||quem, anexadoEm:a.anexadoEm||quando})),
+        anexos:  _compAnexosBuffer.map(a=>({id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url||'', anexadoPor:a.anexadoPor||quem, anexadoEm:a.anexadoEm||quando})),
       });
     }
 
+    /* Atualiza em memória com a versão mesclada */
     const idx = fichasIntel.findIndex(x=>x.id===id);
-    if(idx>=0) fichasIntel[idx] = ficha;
+    if(idx>=0) fichasIntel[idx] = fichaAtual;
+    else fichasIntel.push(fichaAtual);
+
     await _salvarFichasComAnexos(id);
     fecharModal('modal-complementar-intel');
+    /* Recarrega fichas do Supabase para garantir consistência */
+    await _carregarFichasComAnexos();
     renderIntel();
   }catch(e){
     alert('Erro ao salvar complemento: '+e.message);
