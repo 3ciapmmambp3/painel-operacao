@@ -5883,102 +5883,107 @@ function renderIntel(){
 
   const reincLbl = { nao:'Não', sim:'Sim — Suspeito', local:'Sim — Local' };
 
-  /* Helper: separa campo original dos complementos (separados por " | ") */
-  function _splitComplementos(valor){
-    if(!valor) return {original:'', complementos:[]};
-    const partes = valor.split(' | ');
-    /* Detecta se alguma parte é um registro de complemento */
-    const original = [];
-    const complementos = [];
-    partes.forEach(p => {
-      if(p.startsWith('[COMPLEMENTADO POR ')) complementos.push(p);
-      else original.push(p);
-    });
-    return { original: original.join(' | '), complementos };
+  /* Helper: campo simples sem complementos antigos */
+  function _campoOriginal(campo){
+    if(!campo) return '';
+    return campo.split(' | ').filter(p=>!p.startsWith('[COMPLEMENTADO POR ')).join(' | ');
   }
 
-  /* Helper: renderiza um campo com separação original/complementos */
-  function _renderCampo(label, valor, cor){
-    if(!valor) return '';
-    const {original, complementos} = _splitComplementos(valor);
-    let html = `<div class="intel-field" style="margin-bottom:8px;">
-      <label>${label}</label>`;
-    if(original) html += `<div style="font-size:12px;color:${cor||'var(--text-white)'};line-height:1.6;">${original}</div>`;
-    complementos.forEach(c => {
-      /* Extrai o texto do complemento — remove o marcador */
-      const match = c.match(/\[COMPLEMENTADO POR (.+?) EM (.+?)\]/);
-      if(match) return; /* só marcador, sem texto adicional — já tratado pelo campo */
+  /* Helper: extrai complementos do formato antigo (campos concatenados com | ) */
+  function _extrairComplementosLegado(ficha){
+    /* Retorna array de {por, em, campos} extraídos dos campos antigos */
+    const camposNomes = ['suspeitos','veiculos','facao','modus','armas','conexoes','obs'];
+    /* Coleta todos os registros de quem complementou */
+    const registros = {};
+    camposNomes.forEach(c => {
+      if(!ficha[c]) return;
+      const partes = ficha[c].split(' | ');
+      /* Os valores após o primeiro são complementos */
+      partes.slice(1).forEach((v,i) => {
+        if(v.startsWith('[COMPLEMENTADO POR ')) return;
+        /* Tenta associar ao registro de complemento pelo índice */
+        const chave = 'legado-'+i;
+        if(!registros[chave]) registros[chave] = {id:'legado-'+i, por:'DESCONHECIDO', em:'—', campos:{}};
+        registros[chave].campos[c] = v;
+      });
     });
-    html += '</div>';
-    return html;
+    /* Extrai nomes dos marcadores [COMPLEMENTADO POR X EM Y] */
+    const obs = ficha.obs || '';
+    const marcadores = [];
+    obs.split(' | ').forEach(p => {
+      const m = p.match(/\[COMPLEMENTADO POR (.+?) EM (.+?)\]/);
+      if(m) marcadores.push({por:m[1], em:m[2]});
+    });
+    /* Associa marcadores aos registros */
+    const keys = Object.keys(registros);
+    keys.forEach((k,i) => {
+      if(marcadores[i]){ registros[k].por = marcadores[i].por; registros[k].em = marcadores[i].em; }
+    });
+    return Object.values(registros).filter(r => Object.keys(r.campos).length > 0);
+  }
+
+  /* Helper: renderiza thumb de anexo */
+  function _thumbAnexo(a){
+    const icon=(a.tipo&&a.tipo.startsWith('image'))?'🖼':(a.tipo&&a.tipo.startsWith('video'))?'🎥':a.nome.endsWith('.pdf')?'📄':a.nome.endsWith('.kml')||a.nome.endsWith('.kmz')?'🗺':'📎';
+    return `<div style="border:1px solid var(--border);border-radius:4px;overflow:hidden;cursor:pointer;text-align:center;width:60px;" onclick="_abrirAnexo('${a.id}')" title="${a.nome}">
+      <div style="height:45px;display:flex;align-items:center;justify-content:center;background:#222;font-size:20px;">${icon}</div>
+      <div style="padding:2px 3px;background:#1a1a1a;font-size:8px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${a.nome}</div>
+      ${a.anexadoPor?`<div style="padding:1px 3px;background:#111;font-size:7px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${a.anexadoPor}</div>`:''}
+    </div>`;
   }
 
   el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:12px;">` +
     fichas.map(f => {
       const muns = Array.isArray(f.municipio) ? f.municipio : (f.municipio ? [f.municipio] : []);
       const munLabel = muns.join(', ') || '—';
-
-      /* Separa campos originais dos complementos */
-      const camposSep = {};
-      ['suspeitos','veiculos','facao','modus','armas','conexoes','obs'].forEach(c => {
-        camposSep[c] = _splitComplementos(f[c]);
-      });
-
-      /* Extrai registros de complemento do campo obs */
-      const registrosComp = [];
-      const obsPartes = (f.obs||'').split(' | ');
-      const obsOriginal = [];
-      obsPartes.forEach(p => {
-        const m = p.match(/\[COMPLEMENTADO POR (.+?) EM (.+?)\]/);
-        if(m) registrosComp.push({por:m[1], em:m[2]});
-        else if(p.trim()) obsOriginal.push(p);
-      });
-
       const gpsLabel = (f.gpsAtuacao||[]).length
         ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">${(f.gpsAtuacao||[]).map(g=>`<span style="font-size:10px;background:rgba(155,138,92,.15);color:var(--gold);border:1px solid var(--gold-border);padding:1px 7px;border-radius:3px;">${g}</span>`).join('')}</div>` : '';
 
-      /* Renderiza campos que têm complementos separadamente */
-      function renderCampoComComp(label, campoKey, cor){
-        const {original, complementos: _c} = camposSep[campoKey];
-        if(!original && !_c.length) return '';
-        /* Remove os marcadores [COMPLEMENTADO...] dos complementos */
-        const partes = (f[campoKey]||'').split(' | ').filter(p => !p.startsWith('[COMPLEMENTADO POR '));
-        if(!partes.length) return '';
-        /* Separa: primeiro valor = original, demais = complementos */
-        const orig = partes[0];
-        const comps = partes.slice(1);
-        let html = `<div class="intel-field" style="margin-bottom:8px;"><label>${label}</label>`;
-        if(orig) html += `<div style="font-size:12px;color:${cor||'var(--text-white)'};line-height:1.5;">${orig}</div>`;
-        comps.forEach(cp => {
-          html += `<div style="font-size:11px;color:${cor||'var(--text-muted)'};border-left:2px solid rgba(155,138,92,.4);padding-left:6px;margin-top:4px;opacity:.85;">+ ${cp}</div>`;
-        });
-        html += '</div>';
-        return html;
-      }
+      /* Dados originais — sem complementos antigos embolados */
+      const labelMap = {suspeitos:'SUSPEITOS',veiculos:'VEÍCULOS SUSPEITOS',facao:'FACÇÃO / VÍNCULO',modus:'MODUS OPERANDI',armas:'ARMAS',conexoes:'CONEXÕES COM OUTROS BOS',obs:'OBSERVAÇÕES'};
+      const cores = {suspeitos:'var(--text-white)',veiculos:'#ccc',facao:'var(--danger)',modus:'#bbb',armas:'#ff9800',conexoes:'#ccc',obs:'var(--text-muted)'};
+      const camposOriginaisHtml = ['suspeitos','veiculos','facao','modus','armas','conexoes','obs'].map(c=>{
+        const v = _campoOriginal(f[c]);
+        if(!v) return '';
+        return `<div style="margin-bottom:8px;"><div style="font-size:9px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;">${labelMap[c]}</div><div style="font-size:12px;color:${cores[c]};line-height:1.5;">${v}</div></div>`;
+      }).join('');
 
-      /* Anexos com quem anexou */
+      /* Anexos originais */
       const anexosHtml = (f.fotos||[]).length ? `
         <div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">
-          <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:6px;">📎 Anexos (${f.fotos.length})</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            ${f.fotos.map(ft=>{
-              const isImg=ft.tipo&&ft.tipo.startsWith('image');
-              const isVid=ft.tipo&&ft.tipo.startsWith('video');
-              const isPdf=ft.tipo==='application/pdf'||ft.nome.endsWith('.pdf');
-              const isKml=ft.nome.endsWith('.kml')||ft.nome.endsWith('.kmz');
-              let thumb='';
-              if(isImg) thumb=`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;font-size:20px;">🖼</div>`;
-              else if(isVid) thumb=`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;font-size:20px;">🎥</div>`;
-              else if(isPdf) thumb=`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;font-size:20px;">📄</div>`;
-              else if(isKml) thumb=`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;font-size:20px;">🗺</div>`;
-              else thumb=`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;font-size:20px;">📎</div>`;
-              return `<div style="border:1px solid var(--border);border-radius:4px;overflow:hidden;cursor:pointer;text-align:center;" onclick="_abrirAnexo('${ft.id}')" title="${ft.nome}${ft.anexadoPor?' · '+ft.anexadoPor:''}">
-                ${thumb}
-                <div style="padding:2px 4px;background:#1a1a1a;font-size:8px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60px;">${ft.nome}</div>
-                ${ft.anexadoPor?`<div style="padding:1px 4px;background:#111;font-size:7px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60px;">${ft.anexadoPor}</div>`:''}
-              </div>`;
-            }).join('')}
-          </div>
+          <div style="font-size:10px;font-weight:700;color:var(--text-muted);margin-bottom:6px;">📎 ANEXOS (${f.fotos.length})</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">${f.fotos.map(ft=>_thumbAnexo(ft)).join('')}</div>
+        </div>` : '';
+
+      /* Complementos — cada um em card separado */
+      /* Complementos — novos (estruturados) + antigos (legado) */
+      const complementosNovos = f.complementos || [];
+      const complementosLegado = _extrairComplementosLegado(f);
+      const todosComplementos = [...complementosNovos, ...complementosLegado];
+
+      const complementosHtml = todosComplementos.length ? `
+        <div style="border-top:1px dashed rgba(155,138,92,.3);padding-top:10px;margin-top:8px;">
+          <div style="font-size:10px;font-weight:700;color:var(--gold);margin-bottom:8px;">➕ COMPLEMENTOS (${todosComplementos.length})</div>
+          ${todosComplementos.map(comp=>{
+            const _isAdminComp = sessao && (sessao.perfil==='admin'||sessao.perfil==='comandante');
+            const ehAutorComp = _isAdminComp || comp.por===(sessao?.nome||'').toUpperCase() || comp.por===(sessao?.guerra||'').toUpperCase();
+            const ehLegado = comp.id && comp.id.startsWith('legado-');
+            const camposComp = Object.entries(comp.campos||{}).filter(([k,v])=>v);
+            return `<div style="background:rgba(155,138,92,.07);border:1px solid rgba(155,138,92,.25);border-radius:6px;padding:8px 10px;margin-bottom:6px;">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+                <div>
+                  <div style="font-size:11px;font-weight:700;color:var(--gold);">${comp.por}</div>
+                  <div style="font-size:10px;color:var(--text-hint);">${comp.em}${comp.editadoPor?` · editado em ${comp.editadoEm}`:''}</div>
+                </div>
+                <div style="display:flex;gap:4px;">
+                  ${!ehLegado && ehAutorComp?`<button class="btn-outline" style="padding:1px 7px;font-size:9px;" onclick="editarComplemento('${f.id}','${comp.id}')">✏</button>`:''}
+                  ${!ehLegado?`<button class="btn-outline" style="padding:1px 7px;font-size:9px;" onclick="verComplemento('${f.id}','${comp.id}')">👁 Ver</button>`:''}
+                </div>
+              </div>
+              ${camposComp.map(([k,v])=>`<div style="margin-bottom:3px;"><span style="font-size:9px;color:var(--text-muted);text-transform:uppercase;">${labelMap[k]||k}:</span> <span style="font-size:11px;color:#ddd;">${v.length>100?v.slice(0,100)+'...':v}</span></div>`).join('')}
+              ${(comp.anexos||[]).length?`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">${comp.anexos.map(a=>_thumbAnexo(a)).join('')}</div>`:''}
+            </div>`;
+          }).join('')}
         </div>` : '';
 
       const _isAdminCard = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
@@ -6000,50 +6005,11 @@ function renderIntel(){
           </div>
         </div>
         ${gpsLabel}
-        ${renderCampoComComp('Suspeitos','suspeitos','var(--text-white)')}
-        ${renderCampoComComp('Veículos Suspeitos','veiculos','#ccc')}
-        ${renderCampoComComp('Facção / Vínculo','facao','var(--danger)')}
-        ${renderCampoComComp('Modus Operandi','modus','#bbb')}
-        ${renderCampoComComp('Armas','armas','#ff9800')}
-        ${renderCampoComComp('Conexões com Outros BOs','conexoes','#ccc')}
         ${f.reincidencia&&f.reincidencia!=='nao'?`<div style="font-size:10px;background:rgba(239,83,80,.12);color:var(--danger);padding:3px 8px;border-radius:3px;font-weight:700;display:inline-block;margin-bottom:8px;">⚠ Reincidência: ${reincLbl[f.reincidencia]}</div>`:''}
-        ${obsOriginal.length?`<div style="font-size:11px;color:var(--text-muted);background:var(--bg-input);border-radius:4px;padding:6px 8px;margin-bottom:8px;">${obsOriginal.join(' | ')}</div>`:''}
-        ${(f.complementos||[]).length?`
-        <div style="border-top:1px dashed rgba(155,138,92,.35);padding-top:10px;margin-top:6px;">
-          <div style="font-size:10px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">➕ Complementos (${f.complementos.length})</div>
-          ${f.complementos.map((comp,ci)=>{
-            const ehAutor = sessao && (
-              comp.por === (sessao.nome||'').toUpperCase() ||
-              comp.por === (sessao.guerra||'').toUpperCase() ||
-              sessao.perfil==='admin' || sessao.perfil==='comandante'
-            );
-            const camposComp = Object.entries(comp.campos||{}).filter(([k,v])=>v);
-            const labelMap = {suspeitos:'Suspeitos',veiculos:'Veículos',modus:'Modus Operandi',conexoes:'Conexões',obs:'Observações'};
-            return `<div style="background:rgba(155,138,92,.07);border:1px solid rgba(155,138,92,.2);border-radius:6px;padding:8px 10px;margin-bottom:6px;">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                <div style="font-size:10px;color:var(--gold);">
-                  <strong>${comp.por}</strong> · ${comp.em}
-                  ${comp.editadoPor?`<span style="color:var(--text-muted);"> · editado por ${comp.editadoPor} em ${comp.editadoEm}</span>`:''}
-                </div>
-                <div style="display:flex;gap:4px;">
-                  ${ehAutor?`<button class="btn-outline" style="padding:1px 7px;font-size:9px;" onclick="editarComplemento('${f.id}','${comp.id}')">✏ Editar</button>`:''}
-                  <button class="btn-outline" style="padding:1px 7px;font-size:9px;" onclick="verComplemento('${f.id}','${comp.id}')">👁 Ver</button>
-                </div>
-              </div>
-              ${camposComp.map(([k,v])=>`<div style="margin-bottom:4px;"><span style="font-size:9px;color:var(--text-muted);text-transform:uppercase;">${labelMap[k]||k}:</span> <span style="font-size:11px;color:#ddd;">${v}</span></div>`).join('')}
-              ${(comp.anexos||[]).length?`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">${(comp.anexos||[]).map(a=>{
-                const isImg=a.tipo&&a.tipo.startsWith('image');
-                const isVid=a.tipo&&a.tipo.startsWith('video');
-                const isPdf=a.tipo==='application/pdf'||a.nome.endsWith('.pdf');
-                const isKml=a.nome.endsWith('.kml')||a.nome.endsWith('.kmz');
-                const icon=isImg?'🖼':isVid?'🎥':isPdf?'📄':isKml?'🗺':'📎';
-                return `<div style="border:1px solid var(--border);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;color:var(--text-muted);" onclick="_abrirAnexo('${a.id}')" title="${a.nome}">${icon} ${a.nome.length>12?a.nome.slice(0,12)+'...':a.nome}</div>`;
-              }).join('')}</div>`:''}
-            </div>`;
-          }).join('')}
-        </div>`:''}
+        ${camposOriginaisHtml}
         ${anexosHtml}
-        <div style="font-size:10px;color:var(--text-hint);margin-top:8px;border-top:1px solid var(--border);padding-top:6px;line-height:1.8;">
+        ${complementosHtml}
+        <div style="font-size:10px;color:var(--text-hint);margin-top:8px;border-top:1px solid var(--border);padding-top:6px;">
           Criado por <strong>${f.criadoPor}</strong> em ${f.criadoEm}
         </div>
       </div>`;
