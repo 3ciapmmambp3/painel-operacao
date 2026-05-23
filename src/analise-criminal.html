@@ -3571,16 +3571,48 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
 
     /* Hover inteligente — mostra todos os crimes próximos */
     _mCrime.on('mouseover', function(e){
-      const RAIO = 0.05;
+      const RAIO = 0.0005; /* ~55m — apenas pontos realmente sobrepostos */
       const todosCrimes = [];
+      /* Verifica crimes próximos */
       gCrimes.eachLayer(m2 => {
         if(!m2._crimeData) return;
         if(Math.abs(this._lat - m2._lat) < RAIO && Math.abs(this._lng - m2._lng) < RAIO){
           todosCrimes.push(...m2._crimeData);
         }
       });
+      /* Verifica operações próximas */
+      if(_acLayers['ops']) _acLayers['ops'].eachLayer(m2 => {
+        if(!m2._latlng) return;
+        if(Math.abs(this._lat - m2._latlng.lat) < RAIO && Math.abs(this._lng - m2._latlng.lng) < RAIO){
+          const tip = m2.getTooltip ? m2.getTooltip()?.getContent() : null;
+          todosCrimes.push({_tipo:'ops', _tipHtml: tip||'Operação GDO Rural'});
+        }
+      });
+      /* Verifica visitas próximas */
+      ['visitas-furto','visitas-violento','visitas-urbano'].forEach(vk => {
+        if(!_acLayers[vk]) return;
+        _acLayers[vk].eachLayer(m2 => {
+          if(!m2._latlng) return;
+          if(Math.abs(this._lat - m2._latlng.lat) < RAIO && Math.abs(this._lng - m2._latlng.lng) < RAIO){
+            const tip = m2.getTooltip ? m2.getTooltip()?.getContent() : null;
+            todosCrimes.push({_tipo:'visita', _tipHtml: tip||'Visita Tranquilizadora'});
+          }
+        });
+      });
       if(todosCrimes.length <= 1) return;
       const linhas = todosCrimes.map(d => {
+        if(d._tipo === 'ops'){
+          return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid #2a2a2a;">
+            <span style="background:#8e24aa;color:#fff;font-size:9px;font-weight:800;padding:1px 5px;border-radius:2px;min-width:34px;text-align:center;">OPS</span>
+            <span style="color:#ccc;font-size:10px;flex:1;">Operação GDO Rural</span>
+          </div>`;
+        }
+        if(d._tipo === 'visita'){
+          return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid #2a2a2a;">
+            <span style="background:#4caf50;color:#fff;font-size:9px;font-weight:800;padding:1px 5px;border-radius:2px;min-width:34px;text-align:center;">VIS</span>
+            <span style="color:#ccc;font-size:10px;flex:1;">Visita Tranquilizadora</span>
+          </div>`;
+        }
         const cor = CORES_INDICADOR[d.indicador]||'#9b8a5c';
         return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid #2a2a2a;">
           <span style="background:${cor};color:#fff;font-size:9px;font-weight:800;padding:1px 5px;border-radius:2px;min-width:34px;text-align:center;">${d.indicador}</span>
