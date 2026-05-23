@@ -1496,6 +1496,7 @@
         </div>
       </div>
       <input type="hidden" id="comp-ficha-id">
+      <input type="hidden" id="comp-comp-id">
     </div>
     <div class="modal-footer">
       <button class="btn-outline" onclick="fecharModal('modal-complementar-intel')">Cancelar</button>
@@ -3034,7 +3035,7 @@ function renderMapaFS(){
   if(elNormal) elNormal.id = '_ac-mapa-normal-hidden';
 
   try {
-    _renderMapaCriminalInterno(dados, '');
+    _renderMapaCriminalInterno(dados, gp);
   } finally {
     /* ── Sempre restaura IDs e globals, mesmo em caso de erro ── */
     elFS.id = 'mapa-fullscreen-inner';
@@ -5381,11 +5382,34 @@ let _compAnexosBuffer = [];
 
 function abrirComplementarIntel(id){
   document.getElementById('comp-ficha-id').value = id;
+  document.getElementById('comp-comp-id').value = ''; /* novo complemento */
   ['comp-suspeitos','comp-veiculos','comp-modus','comp-conexoes','comp-obs'].forEach(fid=>{
     document.getElementById(fid).value = '';
   });
   _compAnexosBuffer = [];
   _renderAnexos('comp');
+  /* Título do modal */
+  const titulo = document.querySelector('#modal-complementar-intel .modal-header h3');
+  if(titulo) titulo.textContent = '➕ Complementar Ficha de Inteligência';
+  abrirModal('modal-complementar-intel');
+}
+
+function editarComplemento(fichaId, compId){
+  const ficha = fichasIntel.find(x=>x.id===fichaId);
+  if(!ficha) return;
+  const comp = (ficha.complementos||[]).find(c=>c.id===compId);
+  if(!comp) return;
+  document.getElementById('comp-ficha-id').value = fichaId;
+  document.getElementById('comp-comp-id').value = compId;
+  document.getElementById('comp-suspeitos').value = comp.campos?.suspeitos||'';
+  document.getElementById('comp-veiculos').value  = comp.campos?.veiculos||'';
+  document.getElementById('comp-modus').value     = comp.campos?.modus||'';
+  document.getElementById('comp-conexoes').value  = comp.campos?.conexoes||'';
+  document.getElementById('comp-obs').value       = comp.campos?.obs||'';
+  _compAnexosBuffer = (comp.anexos||[]).map(a=>({...a}));
+  _renderAnexos('comp');
+  const titulo = document.querySelector('#modal-complementar-intel .modal-header h3');
+  if(titulo) titulo.textContent = '✏ Editar Complemento';
   abrirModal('modal-complementar-intel');
 }
 
@@ -5393,25 +5417,48 @@ async function salvarComplemento(){
   const btn = document.querySelector('#modal-complementar-intel .btn-gold');
   if(btn){ btn.disabled=true; btn.textContent='⏳ Salvando...'; }
   try{
-    const id = document.getElementById('comp-ficha-id').value;
-    const ficha = fichasIntel.find(x=>x.id===id);
+    const id     = document.getElementById('comp-ficha-id').value;
+    const compId = document.getElementById('comp-comp-id').value;
+    const ficha  = fichasIntel.find(x=>x.id===id);
     if(!ficha){ alert('Ficha não encontrada.'); return; }
-    const sep = ' | ';
-    const campos = ['suspeitos','veiculos','modus','conexoes','obs'];
-    const ids    = ['comp-suspeitos','comp-veiculos','comp-modus','comp-conexoes','comp-obs'];
-    campos.forEach((campo, i) => {
-      const val = document.getElementById(ids[i]).value.trim().toUpperCase();
-      if(val) ficha[campo] = ficha[campo] ? ficha[campo] + sep + val : val;
-    });
-    /* Acrescenta anexos novos */
-    if(_compAnexosBuffer.length){
-      ficha.fotos = [...(ficha.fotos||[]), ..._compAnexosBuffer];
-    }
-    /* Registra quem complementou */
+
     const quem   = (sessao?.nome || sessao?.guerra || '—').toUpperCase();
     const quando = new Date().toLocaleString('pt-BR');
-    const registro = `[COMPLEMENTADO POR ${quem} EM ${quando}]`;
-    ficha.obs = (ficha.obs ? ficha.obs + ' | ' : '') + registro;
+
+    const campos = {
+      suspeitos: document.getElementById('comp-suspeitos').value.trim().toUpperCase(),
+      veiculos:  document.getElementById('comp-veiculos').value.trim().toUpperCase(),
+      modus:     document.getElementById('comp-modus').value.trim().toUpperCase(),
+      conexoes:  document.getElementById('comp-conexoes').value.trim().toUpperCase(),
+      obs:       document.getElementById('comp-obs').value.trim().toUpperCase(),
+    };
+
+    if(!ficha.complementos) ficha.complementos = [];
+
+    if(compId){
+      /* Editando complemento existente */
+      const ci = ficha.complementos.findIndex(c=>c.id===compId);
+      if(ci>=0){
+        ficha.complementos[ci] = {
+          ...ficha.complementos[ci],
+          campos,
+          anexos:    _compAnexosBuffer.map(a=>({id:a.id, nome:a.nome, tipo:a.tipo||'', base64:a.base64||'', anexadoPor:a.anexadoPor||quem, anexadoEm:a.anexadoEm||quando})),
+          editadoPor: quem,
+          editadoEm:  quando,
+        };
+      }
+    } else {
+      /* Novo complemento */
+      ficha.complementos.push({
+        id:      'comp-'+Date.now(),
+        por:     quem,
+        em:      quando,
+        _emISO:  new Date().toISOString(),
+        campos,
+        anexos:  _compAnexosBuffer.map(a=>({id:a.id, nome:a.nome, tipo:a.tipo||'', base64:a.base64||'', anexadoPor:a.anexadoPor||quem, anexadoEm:a.anexadoEm||quando})),
+      });
+    }
+
     const idx = fichasIntel.findIndex(x=>x.id===id);
     if(idx>=0) fichasIntel[idx] = ficha;
     await _salvarFichasComAnexos(id);
@@ -5916,12 +5963,38 @@ function renderIntel(){
         ${renderCampoComComp('Conexões com Outros BOs','conexoes','#ccc')}
         ${f.reincidencia&&f.reincidencia!=='nao'?`<div style="font-size:10px;background:rgba(239,83,80,.12);color:var(--danger);padding:3px 8px;border-radius:3px;font-weight:700;display:inline-block;margin-bottom:8px;">⚠ Reincidência: ${reincLbl[f.reincidencia]}</div>`:''}
         ${obsOriginal.length?`<div style="font-size:11px;color:var(--text-muted);background:var(--bg-input);border-radius:4px;padding:6px 8px;margin-bottom:8px;">${obsOriginal.join(' | ')}</div>`:''}
-        ${registrosComp.length?`
-        <div style="border-top:1px dashed rgba(155,138,92,.3);padding-top:8px;margin-top:4px;">
-          ${registrosComp.map(rc=>`
-          <div style="font-size:10px;color:var(--gold);background:rgba(155,138,92,.08);border-radius:3px;padding:3px 8px;margin-bottom:3px;">
-            ➕ Complementado por <strong>${rc.por}</strong> em ${rc.em}
-          </div>`).join('')}
+        ${(f.complementos||[]).length?`
+        <div style="border-top:1px dashed rgba(155,138,92,.35);padding-top:10px;margin-top:6px;">
+          <div style="font-size:10px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">➕ Complementos (${f.complementos.length})</div>
+          ${f.complementos.map((comp,ci)=>{
+            const ehAutor = sessao && (
+              comp.por === (sessao.nome||'').toUpperCase() ||
+              comp.por === (sessao.guerra||'').toUpperCase() ||
+              sessao.perfil==='admin' || sessao.perfil==='comandante'
+            );
+            const camposComp = Object.entries(comp.campos||{}).filter(([k,v])=>v);
+            const labelMap = {suspeitos:'Suspeitos',veiculos:'Veículos',modus:'Modus Operandi',conexoes:'Conexões',obs:'Observações'};
+            return `<div style="background:rgba(155,138,92,.07);border:1px solid rgba(155,138,92,.2);border-radius:6px;padding:8px 10px;margin-bottom:6px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <div style="font-size:10px;color:var(--gold);">
+                  <strong>${comp.por}</strong> · ${comp.em}
+                  ${comp.editadoPor?`<span style="color:var(--text-muted);"> · editado por ${comp.editadoPor} em ${comp.editadoEm}</span>`:''}
+                </div>
+                <div style="display:flex;gap:4px;">
+                  ${ehAutor?`<button class="btn-outline" style="padding:1px 7px;font-size:9px;" onclick="editarComplemento('${f.id}','${comp.id}')">✏ Editar</button>`:''}
+                </div>
+              </div>
+              ${camposComp.map(([k,v])=>`<div style="margin-bottom:4px;"><span style="font-size:9px;color:var(--text-muted);text-transform:uppercase;">${labelMap[k]||k}:</span> <span style="font-size:11px;color:#ddd;">${v}</span></div>`).join('')}
+              ${(comp.anexos||[]).length?`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">${(comp.anexos||[]).map(a=>{
+                const isImg=a.tipo&&a.tipo.startsWith('image');
+                const isVid=a.tipo&&a.tipo.startsWith('video');
+                const isPdf=a.tipo==='application/pdf'||a.nome.endsWith('.pdf');
+                const isKml=a.nome.endsWith('.kml')||a.nome.endsWith('.kmz');
+                const icon=isImg?'🖼':isVid?'🎥':isPdf?'📄':isKml?'🗺':'📎';
+                return `<div style="border:1px solid var(--border);border-radius:3px;padding:2px 6px;cursor:pointer;font-size:10px;color:var(--text-muted);" onclick="_abrirAnexo('${a.id}')" title="${a.nome}">${icon} ${a.nome.length>12?a.nome.slice(0,12)+'...':a.nome}</div>`;
+              }).join('')}</div>`:''}
+            </div>`;
+          }).join('')}
         </div>`:''}
         ${anexosHtml}
         <div style="font-size:10px;color:var(--text-hint);margin-top:8px;border-top:1px solid var(--border);padding-top:6px;line-height:1.8;">
