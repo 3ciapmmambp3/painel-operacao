@@ -600,6 +600,9 @@
         <option value="urbano">Área Urbana</option>
         <option value="rural">Zona Rural</option>
       </select>
+      <select id="fs-gp" onchange="sincFiltrosFS()" style="padding:5px 8px;background:#252525;border:1px solid var(--border-hover);border-radius:4px;color:#fff;font-size:11px;max-width:220px;">
+        <option value="">Todos Grupamentos</option>
+      </select>
     </div>
     <button onclick="fecharMapaFullscreen()"
       style="background:rgba(239,83,80,.15);border:1px solid var(--danger);color:var(--danger);padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all .2s;flex-shrink:0;"
@@ -1032,7 +1035,7 @@
       <div class="two-col">
         <div class="intel-field">
           <label>Nº do Registro (REDS / BO / BOS / RAT)</label>
-          <input type="text" id="c-reds" placeholder="Ex: 2026-012345678-001" maxlength="17" oninput="mascaraBO(this)">
+          <input type="text" id="c-reds" placeholder="Ex: 2026-012345678-001" maxlength="18" oninput="mascaraBO(this)">
         </div>
         <div class="intel-field">
           <label>Data da Execução</label>
@@ -1366,7 +1369,7 @@
         <div>
           <div class="intel-field">
             <label>Nº BO Vinculado</label>
-            <input type="text" id="i-rat" placeholder="Ex: 2026-012345678-001" maxlength="17" oninput="mascaraBO(this)">
+            <input type="text" id="i-rat" placeholder="Ex: 2026-012345678-001" maxlength="18" oninput="mascaraBO(this)">
           </div>
           <div class="intel-field">
             <label>Município de Atuação <span style="color:var(--text-muted);font-weight:400;">(um ou mais, separados por vírgula)</span></label>
@@ -1518,7 +1521,7 @@
       <div class="two-col">
         <div class="intel-field">
           <label>BO Crime Vinculado</label>
-          <input type="text" id="m-rat" placeholder="Ex: 2026-012345678-001 (opcional)" maxlength="17" oninput="mascaraBO(this)">
+          <input type="text" id="m-rat" placeholder="Ex: 2026-012345678-001 (opcional)" maxlength="18" oninput="mascaraBO(this)">
         </div>
         <div class="intel-field">
           <label>Grupamento Destinatário</label>
@@ -2255,21 +2258,25 @@ function popularFiltrosGPs(){
   /* Grupamento do usuário logado */
   const _isAdminGP = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
   const gpUsuarioLot = sessao?.lotacao || '';
+  console.log('[GP Filter] isAdmin:', _isAdminGP, '| lotacao:', gpUsuarioLot);
 
   ['mis-gp','m-gp','cr-gp','f-gp-dash','mapa-gp','cx-gp','vt-gp','intel-busca-gp'].forEach(id => {
     const el = document.getElementById(id);
     if(!el) return;
     const cur = el.value;
     const isModal = id === 'm-gp';
-    /* Para filtros de Intel e Missão: não-admin vê apenas seu grupamento */
+    /* Para filtros de Intel e Missão: não-admin vê apenas seu grupamento, sem opção Todos */
     const isIntelOuMissao = id === 'intel-busca-gp' || id === 'mis-gp';
     let lista = gpsUnicos;
     if(!_isAdminGP && isIntelOuMissao && gpUsuarioLot){
       lista = gpsUnicos.filter(g => g === gpUsuarioLot);
+      /* Sem opção Todos para não-admin */
+      el.innerHTML = lista.map(g=>`<option value="${g}"${g===cur?' selected':''}>${g}</option>`).join('');
+      if(lista.length === 1) el.value = lista[0];
+      return;
     }
     el.innerHTML = `<option value="">${isModal ? 'Selecione...' : 'Todos'}</option>` +
       lista.map(g=>`<option value="${g}"${g===cur?' selected':''}>${g}</option>`).join('');
-    /* Se não-admin e tem apenas 1 GP, pré-seleciona automaticamente */
     if(!_isAdminGP && isIntelOuMissao && lista.length === 1 && !isModal){
       el.value = lista[0];
     }
@@ -2934,6 +2941,17 @@ function abrirMapaFullscreen(){
   document.getElementById('fs-indicador').value  = document.getElementById('mapa-indicador').value;
   document.getElementById('fs-pel').value        = document.getElementById('mapa-pel').value;
   document.getElementById('fs-loc').value        = document.getElementById('mapa-loc').value;
+  /* Popula e sincroniza filtro de GP */
+  const fsGp = document.getElementById('fs-gp');
+  if(fsGp){
+    const gpsUnicos = [...new Map(dadosGrupos.filter(r=>r.grupamento).sort((a,b)=>{
+      if(a.pelNum!==b.pelNum) return a.pelNum-b.pelNum;
+      return gpNumDoColk(a.grupamento)-gpNumDoColk(b.grupamento);
+    }).map(r=>[r.grupamento,r.grupamento])).values()];
+    const gpAtual = document.getElementById('mapa-gp')?.value||'';
+    fsGp.innerHTML = '<option value="">Todos Grupamentos</option>' +
+      gpsUnicos.map(g=>`<option value="${g}"${g===gpAtual?' selected':''}>${g}</option>`).join('');
+  }
 
   /* Impede scroll do body */
   document.body.style.overflow = 'hidden';
@@ -2964,14 +2982,14 @@ function _fsEscListener(e){
 }
 
 function sincFiltrosFS(){
-  /* Sincroniza filtros do FS de volta para o mapa normal */
-  /* sync fullscreen → mapa: resets to single month */
   const _fsMesV = document.getElementById('fs-mes').value;
   document.querySelectorAll('#mapa-mes-list input').forEach(cb => cb.checked = cb.value===_fsMesV);
   _mesDdUpdateLabel('mapa');
   document.getElementById('mapa-indicador').value  = document.getElementById('fs-indicador').value;
   document.getElementById('mapa-pel').value        = document.getElementById('fs-pel').value;
   document.getElementById('mapa-loc').value        = document.getElementById('fs-loc').value;
+  const fsGpVal = document.getElementById('fs-gp')?.value||'';
+  if(document.getElementById('mapa-gp')) document.getElementById('mapa-gp').value = fsGpVal;
   renderMapaFS();
 }
 
@@ -2980,8 +2998,10 @@ function renderMapaFS(){
   const ind = document.getElementById('fs-indicador').value;
   const pel = document.getElementById('fs-pel').value;
   const loc = document.getElementById('fs-loc').value;
+  const gp  = document.getElementById('fs-gp')?.value || '';
 
   let dados = getDadosFiltrados(mes, ind, '', pel, loc, '');
+  if(gp) dados = dados.filter(d => d.grupamento && gpDoColk(d.grupamento) === gp);
 
   if(typeof L === 'undefined'){
     document.getElementById('mapa-fullscreen-inner').innerHTML =
@@ -5577,9 +5597,10 @@ function _renderAnexos(prefixo){
     else if(isKml) preview = `<div style="width:100px;height:75px;display:flex;align-items:center;justify-content:center;background:#1a1a1a;border-radius:4px 4px 0 0;font-size:28px;">🗺</div>`;
     else preview = `<div style="width:100px;height:75px;display:flex;align-items:center;justify-content:center;background:#1a1a1a;border-radius:4px 4px 0 0;font-size:28px;">📎</div>`;
     return `
-    <div style="position:relative;border:1px solid var(--border);border-radius:6px;overflow:hidden;width:100px;flex-shrink:0;cursor:pointer;" onclick="_abrirAnexo('${f.id}')">
+    <div style="position:relative;border:1px solid var(--border);border-radius:6px;overflow:hidden;width:100px;flex-shrink:0;cursor:pointer;" onclick="_abrirAnexo('${f.id}')" title="${f.nome}${f.anexadoPor?' · Anexado por '+f.anexadoPor:''}">
       ${preview}
       <div style="padding:3px 5px;background:#1a1a1a;font-size:9px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${f.nome}">${f.nome}</div>
+      ${f.anexadoPor?`<div style="padding:1px 5px;background:#111;font-size:8px;color:#666;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${f.anexadoPor}</div>`:''}
       <button onclick="event.stopPropagation();_removerAnexo('${prefixo}','${f.id}')" style="position:absolute;top:3px;right:3px;background:rgba(239,83,80,.85);border:none;color:#fff;border-radius:50%;width:18px;height:18px;font-size:10px;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center;">✕</button>
     </div>`;
   }).join('');
@@ -5595,10 +5616,12 @@ function _removerAnexo(prefixo, fid){
 function adicionarAnexosIntel(input, prefixo){
   const files = Array.from(input.files);
   if(!files.length) return;
+  const quem = (sessao?.nome || sessao?.guerra || '—').toUpperCase();
+  const quando = new Date().toLocaleString('pt-BR');
   files.forEach(file => {
     const reader = new FileReader();
     reader.onload = e => {
-      const anexo = { id:'a'+Date.now()+Math.random().toString(36).slice(2,6), base64:e.target.result, nome:file.name, tipo:file.type };
+      const anexo = { id:'a'+Date.now()+Math.random().toString(36).slice(2,6), base64:e.target.result, nome:file.name, tipo:file.type, anexadoPor:quem, anexadoEm:quando };
       const buf = _getAnexosBuffer(prefixo);
       buf.push(anexo);
       _setAnexosBuffer(prefixo, buf);
@@ -5613,9 +5636,11 @@ function adicionarAnexosIntel(input, prefixo){
 async function adicionarVideosIntel(input, prefixo){
   const files = Array.from(input.files);
   if(!files.length) return;
+  const quem = (sessao?.nome || sessao?.guerra || '—').toUpperCase();
+  const quando = new Date().toLocaleString('pt-BR');
   for(const file of files){
     const result = await _comprimirVideo(file, prefixo);
-    const anexo = { id:'v'+Date.now()+Math.random().toString(36).slice(2,6), base64:result.base64, nome:result.nome, tipo:'video/webm' };
+    const anexo = { id:'v'+Date.now()+Math.random().toString(36).slice(2,6), base64:result.base64, nome:result.nome, tipo:'video/webm', anexadoPor:quem, anexadoEm:quando };
     const buf = _getAnexosBuffer(prefixo);
     buf.push(anexo);
     _setAnexosBuffer(prefixo, buf);
@@ -5767,41 +5792,114 @@ function renderIntel(){
   }
 
   const reincLbl = { nao:'Não', sim:'Sim — Suspeito', local:'Sim — Local' };
-  el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px;">` +
+
+  /* Helper: separa campo original dos complementos (separados por " | ") */
+  function _splitComplementos(valor){
+    if(!valor) return {original:'', complementos:[]};
+    const partes = valor.split(' | ');
+    /* Detecta se alguma parte é um registro de complemento */
+    const original = [];
+    const complementos = [];
+    partes.forEach(p => {
+      if(p.startsWith('[COMPLEMENTADO POR ')) complementos.push(p);
+      else original.push(p);
+    });
+    return { original: original.join(' | '), complementos };
+  }
+
+  /* Helper: renderiza um campo com separação original/complementos */
+  function _renderCampo(label, valor, cor){
+    if(!valor) return '';
+    const {original, complementos} = _splitComplementos(valor);
+    let html = `<div class="intel-field" style="margin-bottom:8px;">
+      <label>${label}</label>`;
+    if(original) html += `<div style="font-size:12px;color:${cor||'var(--text-white)'};line-height:1.6;">${original}</div>`;
+    complementos.forEach(c => {
+      /* Extrai o texto do complemento — remove o marcador */
+      const match = c.match(/\[COMPLEMENTADO POR (.+?) EM (.+?)\]/);
+      if(match) return; /* só marcador, sem texto adicional — já tratado pelo campo */
+    });
+    html += '</div>';
+    return html;
+  }
+
+  el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:12px;">` +
     fichas.map(f => {
       const muns = Array.isArray(f.municipio) ? f.municipio : (f.municipio ? [f.municipio] : []);
       const munLabel = muns.join(', ') || '—';
+
+      /* Separa campos originais dos complementos */
+      const camposSep = {};
+      ['suspeitos','veiculos','facao','modus','armas','conexoes','obs'].forEach(c => {
+        camposSep[c] = _splitComplementos(f[c]);
+      });
+
+      /* Extrai registros de complemento do campo obs */
+      const registrosComp = [];
+      const obsPartes = (f.obs||'').split(' | ');
+      const obsOriginal = [];
+      obsPartes.forEach(p => {
+        const m = p.match(/\[COMPLEMENTADO POR (.+?) EM (.+?)\]/);
+        if(m) registrosComp.push({por:m[1], em:m[2]});
+        else if(p.trim()) obsOriginal.push(p);
+      });
+
       const gpsLabel = (f.gpsAtuacao||[]).length
-        ? `<div class="intel-field" style="margin-bottom:6px;"><label>Área de Atuação</label><div style="display:flex;flex-wrap:wrap;gap:4px;">${(f.gpsAtuacao||[]).map(g=>`<span style="font-size:10px;background:rgba(155,138,92,.15);color:var(--gold);border:1px solid var(--gold-border);padding:1px 7px;border-radius:3px;">${g}</span>`).join('')}</div></div>`
-        : '';
-      const anexosHtml = (f.fotos||[]).length
-        ? `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">
-             <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:6px;">📎 Anexos (${f.fotos.length})</div>
-             <div style="display:flex;gap:6px;flex-wrap:wrap;">
-               ${f.fotos.map(ft=>{
-                 const isImg = ft.tipo && ft.tipo.startsWith('image');
-                 const isVid = ft.tipo && ft.tipo.startsWith('video');
-                 const isPdf = ft.tipo==='application/pdf'||ft.nome.endsWith('.pdf');
-                 const isKml = ft.nome.endsWith('.kml')||ft.nome.endsWith('.kmz');
-                 let thumb='';
-                 if(isImg)      thumb=ft.base64?`<img src="${ft.base64}" style="width:60px;height:45px;object-fit:cover;display:block;" title="${ft.nome}">`:`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;font-size:20px;">🖼</div>`;
-                 else if(isVid) thumb=ft.base64?`<video src="${ft.base64}" style="width:60px;height:45px;object-fit:cover;display:block;" muted></video>`:`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;font-size:20px;">🎥</div>`;
-                 else if(isPdf) thumb=`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;font-size:20px;">📄</div>`;
-                 else if(isKml) thumb=`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;font-size:20px;">🗺</div>`;
-                 else           thumb=`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;font-size:20px;">📎</div>`;
-                 return `<div style="border:1px solid var(--border);border-radius:4px;overflow:hidden;cursor:pointer;" onclick="_abrirAnexo('${ft.id}')" title="${ft.nome}">${thumb}</div>`;
-               }).join('')}
-             </div>
-           </div>`
-        : '';
+        ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">${(f.gpsAtuacao||[]).map(g=>`<span style="font-size:10px;background:rgba(155,138,92,.15);color:var(--gold);border:1px solid var(--gold-border);padding:1px 7px;border-radius:3px;">${g}</span>`).join('')}</div>` : '';
+
+      /* Renderiza campos que têm complementos separadamente */
+      function renderCampoComComp(label, campoKey, cor){
+        const {original, complementos: _c} = camposSep[campoKey];
+        if(!original && !_c.length) return '';
+        /* Remove os marcadores [COMPLEMENTADO...] dos complementos */
+        const partes = (f[campoKey]||'').split(' | ').filter(p => !p.startsWith('[COMPLEMENTADO POR '));
+        if(!partes.length) return '';
+        /* Separa: primeiro valor = original, demais = complementos */
+        const orig = partes[0];
+        const comps = partes.slice(1);
+        let html = `<div class="intel-field" style="margin-bottom:8px;"><label>${label}</label>`;
+        if(orig) html += `<div style="font-size:12px;color:${cor||'var(--text-white)'};line-height:1.5;">${orig}</div>`;
+        comps.forEach(cp => {
+          html += `<div style="font-size:11px;color:${cor||'var(--text-muted)'};border-left:2px solid rgba(155,138,92,.4);padding-left:6px;margin-top:4px;opacity:.85;">+ ${cp}</div>`;
+        });
+        html += '</div>';
+        return html;
+      }
+
+      /* Anexos com quem anexou */
+      const anexosHtml = (f.fotos||[]).length ? `
+        <div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">
+          <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:6px;">📎 Anexos (${f.fotos.length})</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            ${f.fotos.map(ft=>{
+              const isImg=ft.tipo&&ft.tipo.startsWith('image');
+              const isVid=ft.tipo&&ft.tipo.startsWith('video');
+              const isPdf=ft.tipo==='application/pdf'||ft.nome.endsWith('.pdf');
+              const isKml=ft.nome.endsWith('.kml')||ft.nome.endsWith('.kmz');
+              let thumb='';
+              if(isImg) thumb=`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;font-size:20px;">🖼</div>`;
+              else if(isVid) thumb=`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;font-size:20px;">🎥</div>`;
+              else if(isPdf) thumb=`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;font-size:20px;">📄</div>`;
+              else if(isKml) thumb=`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;font-size:20px;">🗺</div>`;
+              else thumb=`<div style="width:60px;height:45px;display:flex;align-items:center;justify-content:center;background:#222;font-size:20px;">📎</div>`;
+              return `<div style="border:1px solid var(--border);border-radius:4px;overflow:hidden;cursor:pointer;text-align:center;" onclick="_abrirAnexo('${ft.id}')" title="${ft.nome}${ft.anexadoPor?' · '+ft.anexadoPor:''}">
+                ${thumb}
+                <div style="padding:2px 4px;background:#1a1a1a;font-size:8px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60px;">${ft.nome}</div>
+                ${ft.anexadoPor?`<div style="padding:1px 4px;background:#111;font-size:7px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60px;">${ft.anexadoPor}</div>`:''}
+              </div>`;
+            }).join('')}
+          </div>
+        </div>` : '';
+
       const _isAdminCard = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
       const _criadorCard = f.criadoPor === sessao?.nome || f.criadoPor === sessao?.guerra ||
         (sessao?.guerra && f.criadoPor?.toUpperCase().includes(sessao.guerra.toUpperCase()));
       const _podeEditarExcluir = _isAdminCard || _criadorCard;
+
       return `
       <div class="intel-card" style="border-left:3px solid var(--gold);">
-        <div class="intel-card-title" style="display:flex;align-items:center;justify-content:space-between;">
-          <span>🕵 BO: ${f.rat||'—'} · ${munLabel}</span>
+        <div class="intel-card-title" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <span>🕵 BO: <strong>${f.rat||'—'}</strong>${munLabel !== '—' ? ' · '+munLabel : ''}</span>
           <div style="display:flex;gap:4px;">
             <button class="btn-outline" style="padding:2px 8px;font-size:10px;" onclick="abrirComplementarIntel('${f.id}')">➕ Complementar</button>
             ${_podeEditarExcluir ? `
@@ -5810,14 +5908,25 @@ function renderIntel(){
           </div>
         </div>
         ${gpsLabel}
-        ${f.suspeitos?`<div class="intel-field" style="margin-bottom:6px;"><label>Suspeitos</label><div style="font-size:12px;color:var(--text-white)">${f.suspeitos}</div></div>`:''}
-        ${f.facao?`<div class="intel-field" style="margin-bottom:6px;"><label>Facção / Vínculo</label><div style="font-size:12px;color:var(--danger);font-weight:700">${f.facao}</div></div>`:''}
-        ${f.modus?`<div class="intel-field" style="margin-bottom:6px;"><label>Modus Operandi</label><div style="font-size:11px;color:#bbb">${f.modus}</div></div>`:''}
-        ${f.armas?`<div class="intel-field" style="margin-bottom:6px;"><label>Armas</label><div style="font-size:11px;color:#ff9800">${f.armas}</div></div>`:''}
-        ${f.reincidencia&&f.reincidencia!=='nao'?`<div style="font-size:10px;background:rgba(239,83,80,.12);color:var(--danger);padding:3px 8px;border-radius:3px;font-weight:700;display:inline-block;margin-bottom:6px;">⚠ Reincidência: ${reincLbl[f.reincidencia]}</div>`:''}
-        ${f.obs?`<div style="font-size:11px;color:var(--text-muted);background:var(--bg-input);border-radius:4px;padding:6px 8px;margin-top:4px;">${f.obs}</div>`:''}
+        ${renderCampoComComp('Suspeitos','suspeitos','var(--text-white)')}
+        ${renderCampoComComp('Veículos Suspeitos','veiculos','#ccc')}
+        ${renderCampoComComp('Facção / Vínculo','facao','var(--danger)')}
+        ${renderCampoComComp('Modus Operandi','modus','#bbb')}
+        ${renderCampoComComp('Armas','armas','#ff9800')}
+        ${renderCampoComComp('Conexões com Outros BOs','conexoes','#ccc')}
+        ${f.reincidencia&&f.reincidencia!=='nao'?`<div style="font-size:10px;background:rgba(239,83,80,.12);color:var(--danger);padding:3px 8px;border-radius:3px;font-weight:700;display:inline-block;margin-bottom:8px;">⚠ Reincidência: ${reincLbl[f.reincidencia]}</div>`:''}
+        ${obsOriginal.length?`<div style="font-size:11px;color:var(--text-muted);background:var(--bg-input);border-radius:4px;padding:6px 8px;margin-bottom:8px;">${obsOriginal.join(' | ')}</div>`:''}
+        ${registrosComp.length?`
+        <div style="border-top:1px dashed rgba(155,138,92,.3);padding-top:8px;margin-top:4px;">
+          ${registrosComp.map(rc=>`
+          <div style="font-size:10px;color:var(--gold);background:rgba(155,138,92,.08);border-radius:3px;padding:3px 8px;margin-bottom:3px;">
+            ➕ Complementado por <strong>${rc.por}</strong> em ${rc.em}
+          </div>`).join('')}
+        </div>`:''}
         ${anexosHtml}
-        <div style="font-size:10px;color:var(--text-hint);margin-top:8px;border-top:1px solid var(--border);padding-top:6px;">Criado por ${f.criadoPor} em ${f.criadoEm}</div>
+        <div style="font-size:10px;color:var(--text-hint);margin-top:8px;border-top:1px solid var(--border);padding-top:6px;line-height:1.8;">
+          Criado por <strong>${f.criadoPor}</strong> em ${f.criadoEm}
+        </div>
       </div>`;
     }).join('') +
     `</div>`;
@@ -6086,12 +6195,12 @@ function abrirModalConclusao(id){
   setTimeout(() => _renderAnexos('conclusao'), 50);
 }
 
-/* ── Máscara do número do BO: XXXX-XXXXXXXXX-XXX ── */
+/* ── Máscara do número do BO: XXXX-XXXXXXXXX-XXX (4+9+3 = 16 dígitos) ── */
 function mascaraBO(el){
   let v = el.value.replace(/\D/g,'');
-  if(v.length > 4)  v = v.slice(0,4) + '-' + v.slice(4);
-  if(v.length > 14) v = v.slice(0,14) + '-' + v.slice(14);
-  if(v.length > 17) v = v.slice(0,17);
+  if(v.length > 16) v = v.slice(0,16);
+  if(v.length > 13) v = v.slice(0,4) + '-' + v.slice(4,13) + '-' + v.slice(13);
+  else if(v.length > 4) v = v.slice(0,4) + '-' + v.slice(4);
   el.value = v;
 }
 
@@ -6415,12 +6524,12 @@ function renderMissoes(){
           ${m.conclusao.efetivo?`<div style="font-size:10px;color:var(--text-muted);">Efetivo: ${m.conclusao.efetivo}</div>`:''}
           ${(m.conclusao.anexos||[]).length?`<div style="margin-top:6px;font-size:9px;color:var(--text-muted);">📎 ${m.conclusao.anexos.length} anexo(s) — clique em ✏ Editar para visualizar</div>`:''}
         </div>`:"''"}
-      <div style="font-size:10px;color:var(--text-hint);margin-top:8px;border-top:1px solid var(--border);padding-top:6px;">
-        Criada por ${m.criadoPor} em ${m.criadoEm}
-        ${m.editadoPor ? ` · Editada por ${m.editadoPor} em ${m.editadoEm}` : ''}
-        ${m.conclusao&&m.conclusao.concluidoPor ? ` · Concluída por ${m.conclusao.concluidoPor} em ${m.conclusao.concluidoEm}` : ''}
-        ${m.conclusao&&m.conclusao.editadoPor ? ` · Relatório editado por ${m.conclusao.editadoPor} em ${m.conclusao.editadoEm}` : ''}
-        ${(m.historico||[]).map(h => ` · ${h.acao} por ${h.por} em ${h.em}`).join('')}
+      <div style="font-size:10px;color:var(--text-hint);margin-top:8px;border-top:1px solid var(--border);padding-top:6px;line-height:1.8;">
+        Criada por <strong>${m.criadoPor}</strong> em ${m.criadoEm}
+        ${m.editadoPor ? `<br>✏ Editada por <strong>${m.editadoPor}</strong> em ${m.editadoEm}` : ''}
+        ${m.conclusao&&m.conclusao.concluidoPor ? `<br>✅ Concluída por <strong>${m.conclusao.concluidoPor}</strong> em ${m.conclusao.concluidoEm}` : ''}
+        ${m.conclusao&&m.conclusao.editadoPor ? `<br>✏ Relatório editado por <strong>${m.conclusao.editadoPor}</strong> em ${m.conclusao.editadoEm}` : ''}
+        ${(m.historico||[]).map(h=>`<br>↩ ${h.acao} por <strong>${h.por}</strong> em ${h.em}`).join('')}
       </div>
     </div>`;
   }).join('');
