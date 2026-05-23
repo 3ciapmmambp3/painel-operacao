@@ -3422,12 +3422,23 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
   const _gCrimesPel = {};
   const dadosComCoord = dados.filter(d=>d.lat&&d.lng);
 
-  /* Agrupa crimes por coordenada aproximada (4 casas = ~11m) para tratar sobreposição visual */
+  /* Agrupa crimes por proximidade — raio de ~150m (0.0014 graus) */
+  const PROX = 0.0014;
   const coordMap = new Map();
-  dadosComCoord.forEach(d => {
+  const _usados = new Set();
+  dadosComCoord.forEach((d, i) => {
+    if(_usados.has(i)) return;
+    const grupo = [d];
+    _usados.add(i);
+    dadosComCoord.forEach((d2, j) => {
+      if(_usados.has(j)) return;
+      if(Math.abs(d.lat - d2.lat) < PROX && Math.abs(d.lng - d2.lng) < PROX){
+        grupo.push(d2);
+        _usados.add(j);
+      }
+    });
     const key = `${d.lat.toFixed(4)},${d.lng.toFixed(4)}`;
-    if(!coordMap.has(key)) coordMap.set(key, []);
-    coordMap.get(key).push(d);
+    coordMap.set(key, grupo);
   });
 
   coordMap.forEach((grupo, key) => {
