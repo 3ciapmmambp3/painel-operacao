@@ -3079,12 +3079,12 @@ function _fecharSpider(){
 function _abrirSpider(proximos, centro, map){
   _fecharSpider();
   const n = proximos.length;
-  const DIST = 0.0025; /* distância de abertura em graus */
+  const DIST = 0.008; /* distância maior para não sobrepor */
   proximos.forEach(({tipo, data}, i) => {
-    /* Posição em leque */
+    /* Posição em leque — começa do topo e distribui em arco */
     const angulo = (2 * Math.PI * i / n) - (Math.PI / 2);
     const lat = centro.lat + DIST * Math.cos(angulo);
-    const lng = centro.lng + DIST * Math.sin(angulo);
+    const lng = centro.lng + (DIST * 1.5) * Math.sin(angulo); /* elipse horizontal */
     /* Ícone do item */
     let html = '';
     if(tipo === 'crime'){
@@ -3468,6 +3468,56 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
     });
     _mOps_last = L.marker([op.lat, op.lng], {icon, zIndexOffset:500});
     _mOps_last._opData = {bo: op.rat||'—', data: op.data||'—', municipio: op.municipio||'—', natureza: op.natureza||'—'};
+
+    /* Spider para ops */
+    (function(marker, lat0, lng0){
+      const RAIO = 0.0005;
+      function _getProxOps(){
+        const lista = [];
+        gCrimes.eachLayer(m2 => {
+          if(!m2._crimeData) return;
+          if(Math.abs(lat0 - m2._latlng.lat) < RAIO && Math.abs(lng0 - m2._latlng.lng) < RAIO)
+            m2._crimeData.forEach(d => lista.push({tipo:'crime', data:d}));
+        });
+        if(_acLayers['ops']) _acLayers['ops'].eachLayer(m2 => {
+          if(!m2._latlng||!m2._opData) return;
+          if(Math.abs(lat0 - m2._latlng.lat) < RAIO && Math.abs(lng0 - m2._latlng.lng) < RAIO)
+            lista.push({tipo:'ops', data:m2._opData});
+        });
+        ['visitas-furto','visitas-violento','visitas-urbano'].forEach(vk => {
+          if(!_acLayers[vk]) return;
+          _acLayers[vk].eachLayer(m2 => {
+            if(!m2._latlng||!m2._visData) return;
+            if(Math.abs(lat0 - m2._latlng.lat) < RAIO && Math.abs(lng0 - m2._latlng.lng) < RAIO)
+              lista.push({tipo:'visita', data:m2._visData});
+          });
+        });
+        return lista;
+      }
+      marker.on('mouseover', function(){
+        const prox = _getProxOps();
+        if(prox.length <= 1) return;
+        marker.getTooltip()?.remove();
+        marker.bindTooltip(
+          `<div style="background:#1e1e1e;border:1px solid #666;border-radius:6px;padding:7px 10px;min-width:180px;">
+            <div style="font-size:11px;font-weight:700;color:#fff;margin-bottom:4px;">📍 ${prox.length} registros sobrepostos</div>
+            ${prox.map(({tipo,data})=>{
+              if(tipo==='crime'){const cor=CORES_INDICADOR[data.indicador]||'#9b8a5c';return`<div style="font-size:10px;color:#ccc;padding:1px 0;"><span style="background:${cor};color:#fff;font-size:8px;padding:0 4px;border-radius:2px;margin-right:4px;">${data.indicador}</span>${data.bo||'—'} · ${data.data||''}</div>`;}
+              if(tipo==='ops') return`<div style="font-size:10px;color:#ccc;padding:1px 0;"><span style="background:#8e24aa;color:#fff;font-size:8px;padding:0 4px;border-radius:2px;margin-right:4px;">OPS</span>${data.natureza||'—'} · ${data.data||''}</div>`;
+              return`<div style="font-size:10px;color:#ccc;padding:1px 0;"><span style="background:#4caf50;color:#fff;font-size:8px;padding:0 4px;border-radius:2px;margin-right:4px;">VIS</span>${data.natCode||'—'} · ${data.data||''}</div>`;
+            }).join('')}
+            <div style="font-size:9px;color:#888;margin-top:4px;text-align:center;">🖱 Clique para abrir em leque</div>
+          </div>`,
+          {sticky:false, direction:'top', className:'leaflet-tooltip-crime', opacity:1}
+        ).openTooltip();
+      });
+      marker.on('click', function(e){
+        const prox = _getProxOps();
+        if(prox.length <= 1) return;
+        L.DomEvent.stopPropagation(e);
+        _abrirSpider(prox, marker.getLatLng(), _acMap);
+      });
+    })(_mOps_last, op.lat, op.lng);
     _mOps_last.bindTooltip(
         `<div style="font-size:11px;line-height:1.8;width:240px;word-break:break-word;">
           <b style="color:${corOp};font-size:12px;">★ OP GDO RURAL</b>
@@ -3771,6 +3821,56 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
     const crimeRef=dadosCrimes.find(d=>(d.bo||d.rat||'').toString().trim()===boNorm);
     const m=L.marker([v.lat,v.lng],{icon,zIndexOffset:alerta?400:600,pelNum:_vPelN,natCode:v.natCode,alertaVis:alerta});
     m._visData = {bo: v.bo||'—', data: v.data||'—', municipio: v.municipio||'—', natCode: v.natCode||'—', natDesc: v.natDesc||'—', horInicio: v.horInicio||'', localizacao: v.localizacao||'—', lat: v.lat, lng: v.lng};
+
+    /* Spider para visitas */
+    (function(marker, lat0, lng0){
+      const RAIO = 0.0005;
+      function _getProxVis(){
+        const lista = [];
+        gCrimes.eachLayer(m2 => {
+          if(!m2._crimeData) return;
+          if(Math.abs(lat0 - m2._latlng.lat) < RAIO && Math.abs(lng0 - m2._latlng.lng) < RAIO)
+            m2._crimeData.forEach(d => lista.push({tipo:'crime', data:d}));
+        });
+        if(_acLayers['ops']) _acLayers['ops'].eachLayer(m2 => {
+          if(!m2._latlng||!m2._opData) return;
+          if(Math.abs(lat0 - m2._latlng.lat) < RAIO && Math.abs(lng0 - m2._latlng.lng) < RAIO)
+            lista.push({tipo:'ops', data:m2._opData});
+        });
+        ['visitas-furto','visitas-violento','visitas-urbano'].forEach(vk => {
+          if(!_acLayers[vk]) return;
+          _acLayers[vk].eachLayer(m2 => {
+            if(!m2._latlng||!m2._visData) return;
+            if(Math.abs(lat0 - m2._latlng.lat) < RAIO && Math.abs(lng0 - m2._latlng.lng) < RAIO)
+              lista.push({tipo:'visita', data:m2._visData});
+          });
+        });
+        return lista;
+      }
+      marker.on('mouseover', function(){
+        const prox = _getProxVis();
+        if(prox.length <= 1) return;
+        marker.getTooltip()?.remove();
+        marker.bindTooltip(
+          `<div style="background:#1e1e1e;border:1px solid #666;border-radius:6px;padding:7px 10px;min-width:180px;">
+            <div style="font-size:11px;font-weight:700;color:#fff;margin-bottom:4px;">📍 ${prox.length} registros sobrepostos</div>
+            ${prox.map(({tipo,data})=>{
+              if(tipo==='crime'){const cor=CORES_INDICADOR[data.indicador]||'#9b8a5c';return`<div style="font-size:10px;color:#ccc;padding:1px 0;"><span style="background:${cor};color:#fff;font-size:8px;padding:0 4px;border-radius:2px;margin-right:4px;">${data.indicador}</span>${data.bo||'—'} · ${data.data||''}</div>`;}
+              if(tipo==='ops') return`<div style="font-size:10px;color:#ccc;padding:1px 0;"><span style="background:#8e24aa;color:#fff;font-size:8px;padding:0 4px;border-radius:2px;margin-right:4px;">OPS</span>${data.natureza||'—'} · ${data.data||''}</div>`;
+              return`<div style="font-size:10px;color:#ccc;padding:1px 0;"><span style="background:#4caf50;color:#fff;font-size:8px;padding:0 4px;border-radius:2px;margin-right:4px;">VIS</span>${data.natCode||'—'} · ${data.data||''}</div>`;
+            }).join('')}
+            <div style="font-size:9px;color:#888;margin-top:4px;text-align:center;">🖱 Clique para abrir em leque</div>
+          </div>`,
+          {sticky:false, direction:'top', className:'leaflet-tooltip-crime', opacity:1}
+        ).openTooltip();
+      });
+      marker.on('click', function(e){
+        const prox = _getProxVis();
+        if(prox.length <= 1) return;
+        L.DomEvent.stopPropagation(e);
+        _abrirSpider(prox, marker.getLatLng(), _acMap);
+      });
+    })(m, v.lat, v.lng);
     m.bindTooltip(`<div style="font-size:11px;line-height:1.8;width:240px;word-break:break-word;">
         <b style="color:${cor};">🤝 VISITA TRANQUILIZADORA</b><br>
         <b>Natureza:</b> ${v.natCode}<br>
@@ -7543,5 +7643,4 @@ function gerarPdfPrioridade(){
 </script>
 
 </body>
-</html>
 </html>
