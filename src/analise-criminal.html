@@ -3422,10 +3422,10 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
   const _gCrimesPel = {};
   const dadosComCoord = dados.filter(d=>d.lat&&d.lng);
 
-  /* Agrupa crimes por coordenada exata para tratar sobreposição */
+  /* Agrupa crimes por coordenada aproximada (4 casas = ~11m) para tratar sobreposição visual */
   const coordMap = new Map();
   dadosComCoord.forEach(d => {
-    const key = `${d.lat.toFixed(5)},${d.lng.toFixed(5)}`;
+    const key = `${d.lat.toFixed(4)},${d.lng.toFixed(4)}`;
     if(!coordMap.has(key)) coordMap.set(key, []);
     coordMap.get(key).push(d);
   });
@@ -3498,12 +3498,20 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
         </div>
       </div>`;
       _mCrime.bindPopup(popupHtml, {maxWidth:360, className:'leaflet-popup-crime'});
-      /* Tooltip simples mostrando quantidade */
+      /* Tooltip ao passar o mouse — mostra resumo de todos os crimes */
+      const ttLinhas = grupo.map(d => {
+        const cor = CORES_INDICADOR[d.indicador]||'#9b8a5c';
+        return `<div style="display:flex;align-items:center;gap:6px;padding:2px 0;border-bottom:1px solid #2a2a2a;">
+          <span style="background:${cor};color:#fff;font-size:9px;font-weight:800;padding:1px 5px;border-radius:2px;min-width:32px;text-align:center;">${d.indicador}</span>
+          <span style="color:#ccc;font-size:10px;">BO ${d.bo||'—'}</span>
+          <span style="color:#666;font-size:9px;">${d.data||''}</span>
+        </div>`;
+      }).join('');
       _mCrime.bindTooltip(
-        `<div style="background:#1e1e1e;border:1px solid #555;border-radius:5px;padding:5px 10px;font-size:11px;color:#fff;">
-          <b>${grupo.length} crimes</b> neste local<br>
-          <span style="color:#aaa;font-size:10px;">${grupo.map(d=>`<span style="color:${CORES_INDICADOR[d.indicador]||'#9b8a5c'};font-weight:700;">${d.indicador}</span>`).join(' · ')}</span><br>
-          <span style="color:#888;font-size:10px;">Clique para ver detalhes</span>
+        `<div style="background:#1e1e1e;border:1px solid #555;border-radius:6px;padding:8px 10px;min-width:220px;">
+          <div style="font-size:11px;font-weight:700;color:#fff;margin-bottom:6px;">📍 ${grupo.length} crimes — ${d0.municipio||'—'}</div>
+          ${ttLinhas}
+          <div style="font-size:9px;color:#666;margin-top:4px;text-align:center;">Clique para ver detalhes completos</div>
         </div>`,
         {sticky:true, direction:'top', className:'leaflet-tooltip-crime', opacity:1}
       );
