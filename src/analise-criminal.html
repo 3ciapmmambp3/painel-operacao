@@ -3646,7 +3646,9 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
         }).join('')}
         </div>
       </div>`;
-      _mCrime.bindPopup(popupHtml, {maxWidth:360, className:'leaflet-popup-crime'});
+      /* Guarda popup para abrir manualmente quando não há sobreposição */
+      _mCrime._popupHtml = popupHtml;
+      /* NÃO usa bindPopup — o click é tratado pelo handler spider abaixo */
       /* Tooltip ao passar o mouse — mostra resumo de todos os crimes */
       const ttLinhas = grupo.map(d => {
         const cor = CORES_INDICADOR[d.indicador]||'#9b8a5c';
@@ -3751,8 +3753,19 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
       });
       marker.on('click', function(e){
         const prox = _getProximos();
-        if(prox.length <= 1) return;
+        console.log('[Spider] proximos encontrados:', prox.length, prox.map(p=>p.tipo+'='+( p.data?.bo||p.data?.natureza||p.data?.natCode||'?')));
+        if(prox.length <= 1){
+          /* Único — abre popup manualmente */
+          if(marker._popupHtml){
+            L.popup({maxWidth:360, className:'leaflet-popup-crime'})
+              .setLatLng(marker.getLatLng())
+              .setContent(marker._popupHtml)
+              .openOn(_acMap);
+          }
+          return;
+        }
         L.DomEvent.stopPropagation(e);
+        _fecharSpider();
         _abrirSpider(prox, marker.getLatLng(), _acMap);
       });
     })(_mCrime, d0.lat, d0.lng);
