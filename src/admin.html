@@ -182,6 +182,7 @@
 <nav class="tabs-bar">
   <div class="tab active" onclick="switchTab(this,'usuarios')">👥 Usuários</div>
   <div class="tab" onclick="switchTab(this,'grupamentos');renderGruposAdmin()">📍 Grupamentos</div>
+  <div class="tab" onclick="switchTab(this,'metas');metasInit()">📊 Metas</div>
 </nav>
 
 <div class="content">
@@ -416,6 +417,58 @@
       </div>
     </div>
   </div><!-- /tab-grupamentos -->
+
+  <!-- ===== ABA METAS ===== -->
+  <div class="tab-pane" id="tab-metas">
+    <div style="max-width:1100px;margin:0 auto;">
+
+      <!-- Seletor de tipo de meta -->
+      <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;align-items:center;">
+        <button class="imp-ind-btn active" id="meta-btn-gdo" onclick="metaSelTipo(this,'gdo')">🌿 Metas GDO Rural</button>
+        <select id="meta-ano" onchange="metasCarregar()" style="background:#222;border:1px solid var(--border);color:#ccc;padding:6px 12px;border-radius:6px;font-size:12px;">
+          <option value="2026">2026</option>
+          <option value="2027">2027</option>
+        </select>
+        <button onclick="metasCriarAno()" style="padding:6px 14px;background:#222;border:1px solid var(--border);color:#ccc;border-radius:6px;font-size:12px;cursor:pointer;" title="Criar metas para o ano selecionado copiando do ano anterior">
+          ➕ Criar metas para este ano
+        </button>
+        <span id="meta-status" style="font-size:11px;color:var(--text-muted);"></span>
+      </div>
+      <!-- GDO METAS -->
+      <div id="meta-gdo-section" style="display:none;">
+        <div style="background:var(--bg-card);border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid var(--border);font-size:11px;color:var(--text-muted);">
+          Meta anual por grupamento. O painel divide por 12 para obter a meta mensal.
+        </div>
+        <div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;">
+          <table style="width:100%;border-collapse:collapse;font-size:11px;">
+            <thead>
+              <tr style="background:#1a1a1a;">
+                <th style="padding:8px 12px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;left:0;background:#1a1a1a;">GRUPAMENTO</th>
+                <th style="padding:8px 8px;color:var(--text-muted);font-size:10px;border-bottom:1px solid var(--border);text-align:center;">PEL</th>
+                <th style="padding:8px 4px;color:#aaa;font-size:10px;border-bottom:1px solid var(--border);text-align:center;min-width:44px;">JAN</th>
+                <th style="padding:8px 4px;color:#aaa;font-size:10px;border-bottom:1px solid var(--border);text-align:center;min-width:44px;">FEV</th>
+                <th style="padding:8px 4px;color:#aaa;font-size:10px;border-bottom:1px solid var(--border);text-align:center;min-width:44px;">MAR</th>
+                <th style="padding:8px 4px;color:#aaa;font-size:10px;border-bottom:1px solid var(--border);text-align:center;min-width:44px;">ABR</th>
+                <th style="padding:8px 4px;color:#aaa;font-size:10px;border-bottom:1px solid var(--border);text-align:center;min-width:44px;">MAI</th>
+                <th style="padding:8px 4px;color:#aaa;font-size:10px;border-bottom:1px solid var(--border);text-align:center;min-width:44px;">JUN</th>
+                <th style="padding:8px 4px;color:#aaa;font-size:10px;border-bottom:1px solid var(--border);text-align:center;min-width:44px;">JUL</th>
+                <th style="padding:8px 4px;color:#aaa;font-size:10px;border-bottom:1px solid var(--border);text-align:center;min-width:44px;">AGO</th>
+                <th style="padding:8px 4px;color:#aaa;font-size:10px;border-bottom:1px solid var(--border);text-align:center;min-width:44px;">SET</th>
+                <th style="padding:8px 4px;color:#aaa;font-size:10px;border-bottom:1px solid var(--border);text-align:center;min-width:44px;">OUT</th>
+                <th style="padding:8px 4px;color:#aaa;font-size:10px;border-bottom:1px solid var(--border);text-align:center;min-width:44px;">NOV</th>
+                <th style="padding:8px 4px;color:#aaa;font-size:10px;border-bottom:1px solid var(--border);text-align:center;min-width:44px;">DEZ</th>
+                <th style="padding:8px 8px;color:var(--gold);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);text-align:center;border-left:2px solid var(--border);">ANUAL</th>
+              </tr>
+            </thead>
+            <tbody id="meta-gdo-tbody">
+              <tr><td colspan="15" style="padding:20px;text-align:center;color:var(--text-muted);">Carregando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div><!-- /tab-metas -->
 
 </div><!-- /content -->
 
@@ -1268,6 +1321,214 @@ function switchTab(el, id) {
   if (el) el.classList.add('active');
   document.getElementById('tab-' + id)?.classList.add('active');
 }
+
+/* ══════════════════════════════════════════
+   SUPABASE
+══════════════════════════════════════════ */
+const SB_URL = 'https://zrnbebjszwkmquzthjfa.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpybmJlYmpzendrbXF1enRoamZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkzOTA4MzEsImV4cCI6MjA5NDk2NjgzMX0.di9t2SOCTLZ2uPFOnTOiy6srvt7GC5cdqenZZScXve4';
+
+async function sbFetch(table, params=''){
+  const sep = params ? '&' : '';
+  const url = `${SB_URL}/rest/v1/${table}?${params}${sep}limit=10000`;
+  const res = await fetch(url, {
+    headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`}
+  });
+  if(!res.ok) throw new Error(`Supabase ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+async function sbPatch(table, params, body){
+  const res = await fetch(`${SB_URL}/rest/v1/${table}?${params}`,{
+    method:'PATCH',
+    headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=representation'},
+    body: JSON.stringify(body)
+  });
+  if(!res.ok) throw new Error(`Supabase patch ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+/* Ordem correta dos grupamentos por pelotão/GP */
+const GP_ORDEM = [
+  'GP GOVERNADOR VALADARES','GP MANTENA','GP AIMORES','GP CONSELHEIRO PENA','GP GUANHAES','GP SANTA MARIA DO SUACUI','GP SAO JOAO EVANGELISTA',
+  'GP IPATINGA','GP MARILIERIA','GP PINGO D AGUA','GP JOAO MOLEVADE','GP BARAO DE COCAIS','GP ITABIRA',
+  'GP MANHUACU','GP ALTO CAPARAO','GP MUTUM','GP IPANEMA','GP CARATINGA','GP PONTE NOVA','GP RAUL SOARES',
+  'GP TEOFILO OTONI','GP AGUAS FORMOSAS','GP ITAMBACURI','GP MALACACHETA','GP NANUQUE','GP NOVO CRUZEIRO',
+  'GP ALMENARA','GP ARACUAI','GP ITAOBIM','GP JEQUITINHONHA','GP PEDRA AZUL','GP RIO DO PRADO','GP SALTO DA DIVISA'
+];
+
+function gpOrdem(nome){
+  /* Tenta nome direto */
+  let i = GP_ORDEM.indexOf(nome);
+  if(i >= 0) return i;
+  /* Tenta extrair o nome curto do formato longo "1 GP / 1 PEL / ... / GOVERNADOR VALADARES" */
+  const m = nome.match(/\/\s*([^/]+)$/);
+  if(m){
+    const sufixo = m[1].trim();
+    i = GP_ORDEM.findIndex(g => g.replace('GP ','') === sufixo);
+    if(i >= 0) return i;
+  }
+  return 999;
+}
+
+const MESES_ADMIN = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
+const MESES_ABR   = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+let _metaTipo = 'gdo';
+let _metaDados = [];
+
+function metaSelTipo(btn, tipo){
+  document.querySelectorAll('[id^="meta-btn-"]').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  _metaTipo = tipo;
+  document.getElementById('meta-gdo-section').style.display = '';
+  metasCarregar();
+}
+
+async function metasInit(){ await metasCarregar(); }
+
+async function metasCarregar(){
+  const ano = document.getElementById('meta-ano').value;
+  const statusEl = document.getElementById('meta-status');
+  statusEl.textContent = 'Carregando...'; statusEl.style.color='var(--text-muted)';
+  try{
+    await metasGdoCarregar(ano);
+    statusEl.textContent = '✓ Atualizado'; statusEl.style.color='#2ea043';
+  }catch(e){
+    statusEl.textContent = '✗ Erro: '+e.message; statusEl.style.color='#ef5350';
+  }
+}
+
+/* ── GDO METAS ── */
+let _gdoDados = [];
+
+async function metasGdoCarregar(ano){
+  const data = await sbFetch('gdo_metas', `ano=eq.${ano}&select=id,gp_responsavel,grupamento_bpm,meta_anual,meta_jan,meta_fev,meta_mar,meta_abr,meta_mai,meta_jun,meta_jul,meta_ago,meta_set,meta_out,meta_nov,meta_dez&order=gp_responsavel`);
+  _gdoDados = data;
+  /* Ordenar por GP_ORDEM */
+  _gdoDados.sort((a,b)=>gpOrdem(a.gp_responsavel)-gpOrdem(b.gp_responsavel));
+  const tbody = document.getElementById('meta-gdo-tbody');
+  if(!_gdoDados.length){
+    tbody.innerHTML='<tr><td colspan="15" style="padding:20px;text-align:center;color:var(--text-muted);">Nenhum registro.</td></tr>';
+    return;
+  }
+  const MESES_COLS=['meta_jan','meta_fev','meta_mar','meta_abr','meta_mai','meta_jun','meta_jul','meta_ago','meta_set','meta_out','meta_nov','meta_dez'];
+  tbody.innerHTML = _gdoDados.map(d => {
+    const pelM = d.grupamento_bpm ? d.grupamento_bpm.match(/(\d+)\s*PEL/i) : null;
+    const pel = pelM ? pelM[1]+'º PEL' : '—';
+    const mensal = Math.ceil(d.meta_anual/12);
+    const mCells = MESES_COLS.map((col,i)=>{
+      const val = (d[col] !== null && d[col] !== undefined) ? d[col] : mensal;
+      return `<td style="padding:3px 2px;text-align:center;">
+        <input type="number" min="0" value="${val}"
+          style="width:38px;background:#1a1a1a;border:1px solid #333;color:#ccc;text-align:center;padding:3px 2px;border-radius:3px;font-size:11px;"
+          onchange="metaGdoMesSalvar(${d.id},'${col}',this.value,'${d.gp_responsavel}','gdo-anual-${d.id}')"
+          title="${MESES_ADMIN[i]}">
+      </td>`;
+    }).join('');
+    const somaAnual = MESES_COLS.reduce((s,col)=> s + ((d[col]!==null&&d[col]!==undefined)?d[col]:mensal), 0);
+    return `<tr style="border-bottom:1px solid #252525;">
+      <td style="padding:5px 12px;color:#ccc;font-weight:600;white-space:nowrap;position:sticky;left:0;background:#1e1e1e;">${d.gp_responsavel}</td>
+      <td style="padding:5px 8px;text-align:center;color:var(--text-muted);">${pel}</td>
+      ${mCells}
+      <td style="padding:5px 8px;text-align:center;font-weight:700;color:var(--gold);border-left:2px solid var(--border);" id="gdo-anual-${d.id}">${somaAnual}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function metaGdoSalvar(id, novoVal, inputEl){
+  const meta_anual = parseInt(novoVal)||90;
+  const statusEl = document.getElementById('meta-status');
+  try{
+    await sbPatch('gdo_metas', `id=eq.${id}`, { meta_anual, updated_at: new Date().toISOString() });
+    statusEl.textContent = `✓ Meta anual salva: ${meta_anual}`;
+    statusEl.style.color = '#2ea043';
+    setTimeout(()=>{ statusEl.textContent=''; },3000);
+  }catch(e){
+    inputEl.style.borderColor='#ef5350';
+    statusEl.textContent='✗ Erro: '+e.message; statusEl.style.color='#ef5350';
+  }
+}
+
+async function metaGdoMesSalvar(id, col, novoVal, gpNome, anualCellId){
+  const val = parseInt(novoVal)||0;
+  const statusEl = document.getElementById('meta-status');
+  const mesIdx = ['meta_jan','meta_fev','meta_mar','meta_abr','meta_mai','meta_jun','meta_jul','meta_ago','meta_set','meta_out','meta_nov','meta_dez'].indexOf(col);
+  try{
+    const patch = {}; patch[col] = val; patch['updated_at'] = new Date().toISOString();
+    /* Recalcula meta_anual como soma de todos os meses da linha */
+    const entry = _gdoDados.find(d=>d.id===id);
+    if(entry){
+      entry[col] = val;
+      const MESES_COLS=['meta_jan','meta_fev','meta_mar','meta_abr','meta_mai','meta_jun','meta_jul','meta_ago','meta_set','meta_out','meta_nov','meta_dez'];
+      const soma = MESES_COLS.reduce((s,c)=> s + ((entry[c]!==null&&entry[c]!==undefined)?entry[c]:Math.ceil(entry.meta_anual/12)), 0);
+      patch['meta_anual'] = soma;
+      entry.meta_anual = soma;
+      const el = document.getElementById(anualCellId);
+      if(el) el.textContent = soma;
+    }
+    await sbPatch('gdo_metas', `id=eq.${id}`, patch);
+    statusEl.textContent = `✓ ${gpNome} · ${MESES_ABR[mesIdx]} = ${val}`;
+    statusEl.style.color = '#2ea043';
+    setTimeout(()=>{ statusEl.textContent=''; },3000);
+  }catch(e){
+    statusEl.textContent='✗ Erro: '+e.message; statusEl.style.color='#ef5350';
+  }
+}
+
+function metaSelTipo(btn, tipo){
+  document.querySelectorAll('[id^="meta-btn-"]').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  _metaTipo = tipo;
+  document.getElementById('meta-gdo-section').style.display = '';
+  metasCarregar();
+}
+
+async function metasInit(){
+  await metasCarregar();
+}
+
+async function metasCarregar(){
+  const ano = document.getElementById('meta-ano').value;
+  const statusEl = document.getElementById('meta-status');
+  statusEl.textContent = 'Carregando...';
+  try{
+    await metasGdoCarregar(ano);
+    statusEl.textContent = '✓ Atualizado';
+    statusEl.style.color = '#2ea043';
+  }catch(e){
+    statusEl.textContent = '✗ Erro: '+e.message;
+    statusEl.style.color = '#ef5350';
+  }
+}
+
+
+async function metasCriarAno(){
+  const ano = parseInt(document.getElementById('meta-ano').value);
+  const anoAnt = ano - 1;
+  const statusEl = document.getElementById('meta-status');
+  if(!confirm(`Criar metas para ${ano} copiando de ${anoAnt}?`)) return;
+  statusEl.textContent = `Criando metas para ${ano}...`; statusEl.style.color='var(--text-muted)';
+  try{
+    /* Busca metas do ano anterior */
+    const origem = await sbFetch('gdo_metas',
+      `ano=eq.${anoAnt}&select=*`);
+    if(!origem.length){ statusEl.textContent=`Nenhuma meta em ${anoAnt} para copiar.`; return; }
+    /* Remove id e atualiza ano */
+    const novas = origem.map(d => { const n={...d}; delete n.id; n.ano=ano; n.updated_at=new Date().toISOString(); return n; });
+    /* Insere em lotes de 100 */
+    for(let i=0;i<novas.length;i+=100){
+      const lote = novas.slice(i,i+100);
+      const res = await fetch(`${SB_URL}/rest/v1/${'gdo_metas'}`,{
+        method:'POST',
+        headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'resolution=ignore-duplicates'},
+        body:JSON.stringify(lote)
+      });
+      if(!res.ok) throw new Error(await res.text());
+    }
+    statusEl.textContent=`✓ ${novas.length} metas criadas para ${ano}!`; statusEl.style.color='#2ea043';
+    await metasCarregar();
+  }catch(e){ statusEl.textContent='✗ Erro: '+e.message; statusEl.style.color='#ef5350'; }
+}
+
 </script>
 </body>
 </html>
