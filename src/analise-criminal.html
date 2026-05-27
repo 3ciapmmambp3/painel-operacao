@@ -297,9 +297,10 @@
   <div class="subtab" onclick="switchSubtab(this,'crimes')">📋 Ocorrências</div>
   <div class="subtab" onclick="switchSubtab(this,'cruzamento')">🔗 Correlação Op × Crime</div>
   <div class="subtab" onclick="switchSubtab(this,'visitas')">🤝 Visitas Tranquilizadoras</div>
-  <div class="subtab" onclick="switchSubtab(this,'prioridade')">🚨 Prioridade Operacional</div>
+  <div class="subtab" id="tab-btn-prioridade" style="display:none;" onclick="switchSubtab(this,'prioridade')">🚨 Prioridade Operacional</div>
   <div class="subtab" onclick="switchSubtab(this,'inteligencia')">🕵 Inteligência</div>
   <div class="subtab" onclick="switchSubtab(this,'missoes')">🎯 Missões</div>
+  <div class="subtab" id="tab-btn-auditorias" style="display:none;" onclick="switchSubtab(this,'auditorias')">🔐 Auditorias</div>
 </nav>
 
 <main class="content">
@@ -600,9 +601,6 @@
         <option value="urbano">Área Urbana</option>
         <option value="rural">Zona Rural</option>
       </select>
-      <select id="fs-gp" onchange="sincFiltrosFS()" style="padding:5px 8px;background:#252525;border:1px solid var(--border-hover);border-radius:4px;color:#fff;font-size:11px;min-width:140px;">
-        <option value="">Todos Grupamentos</option>
-      </select>
     </div>
     <button onclick="fecharMapaFullscreen()"
       style="background:rgba(239,83,80,.15);border:1px solid var(--danger);color:var(--danger);padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all .2s;flex-shrink:0;"
@@ -688,10 +686,9 @@
         <label>Grupamento</label>
         <select id="cr-gp" onchange="renderCrimes()" style="font-size:11px;"><option value="">Todos</option></select>
       </div>
-      <div class="fg" style="max-width:220px;">
+      <div class="fg" style="max-width:200px;">
         <label>Buscar (Nº BO / município)</label>
-        <input type="text" id="cr-busca" placeholder="Ex: 020361740 ou município..."
-          oninput="formatBuscaBO(this);renderCrimes()" maxlength="30">
+        <input type="text" id="cr-busca" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this);renderCrimes()">
       </div>
       <div style="align-self:flex-end;"><button class="btn-outline" onclick="limparFiltrosCrimes()">✕</button></div>
     </div>
@@ -805,14 +802,14 @@
         <label>Grupamento</label>
         <select id="cx-gp" onchange="renderCruzamento()" style="font-size:11px;"><option value="">Todos</option></select>
       </div>
-      <div class="fg" style="min-width:180px;">
+      <div class="fg" style="min-width:160px;">
         <label>Status</label>
-        <select id="cx-status" onchange="renderCruzamento()" style="font-size:11px;">
+        <select id="cx-status" onchange="renderCruzamento()">
           <option value="">Todos</option>
           <option value="sem-op">🔴 Sem Operação</option>
           <option value="op-proxima">🟡 Op. Próxima</option>
           <option value="com-op">🟢 Com Operação</option>
-          <option value="visita">🟡 Visita Tranquilizadora</option>
+          <option value="visita">🔵 Visita Tranquilizadora</option>
         </select>
       </div>
       <div style="align-self:flex-end;">
@@ -1168,6 +1165,33 @@
 
 </div><!-- /tab-missoes -->
 
+<!-- ════════════════════════════════
+     ABA: AUDITORIAS (admin only)
+════════════════════════════════ -->
+<div class="tab-pane" id="tab-auditorias">
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+    <h3 style="margin:0;font-size:14px;color:var(--gold);">🔐 Gestão de Auditorias</h3>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <select id="audit-lista-filtro-status" onchange="renderAuditoriasLista()" style="background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:4px 8px;font-size:11px;">
+        <option value="">Todos os status</option>
+        <option value="aguardando">⏳ Aguardando</option>
+        <option value="em_analise">🔍 Em análise</option>
+        <option value="validada">✅ Validada</option>
+        <option value="indeferida">❌ Indeferida</option>
+        <option value="corrigida">✔ Corrigida</option>
+      </select>
+      <input type="text" id="audit-lista-busca" placeholder="Ex: 2026-020361740-001 ou nome" oninput="mascaraBO(this);renderAuditoriasLista()" style="background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:4px 10px;font-size:11px;width:220px;">
+      <button class="btn-outline" onclick="renderAuditoriasLista()" style="font-size:11px;padding:4px 10px;">☰ Atualizar</button>
+      <button class="btn-danger" onclick="limparTodasAuditorias()" style="font-size:11px;padding:4px 10px;">🗑 Limpar todas</button>
+    </div>
+  </div>
+  <!-- Cards resumo -->
+  <div id="audit-lista-cards" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;"></div>
+  <div id="audit-lista-container">
+    <div style="color:var(--text-muted);font-size:12px;text-align:center;padding:30px;">Nenhuma solicitação encontrada.</div>
+  </div>
+</div><!-- /tab-auditorias -->
+
 </main><!-- /content -->
 
 <!-- ════════════════════════════════
@@ -1329,6 +1353,9 @@
     </div>
     <div class="modal-footer" id="audit-modal-footer">
       <button class="btn-outline" onclick="fecharModal('modal-auditoria')">Cancelar</button>
+      <button class="btn-danger" id="audit-btn-excluir" onclick="excluirSolicitacaoUsuario()" style="display:none;">
+        🗑 Excluir Solicitação
+      </button>
       <button class="btn-gold" id="audit-btn-solicitar" onclick="salvarSolicitacaoUsuario()" style="background:#2e7d32;color:#fff;">
         💾 Salvar Solicitação
       </button>
@@ -1621,6 +1648,22 @@ const CLASS_NAT = {
 };
 
 function norm(s){ return(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/-/g,' ').replace(/\s+/g,' ').trim().toUpperCase(); }
+
+/* Máscara automática de BO: AAAA-NNNNNNN-NNN
+   Só aplica se o valor for todo numérico (sem letras), senão deixa como está (busca por município) */
+function mascaraBO(input){
+  const raw = input.value;
+  const digits = raw.replace(/-/g,'');
+  /* Se tem letras → é busca por município, não formata */
+  if(!/^\d*$/.test(digits)) return;
+  if(digits.length === 0){ input.value = ''; return; }
+
+  let f = digits;
+  if(digits.length > 4 && digits.length <= 13) f = digits.slice(0,4) + '-' + digits.slice(4);
+  else if(digits.length > 13) f = digits.slice(0,4) + '-' + digits.slice(4,13) + '-' + digits.slice(13,16);
+
+  input.value = f;
+}
 function pelDoColk(colK){ const m=(colK||'').match(/(\d+)\s*PEL/i); return m?parseInt(m[1]):99; }
 function gpNumDoColk(colK){ const m=(colK||'').match(/^(\d+)\s*GP/i); return m?parseInt(m[1]):99; }
 
@@ -1670,6 +1713,11 @@ window.addEventListener('DOMContentLoaded', async () => {
   if(sessao.perfil === 'admin'){
     badge.textContent='ADMIN';
     badge.style.cssText='font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;background:rgba(155,138,92,.2);color:var(--gold);border:1px solid var(--gold-border);';
+    /* Exibe abas exclusivas para admin */
+    const tabBtnAudit = document.getElementById('tab-btn-auditorias');
+    if(tabBtnAudit) tabBtnAudit.style.display = '';
+    const tabBtnPrior = document.getElementById('tab-btn-prioridade');
+    if(tabBtnPrior) tabBtnPrior.style.display = '';
   } else {
     badge.textContent='OPERACIONAL';
     badge.style.cssText='font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;background:rgba(66,165,245,.15);color:var(--info);border:1px solid rgba(66,165,245,.3);';
@@ -1681,7 +1729,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   missoes       = JSON.parse(_pget('ac_missoes') || '[]');
 
   /* Carrega do Supabase em paralelo com os crimes */
-  Promise.all([_carregarFichasComAnexos(), _carregarMissoesComAnexos()])
+  Promise.all([_carregarFichasComAnexos(), _carregarMissoesComAnexos(), _carregarAuditorias()])
     .then(() => { renderIntel(); renderMissoes(); })
     .catch(() => { renderIntel(); renderMissoes(); });
 
@@ -1759,6 +1807,10 @@ async function recarregarTudo(){
     const now = new Date().toLocaleTimeString('pt-BR');
     document.getElementById('last-update').textContent = 'Atualizado: '+now;
     setStatus('ok','✔ Dados criminais carregados — '+dadosCrimes.length+' BOs');
+
+    /* Limpa auditorias cujos BOs não existem mais nos dados carregados */
+    /* Reaplicar auditorias já carregadas nos crimes recém populados */
+    Object.values(auditoriasMap).forEach(r => _sincAuditoria(r));
 
     /* Salva crimes no localStorage para uso no painel.html (Relatórios) */
     try{
@@ -2863,16 +2915,13 @@ function abrirMapaFullscreen(){
   document.getElementById('fs-pel').value        = document.getElementById('mapa-pel').value;
   document.getElementById('fs-loc').value        = document.getElementById('mapa-loc').value;
 
-  /* Popular select de grupamento no FS */
-  const fsGp = document.getElementById('fs-gp');
-  const mapaGp = document.getElementById('mapa-gp');
-  if(fsGp && mapaGp){
-    fsGp.innerHTML = mapaGp.innerHTML;
-    fsGp.value = mapaGp.value;
-  }
-
+  /* Impede scroll do body */
   document.body.style.overflow = 'hidden';
+
+  /* Renderiza mapa no container fullscreen (aguarda overlay ficar visível) */
   setTimeout(() => renderMapaFS(), 200);
+
+  /* Esc fecha */
   document.addEventListener('keydown', _fsEscListener);
 }
 
@@ -2895,14 +2944,14 @@ function _fsEscListener(e){
 }
 
 function sincFiltrosFS(){
+  /* Sincroniza filtros do FS de volta para o mapa normal */
+  /* sync fullscreen → mapa: resets to single month */
   const _fsMesV = document.getElementById('fs-mes').value;
   document.querySelectorAll('#mapa-mes-list input').forEach(cb => cb.checked = cb.value===_fsMesV);
   _mesDdUpdateLabel('mapa');
-  document.getElementById('mapa-indicador').value = document.getElementById('fs-indicador').value;
+  document.getElementById('mapa-indicador').value  = document.getElementById('fs-indicador').value;
   document.getElementById('mapa-pel').value        = document.getElementById('fs-pel').value;
   document.getElementById('mapa-loc').value        = document.getElementById('fs-loc').value;
-  if(document.getElementById('mapa-gp') && document.getElementById('fs-gp'))
-    document.getElementById('mapa-gp').value = document.getElementById('fs-gp').value;
   renderMapaFS();
 }
 
@@ -2911,9 +2960,8 @@ function renderMapaFS(){
   const ind = document.getElementById('fs-indicador').value;
   const pel = document.getElementById('fs-pel').value;
   const loc = document.getElementById('fs-loc').value;
-  const gp  = document.getElementById('fs-gp')?.value || '';
 
-  let dados = getDadosFiltrados(mes, ind, '', pel, loc, gp);
+  let dados = getDadosFiltrados(mes, ind, '', pel, loc, '');
 
   if(typeof L === 'undefined'){
     document.getElementById('mapa-fullscreen-inner').innerHTML =
@@ -2975,84 +3023,6 @@ function renderMapaFS(){
     if(legendaEl && legendaNormal) legendaEl.innerHTML = legendaNormal.innerHTML;
   }, 100);
 }
-/* ── Spiderfier: abre marcadores sobrepostos em leque ── */
-let _spiderMarkers = [];
-let _spiderLines   = [];
-
-function _fecharSpider(){
-  _spiderMarkers.forEach(m => { try{if(m._map) m.remove();}catch(e){} });
-  _spiderLines.forEach(l => { try{if(l._map) l.remove();}catch(e){} });
-  _spiderMarkers = [];
-  _spiderLines   = [];
-}
-
-function _abrirSpider(proximos, centro, map){
-  _fecharSpider();
-  const n = proximos.length;
-  const DIST = 0.008;
-  proximos.forEach(({tipo, data}, i) => {
-    const angulo = (2 * Math.PI * i / n) - (Math.PI / 2);
-    const lat = centro.lat + DIST * Math.cos(angulo);
-    const lng = centro.lng + (DIST * 1.5) * Math.sin(angulo);
-    let iconHtmlSpider = '';
-    if(tipo === 'crime'){
-      const cor = CORES_INDICADOR[data.indicador]||'#9b8a5c';
-      const fn = (window.ICONES_IND||{})[data.indicador];
-      if(fn){
-        iconHtmlSpider = `<div style="filter:drop-shadow(0 2px 6px rgba(0,0,0,.7));cursor:pointer;">${fn(cor, false)}</div>`;
-      } else {
-        const emoji = {IMV:'💀',CVPE:'👤',CVPA:'🏠',IF:'🔍'}[data.indicador]||'🔴';
-        iconHtmlSpider = `<div style="background:${cor};border:3px solid #fff;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:18px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.7));cursor:pointer;">${emoji}</div>`;
-      }
-    } else if(tipo === 'ops'){
-      const corOp2 = {Y07001:'#e53935',Y07002:'#8e24aa',Y07014:'#1565c0'}[data.natureza]||'#8e24aa';
-      const lblOp = {Y07001:'🚓',Y07002:'👮',Y07014:'🛡'}[data.natureza]||'⭐';
-      iconHtmlSpider = `<div style="background:${corOp2};border:2px solid #fff;border-radius:6px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:18px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.7));cursor:pointer;">${lblOp}</div>`;
-    } else {
-      const corVis2 = data.natCode&&data.natCode.includes('28')?'#4caf50':'#ab47bc';
-      iconHtmlSpider = `<div style="background:${corVis2};border:2px solid #fff;border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:18px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.7));cursor:pointer;">🤝</div>`;
-    }
-    const icon = L.divIcon({html:iconHtmlSpider, className:'', iconSize:[34,34], iconAnchor:[17,17]});
-    const m = L.marker([lat, lng], {icon, zIndexOffset:9000});
-    let ttHtml = '';
-    if(tipo === 'crime'){
-      const cor = CORES_INDICADOR[data.indicador]||'#9b8a5c';
-      const indLabel = {IMV:'Morte Violenta',CVPE:'Crime c/ Pessoa',CVPA:'Crime c/ Patrimônio',IF:'Furto'}[data.indicador]||data.indicador;
-      ttHtml = `<div style="background:#1e1e1e;border:1px solid ${cor};border-radius:6px;padding:8px 12px;min-width:200px;">
-        <div style="font-size:11px;font-weight:800;color:${cor};margin-bottom:5px;"><span style="background:${cor};color:#fff;padding:1px 6px;border-radius:2px;margin-right:4px;">${data.indicador}</span>${indLabel}</div>
-        <div style="font-size:10px;color:#ccc;line-height:1.8;">
-          <b>BO:</b> ${data.bo||'—'}<br><b>Data:</b> ${data.data||'—'}<br>
-          <b>Município:</b> ${data.municipio||'—'}<br>
-          ${data.localizacao?`<b>Local:</b> ${data.localizacao}<br>`:''}
-          ${data.qtdVitimas?`<b>Vítimas:</b> <span style="color:#ef5350;font-weight:700;">${data.qtdVitimas}</span>`:''}
-        </div></div>`;
-    } else if(tipo === 'ops'){
-      ttHtml = `<div style="background:#1e1e1e;border:1px solid #8e24aa;border-radius:6px;padding:8px 12px;min-width:200px;">
-        <div style="font-size:11px;font-weight:800;color:#ce93d8;margin-bottom:5px;">⭐ OP GDO RURAL</div>
-        <div style="font-size:10px;color:#ccc;line-height:1.8;">
-          <b>Natureza:</b> ${data.natureza||'—'}<br><b>RAT:</b> ${data.bo||data.rat||'—'}<br>
-          <b>Data:</b> ${data.data||'—'}<br><b>Município:</b> ${data.municipio||'—'}
-        </div></div>`;
-    } else {
-      ttHtml = `<div style="background:#1e1e1e;border:1px solid #4caf50;border-radius:6px;padding:8px 12px;min-width:200px;">
-        <div style="font-size:11px;font-weight:800;color:#a5d6a7;margin-bottom:5px;">🤝 VISITA TRANQUILIZADORA</div>
-        <div style="font-size:10px;color:#ccc;line-height:1.8;">
-          <b>Natureza:</b> ${data.natCode||'—'}<br><b>BO:</b> ${data.bo||'—'}<br>
-          <b>Data:</b> ${data.data||'—'}<br><b>Município:</b> ${data.municipio||'—'}
-        </div></div>`;
-    }
-    m.bindTooltip(ttHtml, {sticky:false, direction:'top', opacity:1});
-    m.on('click', () => _fecharSpider());
-    m.addTo(map);
-    _spiderMarkers.push(m);
-    const linha = L.polyline([[centro.lat, centro.lng],[lat, lng]], {
-      color:'#fff', weight:1.5, opacity:0.6, dashArray:'4,4'
-    }).addTo(map);
-    _spiderLines.push(linha);
-  });
-  map.once('click', _fecharSpider);
-}
-
 function renderMapaCriminal(){
   const _mesMapa = getMesDd('mapa');
   const ind = document.getElementById('mapa-indicador').value;
@@ -3108,7 +3078,7 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
   tileOSM.addTo(_acMap);
 
   /* ── Ícones intuitivos por indicador ── */
-  window.ICONES_IND = {
+  const ICONES_IND = {
     /* IMV — Morte Violenta: caveira vermelha */
     IMV: (cor, urb) => `
       <div style="position:relative;filter:drop-shadow(0 2px 4px rgba(0,0,0,.7));">
@@ -3368,7 +3338,6 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
       iconSize: iconSz, iconAnchor: iconAn,
     });
     _mOps_last = L.marker([op.lat, op.lng], {icon, zIndexOffset:500});
-    _mOps_last._opData = { natureza: op.natureza, bo: op.rat||op.bo||'', data: op.data||op.mes||'', municipio: op.municipio||'' };
     _mOps_last.bindTooltip(
         `<div style="font-size:11px;line-height:1.8;width:240px;word-break:break-word;">
           <b style="color:${corOp};font-size:12px;">★ OP GDO RURAL</b>
@@ -3448,76 +3417,46 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
     const _mCrime = L.marker([d0.lat, d0.lng], {icon, zIndexOffset:1000});
 
     if(multi){
-      /* Clique abre leque circular com cada crime separado */
-      _mCrime.on('click', function(e){
-        /* Remove leque anterior se existir */
-        if(window._leafletLeque) window._leafletLeque.forEach(m=>{ try{m.remove();}catch(e){} });
-        window._leafletLeque = [];
-
-        /* Usa o mapa correto (normal ou fullscreen) */
-        const map = (window._acMapFS && window._acMapFS.getContainer().offsetParent) ? window._acMapFS : _acMap;
-        if(!map) return;
-
-        const nItems = grupo.length;
-        const raioLeque = 0.0009 * Math.max(1.5, nItems/3);
-
-        grupo.forEach((d, i) => {
-          const angulo = (2 * Math.PI * i / nItems) - Math.PI/2;
-          const lat = d0.lat + raioLeque * Math.cos(angulo);
-          const lng = d0.lng + raioLeque * Math.sin(angulo) / Math.cos(d0.lat * Math.PI/180);
+      /* Múltiplos crimes — popup ao clicar listando todos */
+      const popupHtml = `<div style="width:340px;max-width:min(340px,calc(100vw-32px));background:#1e1e1e;border-radius:8px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.6);">
+        <div style="background:#333;padding:8px 12px;font-size:12px;font-weight:700;color:#fff;border-bottom:1px solid #444;">
+          📍 ${grupo.length} crimes neste local — ${d0.municipio||'—'}
+        </div>
+        <div style="max-height:340px;overflow-y:auto;">
+        ${grupo.map(d => {
           const cor = CORES_INDICADOR[d.indicador]||'#9b8a5c';
-          const fn  = ICONES_IND[d.indicador]||ICONES_IND['CVPE'];
-          const isUrb = d._auditoriaPendente;
-          const gp = d.grupamento ? gpDoColk(d.grupamento) : '—';
-          const gpInfo2 = dadosGrupos.find(g => g.munNorm === norm(d.municipio||''));
-          const gpCurto2 = gpInfo2 ? gpInfo2.gpResp : '';
-          const pel = d.grupamento ? pelDoColk(d.grupamento) : 99;
           const indLabel = {IMV:'Morte Violenta',CVPE:'Crime Contra Pessoa',CVPA:'Crime Contra Patrimônio',IF:'Indicador de Furto'}[d.indicador]||d.indicador;
-          const auditBadge = isUrb ? `<div style="margin-top:8px;background:rgba(239,83,80,.18);border:1px solid #ef5350;border-radius:5px;padding:5px 8px;font-size:10px;color:#ef5350;font-weight:700;text-align:center;">⚠ ÁREA URBANA — AUDITORIA</div>` : '';
-          const vitRow = d.indicador !== 'IF' && d.qtdVitimas ? `<tr><td style="color:#888;padding:1px 4px 1px 0;">Vítimas</td><td style="color:#ef5350;font-weight:700;">${d.qtdVitimas}</td></tr>` : '';
-
-          const iconLeque = L.divIcon({ className:'', html: fn(cor, isUrb), iconSize:[28,28], iconAnchor:[14,14] });
-          const mLeque = L.marker([lat, lng], {icon: iconLeque, zIndexOffset: 2000})
-            .bindTooltip(`<div style="width:300px;background:#1e1e1e;border:1px solid ${cor}55;border-radius:8px;overflow:hidden;">
-              <div style="background:${cor}22;border-bottom:2px solid ${cor};padding:6px 10px;display:flex;align-items:center;gap:6px;">
-                <span style="background:${cor};color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:3px;">${d.indicador}</span>
-                <span style="color:#ddd;font-size:11px;">${indLabel}</span>
-              </div>
-              <div style="padding:7px 10px;">
-                <table style="width:100%;border-collapse:collapse;font-size:11px;line-height:1.8;">
-                  <tr><td style="color:#888;width:80px;">Nº BO</td><td style="color:#fff;font-weight:700;">${d.bo}</td></tr>
-                  <tr><td style="color:#888;">Data</td><td style="color:#ccc;">${d.data||'—'}</td></tr>
-                  <tr><td style="color:#888;">Município</td><td style="color:#fff;">${d.municipio||'—'}</td></tr>
-                  <tr><td style="color:#888;">Grupamento</td><td style="color:#c9a84c;font-size:10px;">${gpCurto2||gp}</td></tr>
-                  <tr><td style="color:#888;">Localização</td><td style="color:${(d.localizacao||'').includes('URBAN')?'#ef5350':'#66bb6a'};font-weight:600;">${d.localizacao||'—'}</td></tr>
-                  ${vitRow}
-                </table>
-              </div>${auditBadge}
-            </div>`, {sticky:true, direction:'top', className:'leaflet-tooltip-crime', opacity:1})
-            .addTo(map);
-
-          window._leafletLeque.push(mLeque);
-
-          /* Linha conectando ao marcador original */
-          const linha = L.polyline([[d0.lat,d0.lng],[lat,lng]], {color:cor, weight:1.5, opacity:0.5, dashArray:'4,4'}).addTo(map);
-          window._leafletLeque.push(linha);
-        });
-
-        /* Clique no mapa fecha o leque */
-        map.once('click', ()=>{
-          if(window._leafletLeque) window._leafletLeque.forEach(m=>m.remove());
-          window._leafletLeque = [];
-        });
-
-        L.DomEvent.stopPropagation(e);
-      });
-
+          const pel = d.grupamento ? pelDoColk(d.grupamento) : 99;
+          const gp  = d.grupamento ? gpDoColk(d.grupamento) : '—';
+          const vitRow = d.indicador !== 'IF' && d.qtdVitimas
+            ? `<tr><td style="color:#888;padding:1px 4px 1px 0;">Vítimas</td><td style="color:#ef5350;font-weight:700;">${d.qtdVitimas}</td></tr>` : '';
+          const auditBadge = d._auditoriaPendente
+            ? `<div style="margin:4px 0 2px;background:rgba(239,83,80,.18);border:1px solid #ef5350;border-radius:4px;padding:3px 7px;font-size:9px;color:#ef5350;font-weight:700;">⚠ ÁREA URBANA — NECESSÁRIA AUDITORIA</div>` : '';
+          return `<div style="border-bottom:1px solid #2a2a2a;padding:8px 12px;">
+            <div style="background:${cor}22;border-left:3px solid ${cor};padding:4px 8px;border-radius:0 4px 4px 0;margin-bottom:6px;display:flex;align-items:center;gap:8px;">
+              <span style="background:${cor};color:#fff;font-size:9px;font-weight:800;padding:1px 7px;border-radius:3px;">${d.indicador}</span>
+              <span style="color:#ddd;font-size:11px;">${indLabel}</span>
+            </div>
+            <table style="width:100%;border-collapse:collapse;font-size:11px;line-height:1.8;">
+              <tr><td style="color:#888;width:80px;padding:1px 4px 1px 0;">Nº BO</td><td style="color:#fff;font-weight:700;">${d.bo}</td></tr>
+              <tr><td style="color:#888;padding:1px 4px 1px 0;">Data</td><td style="color:#ccc;">${d.data||'—'} <span style="color:#666;font-size:10px;">${d.mes||''}</span></td></tr>
+              <tr><td style="color:#888;padding:1px 4px 1px 0;">Grupamento</td><td style="color:#c9a84c;font-size:10px;line-height:1.4;">${gp}</td></tr>
+              <tr><td style="color:#888;padding:1px 4px 1px 0;">Localização</td><td style="color:${(d.localizacao||'').includes('URBAN')?'#ef5350':'#66bb6a'};font-weight:600;">${d.localizacao||'—'}</td></tr>
+              ${vitRow}
+              ${d.rpm?`<tr><td style="color:#888;padding:1px 4px 1px 0;">RPM</td><td style="color:#ccc;">${d.rpm}</td></tr>`:''}
+            </table>
+            ${auditBadge}
+          </div>`;
+        }).join('')}
+        </div>
+      </div>`;
+      _mCrime.bindPopup(popupHtml, {maxWidth:360, className:'leaflet-popup-crime'});
       /* Tooltip simples mostrando quantidade */
       _mCrime.bindTooltip(
         `<div style="background:#1e1e1e;border:1px solid #555;border-radius:5px;padding:5px 10px;font-size:11px;color:#fff;">
-          <b>${grupo.length} crimes</b> neste local — ${d0.municipio||'—'}<br>
+          <b>${grupo.length} crimes</b> neste local<br>
           <span style="color:#aaa;font-size:10px;">${grupo.map(d=>`<span style="color:${CORES_INDICADOR[d.indicador]||'#9b8a5c'};font-weight:700;">${d.indicador}</span>`).join(' · ')}</span><br>
-          <span style="color:#888;font-size:10px;">🖱 Clique para expandir leque</span>
+          <span style="color:#888;font-size:10px;">Clique para ver detalhes</span>
         </div>`,
         {sticky:true, direction:'top', className:'leaflet-tooltip-crime', opacity:1}
       );
@@ -3558,76 +3497,6 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
         {sticky:true, direction:'top', className:'leaflet-tooltip-crime', opacity:1}
       );
     }
-
-    /* Guarda dados do grupo no marcador para acesso no hover/click */
-    _mCrime._crimeData = grupo;
-    _mCrime._lat = d0.lat;
-    _mCrime._lng = d0.lng;
-
-    /* Click/Hover: detecta sobreposição e abre em leque */
-    /* Captura layers no momento do render (para fullscreen funcionar corretamente) */
-    const _gCrimesCapt = gCrimes;
-    const _acLayersCapt = _acLayers;
-    (function(marker, lat0, lng0, gCrimesLocal, layersLocal){
-      const RAIO = 0.0005;
-      function _getProximos(){
-        const lista = [];
-        gCrimesLocal.eachLayer(m2 => {
-          if(!m2._crimeData) return;
-          if(Math.abs(lat0 - m2._latlng.lat) < RAIO && Math.abs(lng0 - m2._latlng.lng) < RAIO)
-            m2._crimeData.forEach(d => lista.push({tipo:'crime', data:d, marker:m2}));
-        });
-        if(layersLocal['ops']) layersLocal['ops'].eachLayer(m2 => {
-          if(!m2._latlng||!m2._opData) return;
-          if(Math.abs(lat0 - m2._latlng.lat) < RAIO && Math.abs(lng0 - m2._latlng.lng) < RAIO)
-            lista.push({tipo:'ops', data:m2._opData, marker:m2});
-        });
-        ['visitas-furto','visitas-violento','visitas-urbano'].forEach(vk => {
-          if(!layersLocal[vk]) return;
-          layersLocal[vk].eachLayer(m2 => {
-            if(!m2._latlng||!m2._visData) return;
-            if(Math.abs(lat0 - m2._latlng.lat) < RAIO && Math.abs(lng0 - m2._latlng.lng) < RAIO)
-              lista.push({tipo:'visita', data:m2._visData, marker:m2});
-          });
-        });
-        return lista;
-      }
-      marker.on('mouseover', function(){
-        const prox = _getProximos();
-        if(prox.length <= 1) return;
-        marker.unbindTooltip();
-        marker.bindTooltip(
-          `<div style="background:#1e1e1e;border:1px solid #666;border-radius:6px;padding:7px 10px;min-width:180px;">
-            <div style="font-size:11px;font-weight:700;color:#fff;margin-bottom:4px;">📍 ${prox.length} registros sobrepostos</div>
-            ${prox.map(({tipo,data})=>{
-              if(tipo==='crime'){const cor=CORES_INDICADOR[data.indicador]||'#9b8a5c';return`<div style="font-size:10px;color:#ccc;padding:1px 0;"><span style="background:${cor};color:#fff;font-size:8px;padding:0 4px;border-radius:2px;margin-right:4px;">${data.indicador}</span>${data.bo||'—'} · ${data.data||''}</div>`;}
-              if(tipo==='ops') return`<div style="font-size:10px;color:#ccc;padding:1px 0;"><span style="background:#8e24aa;color:#fff;font-size:8px;padding:0 4px;border-radius:2px;margin-right:4px;">OPS</span>${data.natureza||'—'} · ${data.data||''}</div>`;
-              return`<div style="font-size:10px;color:#ccc;padding:1px 0;"><span style="background:#4caf50;color:#fff;font-size:8px;padding:0 4px;border-radius:2px;margin-right:4px;">VIS</span>${data.natCode||'—'} · ${data.data||''}</div>`;
-            }).join('')}
-            <div style="font-size:9px;color:#888;margin-top:4px;text-align:center;">🖱 Clique para abrir em leque</div>
-          </div>`,
-          {sticky:false, direction:'top', className:'leaflet-tooltip-crime', opacity:1}
-        ).openTooltip();
-      });
-      marker.on('click', function(e){
-        const prox = _getProximos();
-        if(prox.length <= 1){
-          if(marker._popupHtml){
-            const mapaPopup = (typeof _acMapFS !== 'undefined' && _acMapFS && document.getElementById('mapa-fullscreen-overlay')?.classList.contains('ativo')) ? _acMapFS : _acMap;
-            L.popup({maxWidth:360, className:'leaflet-popup-crime'})
-              .setLatLng(marker.getLatLng())
-              .setContent(marker._popupHtml)
-              .openOn(mapaPopup);
-          }
-          return;
-        }
-        L.DomEvent.stopPropagation(e);
-        _fecharSpider();
-        const fsAtivo = typeof _acMapFS !== 'undefined' && _acMapFS && document.getElementById('mapa-fullscreen-overlay')?.classList.contains('ativo');
-        const _mapaAtivo = fsAtivo ? _acMapFS : _acMap;
-        _abrirSpider(prox, marker.getLatLng(), _mapaAtivo);
-      });
-    })(_mCrime, d0.lat, d0.lng, _gCrimesCapt, _acLayersCapt);
 
     _mCrime.addTo(gCrimes);
     /* Sub-layer por pelotão */
@@ -3695,9 +3564,8 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
     const icon=L.divIcon({className:'',html:svgHtml,iconSize:[26,26],iconAnchor:[13,13]});
     const boNorm=(v.bo||'').toString().trim();
     const crimeRef=dadosCrimes.find(d=>(d.bo||d.rat||'').toString().trim()===boNorm);
-    const m=L.marker([v.lat,v.lng],{icon,zIndexOffset:alerta?400:600,pelNum:_vPelN,natCode:v.natCode,alertaVis:alerta});
-    m._visData = { natCode:v.natCode||'', natDesc:v.natDesc||'', bo:v.bo||'', data:v.data||'', municipio:v.municipio||'', localizacao:v.localizacao||'' };
-    m.bindTooltip(`<div style="font-size:11px;line-height:1.8;width:240px;word-break:break-word;">
+    const m=L.marker([v.lat,v.lng],{icon,zIndexOffset:alerta?400:600,pelNum:_vPelN,natCode:v.natCode,alertaVis:alerta})
+      .bindTooltip(`<div style="font-size:11px;line-height:1.8;width:240px;word-break:break-word;">
         <b style="color:${cor};">🤝 VISITA TRANQUILIZADORA</b><br>
         <b>Natureza:</b> ${v.natCode}<br>
         <span style="color:#bbb;font-size:10px;word-break:break-word;">${v.natDesc||'—'}</span><br>
@@ -3907,22 +3775,6 @@ document.head.appendChild(styleUrban);
    OCORRÊNCIAS
 ══════════════════════════════════ */
 const CRIMES_PAG_SZ = 30;
-/* Máscara automática para número de BO: digita só números → formata AAAA-NNNNNNNNN-NNN */
-function formatBuscaBO(input){
-  const v = input.value;
-  /* Se parece número puro, aplica máscara */
-  const nums = v.replace(/\D/g,'');
-  if(nums.length >= 4 && /^\d+$/.test(v.replace(/-/g,''))){
-    const ano  = nums.slice(0,4);
-    const seq  = nums.slice(4,13);
-    const suf  = nums.slice(13,16);
-    let masked = ano;
-    if(seq)  masked += '-' + seq;
-    if(suf)  masked += '-' + suf;
-    input.value = masked;
-  }
-}
-
 function renderCrimes(){
   const _mesCr = getMesDd('cr');
   const mes   = _mesCr.length===1?_mesCr[0]:'';
@@ -4192,7 +4044,7 @@ function renderCruzamento(){
     return;
   }
 
-  let resultados = crimes.map(crime => {
+  const resultados = crimes.map(crime => {
     const dataCrime = parseDataDDMMAAAA(crime.data||'');
     /* Busca operações no raio e período */
     const opsProximas = dadosGdoRural.filter(op => {
@@ -4213,26 +4065,30 @@ function renderCruzamento(){
       ? Math.min(...opsProximas.map(op=>distanciaKm(crime.lat,crime.lng,op.lat,op.lng)))
       : null;
 
-    return {
-      crime,
-      opsProximas,
-      distMin,
-      status: opsProximas.length === 0 ? 'sem-op'
-              : distMin < raio/2 ? 'com-op'
-              : 'op-proxima',
-    };
+    /* Status: verifica visitas vinculadas para definir 'visita' */
+    const temVisitaVinc = dadosVisitas.some(v => {
+      if(!v.lat||!v.lng) return false;
+      const dist = distanciaKm(crime.lat, crime.lng, v.lat, v.lng);
+      if(dist > raio) return false;
+      if(dataCrime){
+        const dataVt = parseDataDDMMAAAA(v.data||'');
+        if(dataVt){ const diff=(dataVt-dataCrime)/(1000*60*60*24); if(diff<0||diff>dias*2) return false; }
+      }
+      return true;
+    });
+
+    const status = opsProximas.length === 0
+      ? (temVisitaVinc ? 'visita' : 'sem-op')
+      : distMin < raio/2 ? 'com-op'
+      : 'op-proxima';
+
+    return { crime, opsProximas, distMin, status };
   });
 
-  /* Filtro de status */
-  const statusF = document.getElementById('cx-status')?.value || '';
-
-  /* Contadores (sempre sobre todos) */
+  /* Contadores */
   const semOp   = resultados.filter(r=>r.status==='sem-op').length;
   const comOp   = resultados.filter(r=>r.status==='com-op').length;
   const proxima = resultados.filter(r=>r.status==='op-proxima').length;
-
-  /* Aplica filtro de status na lista */
-  if(statusF) resultados = resultados.filter(r => r.status === statusF);
 
   /* Municípios sem policiamento */
   const munsSemOp = [...new Set(resultados.filter(r=>r.status==='sem-op').map(r=>r.crime.municipio))];
@@ -4244,6 +4100,8 @@ function renderCruzamento(){
 
   /* Renderiza lista */
   let html = '';
+  const cxStatus = document.getElementById('cx-status')?.value || '';
+  const resultadosFiltrados = cxStatus ? resultados.filter(r => r.status === cxStatus) : resultados;
 
   if(munsSemOp.length){
     html += `<div style="background:rgba(239,83,80,.08);border:1px solid rgba(239,83,80,.3);border-radius:7px;padding:10px 14px;margin-bottom:12px;">
@@ -4255,7 +4113,7 @@ function renderCruzamento(){
   /* Map de dados de tooltip — indexado por número da linha */
   window._crzTooltipData = {};
 
-  resultados.forEach((r, idx) => {
+  resultadosFiltrados.forEach((r, idx) => {
     const cor = CORES_INDICADOR[r.crime.indicador]||'#9b8a5c';
     const distLabel = r.distMin !== null
       ? `${r.distMin.toFixed(1)} km`
@@ -4265,7 +4123,9 @@ function renderCruzamento(){
       ? `<span style="background:rgba(239,83,80,.15);color:var(--danger);border:1px solid rgba(239,83,80,.3);padding:2px 7px;border-radius:3px;font-size:10px;font-weight:700;">SEM OPERAÇÃO</span>`
       : r.status === 'com-op'
         ? `<span style="background:rgba(102,187,106,.12);color:var(--success);border:1px solid rgba(102,187,106,.3);padding:2px 7px;border-radius:3px;font-size:10px;font-weight:700;">COM OPERAÇÃO</span>`
-        : `<span style="background:rgba(255,152,0,.12);color:#ff9800;border:1px solid rgba(255,152,0,.3);padding:2px 7px;border-radius:3px;font-size:10px;font-weight:700;">OP. PRÓXIMA</span>`;
+        : r.status === 'visita'
+          ? `<span style="background:rgba(66,165,245,.12);color:var(--info);border:1px solid rgba(66,165,245,.3);padding:2px 7px;border-radius:3px;font-size:10px;font-weight:700;">VISITA TRANQUILIZADORA</span>`
+          : `<span style="background:rgba(255,152,0,.12);color:#ff9800;border:1px solid rgba(255,152,0,.3);padding:2px 7px;border-radius:3px;font-size:10px;font-weight:700;">OP. PRÓXIMA</span>`;
 
     /* Visitas próximas ao crime por raio + período (igual à lógica das operações) */
     const dataCrimeVt = parseDataDDMMAAAA(r.crime.data||'');
@@ -4721,6 +4581,14 @@ const AUDIT_STATUS_LABEL = {
   corrigida:   'Corrigida na Fonte',
 };
 
+const AUDIT_STATUS_COR = {
+  aguardando: '#ff9800',
+  em_analise: '#42a5f5',
+  validada:   '#66bb6a',
+  indeferida: '#ef5350',
+  corrigida:  '#ab47bc',
+};
+
 const AUDIT_STATUS_LABEL_SHORT = {
   aguardando: 'Aguard. Docs',
   em_analise: 'Em Análise',
@@ -4768,6 +4636,8 @@ function abrirAuditoria(bo){
     document.getElementById('audit-etapa-avaliacao').style.display   = 'block';
     document.getElementById('audit-btn-solicitar').style.display = 'none';
     document.getElementById('audit-btn-salvar').style.display    = 'inline-block';
+    /* Admin pode excluir qualquer solicitação */
+    document.getElementById('audit-btn-excluir').style.display   = 'inline-block';
     /* PDF só disponível se já foi validada/corrigida */
     const statusAtual = saved?.status || 'aguardando';
     document.getElementById('audit-btn-pdf').style.display = (['validada','corrigida'].includes(statusAtual)) ? 'inline-block' : 'none';
@@ -4797,6 +4667,10 @@ function abrirAuditoria(bo){
     document.getElementById('audit-btn-solicitar').style.display = 'inline-block';
     document.getElementById('audit-btn-pdf').style.display       = 'none';
     document.getElementById('audit-btn-salvar').style.display    = 'none';
+
+    /* Botão excluir: só para usuário (não admin), com solicitação existente ainda não avaliada */
+    const podeExcluir = !isAdmin && saved && saved.motivo && ['aguardando','em_analise'].includes(saved.status || 'aguardando');
+    document.getElementById('audit-btn-excluir').style.display = podeExcluir ? 'inline-block' : 'none';
 
     /* Pré-preenche solicitante */
     document.getElementById('audit-solicitante').value   = saved?.solicitante || (sessao?.nome||'');
@@ -4839,22 +4713,73 @@ function salvarSolicitacaoUsuario(){
     img1: img1 || null,
     img2: img2 || null,
     img3: img3 || null,
-    dataSolicitacao: dataHora,
+    data_solicitacao: dataHora,
     obs:             '',
     resp:            '',
-    dataDecisao:     '',
+    data_decisao:    '',
   };
 
-  auditoriasMap[_auditBoAtual] = registro;
+  /* Salva no Supabase */
+  _sbUpsert('auditorias', registro).then(() => {
+    _sincAuditoria(registro);
+    fecharModal('modal-auditoria');
+    renderCrimes();
+    renderDashboard();
+    alert('✔ Solicitação de auditoria salva com sucesso!\n\nAguarde a avaliação do Administrador.');
+  }).catch(e => {
+    /* Fallback localStorage */
+    console.warn('[auditorias] Supabase falhou, salvando local:', e.message);
+    _sincAuditoria(registro);
+    _pset('ac_auditorias', JSON.stringify(auditoriasMap));
+    fecharModal('modal-auditoria');
+    renderCrimes();
+    renderDashboard();
+    alert('✔ Solicitação salva localmente.\n\nAguarde a avaliação do Administrador.');
+  });
+}
+
+function excluirSolicitacaoUsuario(){
+  if(!_auditBoAtual) return;
+
+  const saved = auditoriasMap[_auditBoAtual];
+  const isAdmin = sessao?.perfil === 'admin';
+
+  if(!saved || !saved.motivo){
+    alert('Não há solicitação para excluir.');
+    return;
+  }
+
+  if(!isAdmin && !['aguardando','em_analise'].includes(saved.status || 'aguardando')){
+    alert('Esta solicitação já foi avaliada e não pode ser excluída.');
+    return;
+  }
+
+  const msg = isAdmin
+    ? `Admin: excluir a solicitação do BO ${_auditBoAtual}?\n\nEsta ação não pode ser desfeita.`
+    : `Tem certeza que deseja excluir esta solicitação de auditoria?\n\nEsta ação não pode ser desfeita.`;
+
+  if(!confirm(msg)) return;
+
+  /* Deleta do Supabase pelo campo bo */
+  fetch(`${SB_URL}/rest/v1/auditorias?bo=eq.${encodeURIComponent(_auditBoAtual)}`, {
+    method: 'DELETE', headers: _sbHeaders()
+  }).catch(e => console.warn('[auditorias] delete Supabase:', e.message));
+
+  /* Remove local */
+  delete auditoriasMap[_auditBoAtual];
   _pset('ac_auditorias', JSON.stringify(auditoriasMap));
 
   const crime = dadosCrimes.find(d => d.bo === _auditBoAtual || d.rat === _auditBoAtual);
-  if(crime){ crime._auditoria = registro; }
+  if(crime){
+    crime._auditoria = null;
+    crime._auditoriaPendente = pontoEmAreaUrbanaIBGE(crime.lat, crime.lng);
+  }
 
   fecharModal('modal-auditoria');
   renderCrimes();
   renderDashboard();
-  alert('✔ Solicitação de auditoria salva com sucesso!\n\nAguarde a avaliação do Administrador.');
+  if(document.getElementById('tab-auditorias')?.classList.contains('active')) renderAuditoriasLista();
+  alert('✔ Solicitação excluída com sucesso.');
 }
 
 function salvarAvaliacaoAdmin(){
@@ -4868,34 +4793,130 @@ function salvarAvaliacaoAdmin(){
     status:       document.getElementById('audit-status').value,
     obs:          document.getElementById('audit-obs').value.trim(),
     resp:         document.getElementById('audit-resp').value.trim(),
-    dataDecisao:  new Date().toLocaleString('pt-BR'),
+    data_decisao: new Date().toLocaleString('pt-BR'),
   };
 
   if(!decisao.obs){ alert('Informe o parecer do administrador.'); return; }
 
-  auditoriasMap[_auditBoAtual] = decisao;
-  _pset('ac_auditorias', JSON.stringify(auditoriasMap));
+  _sbUpsert('auditorias', decisao).then(() => {
+    _sincAuditoria(decisao);
+    _pset('ac_auditorias', JSON.stringify(auditoriasMap));
+    _posAvaliacaoAdmin(decisao);
+  }).catch(e => {
+    console.warn('[auditorias] Supabase falhou, salvando local:', e.message);
+    _sincAuditoria(decisao);
+    _pset('ac_auditorias', JSON.stringify(auditoriasMap));
+    _posAvaliacaoAdmin(decisao);
+  });
+}
 
-  /* Atualiza crime na memória */
-  const crime = dadosCrimes.find(d => d.bo === _auditBoAtual || d.rat === _auditBoAtual);
-  if(crime){
-    crime._auditoria = decisao;
-    if(['validada','indeferida','corrigida'].includes(decisao.status)){
-      crime._auditoriaPendente = false;
-    }
-  }
-
+function _posAvaliacaoAdmin(decisao){
   renderCrimes();
   renderDashboard();
-
   if(['validada','corrigida'].includes(decisao.status)){
-    /* Mostra botão de PDF sem fechar o modal */
     document.getElementById('audit-btn-pdf').style.display = 'inline-block';
     alert('✔ Avaliação registrada!\n\nA solicitação foi ' + (decisao.status === 'validada' ? 'VALIDADA' : 'CORRIGIDA') + '.\nAgora você pode gerar o PDF para envio ao BPM MAmb.');
   } else {
     fecharModal('modal-auditoria');
     alert('✔ Avaliação registrada com sucesso!');
   }
+}
+
+function limparTodasAuditorias(){
+  if(sessao?.perfil !== 'admin') return;
+  const total = Object.keys(auditoriasMap).filter(k => auditoriasMap[k]?.motivo).length;
+  if(!total){ alert('Não há solicitações para limpar.'); return; }
+  if(!confirm(`Limpar TODAS as ${total} solicitações de auditoria?\n\nEsta ação não pode ser desfeita.`)) return;
+
+  /* Deleta tudo do Supabase */
+  fetch(`${SB_URL}/rest/v1/auditorias?id=gt.0`, {
+    method: 'DELETE', headers: _sbHeaders()
+  }).catch(e => console.warn('[auditorias] limpar Supabase:', e.message));
+
+  auditoriasMap = {};
+  _pset('ac_auditorias', '{}');
+
+  dadosCrimes.forEach(d => { d._auditoria = null; d._auditoriaPendente = pontoEmAreaUrbanaIBGE(d.lat, d.lng); });
+  renderCrimes();
+  renderDashboard();
+  renderAuditoriasLista();
+  alert('✔ Todas as solicitações foram removidas.');
+}
+
+function renderAuditoriasLista(){
+  if(sessao?.perfil !== 'admin') return;
+  const container = document.getElementById('audit-lista-container');
+  const cardsEl   = document.getElementById('audit-lista-cards');
+  if(!container) return;
+
+  const filtroStatus = document.getElementById('audit-lista-filtro-status')?.value || '';
+  const busca = (document.getElementById('audit-lista-busca')?.value || '').toLowerCase().trim();
+  const entradas = Object.values(auditoriasMap).filter(a => a && a.motivo);
+
+  /* Cards de resumo */
+  const contagem = { aguardando:0, em_analise:0, validada:0, indeferida:0, corrigida:0 };
+  entradas.forEach(a => { const s = a.status||'aguardando'; if(s in contagem) contagem[s]++; });
+  const cardDef = [
+    { key:'aguardando', label:'Aguardando', cor:'#ff9800', icon:'⏳' },
+    { key:'em_analise', label:'Em Análise',  cor:'#42a5f5', icon:'🔍' },
+    { key:'validada',   label:'Validada',    cor:'#66bb6a', icon:'✅' },
+    { key:'indeferida', label:'Indeferida',  cor:'#ef5350', icon:'❌' },
+    { key:'corrigida',  label:'Corrigida',   cor:'#ab47bc', icon:'✔' },
+  ];
+  if(cardsEl) cardsEl.innerHTML = cardDef.map(c => `
+    <div style="background:var(--bg-card);border:1px solid ${c.cor}44;border-top:3px solid ${c.cor};border-radius:7px;padding:10px 16px;min-width:110px;cursor:pointer;text-align:center;"
+         onclick="document.getElementById('audit-lista-filtro-status').value='${c.key}';renderAuditoriasLista()">
+      <div style="font-size:20px;font-weight:700;color:${c.cor};">${contagem[c.key]}</div>
+      <div style="font-size:10px;color:var(--text-muted);">${c.icon} ${c.label}</div>
+    </div>`).join('');
+
+  let filtradas = entradas;
+  if(filtroStatus) filtradas = filtradas.filter(a => (a.status||'aguardando') === filtroStatus);
+  if(busca) filtradas = filtradas.filter(a =>
+    (a.bo||'').toLowerCase().includes(busca) ||
+    (a.solicitante||'').toLowerCase().includes(busca)
+  );
+
+  if(!filtradas.length){
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:30px;">Nenhuma solicitação encontrada.</div>';
+    return;
+  }
+
+  /* Ordena: aguardando/em_analise primeiro */
+  const ordemStatus = {aguardando:0, em_analise:1, validada:2, corrigida:3, indeferida:4};
+  filtradas.sort((a,b) => {
+    const os = (ordemStatus[a.status||'aguardando']||0) - (ordemStatus[b.status||'aguardando']||0);
+    if(os !== 0) return os;
+    return (b.dataSolicitacao||'').localeCompare(a.dataSolicitacao||'');
+  });
+
+  container.innerHTML = filtradas.map(a => {
+    const crime = dadosCrimes.find(d => d.bo === a.bo);
+    const status = a.status || 'aguardando';
+    const cor = AUDIT_STATUS_COR[status] || '#aaa';
+    const label = AUDIT_STATUS_LABEL[status] || status;
+    const gp  = crime?.grupamento ? gpDoColk(crime.grupamento) : '—';
+    return `
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-left:3px solid ${cor};border-radius:6px;padding:12px 14px;margin-bottom:8px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;">
+      <div style="flex:1;min-width:200px;">
+        <div style="font-size:11px;font-weight:700;color:#fff;margin-bottom:4px;">BO ${a.bo}</div>
+        <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">
+          <span style="color:#aaa;">Grupamento:</span> ${gp} &nbsp;|&nbsp;
+          <span style="color:#aaa;">Solicitante:</span> ${a.solicitante||'—'} &nbsp;|&nbsp;
+          <span style="color:#aaa;">Data:</span> ${a.dataSolicitacao||'—'}
+        </div>
+        <div style="font-size:10px;color:#ccc;">
+          <span style="color:#aaa;">Tipo:</span> ${AUDIT_TIPO_LABEL[a.tipo]||a.tipo||'—'} &nbsp;|&nbsp;
+          <span style="color:#aaa;">Motivo:</span> ${(a.motivo||'').slice(0,80)}${(a.motivo||'').length>80?'…':''}
+        </div>
+        ${a.resp ? `<div style="font-size:10px;color:#aaa;margin-top:3px;"><span>Avaliador:</span> ${a.resp} &nbsp;|&nbsp; ${a.dataDecisao||''}</div>` : ''}
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:10px;font-weight:700;color:${cor};background:${cor}22;border:1px solid ${cor}55;border-radius:4px;padding:3px 8px;">${label}</span>
+        <button class="btn-outline" style="font-size:10px;padding:3px 10px;" onclick="abrirAuditoria('${a.bo}')">📋 Abrir</button>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function gerarPDFAuditoria(){
@@ -5300,6 +5321,51 @@ async function _salvarFichasComAnexos(fichaId){
       ...f, fotos: (f.fotos||[]).map(a => ({id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url||''}))
     }))));
   }catch(e){}
+}
+
+/* ── Helpers de auditoria ── */
+
+/* Sincroniza um registro no auditoriasMap e no crime correspondente */
+function _sincAuditoria(reg){
+  /* Normaliza nomes de campos (Supabase usa snake_case) */
+  const r = {
+    bo:              reg.bo,
+    status:          reg.status || 'aguardando',
+    motivo:          reg.motivo || '',
+    tipo:            reg.tipo   || '',
+    solicitante:     reg.solicitante || '',
+    complemento:     reg.complemento || '',
+    chk1: !!reg.chk1, chk2: !!reg.chk2, chk3: !!reg.chk3,
+    img1: reg.img1 || null,
+    img2: reg.img2 || null,
+    img3: reg.img3 || null,
+    dataSolicitacao: reg.data_solicitacao || reg.dataSolicitacao || '',
+    obs:             reg.obs || '',
+    resp:            reg.resp || '',
+    dataDecisao:     reg.data_decisao || reg.dataDecisao || '',
+  };
+  auditoriasMap[r.bo] = r;
+  const crime = dadosCrimes.find(d => d.bo === r.bo || d.rat === r.bo);
+  if(crime){
+    crime._auditoria = r;
+    if(['validada','indeferida','corrigida'].includes(r.status)){
+      crime._auditoriaPendente = false;
+    }
+  }
+}
+
+/* Carrega todas as auditorias do Supabase */
+async function _carregarAuditorias(){
+  try{
+    const rows = await _sbSelect('auditorias', 'order=id.desc');
+    auditoriasMap = {};
+    rows.forEach(r => _sincAuditoria(r));
+    _pset('ac_auditorias', JSON.stringify(auditoriasMap));
+    console.log('[auditorias] Supabase:', rows.length, 'registros');
+  }catch(e){
+    console.warn('[auditorias] Fallback localStorage:', e.message);
+    auditoriasMap = JSON.parse(_pget('ac_auditorias') || '{}');
+  }
 }
 
 /* ── Carrega fichas do Supabase ── */
@@ -6401,6 +6467,9 @@ function switchSubtab(el, id){
   }
   if(id === 'prioridade'){
     _prMesInit();
+  }
+  if(id === 'auditorias'){
+    renderAuditoriasLista();
   }
 }
 
