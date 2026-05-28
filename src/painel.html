@@ -818,19 +818,28 @@ const SB_URL = 'https://zrnbebjszwkmquzthjfa.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpybmJlYmpzendrbXF1enRoamZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkzOTA4MzEsImV4cCI6MjA5NDk2NjgzMX0.di9t2SOCTLZ2uPFOnTOiy6srvt7GC5cdqenZZScXve4';
 
 async function sbFetch(table, params=''){
-  /* Supabase limita 1000 por padrão — passa limit alto na URL */
-  const sep = params ? '&' : '';
-  const url = `${SB_URL}/rest/v1/${table}?${params}${sep}limit=10000`;
-  const res = await fetch(url, {
-    headers: {
-      'apikey': SB_KEY,
-      'Authorization': `Bearer ${SB_KEY}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'return=representation'
-    }
-  });
-  if(!res.ok) throw new Error(`Supabase erro ${res.status}: ${await res.text()}`);
-  return res.json();
+  /* Supabase pode limitar a 1000 por request — pagina até buscar tudo */
+  const BATCH = 1000;
+  let allRows = [];
+  let offset = 0;
+  while(true){
+    const sep = params ? '&' : '';
+    const url = `${SB_URL}/rest/v1/${table}?${params}${sep}limit=${BATCH}&offset=${offset}`;
+    const res = await fetch(url, {
+      headers: {
+        'apikey': SB_KEY,
+        'Authorization': `Bearer ${SB_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+      }
+    });
+    if(!res.ok) throw new Error(`Supabase erro ${res.status}: ${await res.text()}`);
+    const rows = await res.json();
+    allRows = allRows.concat(rows);
+    if(rows.length < BATCH) break;
+    offset += BATCH;
+  }
+  return allRows;
 }
 
 async function sbUpsert(table, data){
