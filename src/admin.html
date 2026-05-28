@@ -438,15 +438,20 @@
 
       <!-- POE METAS -->
       <div id="meta-poe-section" style="display:none;">
-        <div style="background:var(--bg-card);border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid var(--border);font-size:11px;color:var(--text-muted);">
-          Meta anual POE por grupamento. O painel divide por 12 para obter a meta mensal.
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+          <select id="poe-filtro-gp" onchange="poeFiltrar()" style="background:#222;border:1px solid var(--border);color:#ccc;padding:6px 10px;border-radius:6px;font-size:12px;min-width:200px;">
+            <option value="">Todos os Grupamentos</option>
+          </select>
+          <select id="poe-filtro-nat" onchange="poeFiltrar()" style="background:#222;border:1px solid var(--border);color:#ccc;padding:6px 10px;border-radius:6px;font-size:12px;min-width:150px;">
+            <option value="">Todas as Naturezas</option>
+          </select>
         </div>
         <div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;">
           <table style="width:100%;border-collapse:collapse;font-size:11px;">
             <thead>
               <tr style="background:#1a1a1a;">
-                <th style="padding:8px 12px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;left:0;background:#1a1a1a;">GRUPAMENTO</th>
-                <th style="padding:8px 8px;color:var(--text-muted);font-size:10px;border-bottom:1px solid var(--border);text-align:center;">PEL</th>
+                <th style="padding:8px 12px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;left:0;background:#1a1a1a;min-width:160px;">GRUPAMENTO</th>
+                <th style="padding:8px 8px;color:var(--text-muted);font-size:10px;border-bottom:1px solid var(--border);text-align:center;white-space:nowrap;">NATUREZA</th>
                 <th style="padding:8px 4px;color:#aaa;font-size:10px;border-bottom:1px solid var(--border);text-align:center;min-width:44px;">JAN</th>
                 <th style="padding:8px 4px;color:#aaa;font-size:10px;border-bottom:1px solid var(--border);text-align:center;min-width:44px;">FEV</th>
                 <th style="padding:8px 4px;color:#aaa;font-size:10px;border-bottom:1px solid var(--border);text-align:center;min-width:44px;">MAR</th>
@@ -459,7 +464,7 @@
                 <th style="padding:8px 4px;color:#aaa;font-size:10px;border-bottom:1px solid var(--border);text-align:center;min-width:44px;">OUT</th>
                 <th style="padding:8px 4px;color:#aaa;font-size:10px;border-bottom:1px solid var(--border);text-align:center;min-width:44px;">NOV</th>
                 <th style="padding:8px 4px;color:#aaa;font-size:10px;border-bottom:1px solid var(--border);text-align:center;min-width:44px;">DEZ</th>
-                <th style="padding:8px 8px;color:var(--gold);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);text-align:center;border-left:2px solid var(--border);">ANUAL</th>
+                <th style="padding:8px 8px;color:var(--gold);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);text-align:center;border-left:2px solid var(--border);white-space:nowrap;">TOTAL</th>
               </tr>
             </thead>
             <tbody id="meta-poe-tbody">
@@ -1523,58 +1528,88 @@ async function metaGdoMesSalvar(id, col, novoVal, gpNome, anualCellId){
 
 /* ── POE METAS ── */
 let _poeDados = [];
+const POE_MESES_COLS = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
+const POE_MESES_ABR  = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
 async function metasPoeCarregar(ano){
-  const data = await sbFetch('bd_metaspoe', `ano=eq.${ano}&select=id,gp_responsavel,grupamento_bpm,meta_anual,meta_jan,meta_fev,meta_mar,meta_abr,meta_mai,meta_jun,meta_jul,meta_ago,meta_set,meta_out,meta_nov,meta_dez&order=gp_responsavel`);
+  /* A tabela bd_metaspoe não tem coluna ano nem id — chave é GRUPAMENTO+NATUREZA */
+  const data = await sbFetch('bd_metaspoe',
+    `select=GRUPAMENTO,NATUREZA,JANEIRO,FEVEREIRO,MARÇO,ABRIL,MAIO,JUNHO,JULHO,AGOSTO,SETEMBRO,OUTUBRO,NOVEMBRO,DEZEMBRO,"TOTAL GERAL"&order=GRUPAMENTO,NATUREZA`);
   _poeDados = data;
-  _poeDados.sort((a,b)=>gpOrdem(a.gp_responsavel)-gpOrdem(b.gp_responsavel));
+
+  /* Popula filtros */
+  const gps  = [...new Set(data.map(d=>d.GRUPAMENTO))].sort();
+  const nats = [...new Set(data.map(d=>d.NATUREZA))].sort();
+  const selGp  = document.getElementById('poe-filtro-gp');
+  const selNat = document.getElementById('poe-filtro-nat');
+  const curGp  = selGp.value;
+  const curNat = selNat.value;
+  selGp.innerHTML  = '<option value="">Todos os Grupamentos</option>' + gps.map(g=>`<option value="${g}"${g===curGp?' selected':''}>${g}</option>`).join('');
+  selNat.innerHTML = '<option value="">Todas as Naturezas</option>'   + nats.map(n=>`<option value="${n}"${n===curNat?' selected':''}>${n}</option>`).join('');
+
+  poeFiltrar();
+}
+
+function poeFiltrar(){
+  const filtroGp  = document.getElementById('poe-filtro-gp').value;
+  const filtroNat = document.getElementById('poe-filtro-nat').value;
+  const lista = _poeDados.filter(d =>
+    (!filtroGp  || d.GRUPAMENTO === filtroGp) &&
+    (!filtroNat || d.NATUREZA   === filtroNat)
+  );
   const tbody = document.getElementById('meta-poe-tbody');
-  if(!_poeDados.length){
+  if(!lista.length){
     tbody.innerHTML='<tr><td colspan="15" style="padding:20px;text-align:center;color:var(--text-muted);">Nenhum registro.</td></tr>';
     return;
   }
-  const MESES_COLS=['meta_jan','meta_fev','meta_mar','meta_abr','meta_mai','meta_jun','meta_jul','meta_ago','meta_set','meta_out','meta_nov','meta_dez'];
-  tbody.innerHTML = _poeDados.map(d => {
-    const pelM = d.grupamento_bpm ? d.grupamento_bpm.match(/(\d+)\s*PEL/i) : null;
-    const pel = pelM ? pelM[1]+'º PEL' : '—';
-    const mensal = Math.ceil(d.meta_anual/12);
-    const mCells = MESES_COLS.map((col,i)=>{
-      const val = (d[col] !== null && d[col] !== undefined) ? d[col] : mensal;
+  tbody.innerHTML = lista.map((d,idx) => {
+    const mCells = POE_MESES_COLS.map((col,i)=>{
+      const val = parseInt(d[col])||0;
+      const rowKey = encodeURIComponent(d.GRUPAMENTO + '|||' + d.NATUREZA);
       return `<td style="padding:3px 2px;text-align:center;">
         <input type="number" min="0" value="${val}"
           style="width:38px;background:#1a1a1a;border:1px solid #333;color:#ccc;text-align:center;padding:3px 2px;border-radius:3px;font-size:11px;"
-          onchange="metaPoeMesSalvar(${d.id},'${col}',this.value,'${d.gp_responsavel}','poe-anual-${d.id}')"
-          title="${MESES_ADMIN[i]}">
+          onchange="metaPoeMesSalvar('${rowKey}','${col}',this.value,'${d.GRUPAMENTO}','poe-total-${idx}')"
+          title="${POE_MESES_COLS[i]}">
       </td>`;
     }).join('');
-    const somaAnual = MESES_COLS.reduce((s,col)=> s + ((d[col]!==null&&d[col]!==undefined)?d[col]:mensal), 0);
+    const total = POE_MESES_COLS.reduce((s,col)=> s + (parseInt(d[col])||0), 0);
     return `<tr style="border-bottom:1px solid #252525;">
-      <td style="padding:5px 12px;color:#ccc;font-weight:600;white-space:nowrap;position:sticky;left:0;background:#1e1e1e;">${d.gp_responsavel}</td>
-      <td style="padding:5px 8px;text-align:center;color:var(--text-muted);">${pel}</td>
+      <td style="padding:5px 12px;color:#ccc;font-weight:600;white-space:nowrap;position:sticky;left:0;background:#1e1e1e;">${d.GRUPAMENTO}</td>
+      <td style="padding:5px 8px;text-align:center;color:var(--text-muted);white-space:nowrap;">${d.NATUREZA}</td>
       ${mCells}
-      <td style="padding:5px 8px;text-align:center;font-weight:700;color:var(--gold);border-left:2px solid var(--border);" id="poe-anual-${d.id}">${somaAnual}</td>
+      <td style="padding:5px 8px;text-align:center;font-weight:700;color:var(--gold);border-left:2px solid var(--border);" id="poe-total-${idx}">${total}</td>
     </tr>`;
   }).join('');
 }
 
-async function metaPoeMesSalvar(id, col, novoVal, gpNome, anualCellId){
+async function metaPoeMesSalvar(rowKey, col, novoVal, gpNome, totalCellId){
   const val = parseInt(novoVal)||0;
   const statusEl = document.getElementById('meta-status');
-  const mesIdx = ['meta_jan','meta_fev','meta_mar','meta_abr','meta_mai','meta_jun','meta_jul','meta_ago','meta_set','meta_out','meta_nov','meta_dez'].indexOf(col);
+  const mesIdx = POE_MESES_COLS.indexOf(col);
   try{
-    const patch = {}; patch[col] = val; patch['updated_at'] = new Date().toISOString();
-    const entry = _poeDados.find(d=>d.id===id);
+    const decoded = decodeURIComponent(rowKey).split('|||');
+    const grupamento = decoded[0];
+    const natureza   = decoded[1];
+
+    /* Atualiza no objeto local */
+    const entry = _poeDados.find(d => d.GRUPAMENTO===grupamento && d.NATUREZA===natureza);
     if(entry){
       entry[col] = val;
-      const MESES_COLS=['meta_jan','meta_fev','meta_mar','meta_abr','meta_mai','meta_jun','meta_jul','meta_ago','meta_set','meta_out','meta_nov','meta_dez'];
-      const soma = MESES_COLS.reduce((s,c)=> s + ((entry[c]!==null&&entry[c]!==undefined)?entry[c]:Math.ceil(entry.meta_anual/12)), 0);
-      patch['meta_anual'] = soma;
-      entry.meta_anual = soma;
-      const el = document.getElementById(anualCellId);
-      if(el) el.textContent = soma;
+      const total = POE_MESES_COLS.reduce((s,c)=> s+(parseInt(entry[c])||0), 0);
+      entry['TOTAL GERAL'] = total;
+      const el = document.getElementById(totalCellId);
+      if(el) el.textContent = total;
     }
-    await sbPatch('bd_metaspoe', `id=eq.${id}`, patch);
-    statusEl.textContent = `✓ ${gpNome} · ${MESES_ABR[mesIdx]} = ${val}`;
+
+    /* Patch no Supabase usando GRUPAMENTO e NATUREZA como filtro */
+    const patch = {};
+    patch[col] = String(val);
+    await sbPatch('bd_metaspoe',
+      `GRUPAMENTO=eq.${encodeURIComponent(grupamento)}&NATUREZA=eq.${encodeURIComponent(natureza)}`,
+      patch);
+
+    statusEl.textContent = `✓ ${gpNome} · ${natureza} · ${POE_MESES_ABR[mesIdx]} = ${val}`;
     statusEl.style.color = '#2ea043';
     setTimeout(()=>{ statusEl.textContent=''; },3000);
   }catch(e){
@@ -1587,7 +1622,13 @@ async function metasCriarAno(){
   const ano = parseInt(document.getElementById('meta-ano').value);
   const anoAnt = ano - 1;
   const statusEl = document.getElementById('meta-status');
-  const tabela = _metaTipo === 'poe' ? 'bd_metaspoe' : 'gdo_metas';
+  if(_metaTipo === 'poe'){
+    statusEl.textContent = 'A tabela POE não usa controle por ano.';
+    statusEl.style.color = '#ffb74d';
+    setTimeout(()=>{ statusEl.textContent=''; },4000);
+    return;
+  }
+  const tabela = 'gdo_metas';
   if(!confirm(`Criar metas para ${ano} copiando de ${anoAnt}?`)) return;
   statusEl.textContent = `Criando metas para ${ano}...`; statusEl.style.color='var(--text-muted)';
   try{
