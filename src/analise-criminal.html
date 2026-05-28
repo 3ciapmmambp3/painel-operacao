@@ -3396,10 +3396,50 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
   const _gCrimesPel = {};
   const dadosComCoord = dados.filter(d=>d.lat&&d.lng);
 
+  /* ── Pré-calcula coordenadas que vão para o leque misto (crime+ops/vis) ──
+     para evitar plotar o marcador de crime separado nesses pontos */
+  const _lequeCoordsMistos = new Set();
+  (function(){
+    const PROX = 0.00045;
+    const mesF2l = getMesDd('mapa');
+    const pelF2l = document.getElementById('mapa-pel').value;
+    const allL = [];
+    dadosComCoord.forEach(d => allL.push({ lat:d.lat, lng:d.lng, tipo:'crime' }));
+    dadosGdoRural.forEach(op => {
+      if(!op.lat||!op.lng) return;
+      if(mesF2l.length && !mesF2l.includes(op.mes)) return;
+      if(pelF2l && pelDoColk(op.grupamento) !== parseInt(pelF2l)) return;
+      allL.push({ lat:op.lat, lng:op.lng, tipo:'ops' });
+    });
+    dadosVisitas.forEach(v => {
+      if(!v.lat||!v.lng) return;
+      if(mesF2l.length && !mesF2l.includes(v.mes)) return;
+      allL.push({ lat:v.lat, lng:v.lng, tipo:'vis' });
+    });
+    const seenL = new Set();
+    allL.forEach(function(p, i){
+      if(seenL.has(i)) return;
+      const g = [p]; seenL.add(i);
+      allL.forEach(function(q, j){
+        if(seenL.has(j)) return;
+        if(Math.abs(p.lat-q.lat)<PROX && Math.abs(p.lng-q.lng)<PROX){ g.push(q); seenL.add(j); }
+      });
+      if(g.length > 1){
+        const tipos = new Set(g.map(function(x){ return x.tipo; }));
+        if(tipos.size > 1){
+          /* Marca a coordenada do centro como "vai para leque" */
+          g.forEach(function(pt){ _lequeCoordsMistos.add(pt.lat.toFixed(5)+','+pt.lng.toFixed(5)); });
+        }
+      }
+    });
+  })();
+
   /* Agrupa crimes por coordenada exata para tratar sobreposição */
+  /* Exclui crimes que participam de um leque misto (evita marcador duplo) */
   const coordMap = new Map();
   dadosComCoord.forEach(d => {
     const key = `${d.lat.toFixed(5)},${d.lng.toFixed(5)}`;
+    if(_lequeCoordsMistos.has(key)) return; /* será plotado no leque */
     if(!coordMap.has(key)) coordMap.set(key, []);
     coordMap.get(key).push(d);
   });
