@@ -586,8 +586,29 @@
 
 <!-- OVERLAY tela cheia GDO Rural -->
 <div id="gdo-mapa-fullscreen-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:#111;flex-direction:column;">
-  <div style="background:#1a1a1a;border-bottom:1px solid var(--border);padding:8px 14px;display:flex;align-items:center;gap:12px;flex-shrink:0;">
+  <div style="background:#1a1a1a;border-bottom:1px solid var(--border);padding:8px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0;">
     <span style="font-size:13px;font-weight:700;color:var(--gold);">🗺 GDO Rural — Tela Cheia</span>
+    <select id="gdo-fs-mes" onchange="atualizarGdoFS()" style="padding:5px 8px;background:#252525;border:1px solid var(--border-hover);border-radius:4px;color:#fff;font-size:11px;">
+      <option value="">Todos os Meses</option>
+      <option>JANEIRO</option><option>FEVEREIRO</option><option>MARÇO</option>
+      <option>ABRIL</option><option>MAIO</option><option>JUNHO</option>
+      <option>JULHO</option><option>AGOSTO</option><option>SETEMBRO</option>
+      <option>OUTUBRO</option><option>NOVEMBRO</option><option>DEZEMBRO</option>
+    </select>
+    <select id="gdo-fs-pel" onchange="atualizarGdoFS()" style="padding:5px 8px;background:#252525;border:1px solid var(--border-hover);border-radius:4px;color:#fff;font-size:11px;">
+      <option value="">Todos os Pelotões</option>
+      <option value="1">1º PEL</option><option value="2">2º PEL</option>
+      <option value="3">3º PEL</option><option value="4">4º PEL</option><option value="5">5º PEL</option>
+    </select>
+    <select id="gdo-fs-gp" onchange="atualizarGdoFS()" style="padding:5px 8px;background:#252525;border:1px solid var(--border-hover);border-radius:4px;color:#fff;font-size:11px;min-width:160px;">
+      <option value="">Todos os Grupamentos</option>
+    </select>
+    <select id="gdo-fs-nat" onchange="atualizarGdoFS()" style="padding:5px 8px;background:#252525;border:1px solid var(--border-hover);border-radius:4px;color:#fff;font-size:11px;">
+      <option value="">Todas as Naturezas</option>
+      <option value="Y07001">Y07001 — Batida Policial</option>
+      <option value="Y07002">Y07002 — Op. Presença</option>
+      <option value="Y07014">Y07014 — Ação Zona Rural</option>
+    </select>
     <button onclick="fecharGdoMapaFullscreen()" style="margin-left:auto;background:rgba(200,50,50,.2);border:1px solid #c03030;color:#ef5350;padding:5px 14px;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">✕ Fechar</button>
   </div>
   <div id="gdo-mapa-fs-inner" style="flex:1;width:100%;"></div>
@@ -2762,6 +2783,7 @@ function renderGdoTabela(dados, natF){
 
 /* ── Mapa Leaflet ── */
 function renderGdoMapa(dados){
+  const gpFiltro = document.getElementById('gdo-gp')?.value || '';
   if(!window.L){
     if(!document.getElementById('leaflet-css')){
       const css=document.createElement('link'); css.id='leaflet-css'; css.rel='stylesheet';
@@ -2770,11 +2792,11 @@ function renderGdoMapa(dados){
     }
     const sc=document.createElement('script');
     sc.src='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
-    sc.onload=()=>_initMapaGdo(dados);
+    sc.onload=()=>_initMapaGdo(dados, gpFiltro);
     document.head.appendChild(sc);
     return;
   }
-  _initMapaGdo(dados);
+  _initMapaGdo(dados, gpFiltro);
 }
 
 let _kmlLayers = {}; /* key → L.LayerGroup */
@@ -2800,7 +2822,8 @@ function toggleLayer(key){
   }
 }
 
-function _initMapaGdo(dados){
+function _initMapaGdo(dados, gpFiltro){
+  gpFiltro = gpFiltro || '';
   const dadosCoord=dados.filter(d=>d.lat&&d.lng);
   const el=document.getElementById('gdo-mapa-inner');
   if(_leafletMap){ _leafletMap.remove(); _leafletMap=null; _kmlLayers={}; }
@@ -2850,12 +2873,17 @@ function _initMapaGdo(dados){
               : `${pelData.label} — ${gpData.label}`;
 
             gpData.polys.forEach(poly => {
+              /* Destaque visual se gpFiltro ativo */
+              const esteGp = gpFiltro && gpInfo && gpInfo.gpResp === gpFiltro;
+              const wt  = esteGp ? 3.5 : (gpFiltro ? 0.7 : 1.5);
+              const op  = esteGp ? 1.0 : (gpFiltro ? 0.22 : 0.9);
+              const fOp = esteGp ? 0.22: (gpFiltro ? 0.03 : 0.15);
               L.polygon(poly.map(p=>[p[1],p[0]]),{
                 color:    gpData.cor,
-                weight:   1.5,
-                opacity:  0.9,
+                weight:   wt,
+                opacity:  op,
                 fillColor:gpData.cor,
-                fillOpacity:0.15
+                fillOpacity:fOp
               })
               .bindTooltip(tooltipLabel,{
                 sticky:true, className:'leaflet-tooltip-pel'
@@ -2931,71 +2959,103 @@ function _initMapaGdo(dados){
 /* ── Tela Cheia GDO Rural ── */
 let _gdoFsMap = null;
 
+function atualizarGdoFS(){
+  /* Lê filtros do FS e re-renderiza mapa no overlay */
+  const fsEl = document.getElementById('gdo-mapa-fs-inner');
+  if(!fsEl || document.getElementById('gdo-mapa-fullscreen-overlay').style.display === 'none') return;
+  const mes = document.getElementById('gdo-fs-mes')?.value || '';
+  const pel = document.getElementById('gdo-fs-pel')?.value || '';
+  const gpF = document.getElementById('gdo-fs-gp')?.value  || '';
+  const nat = document.getElementById('gdo-fs-nat')?.value  || '';
+  const gdoNatsRel = ['Y07001','Y07002','Y07014'];
+  const MESESALL = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
+  const mesesF = mes ? [mes] : MESESALL;
+  const dados = (window._dadosBrutos||[]).filter(d => {
+    if(!(d.localizacao||'').toUpperCase().includes('RURAL')) return false;
+    const nats = nat ? [nat] : gdoNatsRel;
+    if(!nats.includes(d.natureza)) return false;
+    if(!mesesF.includes(d.mes)) return false;
+    if(gpF && d.gpResp !== gpF) return false;
+    if(pel){ const pn=pelDoColk(d.grupamento); if(pn===99||pn!==parseInt(pel)) return false; }
+    return true;
+  });
+  if(_gdoFsMap){ _gdoFsMap.remove(); _gdoFsMap=null; }
+  const el = document.getElementById('gdo-mapa-fs-inner');
+  _renderGdoFsMap(el, dados, gpF);
+}
+
+function _renderGdoFsMap(el, dados, gpFiltro){
+  gpFiltro = gpFiltro || '';
+  _gdoFsMap = L.map(el, {zoomControl:true, scrollWheelZoom:true});
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    attribution:'&copy; OpenStreetMap contributors', maxZoom:19
+  }).addTo(_gdoFsMap);
+  /* KML layers com destaque */
+  if(typeof KML_DATA !== 'undefined' && KML_DATA.pelotoes){
+    Object.entries(KML_DATA.pelotoes).forEach(([pelKey, pelData]) => {
+      const group = L.layerGroup();
+      const pelNum = parseInt(pelKey.replace(/\D/g,''));
+      if(pelData.gps){
+        Object.entries(pelData.gps).forEach(([gpKey, gpData]) => {
+          const gpNum = parseInt(gpKey.replace(/\D/g,''));
+          const gpInfo = dadosGrupos.find(r => r.pelNum===pelNum && gpNumDoColk(r.colK||r.grupamento)===gpNum);
+          const cidade = gpInfo ? gpInfo.gpResp.replace('GP ','') : '';
+          const esteGp = gpFiltro && gpInfo && gpInfo.gpResp === gpFiltro;
+          const wt = esteGp ? 3.5 : (gpFiltro ? 0.7 : 1.5);
+          const op = esteGp ? 1.0 : (gpFiltro ? 0.22 : 0.9);
+          const fOp= esteGp ? 0.22: (gpFiltro ? 0.03 : 0.15);
+          const lbl = cidade ? `${pelData.label} — ${gpData.label} — ${cidade}` : `${pelData.label} — ${gpData.label}`;
+          gpData.polys.forEach(poly => {
+            L.polygon(poly.map(p=>[p[1],p[0]]),{color:gpData.cor,weight:wt,opacity:op,fillColor:gpData.cor,fillOpacity:fOp})
+              .bindTooltip(lbl,{sticky:true,className:'leaflet-tooltip-pel'}).addTo(group);
+          });
+        });
+      }
+      group.addTo(_gdoFsMap);
+    });
+  }
+  /* Marcadores */
+  const dadosCoord = dados.filter(d=>d.lat&&d.lng);
+  if(dadosCoord.length){
+    dadosCoord.forEach(d => {
+      const cor = GDO_NAT_COR[d.natureza]||'#9b8a5c';
+      const icon = L.divIcon({className:'',html:`<div style="width:13px;height:13px;background:${cor};border:2.5px solid #fff;border-radius:50%;box-shadow:0 1px 6px rgba(0,0,0,.4);"></div>`,iconSize:[13,13],iconAnchor:[6,6]});
+      const tt = `<div style="font-size:12px;padding:4px;min-width:180px;"><b style="color:${cor};">RAT: ${d.rat}</b><br>Data: ${d.data||'—'}<br>Município: ${d.municipio||'—'}<br>Natureza: <b>${d.natureza}</b></div>`;
+      L.marker([d.lat,d.lng],{icon}).bindTooltip(tt,{sticky:true,direction:'top',className:'leaflet-tooltip-rat'}).addTo(_gdoFsMap);
+    });
+    const bounds = L.featureGroup(dadosCoord.map(d=>L.marker([d.lat,d.lng]))).getBounds();
+    _gdoFsMap.fitBounds(bounds,{padding:[60,60]});
+  } else {
+    _gdoFsMap.setView([-18.5,-41.5],7);
+  }
+  document.getElementById('gdo-mapa-fs-legenda').innerHTML =
+    (window.gdoNats||['Y07001','Y07002','Y07014']).map(n=>`<span><span class="nat-dot" style="background:${GDO_NAT_COR[n]||'#9b8a5c'}"></span>${n}</span>`).join('') +
+    `<span style="margin-left:12px;color:var(--text-hint)">Pontos: ${dadosCoord.length}</span>`;
+  setTimeout(()=>{ if(_gdoFsMap) _gdoFsMap.invalidateSize(); }, 200);
+}
+
 function abrirGdoMapaFullscreen(){
   const overlay = document.getElementById('gdo-mapa-fullscreen-overlay');
   if(!overlay) return;
   overlay.style.display = 'flex';
   document.body.style.overflow = 'hidden';
+  /* Sincroniza filtros normais → FS */
+  const gdoMesEl = document.getElementById('gdo-mes-sel');
+  const gdoMesVal = gdoMesEl ? gdoMesEl.value : '';
+  const fsGdoMes = document.getElementById('gdo-fs-mes');
+  if(fsGdoMes) fsGdoMes.value = gdoMesVal || '';
+  const fsPel = document.getElementById('gdo-fs-pel');
+  if(fsPel) fsPel.value = document.getElementById('gdo-pel')?.value || '';
+  const fsGp = document.getElementById('gdo-fs-gp');
+  /* Popula gdo-fs-gp com os mesmos grupamentos do gdo-gp */
+  const gdoGpSrc = document.getElementById('gdo-gp');
+  if(fsGp && gdoGpSrc) fsGp.innerHTML = gdoGpSrc.innerHTML;
+  if(fsGp) fsGp.value = gdoGpSrc?.value || '';
   const dados = getDadosGdoFiltrados();
   const el = document.getElementById('gdo-mapa-fs-inner');
   if(_gdoFsMap){ _gdoFsMap.remove(); _gdoFsMap = null; }
-  _gdoFsMap = L.map(el, {zoomControl:true, scrollWheelZoom:true});
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-    attribution:'&copy; OpenStreetMap contributors', maxZoom:19
-  }).addTo(_gdoFsMap);
-  /* Copia camadas KML já carregadas */
-  if(_leafletMap && typeof KML_DATA !== 'undefined'){
-    /* Replica layers do mapa principal no fullscreen */
-    Object.entries(_kmlLayers).forEach(([key, grp]) => {
-      if(key.startsWith('ops-')) return; /* marcadores serão re-adicionados abaixo */
-      const cbId = 'layer-'+key.replace('_','');
-      const cb = document.getElementById(cbId) || document.getElementById('layer-'+key);
-      if(!cb || cb.checked) grp.eachLayer(l => {
-        const clone = _cloneLeafletLayer(l);
-        if(clone) clone.addTo(_gdoFsMap);
-      });
-    });
-  }
-  /* Adiciona marcadores */
-  const dadosCoord = dados.filter(d=>d.lat&&d.lng);
-  if(!dadosCoord.length){
-    _gdoFsMap.setView([-18.5,-41.5],7);
-  } else {
-    dadosCoord.forEach(d=>{
-      const pelNum = d.grupamento ? pelDoColk(d.grupamento) : 0;
-      if(pelNum >= 1 && pelNum <= 5){
-        const cbKey = pelNum < 4 ? pelNum+'PEL' : pelNum+'_PEL';
-        const cbId2 = 'layer-'+cbKey.replace('_','');
-        const cb2   = document.getElementById(cbId2);
-        if(cb2 && !cb2.checked) return;
-      }
-      const cor=GDO_NAT_COR[d.natureza]||'#9b8a5c';
-      const icon=L.divIcon({
-        className:'',
-        html:`<div style="width:13px;height:13px;background:${cor};border:2.5px solid #fff;border-radius:50%;box-shadow:0 1px 6px rgba(0,0,0,.4);"></div>`,
-        iconSize:[13,13],iconAnchor:[6,6],popupAnchor:[0,-10]
-      });
-      const tooltipHtml=`<div style="font-size:12px;line-height:1.75;padding:4px 2px;min-width:200px;">
-        <b style="color:${cor};font-size:13px;display:block;margin-bottom:4px;">RAT: ${d.rat}</b>
-        <table style="width:100%;border-collapse:collapse;">
-          <tr><td style="color:#555;font-size:11px;padding-right:8px;">Data</td><td style="font-weight:600">${d.data||'—'}</td></tr>
-          <tr><td style="color:#555;font-size:11px;">Município</td><td style="font-weight:600">${d.municipio||'—'}</td></tr>
-          <tr><td style="color:#555;font-size:11px;">Natureza</td><td style="font-weight:700;color:${cor}">${d.natureza}</td></tr>
-          <tr><td style="color:#555;font-size:11px;">Localização</td><td>${d.localizacao||'—'}</td></tr>
-        </table>
-      </div>`;
-      L.marker([d.lat,d.lng],{icon,zIndexOffset:1000})
-        .bindTooltip(tooltipHtml,{sticky:true,direction:'top',offset:[0,-10],className:'leaflet-tooltip-rat'})
-        .addTo(_gdoFsMap);
-    });
-    const bounds=L.featureGroup(dadosCoord.map(d=>L.marker([d.lat,d.lng]))).getBounds();
-    _gdoFsMap.fitBounds(bounds,{padding:[80,80]});
-  }
-  /* Legenda */
-  document.getElementById('gdo-mapa-fs-legenda').innerHTML=
-    gdoNats.map(n=>`<span><span class="nat-dot" style="background:${GDO_NAT_COR[n]||'#9b8a5c'}"></span>${n}</span>`).join('')+
-    `<span style="margin-left:12px;color:var(--text-hint)">Pontos: ${dadosCoord.length}</span>`;
-  setTimeout(()=>{ if(_gdoFsMap) _gdoFsMap.invalidateSize(); }, 200);
+  const gpFiltroFS = document.getElementById('gdo-fs-gp')?.value || '';
+  _renderGdoFsMap(el, dados, gpFiltroFS);
 }
 
 function fecharGdoMapaFullscreen(){
@@ -3429,10 +3489,10 @@ function popularRelGP(){
         if(a.pelNum !== b.pelNum) return a.pelNum - b.pelNum;
         return gpNumDoColk(a.colK||a.grupamento) - gpNumDoColk(b.colK||b.grupamento);
       })
-      .map(r => [r.grupamento, r.grupamento])
+      .map(r => [r.gpResp, r])  /* key=gpResp (chave interna), value=objeto */
   ).values()];
   sel.innerHTML = '<option value="">Todos</option>' +
-    gps.map(g => `<option value="${g}">${g}</option>`).join('');
+    gps.map(r => `<option value="${r.gpResp}">${r.grupamento||r.gpResp}</option>`).join('');
 }
 
 function initRelatorios(){
@@ -3621,7 +3681,7 @@ function _relFiltrarGPs(pelF, gpF){
   if(gpF) return gps.filter(gp => gp === gpF);
   if(pelF){
     gps = gps.filter(gp => {
-      const pg = dadosGrupos.find(r => r.grupamento === gp);
+      const pg = dadosGrupos.find(r => r.gpResp === gp || norm(r.grupamento) === norm(gp));
       return pg && String(pg.pelNum) === pelF;
     });
   }
@@ -3714,9 +3774,9 @@ function _relSecaoGDO(mesNome, mesesSel, mesIdx, pelF, gpF){
     if(!(d.localizacao||'').toUpperCase().includes('RURAL')) return false;
     if(!gdoNatsRel.includes(d.natureza)) return false;
     if(!mesesSel.includes(d.mes)) return false;
-    if(gpF && d.grupamento!==gpF) return false;
+    if(gpF && d.gpResp!==gpF) return false;
     if(pelF&&!gpF){
-      const pg=dadosGrupos.find(r=>r.grupamento===d.grupamento||r.gpResp===d.grupamento);
+      const pg=dadosGrupos.find(r=>r.gpResp===d.gpResp);
       if(!pg||String(pg.pelNum)!==pelF) return false;
     }
     return true;
@@ -3763,9 +3823,9 @@ function _relSecaoCriminal(mesNome, mesesSel, mesIdx, pelF, gpF){
   if(!crimes.length)
     return _rVazio('Análise Criminal','Dados criminais não disponíveis. Acesse a aba Análise Criminal e carregue os dados primeiro.');
   let dados=crimes.filter(d=>mesesSel.includes(d.mes));
-  if(gpF) dados=dados.filter(d=>d.grupamento===gpF);
+  if(gpF) dados=dados.filter(d=>d.gpResp===gpF||(d.grupamento&&norm(d.grupamento)===norm(gpF)));
   else if(pelF) dados=dados.filter(d=>{
-    const pg=dadosGrupos.find(r=>r.grupamento===d.grupamento||r.gpResp===d.grupamento);
+    const pg=dadosGrupos.find(r=>r.gpResp===d.gpResp||norm(r.grupamento)===norm(d.grupamento||''));
     return pg&&String(pg.pelNum)===pelF;
   });
   if(!dados.length) return _rVazio('Análise Criminal','Nenhuma ocorrência no período/filtro selecionado.');
