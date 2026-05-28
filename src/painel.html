@@ -989,6 +989,7 @@ let dadosMetas   = [];
 let dadosRatreds = {};
 let dadosRatsList = {}; /* chave gp|nat|mes → [{rat, data}] */
 let munParaGrup  = {}; /* lookup: MUNICIPIO_NORM → colK completo da aba GRUPOS */
+window._getMunParaGrup = () => munParaGrup; /* debug helper */
 let naturezas    = ['Y12001','Y12012','Y12013','Y11001','Y04011','Y02999','Y02007','Y02005','Y02002'];
 let grpPage      = 1;
 
@@ -1083,19 +1084,40 @@ async function loadGrupos(){
   munParaGrup = {};
 
   /* Carrega mapa município → GP do Supabase (tabela municipios_grupos) */
+  /* Usa fetch direto com paginação explícita para evitar qualquer problema com sbFetch */
   try {
-    const muns = await sbFetch('municipios_grupos', 'select=municipio,gp_responsavel');
-    muns.forEach(m => { munParaGrup[norm(m.municipio)] = m.gp_responsavel; });
+    let allMuns = [];
+    let munOffset = 0;
+    const MUN_BATCH = 500;
+    while(true){
+      const munRes = await fetch(
+        `${SB_URL}/rest/v1/municipios_grupos?select=municipio,gp_responsavel&limit=${MUN_BATCH}&offset=${munOffset}`,
+        { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
+      );
+      if(!munRes.ok) throw new Error('municipios_grupos HTTP ' + munRes.status + ': ' + await munRes.text());
+      const batch = await munRes.json();
+      allMuns = allMuns.concat(batch);
+      if(batch.length < MUN_BATCH) break;
+      munOffset += MUN_BATCH;
+    }
+    allMuns.forEach(m => { if(m.municipio) munParaGrup[norm(m.municipio)] = (m.gp_responsavel||'').trim(); });
     console.log('[loadGrupos] munParaGrup Supabase:', Object.keys(munParaGrup).length, 'municípios');
+    console.log('[loadGrupos] AIMORES no mapa:', munParaGrup['AIMORES'], '| norm check:', norm('AIMORES'));
   } catch(e) {
+    console.error('[loadGrupos] ERRO ao carregar municipios_grupos:', e.message);
     /* Fallback: carrega do Google Sheets */
-    console.warn('[loadGrupos] Fallback Sheets:', e.message);
-    const rows = await fetchSheet('GRUPOS!A2:O');
-    rows.slice(1).forEach(r => {
-      if(!r[0]||!r[0].trim()) return;
-      const colI = (r[8]||'').trim();
-      if(colI) munParaGrup[r[0].trim().toUpperCase()] = colI;
-    });
+    try {
+      console.warn('[loadGrupos] Tentando fallback Google Sheets...');
+      const rows = await fetchSheet('GRUPOS!A2:O');
+      rows.slice(1).forEach(r => {
+        if(!r[0]||!r[0].trim()) return;
+        const colI = (r[8]||'').trim();
+        if(colI) munParaGrup[r[0].trim().toUpperCase()] = colI;
+      });
+      console.log('[loadGrupos] Fallback Sheets OK:', Object.keys(munParaGrup).length, 'municípios');
+    } catch(e2) {
+      console.error('[loadGrupos] Fallback Sheets também falhou:', e2.message);
+    }
   }
 
   data.forEach(d => {
@@ -1272,7 +1294,10 @@ async function loadRatreds(){
 
     /* Resolve o grupamento via dicionário GRUPOS */
     const gpResp = munParaGrup[norm(municipio)];
-    if(!gpResp) return;
+    if(!gpResp){
+      if(norm(municipio).includes('AIMOR')) console.warn('[loadRatreds] AIMORES nao encontrado em munParaGrup! norm=', norm(municipio), 'keys sample:', Object.keys(munParaGrup).slice(0,3));
+      return;
+    }
 
     /* Usa gpResp como chave — consistente com getReal(gp,nat,mes) */
     const key = gpResp + '|' + nat + '|' + mes;
