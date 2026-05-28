@@ -1851,32 +1851,24 @@ async function recarregarTudo(){
 let munParaGrupCrimes = {}; /* normMunicipio → coluna K */
 
 async function carregarGruposCrimes(){
+  munParaGrupCrimes = {};
   try {
-    /* Aba GRUPOS da planilha de crimes: col A = município, col K (idx 10) = grupamento */
-    const rows = await fetchSheet(AC_SHEET_ID, 'GRUPOS!A1:K');
-    munParaGrupCrimes = {};
-    /* Detecta linha de cabeçalho — pula linhas até encontrar "MUNICIPIO" na col A */
-    let startIdx = 0;
-    for(let i=0; i<Math.min(rows.length,5); i++){
-      if(norm(rows[i][0]||'').includes('MUNICIPIO') || norm(rows[i][0]||'').includes('MUNICÍPIO')){
-        startIdx = i+1; break;
-      }
-    }
-    rows.slice(startIdx).forEach(r => {
-      const mun  = (r[0]||'').toString().trim();
-      const colK = (r[10]||'').toString().trim();
-      if(mun && colK){
-        const key = norm(mun);
-        if(!munParaGrupCrimes[key]) munParaGrupCrimes[key] = colK;
-      }
+    /* Supabase — tabela municipios_grupos */
+    const r = await fetch(`${SB_URL}/rest/v1/municipios_grupos?select=municipio,gp_responsavel&limit=10000`, {
+      headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY }
     });
-    console.log('GRUPOS crimes carregado:', Object.keys(munParaGrupCrimes).length, 'municípios');
+    if(!r.ok) throw new Error('municipios_grupos HTTP ' + r.status);
+    const rows = await r.json();
+    rows.forEach(row => {
+      const mun = (row.municipio || '').toString().trim();
+      const gp  = (row.gp_responsavel || '').toString().trim();
+      if(mun && gp) munParaGrupCrimes[norm(mun)] = gp;
+    });
+    console.log('[carregarGruposCrimes] Supabase:', Object.keys(munParaGrupCrimes).length, 'municipios');
   } catch(e){
-    console.warn('carregarGruposCrimes (tentando sem cabeçalho):', e.message);
-    /* Fallback: tenta sem cabeçalho — col A = município, col K = grupamento */
+    console.warn('[carregarGruposCrimes] Supabase falhou, Sheets fallback:', e.message);
     try {
       const rows2 = await fetchSheet(AC_SHEET_ID, 'GRUPOS!A2:K');
-      munParaGrupCrimes = {};
       rows2.forEach(r => {
         const mun  = (r[0]||'').toString().trim();
         const colK = (r[10]||'').toString().trim();
@@ -1885,7 +1877,8 @@ async function carregarGruposCrimes(){
           if(!munParaGrupCrimes[key]) munParaGrupCrimes[key] = colK;
         }
       });
-    } catch(e2){ console.warn('carregarGruposCrimes fallback:', e2.message); }
+      console.log('[carregarGruposCrimes] Sheets fallback:', Object.keys(munParaGrupCrimes).length, 'municipios');
+    } catch(e2){ console.warn('[carregarGruposCrimes] fallback falhou:', e2.message); }
   }
 }
 
@@ -1903,159 +1896,100 @@ async function carregarCrimes(){
     await carregarGruposCrimes();
   }
 
-  const abas = [
-    { nome:'BD_IMV',  indicador:'IMV',  colVitimas: 73  /* BV */ },
-    { nome:'BD_CVPE', indicador:'CVPE', colVitimas: 79  /* CB */ },
-    { nome:'BD_CVPA', indicador:'CVPA', colVitimas: 83  /* CF */ },
-    { nome:'BD_IF',   indicador:'IF',   colVitimas: -1  /* sem vítimas — conta ocorrências */ },
-  ];
+  /* -- Busca crimes do Supabase (bd_crimes) -- */
+  let rows = [];
+  try {
+    const r = await fetch(
+      `${SB_URL}/rest/v1/bd_crimes?select=numero_reds,ano_fato,mes_descricao,data_fato,municipio,` +
+      `descricao_localizacao,latitude,longitude,unid_area_nivel_4,unid_registro,` +
+      `imv_total,icvpe_total,icvpa_total,ifzr,descr_natureza_principal&limit=100000&order=data_fato`,
+      { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
+    );
+    if(!r.ok) throw new Error('bd_crimes HTTP ' + r.status);
+    rows = await r.json();
+    console.log('[carregarCrimes] Supabase bd_crimes:', rows.length, 'registros');
+  } catch(e){
+    console.error('[carregarCrimes] Erro Supabase:', e.message);
+    ['IMV','CVPE','CVPA','IF'].forEach(ind => _setUpdatedBadge(ind, null));
+    return;
+  }
 
-  /* ══════════════════════════════════════════════════
-     MAPEAMENTO FIXO — colunas confirmadas pelo usuário
-     Letra → índice 0-based (A=0, B=1 ... Z=25, AA=26 ...)
-     A=0  B=1  C=2  D=3  E=4  F=5  G=6  H=7  I=8  J=9
-     K=10 L=11 M=12 N=13 O=14 P=15 Q=16 R=17 S=18 T=19
-     U=20 V=21 W=22 X=23 Y=24 Z=25
-     AA=26 AB=27 ... AR=43 AS=44 ... AW=48 AY=50
-     BA=52 ... BE=56 ... BV=73
-  ══════════════════════════════════════════════════ */
-  const COL = {
-    bo:          0,   /* A  — Nº BO                  */
-    ano:         1,   /* B  — ANO                    */
-    mes:         3,   /* D  — MÊS                    */
-    data:        5,   /* F  — DATA                   */
-    municipio:   13,  /* N  — MUNICÍPIO              */
-    localizacao: 22,  /* W  — DESCRICAO_LOCALIZACAO  */
-    lat:         43,  /* AR — LATITUDE               */
-    lng:         44,  /* AS — LONGITUDE              */
-    rpm:         48,  /* AW — RPM                    */
-    unidadeArea: 50,  /* AY — UNIDADE DE ÁREA        */
-    unidadeReg:  56,  /* BE — UNIDADE QUE REGISTROU  */
-    /* qtdVitimas é por aba: IMV=BV(73), CVPE=CB(79), CVPA=CF(83), IF=sem */
-  };
+  const IND_COL = { IMV:'imv_total', CVPE:'icvpe_total', CVPA:'icvpa_total', IF:'ifzr' };
+  const ultimaData = { IMV:null, CVPE:null, CVPA:null, IF:null };
 
-  const get = (r, i) => (r && r[i] !== undefined && r[i] !== null)
-    ? r[i].toString().trim() : '';
+  rows.forEach((r, idx) => {
+    const munVal = (r.municipio || '').toString().trim();
+    if(!munVal) return;
 
-  /* Busca todas as abas em paralelo */
-  const fetchResults = await Promise.all(
-    abas.map(aba =>
-      fetchSheet(AC_SHEET_ID, aba.nome+'!A1:CJ')
-        .then(rows => ({ aba, rows, ok: true }))
-        .catch(e => { console.warn('['+aba.nome+'] não encontrada:', e.message); return { aba, rows: null, ok: false }; })
-    )
-  );
+    const boVal   = (r.numero_reds || '').toString().trim();
+    const dataStr = (r.data_fato   || '').toString().trim();
 
-  for(const { aba, rows, ok } of fetchResults){
-    if(!ok || !rows || rows.length < 2){ if(ok) console.warn('['+aba.nome+'] vazia'); continue; }
-
-    /* Última data da coluna F para o badge de atualização */
-    const _lastDate = _ultimaDataColF(rows, 5);
-    _setUpdatedBadge(aba.indicador, _lastDate);
-
-    /* Pula linha 1 se for cabeçalho (col A contém texto, não número de BO) */
-    const col0Row1 = (rows[0][COL.bo]||'').toString().trim();
-    /* Cabeçalho tem texto; dado real tem número de BO (ex: "2026-020...") */
-    const isHeaderRow = col0Row1 === '' ||
-                        isNaN(col0Row1.replace(/-/g,'').replace(/\s/g,'')) ||
-                        col0Row1.toUpperCase().includes('BO') ||
-                        col0Row1.toUpperCase().includes('NUM');
-    const startIdx = isHeaderRow ? 1 : 0;
-
-    console.log(`[${aba.nome}] linhas=${rows.length} início=${startIdx} col0="${col0Row1}"`);
-    /* DEBUG: mostra cabeçalho e primeiros valores da coluna de vítimas */
-    if(aba.colVitimas >= 0 && rows[0]){
-      console.log(`[${aba.nome}] col${aba.colVitimas} header="${rows[0][aba.colVitimas]||''}" | row1="${(rows[startIdx]||[])[aba.colVitimas]||''}" | row2="${(rows[startIdx+1]||[])[aba.colVitimas]||''}" | rowLen=${(rows[startIdx]||[]).length}`);
+    /* Lat/lng */
+    let latVal = parseFloat(r.latitude)  || null;
+    let lngVal = parseFloat(r.longitude) || null;
+    if(latVal !== null && lngVal !== null){
+      const latOk = latVal >= -35 && latVal <= 6;
+      const lngOk = lngVal >= -75 && lngVal <= -28;
+      if(!latOk && !lngOk){
+        if(lngVal >= -35 && lngVal <= 6 && latVal >= -75 && latVal <= -28){ [latVal,lngVal]=[lngVal,latVal]; }
+        else { latVal=null; lngVal=null; }
+      } else if(!latOk || !lngOk){ latVal=null; lngVal=null; }
     }
 
-    let contAba = 0;
-    rows.slice(startIdx).forEach(r => {
-      if(!r || r.length === 0) return;
+    /* Mes */
+    const mesRaw = (r.mes_descricao || '').toString().toUpperCase().trim();
+    const mesMap = { 'MARCO':'MARCO', 'FEVREIRO':'FEVEREIRO', 'FEVEREREIRO':'FEVEREIRO' };
+    const mesVal = MESES.find(m => m === mesRaw)
+      || mesMap[mesRaw]
+      || MESES.find(m => m.normalize('NFD').replace(/[\u0300-\u036f]/g,'') ===
+                         mesRaw.normalize('NFD').replace(/[\u0300-\u036f]/g,''))
+      || mesRaw;
 
-      const boVal  = get(r, COL.bo);
-      const munVal = get(r, COL.municipio);
-      if(!munVal) return; /* precisa ter município */
+    /* Localizacao */
+    const locRaw  = (r.descricao_localizacao || '').toString().toUpperCase();
+    const locNorm = locRaw.includes('RURAL') ? 'ZONA RURAL'
+                  : locRaw.includes('URBAN') ? 'PERIMETRO URBANO'
+                  : locRaw || '—';
 
-      /* Lat/lng — aceita vírgula ou ponto como decimal */
-      let latVal = parseFloat(get(r, COL.lat).replace(',','.')) || null;
-      let lngVal = parseFloat(get(r, COL.lng).replace(',','.')) || null;
+    /* Grupamento */
+    const colKCrime = munParaGrupCrimes[norm(munVal)] || (r.unid_registro || '').toString().trim();
 
-      /* Validação: Brasil está entre lat -33 a +5 e lng -74 a -28
-         Se as coordenadas estiverem fora desse range, tenta inverter */
-      if(latVal !== null && lngVal !== null){
-        const latOk = latVal >= -35 && latVal <= 6;
-        const lngOk = lngVal >= -75 && lngVal <= -28;
-        if(!latOk && !lngOk){
-          /* Tenta inverter — talvez lat e lng estejam trocados na planilha */
-          const latInv = lngVal >= -35 && lngVal <= 6;
-          const lngInv = latVal >= -75 && latVal <= -28;
-          if(latInv && lngInv){
-            [latVal, lngVal] = [lngVal, latVal]; /* troca */
-          } else {
-            /* Coordenadas completamente fora do Brasil — descarta */
-            latVal = null; lngVal = null;
-          }
-        } else if(!latOk || !lngOk){
-          /* Só uma está errada — descarta o par */
-          latVal = null; lngVal = null;
-        }
-      }
+    /* Gera um objeto por indicador com valor presente */
+    ['IMV','CVPE','CVPA','IF'].forEach(ind => {
+      const colInd = IND_COL[ind];
+      const qtdRaw = r[colInd];
+      const qtdNum = parseInt(qtdRaw) || 0;
+      if(ind !== 'IF' && qtdNum <= 0) return;
+      if(ind === 'IF' && (qtdRaw === null || qtdRaw === undefined || qtdRaw === '')) return;
 
-      /* Lookup grupamento: município → coluna K da aba GRUPOS */
-      const colKCrime = munParaGrupCrimes[norm(munVal)] || '';
-
-      /* Normaliza localização */
-      const locRaw = get(r, COL.localizacao).toUpperCase();
-      const locNorm = locRaw.includes('RURAL')  ? 'ZONA RURAL'
-                    : locRaw.includes('URBAN')  ? 'PERIMETRO URBANO'
-                    : locRaw || '—';
-
-      /* Mês — normaliza para garantir match exato com MESES */
-      const mesRaw = get(r, COL.mes).toUpperCase().trim();
-      /* Mapeia variações de acento (MARÇO/MARCO/MARÃ‡O etc.) */
-      const mesMap = {
-        'MARCO':'MARÇO','MARÃ§O':'MARÇO','MARÃ‡O':'MARÇO',
-        'FEVREIRO':'FEVEREIRO','FEVEREREIRO':'FEVEREIRO',
-      };
-      const mesVal = MESES.find(m => m === mesRaw)
-        || mesMap[mesRaw]
-        || MESES.find(m => m.normalize('NFD').replace(/[\u0300-\u036f]/g,'') ===
-                           mesRaw.normalize('NFD').replace(/[\u0300-\u036f]/g,''))
-        || mesRaw;
-
-      /* Vítimas: usa coluna específica por indicador; IF conta ocorrências */
-      const qtdVit = aba.colVitimas >= 0
-        ? get(r, aba.colVitimas)
-        : '';   /* IF: sem campo vítimas */
+      if(dataStr && (!ultimaData[ind] || dataStr > ultimaData[ind])) ultimaData[ind] = dataStr;
 
       const obj = {
-        bo:            boVal || ('BO-'+aba.indicador+'-'+contAba),
-        rat:           boVal || ('BO-'+aba.indicador+'-'+contAba),
-        ano:           get(r, COL.ano),
+        bo:            boVal || ('BO-'+ind+'-'+idx),
+        rat:           boVal || ('BO-'+ind+'-'+idx),
+        ano:           (r.ano_fato || '').toString().trim(),
         mes:           mesVal,
-        data:          get(r, COL.data),
+        data:          dataStr,
         municipio:     munVal,
         localizacao:   locNorm,
-        natureza:      get(r, COL.unidadeArea),
-        descrNatureza: get(r, COL.unidadeReg),
-        rpm:           get(r, COL.rpm),
-        qtdVitimas:    qtdVit,
+        natureza:      (r.unid_area_nivel_4 || '').toString().trim(),
+        descrNatureza: (r.descr_natureza_principal || '').toString().trim(),
+        rpm:           '',
+        qtdVitimas:    ind !== 'IF' ? String(qtdNum) : '',
         lat:           latVal,
         lng:           lngVal,
         grupamento:    colKCrime,
-        indicador:     aba.indicador,
+        indicador:     ind,
         _auditoriaPendente: false,
         _auditoria:    null,
       };
 
-      /* Alerta área urbana */
       if(obj.lat && obj.lng && typeof IBGE_DATA !== 'undefined' && IBGE_DATA.length){
         obj._auditoriaPendente = pontoEmAreaUrbanaIBGE(obj.lat, obj.lng);
       } else if(locNorm.includes('URBAN')){
         obj._auditoriaPendente = true;
       }
 
-      /* Auditoria salva */
       if(auditoriasMap[obj.bo]){
         obj._auditoria = auditoriasMap[obj.bo];
         if(obj._auditoria.status && obj._auditoria.status !== 'pendente'){
@@ -2064,139 +1998,201 @@ async function carregarCrimes(){
       }
 
       dadosCrimes.push(obj);
-      contAba++;
     });
+  });
 
-    console.log(`[${aba.nome}] ✔ ${contAba} registros`);
-  }
-
-  /* ac-status-dados removido — info já no setStatus */
+  ['IMV','CVPE','CVPA','IF'].forEach(ind => _setUpdatedBadge(ind, ultimaData[ind]));
+  console.log('[carregarCrimes] Total:', dadosCrimes.length,
+    '| IMV:', dadosCrimes.filter(d=>d.indicador==='IMV').length,
+    '| CVPE:', dadosCrimes.filter(d=>d.indicador==='CVPE').length,
+    '| CVPA:', dadosCrimes.filter(d=>d.indicador==='CVPA').length,
+    '| IF:', dadosCrimes.filter(d=>d.indicador==='IF').length);
 }
-
 async function carregarGrupos(){
+  /* -- Supabase: tabela grupos -- */
+  dadosGrupos = [];
   try {
-    const rows = await fetchSheet(POE_SHEET_ID, 'GRUPOS!A2:O');
-    dadosGrupos = [];
+    const r = await fetch(
+      `${SB_URL}/rest/v1/grupos?select=gp_responsavel,grupamento_bpm,grupamento_completo,pelotao,rpm,municipio&limit=10000&order=gp_responsavel`,
+      { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
+    );
+    if(!r.ok) throw new Error('grupos HTTP ' + r.status);
+    const data = await r.json();
     const seen = new Set();
-    rows.slice(1).forEach(r => {
-      if(!r[0]) return;
-      const colK  = (r[10]||'').trim();
-      const gpRes = (r[8]||'').trim();
-      const key   = norm(r[0])+'|'+colK;
+    data.forEach(d => {
+      const gpResp = (d.gp_responsavel || '').trim();
+      const colK   = (d.grupamento_bpm || '').trim();
+      const mun    = (d.municipio || '').trim();
+      const key    = norm(mun) + '|' + colK;
       if(seen.has(key)) return;
       seen.add(key);
       dadosGrupos.push({
-        municipio:  (r[0]||'').trim(),
-        gp:         (r[1]||'').trim(),
-        pelotao:    (r[2]||'').trim(),
-        gpResp:     gpRes,
-        grupamento: colK,
+        municipio:  mun,
+        gp:         '',
+        pelotao:    (d.pelotao || '').trim(),
+        rpm:        (d.rpm || '').trim(),
+        gpResp,
+        grupamento: colK || gpResp,
+        colK:       colK,
         pelNum:     pelDoColk(colK),
-        munNorm:    norm(r[0]),
+        munNorm:    norm(mun),
       });
     });
-    console.log('carregarGrupos: '+dadosGrupos.length+' entradas, '+[...new Set(dadosGrupos.map(r=>r.gpResp).filter(Boolean))].length+' GPs únicos');
-    /* Atualiza filtros imediatamente após carregar grupos */
+    console.log('[carregarGrupos] Supabase:', dadosGrupos.length, 'entradas,',
+      [...new Set(dadosGrupos.map(r=>r.gpResp).filter(Boolean))].length, 'GPs unicos');
     popularFiltrosGPs();
-  } catch(e){ console.warn('carregarGrupos:', e.message); }
+  } catch(e){
+    console.warn('[carregarGrupos] Supabase falhou, Sheets fallback:', e.message);
+    try {
+      const rows = await fetchSheet(POE_SHEET_ID, 'GRUPOS!A2:O');
+      const seen2 = new Set();
+      rows.slice(1).forEach(r => {
+        if(!r[0]) return;
+        const colK  = (r[10]||'').trim();
+        const gpRes = (r[8]||'').trim();
+        const key   = norm(r[0])+'|'+colK;
+        if(seen2.has(key)) return;
+        seen2.add(key);
+        dadosGrupos.push({
+          municipio:  (r[0]||'').trim(),
+          gp:         (r[1]||'').trim(),
+          pelotao:    (r[2]||'').trim(),
+          gpResp:     gpRes,
+          grupamento: colK,
+          pelNum:     pelDoColk(colK),
+          munNorm:    norm(r[0]),
+        });
+      });
+      console.log('[carregarGrupos] Sheets fallback:', dadosGrupos.length, 'entradas');
+      popularFiltrosGPs();
+    } catch(e2){ console.warn('[carregarGrupos] fallback falhou:', e2.message); }
+  }
 }
-
 async function carregarOpsGdo(){
+  /* -- Supabase: tabela bd_operacoes (GDO Rural — naturezas Y07xxx) -- */
+  dadosGdoRural = [];
   try {
-    const rows = await fetchSheet(POE_SHEET_ID, 'DADOS!A2:AT');
-    dadosGdoRural = [];
-    const get = (r,i) => (r[i]||'').toString().trim();
-    /* Lookup municipio → grupamento */
+    const r = await fetch(
+      `${SB_URL}/rest/v1/bd_operacoes?select=numero_rat,data_fato,municipio,codigo_natureza_principal,` +
+      `descricao_localizacao,latitude,longitude,opr_tempo_total_minutos,unid_registro,unid_area_nivel_4` +
+      `&limit=100000&order=data_fato`,
+      { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
+    );
+    if(!r.ok) throw new Error('bd_operacoes HTTP ' + r.status);
+    const rows = await r.json();
+
+    /* Lookup municipio -> grupamento */
     const munMap = {};
-    dadosGrupos.forEach(g => { if(!munMap[g.munNorm]) munMap[g.munNorm]=g.grupamento; });
-    /* Mapa município → gpResp (col I = curto, ex: "GP GOVERNADOR VALADARES") */
     const munMapCurto = {};
-    dadosGrupos.forEach(g => { if(!munMapCurto[g.munNorm]) munMapCurto[g.munNorm]=g.gpResp; });
+    dadosGrupos.forEach(g => {
+      if(!munMap[g.munNorm])     munMap[g.munNorm]     = g.grupamento;
+      if(!munMapCurto[g.munNorm]) munMapCurto[g.munNorm] = g.gpResp;
+    });
 
     rows.forEach(r => {
-      const rat  = get(r,0);
-      const nat  = get(r,25);
-      const loc  = get(r,24).toUpperCase();
-      if(!rat || !loc.includes('RURAL')) return;
-      /* GDO Rural: naturezas Y07xxx */
+      const rat = (r.numero_rat || '').toString().trim();
+      const nat = (r.codigo_natureza_principal || '').toString().trim();
+      const loc = (r.descricao_localizacao || '').toString().toUpperCase();
+      if(!rat || !nat || !loc.includes('RURAL')) return;
       if(!nat.startsWith('Y07')) return;
+
+      const municipio = (r.municipio || '').toString().trim();
+      /* Mes a partir de data_fato */
+      const dataStr = (r.data_fato || '').toString().trim();
+      let mesIdx = -1;
+      const p1 = dataStr.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+      const p2 = dataStr.match(/(\d{4})-(\d{2})-(\d{2})/);
+      if(p1) mesIdx = parseInt(p1[2]) - 1;
+      else if(p2) mesIdx = parseInt(p2[2]) - 1;
+      const mes = (mesIdx >= 0 && mesIdx < MESES.length) ? MESES[mesIdx] : '';
+
       dadosGdoRural.push({
         rat,
-        mes:       get(r,3).toUpperCase(),
-        data:      get(r,5),
-        municipio: get(r,12),
-        lat:       parseFloat(get(r,32).replace(',','.')) || null,
-        lng:       parseFloat(get(r,33).replace(',','.')) || null,
+        mes,
+        data:      dataStr,
+        municipio,
+        lat:       parseFloat(r.latitude)  || null,
+        lng:       parseFloat(r.longitude) || null,
         natureza:  nat,
-        grupamento: munMap[norm(get(r,12))] || '',
-        gpCurto:    munMapCurto[norm(get(r,12))] || '',
+        grupamento: munMap[norm(municipio)]      || '',
+        gpCurto:    munMapCurto[norm(municipio)] || '',
       });
     });
-  } catch(e){ console.warn('carregarOpsGdo:', e.message); }
+    console.log('[carregarOpsGdo] Supabase:', dadosGdoRural.length, 'ops GDO Rural');
+  } catch(e){ console.warn('[carregarOpsGdo] Erro:', e.message); }
 }
-
-
 async function carregarVisitas(){
-  /* BD_VISITA_REUNIAO — colunas (0-based):
-     A=0 NUMERO_BOS (chave = BO do crime)  B=1 CODIGO_NATUREZA  C=2 DESC_NATUREZA
-     F=5 ANO  H=7 MES  J=9 DATA  Q=16 MUNICIPIO
-     AC=28 LOCALIZACAO  AD=29 LAT  AE=30 LNG
-     AI=34 RPM  AQ=42 UNID_REGISTRO
-     AT=45 DATA_INICIO  AU=46 HOR_INICIO  AV=47 DATA_FIM  AW=48 HOR_FIM
-     AX=49 MINUTOS  AY=50 FAIXA_TEMPO
-  */
+  /* -- Supabase: tabela bd_visitas -- */
   dadosVisitas = [];
   window._visitasPorBO = {};
   try {
-    const rows = await fetchSheet(AC_SHEET_ID, 'BD_VISITA_REUNIAO!A1:AZ');
-    const _lastVisDate = _ultimaDataColF(rows, 9); /* col J = índice 9 */
-    _setUpdatedBadge('VIS', _lastVisDate);
-    if(!rows || rows.length < 2){ console.warn('[BD_VISITA_REUNIAO] vazia'); return; }
-    const get = (r,i) => (r&&r[i]!=null) ? r[i].toString().trim() : '';
-    const col0 = get(rows[0],0).toUpperCase();
-    const startIdx = (col0===''||col0.includes('BO')||col0.includes('NUMERO')) ? 1 : 0;
-    const NATS = {'A20028':true,'A20001':true};
+    const r = await fetch(
+      `${SB_URL}/rest/v1/bd_visitas?select=numero_bos,codigo_natureza,desc_natureza,mes_descricao,` +
+      `ano_fato,data_fato,municipio,descricao_localizacao,latitude,longitude,` +
+      `unid_registro,opr_tempo_total_minutos&limit=100000&order=data_fato`,
+      { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
+    );
+    if(!r.ok) throw new Error('bd_visitas HTTP ' + r.status);
+    const rows = await r.json();
 
-    rows.slice(startIdx).forEach(r => {
-      if(!r||!r.length) return;
-      const bo      = get(r,0);
-      const natCode = get(r,1).toUpperCase();
+    const NATS = {'A20028':true,'A20001':true};
+    let ultimaData = null;
+
+    rows.forEach(row => {
+      const bo      = (row.numero_bos || '').toString().trim();
+      const natCode = (row.codigo_natureza || '').toString().toUpperCase().trim();
       if(!bo || !NATS[natCode]) return;
 
-      let lat = parseFloat(get(r,29).replace(',','.')) || null;
-      let lng = parseFloat(get(r,30).replace(',','.')) || null;
-      if(lat!==null&&lng!==null){
-        const latOk=lat>=-35&&lat<=6, lngOk=lng>=-75&&lng<=-28;
-        if(!latOk&&!lngOk){ if(lng>=-35&&lng<=6&&lat>=-75&&lat<=-28){[lat,lng]=[lng,lat];}else{lat=null;lng=null;} }
-        else if(!latOk||!lngOk){lat=null;lng=null;}
+      let lat = parseFloat(row.latitude)  || null;
+      let lng = parseFloat(row.longitude) || null;
+      if(lat !== null && lng !== null){
+        const latOk = lat >= -35 && lat <= 6;
+        const lngOk = lng >= -75 && lng <= -28;
+        if(!latOk && !lngOk){
+          if(lng >= -35 && lng <= 6 && lat >= -75 && lat <= -28){ [lat,lng]=[lng,lat]; }
+          else { lat=null; lng=null; }
+        } else if(!latOk || !lngOk){ lat=null; lng=null; }
       }
-      const locRaw = get(r,28).toUpperCase();
-      const locNorm = locRaw.includes('RURAL')?'ZONA RURAL':locRaw.includes('URBAN')?'PERIMETRO URBANO':locRaw||'—';
-      const mesRaw  = get(r,7).toUpperCase().trim();
-      const mesVal  = MESES.find(m=>m===mesRaw)
-        ||MESES.find(m=>m.normalize('NFD').replace(/[\u0300-\u036f]/g,'')===mesRaw.normalize('NFD').replace(/[\u0300-\u036f]/g,''))
-        ||mesRaw;
-      const minutos = parseInt(get(r,49))||0;
-      const visitaValida = locNorm==='ZONA RURAL' && bo && minutos>=1;
-      const alertaUrbano = locNorm==='PERIMETRO URBANO';
+
+      const locRaw  = (row.descricao_localizacao || '').toString().toUpperCase();
+      const locNorm = locRaw.includes('RURAL') ? 'ZONA RURAL'
+                    : locRaw.includes('URBAN') ? 'PERIMETRO URBANO'
+                    : locRaw || '—';
+
+      const mesRaw = (row.mes_descricao || '').toString().toUpperCase().trim();
+      const mesVal = MESES.find(m => m === mesRaw)
+        || MESES.find(m => m.normalize('NFD').replace(/[\u0300-\u036f]/g,'') ===
+                           mesRaw.normalize('NFD').replace(/[\u0300-\u036f]/g,''))
+        || mesRaw;
+
+      const minutos = parseInt(row.opr_tempo_total_minutos) || 0;
+      const visitaValida  = locNorm === 'ZONA RURAL' && bo && minutos >= 1;
+      const alertaUrbano  = locNorm === 'PERIMETRO URBANO';
+
+      const dataStr = (row.data_fato || '').toString().trim();
+      if(dataStr && (!ultimaData || dataStr > ultimaData)) ultimaData = dataStr;
 
       const obj = {
-        bo, natCode, natDesc:get(r,2), mes:mesVal, ano:get(r,5), data:get(r,9),
-        municipio:get(r,16), localizacao:locNorm, lat, lng,
-        rpm:get(r,34), unidReg:get(r,42),
-        dataInicio:get(r,45), horInicio:get(r,46), dataFim:get(r,47), horFim:get(r,48),
-        minutos, faixaTempo:get(r,50), visitaValida, alertaUrbano,
+        bo, natCode, natDesc: (row.desc_natureza || '').toString().trim(),
+        mes: mesVal, ano: (row.ano_fato || '').toString().trim(), data: dataStr,
+        municipio: (row.municipio || '').toString().trim(),
+        localizacao: locNorm, lat, lng,
+        rpm: '',
+        unidReg: (row.unid_registro || '').toString().trim(),
+        dataInicio: '', horInicio: '', dataFim: '', horFim: '',
+        minutos, faixaTempo: '', visitaValida, alertaUrbano,
       };
       dadosVisitas.push(obj);
-      if(!window._visitasPorBO[bo]) window._visitasPorBO[bo]=[];
+      if(!window._visitasPorBO[bo]) window._visitasPorBO[bo] = [];
       window._visitasPorBO[bo].push(obj);
     });
-    console.log('[BD_VISITA_REUNIAO]',dadosVisitas.length,'registros |',
-      dadosVisitas.filter(v=>v.visitaValida).length,'válidas |',
-      Object.keys(window._visitasPorBO).length,'registros carregados');
-  } catch(e){ console.warn('carregarVisitas:',e.message); }
-}
 
+    _setUpdatedBadge('VIS', ultimaData);
+    console.log('[carregarVisitas] Supabase:', dadosVisitas.length, 'registros |',
+      dadosVisitas.filter(v=>v.visitaValida).length, 'validas |',
+      Object.keys(window._visitasPorBO).length, 'BOs');
+  } catch(e){ console.warn('[carregarVisitas] Erro:', e.message); }
+}
 /* ══════════════════════════════════
    VERIFICAÇÃO IBGE — ponto em polígono
 ══════════════════════════════════ */
