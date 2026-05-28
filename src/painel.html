@@ -4412,7 +4412,8 @@ async function impGerarPreview(){
   });
   /* Verifica duplicatas consultando o Supabase — garante precisão independente de cache */
   const TABELA_CHECK = { IMV:'bd_crimes', CVPE:'bd_crimes', CVPA:'bd_crimes', IF:'bd_crimes', OPR:'bd_operacoes', VIS:'bd_visitas' };
-  const CHAVE_COL    = { IMV:'numero_reds', CVPE:'numero_reds', CVPA:'numero_reds', IF:'numero_reds', OPR:'numero_rat', VIS:'numero_bos' };
+  /* Para OPR, a chave composta é numero_rat+data_fato (mesmo RAT pode repetir em meses diferentes) */
+  const CHAVE_COL    = { IMV:'numero_reds', CVPE:'numero_reds', CVPA:'numero_reds', IF:'numero_reds', OPR:'numero_rat,data_fato', VIS:'numero_bos' };
   const tabelaCheck  = TABELA_CHECK[_impInd];
   const chaveColSB   = CHAVE_COL[_impInd];
   const jaExistentes = new Set();
@@ -4427,7 +4428,15 @@ async function impGerarPreview(){
       );
       if(!r.ok) break;
       const rows = await r.json();
-      rows.forEach(row => { if(row[chaveColSB]) jaExistentes.add(row[chaveColSB]); });
+      rows.forEach(row => {
+        /* Para OPR usa chave composta numero_rat|data_fato */
+        if(_impInd === 'OPR'){
+          if(row.numero_rat && row.data_fato) jaExistentes.add(row.numero_rat + '|' + row.data_fato);
+        } else {
+          const col = chaveColSB;
+          if(row[col]) jaExistentes.add(row[col]);
+        }
+      });
       if(rows.length < BATCH) break;
       offset += BATCH;
     }
@@ -4436,7 +4445,12 @@ async function impGerarPreview(){
 
   let novos = 0, atualizados = 0;
   semDup.forEach(r => {
-    r._dup = jaExistentes.has(r[chave]);
+    /* Para OPR verifica chave composta numero_rat|DATA_FATO */
+    if(_impInd === 'OPR'){
+      r._dup = jaExistentes.has((r['NUMERO_RAT']||'') + '|' + (r['DATA_FATO']||''));
+    } else {
+      r._dup = jaExistentes.has(r[chave]);
+    }
     r._dup ? atualizados++ : novos++;
   });
   const duplicados = atualizados;
@@ -4505,7 +4519,7 @@ function impConfirmar(){
       /* Upsert em lotes de 200 — usa on_conflict explícito por tabela */
       const ON_CONFLICT = {
         'bd_crimes':    'numero_reds',
-        'bd_operacoes': 'numero_rat',
+        'bd_operacoes': 'numero_rat,data_fato',
         'bd_visitas':   'numero_bos',
       };
       const conflictCol = ON_CONFLICT[tabela] || '';
