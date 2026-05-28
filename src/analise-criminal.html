@@ -601,6 +601,9 @@
         <option value="urbano">Área Urbana</option>
         <option value="rural">Zona Rural</option>
       </select>
+      <select id="fs-gp" onchange="sincFiltrosFS()" style="padding:5px 8px;background:#252525;border:1px solid var(--border-hover);border-radius:4px;color:#fff;font-size:11px;min-width:180px;">
+        <option value="">Todos Grupamentos</option>
+      </select>
     </div>
     <button onclick="fecharMapaFullscreen()"
       style="background:rgba(239,83,80,.15);border:1px solid var(--danger);color:var(--danger);padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all .2s;flex-shrink:0;"
@@ -1860,32 +1863,15 @@ let munParaGrupCrimes = {}; /* normMunicipio → coluna K */
 async function carregarGruposCrimes(){
   munParaGrupCrimes = {};
   try {
-    const [rMuns, rGrupos] = await Promise.all([
-      fetch(`${SB_URL}/rest/v1/municipios_grupos?select=municipio,gp_responsavel&limit=10000`, {
-        headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY }
-      }),
-      fetch(`${SB_URL}/rest/v1/grupos?select=gp_responsavel,grupamento_completo,grupamento_bpm&limit=10000`, {
-        headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY }
-      })
-    ]);
-    if(!rMuns.ok)   throw new Error('municipios_grupos HTTP ' + rMuns.status);
-    if(!rGrupos.ok) throw new Error('grupos HTTP ' + rGrupos.status);
-    const rows   = await rMuns.json();
-    const grupos = await rGrupos.json();
-    /* Mapa gpResp → grupamento_completo (nome longo) */
-    const gpToLongo = {};
-    grupos.forEach(g => {
-      const gpResp = (g.gp_responsavel || '').trim();
-      const longo  = (g.grupamento_completo || g.grupamento_bpm || '').trim();
-      if(gpResp && longo) gpToLongo[norm(gpResp)] = longo;
+    const r = await fetch(`${SB_URL}/rest/v1/municipios_grupos?select=municipio,gp_responsavel&limit=10000`, {
+      headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY }
     });
+    if(!r.ok) throw new Error('municipios_grupos HTTP ' + r.status);
+    const rows = await r.json();
     rows.forEach(row => {
-      const mun    = (row.municipio || '').toString().trim();
-      const gpResp = (row.gp_responsavel || '').toString().trim();
-      if(mun && gpResp){
-        const longo = gpToLongo[norm(gpResp)] || gpResp;
-        munParaGrupCrimes[norm(mun)] = longo;
-      }
+      const mun = (row.municipio || '').toString().trim();
+      const gp  = (row.gp_responsavel || '').toString().trim();
+      if(mun && gp) munParaGrupCrimes[norm(mun)] = gp;
     });
     console.log('[carregarGruposCrimes] Supabase:', Object.keys(munParaGrupCrimes).length, 'municipios');
   } catch(e){
@@ -2043,17 +2029,16 @@ async function carregarGrupos(){
       if(seen.has(key)) return;
       seen.add(key);
       const gDados = gpMap[norm(gpResp)] || {};
-      const colK       = (gDados.grupamento_bpm      || '').trim();
-      const colKLongo  = (gDados.grupamento_completo  || '').trim();
+      const colK   = (gDados.grupamento_bpm || '').trim();
       dadosGrupos.push({
         municipio:  mun,
         gp:         '',
         pelotao:    (gDados.pelotao || '').trim(),
         rpm:        (gDados.rpm || '').trim(),
         gpResp,
-        grupamento: colKLongo || colK || gpResp,
-        colK:       colKLongo || colK,
-        pelNum:     pelDoColk(colKLongo || colK),
+        grupamento: colK || gpResp,
+        colK,
+        pelNum:     pelDoColk(colK),
         munNorm:    norm(mun),
       });
     });
@@ -2124,8 +2109,8 @@ async function carregarOpsGdo(){
       dadosGdoRural.push({
         rat:        (r.numero_rat || '').toString().trim(),
         mes, data:  dataStr, municipio,
-        lat:        (() => { let lv=parseFloat((r.latitude||'').toString().replace(',','.'))||null, gv=parseFloat((r.longitude||'').toString().replace(',','.'))||null; if(lv!==null&&gv!==null){const lo=lv>=-35&&lv<=6,go=gv>=-75&&gv<=-28;if(!lo&&!go){if(gv>=-35&&gv<=6&&lv>=-75&&lv<=-28)return gv;return null;}if(!lo||!go)return null;} return lv; })(),
-        lng:        (() => { let lv=parseFloat((r.latitude||'').toString().replace(',','.'))||null, gv=parseFloat((r.longitude||'').toString().replace(',','.'))||null; if(lv!==null&&gv!==null){const lo=lv>=-35&&lv<=6,go=gv>=-75&&gv<=-28;if(!lo&&!go){if(gv>=-35&&gv<=6&&lv>=-75&&lv<=-28)return lv;return null;}if(!lo||!go)return null;} return gv; })(),
+        lat:        parseFloat((r.latitude  || '').toString().replace(',','.')) || null,
+        lng:        parseFloat((r.longitude || '').toString().replace(',','.')) || null,
         natureza:   nat,
         grupamento: munMap[norm(municipio)]      || '',
         gpCurto:    munMapCurto[norm(municipio)] || '',
@@ -2252,7 +2237,7 @@ function popularFiltrosGPs(){
       .map(r => [r.grupamento, r.grupamento])
   ).values()];
 
-  ['mis-gp','m-gp','cr-gp','f-gp-dash','mapa-gp','cx-gp','vt-gp','intel-busca-gp'].forEach(id => {
+  ['mis-gp','m-gp','cr-gp','f-gp-dash','mapa-gp','fs-gp','cx-gp','vt-gp','intel-busca-gp'].forEach(id => {
     const el = document.getElementById(id);
     if(!el) return;
     const isModal = id === 'm-gp';
@@ -2919,6 +2904,8 @@ function abrirMapaFullscreen(){
   document.getElementById('fs-indicador').value  = document.getElementById('mapa-indicador').value;
   document.getElementById('fs-pel').value        = document.getElementById('mapa-pel').value;
   document.getElementById('fs-loc').value        = document.getElementById('mapa-loc').value;
+  const _fsGpEl = document.getElementById('fs-gp');
+  if(_fsGpEl) _fsGpEl.value = document.getElementById('mapa-gp')?.value || '';
 
   /* Impede scroll do body */
   document.body.style.overflow = 'hidden';
@@ -2957,6 +2944,8 @@ function sincFiltrosFS(){
   document.getElementById('mapa-indicador').value  = document.getElementById('fs-indicador').value;
   document.getElementById('mapa-pel').value        = document.getElementById('fs-pel').value;
   document.getElementById('mapa-loc').value        = document.getElementById('fs-loc').value;
+  const _fsGp2 = document.getElementById('fs-gp');
+  if(_fsGp2) { const mapaGp = document.getElementById('mapa-gp'); if(mapaGp) mapaGp.value = _fsGp2.value; }
   renderMapaFS();
 }
 
@@ -2966,7 +2955,9 @@ function renderMapaFS(){
   const pel = document.getElementById('fs-pel').value;
   const loc = document.getElementById('fs-loc').value;
 
+  const gp  = document.getElementById('fs-gp')?.value || '';
   let dados = getDadosFiltrados(mes, ind, '', pel, loc, '');
+  if(gp) dados = dados.filter(d => d.grupamento && norm(d.grupamento) === norm(gp));
 
   if(typeof L === 'undefined'){
     document.getElementById('mapa-fullscreen-inner').innerHTML =
@@ -2999,7 +2990,7 @@ function renderMapaFS(){
   if(elNormal) elNormal.id = '_ac-mapa-normal-hidden';
 
   try {
-    _renderMapaCriminalInterno(dados, '');
+    _renderMapaCriminalInterno(dados, gp);
   } finally {
     /* ── Sempre restaura IDs e globals, mesmo em caso de erro ── */
     elFS.id = 'mapa-fullscreen-inner';
@@ -3208,7 +3199,7 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
 
   /* ── Camadas KML dos Pelotões (igual ao GDO Rural) ── */
   /* Descobrir qual pelotão pertence ao grupamento filtrado */
-  const gpFiltroInfo = gpFiltro ? dadosGrupos.find(r => norm(gpDoColk(r.grupamento)) === norm(gpFiltro)) : null;
+  const gpFiltroInfo = gpFiltro ? dadosGrupos.find(r => norm(r.grupamento) === norm(gpFiltro)) : null;
   const gpFiltroPelNum = gpFiltroInfo ? gpFiltroInfo.pelNum : null;
 
   if(typeof KML_DATA !== 'undefined' && KML_DATA.pelotoes){
@@ -3228,9 +3219,14 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
             ${cidade ? `<br><span style="font-size:11px;color:#fff;font-weight:600;">${cidade}</span>` : ''}
           </div>`;
           gpData.polys.forEach(poly => {
+            /* Destaque visual quando GP está filtrado */
+            const esteGp = gpFiltro && gpInfo && norm(gpDoColk(gpInfo.grupamento)) === norm(gpFiltro);
+            const wt  = esteGp ? 3.5 : (gpFiltro ? 0.7 : 1.5);
+            const op  = esteGp ? 1.0 : (gpFiltro ? 0.25 : 0.9);
+            const fOp = esteGp ? 0.22: (gpFiltro ? 0.03 : 0.12);
             L.polygon(poly.map(p=>[p[1],p[0]]),{
-              color: gpData.cor, weight:1.5, opacity:0.9,
-              fillColor: gpData.cor, fillOpacity:0.12
+              color: gpData.cor, weight:wt, opacity:op,
+              fillColor: gpData.cor, fillOpacity:fOp
             }).bindTooltip(ttHtml,{sticky:true,className:'leaflet-tooltip-pel'}).addTo(group);
           });
         });
@@ -3620,89 +3616,192 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
   });
   /* Ainda registra gVFurto etc. em layers para toggleMapaLayer poder referenciá-los */
 
-  /* ── Leque: detecta marcadores sobrepostos (crimes + ops + visitas) ── */
-  (function adicionaLeque(){
-    const allPts = [];
+
+  /* ── Leque: pontos mistos sobrepostos (crime+ops, crime+vis, ops+vis) ── */
+  (function(){
+    /* Referência ao mapa ativo (normal ou FS via swap de IDs) */
+    const mapRef = _acMap;
+    if(!mapRef) return;
+
     const mesF2 = getMesDd('mapa');
     const pelF2 = document.getElementById('mapa-pel').value;
-    /* Crimes */
-    dadosComCoord.forEach(d => allPts.push({ lat:d.lat, lng:d.lng, tipo:'crime', label:d.bo||'--', ind:d.indicador, data:d.data||'--' }));
+
+    /* Coleta pontos com coordenadas válidas, respeitando filtros ativos */
+    const allPts = [];
+
+    /* Crimes (já filtrados em dadosComCoord) */
+    dadosComCoord.forEach(d => {
+      allPts.push({
+        lat:d.lat, lng:d.lng, tipo:'crime', ind:d.indicador,
+        bo:d.bo||'—', data:d.data||'—', municipio:d.municipio||'—',
+        localizacao:d.localizacao||'—', qtdVitimas:d.qtdVitimas||'',
+        grupamento:d.grupamento||'—', _auditoriaPendente:!!d._auditoriaPendente
+      });
+    });
+
     /* Ops GDO Rural */
     dadosGdoRural.forEach(op => {
       if(!op.lat||!op.lng) return;
       if(mesF2.length && !mesF2.includes(op.mes)) return;
       if(pelF2 && pelDoColk(op.grupamento) !== parseInt(pelF2)) return;
       if(gpFiltro && norm(op.grupamento||'') !== norm(gpFiltro)) return;
-      allPts.push({ lat:op.lat, lng:op.lng, tipo:'ops', label:op.rat||'--', ind:op.natureza, data:op.data||'--' });
+      allPts.push({
+        lat:op.lat, lng:op.lng, tipo:'ops', ind:op.natureza,
+        bo:op.rat||'—', data:op.data||'—', municipio:op.municipio||'—',
+        localizacao:'ZONA RURAL', qtdVitimas:'',
+        grupamento:op.grupamento||'—', _auditoriaPendente:false
+      });
     });
+
     /* Visitas */
     dadosVisitas.forEach(v => {
       if(!v.lat||!v.lng) return;
       if(mesF2.length && !mesF2.includes(v.mes)) return;
       if(gpFiltro){
-        const vGrp = dadosGrupos.find(g => norm(g.munNorm) === norm(v.municipio||''));
-        if(!vGrp || norm(gpDoColk(vGrp.grupamento)) !== norm(gpFiltro)) return;
+        const vg = dadosGrupos.find(g => norm(g.munNorm) === norm(v.municipio||''));
+        if(!vg || norm(gpDoColk(vg.grupamento)) !== norm(gpFiltro)) return;
       }
-      allPts.push({ lat:v.lat, lng:v.lng, tipo:'vis', label:v.bo||'--', ind:v.natCode||'VIS', data:v.data||'--' });
-    });
-
-    /* Agrupa por coordenada proxima (raio aprox 50m) */
-    const PROX = 0.00045;
-    const visitados = new Set();
-    const grupos = [];
-    allPts.forEach((p, i) => {
-      if(visitados.has(i)) return;
-      const grupo = [p]; visitados.add(i);
-      allPts.forEach((q, j) => {
-        if(visitados.has(j)) return;
-        if(Math.abs(p.lat-q.lat)<PROX && Math.abs(p.lng-q.lng)<PROX){ grupo.push(q); visitados.add(j); }
+      allPts.push({
+        lat:v.lat, lng:v.lng, tipo:'vis', ind:v.natCode||'VIS',
+        bo:v.bo||'—', data:v.data||'—', municipio:v.municipio||'—',
+        localizacao:v.localizacao||'—', qtdVitimas:'',
+        grupamento:'—', _auditoriaPendente:false
       });
-      if(grupo.length > 1) grupos.push(grupo);
     });
 
-    const COR_TIPO = { crime:'#ef5350', ops:'#e53935', vis:'#66bb6a' };
-    const LABEL_IND = { IMV:'IMV', CVPE:'CVPE', CVPA:'CVPA', IF:'IF', Y07001:'OPS', Y07002:'OPS', Y07014:'OPS', A20028:'VIS', A20001:'VIS' };
+    /* Agrupa por proximidade ~50m */
+    const PROX = 0.00045;
+    const seen = new Set();
+    const grupos = [];
+    allPts.forEach(function(p, i){
+      if(seen.has(i)) return;
+      const g = [p]; seen.add(i);
+      allPts.forEach(function(q, j){
+        if(seen.has(j)) return;
+        if(Math.abs(p.lat-q.lat)<PROX && Math.abs(p.lng-q.lng)<PROX){ g.push(q); seen.add(j); }
+      });
+      /* Só cria leque para grupos MISTOS — crimes puros já têm seu próprio agrupamento */
+      if(g.length > 1){
+        const tipos = new Set(g.map(function(x){ return x.tipo; }));
+        if(tipos.size > 1) grupos.push(g);
+      }
+    });
+    if(!grupos.length) return;
 
-    grupos.forEach(grupo => {
+    /* Helpers de cor/label por tipo+indicador */
+    function getCorLabel(p){
+      if(p.tipo==='ops') return { cor:'#e53935', label:'OPS', desc:({'Y07001':'Batida Policial','Y07002':'Op. Presença','Y07014':'Ação/Op. Rural'}[p.ind]||p.ind) };
+      if(p.tipo==='vis') return { cor:'#66bb6a', label:'VIS', desc:({'A20028':'Visita — Furto','A20001':'Visita — Crime Violento'}[p.ind]||'Visita') };
+      const cor = CORES_INDICADOR[p.ind]||'#9b8a5c';
+      const desc = {IMV:'Morte Violenta',CVPE:'Crime Contra Pessoa',CVPA:'Crime Contra Patrimônio',IF:'Indicador de Furto'}[p.ind]||p.ind;
+      return { cor, label:p.ind, desc };
+    }
+
+    grupos.forEach(function(grupo){
       const lat0 = grupo[0].lat, lng0 = grupo[0].lng;
-      const iconHtml = '<div style="position:relative;width:36px;height:36px;cursor:pointer;">' +
-        grupo.slice(0,3).map(function(p,i){
-          const cor = COR_TIPO[p.tipo]||'#9b8a5c';
-          return '<div style="position:absolute;left:'+(i*6)+'px;top:'+(i*-4)+'px;width:26px;height:26px;border-radius:50%;background:'+cor+';border:2px solid #fff;opacity:'+(1-i*0.15)+';display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;color:#fff;">'+(LABEL_IND[p.ind]||p.tipo.toUpperCase().slice(0,3))+'</div>';
-        }).join('') +
-        '<div style="position:absolute;top:-6px;right:-6px;background:#1a1a1a;color:#fff;font-size:9px;font-weight:800;border-radius:50%;width:17px;height:17px;display:flex;align-items:center;justify-content:center;border:2px solid #c9a84c;z-index:10;">'+grupo.length+'</div>' +
+
+      /* Ícone de sobreposição: empilha SVGs originais dos primeiros 3 pontos */
+      var stackItems = grupo.slice(0,3).map(function(p,i){
+        var cl = getCorLabel(p);
+        var svgEl;
+        if(p.tipo==='crime'){
+          var fn = ICONES_IND[p.ind]||ICONES_IND['CVPE'];
+          svgEl = fn(cl.cor, p._auditoriaPendente);
+        } else if(p.tipo==='ops'){
+          svgEl = '<div style="width:28px;height:18px;border-radius:3px;background:'+cl.cor+';border:1.5px solid #fff;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:800;color:#fff;filter:drop-shadow(0 1px 3px rgba(0,0,0,.5));">OPS</div>';
+        } else {
+          svgEl = '<div style="width:22px;height:22px;border-radius:50%;background:'+cl.cor+';border:1.5px solid #fff;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:800;color:#fff;filter:drop-shadow(0 1px 3px rgba(0,0,0,.5));">VIS</div>';
+        }
+        return '<div style="position:absolute;left:'+(i*7)+'px;top:'+(i*-5)+'px;opacity:'+(1-i*0.2)+';">'+svgEl+'</div>';
+      });
+
+      var icoHtml = '<div style="position:relative;width:42px;height:38px;cursor:pointer;">' +
+        stackItems.join('') +
+        '<div style="position:absolute;top:-7px;right:-7px;background:#1a1a1a;color:#c9a84c;font-size:9px;font-weight:800;border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center;border:2px solid #c9a84c;z-index:10;">'+grupo.length+'</div>' +
         '</div>';
 
-      const icon = L.divIcon({ className:'', html:iconHtml, iconSize:[36,36], iconAnchor:[18,18], popupAnchor:[0,-20] });
-      const mk = L.marker([lat0, lng0], { icon, zIndexOffset:2000 });
+      var icon = L.divIcon({ className:'', html:icoHtml, iconSize:[42,38], iconAnchor:[21,19] });
+      var mk   = L.marker([lat0, lng0], { icon:icon, zIndexOffset:2000 });
 
-      const ttHtml = '<div style="background:#1e1e1e;border-radius:8px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.6);min-width:220px;">' +
-        '<div style="background:#333;padding:7px 12px;font-size:12px;font-weight:700;color:#fff;border-bottom:1px solid #444;">Registros sobrepostos: ' + grupo.length + '</div>' +
-        '<div style="padding:6px 10px;">' +
-        grupo.map(function(p){ const cor=COR_TIPO[p.tipo]||'#9b8a5c'; return '<div style="padding:3px 0;font-size:11px;color:#ddd;"><span style="background:'+cor+';color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:3px;margin-right:6px;">'+(p.tipo==='crime'?p.ind:p.tipo==='ops'?'OPS':'VIS')+'</span>'+p.label+' - '+p.data+'</div>'; }).join('') +
-        '<div style="margin-top:6px;color:#c9a84c;font-size:10px;text-align:center;border-top:1px solid #333;padding-top:5px;">Clique para abrir em leque</div></div></div>';
+      /* Tooltip de hover — lista todos com badge colorido */
+      var rows = grupo.map(function(p){
+        var cl = getCorLabel(p);
+        return '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid #2a2a2a;">' +
+          '<span style="background:'+cl.cor+';color:#fff;font-size:9px;font-weight:800;padding:1px 7px;border-radius:3px;min-width:36px;text-align:center;">'+cl.label+'</span>' +
+          '<div style="font-size:11px;line-height:1.4;">' +
+            '<span style="color:#fff;font-weight:600;">'+p.bo+'</span>' +
+            '<span style="color:#888;font-size:10px;margin-left:5px;">'+p.data+'</span><br>' +
+            '<span style="color:#aaa;font-size:10px;">'+cl.desc+'</span>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+      var ttHtml = '<div style="background:#1e1e1e;border-radius:8px;overflow:hidden;min-width:260px;box-shadow:0 4px 20px rgba(0,0,0,.7);">' +
+        '<div style="background:#2d2d2d;padding:8px 12px;font-size:12px;font-weight:700;color:#fff;border-bottom:1px solid #3a3a3a;">📍 '+grupo.length+' registros sobrepostos</div>' +
+        '<div style="padding:6px 12px;">'+rows+'</div>' +
+        '<div style="padding:5px 12px 8px;color:#c9a84c;font-size:10px;">➜ Clique para abrir em leque</div>' +
+        '</div>';
       mk.bindTooltip(ttHtml, { sticky:false, direction:'top', className:'leaflet-tooltip-crime', opacity:1 });
 
-      var lequeMks = []; var lequeAberto = false;
+      /* Click — abre/fecha leque em espiral */
+      var lequeMks = []; var aberto = false;
       mk.on('click', function(){
-        if(lequeAberto){ lequeMks.forEach(function(lm){ _acMap.removeLayer(lm); }); lequeMks=[]; lequeAberto=false; return; }
-        lequeAberto = true;
-        var n = grupo.length; var raio = 0.0008 + n * 0.00015;
+        if(aberto){
+          lequeMks.forEach(function(lm){ try{ mapRef.removeLayer(lm); }catch(e){} });
+          lequeMks=[]; aberto=false; return;
+        }
+        aberto = true;
+        var n = grupo.length;
+        var raio = 0.0012 + n * 0.00018;
         grupo.forEach(function(p, i){
-          var ang = (2*Math.PI*i/n) - Math.PI/2;
+          var ang  = (2*Math.PI*i/n) - Math.PI/2;
           var lat2 = lat0 + raio*Math.cos(ang);
           var lng2 = lng0 + raio*Math.sin(ang)/Math.cos(lat0*Math.PI/180);
-          var cor = COR_TIPO[p.tipo]||'#9b8a5c';
-          var icoHtml2 = '<div style="width:28px;height:28px;border-radius:50%;background:'+cor+';border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.5);">'+(LABEL_IND[p.ind]||p.tipo.slice(0,3).toUpperCase())+'</div>';
-          var ico2 = L.divIcon({ className:'', html:icoHtml2, iconSize:[28,28], iconAnchor:[14,14] });
-          var lm = L.marker([lat2, lng2], { icon:ico2, zIndexOffset:3000 });
-          var linha = L.polyline([[lat0,lng0],[lat2,lng2]], { color:cor, weight:1.5, opacity:0.6, dashArray:'4,4' });
-          linha.addTo(_acMap); lequeMks.push(linha);
-          lm.bindTooltip('<div style="background:#1e1e1e;border:1px solid '+cor+';border-radius:6px;padding:6px 10px;font-size:11px;color:#ddd;min-width:160px;"><span style="background:'+cor+';color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:3px;">'+(p.tipo==='crime'?p.ind:p.tipo==='ops'?'OPS':'VIS')+'</span> <b>'+p.label+'</b><br><span style="color:#aaa;">'+p.data+'</span></div>', { sticky:false, direction:'top', className:'leaflet-tooltip-crime', opacity:1 });
-          lm.addTo(_acMap); lequeMks.push(lm);
+          var cl   = getCorLabel(p);
+
+          /* Ícone individual com SVG original */
+          var svgEl2;
+          if(p.tipo==='crime'){
+            var fn2 = ICONES_IND[p.ind]||ICONES_IND['CVPE'];
+            svgEl2 = fn2(cl.cor, p._auditoriaPendente);
+          } else if(p.tipo==='ops'){
+            svgEl2 = '<div style="width:32px;height:22px;border-radius:4px;background:'+cl.cor+';border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.6);">OPS</div>';
+          } else {
+            svgEl2 = '<div style="width:28px;height:28px;border-radius:50%;background:'+cl.cor+';border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.6);">VIS</div>';
+          }
+          var ico2 = L.divIcon({ className:'', html:svgEl2, iconSize:[32,32], iconAnchor:[16,16] });
+          var lm   = L.marker([lat2, lng2], { icon:ico2, zIndexOffset:3000 });
+
+          /* Linha tracejada */
+          var linha = L.polyline([[lat0,lng0],[lat2,lng2]], { color:cl.cor, weight:1.5, opacity:0.6, dashArray:'5,5' });
+          linha.addTo(mapRef); lequeMks.push(linha);
+
+          /* Tooltip do item com todas as informações */
+          var vitRow = (p.tipo==='crime' && p.ind!=='IF' && p.qtdVitimas) ?
+            '<tr><td style="color:#888;padding:1px 4px 1px 0;white-space:nowrap;">Vítimas</td><td style="color:#ef5350;font-weight:700;">'+p.qtdVitimas+'</td></tr>' : '';
+          var auditRow = p._auditoriaPendente ?
+            '<tr><td colspan="2"><div style="background:rgba(239,83,80,.15);border:1px solid #ef5350;border-radius:4px;padding:2px 6px;font-size:9px;color:#ef5350;font-weight:700;margin-top:2px;">⚠ ÁREA URBANA — AUDITORIA</div></td></tr>' : '';
+          var ttItem =
+            '<div style="width:290px;background:#1e1e1e;border:1px solid '+cl.cor+'55;border-radius:8px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.7);">' +
+            '<div style="background:'+cl.cor+'22;border-bottom:2px solid '+cl.cor+';padding:7px 12px;display:flex;align-items:center;gap:8px;">' +
+              '<span style="background:'+cl.cor+';color:#fff;font-size:10px;font-weight:800;padding:2px 9px;border-radius:3px;">'+cl.label+'</span>' +
+              '<span style="color:#ddd;font-size:11px;font-weight:600;">'+cl.desc+'</span>' +
+            '</div>' +
+            '<div style="padding:8px 12px;">' +
+              '<table style="width:100%;border-collapse:collapse;font-size:11px;line-height:1.9;">' +
+                '<tr><td style="color:#888;width:80px;white-space:nowrap;">Nº BO/RAT</td><td style="color:#fff;font-weight:700;">'+p.bo+'</td></tr>' +
+                '<tr><td style="color:#888;white-space:nowrap;">Data</td><td style="color:#ccc;">'+p.data+'</td></tr>' +
+                '<tr><td style="color:#888;white-space:nowrap;">Município</td><td style="color:#fff;font-weight:600;">'+p.municipio+'</td></tr>' +
+                '<tr><td style="color:#888;white-space:nowrap;vertical-align:top;">Grupamento</td><td style="color:#c9a84c;font-size:10px;line-height:1.4;word-break:break-word;">'+p.grupamento+'</td></tr>' +
+                '<tr><td style="color:#888;white-space:nowrap;">Localização</td><td style="color:'+((p.localizacao||'').includes('URBAN')?'#ef5350':'#66bb6a')+';font-weight:600;">'+p.localizacao+'</td></tr>' +
+                vitRow + auditRow +
+              '</table>' +
+            '</div></div>';
+          lm.bindTooltip(ttItem, { sticky:false, direction:'top', className:'leaflet-tooltip-crime', opacity:1 });
+          lm.addTo(mapRef); lequeMks.push(lm);
         });
       });
-      mk.addTo(_acMap);
+
+      mk.addTo(mapRef);
     });
   })();
 
