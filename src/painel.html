@@ -1087,56 +1087,31 @@ async function loadGrupos(){
 }
 
 async function loadMetas(){
-  /* Tabela bd_metaspoe — estrutura pivotada: GRUPAMENTO, NATUREZA, JANEIRO, FEVEREIRO, ... */
-  const dataAll = await sbFetch('bd_metaspoe', 'limit=10000');
-  console.log('[loadMetas] bd_metaspoe total:', dataAll.length, 'registros');
+  /* Tabela renomeada de poe_metas para bd_metaspoe.
+     Nova estrutura: uma linha por GRUPAMENTO+NATUREZA,
+     colunas: GRUPAMENTO, NATUREZA, JANEIRO, FEVEREIRO, MARÇO, ABRIL,
+              MAIO, JUNHO, JULHO, AGOSTO, SETEMBRO, OUTUBRO, NOVEMBRO, DEZEMBRO */
+  const dataAll = await sbFetch('bd_metaspoe', 'select=*&order=GRUPAMENTO,NATUREZA');
+  console.log('[loadMetas] Supabase total:', dataAll.length, 'registros');
   dadosMetas = [];
-  if(!dataAll.length) return;
 
-  /* Mapeia nome do mês (com ou sem acento) para a chave exata de MESES[] */
-  const mesCols = {};
-  const sample = dataAll[0];
-  Object.keys(sample).forEach(col => {
-    const n = norm(col);
-    const match = MESES.find(m => norm(m) === n);
-    if(match) mesCols[col] = match;   /* ex: "MARÇO" -> "MARÇO", "MARCO" -> "MARÇO" */
-  });
-  console.log('[loadMetas] Colunas de mês encontradas:', Object.keys(mesCols));
-
-  /* Coluna de grupamento e natureza (case-insensitive) */
-  const findCol = (obj, candidates) =>
-    Object.keys(obj).find(k => candidates.includes(k.toUpperCase())) || null;
-
-  const mapa = {};
   dataAll.forEach(d => {
-    const kGP  = findCol(d, ['GRUPAMENTO','GP','GP_RESPONSAVEL','GP_CHAVE']);
-    const kNat = findCol(d, ['NATUREZA','NAT','CODIGO_NATUREZA']);
-    if(!kGP || !kNat) return;
-
-    const gpRaw  = (d[kGP]  || '').toString().trim();
-    const natRaw = (d[kNat] || '').toString().trim();
-    if(!gpRaw || !natRaw) return;
-
-    /* Normaliza nome do GP cruzando com dadosGrupos */
-    const gpRawN  = norm(gpRaw);
+    const gpRaw = (d.GRUPAMENTO || '').trim();
+    /* Cruzamento normalizado: ignora acentos, maiúsculas e espaços extras */
+    const gpRawN = norm(gpRaw);
     const gpEntry = dadosGrupos.find(g =>
       norm(g.grupamento) === gpRawN || norm(g.gpResp) === gpRawN
     );
     const gp = gpEntry ? (gpEntry.gpResp || gpEntry.grupamento) : gpRaw;
-
-    const chave = gp + '|' + natRaw;
-    if(!mapa[chave]) mapa[chave] = { gp, nat: natRaw };
-
-    /* Lê cada coluna de mês diretamente */
-    Object.entries(mesCols).forEach(([colOriginal, mesKey]) => {
-      mapa[chave][mesKey] = parseFloat(d[colOriginal]) || 0;
-    });
+    const obj = { gp, nat: (d.NATUREZA || '').trim() };
+    /* Mapeia cada coluna de mês para o valor numérico */
+    MESES.forEach(m => { obj[m] = parseInt(d[m]) || 0; });
+    dadosMetas.push(obj);
   });
 
-  dadosMetas = Object.values(mapa);
-  dadosMetas.forEach(obj => { MESES.forEach(m => { if(obj[m]===undefined) obj[m]=0; }); });
-  console.log('[loadMetas] Entradas processadas:', dadosMetas.length);
+  console.log('[loadMetas] Supabase:', dadosMetas.length, 'entradas');
 }
+
 /* ══════════════════════════════════════════════════════════════
    ADAPTER DE MAPEAMENTO — DADOS (nova aba)
    Altere apenas este objeto quando o layout da planilha mudar.
@@ -4409,51 +4384,76 @@ function impGerarPreview(){
     if(!k) return;
     if(!vistos.has(k)){ vistos.add(k); semDup.push(r); }
   });
-  /* Verifica duplicatas usando apenas chaves salvas */
-  const jaExistentes = new Set(
-    JSON.parse(localStorage.getItem('imp_keys_'+_impInd)||'[]')
-  );
-  /* Fallback: tenta ler chaves do formato antigo se existir */
-  try {
-    const antigo = localStorage.getItem('imp_bd_obj_'+_impInd);
-    if(antigo) Object.keys(JSON.parse(antigo)).forEach(k=>jaExistentes.add(k));
-  } catch(e){}
 
-  let novos = 0, atualizados = 0;
-  semDup.forEach(r => {
-    r._dup = jaExistentes.has(r[chave]);
-    r._dup ? atualizados++ : novos++;
-  });
-  const duplicados = atualizados;
-
-  /* Ordenar por DATA_FATO + HORARIO_FATO */
+  /* Ordena antes de exibir */
   semDup.sort((a,b) => {
     const pd = d => { if(!d) return ''; const p=d.split('/'); return p.length===3?`${p[2]}-${p[1]}-${p[0]}`:d; };
     return (pd(a.DATA_FATO)+' '+(a.HORARIO_FATO||'')).localeCompare(pd(b.DATA_FATO)+' '+(b.HORARIO_FATO||''));
   });
   _impTodosRegistros = semDup;
 
+  /* Mostra step2 com loading enquanto consulta o banco */
   document.getElementById('imp-step1').style.display = 'none';
   document.getElementById('imp-step2').style.display = 'block';
-
-  document.getElementById('imp-preview-summary').innerHTML = `
-    <div class="imp-stat-box imp-stat-total"><div class="n">${semDup.length}</div><div class="l">Total</div></div>
-    <div class="imp-stat-box imp-stat-novos"><div class="n">${novos}</div><div class="l">Novos</div></div>
-    <div class="imp-stat-box imp-stat-dup"><div class="n">${atualizados}</div><div class="l">Atualizados</div></div>
-    <div class="imp-stat-box" style="border-color:#555"><div class="n" style="color:#aaa">${todos.length-filtrados.length}</div><div class="l">Descartados*</div></div>`;
-
-  const cols = IMP_PREVIEW_COLS[info.tipo];
-  document.getElementById('imp-preview-thead').innerHTML = '<tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr>';
-  document.getElementById('imp-preview-tbody').innerHTML = semDup.slice(0,200).map(r =>
-    `<tr class="${r._dup?'imp-row-dup':''}">${cols.map(c=>`<td>${r[c]||'—'}</td>`).join('')}</tr>`
-  ).join('');
-
+  document.getElementById('imp-preview-summary').innerHTML =
+    `<div style="color:var(--text-muted);font-size:12px;padding:8px 0;">⏳ Verificando registros existentes no banco...</div>`;
+  document.getElementById('imp-preview-tbody').innerHTML = '';
   const btn = document.getElementById('imp-btn-confirmar');
-  btn.disabled = novos===0;
-  btn.style.opacity = novos===0 ? '.5' : '1';
-  btn.disabled = false; btn.style.opacity = '1';
-  const totalAcao = novos + atualizados;
-  btn.textContent = `✅ Confirmar (${novos} novos · ${atualizados} atualizados)`;
+  btn.disabled = true; btn.style.opacity = '.5';
+  btn.textContent = '⏳ Aguarde...';
+
+  /* Busca chaves já existentes diretamente do Supabase — funciona em qualquer navegador */
+  const TABELA = { IMV:'bd_crimes', CVPE:'bd_crimes', CVPA:'bd_crimes', IF:'bd_crimes', OPR:'bd_operacoes', VIS:'bd_visitas' };
+  const tabela = TABELA[_impInd];
+  const chaveCol = chave.toLowerCase().replace(/[^a-z0-9]/g,'_');
+  const chavesNoArquivo = semDup.map(r => r[chave]).filter(Boolean);
+
+  (async () => {
+    const jaExistentes = new Set();
+    try {
+      /* Consulta o banco apenas pelas chaves presentes no arquivo (in=) */
+      if(chavesNoArquivo.length > 0){
+        const lista = chavesNoArquivo.map(k => encodeURIComponent(k)).join(',');
+        const data = await sbFetch(tabela, `select=${chaveCol}&${chaveCol}=in.(${lista})`);
+        data.forEach(r => { if(r[chaveCol]) jaExistentes.add(String(r[chaveCol])); });
+      }
+      /* Atualiza localStorage como cache secundário */
+      try{
+        const ch = new Set(JSON.parse(localStorage.getItem('imp_keys_'+_impInd)||'[]'));
+        jaExistentes.forEach(k => ch.add(k));
+        localStorage.setItem('imp_keys_'+_impInd, JSON.stringify([...ch]));
+      }catch(e2){}
+    } catch(e) {
+      /* Fallback para localStorage se o banco falhar */
+      console.warn('Fallback localStorage:', e.message);
+      JSON.parse(localStorage.getItem('imp_keys_'+_impInd)||'[]').forEach(k => jaExistentes.add(k));
+      try {
+        const antigo = localStorage.getItem('imp_bd_obj_'+_impInd);
+        if(antigo) Object.keys(JSON.parse(antigo)).forEach(k=>jaExistentes.add(k));
+      } catch(e2){}
+    }
+
+    let novos = 0, atualizados = 0;
+    semDup.forEach(r => {
+      r._dup = jaExistentes.has(String(r[chave]));
+      r._dup ? atualizados++ : novos++;
+    });
+
+    document.getElementById('imp-preview-summary').innerHTML = `
+      <div class="imp-stat-box imp-stat-total"><div class="n">${semDup.length}</div><div class="l">Total</div></div>
+      <div class="imp-stat-box imp-stat-novos"><div class="n">${novos}</div><div class="l">Novos</div></div>
+      <div class="imp-stat-box imp-stat-dup"><div class="n">${atualizados}</div><div class="l">Atualizados</div></div>
+      <div class="imp-stat-box" style="border-color:#555"><div class="n" style="color:#aaa">${todos.length-filtrados.length}</div><div class="l">Descartados*</div></div>`;
+
+    const cols = IMP_PREVIEW_COLS[info.tipo];
+    document.getElementById('imp-preview-thead').innerHTML = '<tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr>';
+    document.getElementById('imp-preview-tbody').innerHTML = semDup.slice(0,200).map(r =>
+      `<tr class="${r._dup?'imp-row-dup':''}">${cols.map(c=>`<td>${r[c]||'—'}</td>`).join('')}</tr>`
+    ).join('');
+
+    btn.disabled = false; btn.style.opacity = '1';
+    btn.textContent = `✅ Confirmar (${novos} novos · ${atualizados} atualizados)`;
+  })();
 }
 
 function impVoltarStep1(){
@@ -4489,9 +4489,12 @@ function impConfirmar(){
 
       /* Upsert em lotes de 200 */
       const LOTE = 200;
+      /* Determina a coluna de conflito (chave única) para upsert correto */
+      const CHAVE_UPSERT = { bd_crimes:'numero_reds', bd_operacoes:'numero_rat', bd_visitas:'numero_bos' };
+      const onConflict = CHAVE_UPSERT[tabela] || 'numero_reds';
       for(let i=0; i<registros.length; i+=LOTE){
         btnConf.textContent = `⏳ ${Math.min(i+LOTE,registros.length)}/${registros.length}...`;
-        const res = await fetch(`${SB_URL}/rest/v1/${tabela}`, {
+        const res = await fetch(`${SB_URL}/rest/v1/${tabela}?on_conflict=${onConflict}`, {
           method:'POST',
           headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},
           body: JSON.stringify(registros.slice(i,i+LOTE))
@@ -4594,7 +4597,13 @@ function impGerCarregar(){
   const statusEl = document.getElementById('imp-ger-total');
   statusEl.textContent = 'Carregando do Supabase...';
 
-  sbFetch(tabela, `select=${chaveCol},data_fato,municipio,desc_natureza,descricao_localizacao,latitude,longitude&order=${chaveCol}`)
+  const SEL_COLS = {
+    bd_crimes:    `${chaveCol},data_fato,municipio,descr_natureza_principal,imv_total,icvpe_total,icvpa_total,ifzr,desc_natureza,descricao_localizacao,latitude,longitude`,
+    bd_operacoes: `${chaveCol},data_fato,municipio,descricao_localizacao,codigo_natureza_principal,desc_natureza,nome_operacao,opr_tempo_total_minutos,unid_registro,latitude,longitude`,
+    bd_visitas:   `${chaveCol},data_fato,municipio,desc_natureza,descricao_localizacao,opr_tempo_total_minutos,unid_registro,latitude,longitude`,
+  };
+  const selectCols = SEL_COLS[tabela] || `${chaveCol},data_fato,municipio`;
+  sbFetch(tabela, `select=${selectCols}&order=${chaveCol}`)
     .then(data => {
       _impGerRegistros = data.map(r => {
         /* Mapeia de volta para maiúsculas para compatibilidade com IMP_GER_COLS */
