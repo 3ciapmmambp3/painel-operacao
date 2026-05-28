@@ -1087,34 +1087,56 @@ async function loadGrupos(){
 }
 
 async function loadMetas(){
-  const dataAll = await sbFetch('bd_metaspoe', 'ano=eq.2026&select=grupamento,natureza,mes,mes_num,meta&order=grupamento,natureza,mes_num');
-  console.log('[loadMetas] Supabase total:', dataAll.length, 'registros');
+  /* Tabela bd_metaspoe — estrutura pivotada: GRUPAMENTO, NATUREZA, JANEIRO, FEVEREIRO, ... */
+  const dataAll = await sbFetch('bd_metaspoe', 'limit=10000');
+  console.log('[loadMetas] bd_metaspoe total:', dataAll.length, 'registros');
   dadosMetas = [];
+  if(!dataAll.length) return;
 
-  /* Agrupa por gp+natureza numa estrutura MESES→valor */
+  /* Mapeia nome do mês (com ou sem acento) para a chave exata de MESES[] */
+  const mesCols = {};
+  const sample = dataAll[0];
+  Object.keys(sample).forEach(col => {
+    const n = norm(col);
+    const match = MESES.find(m => norm(m) === n);
+    if(match) mesCols[col] = match;   /* ex: "MARÇO" -> "MARÇO", "MARCO" -> "MARÇO" */
+  });
+  console.log('[loadMetas] Colunas de mês encontradas:', Object.keys(mesCols));
+
+  /* Coluna de grupamento e natureza (case-insensitive) */
+  const findCol = (obj, candidates) =>
+    Object.keys(obj).find(k => candidates.includes(k.toUpperCase())) || null;
+
   const mapa = {};
   dataAll.forEach(d => {
-    const gpRaw = d.grupamento.trim();
-    /* Cruzamento normalizado: ignora acentos, maiúsculas e espaços extras */
-    const gpRawN = norm(gpRaw);
+    const kGP  = findCol(d, ['GRUPAMENTO','GP','GP_RESPONSAVEL','GP_CHAVE']);
+    const kNat = findCol(d, ['NATUREZA','NAT','CODIGO_NATUREZA']);
+    if(!kGP || !kNat) return;
+
+    const gpRaw  = (d[kGP]  || '').toString().trim();
+    const natRaw = (d[kNat] || '').toString().trim();
+    if(!gpRaw || !natRaw) return;
+
+    /* Normaliza nome do GP cruzando com dadosGrupos */
+    const gpRawN  = norm(gpRaw);
     const gpEntry = dadosGrupos.find(g =>
       norm(g.grupamento) === gpRawN || norm(g.gpResp) === gpRawN
     );
     const gp = gpEntry ? (gpEntry.gpResp || gpEntry.grupamento) : gpRaw;
-    const chave = gp + '|' + d.natureza.trim();
-    if(!mapa[chave]) mapa[chave] = { gp, nat: d.natureza.trim() };
-    /* mes do Supabase pode vir como "MARCO" ou "MARÇO" — normaliza e mapeia de volta para MESES[] */
-    const mesNorm = norm(d.mes.trim());
-    const mesKey = MESES.find(m => norm(m) === mesNorm) || d.mes.trim();
-    mapa[chave][mesKey] = d.meta || 0;
+
+    const chave = gp + '|' + natRaw;
+    if(!mapa[chave]) mapa[chave] = { gp, nat: natRaw };
+
+    /* Lê cada coluna de mês diretamente */
+    Object.entries(mesCols).forEach(([colOriginal, mesKey]) => {
+      mapa[chave][mesKey] = parseFloat(d[colOriginal]) || 0;
+    });
   });
 
   dadosMetas = Object.values(mapa);
-  /* Preenche meses faltantes com 0 usando as chaves exatas de MESES[] */
   dadosMetas.forEach(obj => { MESES.forEach(m => { if(obj[m]===undefined) obj[m]=0; }); });
-  console.log('[loadMetas] Supabase:', dadosMetas.length, 'entradas');
+  console.log('[loadMetas] Entradas processadas:', dadosMetas.length);
 }
-
 /* ══════════════════════════════════════════════════════════════
    ADAPTER DE MAPEAMENTO — DADOS (nova aba)
    Altere apenas este objeto quando o layout da planilha mudar.
