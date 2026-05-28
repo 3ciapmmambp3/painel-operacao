@@ -2155,8 +2155,8 @@ async function carregarVisitas(){
       const natCode = (row.codigo_natureza || '').toString().toUpperCase().trim();
       if(!bo || !NATS[natCode]) return;
 
-      let lat = parseFloat(row.latitude)  || null;
-      let lng = parseFloat(row.longitude) || null;
+      let lat = parseFloat((row.latitude  || '').toString().replace(',','.')) || null;
+      let lng = parseFloat((row.longitude || '').toString().replace(',','.')) || null;
       if(lat !== null && lng !== null){
         const latOk = lat >= -35 && lat <= 6;
         const lngOk = lng >= -75 && lng <= -28;
@@ -3208,7 +3208,7 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
 
   /* ── Camadas KML dos Pelotões (igual ao GDO Rural) ── */
   /* Descobrir qual pelotão pertence ao grupamento filtrado */
-  const gpFiltroInfo = gpFiltro ? dadosGrupos.find(r => gpDoColk(r.grupamento) === gpFiltro) : null;
+  const gpFiltroInfo = gpFiltro ? dadosGrupos.find(r => norm(gpDoColk(r.grupamento)) === norm(gpFiltro)) : null;
   const gpFiltroPelNum = gpFiltroInfo ? gpFiltroInfo.pelNum : null;
 
   if(typeof KML_DATA !== 'undefined' && KML_DATA.pelotoes){
@@ -3256,7 +3256,7 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
     const opPel = op.grupamento ? pelDoColk(op.grupamento) : 0;
     if(pelF && opPel !== parseInt(pelF)) return;
     const gpLongoOp = op.grupamento ? gpDoColk(op.grupamento) : '—';
-    if(gpFiltro && gpLongoOp !== gpFiltro) return;
+    if(gpFiltro && norm(gpLongoOp) !== norm(gpFiltro)) return;
     const corOp  = COR_NAT_OPS[op.natureza]  || '#607d8b';
     const letra  = LETRA_NAT_OPS[op.natureza] || '?';
     const label  = LABEL_NAT_OPS[op.natureza] || op.natureza;
@@ -3555,7 +3555,7 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
     /* Filtro de pelotão */
     if(pelFVis){ if(!_vGrupInfo || _vPelN !== parseInt(pelFVis)) return; }
     /* Filtro de grupamento */
-    if(gpFiltro && (!_vGrupInfo || gpDoColk(_vGrupInfo.grupamento) !== gpFiltro)) return;
+    if(gpFiltro && (!_vGrupInfo || norm(gpDoColk(_vGrupInfo.grupamento)) !== norm(gpFiltro))) return;
     const alerta=v.alertaUrbano, isFurto=v.natCode==='A20028';
     const cor=alerta?'#ff9800':isFurto?'#4caf50':'#ab47bc';
     const borda=alerta?'#ff9800':'#fff';
@@ -3620,6 +3620,91 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
   });
   /* Ainda registra gVFurto etc. em layers para toggleMapaLayer poder referenciá-los */
 
+  /* ── Leque: detecta marcadores sobrepostos (crimes + ops + visitas) ── */
+  (function adicionaLeque(){
+    const allPts = [];
+    const mesF2 = getMesDd('mapa');
+    const pelF2 = document.getElementById('mapa-pel').value;
+    /* Crimes */
+    dadosComCoord.forEach(d => allPts.push({ lat:d.lat, lng:d.lng, tipo:'crime', label:d.bo||'--', ind:d.indicador, data:d.data||'--' }));
+    /* Ops GDO Rural */
+    dadosGdoRural.forEach(op => {
+      if(!op.lat||!op.lng) return;
+      if(mesF2.length && !mesF2.includes(op.mes)) return;
+      if(pelF2 && pelDoColk(op.grupamento) !== parseInt(pelF2)) return;
+      if(gpFiltro && norm(op.grupamento||'') !== norm(gpFiltro)) return;
+      allPts.push({ lat:op.lat, lng:op.lng, tipo:'ops', label:op.rat||'--', ind:op.natureza, data:op.data||'--' });
+    });
+    /* Visitas */
+    dadosVisitas.forEach(v => {
+      if(!v.lat||!v.lng) return;
+      if(mesF2.length && !mesF2.includes(v.mes)) return;
+      if(gpFiltro){
+        const vGrp = dadosGrupos.find(g => norm(g.munNorm) === norm(v.municipio||''));
+        if(!vGrp || norm(gpDoColk(vGrp.grupamento)) !== norm(gpFiltro)) return;
+      }
+      allPts.push({ lat:v.lat, lng:v.lng, tipo:'vis', label:v.bo||'--', ind:v.natCode||'VIS', data:v.data||'--' });
+    });
+
+    /* Agrupa por coordenada proxima (raio aprox 50m) */
+    const PROX = 0.00045;
+    const visitados = new Set();
+    const grupos = [];
+    allPts.forEach((p, i) => {
+      if(visitados.has(i)) return;
+      const grupo = [p]; visitados.add(i);
+      allPts.forEach((q, j) => {
+        if(visitados.has(j)) return;
+        if(Math.abs(p.lat-q.lat)<PROX && Math.abs(p.lng-q.lng)<PROX){ grupo.push(q); visitados.add(j); }
+      });
+      if(grupo.length > 1) grupos.push(grupo);
+    });
+
+    const COR_TIPO = { crime:'#ef5350', ops:'#e53935', vis:'#66bb6a' };
+    const LABEL_IND = { IMV:'IMV', CVPE:'CVPE', CVPA:'CVPA', IF:'IF', Y07001:'OPS', Y07002:'OPS', Y07014:'OPS', A20028:'VIS', A20001:'VIS' };
+
+    grupos.forEach(grupo => {
+      const lat0 = grupo[0].lat, lng0 = grupo[0].lng;
+      const iconHtml = '<div style="position:relative;width:36px;height:36px;cursor:pointer;">' +
+        grupo.slice(0,3).map(function(p,i){
+          const cor = COR_TIPO[p.tipo]||'#9b8a5c';
+          return '<div style="position:absolute;left:'+(i*6)+'px;top:'+(i*-4)+'px;width:26px;height:26px;border-radius:50%;background:'+cor+';border:2px solid #fff;opacity:'+(1-i*0.15)+';display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;color:#fff;">'+(LABEL_IND[p.ind]||p.tipo.toUpperCase().slice(0,3))+'</div>';
+        }).join('') +
+        '<div style="position:absolute;top:-6px;right:-6px;background:#1a1a1a;color:#fff;font-size:9px;font-weight:800;border-radius:50%;width:17px;height:17px;display:flex;align-items:center;justify-content:center;border:2px solid #c9a84c;z-index:10;">'+grupo.length+'</div>' +
+        '</div>';
+
+      const icon = L.divIcon({ className:'', html:iconHtml, iconSize:[36,36], iconAnchor:[18,18], popupAnchor:[0,-20] });
+      const mk = L.marker([lat0, lng0], { icon, zIndexOffset:2000 });
+
+      const ttHtml = '<div style="background:#1e1e1e;border-radius:8px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.6);min-width:220px;">' +
+        '<div style="background:#333;padding:7px 12px;font-size:12px;font-weight:700;color:#fff;border-bottom:1px solid #444;">Registros sobrepostos: ' + grupo.length + '</div>' +
+        '<div style="padding:6px 10px;">' +
+        grupo.map(function(p){ const cor=COR_TIPO[p.tipo]||'#9b8a5c'; return '<div style="padding:3px 0;font-size:11px;color:#ddd;"><span style="background:'+cor+';color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:3px;margin-right:6px;">'+(p.tipo==='crime'?p.ind:p.tipo==='ops'?'OPS':'VIS')+'</span>'+p.label+' - '+p.data+'</div>'; }).join('') +
+        '<div style="margin-top:6px;color:#c9a84c;font-size:10px;text-align:center;border-top:1px solid #333;padding-top:5px;">Clique para abrir em leque</div></div></div>';
+      mk.bindTooltip(ttHtml, { sticky:false, direction:'top', className:'leaflet-tooltip-crime', opacity:1 });
+
+      var lequeMks = []; var lequeAberto = false;
+      mk.on('click', function(){
+        if(lequeAberto){ lequeMks.forEach(function(lm){ _acMap.removeLayer(lm); }); lequeMks=[]; lequeAberto=false; return; }
+        lequeAberto = true;
+        var n = grupo.length; var raio = 0.0008 + n * 0.00015;
+        grupo.forEach(function(p, i){
+          var ang = (2*Math.PI*i/n) - Math.PI/2;
+          var lat2 = lat0 + raio*Math.cos(ang);
+          var lng2 = lng0 + raio*Math.sin(ang)/Math.cos(lat0*Math.PI/180);
+          var cor = COR_TIPO[p.tipo]||'#9b8a5c';
+          var icoHtml2 = '<div style="width:28px;height:28px;border-radius:50%;background:'+cor+';border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.5);">'+(LABEL_IND[p.ind]||p.tipo.slice(0,3).toUpperCase())+'</div>';
+          var ico2 = L.divIcon({ className:'', html:icoHtml2, iconSize:[28,28], iconAnchor:[14,14] });
+          var lm = L.marker([lat2, lng2], { icon:ico2, zIndexOffset:3000 });
+          var linha = L.polyline([[lat0,lng0],[lat2,lng2]], { color:cor, weight:1.5, opacity:0.6, dashArray:'4,4' });
+          linha.addTo(_acMap); lequeMks.push(linha);
+          lm.bindTooltip('<div style="background:#1e1e1e;border:1px solid '+cor+';border-radius:6px;padding:6px 10px;font-size:11px;color:#ddd;min-width:160px;"><span style="background:'+cor+';color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:3px;">'+(p.tipo==='crime'?p.ind:p.tipo==='ops'?'OPS':'VIS')+'</span> <b>'+p.label+'</b><br><span style="color:#aaa;">'+p.data+'</span></div>', { sticky:false, direction:'top', className:'leaflet-tooltip-crime', opacity:1 });
+          lm.addTo(_acMap); lequeMks.push(lm);
+        });
+      });
+      mk.addTo(_acMap);
+    });
+  })();
 
   /* ── Ajusta zoom — filtra pontos válidos dentro do Brasil ── */
   const ptsBrasil = [...dadosComCoord, ...dadosGdoRural.filter(d=>d.lat&&d.lng)]
