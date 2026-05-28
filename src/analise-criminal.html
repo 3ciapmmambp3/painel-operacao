@@ -1863,15 +1863,31 @@ let munParaGrupCrimes = {}; /* normMunicipio → coluna K */
 async function carregarGruposCrimes(){
   munParaGrupCrimes = {};
   try {
-    const r = await fetch(`${SB_URL}/rest/v1/municipios_grupos?select=municipio,gp_responsavel&limit=10000`, {
-      headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY }
+    const [rMuns, rGrupos] = await Promise.all([
+      fetch(`${SB_URL}/rest/v1/municipios_grupos?select=municipio,gp_responsavel&limit=10000`, {
+        headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY }
+      }),
+      fetch(`${SB_URL}/rest/v1/grupos?select=gp_responsavel,grupamento_completo,grupamento_bpm&limit=10000`, {
+        headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY }
+      })
+    ]);
+    if(!rMuns.ok)   throw new Error('municipios_grupos HTTP ' + rMuns.status);
+    if(!rGrupos.ok) throw new Error('grupos HTTP ' + rGrupos.status);
+    const rows   = await rMuns.json();
+    const grupos = await rGrupos.json();
+    /* Mapa gpResp → grupamento_completo */
+    const gpToLongo = {};
+    grupos.forEach(g => {
+      const k = norm((g.gp_responsavel||'').trim());
+      const v = (g.grupamento_completo || g.grupamento_bpm || '').trim();
+      if(k && v) gpToLongo[k] = v;
     });
-    if(!r.ok) throw new Error('municipios_grupos HTTP ' + r.status);
-    const rows = await r.json();
     rows.forEach(row => {
-      const mun = (row.municipio || '').toString().trim();
-      const gp  = (row.gp_responsavel || '').toString().trim();
-      if(mun && gp) munParaGrupCrimes[norm(mun)] = gp;
+      const mun    = (row.municipio || '').toString().trim();
+      const gpResp = (row.gp_responsavel || '').toString().trim();
+      if(mun && gpResp){
+        munParaGrupCrimes[norm(mun)] = gpToLongo[norm(gpResp)] || gpResp;
+      }
     });
     console.log('[carregarGruposCrimes] Supabase:', Object.keys(munParaGrupCrimes).length, 'municipios');
   } catch(e){
@@ -2029,16 +2045,18 @@ async function carregarGrupos(){
       if(seen.has(key)) return;
       seen.add(key);
       const gDados = gpMap[norm(gpResp)] || {};
-      const colK   = (gDados.grupamento_bpm || '').trim();
+      const colK     = (gDados.grupamento_bpm      || '').trim();
+      const colKLongo = (gDados.grupamento_completo || '').trim();
+      const grupVal   = colKLongo || colK || gpResp;
       dadosGrupos.push({
         municipio:  mun,
         gp:         '',
         pelotao:    (gDados.pelotao || '').trim(),
         rpm:        (gDados.rpm || '').trim(),
         gpResp,
-        grupamento: colK || gpResp,
-        colK,
-        pelNum:     pelDoColk(colK),
+        grupamento: grupVal,
+        colK:       colKLongo || colK,
+        pelNum:     pelDoColk(colKLongo || colK),
         munNorm:    norm(mun),
       });
     });
@@ -2052,7 +2070,9 @@ async function carregarGrupos(){
       const seen2 = new Set();
       rows.slice(1).forEach(r => {
         if(!r[0]) return;
-        const colK  = (r[10]||'').trim();
+        const colKBpm   = (r[10]||'').trim();
+        const colKCompl = (r[11]||'').trim();  /* col K = grupamento_completo se existir */
+        const colK      = colKCompl || colKBpm;
         const gpRes = (r[8]||'').trim();
         const key   = norm(r[0])+'|'+colK;
         if(seen2.has(key)) return;
@@ -3454,10 +3474,10 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
       _mCrime.bindPopup(popupHtml, {maxWidth:360, className:'leaflet-popup-crime'});
       /* Tooltip simples mostrando quantidade */
       _mCrime.bindTooltip(
-        `<div style="background:#1e1e1e;border:1px solid #555;border-radius:5px;padding:5px 10px;font-size:11px;color:#fff;">
-          <b>${grupo.length} crimes</b> neste local<br>
-          <span style="color:#aaa;font-size:10px;">${grupo.map(d=>`<span style="color:${CORES_INDICADOR[d.indicador]||'#9b8a5c'};font-weight:700;">${d.indicador}</span>`).join(' · ')}</span><br>
-          <span style="color:#888;font-size:10px;">Clique para ver detalhes</span>
+        `<div style="background:#1e1e1e;border:1px solid #555;border-radius:6px;padding:6px 10px;font-size:11px;color:#fff;white-space:nowrap;">
+          <b style="color:#c9a84c;">${grupo.length} crimes</b> <span style="color:#aaa;">neste local</span>
+          <span style="margin-left:6px;">${grupo.map(d=>`<span style="background:${CORES_INDICADOR[d.indicador]||'#9b8a5c'};color:#fff;font-size:9px;font-weight:800;padding:1px 5px;border-radius:3px;margin-left:2px;">${d.indicador}</span>`).join('')}</span>
+          <span style="color:#888;font-size:10px;margin-left:6px;">· Clique p/ detalhes</span>
         </div>`,
         {sticky:true, direction:'top', className:'leaflet-tooltip-crime', opacity:1}
       );
