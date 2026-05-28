@@ -1888,7 +1888,7 @@ async function carregarCrimes(){
   try {
     const r = await fetch(
       `${SB_URL}/rest/v1/bd_crimes?select=numero_reds,ano_fato,mes_descricao,data_fato,municipio,` +
-      `descricao_localizacao,latitude,longitude,unid_area_nivel_4,unid_registro,` +
+      `descricao_localizacao,latitude,longitude,unid_area_nivel_4,unid_registro_nivel_4,` +
       `imv_total,icvpe_total,icvpa_total,ifzr,descr_natureza_principal&limit=100000&order=data_fato`,
       { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
     );
@@ -1932,7 +1932,7 @@ async function carregarCrimes(){
                   : locRaw.includes('URBAN') ? 'PERIMETRO URBANO'
                   : locRaw || '\u2014';
 
-    const colKCrime = munParaGrupCrimes[norm(munVal)] || (r.unid_registro || '').toString().trim();
+    const colKCrime = munParaGrupCrimes[norm(munVal)] || (r.unid_registro_nivel_4 || '').toString().trim();
 
     ['IMV','CVPE','CVPA','IF'].forEach(ind => {
       const colInd = IND_COL[ind];
@@ -1986,27 +1986,45 @@ async function carregarCrimes(){
     '| IF:', dadosCrimes.filter(d=>d.indicador==='IF').length);
 }
 async function carregarGrupos(){
+  /* grupos: id, gp_responsavel, grupamento_bpm, grupamento_completo, pelotao, rpm, cia
+     municipios_grupos: municipio, gp_responsavel
+     Cruza os dois para montar dadosGrupos com municipio */
   dadosGrupos = [];
   try {
-    const r = await fetch(
-      `${SB_URL}/rest/v1/grupos?select=gp_responsavel,grupamento_bpm,grupamento_completo,pelotao,rpm,municipio&limit=10000&order=gp_responsavel`,
-      { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
-    );
-    if(!r.ok) throw new Error('grupos HTTP ' + r.status);
-    const data = await r.json();
+    const [rGrupos, rMuns] = await Promise.all([
+      fetch(`${SB_URL}/rest/v1/grupos?select=gp_responsavel,grupamento_bpm,grupamento_completo,pelotao,rpm&limit=10000&order=gp_responsavel`,
+        { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }),
+      fetch(`${SB_URL}/rest/v1/municipios_grupos?select=municipio,gp_responsavel&limit=10000`,
+        { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } })
+    ]);
+    if(!rGrupos.ok) throw new Error('grupos HTTP ' + rGrupos.status);
+    if(!rMuns.ok)   throw new Error('municipios_grupos HTTP ' + rMuns.status);
+
+    const grupos = await rGrupos.json();
+    const muns   = await rMuns.json();
+
+    /* Mapa gp_responsavel → dados do grupo */
+    const gpMap = {};
+    grupos.forEach(g => {
+      const gp = (g.gp_responsavel || '').trim();
+      if(gp) gpMap[norm(gp)] = g;
+    });
+
+    /* Gera dadosGrupos cruzando municipios_grupos com grupos */
     const seen = new Set();
-    data.forEach(d => {
-      const gpResp = (d.gp_responsavel || '').trim();
-      const colK   = (d.grupamento_bpm || '').trim();
-      const mun    = (d.municipio || '').trim();
-      const key    = norm(mun) + '|' + colK;
+    muns.forEach(m => {
+      const mun    = (m.municipio     || '').trim();
+      const gpResp = (m.gp_responsavel|| '').trim();
+      const key    = norm(mun) + '|' + norm(gpResp);
       if(seen.has(key)) return;
       seen.add(key);
+      const gDados = gpMap[norm(gpResp)] || {};
+      const colK   = (gDados.grupamento_bpm || '').trim();
       dadosGrupos.push({
         municipio:  mun,
         gp:         '',
-        pelotao:    (d.pelotao || '').trim(),
-        rpm:        (d.rpm || '').trim(),
+        pelotao:    (gDados.pelotao || '').trim(),
+        rpm:        (gDados.rpm || '').trim(),
         gpResp,
         grupamento: colK || gpResp,
         colK,
