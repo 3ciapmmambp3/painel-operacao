@@ -1233,6 +1233,7 @@ async function loadRatreds(){
     rows = await sbFetch('bd_operacoes',
       'select=numero_rat,data_fato,municipio,codigo_natureza_principal,desc_natureza,' +
       'descricao_localizacao,latitude,longitude,opr_tempo_total_minutos,' +
+      'produtividade,efetivos,viaturas,' +
       'unid_registro,unid_area_nivel_4&order=id'
     );
     console.log('[loadRatreds] Supabase bd_operacoes:', rows.length, 'registros');
@@ -1345,11 +1346,31 @@ async function loadRatreds(){
       grupamento:   colK,
       gpResp,
       tempo,
-      /* Campos de validação GDO: sem dados granulares no Supabase → valores permissivos */
-      militares: 99,
-      viaturas:  99,
-      pessoas:   99,
-      veiculos:  99,
+      /* Extrai campos de validação GDO dos dados brutos */
+      militares: (function(){
+        /* Conta militares pelo campo efetivos: cada entrada termina com | */
+        const ef = (r.efetivos||'').toString();
+        if(!ef) return 0;
+        return (ef.match(/numeroPolicia:/g)||[]).length;
+      })(),
+      viaturas: (function(){
+        /* Conta viaturas pelo campo viaturas: cada prefixo termina com | */
+        const vi = (r.viaturas||'').toString();
+        if(!vi) return 0;
+        return (vi.match(/prefixo:/g)||[]).length;
+      })(),
+      pessoas: (function(){
+        /* Extrai quantidade de pessoas abordadas do campo produtividade (idIndicador:15) */
+        const prod = (r.produtividade||'').toString();
+        const m = prod.match(/idIndicador:15\/[^|]*quantidade:(\d+)/);
+        return m ? parseInt(m[1]) : 0;
+      })(),
+      veiculos: (function(){
+        /* Extrai quantidade de veículos fiscalizados do campo produtividade (idIndicador:18) */
+        const prod = (r.produtividade||'').toString();
+        const m = prod.match(/idIndicador:18\/[^|]*quantidade:(\d+)/);
+        return m ? parseInt(m[1]) : 0;
+      })(),
     };
   }).filter(d => d.rat);
 
