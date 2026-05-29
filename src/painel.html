@@ -1271,13 +1271,30 @@ async function loadRatreds(){
   const gpRespToColK = {};
   dadosGrupos.forEach(g => { if(g.gpResp && g.colK) gpRespToColK[g.gpResp] = g.colK; });
 
+  /* ── Mapa unid_registro → gpResp ──────────────────────────────────────────
+     unid_registro ex: "3 GP/1 PEL MAMB/3 CIA PM MAMB/BPM MAMB"
+     grupamento_bpm ex: "3 GP / 1 PEL / 3 CIA PM MAMB / BPM MAMB"
+     Normaliza ambos removendo espaços e "MAMB" do PEL para fazer o match.
+  ── */
+  function _normUnid(s){
+    return (s||'').toUpperCase().replace('PEL MAMB','PEL').replace(/\s/g,'').replace(/-/g,'');
+  }
+  const unidToGpResp = {};
+  dadosGrupos.forEach(g => {
+    if(!g.gpResp || !g.colK) return;
+    /* colK = grupamento_completo ou grupamento_bpm */
+    const bpmNorm = _normUnid(g.colK.replace(/ \/ /g,'/'));
+    unidToGpResp[bpmNorm] = g.gpResp;
+  });
+
   rows.forEach(r => {
     const rat       = (r.numero_rat       || '').toString().trim();
     const municipio = (r.municipio        || '').toString().trim();
     const nat       = (r.codigo_natureza_principal || '').toString().trim();
     const dataStr   = (r.data_fato        || '').toString().trim();
+    const unidReg   = (r.unid_registro    || '').toString().trim();
 
-    if(!rat || !nat || !municipio) return;
+    if(!rat || !nat) return;
 
     /* Dedup por RAT+DATA — mesmo RAT pode ocorrer em meses diferentes */
     const ratKey = rat + '|' + dataStr;
@@ -1293,12 +1310,16 @@ async function loadRatreds(){
     const mes = (mesIdx >= 0 && mesIdx < MESES.length) ? MESES[mesIdx] : '';
     if(!mes) return;
 
-    /* Resolve o grupamento via dicionário GRUPOS */
-    const gpResp = munParaGrup[norm(municipio)];
-    if(!gpResp){
-      if(norm(municipio).includes('AIMOR')) console.warn('[loadRatreds] AIMORES nao encontrado em munParaGrup! norm=', norm(municipio), 'keys sample:', Object.keys(munParaGrup).slice(0,3));
-      return;
+    /* ── Resolve grupamento: PRIORIDADE = unid_registro; fallback = municipio ── */
+    let gpResp = '';
+    if(unidReg){
+      const unidNorm = _normUnid(unidReg);
+      gpResp = unidToGpResp[unidNorm] || '';
     }
+    if(!gpResp && municipio){
+      gpResp = munParaGrup[norm(municipio)] || '';
+    }
+    if(!gpResp) return;
 
     /* Usa gpResp como chave — consistente com getReal(gp,nat,mes) */
     const key = gpResp + '|' + nat + '|' + mes;
@@ -1322,7 +1343,11 @@ async function loadRatreds(){
   /* ── Dados brutos para uso futuro (mapa, GDO Rural etc.) ── */
   window._dadosBrutos = rows.map(r => {
     const municipio  = (r.municipio || '').toString().trim();
-    const gpResp     = munParaGrup[norm(municipio)] || '';
+    const unidReg    = (r.unid_registro || '').toString().trim();
+    /* Resolve gpResp: unid_registro primeiro, fallback municipio */
+    let gpResp = '';
+    if(unidReg){ gpResp = unidToGpResp[_normUnid(unidReg)] || ''; }
+    if(!gpResp && municipio){ gpResp = munParaGrup[norm(municipio)] || ''; }
     const colK       = gpRespToColK[gpResp] || gpResp;
     const dataStr    = (r.data_fato || '').toString().trim();
     let mesIdx = -1;
