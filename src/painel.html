@@ -289,7 +289,7 @@
     </div>
     <button class="btn-gold" onclick="recarregarTudo()">↻ Atualizar</button>
     <button id="btn-admin" style="display:none;" class="btn-outline" onclick="window.location.href='admin.html'" title="Painel Administrativo">⚙️ Admin</button>
-    <button class="btn-outline" onclick="_pset('poe_sessao','');window.location.href='index.html'">Sair</button>
+    <button class="btn-outline" onclick="localStorage.removeItem('poe_sessao_v2');sessionStorage.removeItem('poe_sessao_v2');localStorage.removeItem('poe_sessao');window.location.href='index.html'">Sair</button>
   </div>
 </header>
 
@@ -896,14 +896,17 @@ function _pset(k,v){ try{localStorage.setItem(k,v);}catch(e){} _pmem[k]=v; }
 
 /* ── Lê sessão diretamente ── */
 function lerSessao(){
-  const raw = _pget('poe_sessao');
+  /* Tenta sessão nova (Supabase v2) primeiro, depois a antiga por compatibilidade */
+  const raw = localStorage.getItem('poe_sessao_v2') || sessionStorage.getItem('poe_sessao_v2')
+           || _pget('poe_sessao');
   if(!raw){ window.location.href='index.html'; return null; }
   try{
     const s = JSON.parse(raw);
-    /* Confirma perfil no banco local */
-    const db = JSON.parse(_pget('poe_usuarios')||'[]');
-    const u = db.find(x => x.id === s.id);
-    if(u) s.perfil = u.perfil; /* usa perfil do banco, mais confiável */
+    /* Mapeia nivel_acesso → perfil para compatibilidade com o restante do painel */
+    if(s.nivel_acesso && !s.perfil){
+      const niveis_admin = ['admin_geral','admin','admin_pelotao'];
+      s.perfil = niveis_admin.includes(s.nivel_acesso) ? 'admin' : 'operacional';
+    }
     return s;
   }catch(e){ window.location.href='index.html'; return null; }
 }
