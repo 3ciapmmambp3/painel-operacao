@@ -1303,9 +1303,9 @@ async function loadRatreds(){
     if(!rat || !nat) return;
 
     /* Dedup por RAT+DATA — mesmo RAT pode ocorrer em meses diferentes */
-    const ratKey = rat + '|' + dataStr;
-    if(ratsVistos.has(ratKey)) return;
-    ratsVistos.add(ratKey);
+    /* Dedup por RAT — mais recente substitui o anterior */
+    if(ratsVistos.has(rat)) return;
+    ratsVistos.add(rat);
 
     /* Extrai mês a partir de data_fato (DD/MM/AAAA ou AAAA-MM-DD) */
     let mesIdx = -1;
@@ -4563,8 +4563,8 @@ async function impGerarPreview(){
   });
   /* Verifica duplicatas consultando o Supabase — garante precisão independente de cache */
   const TABELA_CHECK = { IMV:'bd_crimes', CVPE:'bd_crimes', CVPA:'bd_crimes', IF:'bd_crimes', OPR:'bd_operacoes', VIS:'bd_visitas' };
-  /* Para OPR, a chave composta é numero_rat+data_fato (mesmo RAT pode repetir em meses diferentes) */
-  const CHAVE_COL    = { IMV:'numero_reds', CVPE:'numero_reds', CVPA:'numero_reds', IF:'numero_reds', OPR:'numero_rat,data_fato', VIS:'numero_bos' };
+  /* Para OPR, a chave única é numero_rat (mais recente substitui) */
+  const CHAVE_COL    = { IMV:'numero_reds', CVPE:'numero_reds', CVPA:'numero_reds', IF:'numero_reds', OPR:'numero_rat', VIS:'numero_bos' };
   const tabelaCheck  = TABELA_CHECK[_impInd];
   const chaveColSB   = CHAVE_COL[_impInd];
   const jaExistentes = new Set();
@@ -4580,10 +4580,10 @@ async function impGerarPreview(){
       if(!r.ok) break;
       const rows = await r.json();
       rows.forEach(row => {
-        /* Para OPR usa chave composta numero_rat|data_fato (formato DD/MM/AAAA no banco) */
+        /* Para OPR usa só numero_rat */
         if(_impInd === 'OPR'){
-          if(row.numero_rat && row.data_fato){
-            jaExistentes.add(row.numero_rat + '|' + row.data_fato);
+          if(row.numero_rat){
+            jaExistentes.add(row.numero_rat);
           }
         } else {
           const col = chaveColSB;
@@ -4600,7 +4600,7 @@ async function impGerarPreview(){
   semDup.forEach(r => {
     /* Para OPR verifica chave composta numero_rat|DATA_FATO (formato DD/MM/AAAA igual ao banco) */
     if(_impInd === 'OPR'){
-      r._dup = jaExistentes.has((r['NUMERO_RAT']||'') + '|' + (r['DATA_FATO']||''));
+      r._dup = jaExistentes.has((r['NUMERO_RAT']||''));
     } else {
       r._dup = jaExistentes.has(r[chave]);
     }
@@ -4672,7 +4672,7 @@ function impConfirmar(){
       /* Upsert em lotes de 200 — usa on_conflict explícito por tabela */
       const ON_CONFLICT = {
         'bd_crimes':    'numero_reds',
-        'bd_operacoes': 'numero_rat,data_fato',
+        'bd_operacoes': 'numero_rat',
         'bd_visitas':   'numero_bos',
       };
       const conflictCol = ON_CONFLICT[tabela] || '';
