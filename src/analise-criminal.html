@@ -1480,7 +1480,7 @@
       <input type="hidden" id="i-id">
 
       <!-- ══ COMPLEMENTOS CRONOLÓGICOS ══ -->
-      <div id="intel-complementos-section" style="margin-top:14px;background:#1a1a1a;border:1px solid var(--border);border-radius:7px;padding:12px 14px;">
+      <div id="intel-complementos-section" style="display:none;margin-top:14px;background:#1a1a1a;border:1px solid var(--border);border-radius:7px;padding:12px 14px;">
         <div style="font-size:12px;font-weight:700;color:var(--gold);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;">
           <span>📝 Complementos / Atualizações</span>
           <span style="font-size:10px;color:var(--text-muted);font-weight:400;">Qualquer usuário pode registrar novas informações</span>
@@ -5789,7 +5789,7 @@ async function _excluirFichaSupabase(id){
 async function _abrirAnexo(id){
   /* Busca em memória (buffer do modal aberto) */
   const emBuf = [..._intelFotosBuffer, ..._missaoAnexosBuffer, ..._compAnexosBuffer].find(a=>a.id===id);
-  if(emBuf && emBuf.base64){ _abrirOuBaixar(emBuf.base64, emBuf.nome, emBuf.tipo, true); return; }
+  if(emBuf && emBuf.base64){ _abrirOuBaixar(emBuf.base64, emBuf.nome, emBuf.tipo||_tipoFromNome(emBuf.nome), true); return; }
 
   /* Busca nas fichas (fotos + anexos de complementos) e missões carregadas */
   const todos = [
@@ -5799,13 +5799,23 @@ async function _abrirAnexo(id){
   const a = todos.find(x=>x.id===id);
   if(!a){ alert('Anexo não encontrado.'); return; }
 
+  const tipo = a.tipo || _tipoFromNome(a.nome||'');
   if(a.storage_url){
-    _abrirOuBaixar(a.storage_url, a.nome, a.tipo, false);
+    _abrirOuBaixar(a.storage_url, a.nome, tipo, false);
   } else if(a.base64){
-    _abrirOuBaixar(a.base64, a.nome, a.tipo, true);
+    _abrirOuBaixar(a.base64, a.nome, tipo, true);
   } else {
-    alert('Arquivo não disponível.');
+    alert('Arquivo sem URL disponível. Tente reabrir o modal para recarregar.');
   }
+}
+
+/* Detecta tipo MIME pela extensão do nome do arquivo */
+function _tipoFromNome(nome){
+  const ext = (nome||'').split('.').pop().toLowerCase();
+  const m = {jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp',
+              pdf:'application/pdf',mp4:'video/mp4',webm:'video/webm',mov:'video/quicktime',
+              kml:'application/vnd.google-earth.kml+xml',kmz:'application/vnd.google-earth.kmz'};
+  return m[ext]||'application/octet-stream';
 }
 
 function _abrirOuBaixar(src, nome, tipo, isBase64){
@@ -5813,34 +5823,38 @@ function _abrirOuBaixar(src, nome, tipo, isBase64){
   const isPdf   = (tipo||'').includes('pdf');
   const isVideo = (tipo||'').startsWith('video');
 
-  if(isImg || isPdf || isVideo){
-    /* Abre direto no browser para visualizar */
-    if(isBase64){
-      const w = window.open('');
-      if(w) w.document.write(`<html><body style="margin:0;background:#000;">${isImg?`<img src="${src}" style="max-width:100%;max-height:100vh;">`:isVideo?`<video src="${src}" controls autoplay style="max-width:100%;max-height:100vh;"></video>`:`<embed src="${src}" width="100%" height="100%" type="${tipo}">`}</body></html>`);
-    } else {
-      window.open(src, '_blank');
+  if(isBase64){
+    /* Converte base64 → Blob URL (não depende de popup) */
+    try{
+      const arr  = src.split(',');
+      const mime = arr[0].match(/:(.*?);/)?.[1] || tipo || 'application/octet-stream';
+      const bstr = atob(arr[1]||arr[0]);
+      const bytes = new Uint8Array(bstr.length);
+      for(let i=0;i<bstr.length;i++) bytes[i]=bstr.charCodeAt(i);
+      const blob = new Blob([bytes],{type:mime});
+      const url  = URL.createObjectURL(blob);
+      if(isImg || isPdf || isVideo){
+        /* Abre numa nova aba via <a target="_blank"> — não é bloqueado como popup */
+        const a = document.createElement('a');
+        a.href = url; a.target = '_blank'; a.rel = 'noopener';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      } else {
+        _forcDownload(url, nome);
+      }
+      setTimeout(()=>URL.revokeObjectURL(url), 8000);
+    }catch(e){
+      console.error('_abrirOuBaixar base64 erro:', e);
+      alert('Não foi possível abrir o anexo: '+e.message);
     }
   } else {
-    /* KML, KMZ e outros — força download com nome correto */
-    if(isBase64){
-      try{
-        const arr   = src.split(',');
-        const mime  = arr[0].match(/:(.*?);/)?.[1] || tipo || 'application/octet-stream';
-        const bstr  = atob(arr[1]||arr[0]);
-        const bytes = new Uint8Array(bstr.length);
-        for(let i=0;i<bstr.length;i++) bytes[i]=bstr.charCodeAt(i);
-        const blob  = new Blob([bytes],{type:mime});
-        const url   = URL.createObjectURL(blob);
-        _forcDownload(url, nome);
-        setTimeout(()=>URL.revokeObjectURL(url),5000);
-      }catch(e){ alert('Erro: '+e.message); }
+    /* URL do Supabase Storage — abre direto */
+    if(isImg || isPdf || isVideo){
+      window.open(src, '_blank', 'noopener');
     } else {
-      /* Busca via fetch para forçar o Content-Disposition */
       fetch(src)
         .then(r=>r.blob())
         .then(blob=>{ const url=URL.createObjectURL(blob); _forcDownload(url,nome); setTimeout(()=>URL.revokeObjectURL(url),5000); })
-        .catch(()=>window.open(src,'_blank'));
+        .catch(()=>window.open(src,'_blank','noopener'));
     }
   }
 }
