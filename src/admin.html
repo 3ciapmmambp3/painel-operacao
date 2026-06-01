@@ -1243,6 +1243,113 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 
 
+
+const ADMIN_GRUPOS_SID    = '17qgczIngwb6RYbFx0JqCOuctpTNMe2I3FQ9r6h24DSo';
+const ADMIN_GRUPOS_APIKEY = 'AIzaSyCBbKDtyNO2RmtpYNWipjC0OAQ07GFnbKU';
+let _adminGrupos = [];
+let _grpAdminPage = 1;
+const GRP_PAGE_SZ = 30;
+
+async function renderGruposAdmin(){
+  if(!_adminGrupos.length) await _carregarGruposAdmin();
+  _filtrarRenderGrp();
+}
+
+async function _carregarGruposAdmin(){
+  try{
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${ADMIN_GRUPOS_SID}/values/GRUPOS!A2:O?key=${ADMIN_GRUPOS_APIKEY}`;
+    const r = await fetch(url);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const data = await r.json();
+    const rows = (data.values||[]).slice(1);
+    _adminGrupos = [];
+    const seen = new Set();
+    rows.forEach(row => {
+      if(!row[0]) return;
+      const colK = (row[10]||'').trim();
+      const key  = (row[0]||'').trim()+'|'+colK;
+      if(seen.has(key)) return;
+      seen.add(key);
+      _adminGrupos.push({
+        municipio:  (row[0]||'').trim(),
+        gp:         (row[1]||'').trim(),
+        pelotao:    (row[2]||'').trim(),
+        rpm:        (row[6]||'').trim(),
+        bpm:        (row[7]||'').trim(),
+        gpResp:     (row[8]||'').trim(),
+        grupamento: colK,
+        pelNum:     parseInt((colK.match(/(\d+)\s*PEL/i)||[])[1]||99),
+      });
+    });
+    const grps = [...new Set(_adminGrupos.map(r=>r.grupamento).filter(Boolean))].sort((a,b)=>{
+      const pa=parseInt((a.match(/(\d+)\s*PEL/i)||[])[1]||99);
+      const pb=parseInt((b.match(/(\d+)\s*PEL/i)||[])[1]||99);
+      return pa!==pb ? pa-pb : a.localeCompare(b);
+    });
+    const sel = document.getElementById('fg-grp');
+    if(sel) sel.innerHTML = '<option value="">Todos os Grupamentos</option>' +
+      grps.map(g=>`<option value="${g}">${g}</option>`).join('');
+  }catch(e){
+    const tb = document.getElementById('grp-tbody');
+    if(tb) tb.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--danger);">✗ Erro ao carregar: ${e.message}</td></tr>`;
+  }
+}
+
+function _filtrarRenderGrp(){
+  const gpF  = (document.getElementById('fg-grp')?.value)||'';
+  const pelF = (document.getElementById('fg-pel')?.value)||'';
+  const munF = ((document.getElementById('fg-mun')?.value)||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+
+  let data = _adminGrupos.filter(r => {
+    if(gpF  && r.grupamento !== gpF) return false;
+    if(pelF){ const n=pelF.replace(/\D/g,''); if(!r.grupamento.includes(n+' PEL')&&r.pelotao!==pelF) return false; }
+    if(munF && !r.municipio.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').includes(munF)) return false;
+    return true;
+  });
+
+  const total=data.length, totPg=Math.ceil(total/GRP_PAGE_SZ)||1;
+  if(_grpAdminPage>totPg) _grpAdminPage=1;
+  const start=(_grpAdminPage-1)*GRP_PAGE_SZ;
+  const slice=data.slice(start,start+GRP_PAGE_SZ);
+  const tbody = document.getElementById('grp-tbody');
+  if(!tbody) return;
+  if(!slice.length){
+    tbody.innerHTML='<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text-muted);">Nenhum registro encontrado.</td></tr>';
+    const pag=document.getElementById('pag-grp-admin'); if(pag) pag.style.display='none';
+    return;
+  }
+  tbody.innerHTML = slice.map((r,i) => `<tr>
+    <td style="color:var(--text-hint);font-size:11px;">${start+i+1}</td>
+    <td style="font-weight:600;color:#fff;">${r.municipio}</td>
+    <td><span style="background:rgba(155,138,92,.15);color:var(--gold);padding:2px 7px;border-radius:3px;font-size:11px;">${r.gp}</span></td>
+    <td style="font-size:10px;color:#aaa;max-width:260px;">${r.grupamento}</td>
+    <td style="font-size:11px;color:var(--text-muted);">${r.gpResp}</td>
+    <td style="font-size:11px;">${r.pelotao}</td>
+    <td style="font-size:11px;">${r.rpm}</td>
+    <td style="font-size:11px;">${r.bpm}</td>
+  </tr>`).join('');
+
+  const pag=document.getElementById('pag-grp-admin');
+  if(pag){ pag.style.display='flex';
+    document.getElementById('pag-grp-info-admin').textContent=`${start+1}–${Math.min(start+GRP_PAGE_SZ,total)} de ${total}`;
+    let btns=`<button class="pag-btn" onclick="goGrpAdminPage(${_grpAdminPage-1})" ${_grpAdminPage===1?'disabled':''}>‹</button>`;
+    for(let p=Math.max(1,_grpAdminPage-2);p<=Math.min(totPg,_grpAdminPage+2);p++)
+      btns+=`<button class="pag-btn ${p===_grpAdminPage?'active':''}" onclick="goGrpAdminPage(${p})">${p}</button>`;
+    btns+=`<button class="pag-btn" onclick="goGrpAdminPage(${_grpAdminPage+1})" ${_grpAdminPage===totPg?'disabled':''}>›</button>`;
+    document.getElementById('pag-grp-btns-admin').innerHTML=btns;
+  }
+}
+function goGrpAdminPage(p){ const t=Math.ceil(_adminGrupos.length/GRP_PAGE_SZ)||1; if(p<1||p>t) return; _grpAdminPage=p; _filtrarRenderGrp(); }
+function limparFiltrosGrpAdmin(){ ['fg-grp','fg-pel','fg-mun'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; }); _grpAdminPage=1; _filtrarRenderGrp(); }
+
+function showMsg(id, tipo, txt) {
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.textContent = txt;
+  el.className = `inline-msg ${tipo} show`;
+  if (tipo === 'ok') setTimeout(() => el.classList.remove('show'), 5000);
+}
+
 </script>
 </body>
 </html>
