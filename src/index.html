@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>3ª Cia PM MAmb — Login</title>
   <link rel="stylesheet" href="styles/global.css">
+  <script src="auth.js"></script>
   <style>
     body{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px;background:#1e1e1e;}
     .card{background:#2d2d2d;border-radius:12px;width:100%;max-width:430px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.7);}
@@ -29,7 +30,6 @@
     .info-box p{color:#777;font-size:12px;line-height:1.65;text-align:center;}
     .err{background:rgba(239,83,80,.13);border:1px solid rgba(239,83,80,.35);border-radius:6px;color:#ef9a9a;font-size:13px;padding:10px 14px;margin-bottom:16px;text-align:center;display:none;}
     .err.show{display:block;}
-    .debug{background:rgba(66,165,245,.1);border:1px solid rgba(66,165,245,.3);border-radius:6px;color:#90caf9;font-size:11px;padding:8px 12px;margin-top:12px;display:none;word-break:break-all;}
   </style>
 </head>
 <body>
@@ -74,7 +74,6 @@
 </div>
 
 <script>
-/* ── Formata NPM preservando zeros à esquerda ── */
 function fmtNP(el){
   let v = el.value.replace(/[^0-9]/g, '');
   if(v.length > 7) v = v.slice(0, 7);
@@ -95,187 +94,39 @@ function togglePw(){
   }
 }
 
-/* ── Banco de usuários embutido (fallback se localStorage bloqueado) ── */
-const USUARIOS_PADRAO = [
-  { id:'0', numeroPolicia:'000.000-1', numeroClean:'0000001', nome:'Administrador Padrão', pg:'', guerra:'', funcao:'', lotacao:'', perfil:'admin', senha:'Mudar@123', primeiroAcesso:true, ativo:true },
-  { id:'1', numeroPolicia:'146.322-3', numeroClean:'1463223', nome:'THIAGO JARDIM DE CASTRO', pg:'3 SGT PM', guerra:'CASTRO', funcao:'AUX P3', lotacao:'1 GP / 4 PEL / 3 CIA PM MAMB / TEOFILO OTONI', perfil:'admin', senha:'Mudar@123', primeiroAcesso:true, ativo:true },
-  { id:'2', numeroPolicia:'138.484-1', numeroClean:'1384841', nome:'RAFAEL ESTEVAM', pg:'1 SGT PM', guerra:'ESTEVAM', funcao:'AUX P3', lotacao:'ADM', perfil:'operacional', senha:'Mudar@123', primeiroAcesso:true, ativo:true }
-];
-
-/* Memória em caso de storage bloqueado */
-const _mem = {};
-function _set(k,v){ try{ localStorage.setItem(k,v); }catch(e){} _mem[k]=v; }
-function _get(k){ try{ const v=localStorage.getItem(k); if(v!==null){ _mem[k]=v; return v; } }catch(e){} return _mem[k]||null; }
-
-function getUsuariosLogin(){
-  const raw = _get('poe_usuarios');
-  if(!raw){
-    _set('poe_usuarios', JSON.stringify(USUARIOS_PADRAO));
-    _set('poe_usuarios_ver', '2');
-    return USUARIOS_PADRAO;
-  }
-  try {
-    const lista = JSON.parse(raw);
-    /* Garante admin padrão sempre presente — sem sobrescrever dados existentes */
-    let changed = false;
-    USUARIOS_PADRAO.forEach(u => {
-      if(!lista.find(x => x.numeroClean === u.numeroClean)){
-        lista.unshift({...u});
-        changed = true;
-      }
-    });
-    if(changed) _set('poe_usuarios', JSON.stringify(lista));
-    return lista;
-  } catch(e) {
-    return USUARIOS_PADRAO;
-  }
-}
-
-const SYNC_SHEET_ID_LOGIN = '1kVxEMYJr0RoaE5h8qUWDTI9v81VbRHGyWnqqbLcB0Nc';
-const SYNC_API_KEY_LOGIN  = 'AIzaSyB_paTPVM8SO4kUvjYg5Z3JwE4bfAMKrdc';
-
-let _syncLoginDone = false;
-
-async function sincronizarBancoLogin(){
-  try {
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SYNC_SHEET_ID_LOGIN}/values/MILITARES!A3:J300?key=${SYNC_API_KEY_LOGIN}`;
-    const resp = await fetch(url);
-    if(!resp.ok) return;
-    const data  = await resp.json();
-    const rows  = data.values || [];
-    if(!rows.length) return;
-
-    const lista = JSON.parse(_get('poe_usuarios') || '[]');
-    let changed = false;
-
-    rows.forEach(row => {
-      const get = (i) => (row[i]||'').toString().trim();
-      const npmRaw   = get(0);
-      const npmClean = npmRaw.replace(/\D/g,'');
-      const nome     = get(2);
-      if(!npmClean || npmClean.length < 5 || !nome) return;
-
-      const perfil      = get(6).toLowerCase().includes('admin') ? 'admin' : 'operacional';
-      const senhaPlan   = get(7) || 'Mudar@123';
-      const trocarSenha = get(8).toUpperCase() !== 'FALSE';
-      const ativoRaw    = get(9).toUpperCase();
-      const ativo       = ativoRaw === '' || ativoRaw === 'TRUE';
-
-      const existIdx = lista.findIndex(u =>
-        (u.numeroClean||'').replace(/\D/g,'') === npmClean ||
-        (u.numeroPolicia||'').replace(/\D/g,'') === npmClean
-      );
-
-      if(existIdx === -1){
-        lista.push({
-          id: 'u'+npmClean+Math.random().toString(36).slice(2,5),
-          numeroPolicia: npmRaw, numeroClean: npmClean,
-          pg: get(1), nome, guerra: get(3), funcao: get(4), lotacao: get(5),
-          perfil, senha: senhaPlan, primeiroAcesso: trocarSenha, ativo,
-        });
-        changed = true;
-      } else {
-        /* Atualiza ativo */
-        if(lista[existIdx].ativo !== ativo){
-          lista[existIdx].ativo = ativo;
-          changed = true;
-        }
-        /* Atualiza senha e primeiroAcesso SEMPRE da planilha
-           Isso garante que senhas alteradas na planilha sejam refletidas localmente
-           E que trocar_senha=FALSE na planilha significa que senha já foi definida */
-        if(lista[existIdx].senha !== senhaPlan){
-          lista[existIdx].senha = senhaPlan;
-          changed = true;
-        }
-        if(lista[existIdx].primeiroAcesso !== trocarSenha){
-          lista[existIdx].primeiroAcesso = trocarSenha;
-          changed = true;
-        }
-      }
-    });
-
-    if(changed) _set('poe_usuarios', JSON.stringify(lista));
-  } catch(e){ /* silencioso */ }
-  _syncLoginDone = true;
-}
-
-/* Sincroniza ao carregar a página */
-window.addEventListener('DOMContentLoaded', () => {
-  sincronizarBancoLogin();
-});
-
-function handleLogin(){
+async function handleLogin(){
   const np  = document.getElementById('np').value.trim();
   const pw  = document.getElementById('pw').value;
   const err = document.getElementById('err');
   const btn = document.getElementById('btn-enter');
+
   err.classList.remove('show');
+
   if(!np || !pw){
     err.textContent = 'Preencha o número de polícia e a senha.';
     err.classList.add('show');
     return;
   }
-  /* Se sync ainda não terminou, aguarda até 4s */
-  if(!_syncLoginDone){
-    btn.textContent = '⏳ Sincronizando...';
-    btn.disabled = true;
-    const t0 = Date.now();
-    const wait = setInterval(() => {
-      if(_syncLoginDone || Date.now()-t0 > 4000){
-        clearInterval(wait);
-        btn.textContent = 'Entrar';
-        btn.disabled = false;
-        _executarLogin(np, pw);
-      }
-    }, 300);
-    return;
-  }
-  _executarLogin(np, pw);
-}
 
-function _executarLogin(np, pw){
-  const err = document.getElementById('err');
-  const btn = document.getElementById('btn-enter');
-  err.classList.remove('show');
-  btn.textContent = 'Entrando...';
+  btn.textContent = '⏳ Entrando...';
   btn.disabled = true;
 
-  /* Limpa NPM para apenas dígitos — aceita qualquer formato digitado */
-  const clean = np.replace(/[^0-9]/g, '');
-  const usuarios = getUsuariosLogin();
+  const r = await SbAuth.login(np, pw);
 
-  /* Busca por numeroClean OU por numeroPolicia limpo (garante compatibilidade) */
-  const user = usuarios.find(u => {
-    const uClean = (u.numeroClean || '').replace(/[^0-9]/g,'');
-    const uNPClean = (u.numeroPolicia || '').replace(/[^0-9]/g,'');
-    return (uClean === clean || uNPClean === clean) && u.ativo !== false;
-  });
+  btn.textContent = 'Entrar';
+  btn.disabled = false;
 
-  setTimeout(() => {
-    btn.textContent = 'Entrar';
-    btn.disabled = false;
+  if(!r.ok){
+    err.textContent = r.erro;
+    err.classList.add('show');
+    return;
+  }
 
-    if(!user){
-      err.textContent = 'Número de polícia não encontrado. Verifique o número ou contate o administrador.';
-      err.classList.add('show');
-      return;
-    }
-    if(user.senha !== pw){
-      err.textContent = 'Senha incorreta.';
-      err.classList.add('show');
-      return;
-    }
-
-    /* Salva sessão */
-    const sessao = { id:user.id, numeroPolicia:user.numeroPolicia, nome:user.nome, guerra:user.guerra||'', pg:user.pg||'', lotacao:user.lotacao||'', perfil:user.perfil, primeiroAcesso:user.primeiroAcesso };
-    _set('poe_sessao', JSON.stringify(sessao));
-
-    if(user.primeiroAcesso){
-      window.location.href = 'primeiro-acesso.html';
-    } else {
-      window.location.href = 'painel.html';
-    }
-  }, 400);
+  if(r.primeiroAcesso){
+    window.location.href = 'primeiro-acesso.html';
+  } else {
+    window.location.href = 'painel.html';
+  }
 }
 </script>
 </body>
