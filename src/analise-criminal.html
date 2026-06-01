@@ -210,6 +210,15 @@
     .spinner{display:inline-block;width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite;margin-right:7px;vertical-align:middle;}
     @keyframes spin{to{transform:rotate(360deg);}}
 
+    /* COMPLEMENTOS CRONOLÓGICOS */
+    .comp-entry{background:#242424;border:1px solid var(--border);border-left:3px solid var(--gold);border-radius:6px;padding:10px 12px;}
+    .comp-entry-header{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;}
+    .comp-autor{font-size:10px;font-weight:700;color:var(--gold);}
+    .comp-data{font-size:10px;color:var(--text-muted);}
+    .comp-texto{font-size:12px;color:#ddd;line-height:1.5;white-space:pre-wrap;}
+    .comp-anexos-mini{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;}
+    .comp-anexo-thumb{border:1px solid var(--border);border-radius:4px;overflow:hidden;cursor:pointer;}
+
     /* Garante que o mapa Leaflet fique abaixo dos dropdowns */
     #tab-mapa .leaflet-container { z-index: 1 !important; }
     #tab-mapa .leaflet-pane,
@@ -1109,11 +1118,15 @@
         <label>Município de Atuação</label>
         <input type="text" id="intel-busca-mun" placeholder="Digite parte do nome..." oninput="renderIntel()">
       </div>
-      <div class="fg">
+      <div class="fg" id="intel-gp-fg">
         <label>Grupamento</label>
         <select id="intel-busca-gp" onchange="renderIntel()"><option value="">Todos</option></select>
       </div>
       <div style="align-self:flex-end;"><button class="btn-outline" onclick="limparFiltrosIntel()">✕</button></div>
+    </div>
+    <!-- Badge de restrição para operacional -->
+    <div id="intel-gp-badge" style="display:none;margin-top:8px;padding:6px 12px;background:rgba(155,138,92,.1);border:1px solid var(--gold-border);border-radius:5px;font-size:11px;color:var(--text-muted);">
+      🔒 Exibindo fichas do seu grupamento: <span id="intel-gp-badge-txt" style="color:var(--gold);font-weight:700;"></span>
     </div>
   </div>
 
@@ -1465,6 +1478,46 @@
       </div>
 
       <input type="hidden" id="i-id">
+
+      <!-- ══ COMPLEMENTOS CRONOLÓGICOS ══ -->
+      <div id="intel-complementos-section" style="margin-top:14px;background:#1a1a1a;border:1px solid var(--border);border-radius:7px;padding:12px 14px;">
+        <div style="font-size:12px;font-weight:700;color:var(--gold);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;">
+          <span>📝 Complementos / Atualizações</span>
+          <span style="font-size:10px;color:var(--text-muted);font-weight:400;">Qualquer usuário pode registrar novas informações</span>
+        </div>
+
+        <!-- Lista de complementos existentes -->
+        <div id="intel-complementos-lista" style="margin-bottom:12px;display:flex;flex-direction:column;gap:8px;">
+          <div style="font-size:11px;color:var(--text-muted);text-align:center;padding:8px 0;">Nenhum complemento registrado.</div>
+        </div>
+
+        <!-- Formulário de novo complemento -->
+        <div style="border-top:1px solid var(--border);padding-top:10px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">➕ Novo Complemento</div>
+          <div class="intel-field">
+            <label>Informação / Atualização *</label>
+            <textarea id="comp-texto" rows="3" placeholder="Ex: Suspeito foi avistado no bairro X às 14h30 em veículo HB20 branco, placa XYZ-1234. Fonte: ronda do GP..."></textarea>
+          </div>
+          <!-- Anexos do complemento -->
+          <div style="margin-bottom:8px;">
+            <div style="font-size:11px;font-weight:700;color:var(--text-muted);margin-bottom:6px;">📎 Anexos deste complemento</div>
+            <div id="comp-anexos-wrap" style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-start;margin-bottom:8px;">
+              <span style="font-size:11px;color:var(--text-muted);">Nenhum anexo.</span>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <label style="cursor:pointer;background:rgba(155,138,92,.15);border:1px dashed var(--gold-border);border-radius:5px;padding:5px 12px;font-size:11px;color:var(--gold);display:inline-block;transition:all .2s;" onmouseover="this.style.background='rgba(155,138,92,.25)'" onmouseout="this.style.background='rgba(155,138,92,.15)'">
+                📸 Foto / PDF / KML
+                <input type="file" id="comp-anexo-input" accept="image/*,.pdf,.kml,.kmz" multiple style="display:none;" onchange="adicionarAnexosIntel(this,'comp')">
+              </label>
+              <label style="cursor:pointer;background:rgba(66,165,245,.1);border:1px dashed rgba(66,165,245,.4);border-radius:5px;padding:5px 12px;font-size:11px;color:var(--info);display:inline-block;transition:all .2s;" onmouseover="this.style.background='rgba(66,165,245,.2)'" onmouseout="this.style.background='rgba(66,165,245,.1)'">
+                🎥 Vídeo
+                <input type="file" id="comp-video-input" accept="video/*" multiple style="display:none;" onchange="adicionarVideosIntel(this,'comp')">
+              </label>
+            </div>
+          </div>
+          <button class="btn-gold" style="width:100%;margin-top:4px;" onclick="adicionarComplemento()">📌 Registrar Complemento</button>
+        </div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn-outline" onclick="fecharModal('modal-intel')">Cancelar</button>
@@ -1815,6 +1868,7 @@ async function recarregarTudo(){
     renderCrimes();
     renderIntel();
     renderMissoes();
+    _initIntelFiltroGP(); /* trava filtro de GP para operacional na aba Inteligência */
     const now = new Date().toLocaleTimeString('pt-BR');
     document.getElementById('last-update').textContent = 'Atualizado: '+now;
     setStatus('ok','✔ Dados criminais carregados — '+dadosCrimes.length+' BOs');
@@ -5450,6 +5504,7 @@ function gerarPDFAuditoria(){
 /* Buffer de fotos em memória para o modal aberto */
 let _intelFotosBuffer  = []; /* [{id, base64, nome, tipo}] — ficha intel */
 let _missaoAnexosBuffer = []; /* [{id, base64, nome, tipo}] — missão */
+let _compAnexosBuffer  = []; /* [{id, base64, nome, tipo}] — complemento sendo digitado */
 
 /* ══════════════════════════════════
    SUPABASE — banco de dados em nuvem
@@ -5636,6 +5691,7 @@ async function _carregarFichasComAnexos(){
       conexoes:     r.conexoes||'',
       obs:          r.obs||'',
       fotos:        (r.fotos||[]),
+      complementos: (r.complementos||[]),
       criadoPor:    r.criado_por||'',
       criadoEm:     r.criado_em||'',
     }));
@@ -5732,12 +5788,12 @@ async function _excluirFichaSupabase(id){
 /* ── Abre anexo: usa storage_url se disponível, senão base64 ── */
 async function _abrirAnexo(id){
   /* Busca em memória (buffer do modal aberto) */
-  const emBuf = [..._intelFotosBuffer, ..._missaoAnexosBuffer].find(a=>a.id===id);
+  const emBuf = [..._intelFotosBuffer, ..._missaoAnexosBuffer, ..._compAnexosBuffer].find(a=>a.id===id);
   if(emBuf && emBuf.base64){ _abrirOuBaixar(emBuf.base64, emBuf.nome, emBuf.tipo, true); return; }
 
-  /* Busca nas fichas e missões carregadas */
+  /* Busca nas fichas (fotos + anexos de complementos) e missões carregadas */
   const todos = [
-    ...fichasIntel.flatMap(f=>f.fotos||[]),
+    ...fichasIntel.flatMap(f=>[...(f.fotos||[]), ...(f.complementos||[]).flatMap(c=>c.anexos||[])]),
     ...missoes.flatMap(m=>m.anexos||[])
   ];
   const a = todos.find(x=>x.id===id);
@@ -5914,8 +5970,9 @@ async function _comprimirVideo(file, prefixo){
 
 /* ── Renderiza lista de anexos (fotos, pdf, kml, vídeos) ── */
 function _renderAnexos(prefixo){
-  const buf  = prefixo === 'intel' ? _intelFotosBuffer : _missaoAnexosBuffer;
-  const wrap = document.getElementById(prefixo+'-anexos-wrap');
+  const buf  = prefixo === 'intel' ? _intelFotosBuffer : prefixo === 'comp' ? _compAnexosBuffer : _missaoAnexosBuffer;
+  const wrapId = prefixo === 'comp' ? 'comp-anexos-wrap' : prefixo+'-anexos-wrap';
+  const wrap = document.getElementById(wrapId);
   if(!wrap) return;
   if(!buf.length){
     wrap.innerHTML = '<span style="font-size:11px;color:var(--text-muted);">Nenhum anexo adicionado.</span>';
@@ -5943,6 +6000,7 @@ function _renderAnexos(prefixo){
 
 function _removerAnexo(prefixo, fid){
   if(prefixo === 'intel') _intelFotosBuffer = _intelFotosBuffer.filter(f=>f.id!==fid);
+  else if(prefixo === 'comp') _compAnexosBuffer = _compAnexosBuffer.filter(f=>f.id!==fid);
   else _missaoAnexosBuffer = _missaoAnexosBuffer.filter(f=>f.id!==fid);
   _renderAnexos(prefixo);
 }
@@ -5956,6 +6014,7 @@ function adicionarAnexosIntel(input, prefixo){
     reader.onload = e => {
       const anexo = { id:'a'+Date.now()+Math.random().toString(36).slice(2,6), base64:e.target.result, nome:file.name, tipo:file.type };
       if(prefixo==='intel') _intelFotosBuffer.push(anexo);
+      else if(prefixo==='comp') _compAnexosBuffer.push(anexo);
       else _missaoAnexosBuffer.push(anexo);
       _renderAnexos(prefixo);
     };
@@ -5972,6 +6031,7 @@ async function adicionarVideosIntel(input, prefixo){
     const result = await _comprimirVideo(file, prefixo);
     const anexo = { id:'v'+Date.now()+Math.random().toString(36).slice(2,6), base64:result.base64, nome:result.nome, tipo:'video/webm' };
     if(prefixo==='intel') _intelFotosBuffer.push(anexo);
+    else if(prefixo==='comp') _compAnexosBuffer.push(anexo);
     else _missaoAnexosBuffer.push(anexo);
     _renderAnexos(prefixo);
   }
@@ -5984,6 +6044,7 @@ function renderFotosIntelModal(){ _renderAnexos('intel'); }
 
 function abrirModalIntel(id){
   _intelFotosBuffer = [];
+  _compAnexosBuffer = [];
   if(id !== undefined){
     const f = fichasIntel.find(x=>x.id===id);
     if(f){
@@ -6006,9 +6067,22 @@ function abrirModalIntel(id){
     });
     document.getElementById('i-reincidencia').value='nao';
   }
+  /* Limpa campo de texto do complemento */
+  const compTxt = document.getElementById('comp-texto');
+  if(compTxt) compTxt.value = '';
+
+  /* Mostra seção de complementos apenas ao editar ficha existente */
+  const compSection = document.getElementById('intel-complementos-section');
+  if(compSection) compSection.style.display = id !== undefined ? '' : 'none';
+
   abrirModal('modal-intel');
   const fichaGps = id !== undefined ? (fichasIntel.find(x=>x.id===id)?.gpsAtuacao||[]) : [];
-  setTimeout(()=>{ _renderGpCheckboxes(fichaGps); _renderAnexos('intel'); }, 50);
+  setTimeout(()=>{
+    _renderGpCheckboxes(fichaGps);
+    _renderAnexos('intel');
+    _renderAnexos('comp');
+    _renderComplementos(id);
+  }, 50);
 }
 
 function abrirIntelPorRat(rat, mun){
@@ -6071,6 +6145,136 @@ async function excluirIntel(id){
   await _excluirFichaSupabase(id);
   try{ _pset('ac_intel', JSON.stringify(fichasIntel)); }catch(e){}
   renderIntel();
+}
+
+/* ══════════════════════════════════
+   COMPLEMENTOS CRONOLÓGICOS DAS FICHAS
+══════════════════════════════════ */
+
+/* Renderiza os complementos existentes de uma ficha no modal */
+function _renderComplementos(fichaId){
+  const lista = document.getElementById('intel-complementos-lista');
+  if(!lista) return;
+  const ficha = fichasIntel.find(f=>f.id===fichaId);
+  const comps = (ficha?.complementos||[]);
+  if(!comps.length){
+    lista.innerHTML = '<div style="font-size:11px;color:var(--text-muted);text-align:center;padding:8px 0;">Nenhum complemento registrado ainda.</div>';
+    return;
+  }
+  /* Ordena cronologicamente (mais recente primeiro) */
+  const sorted = [...comps].sort((a,b) => new Date(b.registradoEmISO||0) - new Date(a.registradoEmISO||0));
+  lista.innerHTML = sorted.map(c => {
+    const anexosHtml = (c.anexos||[]).map(a => {
+      const isImg = a.tipo && a.tipo.startsWith('image');
+      const isVid = a.tipo && a.tipo.startsWith('video');
+      const isPdf = a.tipo==='application/pdf'||a.nome.endsWith('.pdf');
+      let thumb='';
+      if(isImg)      thumb = a.base64 ? `<img src="${a.base64}" style="width:50px;height:38px;object-fit:cover;display:block;" title="${a.nome}">` : `<div style="width:50px;height:38px;display:flex;align-items:center;justify-content:center;background:#222;font-size:16px;">🖼</div>`;
+      else if(isVid) thumb = a.base64 ? `<video src="${a.base64}" style="width:50px;height:38px;object-fit:cover;display:block;" muted></video>` : `<div style="width:50px;height:38px;display:flex;align-items:center;justify-content:center;background:#222;font-size:16px;">🎥</div>`;
+      else if(isPdf) thumb = `<div style="width:50px;height:38px;display:flex;align-items:center;justify-content:center;background:#222;font-size:16px;">📄</div>`;
+      else           thumb = `<div style="width:50px;height:38px;display:flex;align-items:center;justify-content:center;background:#222;font-size:16px;">📎</div>`;
+      const url = a.storage_url || a.base64 || '';
+      return `<div class="comp-anexo-thumb" onclick="_abrirAnexo('${a.id}')" title="${a.nome}" style="border:1px solid var(--border);border-radius:3px;overflow:hidden;cursor:pointer;">${thumb}</div>`;
+    }).join('');
+    return `<div class="comp-entry">
+      <div class="comp-entry-header">
+        <span style="width:22px;height:22px;border-radius:50%;background:var(--gold);color:#1a1000;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${(c.autor||'?').slice(0,1).toUpperCase()}</span>
+        <span class="comp-autor">👮 ${c.autor||'—'}</span>
+        <span class="comp-data">📅 ${c.registradoEm||'—'}</span>
+        ${(sessao?.perfil==='admin'||sessao?.nome===c.autor)?`<button onclick="_excluirComplemento('${fichaId}','${c.id}')" style="margin-left:auto;background:none;border:none;color:var(--text-hint);font-size:11px;cursor:pointer;padding:0;" title="Excluir">🗑</button>`:''}
+      </div>
+      <div class="comp-texto">${c.texto||''}</div>
+      ${(c.anexos||[]).length?`<div class="comp-anexos-mini">${anexosHtml}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+/* Adiciona um novo complemento à ficha aberta */
+async function adicionarComplemento(){
+  const fichaId = document.getElementById('i-id').value;
+  if(!fichaId){ alert('Salve a ficha antes de adicionar complementos.'); return; }
+  const texto = (document.getElementById('comp-texto').value||'').trim();
+  if(!texto && !_compAnexosBuffer.length){ alert('Informe o texto do complemento.'); return; }
+  const btn = document.querySelector('#intel-complementos-section .btn-gold');
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Registrando...'; }
+  try{
+    const ficha = fichasIntel.find(f=>f.id===fichaId);
+    if(!ficha) throw new Error('Ficha não encontrada.');
+    if(!ficha.complementos) ficha.complementos = [];
+    const agora = new Date();
+    const novoComp = {
+      id: 'comp-'+Date.now()+Math.random().toString(36).slice(2,6),
+      texto,
+      autor: sessao?.nome || '—',
+      registradoEm:    agora.toLocaleString('pt-BR'),
+      registradoEmISO: agora.toISOString(),
+      anexos: _compAnexosBuffer.map(a=>({id:a.id, base64:a.base64||'', nome:a.nome, tipo:a.tipo||''})),
+    };
+    ficha.complementos.unshift(novoComp); /* mais recente primeiro */
+
+    /* Salva no Supabase */
+    await _sbUpsert('fichas_intel', {
+      id: fichaId,
+      complementos: ficha.complementos.map(c=>({
+        id:c.id, texto:c.texto, autor:c.autor,
+        registradoEm:c.registradoEm, registradoEmISO:c.registradoEmISO,
+        anexos:(c.anexos||[]).map(a=>({id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url||''}))
+      })),
+      updated_at: new Date().toISOString(),
+    });
+    /* Limpa formulário */
+    document.getElementById('comp-texto').value = '';
+    _compAnexosBuffer = [];
+    _renderAnexos('comp');
+    _renderComplementos(fichaId);
+  }catch(e){ alert('Erro ao registrar complemento: '+e.message); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='📌 Registrar Complemento'; } }
+}
+
+/* Exclui um complemento específico */
+async function _excluirComplemento(fichaId, compId){
+  if(!confirm('Excluir este complemento?')) return;
+  const ficha = fichasIntel.find(f=>f.id===fichaId);
+  if(!ficha) return;
+  ficha.complementos = (ficha.complementos||[]).filter(c=>c.id!==compId);
+  try{
+    await _sbUpsert('fichas_intel', {
+      id: fichaId,
+      complementos: ficha.complementos,
+      updated_at: new Date().toISOString(),
+    });
+  }catch(e){ console.warn('excluir complemento supabase:', e); }
+  _renderComplementos(fichaId);
+}
+
+/* ══════════════════════════════════
+   INICIALIZA FILTRO GP OPERACIONAL NA ABA INTELIGÊNCIA
+══════════════════════════════════ */
+function _initIntelFiltroGP(){
+  const _isAdmin = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
+  if(_isAdmin) return; /* admin vê tudo, sem restrição */
+  const gpSelect = document.getElementById('intel-busca-gp');
+  const badge    = document.getElementById('intel-gp-badge');
+  const badgeTxt = document.getElementById('intel-gp-badge-txt');
+  /* Resolve GP do usuário */
+  const gpUsuario = sessao?.lotacao ? gpDoColk(
+    dadosGrupos.find(r => norm(r.grupamento).includes(norm(sessao.lotacao)))?.grupamento || sessao.lotacao
+  ) : '';
+  if(!gpUsuario) return;
+  /* Trava o select no GP do usuário */
+  if(gpSelect){
+    /* Garante a opção existe */
+    if(![...gpSelect.options].some(o=>o.value===gpUsuario)){
+      const opt = document.createElement('option');
+      opt.value = gpUsuario; opt.textContent = gpUsuario;
+      gpSelect.appendChild(opt);
+    }
+    gpSelect.value = gpUsuario;
+    gpSelect.disabled = true;
+  }
+  /* Mostra badge informativo */
+  if(badge) badge.style.display = 'block';
+  if(badgeTxt) badgeTxt.textContent = gpUsuario;
 }
 
 function renderIntel(){
@@ -6154,6 +6358,20 @@ function renderIntel(){
         ${f.reincidencia&&f.reincidencia!=='nao'?`<div style="font-size:10px;background:rgba(239,83,80,.12);color:var(--danger);padding:3px 8px;border-radius:3px;font-weight:700;display:inline-block;margin-bottom:6px;">⚠ Reincidência: ${reincLbl[f.reincidencia]}</div>`:''}
         ${f.obs?`<div style="font-size:11px;color:var(--text-muted);background:var(--bg-input);border-radius:4px;padding:6px 8px;margin-top:4px;">${f.obs}</div>`:''}
         ${anexosHtml}
+        ${(()=>{
+          const comps = f.complementos||[];
+          if(!comps.length) return '';
+          const ult = [...comps].sort((a,b)=>new Date(b.registradoEmISO||0)-new Date(a.registradoEmISO||0))[0];
+          return `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px;">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+              <span style="font-size:10px;font-weight:700;color:var(--info);text-transform:uppercase;letter-spacing:.3px;">📝 ${comps.length} complemento${comps.length!==1?'s':''}</span>
+              <span style="font-size:10px;color:var(--text-hint);">· último: ${ult.registradoEm||'—'}</span>
+            </div>
+            <div style="font-size:11px;color:#bbb;background:rgba(66,165,245,.06);border:1px solid rgba(66,165,245,.15);border-radius:4px;padding:5px 8px;line-height:1.4;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">
+              <b style="color:var(--info);font-size:10px;">👮 ${ult.autor||'—'}:</b> ${ult.texto||''}
+            </div>
+          </div>`;
+        })()}
         <div style="font-size:10px;color:var(--text-hint);margin-top:8px;border-top:1px solid var(--border);padding-top:6px;">Criado por ${f.criadoPor} em ${f.criadoEm}</div>
       </div>`;
     }).join('') +
@@ -6720,6 +6938,9 @@ function switchSubtab(el, id){
   }
   if(id === 'auditorias'){
     renderAuditoriasLista();
+  }
+  if(id === 'inteligencia'){
+    setTimeout(_initIntelFiltroGP, 100);
   }
 }
 
