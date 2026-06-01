@@ -5,19 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Painel Administrativo — 3ª Cia PM MAmb</title>
   <link rel="stylesheet" href="styles/global.css">
-  <script src="auth.js"></script>
+  <script src="supabase-auth.js"></script>
   <script>
-    /* Verificação imediata — antes do DOM carregar */
+    /* Verificação imediata — sessão Supabase v2 */
     (function(){
       try {
-        const raw = (localStorage.getItem('poe_sessao') || sessionStorage.getItem('poe_sessao'));
+        const raw = sessionStorage.getItem('poe_sessao_v2') || localStorage.getItem('poe_sessao_v2');
         if (!raw) { window.location.replace('index.html'); return; }
         const s = JSON.parse(raw);
-        /* Verifica também no banco */
-        const db = JSON.parse(localStorage.getItem('poe_usuarios') || '[]');
-        const u = db.find(x => x.id === s.id);
-        const perfil = u ? u.perfil : s.perfil;
-        if (perfil !== 'admin') { window.location.replace('painel.html'); }
+        const nivel = s.nivel_acesso || '';
+        if (!['admin_geral','admin','admin_pelotao'].includes(nivel)) {
+          window.location.replace('painel.html');
+        }
       } catch(e) { window.location.replace('index.html'); }
     })();
   </script>
@@ -97,8 +96,11 @@
     table.utbl tbody tr:last-child td{border-bottom:none;}
     table.utbl tbody tr:hover td{background:#333;}
     .badge{display:inline-block;padding:2px 9px;border-radius:4px;font-size:10px;font-weight:700;}
+    .badge-admin-geral{background:rgba(239,83,80,.15);color:#ef5350;border:1px solid rgba(239,83,80,.4);}
     .badge-admin{background:rgba(155,138,92,.2);color:var(--gold);border:1px solid var(--gold-border);}
+    .badge-admin-plt{background:rgba(171,71,188,.15);color:#ce93d8;border:1px solid rgba(171,71,188,.3);}
     .badge-op{background:rgba(66,165,245,.15);color:var(--info);border:1px solid rgba(66,165,245,.3);}
+    .badge-danger{background:rgba(239,83,80,.12);color:#ef9a9a;border:1px solid rgba(239,83,80,.3);}
     .badge-pending{background:rgba(255,152,0,.15);color:#ffb74d;border:1px solid rgba(255,152,0,.3);}
     .badge-active{background:rgba(102,187,106,.12);color:var(--success);border:1px solid rgba(102,187,106,.3);}
     .acoes{display:flex;gap:4px;flex-wrap:wrap;}
@@ -174,7 +176,7 @@
       <span id="user-nome-hdr">—</span>
     </div>
     <button class="btn-outline" onclick="window.location.href='painel.html'">← Painel</button>
-    <button class="btn-outline" onclick="_aset('poe_sessao','');window.location.href='index.html'">Sair</button>
+    <button class="btn-outline" onclick="SbAuth.sessaoLimpar();window.location.href='index.html'">Sair</button>
   </div>
 </div>
 
@@ -193,19 +195,18 @@
     <!-- STATS -->
     <div class="stats-row" id="stats-row"></div>
 
-    <!-- BARRA DE SINCRONIZAÇÃO -->
+    <!-- SINCRONIZAÇÃO → Supabase (substituiu planilha MILITARES) -->
     <div id="sync-bar" style="background:#1a1a1a;border:1px solid var(--border);border-radius:7px;padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
       <div style="display:flex;align-items:center;gap:10px;">
         <div id="sync-dot" style="width:10px;height:10px;border-radius:50%;background:#555;flex-shrink:0;"></div>
         <div>
-          <span id="sync-status" style="font-size:12px;color:var(--text-muted);">Aguardando sincronização...</span>
-          <span id="sync-proxima" style="font-size:10px;color:var(--text-hint);margin-left:10px;"></span>
+          <span id="sync-status" style="font-size:12px;color:var(--text-muted);">Aguardando...</span>
+          <span id="sync-proxima" style="font-size:10px;color:var(--text-hint);margin-left:8px;"></span>
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;">
-        <span style="font-size:10px;color:var(--text-hint);">Planilha MILITARES · sincroniza a cada 1 min</span>
-        <button onclick="sincronizarAgora()" style="background:none;border:1px solid var(--border-hover);color:var(--text-muted);padding:4px 12px;border-radius:4px;font-size:11px;cursor:pointer;transition:all .2s;" onmouseover="this.style.borderColor='var(--gold)';this.style.color='var(--gold)'" onmouseout="this.style.borderColor='var(--border-hover)';this.style.color='var(--text-muted)'">↻ Sincronizar Agora</button>
-        <button onclick="gravarTudoNaPlanilha()" style="background:none;border:1px solid var(--success);color:var(--success);padding:4px 12px;border-radius:4px;font-size:11px;cursor:pointer;transition:all .2s;" title="Grava todos os usuários do sistema local na planilha" onmouseover="this.style.background='rgba(102,187,106,.15)'" onmouseout="this.style.background='none'">📤 Restaurar Planilha</button>
+        <span style="font-size:10px;color:var(--text-hint);">Banco de dados Supabase · tempo real</span>
+        <button onclick="carregarUsuarios()" style="background:none;border:1px solid var(--info);color:var(--info);padding:4px 12px;border-radius:4px;font-size:11px;cursor:pointer;transition:all .2s;" onmouseover="this.style.background='rgba(66,165,245,.15)'" onmouseout="this.style.background='none'">🔄 Recarregar</button>
       </div>
     </div>
 
@@ -313,7 +314,11 @@
             <label>Perfil *</label>
             <select id="new-perfil">
               <option value="operacional">Operacional</option>
-              <option value="admin">Administrador</option>
+              <option value="admin_pelotao">Admin Pelotão</option>
+              <option value="admin_geral">Admin Geral</option>
+            <option value="admin">Admin</option>
+            <option value="admin_pelotao">Admin Pelotão</option>
+              <option value="admin_geral" id="opt-admin-geral" style="display:none">Admin Geral</option>
             </select>
           </div>
         </div>
@@ -614,7 +619,9 @@
           <label>Perfil</label>
           <select id="edit-perfil">
             <option value="operacional">Operacional</option>
-            <option value="admin">Administrador</option>
+            <option value="admin_pelotao">Admin Pelotão</option>
+            <option value="admin">Admin</option>
+            <option value="admin_geral" id="edit-opt-admin-geral" style="display:none">Admin Geral</option>
           </select>
         </div>
       </div>
@@ -631,116 +638,570 @@
 let sessao = null;
 let dadosImport = [];
 
-/* ── Storage direto ── */
-function _aget(k){ try{const v=localStorage.getItem(k);if(v!==null)return v;}catch(e){} return null; }
-function _aset(k,v){ try{localStorage.setItem(k,v);}catch(e){} }
+/* ── Storage direto ── *//* ══════════════════════════════════════════
+   SUPABASE
+══════════════════════════════════════════ */
+const SB_URL = 'https://zrnbebjszwkmquzthjfa.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpybmJlYmpzendrbXF1enRoamZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkzOTA4MzEsImV4cCI6MjA5NDk2NjgzMX0.di9t2SOCTLZ2uPFOnTOiy6srvt7GC5cdqenZZScXve4';
 
-function _getUsuariosDB(){ try{return JSON.parse(_aget('poe_usuarios')||'[]');}catch(e){return[];} }
-/* _saveUsuariosDB definida abaixo junto ao motor de escrita na planilha */
+async function sbFetch(table, params=''){
+  const sep = params ? '&' : '';
+  const url = `${SB_URL}/rest/v1/${table}?${params}${sep}limit=10000`;
+  const res = await fetch(url, {
+    headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`}
+  });
+  if(!res.ok) throw new Error(`Supabase ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+async function sbPatch(table, params, body){
+  const res = await fetch(`${SB_URL}/rest/v1/${table}?${params}`,{
+    method:'PATCH',
+    headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=representation'},
+    body: JSON.stringify(body)
+  });
+  if(!res.ok) throw new Error(`Supabase patch ${res.status}: ${await res.text()}`);
+  return res.json();
+}
 
-function lerSessaoAdmin(){
-  const raw = _aget('poe_sessao');
-  if(!raw){ window.location.replace('index.html'); return null; }
+/* Ordem correta dos grupamentos por pelotão/GP */
+const GP_ORDEM = [
+  'GP GOVERNADOR VALADARES','GP MANTENA','GP AIMORES','GP CONSELHEIRO PENA','GP GUANHAES','GP SANTA MARIA DO SUACUI','GP SAO JOAO EVANGELISTA',
+  'GP IPATINGA','GP MARILIERIA','GP PINGO D AGUA','GP JOAO MOLEVADE','GP BARAO DE COCAIS','GP ITABIRA',
+  'GP MANHUACU','GP ALTO CAPARAO','GP MUTUM','GP IPANEMA','GP CARATINGA','GP PONTE NOVA','GP RAUL SOARES',
+  'GP TEOFILO OTONI','GP AGUAS FORMOSAS','GP ITAMBACURI','GP MALACACHETA','GP NANUQUE','GP NOVO CRUZEIRO',
+  'GP ALMENARA','GP ARACUAI','GP ITAOBIM','GP JEQUITINHONHA','GP PEDRA AZUL','GP RIO DO PRADO','GP SALTO DA DIVISA'
+];
+
+function gpOrdem(nome){
+  /* Tenta nome direto */
+  let i = GP_ORDEM.indexOf(nome);
+  if(i >= 0) return i;
+  /* Tenta extrair o nome curto do formato longo "1 GP / 1 PEL / ... / GOVERNADOR VALADARES" */
+  const m = nome.match(/\/\s*([^/]+)$/);
+  if(m){
+    const sufixo = m[1].trim();
+    i = GP_ORDEM.findIndex(g => g.replace('GP ','') === sufixo);
+    if(i >= 0) return i;
+  }
+  return 999;
+}
+
+const MESES_ADMIN = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
+const MESES_ABR   = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+let _metaTipo = 'gdo';
+let _metaDados = [];
+
+function metaSelTipo(btn, tipo){
+  document.querySelectorAll('[id^="meta-btn-"]').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  _metaTipo = tipo;
+  document.getElementById('meta-gdo-section').style.display = tipo === 'gdo' ? '' : 'none';
+  document.getElementById('meta-poe-section').style.display = tipo === 'poe' ? '' : 'none';
+  metasCarregar();
+}
+
+async function metasInit(){
+  _metaTipo = 'gdo';
+  document.getElementById('meta-gdo-section').style.display = '';
+  document.getElementById('meta-poe-section').style.display = 'none';
+  document.getElementById('meta-btn-gdo').classList.add('active');
+  document.getElementById('meta-btn-poe').classList.remove('active');
+  await metasCarregar();
+}
+
+async function metasCarregar(){
+  const ano = document.getElementById('meta-ano').value;
+  const statusEl = document.getElementById('meta-status');
+  statusEl.textContent = 'Carregando...'; statusEl.style.color='var(--text-muted)';
   try{
-    const s = JSON.parse(raw);
-    const db = _getUsuariosDB();
-    const u = db.find(x => x.id === s.id);
-    const perfil = u ? u.perfil : s.perfil;
-    if(perfil !== 'admin'){
-      document.body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#1a1a1a;flex-direction:column;gap:16px;"><div style="color:#ef5350;font-size:48px;">🔒</div><div style="color:#ef5350;font-size:18px;font-weight:700;">ACESSO RESTRITO</div><div style="color:#999;font-size:13px;">Apenas administradores podem acessar esta área.</div><button onclick="window.location.href=\'painel.html\'" style="margin-top:12px;background:#9b8a5c;color:#1a1000;border:none;padding:10px 24px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;">← Voltar ao Painel</button></div>';
-      return null;
+    if(_metaTipo === 'poe'){
+      await metasPoeCarregar(ano);
+    } else {
+      await metasGdoCarregar(ano);
     }
-    s.perfil = perfil;
-    return s;
-  }catch(e){ window.location.replace('index.html'); return null; }
-}
-
-/* ── Campos extras no auth.js (patch local) ── */
-function auth_atualizarUsuario(id, dados) {
-  const usuarios = JSON.parse(localStorage.getItem('poe_usuarios') || '[]');
-  const idx = usuarios.findIndex(u => u.id === id);
-  if (idx === -1) return { ok: false, erro: 'Usuário não encontrado.' };
-  /* Verifica admin mínimo ao mudar perfil */
-  if (dados.perfil === 'operacional') {
-    const admins = usuarios.filter(u => u.perfil === 'admin' && u.id !== id);
-    if (admins.length === 0) return { ok: false, erro: 'Precisa haver pelo menos um administrador.' };
+    statusEl.textContent = '✓ Atualizado'; statusEl.style.color='#2ea043';
+  }catch(e){
+    statusEl.textContent = '\u2717 Erro: '+e.message; statusEl.style.color='#ef5350';
   }
-  Object.assign(usuarios[idx], dados);
-  localStorage.setItem('poe_usuarios', JSON.stringify(usuarios));
-  return { ok: true };
 }
 
-/* ══ FUNÇÕES DE USUÁRIO ══ */
-function auth_listarUsuarios(){ return _getUsuariosDB(); }
+/* ── GDO METAS ── */
+let _gdoDados = [];
 
-function auth_criarUsuarioCompleto(npm, pg, nome, guerra, funcao, lotacao, perfil) {
-  const lista = _getUsuariosDB();
-  const clean = String(npm).replace(/[^0-9]/g,'');
-  if(lista.find(u => u.numeroClean === clean)) return {ok:false, erro:'Nº PM já cadastrado.', dup:true};
-  const novo = {
-    id: Date.now().toString()+Math.random().toString(36).slice(2,6),
-    numeroPolicia: formatNP(clean), numeroClean: clean,
-    nome, pg, guerra, funcao, lotacao, perfil,
-    senha:'Mudar@123', primeiroAcesso:true, ativo:true,
-    criadoEm: new Date().toISOString()
+async function metasGdoCarregar(ano){
+  const data = await sbFetch('gdo_metas', `ano=eq.${ano}&select=id,gp_responsavel,grupamento_bpm,meta_anual,meta_jan,meta_fev,meta_mar,meta_abr,meta_mai,meta_jun,meta_jul,meta_ago,meta_set,meta_out,meta_nov,meta_dez&order=gp_responsavel`);
+  _gdoDados = data;
+  /* Ordenar por GP_ORDEM */
+  _gdoDados.sort((a,b)=>gpOrdem(a.gp_responsavel)-gpOrdem(b.gp_responsavel));
+  const tbody = document.getElementById('meta-gdo-tbody');
+  if(!_gdoDados.length){
+    tbody.innerHTML='<tr><td colspan="15" style="padding:20px;text-align:center;color:var(--text-muted);">Nenhum registro.</td></tr>';
+    return;
+  }
+  const MESES_COLS=['meta_jan','meta_fev','meta_mar','meta_abr','meta_mai','meta_jun','meta_jul','meta_ago','meta_set','meta_out','meta_nov','meta_dez'];
+  tbody.innerHTML = _gdoDados.map(d => {
+    const pelM = d.grupamento_bpm ? d.grupamento_bpm.match(/(\d+)\s*PEL/i) : null;
+    const pel = pelM ? pelM[1]+'º PEL' : '—';
+    const mensal = Math.ceil(d.meta_anual/12);
+    const mCells = MESES_COLS.map((col,i)=>{
+      const val = (d[col] !== null && d[col] !== undefined) ? d[col] : mensal;
+      return `<td style="padding:3px 2px;text-align:center;">
+        <input type="number" min="0" value="${val}"
+          style="width:38px;background:#1a1a1a;border:1px solid #333;color:#ccc;text-align:center;padding:3px 2px;border-radius:3px;font-size:11px;"
+          onchange="metaGdoMesSalvar(${d.id},'${col}',this.value,'${d.gp_responsavel}','gdo-anual-${d.id}')"
+          title="${MESES_ADMIN[i]}">
+      </td>`;
+    }).join('');
+    const somaAnual = MESES_COLS.reduce((s,col)=> s + ((d[col]!==null&&d[col]!==undefined)?d[col]:mensal), 0);
+    return `<tr style="border-bottom:1px solid #252525;">
+      <td style="padding:5px 12px;color:#ccc;font-weight:600;white-space:nowrap;position:sticky;left:0;background:#1e1e1e;">${d.gp_responsavel}</td>
+      <td style="padding:5px 8px;text-align:center;color:var(--text-muted);">${pel}</td>
+      ${mCells}
+      <td style="padding:5px 8px;text-align:center;font-weight:700;color:var(--gold);border-left:2px solid var(--border);" id="gdo-anual-${d.id}">${somaAnual}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function metaGdoSalvar(id, novoVal, inputEl){
+  const meta_anual = parseInt(novoVal)||90;
+  const statusEl = document.getElementById('meta-status');
+  try{
+    await sbPatch('gdo_metas', `id=eq.${id}`, { meta_anual, updated_at: new Date().toISOString() });
+    statusEl.textContent = `✓ Meta anual salva: ${meta_anual}`;
+    statusEl.style.color = '#2ea043';
+    setTimeout(()=>{ statusEl.textContent=''; },3000);
+  }catch(e){
+    inputEl.style.borderColor='#ef5350';
+    statusEl.textContent='✗ Erro: '+e.message; statusEl.style.color='#ef5350';
+  }
+}
+
+async function metaGdoMesSalvar(id, col, novoVal, gpNome, anualCellId){
+  const val = parseInt(novoVal)||0;
+  const statusEl = document.getElementById('meta-status');
+  const mesIdx = ['meta_jan','meta_fev','meta_mar','meta_abr','meta_mai','meta_jun','meta_jul','meta_ago','meta_set','meta_out','meta_nov','meta_dez'].indexOf(col);
+  try{
+    const patch = {}; patch[col] = val; patch['updated_at'] = new Date().toISOString();
+    /* Recalcula meta_anual como soma de todos os meses da linha */
+    const entry = _gdoDados.find(d=>d.id===id);
+    if(entry){
+      entry[col] = val;
+      const MESES_COLS=['meta_jan','meta_fev','meta_mar','meta_abr','meta_mai','meta_jun','meta_jul','meta_ago','meta_set','meta_out','meta_nov','meta_dez'];
+      const soma = MESES_COLS.reduce((s,c)=> s + ((entry[c]!==null&&entry[c]!==undefined)?entry[c]:Math.ceil(entry.meta_anual/12)), 0);
+      patch['meta_anual'] = soma;
+      entry.meta_anual = soma;
+      const el = document.getElementById(anualCellId);
+      if(el) el.textContent = soma;
+    }
+    await sbPatch('gdo_metas', `id=eq.${id}`, patch);
+    statusEl.textContent = `✓ ${gpNome} · ${MESES_ABR[mesIdx]} = ${val}`;
+    statusEl.style.color = '#2ea043';
+    setTimeout(()=>{ statusEl.textContent=''; },3000);
+  }catch(e){
+    statusEl.textContent='✗ Erro: '+e.message; statusEl.style.color='#ef5350';
+  }
+}
+
+/* ── POE METAS ── */
+let _poeDados = [];
+const POE_MESES_COLS = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
+const POE_MESES_ABR  = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
+async function metasPoeCarregar(ano){
+  /* A tabela bd_metaspoe não tem coluna ano nem id — chave é GRUPAMENTO+NATUREZA */
+  /* Usa select=* para evitar problemas com acentos nos nomes das colunas (MARÇO, SETEMBRO) */
+  const data = await sbFetch('bd_metaspoe', `select=*&order=GRUPAMENTO,NATUREZA`);
+  _poeDados = data;
+
+  /* Popula filtros */
+  const gps  = [...new Set(data.map(d=>d.GRUPAMENTO))].sort();
+  const nats = [...new Set(data.map(d=>d.NATUREZA))].sort();
+  const selGp  = document.getElementById('poe-filtro-gp');
+  const selNat = document.getElementById('poe-filtro-nat');
+  const curGp  = selGp.value;
+  const curNat = selNat.value;
+  selGp.innerHTML  = '<option value="">Todos os Grupamentos</option>' + gps.map(g=>`<option value="${g}"${g===curGp?' selected':''}>${g}</option>`).join('');
+  selNat.innerHTML = '<option value="">Todas as Naturezas</option>'   + nats.map(n=>`<option value="${n}"${n===curNat?' selected':''}>${n}</option>`).join('');
+
+  poeFiltrar();
+}
+
+function poeFiltrar(){
+  const filtroGp  = document.getElementById('poe-filtro-gp').value;
+  const filtroNat = document.getElementById('poe-filtro-nat').value;
+  const lista = _poeDados.filter(d =>
+    (!filtroGp  || d.GRUPAMENTO === filtroGp) &&
+    (!filtroNat || d.NATUREZA   === filtroNat)
+  );
+  const tbody = document.getElementById('meta-poe-tbody');
+  if(!lista.length){
+    tbody.innerHTML='<tr><td colspan="15" style="padding:20px;text-align:center;color:var(--text-muted);">Nenhum registro.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = lista.map((d,idx) => {
+    const mCells = POE_MESES_COLS.map((col,i)=>{
+      const val = parseInt(d[col])||0;
+      const rowKey = encodeURIComponent(d.GRUPAMENTO + '|||' + d.NATUREZA);
+      return `<td style="padding:3px 2px;text-align:center;">
+        <input type="number" min="0" value="${val}"
+          style="width:38px;background:#1a1a1a;border:1px solid #333;color:#ccc;text-align:center;padding:3px 2px;border-radius:3px;font-size:11px;"
+          onchange="metaPoeMesSalvar('${rowKey}','${col}',this.value,'${d.GRUPAMENTO}','poe-total-${idx}')"
+          title="${POE_MESES_COLS[i]}">
+      </td>`;
+    }).join('');
+    const total = POE_MESES_COLS.reduce((s,col)=> s + (parseInt(d[col])||0), 0);
+    return `<tr style="border-bottom:1px solid #252525;">
+      <td style="padding:5px 12px;color:#ccc;font-weight:600;white-space:nowrap;position:sticky;left:0;background:#1e1e1e;">${d.GRUPAMENTO}</td>
+      <td style="padding:5px 8px;text-align:center;color:var(--text-muted);white-space:nowrap;">${d.NATUREZA}</td>
+      ${mCells}
+      <td style="padding:5px 8px;text-align:center;font-weight:700;color:var(--gold);border-left:2px solid var(--border);" id="poe-total-${idx}">${total}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function metaPoeMesSalvar(rowKey, col, novoVal, gpNome, totalCellId){
+  const val = parseInt(novoVal)||0;
+  const statusEl = document.getElementById('meta-status');
+  const mesIdx = POE_MESES_COLS.indexOf(col);
+  try{
+    const decoded = decodeURIComponent(rowKey).split('|||');
+    const grupamento = decoded[0];
+    const natureza   = decoded[1];
+
+    /* Atualiza no objeto local */
+    const entry = _poeDados.find(d => d.GRUPAMENTO===grupamento && d.NATUREZA===natureza);
+    if(entry){
+      entry[col] = val;
+      const total = POE_MESES_COLS.reduce((s,c)=> s+(parseInt(entry[c])||0), 0);
+      entry['TOTAL GERAL'] = total;
+      const el = document.getElementById(totalCellId);
+      if(el) el.textContent = total;
+    }
+
+    /* Patch no Supabase usando GRUPAMENTO e NATUREZA como filtro */
+    const patch = {};
+    patch[col] = String(val);
+    await sbPatch('bd_metaspoe',
+      `GRUPAMENTO=eq.${encodeURIComponent(grupamento)}&NATUREZA=eq.${encodeURIComponent(natureza)}`,
+      patch);
+
+    statusEl.textContent = `✓ ${gpNome} · ${natureza} · ${POE_MESES_ABR[mesIdx]} = ${val}`;
+    statusEl.style.color = '#2ea043';
+    setTimeout(()=>{ statusEl.textContent=''; },3000);
+  }catch(e){
+    statusEl.textContent='✗ Erro: '+e.message; statusEl.style.color='#ef5350';
+  }
+}
+
+
+async function metasCriarAno(){
+  const ano = parseInt(document.getElementById('meta-ano').value);
+  const anoAnt = ano - 1;
+  const statusEl = document.getElementById('meta-status');
+  if(_metaTipo === 'poe'){
+    statusEl.textContent = 'A tabela POE não usa controle por ano.';
+    statusEl.style.color = '#ffb74d';
+    setTimeout(()=>{ statusEl.textContent=''; },4000);
+    return;
+  }
+  const tabela = 'gdo_metas';
+  if(!confirm(`Criar metas para ${ano} copiando de ${anoAnt}?`)) return;
+  statusEl.textContent = `Criando metas para ${ano}...`; statusEl.style.color='var(--text-muted)';
+  try{
+    /* Busca metas do ano anterior */
+    const origem = await sbFetch(tabela, `ano=eq.${anoAnt}&select=*`);
+    if(!origem.length){ statusEl.textContent=`Nenhuma meta em ${anoAnt} para copiar.`; return; }
+    /* Remove id e atualiza ano */
+    const novas = origem.map(d => { const n={...d}; delete n.id; n.ano=ano; n.updated_at=new Date().toISOString(); return n; });
+    /* Insere em lotes de 100 */
+    for(let i=0;i<novas.length;i+=100){
+      const lote = novas.slice(i,i+100);
+      const res = await fetch(`${SB_URL}/rest/v1/${tabela}`,{
+        method:'POST',
+        headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'resolution=ignore-duplicates'},
+        body:JSON.stringify(lote)
+      });
+      if(!res.ok) throw new Error(await res.text());
+    }
+    statusEl.textContent=`✓ ${novas.length} metas criadas para ${ano}!`; statusEl.style.color='#2ea043';
+    await metasCarregar();
+  }catch(e){ statusEl.textContent='✗ Erro: '+e.message; statusEl.style.color='#ef5350'; }
+}
+
+</script>
+</body>
+</html>
+/* ══ SESSÃO / PERMISSÕES (Supabase v2) ══ */
+let sessao = null;
+
+function lerSessaoAdmin() {
+  const s = SbAuth.sessaoLer();
+  if (!s) { window.location.replace('index.html'); return null; }
+  const niveis_admin = ['admin_geral','admin','admin_pelotao'];
+  if (!niveis_admin.includes(s.nivel_acesso)) {
+    document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#1a1a1a;flex-direction:column;gap:16px;"><div style="color:#ef5350;font-size:48px;">🔒</div><div style="color:#ef5350;font-size:18px;font-weight:700;">ACESSO RESTRITO</div><div style="color:#999;font-size:13px;">Apenas administradores podem acessar esta área.</div><button onclick="window.location.href=\'painel.html\'" style="margin-top:12px;background:#9b8a5c;color:#1a1000;border:none;padding:10px 24px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;">← Voltar ao Painel</button></div>';
+    return null;
+  }
+  return s;
+}
+
+/* Label do nível de acesso */
+function _labelNivel(nivel) {
+  const map = { admin_geral:'Admin Geral', admin:'Admin', admin_pelotao:'Admin Pelotão', operacional:'Operacional' };
+  return map[nivel] || nivel;
+}
+
+/* Badge colorido por nível */
+function _badgeNivel(nivel) {
+  const map = {
+    admin_geral: 'badge-admin-geral',
+    admin:       'badge-admin',
+    admin_pelotao: 'badge-admin-plt',
+    operacional: 'badge-op'
   };
-  lista.push(novo);
-  _saveUsuariosDB(lista);
-  return {ok:true, user:novo};
+  return `<span class="badge ${map[nivel]||'badge-op'}">${_labelNivel(nivel)}</span>`;
 }
 
-function auth_alterarPerfil(id, perfil) {
-  const lista = _getUsuariosDB();
-  const admins = lista.filter(u => u.perfil==='admin' && u.id!==id);
-  if(perfil!=='admin' && admins.length===0) return {ok:false, erro:'Não é possível rebaixar o único administrador.'};
-  const idx = lista.findIndex(u => u.id===id);
-  if(idx===-1) return {ok:false, erro:'Usuário não encontrado.'};
-  lista[idx].perfil = perfil;
-  _saveUsuariosDB(lista);
-  return {ok:true};
-}
-
-function auth_resetarSenha(id) {
-  const lista = _getUsuariosDB();
-  const idx = lista.findIndex(u => u.id===id);
-  if(idx===-1) return {ok:false, erro:'Usuário não encontrado.'};
-  lista[idx].senha = 'Mudar@123';
-  lista[idx].primeiroAcesso = true;
-  _saveUsuariosDB(lista);
-  return {ok:true};
-}
-
-function auth_excluirUsuario(id) {
-  let lista = _getUsuariosDB();
-  const u = lista.find(x => x.id===id);
-  if(!u) return {ok:false, erro:'Usuário não encontrado.'};
-  const admins = lista.filter(x => x.perfil==='admin' && x.id!==id);
-  if(u.perfil==='admin' && admins.length===0) return {ok:false, erro:'Não é possível excluir o único administrador.'};
-  lista = lista.filter(x => x.id!==id);
-  _saveUsuariosDB(lista);
-  return {ok:true};
-}
-
-function auth_atualizarUsuario(id, dados) {
-  const lista = _getUsuariosDB();
-  const idx = lista.findIndex(u => u.id===id);
-  if(idx===-1) return {ok:false, erro:'Usuário não encontrado.'};
-  if(dados.perfil && dados.perfil!=='admin') {
-    const admins = lista.filter(u => u.perfil==='admin' && u.id!==id);
-    if(admins.length===0) return {ok:false, erro:'Não é possível rebaixar o único administrador.'};
+/* Carrega lista de usuários do Supabase */
+let _cachedUsers = [];
+async function carregarUsuarios() {
+  _atualizarBarraSync('andamento','⏳ Carregando do Supabase...','');
+  try {
+    _cachedUsers = await SbAuth.listarUsuarios();
+    const agora = new Date().toLocaleTimeString('pt-BR');
+    _atualizarBarraSync('ok', `✔ Carregado às ${agora}`, `${_cachedUsers.length} militares`);
+    renderStats();
+    renderTabela();
+  } catch(e) {
+    _atualizarBarraSync('erro', `✗ Erro: ${e.message}`, 'verifique a conexão');
   }
-  Object.assign(lista[idx], dados);
-  _saveUsuariosDB(lista);
-  return {ok:true};
 }
 
+function _atualizarBarraSync(estado, msg, proxima) {
+  const dot    = document.getElementById('sync-dot');
+  const status = document.getElementById('sync-status');
+  const prox   = document.getElementById('sync-proxima');
+  if (!dot) return;
+  const cores = { ok:'#4caf50', erro:'#ef5350', andamento:'#ff9800', idle:'#555' };
+  dot.style.background = cores[estado] || '#555';
+  dot.style.animation  = estado === 'andamento' ? 'pulse-sync 1s infinite' : '';
+  if (status) status.textContent = msg || '';
+  if (prox)   prox.textContent   = proxima || '';
+}
+
+/* ══ STATS ══ */
+function renderStats() {
+  const lista = _cachedUsers;
+  const total    = lista.length;
+  const ag       = lista.filter(u => u.nivel_acesso === 'admin_geral').length;
+  const admins   = lista.filter(u => u.nivel_acesso === 'admin').length;
+  const plt      = lista.filter(u => u.nivel_acesso === 'admin_pelotao').length;
+  const ops      = lista.filter(u => u.nivel_acesso === 'operacional').length;
+  const pendentes= lista.filter(u => u.primeiro_acesso).length;
+
+  document.getElementById('stats-row').innerHTML = `
+    <div class="stat-card gold"><div class="sc-lbl">Total Usuários</div><div class="sc-val">${total}</div><div class="sc-sub">cadastrados</div></div>
+    <div class="stat-card blue"><div class="sc-lbl">Admin Geral</div><div class="sc-val">${ag}</div><div class="sc-sub">acesso total</div></div>
+    <div class="stat-card blue" style="border-top-color:#7986cb"><div class="sc-lbl">Administradores</div><div class="sc-val">${admins + plt}</div><div class="sc-sub">admin + admin plt</div></div>
+    <div class="stat-card green"><div class="sc-lbl">Operacionais</div><div class="sc-val">${ops}</div><div class="sc-sub">somente leitura</div></div>
+    <div class="stat-card orange"><div class="sc-lbl">1º Acesso Pendente</div><div class="sc-val">${pendentes}</div><div class="sc-sub">aguardando senha</div></div>`;
+  const tl = document.getElementById('total-label');
+  if (tl) tl.textContent = `${total} usuário${total!==1?'s':''} cadastrado${total!==1?'s':''}`;
+}
+
+/* ══ TABELA ══ */
+function renderTabela() {
+  const busca     = (document.getElementById('busca')?.value || '').toLowerCase();
+  const filNivel  = document.getElementById('filtro-perfil')?.value || '';
+  const filStatus = document.getElementById('filtro-status')?.value || '';
+  let lista = [..._cachedUsers];
+
+  if (busca) lista = lista.filter(u =>
+    (u.nome_completo||'').toLowerCase().includes(busca) ||
+    (u.matricula||'').includes(busca) ||
+    (u.nome_guerra||'').toLowerCase().includes(busca)
+  );
+  if (filNivel)  lista = lista.filter(u => u.nivel_acesso === filNivel);
+  if (filStatus === 'pendente') lista = lista.filter(u => u.primeiro_acesso);
+  if (filStatus === 'ativo')    lista = lista.filter(u => !u.primeiro_acesso);
+
+  /* admin_pelotao vê apenas seu grupamento */
+  if (sessao?.nivel_acesso === 'admin_pelotao') {
+    lista = lista.filter(u => u.grupamento_id === sessao.grupamento_id || u.id === sessao.id);
+  }
+
+  const tbody = document.getElementById('tabela-body');
+  if (!lista.length) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="9">Nenhum usuário encontrado.</td></tr>';
+    return;
+  }
+
+  const isSelf = (id) => sessao && sessao.id === id;
+  const meuNivel = SbAuth.NIVEIS.indexOf(sessao?.nivel_acesso || 'operacional');
+
+  tbody.innerHTML = lista.map(u => {
+    const self   = isSelf(u.id);
+    const alvNivel = SbAuth.NIVEIS.indexOf(u.nivel_acesso);
+    const podeAlt  = !self && meuNivel > alvNivel;
+
+    const bStatus = u.primeiro_acesso
+      ? '<span class="badge badge-pending">⚠ Pendente</span>'
+      : (u.ativo ? '<span class="badge badge-active">✔ Ativo</span>' : '<span class="badge badge-danger">✗ Inativo</span>');
+
+    /* Botão promover/rebaixar */
+    let btnNivel = '';
+    if (podeAlt) {
+      const proxIdx = Math.min(alvNivel + 1, meuNivel - 1);
+      const downIdx = Math.max(alvNivel - 1, 0);
+      if (proxIdx > alvNivel && proxIdx <= meuNivel - 1) {
+        btnNivel += `<button class="btn-gold btn-sm" onclick="alterarNivel('${u.id}','${SbAuth.NIVEIS[proxIdx]}')" title="Promover">↑ Promover</button>`;
+      }
+      if (alvNivel > 0) {
+        btnNivel += `<button class="btn-outline btn-sm" onclick="alterarNivel('${u.id}','${SbAuth.NIVEIS[downIdx]}')" title="Rebaixar">↓ Rebaixar</button>`;
+      }
+    }
+    const btnReset = podeAlt ? `<button class="btn-outline btn-sm" onclick="resetarSenha('${u.id}','${(u.nome_completo||'').replace(/'/g,''')}')" title="Resetar senha">🔑</button>` : '';
+    const btnEdit  = (self || podeAlt || sessao?.nivel_acesso === 'admin_geral')
+      ? `<button class="btn-outline btn-sm" onclick="abrirModal('${u.id}')" title="Editar">✏️</button>` : '';
+    const btnDel   = podeAlt ? `<button class="btn-danger btn-sm" onclick="excluirUsuario('${u.id}','${(u.nome_completo||'').replace(/'/g,''')}')" title="Excluir">✕</button>` : '';
+
+    return `<tr>
+      <td style="font-family:monospace;font-size:11px;">${u.matricula||'—'}${self?' <span style="color:var(--gold);font-size:10px;">(você)</span>':''}</td>
+      <td style="font-size:11px;">${u.posto_graduacao||'—'}</td>
+      <td style="font-weight:600;color:var(--text-white);">${u.nome_completo||'—'}</td>
+      <td style="font-size:11px;">${u.nome_guerra||'—'}</td>
+      <td style="font-size:11px;">${u.funcao||'—'}</td>
+      <td style="font-size:11px;">${u.grupamento_id||'—'}</td>
+      <td>${_badgeNivel(u.nivel_acesso)}</td>
+      <td>${bStatus}</td>
+      <td><div class="acoes">${btnEdit}${btnNivel}${btnReset}${btnDel}</div></td>
+    </tr>`;
+  }).join('');
+}
+
+/* ══ ADICIONAR ══ */
+async function adicionarUsuario() {
+  const npm    = document.getElementById('new-npm').value.trim();
+  const pg     = document.getElementById('new-pg').value;
+  const nome   = document.getElementById('new-nome').value.trim();
+  const guerra = document.getElementById('new-guerra').value.trim();
+  const funcao = document.getElementById('new-funcao').value.trim();
+  const lotacao= document.getElementById('new-lotacao').value.trim();
+  const nivel  = document.getElementById('new-perfil').value;
+
+  if (!npm || !nome || !nivel) {
+    showMsg('msg-add','err','Preencha os campos obrigatórios: Nº PM, Nome Completo e Nível de Acesso.'); return;
+  }
+  if (npm.replace(/\D/g,'').length < 7) {
+    showMsg('msg-add','err','Nº PM deve ter 7 dígitos.'); return;
+  }
+
+  const btn = document.querySelector('[onclick="adicionarUsuario()"]');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Salvando...'; }
+
+  const r = await SbAuth.criarUsuario({
+    matricula: npm, posto_graduacao: pg, nome_completo: nome,
+    nome_guerra: guerra, funcao, grupamento_id: lotacao, nivel_acesso: nivel
+  }, sessao);
+
+  if (btn) { btn.disabled = false; btn.textContent = '+ Adicionar Usuário'; }
+
+  if (!r.ok) { showMsg('msg-add','err',r.erro); return; }
+
+  showMsg('msg-add','ok',`✔ ${nome} cadastrado. Senha padrão: Mudar@123`);
+  ['new-npm','new-nome','new-guerra'].forEach(id => { const el = document.getElementById(id); if(el) el.value=''; });
+  await carregarUsuarios();
+}
+
+/* ══ AÇÕES ══ */
+async function alterarNivel(id, novoNivel) {
+  const r = await SbAuth.alterarNivel(id, novoNivel, sessao);
+  if (!r.ok) { alert(r.erro); return; }
+  await carregarUsuarios();
+}
+
+async function resetarSenha(id, nome) {
+  if (!confirm(`Resetar a senha de "${nome}" para ${SbAuth.SENHA_PADRAO}?`)) return;
+  const r = await SbAuth.resetarSenha(id, sessao);
+  if (r.ok) showMsg('msg-add','ok',`Senha de ${nome} resetada para: ${SbAuth.SENHA_PADRAO}`);
+  else alert(r.erro);
+  await carregarUsuarios();
+}
+
+async function excluirUsuario(id, nome) {
+  if (!confirm(`Excluir o usuário "${nome}"? Esta ação não pode ser desfeita.`)) return;
+  const r = await SbAuth.excluirUsuario(id, sessao);
+  if (!r.ok) { alert(r.erro); return; }
+  await carregarUsuarios();
+}
+
+/* ══ MODAL EDITAR ══ */
+function abrirModal(id) {
+  const u = _cachedUsers.find(u => u.id === id);
+  if (!u) return;
+  document.getElementById('edit-id').value      = id;
+  document.getElementById('edit-npm').value     = u.matricula || '';
+  document.getElementById('edit-pg').value      = u.posto_graduacao || '';
+  document.getElementById('edit-nome').value    = u.nome_completo || '';
+  document.getElementById('edit-guerra').value  = u.nome_guerra || '';
+  document.getElementById('edit-funcao').value  = u.funcao || '';
+  document.getElementById('edit-lotacao').value = u.grupamento_id || '';
+  document.getElementById('edit-perfil').value  = u.nivel_acesso || 'operacional';
+
+  /* Exibe opção admin_geral só para admin_geral */
+  const optAG = document.getElementById('edit-opt-admin-geral');
+  if (optAG) optAG.style.display = sessao?.nivel_acesso === 'admin_geral' ? '' : 'none';
+
+  document.getElementById('msg-edit').classList.remove('show');
+  document.getElementById('modal-overlay').classList.add('show');
+}
+
+function fecharModal() {
+  document.getElementById('modal-overlay').classList.remove('show');
+}
+
+async function salvarEdicao() {
+  const id      = document.getElementById('edit-id').value;
+  const nome    = document.getElementById('edit-nome').value.trim();
+  const pg      = document.getElementById('edit-pg').value;
+  const guerra  = document.getElementById('edit-guerra').value.trim();
+  const funcao  = document.getElementById('edit-funcao').value.trim();
+  const lotacao = document.getElementById('edit-lotacao').value.trim();
+  const nivel   = document.getElementById('edit-perfil').value;
+
+  if (!nome) { showMsg('msg-edit','err','Nome é obrigatório.'); return; }
+
+  const r = await SbAuth.atualizarUsuario(id, {
+    nome_completo: nome, posto_graduacao: pg, nome_guerra: guerra,
+    funcao, grupamento_id: lotacao, nivel_acesso: nivel
+  }, sessao);
+
+  if (!r.ok) { showMsg('msg-edit','err',r.erro); return; }
+
+  /* Atualiza sessão se editou o próprio usuário */
+  if (sessao?.id === id) {
+    sessao.nome  = nome;
+    sessao.guerra = guerra;
+    SbAuth.sessaoSalvar(sessao);
+    document.getElementById('user-nome-hdr').textContent = nome;
+  }
+
+  fecharModal();
+  await carregarUsuarios();
+}
+
+/* Fecha modal clicando fora */
+document.getElementById('modal-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-overlay')) fecharModal();
+});
+
+/* Helpers */
 function formatNP(clean) {
-  clean = String(clean || '').replace(/[^0-9]/g,'');
-  while(clean.length < 7) clean = '0' + clean;
-  if(clean.length === 7) return clean.slice(0,3)+'.'+clean.slice(3,6)+'-'+clean.slice(6);
+  clean = String(clean || '').replace(/\D/g,'');
+  while (clean.length < 7) clean = '0' + clean;
+  if (clean.length === 7) return clean.slice(0,3)+'.'+clean.slice(3,6)+'-'+clean.slice(6);
   return clean;
 }
-
 function fmtNP(el) {
   let v = el.value.replace(/\D/g,'');
   if (v.length > 7) v = v.slice(0,7);
@@ -750,617 +1211,26 @@ function fmtNP(el) {
 }
 
 /* ══ INIT ══ */
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
   sessao = lerSessaoAdmin();
   if (!sessao) return;
-  document.getElementById('user-nome-hdr').textContent = sessao.nome || sessao.numeroPolicia;
+
+  /* Exibe nome e avatar */
+  document.getElementById('user-nome-hdr').textContent = sessao.nome || sessao.matricula;
   const initials = (sessao.nome||'A').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
   document.getElementById('user-avatar').textContent = initials;
-  renderStats();
-  renderTabela();
 
-  /* ── Sincronização automática com planilha MILITARES ── */
-  sincronizarAgora(); /* sincroniza imediatamente ao abrir */
-  setInterval(sincronizarAgora, 60 * 1000); /* repete a cada 1 minuto */
+  /* Mostra opção Admin Geral nos selects apenas para admin_geral */
+  if (sessao.nivel_acesso === 'admin_geral') {
+    const optAG = document.getElementById('opt-admin-geral');
+    if (optAG) optAG.style.display = '';
+  }
+
+  /* Oculta aba Importação para não-admin_geral */
+  // (se existir a aba de importação, ela é visível apenas para admin_geral)
+
+  await carregarUsuarios();
 });
-
-/* ══════════════════════════════════════════
-   SINCRONIZAÇÃO AUTOMÁTICA — PLANILHA → PAINEL
-   Lê da aba MILITARES (somente leitura via API Key)
-   e atualiza o banco local sem sobrescrever senhas
-══════════════════════════════════════════ */
-const SYNC_SHEET_ID = '1kVxEMYJr0RoaE5h8qUWDTI9v81VbRHGyWnqqbLcB0Nc';
-const SYNC_API_KEY  = 'AIzaSyB_paTPVM8SO4kUvjYg5Z3JwE4bfAMKrdc';
-let _syncEmAndamento = false;
-let _syncContador = 60;
-
-function _atualizarBarraSync(estado, msg, proxima){
-  const dot    = document.getElementById('sync-dot');
-  const status = document.getElementById('sync-status');
-  const prox   = document.getElementById('sync-proxima');
-  if(!dot) return;
-  const cores = { ok:'#4caf50', erro:'#ef5350', andamento:'#ff9800', idle:'#555' };
-  dot.style.background = cores[estado] || '#555';
-  if(estado === 'andamento') dot.style.animation = 'pulse-sync 1s infinite';
-  else dot.style.animation = '';
-  if(status) status.textContent = msg || '';
-  if(prox)   prox.textContent   = proxima || '';
-}
-
-/* Contador regressivo visível */
-setInterval(() => {
-  if(_syncContador > 0) _syncContador--;
-  const prox = document.getElementById('sync-proxima');
-  if(prox && !_syncEmAndamento){
-    prox.textContent = `próxima em ${_syncContador}s`;
-  }
-}, 1000);
-
-async function sincronizarAgora(){
-  if(_syncEmAndamento) return;
-  _syncEmAndamento = true;
-  _syncContador = 60;
-  _atualizarBarraSync('andamento','⏳ Sincronizando com a planilha...','');
-
-  try {
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SYNC_SHEET_ID}/values/MILITARES!A3:J300?key=${SYNC_API_KEY}`;
-    const resp = await fetch(url);
-    if(!resp.ok){
-      const err = await resp.json().catch(()=>({}));
-      throw new Error(err?.error?.message || `HTTP ${resp.status}`);
-    }
-    const data  = await resp.json();
-    const rows  = data.values || [];
-
-    if(!rows.length){
-      _atualizarBarraSync('idle','⚠ Planilha sem dados (a partir da linha 3)','');
-      return;
-    }
-
-    const lista = _getUsuariosDB();
-    let novos = 0, atualizados = 0;
-
-    rows.forEach(row => {
-      const get = (i) => (row[i]||'').toString().trim();
-      const npmRaw   = get(0);
-      const npmClean = npmRaw.replace(/\D/g,'');
-      const nome     = get(2);
-      if(!npmClean || npmClean.length < 5 || !nome) return;
-
-      const perfilRaw   = get(6).toLowerCase();
-      const perfil      = perfilRaw.includes('admin') ? 'admin' : 'operacional';
-      const senhaPlan   = get(7) || 'Mudar@123';
-      const trocarSenha = get(8).toUpperCase() !== 'FALSE';
-      const ativoRaw    = get(9).toUpperCase();
-      const ativo       = ativoRaw === '' || ativoRaw === 'TRUE';
-
-      const existIdx = lista.findIndex(u => u.numeroClean === npmClean);
-
-      if(existIdx === -1){
-        /* Novo usuário — cria direto no array sem chamar auth_criarUsuarioCompleto
-           para evitar duplicatas ao salvar */
-        const novoId = 'u' + Date.now() + Math.random().toString(36).slice(2,6);
-        lista.push({
-          id: novoId,
-          numeroPolicia: npmRaw,
-          numeroClean:   npmClean,
-          pg:            get(1),
-          nome,
-          guerra:        get(3),
-          funcao:        get(4),
-          lotacao:       get(5),
-          perfil,
-          senha:         senhaPlan,
-          primeiroAcesso: trocarSenha,
-          ativo,
-        });
-        novos++;
-      } else {
-        /* Atualiza dados — preserva senha a menos que a planilha traga senha nova */
-        const u = lista[existIdx];
-        if(get(1))  u.pg      = get(1);
-        if(nome)    u.nome    = nome;
-        if(get(3))  u.guerra  = get(3);
-        if(get(4))  u.funcao  = get(4);
-        if(get(5))  u.lotacao = get(5);
-        /* Perfil — só rebaixa se houver outro admin */
-        if(perfil === 'operacional'){
-          const temOutroAdmin = lista.filter(x=>x.perfil==='admin'&&x.id!==u.id).length > 0;
-          if(temOutroAdmin) u.perfil = perfil;
-        } else {
-          u.perfil = perfil;
-        }
-        /* Ativo — aplica sempre */
-        u.ativo = ativo;
-        /* Trocar senha — só ativa, nunca desativa */
-        if(trocarSenha) u.primeiroAcesso = true;
-        /* Senha — atualiza se a planilha trouxer senha diferente da atual */
-        if(senhaPlan && senhaPlan !== u.senha){
-          u.senha = senhaPlan;
-          u.primeiroAcesso = true;
-        }
-        atualizados++;
-      }
-    });
-
-    /* Salva APENAS localmente — não dispara gravação na planilha
-       (a planilha já é a fonte, não faz sentido gravar de volta) */
-    _saveLocalOriginal(lista);
-    renderStats();
-    renderTabela();
-
-    const agora = new Date().toLocaleTimeString('pt-BR');
-    const msg = `✔ Sincronizado às ${agora}`;
-    const detalhe = novos || atualizados
-      ? `${novos} novo${novos!==1?'s':''} · ${atualizados} atualizado${atualizados!==1?'s':''}`
-      : 'Sem alterações';
-    _atualizarBarraSync('ok', msg, detalhe);
-
-  } catch(e){
-    const agora = new Date().toLocaleTimeString('pt-BR');
-    _atualizarBarraSync('erro',`✗ Erro às ${agora}: ${e.message}`, 'tentará novamente em 1 min');
-    console.warn('Sync erro:', e);
-  } finally {
-    _syncEmAndamento = false;
-  }
-}
-
-/* ══ STATS ══ */
-function renderStats() {
-  const lista = auth_listarUsuarios();
-  const total = lista.length;
-  const admins = lista.filter(u => u.perfil === 'admin').length;
-  const ops = lista.filter(u => u.perfil === 'operacional').length;
-  const pendentes = lista.filter(u => u.primeiroAcesso).length;
-
-  document.getElementById('stats-row').innerHTML = `
-    <div class="stat-card gold"><div class="sc-lbl">Total Usuários</div><div class="sc-val">${total}</div><div class="sc-sub">cadastrados</div></div>
-    <div class="stat-card blue"><div class="sc-lbl">Administradores</div><div class="sc-val">${admins}</div><div class="sc-sub">com acesso total</div></div>
-    <div class="stat-card green"><div class="sc-lbl">Operacionais</div><div class="sc-val">${ops}</div><div class="sc-sub">somente leitura</div></div>
-    <div class="stat-card orange"><div class="sc-lbl">1º Acesso Pendente</div><div class="sc-val">${pendentes}</div><div class="sc-sub">aguardando senha</div></div>`;
-  document.getElementById('total-label').textContent = `${total} usuário${total!==1?'s':''} cadastrado${total!==1?'s':''}`;
-}
-
-/* ══ TABELA ══ */
-function renderTabela() {
-  const busca = (document.getElementById('busca').value || '').toLowerCase();
-  const filPerfil = document.getElementById('filtro-perfil').value;
-  const filStatus = document.getElementById('filtro-status').value;
-  let lista = auth_listarUsuarios();
-
-  if (busca) lista = lista.filter(u =>
-    u.nome.toLowerCase().includes(busca) ||
-    u.numeroPolicia.includes(busca) ||
-    (u.guerra||'').toLowerCase().includes(busca)
-  );
-  if (filPerfil) lista = lista.filter(u => u.perfil === filPerfil);
-  if (filStatus === 'pendente') lista = lista.filter(u => u.primeiroAcesso);
-  if (filStatus === 'ativo') lista = lista.filter(u => !u.primeiroAcesso);
-
-  const isSelf = (id) => sessao && sessao.id === id;
-  const tbody = document.getElementById('tabela-body');
-
-  if (!lista.length) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="9">Nenhum usuário encontrado.</td></tr>';
-    return;
-  }
-
-  tbody.innerHTML = lista.map(u => {
-    const self = isSelf(u.id);
-    const bPerfil = u.perfil === 'admin'
-      ? '<span class="badge badge-admin">Admin</span>'
-      : '<span class="badge badge-op">Operacional</span>';
-    const bStatus = u.primeiroAcesso
-      ? '<span class="badge badge-pending">⚠ Pendente</span>'
-      : '<span class="badge badge-active">✔ Ativo</span>';
-
-    const btnPromover = u.perfil === 'operacional'
-      ? `<button class="btn-gold btn-sm" onclick="alterarPerfil('${u.id}','admin')" title="Promover a Administrador">↑ Promover</button>`
-      : (!self ? `<button class="btn-outline btn-sm" onclick="alterarPerfil('${u.id}','operacional')" title="Rebaixar">↓ Rebaixar</button>` : '');
-    const btnReset = !self ? `<button class="btn-outline btn-sm" onclick="resetarSenha('${u.id}','${u.nome}')" title="Resetar senha">🔑</button>` : '';
-    const btnEdit = `<button class="btn-outline btn-sm" onclick="abrirModal('${u.id}')" title="Editar">✏️</button>`;
-    const btnDel = !self ? `<button class="btn-danger btn-sm" onclick="excluirUsuario('${u.id}','${u.nome}')" title="Excluir">✕</button>` : '';
-
-    return `<tr>
-      <td style="font-family:monospace;font-size:11px;">${u.numeroPolicia}${self?' <span style="color:var(--gold);font-size:10px;">(você)</span>':''}</td>
-      <td style="font-size:11px;">${u.pg||'—'}</td>
-      <td style="font-weight:600;color:var(--text-white);">${u.nome}</td>
-      <td style="font-size:11px;">${u.guerra||'—'}</td>
-      <td style="font-size:11px;">${u.funcao||'—'}</td>
-      <td style="font-size:11px;">${u.lotacao||'—'}</td>
-      <td>${bPerfil}</td>
-      <td>${bStatus}</td>
-      <td><div class="acoes">${btnEdit}${btnPromover}${btnReset}${btnDel}</div></td>
-    </tr>`;
-  }).join('');
-}
-
-/* ══ ADICIONAR ══ */
-function adicionarUsuario() {
-  const npm    = document.getElementById('new-npm').value.trim();
-  const pg     = document.getElementById('new-pg').value;
-  const nome   = document.getElementById('new-nome').value.trim();
-  const guerra = document.getElementById('new-guerra').value.trim();
-  const funcao = document.getElementById('new-funcao').value.trim();
-  const lotacao= document.getElementById('new-lotacao').value.trim();
-  const perfil = document.getElementById('new-perfil').value;
-  const msg    = document.getElementById('msg-add');
-
-  if (!npm || !nome || !perfil) {
-    showMsg('msg-add','err','Preencha os campos obrigatórios: Nº PM, Nome Completo e Perfil.');
-    return;
-  }
-  if (npm.replace(/\D/g,'').length < 7) {
-    showMsg('msg-add','err','Nº PM deve ter 7 dígitos.');
-    return;
-  }
-
-  const r = auth_criarUsuarioCompleto(npm, pg, nome, guerra, funcao, lotacao, perfil);
-  if (!r.ok) { showMsg('msg-add','err',r.erro); return; }
-
-  showMsg('msg-add','ok',`✔ ${nome} cadastrado com sucesso. Senha padrão: Mudar@123`);
-  ['new-npm','new-nome','new-guerra'].forEach(id => document.getElementById(id).value = '');
-  document.getElementById('new-pg').selectedIndex = 0;
-  document.getElementById('new-funcao').selectedIndex = 0;
-  document.getElementById('new-lotacao').selectedIndex = 0;
-  document.getElementById('new-perfil').value = 'operacional';
-  renderStats();
-  renderTabela();
-}
-
-/* ══ AÇÕES ══ */
-function alterarPerfil(id, perfil) {
-  const r = auth_alterarPerfil(id, perfil);
-  if (!r.ok) { alert(r.erro); return; }
-  renderStats(); renderTabela();
-}
-
-function resetarSenha(id, nome) {
-  if (!confirm(`Resetar a senha de "${nome}" para Mudar@123?`)) return;
-  const r = auth_resetarSenha(id);
-  if (r.ok) showMsg('msg-add','ok',`Senha de ${nome} resetada para: Mudar@123`);
-  else alert(r.erro);
-  renderTabela();
-}
-
-function excluirUsuario(id, nome) {
-  if (!confirm(`Excluir o usuário "${nome}"? Esta ação não pode ser desfeita.`)) return;
-  const r = auth_excluirUsuario(id);
-  if (!r.ok) { alert(r.erro); return; }
-  renderStats(); renderTabela();
-}
-
-/* ══ MODAL EDITAR ══ */
-function abrirModal(id) {
-  const lista = auth_listarUsuarios();
-  const u = lista.find(u => u.id === id);
-  if (!u) return;
-  document.getElementById('edit-id').value = id;
-  document.getElementById('edit-npm').value = u.numeroPolicia;
-  document.getElementById('edit-pg').value = u.pg || '';
-  document.getElementById('edit-nome').value = u.nome;
-  document.getElementById('edit-guerra').value = u.guerra || '';
-  document.getElementById('edit-funcao').value = u.funcao || '';
-  document.getElementById('edit-lotacao').value = u.lotacao || '';
-  document.getElementById('edit-perfil').value = u.perfil;
-  document.getElementById('msg-edit').classList.remove('show');
-  document.getElementById('modal-overlay').classList.add('show');
-}
-
-function fecharModal() {
-  document.getElementById('modal-overlay').classList.remove('show');
-}
-
-function salvarEdicao() {
-  const id     = document.getElementById('edit-id').value;
-  const nome   = document.getElementById('edit-nome').value.trim();
-  const pg     = document.getElementById('edit-pg').value;
-  const guerra = document.getElementById('edit-guerra').value.trim();
-  const funcao = document.getElementById('edit-funcao').value.trim();
-  const lotacao= document.getElementById('edit-lotacao').value.trim();
-  const perfil = document.getElementById('edit-perfil').value;
-  if (!nome) { showMsg('msg-edit','err','Nome é obrigatório.'); return; }
-  const r = auth_atualizarUsuario(id, { nome, pg, guerra, funcao, lotacao, perfil });
-  if (!r.ok) { showMsg('msg-edit','err',r.erro); return; }
-  fecharModal();
-  renderStats(); renderTabela();
-}
-
-/* Fecha modal clicando fora */
-document.getElementById('modal-overlay').addEventListener('click', e => {
-  if (e.target === document.getElementById('modal-overlay')) fecharModal();
-});
-
-/* ══════════════════════════════════════════════════════════
-   CREDENCIAIS DA SERVICE ACCOUNT — PREENCHA NO SEU COMPUTADOR
-   Não compartilhe estes valores publicamente.
-══════════════════════════════════════════════════════════ */
-const SA_CLIENT_EMAIL = 'analise-criminal@analise-criminal-496115.iam.gserviceaccount.com';
-const SA_PRIVATE_KEY  = '-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQC0V7JH4eyEtvaM\naQlQPHQF+SPZUkkvgNSL8pKY7L2RcMTKvDQWVGCF7fpeuO3cHreiX3oU0vIoX/yu\nGFprFgVLKdJtRMq0jC0DSMTMcpUIbKn0/+/V3vuxj34SfLzj3b/QY5mCLQIijkRa\nRFAPXg3gqYPgh2hwOx+RqC/xK3SAiVL0XRE3+am1rG5ftI7K+FrGG4Jfe96ccNoC\nUh8ibU+EPbO3AhpetxTQdN6sE2NoLhB9gGuuxiuz7CygCFv0NLTp23UdtUqE6am6\n630m92NGdh97t7BSDD7jJMRRTisKqOE9goD6LsYnmFV4cnVe/voYKsHJ0WplzHy2\nCGPUoh5BAgMBAAECggEAD+zBCVQvxane5Ff3mrJV5/ufsOZxYDya+DctvwuDs1q/\nA+yB2Hlvsw/oSJJBrcr4GgJelkVo3QwZ1NlBbbyab9BT/LJjCHWq2WQE/c098Aoh\naWkqyWrY9K1YO4NwjhoUIK+U3AADtN+1dTecTrkWVmD9rFdkr2lnIJ52ilA1J87i\nlVApbMJeLNiuGe+k1augQeZNTV1DkB0zZOTtp5ApBxE7uYMAMClgdDOJeXvv5WSs\netlY4KgZCthj6UxF/zAGBw5V36CSchk5zs5a7x+gZ/iuqquktc61bD1FgCmVezmN\n88HByDMhcIinljriy0mn7Vw2qmdtKeHLDbjlBthcOQKBgQDZYmHsN5J2O5yZr3Xe\nIITfOdX1LZQzGF2GJOPDXOBUDFJABRCAGqObo8M53JMlC5RgTq/AYDTPiIFOfnph\nh4Zpou8asAehi1LZaTBsjGwuMkWWa9xytrhp/M1JiltUm31shBortLIHFX+7pbFX\nuG890YCQvl8cgaWNiH6oslKbuQKBgQDUYNRShL04nBo3seBVYbkedoKqd2Q26MuG\nxsuqul9o1995IBODBhIbo62uskadYJss/RLenA3Tf8MbgBh6xC3SpEA+oK9djk2q\n/PNT/5T6B8WcTj5HkUzugl7bPhKe1oD2S3A3afmTFlEEypPRJGBy1ns2L/+AxAWg\nmOVWqcWqyQKBgEvkbQtq21cruKBvAVdrQvgr2Oaf4v1zpDMQ7fNmmWq+Yni3S+tt\nYXEU2zN4LmbghAybbABdlhJeNcaRoWgrSGHY4GEQ05kyato8Pwumep4mLuU1AuGJ\nqRhXidQC2Z/QKRmZhQl9LCoM92srjZ5yZWPPoHLoA4yQNpwS6yU6HF0BAoGAI5kL\nXb2EHf4EYvt8t7MGnXWN11blxFJm8vNVZguRPHiaq6nVu2uEE3/u985ICc8Mk5Dj\n3c5Yfu/2WyCwebtyVtFTN2wlmM/mctetTZIUfYhZ9iYjSEmxlHTjw2n3IwqfWSkx\n6QfpXl8qO1xdRHwNcpJC2sVW1VWF//JA1rLkQAkCgYBRlyPaCutQGQFX2ZyGNQLT\nM/3gyNmGicaxHjEsT9BpVXwn4eThmaXohwpMH1bMWIgQsA+elZ/Uu/RJKZkaJapT\nMuovMhCd1Vobs5rLMNo7SGXVBJVE9gbhUzlZ2npELYmeoqtrRA3rAHgnLiceIl0n\n/efXnwJUUUrByR/PrljLLg==\n-----END PRIVATE KEY-----\n';
-const SA_SHEET_ID     = '1kVxEMYJr0RoaE5h8qUWDTI9v81VbRHGyWnqqbLcB0Nc';
-const SA_RANGE_WRITE  = 'MILITARES!A3:J';
-
-/* ── JWT mínimo para Google Sheets API (RS256) ── */
-async function _gerarJWT(){
-  const now   = Math.floor(Date.now()/1000);
-  const header  = { alg:'RS256', typ:'JWT' };
-  const payload = {
-    iss: SA_CLIENT_EMAIL,
-    scope: 'https://www.googleapis.com/auth/spreadsheets',
-    aud: 'https://oauth2.googleapis.com/token',
-    exp: now + 3600,
-    iat: now,
-  };
-  const b64u = (obj) => btoa(JSON.stringify(obj))
-    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-  const sigInput = b64u(header) + '.' + b64u(payload);
-
-  /* Importa chave privada PEM */
-  const pemBody  = SA_PRIVATE_KEY
-    .replace('-----BEGIN PRIVATE KEY-----','')
-    .replace('-----END PRIVATE KEY-----','')
-    .replace(/\n/g,'').trim();
-  const keyData  = Uint8Array.from(atob(pemBody), c=>c.charCodeAt(0));
-  const cryptoKey = await crypto.subtle.importKey(
-    'pkcs8', keyData.buffer,
-    { name:'RSASSA-PKCS1-v1_5', hash:'SHA-256' },
-    false, ['sign']
-  );
-  const enc = new TextEncoder();
-  const sig  = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', cryptoKey, enc.encode(sigInput));
-  const b64sig = btoa(String.fromCharCode(...new Uint8Array(sig)))
-    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-  return sigInput + '.' + b64sig;
-}
-
-async function _getAccessToken(){
-  try {
-    const jwt = await _gerarJWT();
-    const resp = await fetch('https://oauth2.googleapis.com/token', {
-      method:'POST',
-      headers:{'Content-Type':'application/x-www-form-urlencoded'},
-      body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,
-    });
-    const data = await resp.json();
-    if(!data.access_token) throw new Error(data.error_description || 'Token inválido');
-    return data.access_token;
-  } catch(e){
-    console.error('Erro ao obter token:', e);
-    return null;
-  }
-}
-
-/* ── Converte lista de usuários para linhas da planilha ── */
-function _usuariosParaLinhas(lista){
-  return lista.map(u => [
-    u.numeroPolicia || '',          /* A — Nº PM        */
-    u.pg            || '',          /* B — P/G          */
-    u.nome          || '',          /* C — Nome Completo*/
-    u.guerra        || '',          /* D — Nome Guerra  */
-    u.funcao        || '',          /* E — Função       */
-    u.lotacao       || '',          /* F — Lotação      */
-    u.perfil        || 'operacional',/* G — Perfil      */
-    u.senha         || 'Mudar@123', /* H — Senha        */
-    u.primeiroAcesso ? 'TRUE':'FALSE', /* I — Trocar Senha */
-    u.ativo !== false ? 'TRUE':'FALSE', /* J — Ativo    */
-  ]);
-}
-
-/* ── Grava lista completa na planilha (sobrescreve a partir de A3) ── */
-let _gravaTimeout = null;
-async function _gravarNaPlanilha(listaParam){
-  /* Credenciais não preenchidas — silencioso */
-  if(SA_CLIENT_EMAIL.startsWith('COLE_') || SA_PRIVATE_KEY.startsWith('COLE_')) return;
-
-  /* Debounce: agrupa múltiplas gravações em 2s para evitar flood */
-  clearTimeout(_gravaTimeout);
-  _gravaTimeout = setTimeout(async () => {
-    /* Sempre lê o banco completo atualizado — não usa o parâmetro que pode estar desatualizado */
-    const lista = _getUsuariosDB();
-
-    /* Segurança: nunca grava se a lista estiver vazia */
-    if(!lista || lista.length === 0){
-      console.warn('_gravarNaPlanilha: lista vazia, abortando gravação para proteger a planilha.');
-      return;
-    }
-
-    _setBtnSync('gravando');
-    try {
-      const token = await _getAccessToken();
-      if(!token){ _setBtnSync('erro','Erro de autenticação'); return; }
-
-      const linhas = _usuariosParaLinhas(lista);
-
-      /* Só limpa APÓS confirmar que temos dados para gravar */
-      const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SA_SHEET_ID}/values/${encodeURIComponent(SA_RANGE_WRITE)}:clear`;
-      await fetch(clearUrl, { method:'POST', headers:{ Authorization:`Bearer ${token}` } });
-
-      const writeUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SA_SHEET_ID}/values/${encodeURIComponent('MILITARES!A3')}?valueInputOption=USER_ENTERED`;
-      const resp = await fetch(writeUrl, {
-        method:'PUT',
-        headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
-        body: JSON.stringify({ range:'MILITARES!A3', majorDimension:'ROWS', values: linhas }),
-      });
-      if(!resp.ok){ const e=await resp.json(); throw new Error(e.error?.message||'Erro na escrita'); }
-      console.log(`✔ Planilha atualizada — ${lista.length} usuários gravados`);
-      _setBtnSync('ok');
-    } catch(e){
-      _setBtnSync('erro', e.message);
-      console.error('Erro ao gravar na planilha:', e);
-    }
-  }, 2000);
-}
-
-function _setBtnSync(estado, msg){
-  const dot    = document.getElementById('sync-dot');
-  const status = document.getElementById('sync-status');
-  if(!dot) return;
-  const conf = {
-    ok:       { cor:'#4caf50', txt:'✔ Planilha atualizada às '+new Date().toLocaleTimeString('pt-BR') },
-    gravando: { cor:'#ff9800', txt:'📤 Gravando na planilha...' },
-    erro:     { cor:'#ef5350', txt:'✗ Erro ao gravar: '+(msg||'') },
-    andamento:{ cor:'#ff9800', txt:'⏳ Sincronizando...' },
-  };
-  const c = conf[estado] || conf.ok;
-  dot.style.background = c.cor;
-  if(status) status.textContent = c.txt;
-}
-
-/* ── Força gravação imediata de todos os usuários locais na planilha ── */
-async function gravarTudoNaPlanilha(){
-  const lista = _getUsuariosDB();
-  if(!lista || lista.length === 0){
-    alert('Nenhum usuário no banco local para restaurar.');
-    return;
-  }
-  if(!confirm(`Gravar ${lista.length} usuários do sistema local na planilha?\n\nIsso sobrescreverá o conteúdo atual da aba MILITARES.`)) return;
-
-  _setBtnSync('gravando');
-  clearTimeout(_gravaTimeout);
-  try {
-    const token = await _getAccessToken();
-    if(!token){ _setBtnSync('erro','Erro de autenticação'); return; }
-    const linhas = _usuariosParaLinhas(lista);
-    const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SA_SHEET_ID}/values/${encodeURIComponent(SA_RANGE_WRITE)}:clear`;
-    await fetch(clearUrl, { method:'POST', headers:{ Authorization:`Bearer ${token}` } });
-    const writeUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SA_SHEET_ID}/values/${encodeURIComponent('MILITARES!A3')}?valueInputOption=USER_ENTERED`;
-    const resp = await fetch(writeUrl, {
-      method:'PUT',
-      headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
-      body: JSON.stringify({ range:'MILITARES!A3', majorDimension:'ROWS', values: linhas }),
-    });
-    if(!resp.ok){ const e=await resp.json(); throw new Error(e.error?.message||'Erro na escrita'); }
-    _setBtnSync('ok');
-    alert(`✔ ${lista.length} usuários restaurados na planilha com sucesso!`);
-  } catch(e){
-    _setBtnSync('erro', e.message);
-    alert('✗ Erro: ' + e.message);
-  }
-}
-/* Usa variavel para guardar referencia antes do override */
-const _saveLocalOriginal = (lista) => { _aset('poe_usuarios', JSON.stringify(lista)); };
-
-function _saveUsuariosDB(lista){
-  _saveLocalOriginal(lista);         /* salva localmente como antes */
-  _gravarNaPlanilha(lista);          /* dispara escrita na planilha */
-}
-
-/* ══ FIM DO MOTOR BIDIRECIONAL ══ */
-/* ══════════════════════════════════
-   GRUPAMENTOS — ABA ADMIN
-══════════════════════════════════ */
-const ADMIN_GRUPOS_SID    = '17qgczIngwb6RYbFx0JqCOuctpTNMe2I3FQ9r6h24DSo';
-const ADMIN_GRUPOS_APIKEY = 'AIzaSyCBbKDtyNO2RmtpYNWipjC0OAQ07GFnbKU';
-let _adminGrupos = [];
-let _grpAdminPage = 1;
-const GRP_PAGE_SZ = 30;
-
-async function renderGruposAdmin(){
-  if(!_adminGrupos.length) await _carregarGruposAdmin();
-  _filtrarRenderGrp();
-}
-
-async function _carregarGruposAdmin(){
-  try{
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${ADMIN_GRUPOS_SID}/values/GRUPOS!A2:O?key=${ADMIN_GRUPOS_APIKEY}`;
-    const r = await fetch(url);
-    if(!r.ok) throw new Error('HTTP '+r.status);
-    const data = await r.json();
-    const rows = (data.values||[]).slice(1);
-    _adminGrupos = [];
-    const seen = new Set();
-    rows.forEach(row => {
-      if(!row[0]) return;
-      const colK = (row[10]||'').trim();
-      const key  = (row[0]||'').trim()+'|'+colK;
-      if(seen.has(key)) return;
-      seen.add(key);
-      _adminGrupos.push({
-        municipio:  (row[0]||'').trim(),
-        gp:         (row[1]||'').trim(),
-        pelotao:    (row[2]||'').trim(),
-        rpm:        (row[6]||'').trim(),
-        bpm:        (row[7]||'').trim(),
-        gpResp:     (row[8]||'').trim(),
-        grupamento: colK,
-        pelNum:     parseInt((colK.match(/(\d+)\s*PEL/i)||[])[1]||99),
-      });
-    });
-    const grps = [...new Set(_adminGrupos.map(r=>r.grupamento).filter(Boolean))].sort((a,b)=>{
-      const pa=parseInt((a.match(/(\d+)\s*PEL/i)||[])[1]||99);
-      const pb=parseInt((b.match(/(\d+)\s*PEL/i)||[])[1]||99);
-      return pa!==pb ? pa-pb : a.localeCompare(b);
-    });
-    const sel = document.getElementById('fg-grp');
-    if(sel) sel.innerHTML = '<option value="">Todos os Grupamentos</option>' +
-      grps.map(g=>`<option value="${g}">${g}</option>`).join('');
-  }catch(e){
-    const tb = document.getElementById('grp-tbody');
-    if(tb) tb.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--danger);">✗ Erro ao carregar: ${e.message}</td></tr>`;
-  }
-}
-
-function _filtrarRenderGrp(){
-  const gpF  = (document.getElementById('fg-grp')?.value)||'';
-  const pelF = (document.getElementById('fg-pel')?.value)||'';
-  const munF = ((document.getElementById('fg-mun')?.value)||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
-
-  let data = _adminGrupos.filter(r => {
-    if(gpF  && r.grupamento !== gpF) return false;
-    if(pelF){ const n=pelF.replace(/\D/g,''); if(!r.grupamento.includes(n+' PEL')&&r.pelotao!==pelF) return false; }
-    if(munF && !r.municipio.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').includes(munF)) return false;
-    return true;
-  });
-
-  const total=data.length, totPg=Math.ceil(total/GRP_PAGE_SZ)||1;
-  if(_grpAdminPage>totPg) _grpAdminPage=1;
-  const start=(_grpAdminPage-1)*GRP_PAGE_SZ;
-  const slice=data.slice(start,start+GRP_PAGE_SZ);
-  const tbody = document.getElementById('grp-tbody');
-  if(!tbody) return;
-  if(!slice.length){
-    tbody.innerHTML='<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text-muted);">Nenhum registro encontrado.</td></tr>';
-    const pag=document.getElementById('pag-grp-admin'); if(pag) pag.style.display='none';
-    return;
-  }
-  tbody.innerHTML = slice.map((r,i) => `<tr>
-    <td style="color:var(--text-hint);font-size:11px;">${start+i+1}</td>
-    <td style="font-weight:600;color:#fff;">${r.municipio}</td>
-    <td><span style="background:rgba(155,138,92,.15);color:var(--gold);padding:2px 7px;border-radius:3px;font-size:11px;">${r.gp}</span></td>
-    <td style="font-size:10px;color:#aaa;max-width:260px;">${r.grupamento}</td>
-    <td style="font-size:11px;color:var(--text-muted);">${r.gpResp}</td>
-    <td style="font-size:11px;">${r.pelotao}</td>
-    <td style="font-size:11px;">${r.rpm}</td>
-    <td style="font-size:11px;">${r.bpm}</td>
-  </tr>`).join('');
-
-  const pag=document.getElementById('pag-grp-admin');
-  if(pag){ pag.style.display='flex';
-    document.getElementById('pag-grp-info-admin').textContent=`${start+1}–${Math.min(start+GRP_PAGE_SZ,total)} de ${total}`;
-    let btns=`<button class="pag-btn" onclick="goGrpAdminPage(${_grpAdminPage-1})" ${_grpAdminPage===1?'disabled':''}>‹</button>`;
-    for(let p=Math.max(1,_grpAdminPage-2);p<=Math.min(totPg,_grpAdminPage+2);p++)
-      btns+=`<button class="pag-btn ${p===_grpAdminPage?'active':''}" onclick="goGrpAdminPage(${p})">${p}</button>`;
-    btns+=`<button class="pag-btn" onclick="goGrpAdminPage(${_grpAdminPage+1})" ${_grpAdminPage===totPg?'disabled':''}>›</button>`;
-    document.getElementById('pag-grp-btns-admin').innerHTML=btns;
-  }
-}
-function goGrpAdminPage(p){ const t=Math.ceil(_adminGrupos.length/GRP_PAGE_SZ)||1; if(p<1||p>t) return; _grpAdminPage=p; _filtrarRenderGrp(); }
-function limparFiltrosGrpAdmin(){ ['fg-grp','fg-pel','fg-mun'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; }); _grpAdminPage=1; _filtrarRenderGrp(); }
-
-function showMsg(id, tipo, txt) {
-  const el = document.getElementById(id);
-  if(!el) return;
-  el.textContent = txt;
-  el.className = `inline-msg ${tipo} show`;
-  if (tipo === 'ok') setTimeout(() => el.classList.remove('show'), 5000);
-}
-
-function switchTab(el, id) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.tab-pane').forEach(t => t.classList.remove('active'));
-  if (el) el.classList.add('active');
-  document.getElementById('tab-' + id)?.classList.add('active');
-}
 
 /* ══════════════════════════════════════════
    SUPABASE
