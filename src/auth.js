@@ -270,8 +270,11 @@ async function auth_atualizarUsuario(id, dados, sessao) {
       return { ok: false, erro: 'Apenas Admin Geral pode promover outros Admin Gerais.' };
     }
 
-    // Não pode editar usuário de nível igual ou superior (exceto a si mesmo)
-    if (sessao?.id !== id && _nivelNum(alvo.nivel_acesso) >= _nivelNum(sessao?.nivel_acesso)) {
+    // Não pode editar usuário de nível superior (exceto admin_geral pode editar outros admin_geral)
+    const meuNivelNum = _nivelNum(sessao?.nivel_acesso);
+    const alvNivelNum = _nivelNum(alvo.nivel_acesso);
+    const ambosAdminGeral = sessao?.nivel_acesso === 'admin_geral' && alvo.nivel_acesso === 'admin_geral';
+    if (sessao?.id !== id && !ambosAdminGeral && alvNivelNum >= meuNivelNum) {
       return { ok: false, erro: 'Você não pode editar um usuário de nível igual ou superior ao seu.' };
     }
 
@@ -296,7 +299,8 @@ async function auth_resetarSenha(id, sessao) {
   try {
     const alvo = await _sbGetOne(`id=eq.${id}`);
     if (!alvo) return { ok: false, erro: 'Usuário não encontrado.' };
-    if (sessao?.id !== id && _nivelNum(sessao?.nivel_acesso) <= _nivelNum(alvo.nivel_acesso)) {
+    const ambosAG = sessao?.nivel_acesso === 'admin_geral' && alvo.nivel_acesso === 'admin_geral';
+    if (sessao?.id !== id && !ambosAG && _nivelNum(sessao?.nivel_acesso) <= _nivelNum(alvo.nivel_acesso)) {
       return { ok: false, erro: 'Permissão insuficiente para resetar esta senha.' };
     }
     const hash = await hashSenha(SENHA_PADRAO);
@@ -342,7 +346,8 @@ async function auth_excluirUsuario(id, sessao) {
       if (outrosAG === 0) return { ok: false, erro: 'Não é possível excluir o único Admin Geral.' };
     }
 
-    if (_nivelNum(alvo.nivel_acesso) >= _nivelNum(sessao?.nivel_acesso)) {
+    const ambosAGExcl = sessao?.nivel_acesso === 'admin_geral' && alvo.nivel_acesso === 'admin_geral';
+    if (!ambosAGExcl && _nivelNum(alvo.nivel_acesso) >= _nivelNum(sessao?.nivel_acesso)) {
       return { ok: false, erro: 'Você não pode excluir um usuário de nível igual ou superior.' };
     }
 
