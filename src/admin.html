@@ -1021,45 +1021,48 @@ function renderTabela() {
   const filStatus = document.getElementById('filtro-status')?.value || '';
   let lista = [..._cachedUsers];
 
-  /* ── Ordenação por grupamento e função ── */
-  const _ordemFuncao = {
-    'cmt cia': 0, 'aux p1': 1, 'aux p2': 2, 'aux p3': 3, 'aux p4': 4, 'aux p5': 5,
-    'srai': 6, 'cmt grupamento': 7, 'operacional': 8
-  };
-
-  function _ordemGrupo(u) {
+  /* ── Ordenação: ADM → Cmt Pelotão + GPs por pelotão ── */
+  function _chaveOrdem(u) {
     const lot = (u.grupamento_id || '').trim();
-    // ADM fica primeiro
-    if (!lot || lot.toUpperCase() === 'ADM' || lot.toUpperCase().includes('ADM')) return '0000|0|0';
-    // Extrai GP, PEL e nome: "2 GP / 3 PEL / 3 CIA PM MAMB / MANTENA"
+    const fun = (u.funcao || '').trim().toLowerCase();
+
+    // 1) ADM — Administração (sem lotação ou lotação = ADM)
+    if (!lot || lot.toUpperCase() === 'ADM') {
+      let fOrd = 9;
+      if (fun === 'cmt cia')           fOrd = 0;
+      else if (fun === 'aux p1')       fOrd = 1;
+      else if (fun === 'aux p2')       fOrd = 2;
+      else if (fun === 'aux p3')       fOrd = 3;
+      else if (fun === 'aux p4')       fOrd = 4;
+      else if (fun === 'aux p5')       fOrd = 5;
+      else if (fun === 'srai')         fOrd = 6;
+      return `00|00|00|${fOrd}|${u.nome_completo||''}`;
+    }
+
+    // 2) Cmt Pelotão — lotação no formato "N PEL / ..."  (sem GP no início)
+    const isCmtPel = fun === 'cmt pelotão' || fun === 'cmt pelotao';
+    const mPelOnly = !lot.match(/\d+\s*GP/i) && lot.match(/^(\d+)\s*PEL/i);
+    if (isCmtPel || mPelOnly) {
+      const pel = (lot.match(/(\d+)\s*PEL/i)||[])[1] || '99';
+      // Cmt Pelotão aparece ANTES dos GPs do mesmo pelotão
+      return `${pel.padStart(2,'0')}|00|00|0|${u.nome_completo||''}`;
+    }
+
+    // 3) GPs — formato "N GP / N PEL / 3 CIA PM MAMB / NOME"
     const mGP  = lot.match(/(\d+)\s*GP/i);
     const mPEL = lot.match(/(\d+)\s*PEL/i);
     const gp   = mGP  ? mGP[1].padStart(2,'0')  : '99';
     const pel  = mPEL ? mPEL[1].padStart(2,'0') : '99';
-    // Nome do grupamento (após última /)
     const nome = lot.split('/').pop().trim();
-    return `${gp}|${pel}|${nome}`;
+
+    let fOrd = 9;
+    if (fun === 'cmt grupamento') fOrd = 0;
+    // operacional e demais ficam depois
+
+    return `${pel}|${gp}|${nome}|${fOrd}|${u.nome_completo||''}`;
   }
 
-  function _ordemFunc(u) {
-    const f = (u.funcao || '').toLowerCase().trim();
-    // Cmt Cia e auxiliares ficam no topo (ADM)
-    if (f === 'cmt cia') return 0;
-    if (f.startsWith('aux p')) return 1 + (parseInt(f.replace(/\D/g,'')) || 0);
-    if (f === 'srai') return 7;
-    if (f === 'cmt grupamento') return 8;
-    return 9; // operacional e demais
-  }
-
-  lista.sort((a, b) => {
-    const ga = _ordemGrupo(a);
-    const gb = _ordemGrupo(b);
-    if (ga !== gb) return ga.localeCompare(gb);
-    const fa = _ordemFunc(a);
-    const fb = _ordemFunc(b);
-    if (fa !== fb) return fa - fb;
-    return (a.nome_completo || '').localeCompare(b.nome_completo || '');
-  });
+  lista.sort((a, b) => _chaveOrdem(a).localeCompare(_chaveOrdem(b)));
 
   if (busca) lista = lista.filter(u =>
     (u.nome_completo||'').toLowerCase().includes(busca) ||
