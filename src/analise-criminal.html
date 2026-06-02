@@ -6799,28 +6799,75 @@ function renderIntel(){
         const comps = f.complementos||[];
         if(!comps.length) return '';
         const sorted = [...comps].sort((a,b)=>new Date(b.registradoEmISO||0)-new Date(a.registradoEmISO||0));
-        const ult = sorted[0];
-        const MC_TIPO_LABEL_CARD = {avistamento:'👁',localizacao:'📍',veiculo:'🚗',arma:'🔫',movimentacao:'🔄',cumplice:'👥',prisao:'🚨',fonte:'🗣',documento:'📄',outros:'📝'};
-        const tipoIcon = MC_TIPO_LABEL_CARD[ult.tipo||'outros']||'📝';
-        /* Resumo de todos os complementos (até 3) */
-        const resumo = sorted.slice(0,3).map(c=>`
-          <div style="display:flex;align-items:flex-start;gap:6px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04);">
-            <span style="font-size:14px;flex-shrink:0;">${MC_TIPO_LABEL_CARD[c.tipo||'outros']||'📝'}</span>
-            <div style="flex:1;min-width:0;">
-              <div style="font-size:10px;color:var(--gold);font-weight:700;margin-bottom:1px;">👮 ${c.autor||'—'} · <span style="color:var(--text-hint);font-weight:400;">${c.registradoEm||'—'}</span></div>
-              <div style="font-size:11px;color:#ccc;line-height:1.4;word-break:break-word;">${(c.texto||'').slice(0,120)}${(c.texto||'').length>120?'…':''}</div>
-              ${c.local?`<div style="font-size:10px;color:var(--text-muted);margin-top:1px;">📍 ${c.local}</div>`:''}
-              ${(c.anexos||[]).length?`<div style="font-size:10px;color:var(--info);margin-top:2px;">📎 ${c.anexos.length} anexo${c.anexos.length!==1?'s':''}</div>`:''}
+
+        const TIPO_ICON  = {avistamento:'👁',localizacao:'📍',veiculo:'🚗',arma:'🔫',movimentacao:'🔄',cumplice:'👥',prisao:'🚨',fonte:'🗣',documento:'📄',outros:'📝'};
+        const TIPO_LABEL = {avistamento:'Avistamento',localizacao:'Localização',veiculo:'Veículo',arma:'Arma/Drogas',movimentacao:'Movimentação',cumplice:'Novo Suspeito',prisao:'Preso',fonte:'Fonte',documento:'Documento',outros:'Outros'};
+        /* Cor da borda por tipo */
+        const TIPO_COR   = {avistamento:'#42a5f5',localizacao:'#ff9800',veiculo:'#ab47bc',arma:'#ef5350',movimentacao:'#26c6da',cumplice:'#ec407a',prisao:'#ef5350',fonte:'#66bb6a',documento:'#ffa726',outros:'#9b8a5c'};
+        const CONF_LABEL = {confirmada:'✅ Confirmada',provavel:'🟡 Provável',possivel:'🟠 Possível',duvidosa:'🔴 Duvidosa'};
+
+        /* Gera um avatar-cor a partir do nome do autor */
+        function autorCor(nome){
+          const cores = ['#42a5f5','#66bb6a','#ff9800','#ab47bc','#ec407a','#26c6da','#ffa726','#ef5350','#26a69a'];
+          let h = 0; for(let i=0;i<(nome||'').length;i++) h = (h*31+nome.charCodeAt(i)) & 0xFFFF;
+          return cores[h % cores.length];
+        }
+
+        const cards = sorted.map((c,idx)=>{
+          const cor   = TIPO_COR[c.tipo||'outros'] || '#9b8a5c';
+          const icon  = TIPO_ICON[c.tipo||'outros'] || '📝';
+          const label = TIPO_LABEL[c.tipo||'outros'] || 'Outros';
+          const conf  = CONF_LABEL[c.confianca||'provavel'] || '🟡 Provável';
+          const acor  = autorCor(c.autor||'');
+          const ini   = (c.autor||'?').trim().slice(0,1).toUpperCase();
+
+          /* Anexos em miniatura */
+          const anexMini = (c.anexos||[]).length
+            ? `<div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:5px;">`+
+              (c.anexos||[]).map(a=>{
+                const tp = a.tipo||_tipoFromNome(a.nome||'');
+                const em = tp.startsWith('image')?'🖼':tp.startsWith('video')?'🎥':tp.includes('pdf')?'📄':'📎';
+                const thumbSrc = (tp.startsWith('image') && (a.storage_url||a.base64)) ? (a.storage_url||a.base64) : '';
+                return `<div onclick="event.stopPropagation();_abrirAnexoComp('${a.id}','${f.id}')" title="${a.nome}"
+                  style="width:36px;height:28px;border-radius:3px;border:1px solid rgba(255,255,255,.1);overflow:hidden;cursor:pointer;display:flex;align-items:center;justify-content:center;background:#111;font-size:14px;flex-shrink:0;">
+                  ${thumbSrc?`<img src="${thumbSrc}" style="width:36px;height:28px;object-fit:cover;display:block;">`:`<span>${em}</span>`}
+                </div>`;
+              }).join('')+
+              `</div>`
+            : '';
+
+          return `<div style="border:1px solid rgba(255,255,255,.07);border-left:3px solid ${cor};border-radius:6px;background:#212121;padding:8px 10px;cursor:pointer;"
+            onclick="abrirModalComplementos('${f.id}')">
+            <!-- Cabeçalho: avatar + autor + data + tipo -->
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:5px;">
+              <span style="width:22px;height:22px;border-radius:50%;background:${acor};color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${ini}</span>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:10px;font-weight:700;color:${acor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">👮 ${c.autor||'—'}</div>
+                <div style="font-size:9px;color:var(--text-hint);">${c.registradoEm||'—'}${c.editadoEm?' · ✏ editado':''}</div>
+              </div>
+              <span style="font-size:10px;background:${cor}22;color:${cor};border:1px solid ${cor}44;padding:1px 6px;border-radius:3px;font-weight:700;flex-shrink:0;">${icon} ${label}</span>
             </div>
-          </div>`).join('');
-        return `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px;">
+            <!-- Corpo: texto -->
+            <div style="font-size:11px;color:#d0d0d0;line-height:1.45;word-break:break-word;margin-bottom:${c.local||c.dataFato||c.providencia||(c.anexos||[]).length?'4px':'0'};">${(c.texto||'').slice(0,160)}${(c.texto||'').length>160?'…':''}</div>
+            <!-- Metadados opcionais -->
+            ${c.local||c.dataFato?`<div style="font-size:9px;color:var(--text-muted);display:flex;gap:8px;flex-wrap:wrap;margin-bottom:3px;">${c.local?`<span>📍 ${c.local}</span>`:''}${c.dataFato?`<span>🕐 ${new Date(c.dataFato).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>`:''}</div>`:''}
+            ${c.providencia?`<div style="font-size:10px;color:#42a5f5;background:rgba(66,165,245,.07);border-radius:3px;padding:2px 6px;margin-bottom:3px;">💡 ${c.providencia.slice(0,80)}${c.providencia.length>80?'…':''}</div>`:''}
+            <!-- Confiança + Anexos -->
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-top:3px;">
+              <span style="font-size:9px;color:var(--text-hint);">${conf}</span>
+              ${(c.anexos||[]).length?`<span style="font-size:9px;color:var(--info);">📎 ${c.anexos.length} anexo${c.anexos.length!==1?'s':''}</span>`:''}
+            </div>
+            ${anexMini}
+          </div>`;
+        }).join('');
+
+        return `<div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-            <span style="font-size:10px;font-weight:700;color:var(--info);">📝 ${comps.length} complemento${comps.length!==1?'s':''}</span>
-            <button onclick="abrirModalComplementos('${f.id}')" style="font-size:10px;color:var(--info);background:none;border:none;cursor:pointer;text-decoration:underline;padding:0;">ver todos →</button>
+            <span style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;">📝 ${comps.length} complemento${comps.length!==1?'s':''}</span>
+            <button onclick="event.stopPropagation();abrirModalComplementos('${f.id}')" style="font-size:10px;color:var(--info);background:none;border:none;cursor:pointer;padding:0;font-weight:600;">➕ Adicionar / Ver todos</button>
           </div>
-          <div style="background:rgba(66,165,245,.05);border:1px solid rgba(66,165,245,.15);border-radius:6px;overflow:hidden;cursor:pointer;" onclick="abrirModalComplementos('${f.id}')">
-            ${resumo}
-            ${comps.length>3?`<div style="text-align:center;font-size:10px;color:var(--info);padding:5px;border-top:1px solid rgba(66,165,245,.1);">+${comps.length-3} mais — clique para ver todos</div>`:''}
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            ${cards}
           </div>
         </div>`;
       })();
