@@ -8688,9 +8688,9 @@ function _buildPdfPrioridade(meses, pel) {
       const munsInfo = munsArr.length ? munsArr.length+' mun.: '+munsArr.join(', ') : '';
       return [
         {content:i+1, styles:{textColor:CINZA_T,valign:'middle'}},
-        {content:g+(munsInfo?'\n'+munsInfo:''),
-          styles:{fontStyle:'bold',fontSize:7,overflow:'linebreak',
-                  cellPadding:{top:3,bottom:3,left:3,right:2},valign:'top'}},
+        /* Conteúdo vazio — didDrawCell desenha com fontes diferentes */
+        {content:'\u200B', _gp:g, _muns:munsInfo,
+          styles:{cellPadding:{top:3,bottom:3,left:3,right:2},overflow:'linebreak',fontSize:6.5}},
         {content:bd.IMV||'—', styles:{halign:'center',textColor:bd.IMV?C_CRITICO:CINZA_T,valign:'middle'}},
         {content:bd.CVPE||'—', styles:{halign:'center',valign:'middle'}},
         {content:bd.CVPA||'—', styles:{halign:'center',valign:'middle'}},
@@ -8716,15 +8716,53 @@ function _buildPdfPrioridade(meses, pel) {
       if(data.section!=='body') return;
       const row = topGP[data.row.index];
       if(!row) return;
-      const n = getUrg(row.bd);
-      const {bg} = getNivelCores(n);
-      /* Fundo colorido nas linhas ímpares */
+      const {bg} = getNivelCores(getUrg(row.bd));
       if(data.row.index%2===1) data.cell.styles.fillColor = bg;
-      /* Linha de municípios em fonte menor — aplica ao conteúdo da col 1 */
+      /* Calcula altura da col 1 para caber GP + municípios */
       if(data.column.index===1){
-        data.cell.styles.fontSize = 6.5;
-        data.cell.styles.fontStyle = 'normal';
+        const w = 76 - 5;
+        doc.setFontSize(7);
+        doc.setFont('helvetica','bold');
+        const gpLines = doc.splitTextToSize(row.g||'', w);
+        doc.setFontSize(6.5);
+        doc.setFont('helvetica','normal');
+        const munsArr = [...(row.muns||[])];
+        const munsInfo = munsArr.length ? munsArr.length+' mun.: '+munsArr.join(', ') : '';
+        const mLines = munsInfo ? doc.splitTextToSize(munsInfo, w) : [];
+        const lh7  = 7  * 0.3528 + 1.2;
+        const lh65 = 6.5* 0.3528 + 1.0;
+        data.cell.styles.minCellHeight = gpLines.length*lh7 + mLines.length*lh65 + 6;
       }
+    },
+    didDrawCell: (data) => {
+      if(data.section!=='body' || data.column.index!==1) return;
+      const raw = topGP[data.row.index];
+      if(!raw) return;
+      const x = data.cell.x + 3;
+      let   y = data.cell.y + 3;
+      const w = data.cell.width - 5;
+      /* Nome do grupamento — bold 7pt, preto */
+      doc.setFontSize(7);
+      doc.setFont('helvetica','bold');
+      doc.setTextColor(20,20,20);
+      const gpLines = doc.splitTextToSize(raw.g||'', w);
+      const lh7 = 7 * 0.3528 + 1.2;
+      gpLines.forEach(line => { doc.text(line, x, y + lh7); y += lh7; });
+      /* Municípios — normal 6.5pt, cinza escuro */
+      const munsArr  = [...(raw.muns||[])];
+      const munsInfo = munsArr.length ? munsArr.length+' mun.: '+munsArr.join(', ') : '';
+      if(munsInfo){
+        doc.setFontSize(6.5);
+        doc.setFont('helvetica','normal');
+        doc.setTextColor(70,70,70);
+        const mLines = doc.splitTextToSize(munsInfo, w);
+        const lh65 = 6.5 * 0.3528 + 1.0;
+        mLines.forEach(line => { doc.text(line, x, y + lh65); y += lh65; });
+      }
+      /* Restaura */
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(7);
+      doc.setTextColor(30,30,30);
     },
     didDrawPage: (data) => {
       if(data.pageNumber > 1) drawHeader(false);
