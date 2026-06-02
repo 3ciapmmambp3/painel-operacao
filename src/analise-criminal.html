@@ -1187,11 +1187,15 @@
           <option value="baixa">Baixa</option>
         </select>
       </div>
-      <div class="fg">
+      <div class="fg" id="mis-gp-fg">
         <label>Grupamento</label>
         <select id="mis-gp" onchange="renderMissoes()" style="font-size:11px;"><option value="">Todos</option></select>
       </div>
       <div style="align-self:flex-end;"><button class="btn-outline" onclick="limparFiltrosMissoes()">✕</button></div>
+    </div>
+    <!-- Badge de restrição para operacional -->
+    <div id="mis-gp-badge" style="display:none;margin-top:8px;padding:6px 12px;background:rgba(155,138,92,.1);border:1px solid var(--gold-border);border-radius:5px;font-size:11px;color:var(--text-muted);">
+      🔒 Exibindo missões do seu grupamento: <span id="mis-gp-badge-txt" style="color:var(--gold);font-weight:700;"></span>
     </div>
   </div>
 
@@ -1992,6 +1996,7 @@ async function recarregarTudo(){
     renderIntel();
     renderMissoes();
     _initIntelFiltroGP(); /* trava filtro de GP para operacional na aba Inteligência */
+    _initMissoesFiltroGP(); /* trava filtro de GP para operacional na aba Missões */
     const now = new Date().toLocaleTimeString('pt-BR');
     document.getElementById('last-update').textContent = 'Atualizado: '+now;
     setStatus('ok','✔ Dados criminais carregados — '+dadosCrimes.length+' BOs');
@@ -2640,7 +2645,12 @@ function limparFiltrosIntel(){
   renderIntel();
 }
 function limparFiltrosMissoes(){
-  ['mis-status','mis-prio','mis-gp'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  const _isAdmin = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
+  ['mis-status','mis-prio'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  /* Só limpa GP se for admin — operacional mantém travado no seu GP */
+  if(_isAdmin){
+    const gp = document.getElementById('mis-gp'); if(gp) gp.value='';
+  }
   renderMissoes();
 }
 
@@ -6758,18 +6768,15 @@ async function adicionarComplemento(){
 ══════════════════════════════════ */
 function _initIntelFiltroGP(){
   const _isAdmin = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
-  if(_isAdmin) return; /* admin vê tudo, sem restrição */
+  if(_isAdmin) return;
   const gpSelect = document.getElementById('intel-busca-gp');
   const badge    = document.getElementById('intel-gp-badge');
   const badgeTxt = document.getElementById('intel-gp-badge-txt');
-  /* Resolve GP do usuário */
   const gpUsuario = sessao?.lotacao ? gpDoColk(
     dadosGrupos.find(r => norm(r.grupamento).includes(norm(sessao.lotacao)))?.grupamento || sessao.lotacao
   ) : '';
   if(!gpUsuario) return;
-  /* Trava o select no GP do usuário */
   if(gpSelect){
-    /* Garante a opção existe */
     if(![...gpSelect.options].some(o=>o.value===gpUsuario)){
       const opt = document.createElement('option');
       opt.value = gpUsuario; opt.textContent = gpUsuario;
@@ -6778,8 +6785,33 @@ function _initIntelFiltroGP(){
     gpSelect.value = gpUsuario;
     gpSelect.disabled = true;
   }
-  /* Mostra badge informativo */
   if(badge) badge.style.display = 'block';
+  if(badgeTxt) badgeTxt.textContent = gpUsuario;
+}
+
+function _initMissoesFiltroGP(){
+  const _isAdmin = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
+  if(_isAdmin) return; /* admin vê todas as missões */
+  const gpSelect = document.getElementById('mis-gp');
+  const badge    = document.getElementById('mis-gp-badge');
+  const badgeTxt = document.getElementById('mis-gp-badge-txt');
+  /* Resolve GP completo do usuário */
+  const gpUsuario = sessao?.lotacao ? gpDoColk(
+    dadosGrupos.find(r => norm(r.grupamento).includes(norm(sessao.lotacao)))?.grupamento || sessao.lotacao
+  ) : '';
+  if(!gpUsuario) return;
+  /* Trava o select no GP do usuário */
+  if(gpSelect){
+    if(![...gpSelect.options].some(o=>o.value===gpUsuario)){
+      const opt = document.createElement('option');
+      opt.value = gpUsuario; opt.textContent = gpUsuario;
+      gpSelect.appendChild(opt);
+    }
+    gpSelect.value    = gpUsuario;
+    gpSelect.disabled = true;
+  }
+  /* Mostra badge */
+  if(badge)    badge.style.display = 'block';
   if(badgeTxt) badgeTxt.textContent = gpUsuario;
 }
 
@@ -7609,6 +7641,9 @@ function switchSubtab(el, id){
   }
   if(id === 'inteligencia'){
     setTimeout(_initIntelFiltroGP, 100);
+  }
+  if(id === 'missoes'){
+    setTimeout(_initMissoesFiltroGP, 100);
   }
 }
 
