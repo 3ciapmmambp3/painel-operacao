@@ -8748,16 +8748,42 @@ function _buildPdfPrioridade(meses, pel) {
       const gpLines = doc.splitTextToSize(raw.g||'', w);
       const lh7 = 7 * 0.3528 + 1.2;
       gpLines.forEach(line => { doc.text(line, x, y + lh7); y += lh7; });
-      /* Municípios — normal 6.5pt, cinza escuro */
+      /* Municípios — "N mun.:" em bold, nomes em normal, 6.5pt, cinza */
       const munsArr  = [...(raw.muns||[])];
       const munsInfo = munsArr.length ? munsArr.length+' mun.: '+munsArr.join(', ') : '';
       if(munsInfo){
-        doc.setFontSize(6.5);
-        doc.setFont('helvetica','normal');
-        doc.setTextColor(70,70,70);
-        const mLines = doc.splitTextToSize(munsInfo, w);
         const lh65 = 6.5 * 0.3528 + 1.0;
-        mLines.forEach(line => { doc.text(line, x, y + lh65); y += lh65; });
+        const prefixo = munsArr.length+' mun.: '; /* ex: "7 mun.: " */
+        const nomes   = munsArr.join(', ');
+        /* Mede largura do prefixo em bold para saber onde começar os nomes */
+        doc.setFontSize(6.5);
+        doc.setFont('helvetica','bold');
+        const prefW = doc.getTextWidth(prefixo);
+        /* Quebra o texto completo para calcular as linhas */
+        doc.setFont('helvetica','normal');
+        const fullLines = doc.splitTextToSize(prefixo + nomes, w);
+        fullLines.forEach((line, li) => {
+          const lineY = y + lh65;
+          if(li === 0){
+            /* Primeira linha: prefixo em bold + resto em normal */
+            doc.setFont('helvetica','bold');
+            doc.setTextColor(40,40,40);
+            doc.text(prefixo, x, lineY);
+            /* Resto da primeira linha após o prefixo */
+            const restLine = line.slice(prefixo.length);
+            if(restLine){
+              doc.setFont('helvetica','normal');
+              doc.setTextColor(70,70,70);
+              doc.text(restLine, x + prefW, lineY);
+            }
+          } else {
+            /* Linhas seguintes — só nomes, normal */
+            doc.setFont('helvetica','normal');
+            doc.setTextColor(70,70,70);
+            doc.text(line, x, lineY);
+          }
+          y += lh65;
+        });
       }
       /* Restaura */
       doc.setFont('helvetica','normal');
