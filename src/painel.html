@@ -3107,39 +3107,55 @@ function atualizarGdoFS(){
   });
   if(_gdoFsMap){ _gdoFsMap.remove(); _gdoFsMap=null; }
   const el = document.getElementById('gdo-mapa-fs-inner');
-  _renderGdoFsMap(el, dados, gpF);
+  _renderGdoFsMap(el, dados, gpF, pel);
 }
 
-function _renderGdoFsMap(el, dados, gpFiltro){
-  gpFiltro = gpFiltro || '';
+function _renderGdoFsMap(el, dados, gpFiltro, pelFiltro){
+  gpFiltro  = gpFiltro  || '';
+  pelFiltro = pelFiltro || '';
+  const pelFiltroNum = pelFiltro ? parseInt(pelFiltro) : 0;
   _gdoFsMap = L.map(el, {zoomControl:true, scrollWheelZoom:true});
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
     attribution:'&copy; OpenStreetMap contributors', maxZoom:19
   }).addTo(_gdoFsMap);
-  /* KML layers com destaque */
+
+  const pelPolyPoints = [];
+
+  /* KML layers com destaque de GP e Pelotão */
   if(typeof KML_DATA !== 'undefined' && KML_DATA.pelotoes){
     Object.entries(KML_DATA.pelotoes).forEach(([pelKey, pelData]) => {
       const group = L.layerGroup();
       const pelNum = parseInt(pelKey.replace(/\D/g,''));
+      const estePelotao  = pelFiltroNum ? pelNum === pelFiltroNum : false;
+      const gpFiltroAtivo= !!gpFiltro;
+
       if(pelData.gps){
         Object.entries(pelData.gps).forEach(([gpKey, gpData]) => {
-          const gpNum = parseInt(gpKey.replace(/\D/g,''));
+          const gpNum  = parseInt(gpKey.replace(/\D/g,''));
           const gpInfo = dadosGrupos.find(r => r.pelNum===pelNum && gpNumDoColk(r.colK||r.grupamento)===gpNum);
           const cidade = gpInfo ? gpInfo.gpResp.replace('GP ','') : '';
-          const esteGp = gpFiltro && gpInfo && gpInfo.gpResp === gpFiltro;
-          const wt = esteGp ? 3.5 : (gpFiltro ? 0.7 : 1.5);
-          const op = esteGp ? 1.0 : (gpFiltro ? 0.22 : 0.9);
-          const fOp= esteGp ? 0.22: (gpFiltro ? 0.03 : 0.15);
+          const esteGp = gpFiltroAtivo && gpInfo && gpInfo.gpResp === gpFiltro;
+          const wt  = esteGp ? 3.5 : estePelotao ? 2.5 : (gpFiltroAtivo||pelFiltroNum) ? 0.7 : 1.5;
+          const op  = esteGp ? 1.0 : estePelotao ? 0.95: (gpFiltroAtivo||pelFiltroNum) ? 0.22 : 0.9;
+          const fOp = esteGp ? 0.22: estePelotao ? 0.15: (gpFiltroAtivo||pelFiltroNum) ? 0.03 : 0.15;
           const lbl = cidade ? `${pelData.label} — ${gpData.label} — ${cidade}` : `${pelData.label} — ${gpData.label}`;
           gpData.polys.forEach(poly => {
             L.polygon(poly.map(p=>[p[1],p[0]]),{color:gpData.cor,weight:wt,opacity:op,fillColor:gpData.cor,fillOpacity:fOp})
               .bindTooltip(lbl,{sticky:true,className:'leaflet-tooltip-pel'}).addTo(group);
+            if(pelFiltroNum && estePelotao && !gpFiltroAtivo)
+              poly.forEach(p => pelPolyPoints.push([p[1],p[0]]));
+            if(esteGp)
+              poly.forEach(p => pelPolyPoints.push([p[1],p[0]]));
           });
         });
       }
-      group.addTo(_gdoFsMap);
+      /* Mostra só o pelotão selecionado (se filtro ativo) */
+      const gpFiltroPelNum = gpFiltro ? (dadosGrupos.find(r=>r.gpResp===gpFiltro)?.pelNum||null) : null;
+      const pelVisivel = (!pelFiltroNum || pelNum===pelFiltroNum) && (!gpFiltroAtivo || pelNum===gpFiltroPelNum);
+      if(pelVisivel) group.addTo(_gdoFsMap);
     });
   }
+
   /* Marcadores */
   const dadosCoord = dados.filter(d=>d.lat&&d.lng);
   if(dadosCoord.length){
@@ -3149,11 +3165,21 @@ function _renderGdoFsMap(el, dados, gpFiltro){
       const tt = `<div style="font-size:12px;padding:4px;min-width:180px;"><b style="color:${cor};">RAT: ${d.rat}</b><br>Data: ${d.data||'—'}<br>Município: ${d.municipio||'—'}<br>Natureza: <b>${d.natureza}</b></div>`;
       L.marker([d.lat,d.lng],{icon}).bindTooltip(tt,{sticky:true,direction:'top',className:'leaflet-tooltip-rat'}).addTo(_gdoFsMap);
     });
-    const bounds = L.featureGroup(dadosCoord.map(d=>L.marker([d.lat,d.lng]))).getBounds();
-    _gdoFsMap.fitBounds(bounds,{padding:[60,60]});
+  }
+
+  /* fitBounds: prioriza polígonos do pelotão/GP → marcadores → padrão */
+  if(pelPolyPoints.length >= 2){
+    try{ _gdoFsMap.fitBounds(L.latLngBounds(pelPolyPoints),{padding:[40,40],maxZoom:11}); }
+    catch(e){ _gdoFsMap.setView([-18.5,-41.5],7); }
+  } else if(dadosCoord.length){
+    try{
+      const bounds = L.featureGroup(dadosCoord.map(d=>L.marker([d.lat,d.lng]))).getBounds();
+      _gdoFsMap.fitBounds(bounds,{padding:[60,60]});
+    }catch(e){ _gdoFsMap.setView([-18.5,-41.5],7); }
   } else {
     _gdoFsMap.setView([-18.5,-41.5],7);
   }
+
   document.getElementById('gdo-mapa-fs-legenda').innerHTML =
     (window.gdoNats||['Y07001','Y07002','Y07014']).map(n=>`<span><span class="nat-dot" style="background:${GDO_NAT_COR[n]||'#9b8a5c'}"></span>${n}</span>`).join('') +
     `<span style="margin-left:12px;color:var(--text-hint)">Pontos: ${dadosCoord.length}</span>`;
@@ -3180,8 +3206,9 @@ function abrirGdoMapaFullscreen(){
   const dados = getDadosGdoFiltrados();
   const el = document.getElementById('gdo-mapa-fs-inner');
   if(_gdoFsMap){ _gdoFsMap.remove(); _gdoFsMap = null; }
-  const gpFiltroFS = document.getElementById('gdo-fs-gp')?.value || '';
-  _renderGdoFsMap(el, dados, gpFiltroFS);
+  const gpFiltroFS  = document.getElementById('gdo-fs-gp')?.value  || '';
+  const pelFiltroFS = document.getElementById('gdo-fs-pel')?.value || '';
+  _renderGdoFsMap(el, dados, gpFiltroFS, pelFiltroFS);
 }
 
 function fecharGdoMapaFullscreen(){
