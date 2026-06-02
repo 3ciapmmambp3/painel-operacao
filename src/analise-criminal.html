@@ -215,9 +215,10 @@
     .comp-entry-header{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;}
     .comp-autor{font-size:10px;font-weight:700;color:var(--gold);}
     .comp-data{font-size:10px;color:var(--text-muted);}
-    .comp-texto{font-size:12px;color:#ddd;line-height:1.5;white-space:pre-wrap;}
+    .comp-texto{font-size:12px;color:#ddd;line-height:1.5;white-space:pre-wrap;word-break:break-word;}
     .comp-anexos-mini{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;}
-    .comp-anexo-thumb{border:1px solid var(--border);border-radius:4px;overflow:hidden;cursor:pointer;}
+    .comp-anexo-thumb{border:1px solid var(--border);border-radius:4px;overflow:hidden;cursor:pointer;transition:opacity .15s;}
+    .comp-anexo-thumb:hover{opacity:.8;}
 
     /* Garante que o mapa Leaflet fique abaixo dos dropdowns */
     #tab-mapa .leaflet-container { z-index: 1 !important; }
@@ -1522,6 +1523,61 @@
     <div class="modal-footer">
       <button class="btn-outline" onclick="fecharModal('modal-intel')">Cancelar</button>
       <button class="btn-gold" onclick="salvarIntel()">💾 Salvar Ficha</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════
+     MODAL: COMPLEMENTOS DA FICHA (acessível a todos)
+════════════════════════════════ -->
+<div class="modal-overlay hidden" id="modal-complementos">
+  <div class="modal-box" style="max-width:680px;">
+    <div class="modal-header">
+      <div>
+        <h3>📝 Complementos da Ficha</h3>
+        <div id="mc-ficha-info" style="font-size:11px;color:var(--text-muted);margin-top:2px;"></div>
+      </div>
+      <button class="modal-close" onclick="fecharModal('modal-complementos')">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Histórico cronológico -->
+      <div id="mc-lista" style="margin-bottom:16px;display:flex;flex-direction:column;gap:8px;">
+        <div style="font-size:11px;color:var(--text-muted);text-align:center;padding:12px 0;">Nenhum complemento registrado ainda.</div>
+      </div>
+
+      <!-- Linha separadora -->
+      <div style="border-top:2px solid var(--border);padding-top:14px;">
+        <div style="font-size:11px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">➕ Registrar nova informação</div>
+        <div class="intel-field">
+          <label>Informação / Atualização *</label>
+          <textarea id="mc-texto" rows="4" placeholder="Ex: Suspeito avistado no bairro X às 14h30 em veículo HB20 branco placa XYZ-1234. Informante: ronda GP. Recomenda-se atenção ao local..."></textarea>
+        </div>
+        <!-- Anexos -->
+        <div style="margin-bottom:10px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);margin-bottom:6px;">📎 Anexos (opcional)</div>
+          <div id="mc-anexos-wrap" style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-start;margin-bottom:8px;">
+            <span style="font-size:11px;color:var(--text-muted);">Nenhum anexo.</span>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <label style="cursor:pointer;background:rgba(155,138,92,.15);border:1px dashed var(--gold-border);border-radius:5px;padding:5px 12px;font-size:11px;color:var(--gold);display:inline-block;transition:all .2s;" onmouseover="this.style.background='rgba(155,138,92,.25)'" onmouseout="this.style.background='rgba(155,138,92,.15)'">
+              📸 Foto / PDF / KML
+              <input type="file" id="mc-anexo-input" accept="image/*,.pdf,.kml,.kmz" multiple style="display:none;" onchange="adicionarAnexosIntel(this,'mc')">
+            </label>
+            <label style="cursor:pointer;background:rgba(66,165,245,.1);border:1px dashed rgba(66,165,245,.4);border-radius:5px;padding:5px 12px;font-size:11px;color:var(--info);display:inline-block;transition:all .2s;" onmouseover="this.style.background='rgba(66,165,245,.2)'" onmouseout="this.style.background='rgba(66,165,245,.1)'">
+              🎥 Vídeo
+              <input type="file" id="mc-video-input" accept="video/*" multiple style="display:none;" onchange="adicionarVideosIntel(this,'mc')">
+            </label>
+            <span style="font-size:10px;color:var(--text-hint);align-self:center;">Fotos, PDF, KML/KMZ e vídeos (max 15MB)</span>
+          </div>
+        </div>
+        <button class="btn-gold" style="width:100%;" id="mc-btn-registrar" onclick="registrarComplementoModal()">📌 Registrar Complemento</button>
+      </div>
+
+    </div>
+    <div class="modal-footer" style="justify-content:flex-start;">
+      <span style="font-size:10px;color:var(--text-hint);">Qualquer militar pode registrar. Só o admin pode excluir complementos.</span>
+      <button class="btn-outline" style="margin-left:auto;" onclick="fecharModal('modal-complementos')">Fechar</button>
     </div>
   </div>
 </div>
@@ -5505,6 +5561,7 @@ function gerarPDFAuditoria(){
 let _intelFotosBuffer  = []; /* [{id, base64, nome, tipo}] — ficha intel */
 let _missaoAnexosBuffer = []; /* [{id, base64, nome, tipo}] — missão */
 let _compAnexosBuffer  = []; /* [{id, base64, nome, tipo}] — complemento sendo digitado */
+let _mcAnexosBuffer    = []; /* [{id, base64, nome, tipo}] — modal complemento separado */
 
 /* ══════════════════════════════════
    SUPABASE — banco de dados em nuvem
@@ -5788,16 +5845,20 @@ async function _excluirFichaSupabase(id){
 /* ── Abre anexo: usa storage_url se disponível, senão base64 ── */
 async function _abrirAnexo(id){
   /* Busca em memória (buffer do modal aberto) */
-  const emBuf = [..._intelFotosBuffer, ..._missaoAnexosBuffer, ..._compAnexosBuffer].find(a=>a.id===id);
-  if(emBuf && emBuf.base64){ _abrirOuBaixar(emBuf.base64, emBuf.nome, emBuf.tipo||_tipoFromNome(emBuf.nome), true); return; }
+  const emBuf = [..._intelFotosBuffer, ..._missaoAnexosBuffer, ..._compAnexosBuffer, ..._mcAnexosBuffer].find(a=>a.id===id);
+  if(emBuf){
+    const tipo = emBuf.tipo || _tipoFromNome(emBuf.nome||'');
+    if(emBuf.base64)       { _abrirOuBaixar(emBuf.base64, emBuf.nome, tipo, true); return; }
+    if(emBuf.storage_url)  { _abrirOuBaixar(emBuf.storage_url, emBuf.nome, tipo, false); return; }
+  }
 
-  /* Busca nas fichas (fotos + anexos de complementos) e missões carregadas */
+  /* Busca nas fichas (fotos principais + anexos de complementos) e missões carregadas */
   const todos = [
     ...fichasIntel.flatMap(f=>[...(f.fotos||[]), ...(f.complementos||[]).flatMap(c=>c.anexos||[])]),
     ...missoes.flatMap(m=>m.anexos||[])
   ];
   const a = todos.find(x=>x.id===id);
-  if(!a){ alert('Anexo não encontrado.'); return; }
+  if(!a){ alert('Anexo não encontrado. Tente recarregar a página.'); return; }
 
   const tipo = a.tipo || _tipoFromNome(a.nome||'');
   if(a.storage_url){
@@ -5805,7 +5866,7 @@ async function _abrirAnexo(id){
   } else if(a.base64){
     _abrirOuBaixar(a.base64, a.nome, tipo, true);
   } else {
-    alert('Arquivo sem URL disponível. Tente reabrir o modal para recarregar.');
+    alert('Arquivo sem URL disponível. Pode ser necessário reenviar o anexo.');
   }
 }
 
@@ -5984,8 +6045,13 @@ async function _comprimirVideo(file, prefixo){
 
 /* ── Renderiza lista de anexos (fotos, pdf, kml, vídeos) ── */
 function _renderAnexos(prefixo){
-  const buf  = prefixo === 'intel' ? _intelFotosBuffer : prefixo === 'comp' ? _compAnexosBuffer : _missaoAnexosBuffer;
-  const wrapId = prefixo === 'comp' ? 'comp-anexos-wrap' : prefixo+'-anexos-wrap';
+  const buf  = prefixo === 'intel' ? _intelFotosBuffer
+             : prefixo === 'comp'  ? _compAnexosBuffer
+             : prefixo === 'mc'    ? _mcAnexosBuffer
+             : _missaoAnexosBuffer;
+  const wrapId = (prefixo === 'comp') ? 'comp-anexos-wrap'
+               : (prefixo === 'mc')   ? 'mc-anexos-wrap'
+               : prefixo+'-anexos-wrap';
   const wrap = document.getElementById(wrapId);
   if(!wrap) return;
   if(!buf.length){
@@ -6013,9 +6079,10 @@ function _renderAnexos(prefixo){
 }
 
 function _removerAnexo(prefixo, fid){
-  if(prefixo === 'intel') _intelFotosBuffer = _intelFotosBuffer.filter(f=>f.id!==fid);
-  else if(prefixo === 'comp') _compAnexosBuffer = _compAnexosBuffer.filter(f=>f.id!==fid);
-  else _missaoAnexosBuffer = _missaoAnexosBuffer.filter(f=>f.id!==fid);
+  if(prefixo === 'intel')      _intelFotosBuffer   = _intelFotosBuffer.filter(f=>f.id!==fid);
+  else if(prefixo === 'comp')  _compAnexosBuffer   = _compAnexosBuffer.filter(f=>f.id!==fid);
+  else if(prefixo === 'mc')    _mcAnexosBuffer     = _mcAnexosBuffer.filter(f=>f.id!==fid);
+  else                         _missaoAnexosBuffer = _missaoAnexosBuffer.filter(f=>f.id!==fid);
   _renderAnexos(prefixo);
 }
 
@@ -6027,9 +6094,10 @@ function adicionarAnexosIntel(input, prefixo){
     const reader = new FileReader();
     reader.onload = e => {
       const anexo = { id:'a'+Date.now()+Math.random().toString(36).slice(2,6), base64:e.target.result, nome:file.name, tipo:file.type };
-      if(prefixo==='intel') _intelFotosBuffer.push(anexo);
+      if(prefixo==='intel')     _intelFotosBuffer.push(anexo);
       else if(prefixo==='comp') _compAnexosBuffer.push(anexo);
-      else _missaoAnexosBuffer.push(anexo);
+      else if(prefixo==='mc')   _mcAnexosBuffer.push(anexo);
+      else                      _missaoAnexosBuffer.push(anexo);
       _renderAnexos(prefixo);
     };
     reader.readAsDataURL(file);
@@ -6044,9 +6112,10 @@ async function adicionarVideosIntel(input, prefixo){
   for(const file of files){
     const result = await _comprimirVideo(file, prefixo);
     const anexo = { id:'v'+Date.now()+Math.random().toString(36).slice(2,6), base64:result.base64, nome:result.nome, tipo:'video/webm' };
-    if(prefixo==='intel') _intelFotosBuffer.push(anexo);
+    if(prefixo==='intel')     _intelFotosBuffer.push(anexo);
     else if(prefixo==='comp') _compAnexosBuffer.push(anexo);
-    else _missaoAnexosBuffer.push(anexo);
+    else if(prefixo==='mc')   _mcAnexosBuffer.push(anexo);
+    else                      _missaoAnexosBuffer.push(anexo);
     _renderAnexos(prefixo);
   }
   input.value='';
@@ -6165,7 +6234,37 @@ async function excluirIntel(id){
    COMPLEMENTOS CRONOLÓGICOS DAS FICHAS
 ══════════════════════════════════ */
 
-/* Renderiza os complementos existentes de uma ficha no modal */
+/* ID da ficha atualmente aberta no modal de complementos */
+let _mcFichaId = null;
+
+/* Abre o modal de complementos separado (acessível a todos) */
+function abrirModalComplementos(fichaId){
+  _mcFichaId = fichaId;
+  _mcAnexosBuffer = [];
+  const ficha = fichasIntel.find(f=>f.id===fichaId);
+  const info = document.getElementById('mc-ficha-info');
+  if(info) info.textContent = ficha ? `BO: ${ficha.rat||'—'} · ${(Array.isArray(ficha.municipio)?ficha.municipio.join(', '):ficha.municipio)||'—'}` : '';
+  const txt = document.getElementById('mc-texto');
+  if(txt) txt.value = '';
+  abrirModal('modal-complementos');
+  setTimeout(()=>{ _renderAnexos('mc'); _renderComplementosModal(fichaId); }, 50);
+}
+
+/* Renderiza os complementos no modal separado (mc) */
+function _renderComplementosModal(fichaId){
+  const lista = document.getElementById('mc-lista');
+  if(!lista) return;
+  const ficha = fichasIntel.find(f=>f.id===fichaId);
+  const comps = (ficha?.complementos||[]);
+  if(!comps.length){
+    lista.innerHTML = '<div style="font-size:11px;color:var(--text-muted);text-align:center;padding:16px 0;">Nenhum complemento registrado ainda. Seja o primeiro a registrar uma informação!</div>';
+    return;
+  }
+  const sorted = [...comps].sort((a,b) => new Date(b.registradoEmISO||0) - new Date(a.registradoEmISO||0));
+  lista.innerHTML = sorted.map(c => _htmlComplemento(fichaId, c)).join('');
+}
+
+/* Renderiza os complementos no modal de edição da ficha (para quem pode editar) */
 function _renderComplementos(fichaId){
   const lista = document.getElementById('intel-complementos-lista');
   if(!lista) return;
@@ -6175,35 +6274,112 @@ function _renderComplementos(fichaId){
     lista.innerHTML = '<div style="font-size:11px;color:var(--text-muted);text-align:center;padding:8px 0;">Nenhum complemento registrado ainda.</div>';
     return;
   }
-  /* Ordena cronologicamente (mais recente primeiro) */
   const sorted = [...comps].sort((a,b) => new Date(b.registradoEmISO||0) - new Date(a.registradoEmISO||0));
-  lista.innerHTML = sorted.map(c => {
-    const anexosHtml = (c.anexos||[]).map(a => {
-      const isImg = a.tipo && a.tipo.startsWith('image');
-      const isVid = a.tipo && a.tipo.startsWith('video');
-      const isPdf = a.tipo==='application/pdf'||a.nome.endsWith('.pdf');
-      let thumb='';
-      if(isImg)      thumb = a.base64 ? `<img src="${a.base64}" style="width:50px;height:38px;object-fit:cover;display:block;" title="${a.nome}">` : `<div style="width:50px;height:38px;display:flex;align-items:center;justify-content:center;background:#222;font-size:16px;">🖼</div>`;
-      else if(isVid) thumb = a.base64 ? `<video src="${a.base64}" style="width:50px;height:38px;object-fit:cover;display:block;" muted></video>` : `<div style="width:50px;height:38px;display:flex;align-items:center;justify-content:center;background:#222;font-size:16px;">🎥</div>`;
-      else if(isPdf) thumb = `<div style="width:50px;height:38px;display:flex;align-items:center;justify-content:center;background:#222;font-size:16px;">📄</div>`;
-      else           thumb = `<div style="width:50px;height:38px;display:flex;align-items:center;justify-content:center;background:#222;font-size:16px;">📎</div>`;
-      const url = a.storage_url || a.base64 || '';
-      return `<div class="comp-anexo-thumb" onclick="_abrirAnexo('${a.id}')" title="${a.nome}" style="border:1px solid var(--border);border-radius:3px;overflow:hidden;cursor:pointer;">${thumb}</div>`;
-    }).join('');
-    return `<div class="comp-entry">
-      <div class="comp-entry-header">
-        <span style="width:22px;height:22px;border-radius:50%;background:var(--gold);color:#1a1000;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${(c.autor||'?').slice(0,1).toUpperCase()}</span>
-        <span class="comp-autor">👮 ${c.autor||'—'}</span>
-        <span class="comp-data">📅 ${c.registradoEm||'—'}</span>
-        ${(sessao?.perfil==='admin'||sessao?.nome===c.autor)?`<button onclick="_excluirComplemento('${fichaId}','${c.id}')" style="margin-left:auto;background:none;border:none;color:var(--text-hint);font-size:11px;cursor:pointer;padding:0;" title="Excluir">🗑</button>`:''}
-      </div>
-      <div class="comp-texto">${c.texto||''}</div>
-      ${(c.anexos||[]).length?`<div class="comp-anexos-mini">${anexosHtml}</div>`:''}
-    </div>`;
-  }).join('');
+  lista.innerHTML = sorted.map(c => _htmlComplemento(fichaId, c)).join('');
 }
 
-/* Adiciona um novo complemento à ficha aberta */
+/* Gera o HTML de um complemento (usado nos dois modais) */
+function _htmlComplemento(fichaId, c){
+  const _isAdmin = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
+  const podeExcluir = _isAdmin; /* só admin exclui */
+  const anexosHtml = (c.anexos||[]).map(a => {
+    const tipo = a.tipo || _tipoFromNome(a.nome||'');
+    const isImg = tipo.startsWith('image');
+    const isVid = tipo.startsWith('video');
+    const isPdf = tipo.includes('pdf');
+    let thumb='';
+    /* Mostra thumb pela URL do storage se disponível, senão base64 */
+    const src = a.storage_url || a.base64 || '';
+    if(isImg)      thumb = src ? `<img src="${src}" style="width:52px;height:40px;object-fit:cover;display:block;" title="${a.nome}">` : `<div style="width:52px;height:40px;display:flex;align-items:center;justify-content:center;background:#222;font-size:16px;">🖼</div>`;
+    else if(isVid) thumb = `<div style="width:52px;height:40px;display:flex;align-items:center;justify-content:center;background:#222;font-size:16px;">🎥</div>`;
+    else if(isPdf) thumb = `<div style="width:52px;height:40px;display:flex;align-items:center;justify-content:center;background:#222;font-size:16px;">📄</div>`;
+    else           thumb = `<div style="width:52px;height:40px;display:flex;align-items:center;justify-content:center;background:#222;font-size:16px;">📎</div>`;
+    return `<div class="comp-anexo-thumb" onclick="_abrirAnexoComp('${a.id}','${fichaId}')" title="${a.nome}" style="border:1px solid var(--border);border-radius:3px;overflow:hidden;cursor:pointer;">${thumb}</div>`;
+  }).join('');
+  return `<div class="comp-entry">
+    <div class="comp-entry-header">
+      <span style="width:22px;height:22px;border-radius:50%;background:var(--gold);color:#1a1000;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${(c.autor||'?').slice(0,1).toUpperCase()}</span>
+      <span class="comp-autor">👮 ${c.autor||'—'}</span>
+      <span class="comp-data">📅 ${c.registradoEm||'—'}</span>
+      ${podeExcluir?`<button onclick="_excluirComplemento('${fichaId}','${c.id}')" style="margin-left:auto;background:none;border:none;color:var(--text-hint);font-size:11px;cursor:pointer;padding:2px 6px;border-radius:3px;transition:color .15s;" onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--text-hint)'" title="Excluir (admin)">🗑</button>`:''}
+    </div>
+    <div class="comp-texto">${c.texto||''}</div>
+    ${(c.anexos||[]).length?`<div class="comp-anexos-mini">${anexosHtml}</div>`:''}
+  </div>`;
+}
+
+/* Abre um anexo de complemento buscando diretamente na ficha (sem depender de buffer) */
+function _abrirAnexoComp(anexoId, fichaId){
+  /* Primeiro tenta buffer em memória */
+  const emBuf = [..._intelFotosBuffer, ..._missaoAnexosBuffer, ..._compAnexosBuffer, ..._mcAnexosBuffer].find(a=>a.id===anexoId);
+  if(emBuf){ _abrirOuBaixar(emBuf.base64||emBuf.storage_url, emBuf.nome, emBuf.tipo||_tipoFromNome(emBuf.nome), !!emBuf.base64); return; }
+
+  /* Busca diretamente na ficha pelo ID */
+  const ficha = fichasIntel.find(f=>f.id===fichaId);
+  if(!ficha){ alert('Ficha não encontrada.'); return; }
+  /* Procura nos complementos */
+  let a = null;
+  for(const c of (ficha.complementos||[])){
+    a = (c.anexos||[]).find(x=>x.id===anexoId);
+    if(a) break;
+  }
+  /* Também procura nos anexos principais */
+  if(!a) a = (ficha.fotos||[]).find(x=>x.id===anexoId);
+  if(!a){ alert('Anexo não encontrado. Tente recarregar a página.'); return; }
+
+  const tipo = a.tipo || _tipoFromNome(a.nome||'');
+  if(a.storage_url){
+    _abrirOuBaixar(a.storage_url, a.nome, tipo, false);
+  } else if(a.base64){
+    _abrirOuBaixar(a.base64, a.nome, tipo, true);
+  } else {
+    alert('Arquivo sem URL disponível. Pode ser necessário reenviar o anexo.');
+  }
+}
+
+/* Registra novo complemento via modal separado */
+async function registrarComplementoModal(){
+  if(!_mcFichaId){ alert('Ficha não identificada.'); return; }
+  const texto = (document.getElementById('mc-texto').value||'').trim();
+  if(!texto && !_mcAnexosBuffer.length){ alert('Informe o texto do complemento.'); return; }
+  const btn = document.getElementById('mc-btn-registrar');
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Registrando...'; }
+  try{
+    const ficha = fichasIntel.find(f=>f.id===_mcFichaId);
+    if(!ficha) throw new Error('Ficha não encontrada.');
+    if(!ficha.complementos) ficha.complementos = [];
+    const agora = new Date();
+    const novoComp = {
+      id: 'comp-'+Date.now()+Math.random().toString(36).slice(2,6),
+      texto,
+      autor: sessao?.nome || '—',
+      registradoEm:    agora.toLocaleString('pt-BR'),
+      registradoEmISO: agora.toISOString(),
+      anexos: _mcAnexosBuffer.map(a=>({id:a.id, base64:a.base64||'', nome:a.nome, tipo:a.tipo||''})),
+    };
+    ficha.complementos.unshift(novoComp);
+    /* Salva no Supabase */
+    await _sbUpsert('fichas_intel', {
+      id: _mcFichaId,
+      complementos: ficha.complementos.map(c=>({
+        id:c.id, texto:c.texto, autor:c.autor,
+        registradoEm:c.registradoEm, registradoEmISO:c.registradoEmISO,
+        anexos:(c.anexos||[]).map(a=>({id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url||'', base64:a.base64||''}))
+      })),
+      updated_at: new Date().toISOString(),
+    });
+    /* Limpa formulário */
+    document.getElementById('mc-texto').value = '';
+    _mcAnexosBuffer = [];
+    _renderAnexos('mc');
+    _renderComplementosModal(_mcFichaId);
+    /* Atualiza card na listagem */
+    renderIntel();
+  }catch(e){ alert('Erro ao registrar complemento: '+e.message); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='📌 Registrar Complemento'; } }
+}
+
+/* Adiciona um novo complemento via modal de edição da ficha (botão interno) */
 async function adicionarComplemento(){
   const fichaId = document.getElementById('i-id').value;
   if(!fichaId){ alert('Salve a ficha antes de adicionar complementos.'); return; }
@@ -6224,19 +6400,16 @@ async function adicionarComplemento(){
       registradoEmISO: agora.toISOString(),
       anexos: _compAnexosBuffer.map(a=>({id:a.id, base64:a.base64||'', nome:a.nome, tipo:a.tipo||''})),
     };
-    ficha.complementos.unshift(novoComp); /* mais recente primeiro */
-
-    /* Salva no Supabase */
+    ficha.complementos.unshift(novoComp);
     await _sbUpsert('fichas_intel', {
       id: fichaId,
       complementos: ficha.complementos.map(c=>({
         id:c.id, texto:c.texto, autor:c.autor,
         registradoEm:c.registradoEm, registradoEmISO:c.registradoEmISO,
-        anexos:(c.anexos||[]).map(a=>({id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url||''}))
+        anexos:(c.anexos||[]).map(a=>({id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url||'', base64:a.base64||''}))
       })),
       updated_at: new Date().toISOString(),
     });
-    /* Limpa formulário */
     document.getElementById('comp-texto').value = '';
     _compAnexosBuffer = [];
     _renderAnexos('comp');
@@ -6245,8 +6418,10 @@ async function adicionarComplemento(){
   finally{ if(btn){ btn.disabled=false; btn.textContent='📌 Registrar Complemento'; } }
 }
 
-/* Exclui um complemento específico */
+/* Exclui um complemento (somente admin) */
 async function _excluirComplemento(fichaId, compId){
+  const _isAdmin = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
+  if(!_isAdmin){ alert('Somente o administrador pode excluir complementos.'); return; }
   if(!confirm('Excluir este complemento?')) return;
   const ficha = fichasIntel.find(f=>f.id===fichaId);
   if(!ficha) return;
@@ -6258,7 +6433,10 @@ async function _excluirComplemento(fichaId, compId){
       updated_at: new Date().toISOString(),
     });
   }catch(e){ console.warn('excluir complemento supabase:', e); }
+  /* Atualiza ambos os modais */
   _renderComplementos(fichaId);
+  _renderComplementosModal(fichaId);
+  renderIntel();
 }
 
 /* ══════════════════════════════════
@@ -6359,9 +6537,22 @@ function renderIntel(){
       <div class="intel-card" style="border-left:3px solid var(--gold);">
         <div class="intel-card-title" style="display:flex;align-items:center;justify-content:space-between;">
           <span>🕵 BO: ${f.rat||'—'} · ${munLabel}</span>
-          <div style="display:flex;gap:4px;">
-            <button class="btn-outline" style="padding:2px 8px;font-size:10px;" onclick="abrirModalIntel('${f.id}')">✏ Editar</button>
-            <button class="btn-danger" style="padding:2px 8px;" onclick="excluirIntel('${f.id}')">✕</button>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;">
+            ${(()=>{
+              /* Botão EDITAR — só criador ou admin */
+              const podeEditar = _isAdmin || (sessao?.nome && f.criadoPor && (
+                f.criadoPor === sessao.nome ||
+                f.criadoPor === sessao.guerra ||
+                (sessao.guerra && f.criadoPor.toUpperCase().includes((sessao.guerra||'').toUpperCase()))
+              ));
+              return podeEditar ? `<button class="btn-outline" style="padding:2px 8px;font-size:10px;" onclick="abrirModalIntel('${f.id}')">✏ Editar</button>` : '';
+            })()}
+            ${/* Botão COMPLEMENTAR — todos */''}
+            <button style="padding:2px 8px;font-size:10px;border:1px solid rgba(66,165,245,.5);background:rgba(66,165,245,.1);color:var(--info);border-radius:4px;cursor:pointer;font-weight:700;transition:all .15s;"
+              onmouseover="this.style.background='rgba(66,165,245,.25)'" onmouseout="this.style.background='rgba(66,165,245,.1)'"
+              onclick="abrirModalComplementos('${f.id}')">📝 Complementar</button>
+            ${/* Botão EXCLUIR — só admin */''}
+            ${_isAdmin ? `<button class="btn-danger" style="padding:2px 8px;" onclick="excluirIntel('${f.id}')">✕</button>` : ''}
           </div>
         </div>
         ${gpsLabel}
