@@ -1138,6 +1138,18 @@
         <label>Município de Atuação</label>
         <input type="text" id="intel-busca-mun" placeholder="Digite parte do nome..." oninput="renderIntel()">
       </div>
+      <div class="fg">
+        <label>Status</label>
+        <select id="intel-busca-status" onchange="renderIntel()">
+          <option value="ativas">Ativas (oculta encerradas)</option>
+          <option value="">Todas (incluindo encerradas)</option>
+          <option value="em_analise">🔵 Em Análise</option>
+          <option value="monitoramento">🟡 Monitoramento</option>
+          <option value="confirmado">🟠 Confirmado</option>
+          <option value="em_operacao">🔴 Em Operação</option>
+          <option value="encerrado">⚫ Encerradas / Arquivadas</option>
+        </select>
+      </div>
       <div class="fg" id="intel-gp-fg">
         <label>Grupamento</label>
         <select id="intel-busca-gp" onchange="renderIntel()"><option value="">Todos</option></select>
@@ -2700,6 +2712,8 @@ function limparFiltrosIntel(){
   document.getElementById('intel-busca-facao').value='';
   document.getElementById('intel-busca-mun').value='';
   document.getElementById('intel-busca-gp').value='';
+  const statusEl = document.getElementById('intel-busca-status');
+  if(statusEl) statusEl.value='ativas';
   renderIntel();
 }
 function limparFiltrosMissoes(){
@@ -6932,10 +6946,11 @@ function _initMissoesFiltroGP(){
 }
 
 function renderIntel(){
-  const busca   = norm(document.getElementById('intel-busca-rat').value);
-  const facao   = norm(document.getElementById('intel-busca-facao').value);
-  const mun     = norm(document.getElementById('intel-busca-mun').value);
-  const gpBusca = document.getElementById('intel-busca-gp').value;
+  const busca      = norm(document.getElementById('intel-busca-rat').value);
+  const facao      = norm(document.getElementById('intel-busca-facao').value);
+  const mun        = norm(document.getElementById('intel-busca-mun').value);
+  const gpBusca    = document.getElementById('intel-busca-gp').value;
+  const statusBusca= document.getElementById('intel-busca-status')?.value ?? 'ativas';
 
     /* Grupamento do usuário logado (operacional só vê fichas do seu GP) */
   const _isAdmin = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
@@ -6944,31 +6959,57 @@ function renderIntel(){
   ) : '';
 
   let fichas = fichasIntel.filter(f => {
+    /* Filtro de status — "ativas" oculta encerradas por padrão */
+    const status = f.statusFicha || 'em_analise';
+    if(statusBusca === 'ativas' && status === 'encerrado') return false;
+    if(statusBusca && statusBusca !== 'ativas' && status !== statusBusca) return false;
     if(busca && !norm(f.rat).includes(busca)) return false;
     if(facao && !norm(f.facao).includes(facao)) return false;
     if(mun){
-      /* Busca normalizada: funciona com múltiplos municípios, acentos e grafias diferentes */
       const munNorm = norm(mun);
       const muns = Array.isArray(f.municipio) ? f.municipio : (f.municipio ? f.municipio.split(',') : []);
       if(!muns.some(m => norm(m).includes(munNorm))) return false;
     }
     if(gpBusca && !(f.gpsAtuacao||[]).includes(gpBusca)) return false;
-    /* Visibilidade por grupamento: se a ficha tem GPs definidos,
-       admin vê tudo; operacional só vê se seu GP está na lista */
     if(!_isAdmin && gpUsuario && f.gpsAtuacao && f.gpsAtuacao.length){
       if(!f.gpsAtuacao.includes(gpUsuario)) return false;
     }
     return true;
   });
 
+  /* Conta quantas fichas estão encerradas (para exibir aviso quando ocultas) */
+  const totalEncerradas = fichasIntel.filter(f => {
+    const status = f.statusFicha || 'em_analise';
+    if(status !== 'encerrado') return false;
+    if(!_isAdmin && gpUsuario && f.gpsAtuacao && f.gpsAtuacao.length){
+      if(!f.gpsAtuacao.includes(gpUsuario)) return false;
+    }
+    return true;
+  }).length;
+
   const el = document.getElementById('intel-body');
+
+  /* Banner de arquivadas — aparece quando estão ocultas */
+  let bannerArquivadas = '';
+  if(statusBusca === 'ativas' && totalEncerradas > 0){
+    bannerArquivadas = `<div style="margin-bottom:10px;padding:8px 14px;background:rgba(100,100,100,.12);border:1px solid rgba(100,100,100,.3);border-radius:6px;display:flex;align-items:center;justify-content:space-between;">
+      <span style="font-size:11px;color:var(--text-muted);">⚫ <b style="color:#aaa;">${totalEncerradas}</b> ficha${totalEncerradas!==1?'s':''} encerrada${totalEncerradas!==1?'s':''} arquivada${totalEncerradas!==1?'s':''} — ocult${totalEncerradas!==1?'as':'a'} da visualização</span>
+      <button onclick="document.getElementById('intel-busca-status').value='encerrado';renderIntel();"
+        style="font-size:10px;background:none;border:1px solid rgba(100,100,100,.5);color:#aaa;padding:3px 10px;border-radius:4px;cursor:pointer;transition:all .15s;"
+        onmouseover="this.style.borderColor='var(--gold)';this.style.color='var(--gold)'"
+        onmouseout="this.style.borderColor='rgba(100,100,100,.5)';this.style.color='#aaa'">
+        🗂 Ver arquivadas
+      </button>
+    </div>`;
+  }
+
   if(!fichas.length){
-    el.innerHTML = '<div class="empty-state">Nenhuma ficha encontrada.</div>';
+    el.innerHTML = bannerArquivadas + '<div class="empty-state">Nenhuma ficha encontrada.</div>';
     return;
   }
 
   const reincLbl = { nao:'Não', sim:'Sim — Suspeito', local:'Sim — Local' };
-  el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px;">` +
+  el.innerHTML = bannerArquivadas + `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px;">` +
     fichas.map(f => {
       const muns = Array.isArray(f.municipio) ? f.municipio : (f.municipio ? [f.municipio] : []);
       const munLabel = muns.join(', ') || '—';
@@ -7090,8 +7131,14 @@ function renderIntel(){
         (sessao.guerra && f.criadoPor.toUpperCase().includes((sessao.guerra||'').toUpperCase()))
       ));
 
+      const _cardBorder = f.statusFicha==='encerrado'    ? '#555'
+                       : f.statusFicha==='em_operacao'  ? '#ef5350'
+                       : f.statusFicha==='confirmado'   ? '#ff9800'
+                       : f.statusFicha==='monitoramento'? '#ffc107'
+                       : 'var(--gold)';
+      const _cardStyle = f.statusFicha==='encerrado' ? 'opacity:.55;filter:grayscale(.45);' : '';
       return `
-      <div class="intel-card" style="border-left:3px solid var(--gold);">
+      <div class="intel-card" style="border-left:3px solid ${_cardBorder};${_cardStyle}">
         <div class="intel-card-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px;">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
             <span>🕵 BO: ${f.rat||'—'} · ${munLabel}</span>
