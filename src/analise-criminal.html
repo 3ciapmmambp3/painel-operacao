@@ -5822,14 +5822,7 @@ async function _salvarFichasComAnexos(fichaId){
     reincidencia:  ficha.reincidencia||'nao',
     conexoes:      ficha.conexoes||'',
     obs:           ficha.obs||'',
-    /* ── Novos campos de classificação ── */
-    data_fato:     ficha.dataFato||null,
-    tipo_criminal: ficha.tipoCriminal||'',
-    prioridade:    ficha.prioridade||'',
-    status_ficha:  ficha.statusFicha||'em_analise',
-    /* NUNCA envia base64 para o banco — só metadados e URL do storage */
     fotos:         fotosComUrl.map(a => ({id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url||''})),
-    /* Preserva complementos existentes */
     complementos:  (ficha.complementos||[]).map(c=>({
       ...c,
       anexos:(c.anexos||[]).map(a=>({id:a.id,nome:a.nome,tipo:a.tipo||'',storage_url:a.storage_url||''}))
@@ -5838,6 +5831,29 @@ async function _salvarFichasComAnexos(fichaId){
     criado_em:     ficha.criadoEm||'',
     updated_at:    new Date().toISOString(),
   });
+
+  /* ── Novos campos de classificação — salvos separadamente para não quebrar
+     fichas existentes caso as colunas ainda não existam no banco.
+     Execute no Supabase SQL Editor:
+       ALTER TABLE fichas_intel
+         ADD COLUMN IF NOT EXISTS data_fato     timestamptz,
+         ADD COLUMN IF NOT EXISTS tipo_criminal text DEFAULT '',
+         ADD COLUMN IF NOT EXISTS prioridade    text DEFAULT '',
+         ADD COLUMN IF NOT EXISTS status_ficha  text DEFAULT 'em_analise';
+  ── */
+  try{
+    await _sbUpsert('fichas_intel', {
+      id:            ficha.id,
+      data_fato:     ficha.dataFato || null,
+      tipo_criminal: ficha.tipoCriminal || '',
+      prioridade:    ficha.prioridade   || '',
+      status_ficha:  ficha.statusFicha  || 'em_analise',
+      updated_at:    new Date().toISOString(),
+    });
+  }catch(e){
+    /* Colunas ainda não criadas no banco — salva no localStorage como fallback */
+    console.warn('[fichas_intel] Colunas de classificação ainda não existem. Execute o ALTER TABLE no Supabase:', e.message);
+  }
 
   /* Atualiza em memória com URLs */
   const idx = fichasIntel.findIndex(f => f.id === fichaId);
