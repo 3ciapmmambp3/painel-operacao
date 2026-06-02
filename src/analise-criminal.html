@@ -1043,7 +1043,7 @@
 
 <!-- ══ MODAL RELATÓRIO DE CONCLUSÃO ══ -->
 <div class="modal-overlay hidden" id="modal-conclusao">
-  <div class="modal-box" style="max-width:560px;">
+  <div class="modal-box" style="max-width:600px;">
     <div class="modal-header">
       <h3>✅ Relatório de Conclusão da Missão</h3>
       <button class="modal-close" onclick="fecharModal('modal-conclusao')">✕</button>
@@ -1085,6 +1085,25 @@
         <label>Observações finais</label>
         <textarea id="c-obs-final" rows="3" placeholder="Informações adicionais, intercorrências, recomendações..."></textarea>
       </div>
+
+      <!-- ── Anexos da Conclusão ── -->
+      <div style="margin-top:12px;background:#1a1a1a;border:1px solid var(--border);border-radius:7px;padding:12px 14px;">
+        <div style="font-size:12px;font-weight:700;color:var(--gold);margin-bottom:10px;">📎 Anexos do Relatório <span style="font-size:10px;color:var(--text-hint);font-weight:400;">(fotos, PDFs, prints, laudos...)</span></div>
+        <div id="conclusao-anexos-wrap" style="display:flex;gap:6px;flex-wrap:wrap;min-height:28px;margin-bottom:8px;align-items:flex-start;">
+          <span style="font-size:11px;color:var(--text-muted);">Nenhum anexo adicionado.</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <label style="cursor:pointer;background:rgba(155,138,92,.15);border:1px dashed var(--gold-border);border-radius:5px;padding:5px 12px;font-size:11px;color:var(--gold);display:inline-block;transition:all .2s;" onmouseover="this.style.background='rgba(155,138,92,.25)'" onmouseout="this.style.background='rgba(155,138,92,.15)'">
+            📸 Foto / PDF / KML
+            <input type="file" id="conclusao-anexo-input" accept="image/*,.pdf,.kml,.kmz" multiple style="display:none;" onchange="adicionarAnexosIntel(this,'conclusao')">
+          </label>
+          <label style="cursor:pointer;background:rgba(66,165,245,.1);border:1px dashed rgba(66,165,245,.4);border-radius:5px;padding:5px 12px;font-size:11px;color:var(--info);display:inline-block;transition:all .2s;" onmouseover="this.style.background='rgba(66,165,245,.2)'" onmouseout="this.style.background='rgba(66,165,245,.1)'">
+            🎥 Vídeo <span style="font-size:10px;color:var(--text-hint);">(max 15MB)</span>
+            <input type="file" id="conclusao-video-input" accept="video/*" multiple style="display:none;" onchange="adicionarVideosIntel(this,'conclusao')">
+          </label>
+        </div>
+      </div>
+
       <input type="hidden" id="c-missao-id">
     </div>
     <div class="modal-footer">
@@ -5610,6 +5629,7 @@ let _intelFotosBuffer  = []; /* [{id, base64, nome, tipo}] — ficha intel */
 let _missaoAnexosBuffer = []; /* [{id, base64, nome, tipo}] — missão */
 let _compAnexosBuffer  = []; /* [{id, base64, nome, tipo}] — complemento sendo digitado */
 let _mcAnexosBuffer    = []; /* [{id, base64, nome, tipo}] — modal complemento separado */
+let _conclusaoAnexosBuffer = []; /* [{id, base64, nome, tipo}] — relatório de conclusão */
 
 /* ══════════════════════════════════
    SUPABASE — banco de dados em nuvem
@@ -5898,7 +5918,7 @@ async function _excluirFichaSupabase(id){
 /* ── Abre anexo: usa storage_url se disponível, senão base64 ── */
 async function _abrirAnexo(id){
   /* Busca em memória (buffer do modal aberto) */
-  const emBuf = [..._intelFotosBuffer, ..._missaoAnexosBuffer, ..._compAnexosBuffer, ..._mcAnexosBuffer].find(a=>a.id===id);
+  const emBuf = [..._intelFotosBuffer, ..._missaoAnexosBuffer, ..._compAnexosBuffer, ..._mcAnexosBuffer, ..._conclusaoAnexosBuffer].find(a=>a.id===id);
   if(emBuf){
     const tipo = emBuf.tipo || _tipoFromNome(emBuf.nome||'');
     if(emBuf.base64)       { _abrirOuBaixar(emBuf.base64, emBuf.nome, tipo, true); return; }
@@ -6154,12 +6174,14 @@ async function _comprimirVideo(file, prefixo){
 
 /* ── Renderiza lista de anexos (fotos, pdf, kml, vídeos) ── */
 function _renderAnexos(prefixo){
-  const buf  = prefixo === 'intel' ? _intelFotosBuffer
-             : prefixo === 'comp'  ? _compAnexosBuffer
-             : prefixo === 'mc'    ? _mcAnexosBuffer
+  const buf  = prefixo === 'intel'     ? _intelFotosBuffer
+             : prefixo === 'comp'      ? _compAnexosBuffer
+             : prefixo === 'mc'        ? _mcAnexosBuffer
+             : prefixo === 'conclusao' ? _conclusaoAnexosBuffer
              : _missaoAnexosBuffer;
-  const wrapId = (prefixo === 'comp') ? 'comp-anexos-wrap'
-               : (prefixo === 'mc')   ? 'mc-anexos-wrap'
+  const wrapId = (prefixo === 'comp')      ? 'comp-anexos-wrap'
+               : (prefixo === 'mc')        ? 'mc-anexos-wrap'
+               : (prefixo === 'conclusao') ? 'conclusao-anexos-wrap'
                : prefixo+'-anexos-wrap';
   const wrap = document.getElementById(wrapId);
   if(!wrap) return;
@@ -6193,10 +6215,11 @@ function _renderAnexos(prefixo){
 }
 
 function _removerAnexo(prefixo, fid){
-  if(prefixo === 'intel')      _intelFotosBuffer   = _intelFotosBuffer.filter(f=>f.id!==fid);
-  else if(prefixo === 'comp')  _compAnexosBuffer   = _compAnexosBuffer.filter(f=>f.id!==fid);
-  else if(prefixo === 'mc')    _mcAnexosBuffer     = _mcAnexosBuffer.filter(f=>f.id!==fid);
-  else                         _missaoAnexosBuffer = _missaoAnexosBuffer.filter(f=>f.id!==fid);
+  if(prefixo === 'intel')          _intelFotosBuffer        = _intelFotosBuffer.filter(f=>f.id!==fid);
+  else if(prefixo === 'comp')      _compAnexosBuffer        = _compAnexosBuffer.filter(f=>f.id!==fid);
+  else if(prefixo === 'mc')        _mcAnexosBuffer          = _mcAnexosBuffer.filter(f=>f.id!==fid);
+  else if(prefixo === 'conclusao') _conclusaoAnexosBuffer   = _conclusaoAnexosBuffer.filter(f=>f.id!==fid);
+  else                             _missaoAnexosBuffer      = _missaoAnexosBuffer.filter(f=>f.id!==fid);
   _renderAnexos(prefixo);
 }
 
@@ -6208,10 +6231,11 @@ function adicionarAnexosIntel(input, prefixo){
     const reader = new FileReader();
     reader.onload = e => {
       const anexo = { id:'a'+Date.now()+Math.random().toString(36).slice(2,6), base64:e.target.result, nome:file.name, tipo:file.type };
-      if(prefixo==='intel')     _intelFotosBuffer.push(anexo);
-      else if(prefixo==='comp') _compAnexosBuffer.push(anexo);
-      else if(prefixo==='mc')   _mcAnexosBuffer.push(anexo);
-      else                      _missaoAnexosBuffer.push(anexo);
+      if(prefixo==='intel')          _intelFotosBuffer.push(anexo);
+      else if(prefixo==='comp')      _compAnexosBuffer.push(anexo);
+      else if(prefixo==='mc')        _mcAnexosBuffer.push(anexo);
+      else if(prefixo==='conclusao') _conclusaoAnexosBuffer.push(anexo);
+      else                           _missaoAnexosBuffer.push(anexo);
       _renderAnexos(prefixo);
     };
     reader.readAsDataURL(file);
@@ -6226,10 +6250,11 @@ async function adicionarVideosIntel(input, prefixo){
   for(const file of files){
     const result = await _comprimirVideo(file, prefixo);
     const anexo = { id:'v'+Date.now()+Math.random().toString(36).slice(2,6), base64:result.base64, nome:result.nome, tipo:'video/webm' };
-    if(prefixo==='intel')     _intelFotosBuffer.push(anexo);
-    else if(prefixo==='comp') _compAnexosBuffer.push(anexo);
-    else if(prefixo==='mc')   _mcAnexosBuffer.push(anexo);
-    else                      _missaoAnexosBuffer.push(anexo);
+    if(prefixo==='intel')          _intelFotosBuffer.push(anexo);
+    else if(prefixo==='comp')      _compAnexosBuffer.push(anexo);
+    else if(prefixo==='mc')        _mcAnexosBuffer.push(anexo);
+    else if(prefixo==='conclusao') _conclusaoAnexosBuffer.push(anexo);
+    else                           _missaoAnexosBuffer.push(anexo);
     _renderAnexos(prefixo);
   }
   input.value='';
@@ -6622,7 +6647,25 @@ function _abrirAnexoComp(anexoId, fichaId){
   else alert('Arquivo sem URL. Pode ser necessário reenviar o anexo.');
 }
 
-/* ── Exclui complemento (criador ou admin) ── */
+/* ── Abre anexo de conclusão de missão ── */
+function _abrirAnexoConclusao(anexoId, missaoId){
+  /* Buffer em memória */
+  const emBuf = _conclusaoAnexosBuffer.find(a=>a.id===anexoId);
+  if(emBuf){
+    const tipo = emBuf.tipo||_tipoFromNome(emBuf.nome||'');
+    if(emBuf.base64)      { _abrirOuBaixar(emBuf.base64, emBuf.nome, tipo, true); return; }
+    if(emBuf.storage_url) { _abrirOuBaixar(emBuf.storage_url, emBuf.nome, tipo, false); return; }
+  }
+  /* Busca na missão em memória */
+  const missao = missoes.find(m=>m.id===missaoId);
+  if(!missao){ alert('Missão não encontrada.'); return; }
+  const a = (missao.conclusao?.anexos||[]).find(x=>x.id===anexoId);
+  if(!a){ alert('Anexo não encontrado. Recarregue e tente novamente.'); return; }
+  const tipo = a.tipo||_tipoFromNome(a.nome||'');
+  if(a.storage_url)     _abrirOuBaixar(a.storage_url, a.nome, tipo, false);
+  else if(a.base64)     _abrirOuBaixar(a.base64, a.nome, tipo, true);
+  else alert('Arquivo sem URL disponível.');
+}
 async function _excluirComplemento(fichaId, compId){
   const _isAdmin = sessao && (sessao.perfil==='admin'||sessao.perfil==='comandante');
   const ficha = fichasIntel.find(f=>f.id===fichaId);
@@ -7138,43 +7181,81 @@ async function _missoesSyncFromSheet(){
 function abrirModalConclusao(id){
   const m = missoes.find(x=>x.id===id);
   if(!m) return;
+  _conclusaoAnexosBuffer = [];
   document.getElementById('c-missao-id').value = id;
   document.getElementById('conclusao-missao-titulo').textContent = m.titulo;
   document.getElementById('conclusao-missao-gp').textContent = m.gp || '';
-  document.getElementById('c-reds').value = m.conclusao?.reds || '';
-  document.getElementById('c-data').value = m.conclusao?.data || new Date().toISOString().split('T')[0];
-  document.getElementById('c-relato').value = m.conclusao?.relato || '';
+  document.getElementById('c-reds').value         = m.conclusao?.reds         || '';
+  document.getElementById('c-data').value         = m.conclusao?.data         || new Date().toISOString().split('T')[0];
+  document.getElementById('c-relato').value       = m.conclusao?.relato       || '';
   document.getElementById('c-continuidade').value = m.conclusao?.continuidade || 'nao';
-  document.getElementById('c-efetivo').value = m.conclusao?.efetivo || '';
-  document.getElementById('c-obs-final').value = m.conclusao?.obsFinalt || '';
+  document.getElementById('c-efetivo').value      = m.conclusao?.efetivo      || '';
+  document.getElementById('c-obs-final').value    = m.conclusao?.obsFinal     || '';
+  /* Carrega anexos existentes no buffer */
+  _conclusaoAnexosBuffer = (m.conclusao?.anexos||[]).map(a=>({...a}));
   abrirModal('modal-conclusao');
+  setTimeout(()=>_renderAnexos('conclusao'), 50);
 }
 
 async function salvarConclusao(){
   const id = document.getElementById('c-missao-id').value;
   const m  = missoes.find(x=>x.id===id);
   if(!m) return;
-  const reds = document.getElementById('c-reds').value.trim();
+  const reds   = document.getElementById('c-reds').value.trim();
   const relato = document.getElementById('c-relato').value.trim();
   if(!reds && !relato){
     alert('Informe ao menos o número do registro ou o relato da execução.');
     return;
   }
-  m.status = 'concluida';
-  m.conclusao = {
-    reds,
-    data:          document.getElementById('c-data').value,
-    relato,
-    continuidade:  document.getElementById('c-continuidade').value,
-    efetivo:       document.getElementById('c-efetivo').value.trim(),
-    obsFinalt:      document.getElementById('c-obs-final').value.trim(),
-    concluidoPor:  sessao?.nome || '—',
-    concluidoEm:   new Date().toLocaleString('pt-BR'),
-  };
-  _pset('ac_missoes', JSON.stringify(missoes));
-  await _missoesSyncToSheet().catch(()=>{});
-  fecharModal('modal-conclusao');
-  renderMissoes();
+  const btn = document.querySelector('#modal-conclusao .btn-success');
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Salvando...'; }
+  try{
+    /* Upload dos anexos para o Storage */
+    const anexosComUrl = await Promise.all(_conclusaoAnexosBuffer.map(async a => {
+      if(a.storage_url) return { id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url };
+      if(!a.base64)     return { id:a.id, nome:a.nome, tipo:a.tipo||'' };
+      try{
+        const ext  = _getExt(a.nome, a.tipo);
+        const path = `missoes/${id}/conclusao/${a.id}.${ext}`;
+        const url  = await _sbUpload(path, a.base64, a.tipo);
+        return { id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:url };
+      }catch(e){
+        console.warn('upload anexo conclusao:', e);
+        return { id:a.id, nome:a.nome, tipo:a.tipo||'', base64:a.base64 };
+      }
+    }));
+
+    m.status    = 'concluida';
+    m.conclusao = {
+      reds,
+      data:         document.getElementById('c-data').value,
+      relato,
+      continuidade: document.getElementById('c-continuidade').value,
+      efetivo:      document.getElementById('c-efetivo').value.trim(),
+      obsFinal:     document.getElementById('c-obs-final').value.trim(),
+      anexos:       anexosComUrl.map(a=>({id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url||'', base64:a.base64||''})),
+      concluidoPor: sessao?.nome || '—',
+      concluidoEm:  new Date().toLocaleString('pt-BR'),
+    };
+    /* Persiste no Supabase */
+    await _sbUpsert('missoes', {
+      id:        m.id,
+      status:    m.status,
+      conclusao: {
+        ...m.conclusao,
+        anexos: anexosComUrl.map(a=>({id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url||''}))
+      },
+      updated_at: new Date().toISOString(),
+    });
+    _pset('ac_missoes', JSON.stringify(missoes));
+    await _missoesSyncToSheet().catch(()=>{});
+    fecharModal('modal-conclusao');
+    renderMissoes();
+  }catch(e){
+    alert('Erro ao salvar conclusão: '+e.message);
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent='✅ Registrar Conclusão'; }
+  }
 }
 
 function abrirModalMissao(id){
@@ -7415,11 +7496,36 @@ function renderMissoes(){
           ${m.conclusao.reds?`<div style="font-size:11px;margin-bottom:3px;"><span style="color:var(--text-muted);">Registro:</span> <span style="color:var(--gold);font-weight:600;font-family:monospace;">${m.conclusao.reds}</span></div>`:''}
           ${m.conclusao.data?`<div style="font-size:11px;margin-bottom:3px;"><span style="color:var(--text-muted);">Data:</span> <span style="color:#fff;">${new Date(m.conclusao.data+'T12:00').toLocaleDateString('pt-BR')}</span></div>`:''}
           ${m.conclusao.relato?`<div style="font-size:11px;color:#ccc;margin-bottom:3px;line-height:1.5;">${m.conclusao.relato}</div>`:''}
+          ${m.conclusao.efetivo?`<div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">👥 Efetivo: ${m.conclusao.efetivo}</div>`:''}
           ${m.conclusao.continuidade&&m.conclusao.continuidade!=='nao'?`<div style="font-size:10px;color:#ff9800;margin-bottom:3px;">⚠ ${m.conclusao.continuidade==='sim'?'Necessita continuidade':'Aguarda avaliação'}</div>`:''}
-          ${m.conclusao.efetivo?`<div style="font-size:10px;color:var(--text-muted);">Efetivo: ${m.conclusao.efetivo}</div>`:''}
           ${m.conclusao.obsFinal?`<div style="font-size:10px;color:var(--text-muted);margin-top:3px;font-style:italic;">${m.conclusao.obsFinal}</div>`:''}
+          ${(m.conclusao.anexos||[]).length?`
+          <div style="margin-top:8px;border-top:1px solid rgba(102,187,106,.15);padding-top:7px;">
+            <div style="font-size:10px;font-weight:700;color:var(--text-muted);margin-bottom:5px;">📎 Anexos do Relatório (${m.conclusao.anexos.length})</div>
+            <div style="display:flex;gap:5px;flex-wrap:wrap;">
+              ${m.conclusao.anexos.map(a=>{
+                const tipo = a.tipo||_tipoFromNome(a.nome||'');
+                const isImg = tipo.startsWith('image');
+                const isVid = tipo.startsWith('video');
+                const isPdf = tipo.includes('pdf');
+                const src   = a.storage_url||a.base64||'';
+                let thumb='';
+                if(isImg&&src)  thumb=`<img src="${src}" style="width:52px;height:40px;object-fit:cover;display:block;" title="${a.nome}">`;
+                else if(isImg)  thumb=`<div style="width:52px;height:40px;display:flex;align-items:center;justify-content:center;background:#1a1a1a;font-size:18px;">🖼</div>`;
+                else if(isVid)  thumb=`<div style="width:52px;height:40px;display:flex;align-items:center;justify-content:center;background:#1a1a1a;font-size:18px;">🎥</div>`;
+                else if(isPdf)  thumb=`<div style="width:52px;height:40px;display:flex;align-items:center;justify-content:center;background:#1a1a1a;font-size:18px;">📄</div>`;
+                else            thumb=`<div style="width:52px;height:40px;display:flex;align-items:center;justify-content:center;background:#1a1a1a;font-size:18px;">📎</div>`;
+                return `<div onclick="_abrirAnexoConclusao('${a.id}','${m.id}')" title="Abrir: ${a.nome}"
+                  style="border:1px solid rgba(102,187,106,.25);border-radius:4px;overflow:hidden;cursor:pointer;flex-shrink:0;">
+                  ${thumb}
+                  <div style="padding:2px 3px;background:#111;font-size:8px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:52px;">${a.nome}</div>
+                </div>`;
+              }).join('')}
+            </div>
+          </div>`:''}
+          <div style="font-size:10px;color:var(--text-hint);margin-top:5px;">Concluída por ${m.conclusao.concluidoPor||'—'} em ${m.conclusao.concluidoEm||'—'}</div>
         </div>`:''}
-      <div style="font-size:10px;color:var(--text-hint);margin-top:8px;border-top:1px solid var(--border);padding-top:6px;">Criada por ${m.criadoPor} em ${m.criadoEm}${m.editadoPor?' · Editada por '+m.editadoPor:''}${m.conclusao&&m.conclusao.concluidoPor?' · Concluída por '+m.conclusao.concluidoPor:''}</div>
+      <div style="font-size:10px;color:var(--text-hint);margin-top:8px;border-top:1px solid var(--border);padding-top:6px;">Criada por ${m.criadoPor} em ${m.criadoEm}${m.editadoPor?' · Editada por '+m.editadoPor:''}</div>
     </div>`;
   }).join('');
 }
