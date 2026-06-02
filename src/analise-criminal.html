@@ -3243,11 +3243,13 @@ function renderMapaCriminal(){
       '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#ef5350;font-size:13px;background:#1a1a1a;border-radius:8px;">⚠ Leaflet não carregado. Verifique a conexão com internet e recarregue a página.</div>';
     return;
   }
-  _renderMapaCriminalInterno(dados, gp);
+  _renderMapaCriminalInterno(dados, gp, pel);
 }
 
-function _renderMapaCriminalInterno(dados, gpFiltro){
-  gpFiltro = gpFiltro || '';
+function _renderMapaCriminalInterno(dados, gpFiltro, pelFiltro){
+  gpFiltro  = gpFiltro  || '';
+  pelFiltro = pelFiltro || '';
+  const pelFiltroNum = pelFiltro ? parseInt(pelFiltro) : 0;
   const el = document.getElementById('ac-mapa-inner');
   /* Remove instância anterior e limpa o container completamente */
   if(_acMap){
@@ -3410,16 +3412,22 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
   const gpFiltroInfo = gpFiltro ? dadosGrupos.find(r => norm(r.grupamento) === norm(gpFiltro)) : null;
   const gpFiltroPelNum = gpFiltroInfo ? gpFiltroInfo.pelNum : null;
 
+  /* Acumula pontos dos polígonos do pelotão/GP filtrado para fitBounds */
+  const pelPolyPoints = [];
+
   if(typeof KML_DATA !== 'undefined' && KML_DATA.pelotoes){
     Object.entries(KML_DATA.pelotoes).forEach(([pelKey, pelData]) => {
       const group   = L.layerGroup();
       const pelNum  = parseInt(pelKey.replace(/\D/g,''));
+      /* Filtro ativo? */
+      const estePelotao = pelFiltroNum ? pelNum === pelFiltroNum : false;
+      const gpFiltroAtivo = !!gpFiltro;
+
       if(pelData.gps){
         Object.entries(pelData.gps).forEach(([gpKey, gpData]) => {
           const gpNum  = parseInt(gpKey.replace(/\D/g,''));
           const gpInfo = dadosGrupos.find(r => r.pelNum === pelNum && gpNumDoColk(r.grupamento) === gpNum);
           const cidade = gpInfo ? gpInfo.gpResp.replace('GP ','') : '';
-          /* Tooltip HTML compacto — horizontal, bem formatado */
           const ttHtml = `<div style="white-space:nowrap;line-height:1.7;">
             <span style="font-size:12px;font-weight:700;color:${gpData.cor};">${pelData.label}</span>
             <span style="color:#aaa;font-size:11px;margin:0 4px;">·</span>
@@ -3427,24 +3435,32 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
             ${cidade ? `<br><span style="font-size:11px;color:#fff;font-weight:600;">${cidade}</span>` : ''}
           </div>`;
           gpData.polys.forEach(poly => {
-            /* Destaque visual quando GP está filtrado */
-            const esteGp = gpFiltro && gpInfo && norm(gpDoColk(gpInfo.grupamento)) === norm(gpFiltro);
-            const wt  = esteGp ? 3.5 : (gpFiltro ? 0.7 : 1.5);
-            const op  = esteGp ? 1.0 : (gpFiltro ? 0.25 : 0.9);
-            const fOp = esteGp ? 0.22: (gpFiltro ? 0.03 : 0.12);
+            /* Destaque: GP filtrado > Pelotão filtrado > sem filtro */
+            const esteGp  = gpFiltroAtivo && gpInfo && norm(gpDoColk(gpInfo.grupamento)) === norm(gpFiltro);
+            const wt  = esteGp ? 3.5 : estePelotao ? 2.5 : (gpFiltroAtivo || pelFiltroNum) ? 0.7 : 1.5;
+            const op  = esteGp ? 1.0 : estePelotao ? 0.95: (gpFiltroAtivo || pelFiltroNum) ? 0.22 : 0.9;
+            const fOp = esteGp ? 0.22: estePelotao ? 0.15: (gpFiltroAtivo || pelFiltroNum) ? 0.03 : 0.12;
             L.polygon(poly.map(p=>[p[1],p[0]]),{
               color: gpData.cor, weight:wt, opacity:op,
               fillColor: gpData.cor, fillOpacity:fOp
             }).bindTooltip(ttHtml,{sticky:true,className:'leaflet-tooltip-pel'}).addTo(group);
+            /* Acumula pontos para fitBounds no pelotão filtrado */
+            if(pelFiltroNum && estePelotao && !gpFiltroAtivo){
+              poly.forEach(p => pelPolyPoints.push([p[1],p[0]]));
+            }
+            if(esteGp){
+              poly.forEach(p => pelPolyPoints.push([p[1],p[0]]));
+            }
           });
         });
       }
       _acLayers[pelKey] = group;
       const cbId = 'ml-'+pelKey.replace('_','');
       const cb   = document.getElementById(cbId) || document.getElementById('ml-'+pelKey);
-      /* Se filtro de grupamento ativo, mostra só o pelotão correspondente */
-      const pelVisivelPorGp = !gpFiltro || pelNum === gpFiltroPelNum;
-      if(pelVisivelPorGp && (!cb || cb.checked)) group.addTo(_acMap);
+      /* Mostra só o pelotão selecionado (se filtro ativo), ou respeita checkboxes */
+      const pelVisivelPorGp  = !gpFiltroAtivo  || pelNum === gpFiltroPelNum;
+      const pelVisivelPorPel = !pelFiltroNum || pelNum === pelFiltroNum;
+      if(pelVisivelPorGp && pelVisivelPorPel && (!cb || cb.checked)) group.addTo(_acMap);
     });
   }
 
@@ -4053,14 +4069,19 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
     });
   })();
 
-  /* ── Ajusta zoom — filtra pontos válidos dentro do Brasil ── */
+  /* ── Ajusta zoom — prioridade: GP/PEL polígono > marcadores > região padrão ── */
   const ptsBrasil = [...dadosComCoord, ...dadosGdoRural.filter(d=>d.lat&&d.lng)]
     .filter(d => d.lat >= -35 && d.lat <= 6 && d.lng >= -75 && d.lng <= -28);
 
-  if(ptsBrasil.length >= 2){
+  /* Se há polígonos do pelotão/GP filtrado, centraliza neles */
+  if(pelPolyPoints.length >= 2){
+    try{
+      const bounds = L.latLngBounds(pelPolyPoints);
+      _acMap.fitBounds(bounds, {padding:[40,40], maxZoom:11});
+    }catch(e){ _acMap.setView([-18.5,-41.5], 7); }
+  } else if(ptsBrasil.length >= 2){
     try {
       const bounds = L.featureGroup(ptsBrasil.map(d=>L.marker([d.lat,d.lng]))).getBounds();
-      /* Limita zoom máximo para não aproximar demais num único ponto */
       _acMap.fitBounds(bounds, {padding:[60,60], maxZoom:12});
     } catch(e){
       _acMap.setView([-18.5,-41.5], 7);
@@ -4068,7 +4089,6 @@ function _renderMapaCriminalInterno(dados, gpFiltro){
   } else if(ptsBrasil.length === 1){
     _acMap.setView([ptsBrasil[0].lat, ptsBrasil[0].lng], 10);
   } else {
-    /* Sem pontos — centraliza na região da 3ª CIA PM MAmb (Vale do Mucuri/Jequitinhonha) */
     _acMap.setView([-17.5,-41.5], 7);
   }
 
