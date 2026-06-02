@@ -5852,6 +5852,17 @@ async function _salvarMissoesComAnexos(missaoId){
     }
   }));
 
+  /* Serializa a conclusão no campo obs com prefixo §CONCLUSAO§ para persistência */
+  let obsParaSalvar = mis.obs||'';
+  if(mis.conclusao){
+    const obsBase = obsParaSalvar.replace(/§CONCLUSAO§.*$/s,'').trim();
+    const conclusaoSemBase64 = {
+      ...mis.conclusao,
+      anexos: (mis.conclusao.anexos||[]).map(a=>({id:a.id,nome:a.nome,tipo:a.tipo||'',storage_url:a.storage_url||''}))
+    };
+    obsParaSalvar = obsBase + (obsBase?'\n':'') + '§CONCLUSAO§' + JSON.stringify(conclusaoSemBase64);
+  }
+
   await _sbUpsert('missoes', {
     id:          mis.id,
     titulo:      mis.titulo||'',
@@ -5861,7 +5872,7 @@ async function _salvarMissoesComAnexos(missaoId){
     prioridade:  mis.prioridade||'media',
     prazo:       mis.prazo||'',
     descricao:   mis.descricao||'',
-    obs:         mis.obs||'',
+    obs:         obsParaSalvar,
     /* NUNCA envia base64 para o banco — só metadados e URL do storage */
     anexos:      anexosComUrl.map(a => ({id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url||''})),
     status:      mis.status||'pendente',
@@ -5886,23 +5897,34 @@ async function _salvarMissoesComAnexos(missaoId){
 async function _carregarMissoesComAnexos(){
   try{
     const rows = await _sbSelect('missoes', 'order=updated_at.desc');
-    missoes = rows.map(r => ({
-      id:         r.id,
-      titulo:     r.titulo||'',
-      rat:        r.rat||'',
-      gp:         r.gp||'',
-      militares:  r.militares||[],
-      prioridade: r.prioridade||'media',
-      prazo:      r.prazo||'',
-      descricao:  r.descricao||'',
-      obs:        r.obs||'',
-      anexos:     (r.anexos||[]),
-      status:     r.status||'pendente',
-      criadoPor:  r.criado_por||'',
-      criadoEm:   r.criado_em||'',
-      editadoPor: r.editado_por||'',
-      editadoEm:  r.editado_em||'',
-    }));
+    missoes = rows.map(r => {
+      /* Deserializa conclusão armazenada no campo obs com prefixo §CONCLUSAO§ */
+      let obsReal = r.obs||'';
+      let conclusao = undefined;
+      const sepIdx = obsReal.indexOf('§CONCLUSAO§');
+      if(sepIdx !== -1){
+        try{ conclusao = JSON.parse(obsReal.slice(sepIdx + 11)); }catch(e){}
+        obsReal = obsReal.slice(0, sepIdx).trim();
+      }
+      return {
+        id:         r.id,
+        titulo:     r.titulo||'',
+        rat:        r.rat||'',
+        gp:         r.gp||'',
+        militares:  r.militares||[],
+        prioridade: r.prioridade||'media',
+        prazo:      r.prazo||'',
+        descricao:  r.descricao||'',
+        obs:        obsReal,
+        anexos:     (r.anexos||[]),
+        status:     r.status||'pendente',
+        criadoPor:  r.criado_por||'',
+        criadoEm:   r.criado_em||'',
+        editadoPor: r.editado_por||'',
+        editadoEm:  r.editado_em||'',
+        conclusao,
+      };
+    });
     console.log('[Supabase] missoes: '+missoes.length+' missões');
   }catch(e){
     console.warn('[Supabase] erro ao carregar missões:', e.message);
@@ -7233,21 +7255,36 @@ async function salvarConclusao(){
       continuidade: document.getElementById('c-continuidade').value,
       efetivo:      document.getElementById('c-efetivo').value.trim(),
       obsFinal:     document.getElementById('c-obs-final').value.trim(),
-      anexos:       anexosComUrl.map(a=>({id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url||'', base64:a.base64||''})),
+      anexos:       anexosComUrl.map(a=>({id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url||''})),
       concluidoPor: sessao?.nome || '—',
       concluidoEm:  new Date().toLocaleString('pt-BR'),
     };
-    /* Persiste no Supabase */
+
+    /* Salva no Supabase usando apenas colunas que JÁ EXISTEM na tabela missoes.
+       A conclusão é serializada no campo 'obs' com prefixo §CONCLUSAO§ */
+    const obsOriginal = m.obs || '';
+    const obsLimpo    = obsOriginal.replace(/§CONCLUSAO§.*$/s,'').trim();
+    const conclusaoSemBase64 = {
+      ...m.conclusao,
+      anexos: (m.conclusao.anexos||[]).map(a=>({id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url||''}))
+    };
+    const obsFinal = obsLimpo + (obsLimpo?'\n':'') + '§CONCLUSAO§' + JSON.stringify(conclusaoSemBase64);
+
     await _sbUpsert('missoes', {
-      id:        m.id,
-      status:    m.status,
-      conclusao: {
-        ...m.conclusao,
-        anexos: anexosComUrl.map(a=>({id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url||''}))
-      },
+      id:         m.id,
+      status:     m.status,
+      obs:        obsFinal,
       updated_at: new Date().toISOString(),
     });
-    _pset('ac_missoes', JSON.stringify(missoes));
+
+    /* Sempre salva tudo no localStorage (fonte principal para leitura rápida) */
+    _pset('ac_missoes', JSON.stringify(missoes.map(mis => ({
+      ...mis,
+      conclusao: mis.conclusao ? {
+        ...mis.conclusao,
+        anexos: (mis.conclusao.anexos||[]).map(a=>({id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url||''}))
+      } : undefined
+    }))));
     await _missoesSyncToSheet().catch(()=>{});
     fecharModal('modal-conclusao');
     renderMissoes();
