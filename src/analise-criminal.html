@@ -1531,25 +1531,24 @@
      MODAL: COMPLEMENTOS DA FICHA (acessível a todos)
 ════════════════════════════════ -->
 <div class="modal-overlay hidden" id="modal-complementos">
-  <div class="modal-box" style="max-width:720px;max-height:92vh;display:flex;flex-direction:column;overflow:hidden;">
-    <div class="modal-header" style="flex-shrink:0;">
+  <div class="modal-box" style="max-width:720px;">
+    <div class="modal-header">
       <div>
         <h3>📝 Complementos da Ficha de Inteligência</h3>
         <div id="mc-ficha-info" style="font-size:11px;color:var(--text-muted);margin-top:2px;"></div>
       </div>
       <button class="modal-close" onclick="fecharModal('modal-complementos')">✕</button>
     </div>
+    <div class="modal-body">
 
-    <!-- Histórico rolável -->
-    <div style="flex:1;overflow-y:auto;padding:14px 18px 0;">
+      <!-- Histórico cronológico -->
       <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;">📋 Histórico de Complementos</div>
-      <div id="mc-lista" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;">
+      <div id="mc-lista" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;">
         <div style="font-size:11px;color:var(--text-muted);text-align:center;padding:20px 0;">Nenhum complemento ainda.</div>
       </div>
-    </div>
 
-    <!-- Formulário novo/editar — fixo no fundo -->
-    <div id="mc-form-area" style="background:#1a1a1a;border-top:2px solid var(--gold-border);padding:14px 18px;flex-shrink:0;">
+      <!-- Formulário novo/editar -->
+      <div id="mc-form-area" style="background:#1a1a1a;border:1px solid var(--gold-border);border-radius:8px;padding:14px;">
       <div id="mc-form-titulo" style="font-size:11px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">➕ Nova Informação de Inteligência</div>
       <input type="hidden" id="mc-edit-id">
 
@@ -1623,9 +1622,9 @@
         <button class="btn-outline" id="mc-btn-cancelar-edit" style="display:none;" onclick="mcCancelarEdicao()">✕ Cancelar edição</button>
         <button class="btn-gold" style="flex:1;" id="mc-btn-registrar" onclick="registrarComplementoModal()">📌 Registrar Complemento</button>
       </div>
-    </div>
-
-    <div class="modal-footer" style="flex-shrink:0;">
+      </div><!-- /mc-form-area -->
+    </div><!-- /modal-body -->
+    <div class="modal-footer">
       <span style="font-size:10px;color:var(--text-hint);">Qualquer militar registra · Criador edita/exclui o próprio · Admin gerencia todos</span>
       <button class="btn-outline" style="margin-left:auto;" onclick="fecharModal('modal-complementos')">Fechar</button>
     </div>
@@ -5718,6 +5717,11 @@ async function _salvarFichasComAnexos(fichaId){
     obs:          ficha.obs||'',
     /* NUNCA envia base64 para o banco — só metadados e URL do storage */
     fotos:        fotosComUrl.map(a => ({id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url||''})),
+    /* Preserva complementos existentes */
+    complementos: (ficha.complementos||[]).map(c=>({
+      ...c,
+      anexos:(c.anexos||[]).map(a=>({id:a.id,nome:a.nome,tipo:a.tipo||'',storage_url:a.storage_url||''}))
+    })),
     criado_por:   ficha.criadoPor||'',
     criado_em:    ficha.criadoEm||'',
     updated_at:   new Date().toISOString(),
@@ -5929,44 +5933,100 @@ function _tipoFromNome(nome){
   return m[ext]||'application/octet-stream';
 }
 
+/* Viewer inline — exibe imagem, PDF ou vídeo dentro da página sem abrir nova aba */
 function _abrirOuBaixar(src, nome, tipo, isBase64){
   const isImg   = (tipo||'').startsWith('image');
   const isPdf   = (tipo||'').includes('pdf');
   const isVideo = (tipo||'').startsWith('video');
+  const isKml   = (nome||'').toLowerCase().endsWith('.kml') || (nome||'').toLowerCase().endsWith('.kmz');
 
+  /* Para KML sempre faz download */
+  if(isKml){ _prepararEBaixar(src, nome, tipo, isBase64); return; }
+
+  /* Para imagem, PDF e vídeo — viewer inline */
+  if(isImg || isPdf || isVideo){
+    _mostrarViewerInline(src, nome, tipo, isBase64);
+  } else {
+    /* Outros formatos — download direto */
+    _prepararEBaixar(src, nome, tipo, isBase64);
+  }
+}
+
+/* Mostra viewer inline em overlay */
+function _mostrarViewerInline(src, nome, tipo, isBase64){
+  const isImg   = (tipo||'').startsWith('image');
+  const isPdf   = (tipo||'').includes('pdf');
+  const isVideo = (tipo||'').startsWith('video');
+
+  /* Remove viewer anterior se existir */
+  const old = document.getElementById('_viewer_overlay');
+  if(old) old.remove();
+
+  /* Cria Blob URL se base64 */
+  let blobUrl = null;
   if(isBase64){
-    /* Converte base64 → Blob URL (não depende de popup) */
     try{
       const arr  = src.split(',');
       const mime = arr[0].match(/:(.*?);/)?.[1] || tipo || 'application/octet-stream';
       const bstr = atob(arr[1]||arr[0]);
       const bytes = new Uint8Array(bstr.length);
       for(let i=0;i<bstr.length;i++) bytes[i]=bstr.charCodeAt(i);
-      const blob = new Blob([bytes],{type:mime});
-      const url  = URL.createObjectURL(blob);
-      if(isImg || isPdf || isVideo){
-        /* Abre numa nova aba via <a target="_blank"> — não é bloqueado como popup */
-        const a = document.createElement('a');
-        a.href = url; a.target = '_blank'; a.rel = 'noopener';
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      } else {
-        _forcDownload(url, nome);
-      }
+      blobUrl = URL.createObjectURL(new Blob([bytes],{type:mime}));
+    }catch(e){ alert('Erro ao preparar anexo: '+e.message); return; }
+  }
+  const viewSrc = blobUrl || src;
+
+  let conteudo = '';
+  if(isImg)       conteudo = `<img src="${viewSrc}" style="max-width:100%;max-height:75vh;border-radius:4px;display:block;margin:auto;" alt="${nome}">`;
+  else if(isVideo) conteudo = `<video src="${viewSrc}" controls autoplay style="max-width:100%;max-height:75vh;border-radius:4px;display:block;margin:auto;"></video>`;
+  else if(isPdf)  conteudo = `<iframe src="${viewSrc}" style="width:100%;height:75vh;border:none;border-radius:4px;" title="${nome}"></iframe>`;
+
+  const overlay = document.createElement('div');
+  overlay.id = '_viewer_overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.88);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;';
+  overlay.innerHTML = `
+    <div style="width:100%;max-width:900px;background:#1e1e1e;border-radius:10px;border:1px solid var(--gold-border);overflow:hidden;display:flex;flex-direction:column;max-height:92vh;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#111;border-bottom:1px solid var(--border);flex-shrink:0;">
+        <span style="font-size:12px;font-weight:700;color:var(--gold);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%;">📎 ${nome}</span>
+        <div style="display:flex;gap:8px;flex-shrink:0;">
+          <button id="_viewer_dl" style="background:rgba(155,138,92,.2);border:1px solid var(--gold-border);color:var(--gold);padding:5px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;">⬇ Baixar</button>
+          <button onclick="document.getElementById('_viewer_overlay').remove();${blobUrl?`URL.revokeObjectURL('${blobUrl}');`:''}" style="background:rgba(239,83,80,.15);border:1px solid rgba(239,83,80,.4);color:#ef5350;padding:5px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;">✕ Fechar</button>
+        </div>
+      </div>
+      <div style="flex:1;overflow:auto;padding:12px;">${conteudo}</div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  /* Botão de download */
+  document.getElementById('_viewer_dl').onclick = () => {
+    if(blobUrl){ _forcDownload(blobUrl, nome); }
+    else { _prepararEBaixar(src, nome, tipo, false); }
+  };
+
+  /* Fecha ao clicar fora do box */
+  overlay.addEventListener('click', e => {
+    if(e.target === overlay){ overlay.remove(); if(blobUrl) URL.revokeObjectURL(blobUrl); }
+  });
+}
+
+/* Prepara blob e faz download direto */
+function _prepararEBaixar(src, nome, tipo, isBase64){
+  if(isBase64){
+    try{
+      const arr  = src.split(',');
+      const mime = arr[0].match(/:(.*?);/)?.[1] || tipo || 'application/octet-stream';
+      const bstr = atob(arr[1]||arr[0]);
+      const bytes = new Uint8Array(bstr.length);
+      for(let i=0;i<bstr.length;i++) bytes[i]=bstr.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([bytes],{type:mime}));
+      _forcDownload(url, nome);
       setTimeout(()=>URL.revokeObjectURL(url), 8000);
-    }catch(e){
-      console.error('_abrirOuBaixar base64 erro:', e);
-      alert('Não foi possível abrir o anexo: '+e.message);
-    }
+    }catch(e){ alert('Erro ao baixar anexo: '+e.message); }
   } else {
-    /* URL do Supabase Storage — abre direto */
-    if(isImg || isPdf || isVideo){
-      window.open(src, '_blank', 'noopener');
-    } else {
-      fetch(src)
-        .then(r=>r.blob())
-        .then(blob=>{ const url=URL.createObjectURL(blob); _forcDownload(url,nome); setTimeout(()=>URL.revokeObjectURL(url),5000); })
-        .catch(()=>window.open(src,'_blank','noopener'));
-    }
+    fetch(src)
+      .then(r=>r.blob())
+      .then(blob=>{ const url=URL.createObjectURL(blob); _forcDownload(url,nome); setTimeout(()=>URL.revokeObjectURL(url),5000); })
+      .catch(()=>{ const a=document.createElement('a'); a.href=src; a.download=nome; a.target='_blank'; a.click(); });
   }
 }
 
@@ -6246,6 +6306,8 @@ async function salvarIntel(){
     const id = document.getElementById('i-id').value || ('intel-'+Date.now());
     const munRaw = document.getElementById('i-mun').value.trim();
     const municipios = munRaw ? munRaw.split(',').map(m=>m.trim()).filter(Boolean) : [];
+    /* Recupera ficha existente para preservar campos que não estão no modal */
+    const fichaExistente = fichasIntel.find(x=>x.id===id);
     const ficha = {
       id,
       rat:          document.getElementById('i-rat').value.trim(),
@@ -6259,9 +6321,11 @@ async function salvarIntel(){
       reincidencia: document.getElementById('i-reincidencia').value,
       conexoes:     document.getElementById('i-conexoes').value.trim(),
       obs:          document.getElementById('i-obs').value.trim(),
-      fotos:        _intelFotosBuffer.map(f=>({id:f.id, base64:f.base64||'', nome:f.nome, tipo:f.tipo||''})),
-      criadoPor:    sessao?.nome || '—',
-      criadoEm:     new Date().toLocaleString('pt-BR'),
+      fotos:        _intelFotosBuffer.map(f=>({id:f.id, base64:f.base64||'', nome:f.nome, tipo:f.tipo||'', storage_url:f.storage_url||''})),
+      /* Preserva complementos, criadoPor e criadoEm se estiver editando */
+      complementos: fichaExistente?.complementos || [],
+      criadoPor:    fichaExistente?.criadoPor || sessao?.nome || '—',
+      criadoEm:     fichaExistente?.criadoEm  || new Date().toLocaleString('pt-BR'),
     };
     const idx = fichasIntel.findIndex(x=>x.id===id);
     if(idx >= 0) fichasIntel[idx] = ficha;
@@ -6452,12 +6516,12 @@ async function registrarComplementoModal(){
   const texto = (document.getElementById('mc-texto').value||'').trim();
   if(!texto && !_mcAnexosBuffer.length){ alert('Informe ao menos a descrição do complemento.'); return; }
 
-  const editId    = document.getElementById('mc-edit-id').value;
-  const tipo      = document.getElementById('mc-tipo').value;
-  const confianca = document.getElementById('mc-confianca').value;
-  const local     = (document.getElementById('mc-local').value||'').trim();
-  const dataFato  = document.getElementById('mc-data-fato').value||'';
-  const providencia = (document.getElementById('mc-providencia').value||'').trim();
+  const editId     = document.getElementById('mc-edit-id').value;
+  const tipo       = document.getElementById('mc-tipo').value;
+  const confianca  = document.getElementById('mc-confianca').value;
+  const local      = (document.getElementById('mc-local').value||'').trim();
+  const dataFato   = document.getElementById('mc-data-fato').value||'';
+  const providencia= (document.getElementById('mc-providencia').value||'').trim();
 
   const btn = document.getElementById('mc-btn-registrar');
   if(btn){ btn.disabled=true; btn.textContent='⏳ Salvando...'; }
@@ -6468,7 +6532,23 @@ async function registrarComplementoModal(){
     if(!ficha.complementos) ficha.complementos = [];
 
     const agora = new Date();
-    const anexosSalvar = _mcAnexosBuffer.map(a=>({id:a.id, base64:a.base64||'', nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url||''}));
+    const compId = editId || ('comp-'+Date.now()+Math.random().toString(36).slice(2,6));
+
+    /* ── Faz upload dos anexos novos para o Storage ── */
+    const anexosComUrl = await Promise.all(_mcAnexosBuffer.map(async a => {
+      if(a.storage_url) return { id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url };
+      if(!a.base64)     return { id:a.id, nome:a.nome, tipo:a.tipo||'' };
+      try{
+        const ext  = _getExt(a.nome, a.tipo);
+        const path = `intel/${_mcFichaId}/comp_${compId}/${a.id}.${ext}`;
+        const url  = await _sbUpload(path, a.base64, a.tipo);
+        return { id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:url };
+      }catch(e){
+        console.warn('upload anexo complemento:', e);
+        /* Fallback: salva base64 se upload falhar */
+        return { id:a.id, nome:a.nome, tipo:a.tipo||'', base64:a.base64 };
+      }
+    }));
 
     if(editId){
       /* EDIÇÃO */
@@ -6480,34 +6560,40 @@ async function registrarComplementoModal(){
       if(!_isAdmin && !eCriador) throw new Error('Sem permissão para editar este complemento.');
       ficha.complementos[idx] = {
         ...original, texto, tipo, confianca, local, dataFato, providencia,
-        anexos: anexosSalvar,
-        editadoPor: sessao?.nome||'—',
-        editadoEm:  agora.toLocaleString('pt-BR'),
-        editadoEmISO: agora.toISOString(),
+        anexos: anexosComUrl,
+        editadoPor:  sessao?.nome||'—',
+        editadoEm:   agora.toLocaleString('pt-BR'),
+        editadoEmISO:agora.toISOString(),
       };
     } else {
       /* NOVO */
-      const novoComp = {
-        id: 'comp-'+Date.now()+Math.random().toString(36).slice(2,6),
+      ficha.complementos.unshift({
+        id: compId,
         texto, tipo, confianca, local, dataFato, providencia,
-        autor: sessao?.nome||'—',
+        autor:           sessao?.nome||'—',
         registradoEm:    agora.toLocaleString('pt-BR'),
         registradoEmISO: agora.toISOString(),
-        anexos: anexosSalvar,
-      };
-      ficha.complementos.unshift(novoComp);
+        anexos:          anexosComUrl,
+      });
     }
 
-    /* Persiste no Supabase */
+    /* Persiste no Supabase — salva só metadados + storage_url, NUNCA base64 no campo complementos */
     await _sbUpsert('fichas_intel', {
       id: _mcFichaId,
-      complementos: ficha.complementos,
-      updated_at:   agora.toISOString(),
+      complementos: ficha.complementos.map(c=>({
+        ...c,
+        anexos:(c.anexos||[]).map(a=>({id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url||''}))
+      })),
+      updated_at: agora.toISOString(),
     });
+
+    /* Atualiza buffer em memória com URLs (para abrir sem recarregar) */
+    const compSalvo = ficha.complementos.find(c=>c.id===compId);
+    if(compSalvo) compSalvo.anexos = anexosComUrl;
 
     mcCancelarEdicao();
     _renderComplementosModal(_mcFichaId);
-    renderIntel(); /* atualiza card na listagem */
+    renderIntel();
   }catch(e){
     alert('Erro ao salvar: '+e.message);
   }finally{
@@ -6569,15 +6655,32 @@ async function adicionarComplemento(){
     if(!ficha) throw new Error('Ficha não encontrada.');
     if(!ficha.complementos) ficha.complementos=[];
     const agora = new Date();
+    const compId = 'comp-'+Date.now()+Math.random().toString(36).slice(2,6);
+    /* Upload dos anexos para o Storage */
+    const anexosComUrl = await Promise.all(_compAnexosBuffer.map(async a => {
+      if(a.storage_url) return { id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url };
+      if(!a.base64)     return { id:a.id, nome:a.nome, tipo:a.tipo||'' };
+      try{
+        const ext  = _getExt(a.nome, a.tipo);
+        const url  = await _sbUpload(`intel/${fichaId}/comp_${compId}/${a.id}.${ext}`, a.base64, a.tipo);
+        return { id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:url };
+      }catch(e){ return { id:a.id, nome:a.nome, tipo:a.tipo||'', base64:a.base64 }; }
+    }));
     ficha.complementos.unshift({
-      id:'comp-'+Date.now()+Math.random().toString(36).slice(2,6),
-      texto, tipo:'outros', confianca:'provavel',
+      id:compId, texto, tipo:'outros', confianca:'provavel',
       autor: sessao?.nome||'—',
       registradoEm: agora.toLocaleString('pt-BR'),
       registradoEmISO: agora.toISOString(),
-      anexos: _compAnexosBuffer.map(a=>({id:a.id,base64:a.base64||'',nome:a.nome,tipo:a.tipo||'',storage_url:a.storage_url||''})),
+      anexos: anexosComUrl,
     });
-    await _sbUpsert('fichas_intel',{ id:fichaId, complementos:ficha.complementos, updated_at:agora.toISOString() });
+    await _sbUpsert('fichas_intel',{
+      id:fichaId,
+      complementos: ficha.complementos.map(c=>({
+        ...c,
+        anexos:(c.anexos||[]).map(a=>({id:a.id,nome:a.nome,tipo:a.tipo||'',storage_url:a.storage_url||''}))
+      })),
+      updated_at:agora.toISOString()
+    });
     document.getElementById('comp-texto').value='';
     _compAnexosBuffer=[];
     _renderAnexos('comp');
