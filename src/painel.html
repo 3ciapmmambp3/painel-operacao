@@ -914,23 +914,29 @@ function lerSessao(){
 /* ── Sessão ── */
 let sessaoPainel = null;
 
-/* ── Retorna {pelNum, gpNum, gpStr} da lotação do usuário logado ──
-   A lotacao já é a chave exata do grupamento:
-   Ex: "1 GP / 4 PEL / 3 CIA PM MAMB / TEOFILO OTONI"
-   gpStr = lotacao diretamente; pelNum/gpNum extraídos para uso nos filtros. */
+/* ── Retorna {pelNum, gpNum, gpStr, gpResp} da lotação do usuário logado ──
+   lotacao = formato longo: "1 GP / 4 PEL / 3 CIA PM MAMB / TEOFILO OTONI"
+   gpStr   = lotacao longa (para exibição no badge)
+   gpResp  = formato curto (ex: "GP TEOFILO OTONI") — chave usada nos selects */
 function _getUserGP(){
-  if(!sessaoPainel) return { pelNum:'', gpNum:'', gpStr:'' };
+  if(!sessaoPainel) return { pelNum:'', gpNum:'', gpStr:'', gpResp:'' };
   const lot = (sessaoPainel.lotacao||'').trim();
   /* Sem lotação ou ADM/CMDO = sem restrição */
   if(!lot || lot.toUpperCase() === 'ADM' || lot.toUpperCase().startsWith('CMDO'))
-    return { pelNum:'', gpNum:'', gpStr:'' };
+    return { pelNum:'', gpNum:'', gpStr:'', gpResp:'' };
   const lotUp = lot.toUpperCase();
   const gpM   = lotUp.match(/(\d+)\s*GP/);
   const pelM  = lotUp.match(/(\d+)\s*PEL/);
   const gpNum  = gpM  ? gpM[1]  : '';
   const pelNum = pelM ? pelM[1] : '';
-  /* gpStr é a própria lotação — já é a chave exata em dadosGrupos */
-  return { pelNum, gpNum, gpStr: lot };
+  /* Busca o gpResp (formato curto) em dadosGrupos pela lotação */
+  const norm2 = s => (s||'').toUpperCase().replace(/\s+/g,' ').trim();
+  const grupo = dadosGrupos.find(r =>
+    norm2(r.grupamento) === norm2(lot) ||
+    norm2(r.colK||'')   === norm2(lot)
+  );
+  const gpResp = grupo?.gpResp || lot;
+  return { pelNum, gpNum, gpStr: lot, gpResp };
 }
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -3676,15 +3682,20 @@ function initRelatorios(){
     /* Popula GPs filtrados pelo pelotão do usuário */
     popularRelGP();
     if(gpEl){
-      /* lotacao já é a chave exata — garante que existe e seleciona */
-      if(userGP.gpStr && ![...gpEl.options].some(o=>o.value===userGP.gpStr)){
+      /* Usa gpResp (formato curto) para bater com as opções do select */
+      if(userGP.gpResp && ![...gpEl.options].some(o=>o.value===userGP.gpResp)){
         const opt = document.createElement('option');
-        opt.value = userGP.gpStr; opt.textContent = userGP.gpStr;
+        opt.value = userGP.gpResp; opt.textContent = userGP.gpResp;
         gpEl.appendChild(opt);
       }
-      if(userGP.gpStr) gpEl.value = userGP.gpStr;
+      if(userGP.gpResp) gpEl.value = userGP.gpResp;
       gpEl.disabled = true;
     }
+    /* Badge com nome legível */
+    const badge    = document.getElementById('rel-gp-badge');
+    const badgeTxt = document.getElementById('rel-gp-badge-txt');
+    if(badge) badge.style.display = 'block';
+    if(badgeTxt) badgeTxt.textContent = userGP.gpResp || userGP.gpStr || 'Não definido';
   }
   renderRelatorio();
 }
@@ -3712,15 +3723,15 @@ function renderRelatorio(){
     /* 3. Re-popula o select de Grupamento filtrado pelo pelotão do usuário */
     popularRelGP();
 
-    /* 4. Força a opção do grupamento do usuário no select e a seleciona */
+    /* 4. Força a opção do grupamento do usuário (usa gpResp = formato curto) */
     if(gpEl){
-      if(userGP.gpStr && ![...gpEl.options].some(o => o.value === userGP.gpStr)){
+      if(userGP.gpResp && ![...gpEl.options].some(o => o.value === userGP.gpResp)){
         const opt = document.createElement('option');
-        opt.value = userGP.gpStr;
-        opt.textContent = userGP.gpStr;
+        opt.value = userGP.gpResp;
+        opt.textContent = userGP.gpResp;
         gpEl.appendChild(opt);
       }
-      if(userGP.gpStr) gpEl.value = userGP.gpStr;
+      if(userGP.gpResp) gpEl.value = userGP.gpResp;
       gpEl.disabled = true;
     }
 
@@ -3728,7 +3739,7 @@ function renderRelatorio(){
     const badge    = document.getElementById('rel-gp-badge');
     const badgeTxt = document.getElementById('rel-gp-badge-txt');
     if(badge) badge.style.display = 'block';
-    if(badgeTxt) badgeTxt.textContent = userGP.gpStr || 'Não definido';
+    if(badgeTxt) badgeTxt.textContent = userGP.gpResp || userGP.gpStr || 'Não definido';
     if(negado) negado.style.display = 'none';
     if(body)   body.style.display   = 'block';
   } else {
