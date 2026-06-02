@@ -917,11 +917,10 @@ let sessaoPainel = null;
 /* ── Retorna {pelNum, gpNum, gpStr, gpResp} da lotação do usuário logado ──
    lotacao = formato longo: "1 GP / 4 PEL / 3 CIA PM MAMB / TEOFILO OTONI"
    gpStr   = lotacao longa (para exibição no badge)
-   gpResp  = formato curto (ex: "GP TEOFILO OTONI") — chave usada nos selects */
+   gpResp  = formato curto (ex: "GP TEOFILO OTONI") — chave usada nos selects e filtros */
 function _getUserGP(){
   if(!sessaoPainel) return { pelNum:'', gpNum:'', gpStr:'', gpResp:'' };
   const lot = (sessaoPainel.lotacao||'').trim();
-  /* Sem lotação ou ADM/CMDO = sem restrição */
   if(!lot || lot.toUpperCase() === 'ADM' || lot.toUpperCase().startsWith('CMDO'))
     return { pelNum:'', gpNum:'', gpStr:'', gpResp:'' };
   const lotUp = lot.toUpperCase();
@@ -929,13 +928,26 @@ function _getUserGP(){
   const pelM  = lotUp.match(/(\d+)\s*PEL/);
   const gpNum  = gpM  ? gpM[1]  : '';
   const pelNum = pelM ? pelM[1] : '';
-  /* Busca o gpResp (formato curto) em dadosGrupos pela lotação */
-  const norm2 = s => (s||'').toUpperCase().replace(/\s+/g,' ').trim();
-  const grupo = dadosGrupos.find(r =>
-    norm2(r.grupamento) === norm2(lot) ||
-    norm2(r.colK||'')   === norm2(lot)
-  );
-  const gpResp = grupo?.gpResp || lot;
+
+  /* Busca gpResp (formato curto) cruzando com dadosGrupos */
+  let gpResp = '';
+  if(dadosGrupos && dadosGrupos.length){
+    const n2 = s => (s||'').toUpperCase().replace(/\s+/g,' ').trim();
+    const lotN = n2(lot);
+    /* 1. Tenta bater grupamento longo (colK ou grupamento) */
+    let g = dadosGrupos.find(r => n2(r.grupamento) === lotN || n2(r.colK||'') === lotN);
+    /* 2. Tenta bater gpResp diretamente */
+    if(!g) g = dadosGrupos.find(r => n2(r.gpResp) === lotN);
+    /* 3. Extrai a cidade do final da lotação e busca por ela */
+    if(!g){
+      const parts = lot.split('/');
+      const cidade = n2(parts[parts.length-1]||'');
+      if(cidade) g = dadosGrupos.find(r => n2(r.gpResp).endsWith(cidade) || n2(r.grupamento).includes(cidade));
+    }
+    if(g) gpResp = g.gpResp || g.grupamento || lot;
+  }
+  if(!gpResp) gpResp = lot;
+  console.log('[_getUserGP] lotacao:', lot, '→ gpResp:', gpResp, '| pelNum:', pelNum);
   return { pelNum, gpNum, gpStr: lot, gpResp };
 }
 
@@ -3770,13 +3782,13 @@ function renderRelatorio(){
     if(cb){ cb.checked = true; atualizarRelMesesLabel(); }
     mesesSel = getRelMesesSelecionados();
   }
-  /* Para não-admin: usa diretamente a lotação como filtro de grupamento */
+  /* Para não-admin: usa gpResp (formato curto) como filtro — bate com dadosMetas.gp */
   let pelF = document.getElementById('rel-pel').value;
   let gpF  = document.getElementById('rel-gp')?.value || '';
   if(!isAdmin){
     const _ug = _getUserGP();
     if(_ug.pelNum) pelF = _ug.pelNum;
-    if(_ug.gpStr)  gpF  = _ug.gpStr; /* lotacao = chave exata do grupamento */
+    if(_ug.gpResp) gpF  = _ug.gpResp; /* formato curto = chave de dadosMetas */
   }
   const ano       = new Date().getFullYear();
 
@@ -4063,7 +4075,7 @@ async function exportarRelPDF(){
   const _isAdmPDF  = sessaoPainel?.perfil === 'admin';
   let pelF = document.getElementById('rel-pel').value;
   let gpF  = document.getElementById('rel-gp')?.value||'';
-  if(!_isAdmPDF){ const _ug=_getUserGP(); if(_ug.pelNum) pelF=_ug.pelNum; if(_ug.gpStr) gpF=_ug.gpStr; }
+  if(!_isAdmPDF){ const _ug=_getUserGP(); if(_ug.pelNum) pelF=_ug.pelNum; if(_ug.gpResp) gpF=_ug.gpResp; }
   const ano = new Date().getFullYear();
   const filtroLabel = gpF ? gpF : (pelF ? pelF+'º Pelotão' : 'Todos os Grupamentos');
   const _mesInicio  = mesesSel.length>1 ? mesesSel[0] : null;
