@@ -5734,6 +5734,19 @@ async function gerarPDFAuditoria(){
     y+=9;
   }
 
+  /* Justifica texto manualmente distribuindo espaços entre palavras */
+  function _justifyLine(line, x, lineY, maxW){
+    const words = line.split(' ');
+    if(words.length <= 1){ doc.text(line, x, lineY); return; }
+    const totalWordW = words.reduce((s,w) => s + doc.getTextWidth(w), 0);
+    const gap = (maxW - totalWordW) / (words.length - 1);
+    let cx = x;
+    words.forEach((w, i) => {
+      doc.text(w, cx, lineY);
+      cx += doc.getTextWidth(w) + gap;
+    });
+  }
+
   function blocoTexto(texto){
     if(!texto) return;
     if(y+8>268){ doc.addPage(); y=20; }
@@ -5747,12 +5760,13 @@ async function gerarPDFAuditoria(){
     doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...CINZA_E);
     lines.forEach((line, i) => {
       const isLast = i === lines.length - 1;
+      const lineY = y+5+i*lh;
       const lineW = doc.getTextWidth(line);
-      /* Justifica apenas linhas que ocupam mais de 85% da largura e não são a última */
-      if(!isLast && lineW >= colW * 0.85){
-        doc.text(line, ML+2, y+5+i*lh, { maxWidth: colW, align: 'justify' });
+      /* Justifica manualmente apenas linhas longas (≥80% da coluna) e não última */
+      if(!isLast && lineW >= colW * 0.80){
+        _justifyLine(line, ML+2, lineY, colW);
       } else {
-        doc.text(line, ML+2, y+5+i*lh);
+        doc.text(line, ML+2, lineY);
       }
     });
     y+=h+3;
@@ -7098,26 +7112,42 @@ async function gerarPDFAuditoriaBPM(){
 
   /* Figuras — empilha na mesma página quando couber */
   const figsB=[{img:saved.img1,leg:saved.leg1},{img:saved.img2,leg:saved.leg2},{img:saved.img3,leg:saved.leg3},{img:saved.img4,leg:saved.leg4}].filter(f=>f.img);
+  /* Imagens: até 2 por página, tamanho proporcional, legenda no tamanho da imagem */
+  const IMG_W = TW * 0.78;          /* 78% da largura — boa nitidez */
+  const IMG_H = IMG_W * 0.62;       /* proporção ~3:2 */
+  const LEG_FS = 9;
+  const LEG_LH = 5;
+  const BLOCK_H = LEG_LH * 2 + IMG_H + 8; /* legenda (até 2 linhas) + imagem + gap */
+  const IMG_X = ML + (TW - IMG_W) / 2;
+
+  if(figsB.length > 0){ doc.addPage(); y = 20; }
+
   for(let i=0;i<figsB.length;i++){
-    doc.addPage(); y=20;
-    const fig=figsB[i];
-    /* Legenda em bold centrada */
-    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(0,0,0);
-    const legLines=doc.splitTextToSize(`Figura ${i+1}: ${fig.leg||'(sem legenda)'}`, TW);
-    legLines.forEach(l=>{ doc.text(l,PW/2,y,{align:'center'}); y+=6; });
-    y+=3;
-    let imgData=fig.img;
-    if(typeof imgData==='string'&&imgData.startsWith('http')) imgData=await urlToBase64(imgData);
-    if(imgData&&imgData.startsWith('data:')){
+    /* Nova página se não couber mais um bloco */
+    if(y + BLOCK_H > 272){ doc.addPage(); y = 20; }
+
+    const fig = figsB[i];
+    const legText = `Figura ${i+1}: ${fig.leg||'(sem legenda)'}`;
+
+    /* Legenda proporcional à largura da imagem */
+    doc.setFont('helvetica','bold'); doc.setFontSize(LEG_FS); doc.setTextColor(0,0,0);
+    const legLines = doc.splitTextToSize(legText, IMG_W);
+    legLines.forEach(l => { doc.text(l, IMG_X + IMG_W/2, y, {align:'center'}); y += LEG_LH; });
+    y += 2;
+
+    /* Imagem */
+    let imgData = fig.img;
+    if(typeof imgData==='string'&&imgData.startsWith('http')) imgData = await urlToBase64(imgData);
+    if(imgData && imgData.startsWith('data:')){
       try{
-        const fmt=imgData.includes('data:image/png')?'PNG':imgData.includes('data:image/gif')?'GIF':'JPEG';
-        /* Imagem ocupa largura total disponível, altura proporcional máx 200mm */
-        const IMG_W=TW;
-        const IMG_H=Math.min(200, IMG_W*0.70);
-        doc.addImage(imgData,fmt,ML,y,IMG_W,IMG_H,undefined,'FAST');
+        const fmt = imgData.includes('data:image/png')?'PNG':imgData.includes('data:image/gif')?'GIF':'JPEG';
+        doc.addImage(imgData, fmt, IMG_X, y, IMG_W, IMG_H, undefined, 'FAST');
+      }catch(e){
+        doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(150,0,0);
+        doc.text('Erro ao inserir imagem.',ML,y+10);
       }
-      catch(e){ doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(150,0,0);doc.text('Erro ao inserir imagem.',ML,y+10); }
     }
+    y += IMG_H + 12; /* gap entre figuras */
   }
 
   /* Rodapé */
