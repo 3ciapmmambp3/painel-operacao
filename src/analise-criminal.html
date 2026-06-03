@@ -5269,8 +5269,8 @@ function salvarSolicitacaoUsuario(){
     data_decisao:    '',
   };
 
-  /* Salva no Supabase */
-  _sbUpsert('auditorias', registro).then(() => {
+  /* Salva no Supabase — usa 'bo' como chave de negócio (on_conflict=bo) */
+  _sbUpsertAuditoria(registro).then(() => {
     _sincAuditoria(registro);
     fecharModal('modal-auditoria');
     renderCrimes();
@@ -5284,7 +5284,7 @@ function salvarSolicitacaoUsuario(){
     fecharModal('modal-auditoria');
     renderCrimes();
     renderDashboard();
-    alert('✔ Solicitação salva localmente.\n\nAguarde a avaliação do Administrador.');
+    alert('⚠ Solicitação salva localmente (erro Supabase: '+e.message+').\n\nContacte o administrador.');
   });
 }
 
@@ -5348,12 +5348,12 @@ function salvarAvaliacaoAdmin(){
 
   if(!decisao.obs){ alert('Informe o parecer do administrador.'); return; }
 
-  _sbUpsert('auditorias', decisao).then(() => {
+  _sbUpsertAuditoria(decisao).then(() => {
     _sincAuditoria(decisao);
     _pset('ac_auditorias', JSON.stringify(auditoriasMap));
     _posAvaliacaoAdmin(decisao);
   }).catch(e => {
-    console.warn('[auditorias] Supabase falhou, salvando local:', e.message);
+    console.warn('[auditorias] Supabase falhou na decisão, salvando local:', e.message);
     _sincAuditoria(decisao);
     _pset('ac_auditorias', JSON.stringify(auditoriasMap));
     _posAvaliacaoAdmin(decisao);
@@ -5780,6 +5780,36 @@ async function _sbUpsert(tabela, obj){
   if(!r.ok){ const e=await r.text(); throw new Error(tabela+' upsert: '+e); }
   return r.json();
 }
+
+/* Upsert específico para auditorias usando 'bo' como chave de conflito */
+async function _sbUpsertAuditoria(obj){
+  /* Tenta upsert com on_conflict=bo */
+  const r = await fetch(`${SB_URL}/rest/v1/auditorias?on_conflict=bo`, {
+    method: 'POST',
+    headers: _acHeaders({'Prefer':'resolution=merge-duplicates,return=representation'}),
+    body: JSON.stringify(obj)
+  });
+  if(!r.ok){
+    /* Se falhar (bo não é UNIQUE), faz DELETE + INSERT para garantir atualização */
+    const eText = await r.text();
+    console.warn('[auditorias] on_conflict=bo falhou, tentando delete+insert:', eText);
+    /* Tenta deletar o registro existente pelo bo */
+    try{
+      await fetch(`${SB_URL}/rest/v1/auditorias?bo=eq.${encodeURIComponent(obj.bo)}`, {
+        method: 'DELETE', headers: _acHeaders()
+      });
+    }catch(de){ console.warn('[auditorias] delete falhou:', de); }
+    /* Insere novo */
+    const r2 = await fetch(`${SB_URL}/rest/v1/auditorias`, {
+      method: 'POST',
+      headers: _acHeaders({'Prefer':'return=representation'}),
+      body: JSON.stringify(obj)
+    });
+    if(!r2.ok){ const e2=await r2.text(); throw new Error('auditorias insert: '+e2); }
+    return r2.json();
+  }
+  return r.json();
+}
 async function _sbDelete(tabela, id){
   const r = await fetch(`${SB_URL}/rest/v1/${tabela}?id=eq.${encodeURIComponent(id)}`, {
     method: 'DELETE', headers: _acHeaders()
@@ -5940,10 +5970,10 @@ async function _carregarAuditorias(){
     auditoriasMap = {};
     rows.forEach(r => _sincAuditoria(r));
     _pset('ac_auditorias', JSON.stringify(auditoriasMap));
-    console.log('[auditorias] Supabase:', rows.length, 'registros');
+    console.log('[auditorias] Supabase:', rows.length, 'registros carregados');
   }catch(e){
-    console.warn('[auditorias] Fallback localStorage:', e.message);
-    auditoriasMap = JSON.parse(_pget('ac_auditorias') || '{}');
+    console.warn('[auditorias] Erro ao carregar do Supabase:', e.message, '— usando localStorage');
+    try{ auditoriasMap = JSON.parse(_pget('ac_auditorias') || '{}'); }catch(e2){}
   }
 }
 
