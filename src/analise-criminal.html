@@ -5747,11 +5747,12 @@ async function gerarPDFAuditoria(){
     doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...CINZA_E);
     lines.forEach((line, i) => {
       const isLast = i === lines.length - 1;
-      /* Última linha ou linha muito curta → alinhamento normal (esquerda) */
-      if(isLast || doc.getTextWidth(line) < colW * 0.6){
-        doc.text(line, ML+2, y+5+i*lh);
-      } else {
+      const lineW = doc.getTextWidth(line);
+      /* Justifica apenas linhas que ocupam mais de 85% da largura e não são a última */
+      if(!isLast && lineW >= colW * 0.85){
         doc.text(line, ML+2, y+5+i*lh, { maxWidth: colW, align: 'justify' });
+      } else {
+        doc.text(line, ML+2, y+5+i*lh);
       }
     });
     y+=h+3;
@@ -7097,21 +7098,26 @@ async function gerarPDFAuditoriaBPM(){
 
   /* Figuras — empilha na mesma página quando couber */
   const figsB=[{img:saved.img1,leg:saved.leg1},{img:saved.img2,leg:saved.leg2},{img:saved.img3,leg:saved.leg3},{img:saved.img4,leg:saved.leg4}].filter(f=>f.img);
-  const IMG_W=TW*0.60; const IMG_H=Math.min(110,IMG_W*0.60); const LEG_H=8; const GAP=10; const BLOCK=LEG_H+IMG_H+GAP;
-  if(figsB.length>0){ doc.addPage(); y=20; }
   for(let i=0;i<figsB.length;i++){
-    /* Se não cabe mais nesta página, nova página */
-    if(y+BLOCK>275){ doc.addPage(); y=20; }
+    doc.addPage(); y=20;
     const fig=figsB[i];
+    /* Legenda em bold centrada */
     doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(0,0,0);
-    doc.text(`Figura ${i+1}: ${fig.leg||'(sem legenda)'}`,PW/2,y,{align:'center'});y+=LEG_H;
+    const legLines=doc.splitTextToSize(`Figura ${i+1}: ${fig.leg||'(sem legenda)'}`, TW);
+    legLines.forEach(l=>{ doc.text(l,PW/2,y,{align:'center'}); y+=6; });
+    y+=3;
     let imgData=fig.img;
     if(typeof imgData==='string'&&imgData.startsWith('http')) imgData=await urlToBase64(imgData);
     if(imgData&&imgData.startsWith('data:')){
-      try{ const fmt=imgData.includes('data:image/png')?'PNG':imgData.includes('data:image/gif')?'GIF':'JPEG'; doc.addImage(imgData,fmt,ML+(TW-IMG_W)/2,y,IMG_W,IMG_H,undefined,'NONE'); }
+      try{
+        const fmt=imgData.includes('data:image/png')?'PNG':imgData.includes('data:image/gif')?'GIF':'JPEG';
+        /* Imagem ocupa largura total disponível, altura proporcional máx 200mm */
+        const IMG_W=TW;
+        const IMG_H=Math.min(200, IMG_W*0.70);
+        doc.addImage(imgData,fmt,ML,y,IMG_W,IMG_H,undefined,'FAST');
+      }
       catch(e){ doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(150,0,0);doc.text('Erro ao inserir imagem.',ML,y+10); }
     }
-    y+=IMG_H+GAP;
   }
 
   /* Rodapé */
