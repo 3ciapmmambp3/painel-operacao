@@ -1233,7 +1233,7 @@
         <option value="corrigida">✔ Corrigida</option>
       </select>
       <input type="text" id="audit-lista-busca" placeholder="Ex: 2026-020361740-001 ou nome" oninput="mascaraBO(this);renderAuditoriasLista()" maxlength="18" style="background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:4px 10px;font-size:11px;width:220px;">
-      <button class="btn-outline" onclick="renderAuditoriasLista()" style="font-size:11px;padding:4px 10px;">☰ Atualizar</button>
+      <button class="btn-outline" onclick="_carregarAuditorias().then(()=>renderAuditoriasLista())" style="font-size:11px;padding:4px 10px;">☰ Atualizar</button>
       <button class="btn-danger" onclick="limparTodasAuditorias()" style="font-size:11px;padding:4px 10px;">🗑 Limpar todas</button>
     </div>
   </div>
@@ -1999,7 +1999,8 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
 
   /* Carrega dados locais como fallback imediato */
-  auditoriasMap = JSON.parse(_pget('ac_auditorias') || '{}');
+  /* Carrega auditorias do Supabase (não usa localStorage como fonte primária) */
+  auditoriasMap = {};
   fichasIntel   = JSON.parse(_pget('ac_intel') || '[]');
   missoes       = JSON.parse(_pget('ac_missoes') || '[]');
 
@@ -5193,15 +5194,29 @@ function abrirAuditoria(bo){
     document.getElementById('audit-btn-pdf').style.display = (['validada','corrigida'].includes(statusAtual)) ? 'inline-block' : 'none';
 
     /* Mostra resumo da solicitação */
+    const imgLabels = ['Print IBGE','Print REDS','Print Mapa Criminal'];
+    const imgsHtml = [saved.img1, saved.img2, saved.img3].map((img, i) => {
+      if(!img) return '';
+      return `<div style="display:inline-block;margin:4px;vertical-align:top;text-align:center;cursor:pointer;"
+        onclick="_abrirOuBaixar('${img}','${imgLabels[i]}.jpg','image/jpeg',true)">
+        <img src="${img}" style="width:90px;height:68px;object-fit:cover;border-radius:5px;border:1px solid var(--border);display:block;">
+        <div style="font-size:9px;color:var(--text-muted);margin-top:2px;">${imgLabels[i]}</div>
+      </div>`;
+    }).join('');
+
     document.getElementById('audit-solicitacao-resumo').innerHTML = `
       <div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px;">📋 Solicitação Original</div>
       <div style="font-size:11px;color:#ccc;margin-bottom:4px;"><b style="color:var(--text-muted);">Solicitante:</b> ${saved.solicitante||'—'}</div>
       <div style="font-size:11px;color:#ccc;margin-bottom:4px;"><b style="color:var(--text-muted);">Data:</b> ${saved.dataSolicitacao||'—'}</div>
       <div style="font-size:11px;color:#ccc;margin-bottom:4px;"><b style="color:var(--text-muted);">Tipo:</b> ${AUDIT_TIPO_LABEL[saved.tipo]||saved.tipo||'—'}</div>
       <div style="font-size:11px;color:#ccc;margin-bottom:4px;"><b style="color:var(--text-muted);">Motivo:</b> ${saved.motivo||'—'}</div>
-      <div style="font-size:11px;color:#ccc;"><b style="color:var(--text-muted);">Docs. declarados:</b> ${[
+      <div style="font-size:11px;color:#ccc;margin-bottom:6px;"><b style="color:var(--text-muted);">Docs. declarados:</b> ${[
         saved.chk1?'Print IBGE':'', saved.chk2?'Print REDS':'', saved.chk3?'Print Mapa Criminal':''
-      ].filter(Boolean).join(', ')||'Nenhum marcado'}</div>`;
+      ].filter(Boolean).join(', ')||'Nenhum marcado'}</div>
+      ${imgsHtml ? `<div style="margin-top:6px;padding:8px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:6px;">
+        <div style="font-size:10px;font-weight:700;color:var(--text-muted);margin-bottom:6px;">📎 Imagens anexadas (clique para ampliar)</div>
+        <div>${imgsHtml}</div>
+      </div>` : ''}`;
 
     /* Preenche campos de avaliação */
     document.getElementById('audit-status').value        = saved.status  || 'aguardando';
@@ -5270,14 +5285,16 @@ function salvarSolicitacaoUsuario(){
   };
 
   /* Salva no Supabase — usa 'bo' como chave de negócio (on_conflict=bo) */
-  _sbUpsertAuditoria(registro).then(() => {
-    _sincAuditoria(registro);
+  _sbUpsertAuditoria(registro).then((res) => {
+    /* Usa o registro retornado pelo Supabase (com id gerado) */
+    const salvo = Array.isArray(res) ? res[0] : res;
+    _sincAuditoria(salvo || registro);
+    _pset('ac_auditorias', JSON.stringify(auditoriasMap));
     fecharModal('modal-auditoria');
     renderCrimes();
     renderDashboard();
     alert('✔ Solicitação de auditoria salva com sucesso!\n\nAguarde a avaliação do Administrador.');
   }).catch(e => {
-    /* Fallback localStorage */
     console.warn('[auditorias] Supabase falhou, salvando local:', e.message);
     _sincAuditoria(registro);
     _pset('ac_auditorias', JSON.stringify(auditoriasMap));
@@ -5783,30 +5800,54 @@ async function _sbUpsert(tabela, obj){
 
 /* Upsert específico para auditorias usando 'bo' como chave de conflito */
 async function _sbUpsertAuditoria(obj){
-  /* Tenta upsert com on_conflict=bo */
-  const r = await fetch(`${SB_URL}/rest/v1/auditorias?on_conflict=bo`, {
-    method: 'POST',
-    headers: _acHeaders({'Prefer':'resolution=merge-duplicates,return=representation'}),
-    body: JSON.stringify(obj)
-  });
-  if(!r.ok){
-    /* Se falhar (bo não é UNIQUE), faz DELETE + INSERT para garantir atualização */
-    const eText = await r.text();
-    console.warn('[auditorias] on_conflict=bo falhou, tentando delete+insert:', eText);
-    /* Tenta deletar o registro existente pelo bo */
+  /* Separa imagens base64 do payload principal para não exceder limite do Supabase */
+  const imgs = { img1: obj.img1||null, img2: obj.img2||null, img3: obj.img3||null };
+  
+  /* Faz upload das imagens para o Storage se forem base64 */
+  const imgUrls = { img1: null, img2: null, img3: null };
+  for(const key of ['img1','img2','img3']){
+    const b64 = imgs[key];
+    if(!b64) continue;
+    if(b64.startsWith('http')){ imgUrls[key] = b64; continue; } /* já é URL */
     try{
-      await fetch(`${SB_URL}/rest/v1/auditorias?bo=eq.${encodeURIComponent(obj.bo)}`, {
-        method: 'DELETE', headers: _acHeaders()
-      });
-    }catch(de){ console.warn('[auditorias] delete falhou:', de); }
-    /* Insere novo */
-    const r2 = await fetch(`${SB_URL}/rest/v1/auditorias`, {
-      method: 'POST',
-      headers: _acHeaders({'Prefer':'return=representation'}),
-      body: JSON.stringify(obj)
+      const ext  = 'jpg';
+      const path = `auditorias/${obj.bo}/${key}.${ext}`;
+      const url  = await _sbUpload(path, b64, 'image/jpeg');
+      imgUrls[key] = url;
+    }catch(e){
+      console.warn('[auditorias] upload '+key+' falhou, salvando sem imagem:', e.message);
+    }
+  }
+
+  /* Payload sem base64 — apenas URLs do Storage */
+  const payload = {
+    ...obj,
+    img1: imgUrls.img1,
+    img2: imgUrls.img2,
+    img3: imgUrls.img3,
+  };
+
+  /* Tenta deletar registro anterior com mesmo bo (pode não existir) */
+  try{
+    await fetch(`${SB_URL}/rest/v1/auditorias?bo=eq.${encodeURIComponent(obj.bo)}`, {
+      method: 'DELETE', headers: _acHeaders()
     });
-    if(!r2.ok){ const e2=await r2.text(); throw new Error('auditorias insert: '+e2); }
-    return r2.json();
+  }catch(e){ /* ignora erro de delete */ }
+
+  /* Insere novo registro */
+  const r = await fetch(`${SB_URL}/rest/v1/auditorias`, {
+    method: 'POST',
+    headers: _acHeaders({'Prefer':'return=representation'}),
+    body: JSON.stringify(payload)
+  });
+  if(!r.ok){ const e=await r.text(); throw new Error('auditorias insert: '+e); }
+  
+  /* Atualiza imagens em memória com URLs do Storage */
+  const saved = auditoriasMap[obj.bo];
+  if(saved){
+    saved.img1 = imgUrls.img1;
+    saved.img2 = imgUrls.img2;
+    saved.img3 = imgUrls.img3;
   }
   return r.json();
 }
@@ -8035,7 +8076,8 @@ function switchSubtab(el, id){
     _prMesInit();
   }
   if(id === 'auditorias'){
-    renderAuditoriasLista();
+    /* Sempre recarrega do Supabase ao abrir a aba para garantir dados atualizados */
+    _carregarAuditorias().then(() => renderAuditoriasLista()).catch(() => renderAuditoriasLista());
   }
   if(id === 'inteligencia'){
     setTimeout(_initIntelFiltroGP, 100);
