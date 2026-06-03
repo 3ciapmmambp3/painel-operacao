@@ -2312,7 +2312,7 @@ async function carregarCrimes(){
       const qtdRaw = r[colInd];
       const qtdNum = parseInt(qtdRaw) || 0;
       if(ind !== 'IF' && qtdNum <= 0) return;
-      if(ind === 'IF' && (qtdRaw === null || qtdRaw === undefined || qtdRaw === '')) return;
+      if(ind === 'IF' && (qtdRaw === null || qtdRaw === undefined || qtdRaw === '' || qtdNum <= 0)) return;
 
       if(dataStr && (!ultimaData[ind] || dataStr > ultimaData[ind])) ultimaData[ind] = dataStr;
 
@@ -4450,20 +4450,19 @@ function renderCrimes(){
       const isUrb     = d._auditoriaPendente;
       /* Badge auditoria — mostra status completo */
       const auditSalvo  = d._auditoria;
-      const statusLabel = auditSalvo ? (AUDIT_STATUS_LABEL_SHORT[auditSalvo.status] || auditSalvo.status) : null;
-      const auditBadge  = isUrb && !auditSalvo
-        ? `<span class="badge-nat badge-auditoria">⚠ Solicitada</span>`
-        : auditSalvo && auditSalvo.status === 'aguardando'
-          ? `<span class="badge-nat badge-auditoria">⏳ Aguard.</span>`
+      const auditBadge  = auditSalvo && auditSalvo.status === 'aguardando'
+          ? `<span class="badge-nat badge-auditoria" title="Solicitação formal enviada — aguardando análise do admin">📋 Aguard. Análise</span>`
           : auditSalvo && auditSalvo.status === 'em_analise'
-            ? `<span class="badge-nat" style="background:rgba(66,165,245,.12);color:var(--info);border-color:rgba(66,165,245,.3);">🔍 Análise</span>`
+            ? `<span class="badge-nat" style="background:rgba(66,165,245,.12);color:var(--info);border-color:rgba(66,165,245,.3);" title="Em análise pelo administrador">🔍 Em Análise</span>`
             : auditSalvo && (auditSalvo.status === 'validada' || auditSalvo.status === 'corrigida')
-              ? `<span class="badge-nat badge-ok">✔ ${auditSalvo.status==='corrigida'?'Corrigida':'Validada'}</span>`
+              ? `<span class="badge-nat badge-ok" title="${auditSalvo.status==='corrigida'?'Auditoria corrigida na fonte':'Incoerência confirmada e validada'}">✔ ${auditSalvo.status==='corrigida'?'Corrigida':'Validada'}</span>`
               : auditSalvo && auditSalvo.status === 'indeferida'
-                ? `<span class="badge-nat badge-ok" style="background:rgba(100,100,100,.15);color:#888;border-color:#555;">✕ Indefer.</span>`
-                : isUrb
-                  ? `<span class="badge-nat badge-auditoria">⚠ Pendente</span>`
-                  : `<span class="badge-nat badge-ok">✔ OK</span>`;
+                ? `<span class="badge-nat badge-ok" style="background:rgba(100,100,100,.15);color:#888;border-color:#555;" title="Solicitação indeferida — registro correto">✕ Indeferida</span>`
+                : auditSalvo
+                  ? `<span class="badge-nat badge-auditoria">📋 ${AUDIT_STATUS_LABEL_SHORT[auditSalvo.status]||auditSalvo.status}</span>`
+                  : isUrb
+                    ? `<span class="badge-nat badge-auditoria" title="Sistema detectou área urbana — preencha os campos para solicitar auditoria formal">⚠ Sugestão</span>`
+                    : `<span class="badge-nat badge-ok">✔ OK</span>`;
       const locBadge = d.localizacao.includes('RURAL')
         ? `<span class="badge-nat badge-rural">Rural</span>`
         : d.localizacao.includes('URBAN')
@@ -5634,7 +5633,7 @@ function renderAuditoriasLista(){
         </div>
         <div style="font-size:10px;color:#ccc;">
           <span style="color:#aaa;">Tipo:</span> ${AUDIT_TIPO_LABEL[a.tipo]||a.tipo||'—'} &nbsp;|&nbsp;
-          <span style="color:#aaa;">Motivo:</span> ${(a.motivo||'').slice(0,80)}${(a.motivo||'').length>80?'…':''}
+          <span style="color:#aaa;">Justificativa:</span> ${((a.justificativa||a.motivo)||'').slice(0,80)}${((a.justificativa||a.motivo)||'').length>80?'…':''}
         </div>
         ${a.resp ? `<div style="font-size:10px;color:#aaa;margin-top:3px;"><span>Avaliador:</span> ${a.resp} &nbsp;|&nbsp; ${a.dataDecisao||''}</div>` : ''}
       </div>
@@ -7267,7 +7266,7 @@ function abrirFichaExpandida(fichaId){
   document.getElementById('exp-btn-complementar').dataset.id = fichaId;
 
   /* Lookup labels */
-  const TC_LABEL = {homicidio:'🔴 Homicídio',tentativa_homicidio:'🟠 Tentativa de Homicídio',latrocinio:'🔴 Latrocínio',roubo:'🟠 Roubo',furto:'🟡 Furto',trafico:'🟣 Tráfico de Drogas',porte_arma:'🔫 Porte Ilegal de Arma',cvpa:'🏠 Crime Violento Contra o Patrimônio',cvpe:'👤 Crime Violento Contra a Pessoa',lesao_corporal:'🩸 Lesão Corporal',estupro:'⚠ Estupro',sequestro:'⛓ Sequestro/Cárcere',extorsao:'💰 Extorsão',milicia:'🕵 Milícia/Organização Criminosa',outros:'📝 Outros'};
+  const TC_LABEL = {homicidio:'🔴 Homicídio Consumado',tentativa_homicidio:'🟠 Homicídio Tentado',latrocinio:'🔴 Latrocínio',feminicidio:'🔴 Feminicídio',roubo:'🟠 Roubo',furto:'🟡 Furto',trafico:'🟣 Tráfico de Drogas',porte_arma:'🔫 Porte Ilegal de Arma',cvpa:'🏠 Crime Violento Contra o Patrimônio',cvpe:'👤 Crime Violento Contra a Pessoa',lesao_corporal:'🩸 Lesão Corporal',estupro:'⚠ Estupro',sequestro:'⛓ Sequestro/Cárcere',extorsao:'💰 Extorsão',milicia:'🕵 Milícia/Organização Criminosa',outros:'📝 Outros'};
   const PRIO_LABEL = {baixa:'🟢 Baixa',media:'🟡 Média',alta:'🟠 Alta',critica:'🔴 Crítica'};
   const PRIO_COR   = {baixa:'#4caf50',media:'#ffc107',alta:'#ff9800',critica:'#ef5350'};
   const STAT_LABEL = {em_analise:'🔵 Em Análise',monitoramento:'🟡 Monitoramento',confirmado:'🟠 Confirmado',em_operacao:'🔴 Em Operação',encerrado:'⚫ Encerrado'};
@@ -8034,7 +8033,7 @@ function renderIntel(){
         </div>
         ${gpsLabel}
         ${(()=>{
-          const TC_LABEL = {homicidio:'🔴 Homicídio',tentativa_homicidio:'🟠 Tent. Homicídio',latrocinio:'🔴 Latrocínio',roubo:'🟠 Roubo',furto:'🟡 Furto',trafico:'🟣 Tráfico',porte_arma:'🔫 Porte Arma',cvpa:'🏠 CVPA',cvpe:'👤 CVPE',lesao_corporal:'🩸 Lesão Corporal',estupro:'⚠ Estupro',sequestro:'⛓ Sequestro',extorsao:'💰 Extorsão',milicia:'🕵 Milícia',outros:'📝 Outros'};
+          const TC_LABEL = {homicidio:'🔴 Homicídio Consumado',tentativa_homicidio:'🟠 Homicídio Tentado',latrocinio:'🔴 Latrocínio',feminicidio:'🔴 Feminicídio',roubo:'🟠 Roubo',furto:'🟡 Furto',trafico:'🟣 Tráfico',porte_arma:'🔫 Porte Arma',cvpa:'🏠 CVPA',cvpe:'👤 CVPE',lesao_corporal:'🩸 Lesão Corporal',estupro:'⚠ Estupro',sequestro:'⛓ Sequestro',extorsao:'💰 Extorsão',milicia:'🕵 Milícia',outros:'📝 Outros'};
           let info = '';
           if(f.dataFato) info += `<span style="font-size:10px;color:var(--text-muted);">📅 ${new Date(f.dataFato).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</span>`;
           if(f.tipoCriminal && TC_LABEL[f.tipoCriminal]) info += `<span style="font-size:10px;color:#ccc;background:rgba(255,255,255,.06);padding:1px 7px;border-radius:10px;">${TC_LABEL[f.tipoCriminal]}</span>`;
