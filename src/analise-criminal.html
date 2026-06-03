@@ -5734,19 +5734,6 @@ async function gerarPDFAuditoria(){
     y+=9;
   }
 
-  /* Justifica texto manualmente distribuindo espaços entre palavras */
-  function _justifyLine(line, x, lineY, maxW){
-    const words = line.split(' ');
-    if(words.length <= 1){ doc.text(line, x, lineY); return; }
-    const totalWordW = words.reduce((s,w) => s + doc.getTextWidth(w), 0);
-    const gap = (maxW - totalWordW) / (words.length - 1);
-    let cx = x;
-    words.forEach((w, i) => {
-      doc.text(w, cx, lineY);
-      cx += doc.getTextWidth(w) + gap;
-    });
-  }
-
   function blocoTexto(texto){
     if(!texto) return;
     if(y+8>268){ doc.addPage(); y=20; }
@@ -5758,17 +5745,7 @@ async function gerarPDFAuditoria(){
     doc.setFillColor(255,255,255); doc.rect(ML,y,TW,h,'F');
     doc.setDrawColor(...BORDA); doc.setLineWidth(0.15); doc.rect(ML,y,TW,h,'D');
     doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...CINZA_E);
-    lines.forEach((line, i) => {
-      const isLast = i === lines.length - 1;
-      const lineY = y+5+i*lh;
-      const lineW = doc.getTextWidth(line);
-      /* Justifica manualmente apenas linhas longas (≥80% da coluna) e não última */
-      if(!isLast && lineW >= colW * 0.80){
-        _justifyLine(line, ML+2, lineY, colW);
-      } else {
-        doc.text(line, ML+2, lineY);
-      }
-    });
+    doc.text(String(texto), ML+2, y+5, { maxWidth: colW, align: 'justify' });
     y+=h+3;
   }
 
@@ -7075,8 +7052,16 @@ async function gerarPDFAuditoriaBPM(){
   let y=20;
 
   function secBold(num,txt){ if(y>260){doc.addPage();y=20;} doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(0,0,0);doc.text(num+' '+txt,ML,y);y+=6; }
-  function justifyLine(line,xStart,yPos,w){const words=line.split(' ');if(words.length<=1){doc.text(line,xStart,yPos);return;}const totalW=words.reduce((s,wd)=>s+doc.getTextWidth(wd),0);const gap=(w-totalW)/(words.length-1);let cx=xStart;words.forEach(wd=>{doc.text(wd,cx,yPos);cx+=doc.getTextWidth(wd)+gap;});}
-  function corpo(txt,indent){if(!txt)return;doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(0,0,0);const x=ML+(indent||0);const w=TW-(indent||0);const lines=doc.splitTextToSize(String(txt),w);lines.forEach((l)=>{if(y>270){doc.addPage();y=20;}justifyLine(l,x,y,w);y+=5;});y+=2;}
+  function corpo(txt,indent){
+    if(!txt) return;
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(0,0,0);
+    const w = TW-(indent||0);
+    const lines = doc.splitTextToSize(String(txt), w);
+    const lh = 5;
+    if(y + lines.length*lh > 270){ doc.addPage(); y=20; }
+    doc.text(String(txt), ML+(indent||0), y, { maxWidth: w, align: 'justify' });
+    y += lines.length * lh + 2;
+  }
   function campo(label,valor){ if(y>268){doc.addPage();y=20;} doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(0,0,0);doc.text(label+' ',ML,y);const lw=doc.getTextWidth(label+' ');doc.setFont('helvetica','normal');doc.text(String(valor||'—'),ML+lw,y);y+=5; }
   async function urlToBase64(url){ try{const r=await fetch(url);if(!r.ok)throw new Error();const blob=await r.blob();return await new Promise((res,rej)=>{const rd=new FileReader();rd.onload=()=>res(rd.result);rd.onerror=rej;rd.readAsDataURL(blob);});}catch(e){return null;} }
 
