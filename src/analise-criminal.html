@@ -1493,6 +1493,9 @@
       <button class="btn-gold" id="audit-btn-pdf" onclick="gerarPDFAuditoria()" style="background:#1565c0;color:#fff;display:none;">
         📄 Gerar PDF e Enviar ao BPM MAmb
       </button>
+      <button class="btn-gold" id="audit-btn-pdf2" onclick="gerarPDFAuditoriaBPM()" style="background:#1b5e20;color:#fff;display:none;">
+        📋 PDF Modelo Oficial (BPM MAmb)
+      </button>
     </div>
   </div>
 </div>
@@ -5284,6 +5287,7 @@ function abrirAuditoria(bo){
     const statusAtual = saved?.status || 'aguardando';
     /* Admin pode gerar PDF em qualquer status */
     document.getElementById('audit-btn-pdf').style.display = 'inline-block';
+    document.getElementById('audit-btn-pdf2').style.display = 'inline-block';
 
     /* Mostra resumo da solicitação */
     const imgLabels = ['Print IBGE','Print REDS','Print Mapa Criminal'];
@@ -5363,6 +5367,7 @@ function abrirAuditoria(bo){
     document.getElementById('audit-etapa-avaliacao').style.display   = 'none';
     document.getElementById('audit-btn-solicitar').style.display = 'inline-block';
     document.getElementById('audit-btn-pdf').style.display       = 'none';
+    document.getElementById('audit-btn-pdf2').style.display      = 'none';
     document.getElementById('audit-btn-salvar').style.display    = 'none';
 
     /* Botão excluir: só para usuário (não admin), com solicitação existente ainda não avaliada */
@@ -5857,11 +5862,26 @@ async function gerarPDFAuditoria(){
   });
   y+=28;
 
-  /* ── IMAGENS ── */
+  /* ── IMAGENS — busca URL via fetch para embutir no PDF ── */
   const figs=[
     {img:saved.img1,leg:saved.leg1},{img:saved.img2,leg:saved.leg2},
     {img:saved.img3,leg:saved.leg3},{img:saved.img4,leg:saved.leg4},
   ].filter(f=>f.img);
+
+  /* Converte URL do Storage para base64 */
+  async function urlToBase64(url){
+    try{
+      const r = await fetch(url);
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const blob = await r.blob();
+      return await new Promise((res,rej)=>{
+        const reader = new FileReader();
+        reader.onload = ()=>res(reader.result);
+        reader.onerror = rej;
+        reader.readAsDataURL(blob);
+      });
+    }catch(e){ console.warn('urlToBase64 falhou:', e.message); return null; }
+  }
 
   for(let i=0;i<figs.length;i++){
     doc.addPage(); y=20;
@@ -5871,16 +5891,20 @@ async function gerarPDFAuditoria(){
     doc.text(lbl, PW/2, y, {align:'center'});
     y+=8;
     try{
-      if(typeof fig.img==='string'&&fig.img.startsWith('http')){
-        doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(0,70,180);
-        doc.textWithLink('Clique aqui para abrir a imagem', ML, y+8, {url:fig.img});
-        doc.setTextColor(...CINZA_L); doc.text(fig.img.slice(0,90), ML, y+14);
-        y+=20;
-      } else {
-        const fmt=fig.img.includes('data:image/png')?'PNG':fig.img.includes('data:image/gif')?'GIF':'JPEG';
+      let imgData = fig.img;
+      /* Se for URL do Storage, converte para base64 */
+      if(typeof imgData==='string' && imgData.startsWith('http')){
+        imgData = await urlToBase64(imgData);
+      }
+      if(imgData && imgData.startsWith('data:')){
+        const fmt=imgData.includes('data:image/png')?'PNG':imgData.includes('data:image/gif')?'GIF':'JPEG';
         const imgW=TW, imgH=Math.min(220,TW*0.75);
-        doc.addImage(fig.img,fmt,ML,y,imgW,imgH,undefined,'FAST');
+        doc.addImage(imgData,fmt,ML,y,imgW,imgH,undefined,'FAST');
         y+=imgH+5;
+      } else {
+        doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...CINZA_L);
+        doc.text('(Imagem não disponível)', PW/2, y+20, {align:'center'});
+        y+=30;
       }
     }catch(e){
       doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(180,50,50);
@@ -7010,7 +7034,84 @@ async function excluirIntel(id){
 ══════════════════════════════════ */
 let _expFichaId = null;
 
-function abrirFichaExpandida(fichaId){
+/* ══════════════════════════════════
+   PDF MODELO OFICIAL — BPM MAmb
+══════════════════════════════════ */
+async function gerarPDFAuditoriaBPM(){
+  const saved = auditoriasMap[_auditBoAtual];
+  if(!saved){ alert('Dados não encontrados. Abra a auditoria primeiro.'); return; }
+  const crime = dadosCrimes.find(d => d.bo === _auditBoAtual || d.rat === _auditBoAtual);
+  const now=new Date();
+  const dd=String(now.getDate()).padStart(2,'0'),mm2=String(now.getMonth()+1).padStart(2,'0'),yyyy=now.getFullYear();
+  const { jsPDF } = window.jspdf;
+  if(!jsPDF){ alert('Biblioteca PDF não carregada.'); return; }
+  const doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  const PW=210,ML=25,MR=25,TW=PW-ML-MR;
+  let y=20;
+
+  function secBold(num,txt){ if(y>260){doc.addPage();y=20;} doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(0,0,0);doc.text(num+' '+txt,ML,y);y+=6; }
+  function corpo(txt,indent){ if(!txt)return; doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(0,0,0); const lines=doc.splitTextToSize(String(txt),TW-(indent||0)); lines.forEach(l=>{if(y>270){doc.addPage();y=20;}doc.text(l,ML+(indent||0),y);y+=5;});y+=2; }
+  function campo(label,valor){ if(y>268){doc.addPage();y=20;} doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(0,0,0);doc.text(label+' ',ML,y);const lw=doc.getTextWidth(label+' ');doc.setFont('helvetica','normal');doc.text(String(valor||'—'),ML+lw,y);y+=5; }
+  async function urlToBase64(url){ try{const r=await fetch(url);if(!r.ok)throw new Error();const blob=await r.blob();return await new Promise((res,rej)=>{const rd=new FileReader();rd.onload=()=>res(rd.result);rd.onerror=rej;rd.readAsDataURL(blob);});}catch(e){return null;} }
+
+  /* Cabeçalho */
+  doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(0,0,0);
+  doc.text('SOLICITAÇÃO DE AUDITORIA PARA OS INDICADORES DE GDO',PW/2,y,{align:'center'});y+=8;
+  doc.text('AUDITORIA – 3ª CIA PM MAmb',PW/2,y,{align:'center'});y+=12;
+
+  /* Itens 1–9 */
+  secBold('1','IDENTIFICAÇÃO DA AUDITORIA');y+=1;
+  campo('1.1 Número do REDS:',saved.bo||'—');
+  campo('1.2 Data da ocorrência:',crime?.data||'—');
+  campo('1.3 Unidade responsável:',crime?.unidRegistro7||crime?.descrNatureza||'—');
+  campo('1.4 Município:',crime?.municipio||'—');
+  campo('1.5 Indicador auditado:',crime?.indicador||saved.tipo||'—');
+  campo('1.6 Auditor responsável:',saved.resp||'—');
+  y+=4;
+
+  secBold('2','ASSUNTO');
+  let divs=saved.divergencias||[];if(typeof divs==='string'){try{divs=JSON.parse(divs);}catch(e){divs=[];}}
+  corpo(`Solicitação de revisão de enquadramento do registro no indicador ${crime?.indicador||saved.tipo||'[indicador]'} referente ao parâmetro ${divs.join(', ')||'[parâmetros]'}.`);y+=2;
+
+  secBold('3','JUSTIFICATIVA');corpo(saved.justificativa||saved.motivo);y+=2;
+  secBold('4','SÍNTESE DO HISTÓRICO DA OCORRÊNCIA');corpo(saved.historico);y+=2;
+  secBold('5','PARÂMETRO ORIGINAL UTILIZADO NO ENQUADRAMENTO');corpo(saved.parametroOriginal||saved.parametro_original);y+=2;
+  secBold('6','PARÂMETRO DE DIVERGÊNCIA IDENTIFICADO');
+  divs.forEach(d=>corpo(d+';',4));
+  if(saved.divergenciaOutro)corpo(saved.divergenciaOutro+';',4);
+  y+=2;
+  secBold('7','DEMONSTRAÇÃO OBJETIVA DA DIVERGÊNCIA');corpo(saved.demonstracao);y+=2;
+  secBold('8','DOCUMENTOS COMPLEMENTARES ANALISADOS');corpo(saved.documentos);y+=2;
+  secBold('9','CONCLUSÃO DA AUDITORIA');corpo(saved.conclusao||'(Aguardando conclusão do administrador.)');y+=8;
+
+  /* Figuras */
+  const figsB=[{img:saved.img1,leg:saved.leg1},{img:saved.img2,leg:saved.leg2},{img:saved.img3,leg:saved.leg3},{img:saved.img4,leg:saved.leg4}].filter(f=>f.img);
+  for(let i=0;i<figsB.length;i++){
+    doc.addPage();y=20;
+    const fig=figsB[i];
+    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(0,0,0);
+    doc.text(`Figura ${i+1}: ${fig.leg||'(sem legenda)'}`,PW/2,y,{align:'center'});y+=8;
+    let imgData=fig.img;
+    if(typeof imgData==='string'&&imgData.startsWith('http')) imgData=await urlToBase64(imgData);
+    if(imgData&&imgData.startsWith('data:')){
+      try{ const fmt=imgData.includes('data:image/png')?'PNG':imgData.includes('data:image/gif')?'GIF':'JPEG'; doc.addImage(imgData,fmt,ML,y,TW,Math.min(200,TW*0.75),undefined,'FAST'); }
+      catch(e){ doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(150,0,0);doc.text('Erro ao inserir imagem.',ML,y+10); }
+    }
+  }
+
+  /* Rodapé */
+  const pc=doc.getNumberOfPages();
+  for(let p=1;p<=pc;p++){
+    doc.setPage(p);doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(120,120,120);
+    doc.text(`Polícia Militar de Minas Gerais - 3a CIA PM MAmb - ${dd}/${mm2}/${yyyy}`,ML,288);
+    doc.text(`${p}/${pc}`,PW-MR,288,{align:'right'});
+  }
+  doc.save(`AUDITORIA_OFICIAL_${_auditBoAtual}_${dd}-${mm2}-${yyyy}.pdf`);
+}
+
+/* ══════════════════════════════════
+   VISUALIZAÇÃO EXPANDIDA DA FICHA
+══════════════════════════════════ */
   _expFichaId = fichaId;
   const f = fichasIntel.find(x=>x.id===fichaId);
   if(!f){ alert('Ficha não encontrada.'); return; }
