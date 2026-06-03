@@ -5550,27 +5550,30 @@ function salvarAvaliacaoAdmin(){
   if(sessao?.perfil !== 'admin'){ alert('Apenas o Administrador pode registrar avaliação.'); return; }
 
   const saved = auditoriasMap[_auditBoAtual] || {};
+
+  /* Lê divergências marcadas no formulário */
+  const _divChecks = ['audit-div-zona','audit-div-consumacao','audit-div-natureza','audit-div-envolvidos','audit-div-morte','audit-div-outro'];
+  const _divsForm = _divChecks.map(id=>document.getElementById(id)).filter(el=>el&&el.checked).map(el=>el.value);
+
   const decisao = {
     bo:                _auditBoAtual,
     status:            document.getElementById('audit-status').value,
-    tipo:              saved.tipo              || '',
-    solicitante:       saved.solicitante       || '',
-    justificativa:     saved.justificativa     || '',
-    historico:         saved.historico         || '',
-    parametro_original:saved.parametroOriginal || '',
-    demonstracao:      saved.demonstracao      || '',
-    documentos:        saved.documentos        || '',
-    divergencias:      JSON.stringify(saved.divergencias||[]),
-    divergencia_outro: saved.divergenciaOutro  || '',
-    leg1: saved.leg1||'', leg2: saved.leg2||'', leg3: saved.leg3||'', leg4: saved.leg4||'',
-    chk1:              saved.chk1              || false,
-    chk2:              saved.chk2              || false,
-    chk3:              saved.chk3              || false,
-    img1:              saved.img1              || null,
-    img2:              saved.img2              || null,
-    img3:              saved.img3              || null,
-    img4:              saved.img4              || null,
-    data_solicitacao:  saved.dataSolicitacao   || saved.data_solicitacao || '',
+    tipo:              document.getElementById('audit-tipo')?.value               || saved.tipo              || '',
+    solicitante:       document.getElementById('audit-solicitante')?.value.trim() || saved.solicitante       || '',
+    justificativa:     document.getElementById('audit-justificativa')?.value.trim()     || saved.justificativa     || '',
+    historico:         document.getElementById('audit-historico')?.value.trim()         || saved.historico         || '',
+    parametro_original:document.getElementById('audit-parametro-original')?.value.trim()|| saved.parametroOriginal || '',
+    demonstracao:      document.getElementById('audit-demonstracao')?.value.trim()      || saved.demonstracao      || '',
+    documentos:        document.getElementById('audit-documentos')?.value.trim()        || saved.documentos        || '',
+    divergencias:      JSON.stringify(_divsForm.length ? _divsForm : (saved.divergencias||[])),
+    divergencia_outro: document.getElementById('audit-div-outro-texto')?.value.trim()   || saved.divergenciaOutro  || '',
+    leg1: document.getElementById('audit-leg1')?.value||saved.leg1||'',
+    leg2: document.getElementById('audit-leg2')?.value||saved.leg2||'',
+    leg3: document.getElementById('audit-leg3')?.value||saved.leg3||'',
+    leg4: document.getElementById('audit-leg4')?.value||saved.leg4||'',
+    chk1: saved.chk1||false, chk2: saved.chk2||false, chk3: saved.chk3||false,
+    img1: saved.img1||null, img2: saved.img2||null, img3: saved.img3||null, img4: saved.img4||null,
+    data_solicitacao:  saved.dataSolicitacao || saved.data_solicitacao || '',
     obs:               document.getElementById('audit-obs').value.trim(),
     resp:              document.getElementById('audit-resp').value.trim(),
     data_decisao:      new Date().toLocaleString('pt-BR'),
@@ -5975,64 +5978,6 @@ function excluirSolicitacaoUsuario(){
   alert('✔ Solicitação excluída com sucesso.');
 }
 
-function salvarAvaliacaoAdmin(){
-  if(!_auditBoAtual) return;
-  if(sessao?.perfil !== 'admin'){ alert('Apenas o Administrador pode registrar avaliação.'); return; }
-
-  const saved = auditoriasMap[_auditBoAtual] || {};
-  const decisao = {
-    bo:                _auditBoAtual,
-    status:            document.getElementById('audit-status').value,
-    tipo:              saved.tipo              || '',
-    solicitante:       saved.solicitante       || '',
-    justificativa:     saved.justificativa     || '',
-    historico:         saved.historico         || '',
-    parametro_original:saved.parametroOriginal || '',
-    demonstracao:      saved.demonstracao      || '',
-    documentos:        saved.documentos        || '',
-    divergencias:      JSON.stringify(saved.divergencias||[]),
-    divergencia_outro: saved.divergenciaOutro  || '',
-    leg1: saved.leg1||'', leg2: saved.leg2||'', leg3: saved.leg3||'', leg4: saved.leg4||'',
-    chk1:              saved.chk1              || false,
-    chk2:              saved.chk2              || false,
-    chk3:              saved.chk3              || false,
-    img1:              saved.img1              || null,
-    img2:              saved.img2              || null,
-    img3:              saved.img3              || null,
-    img4:              saved.img4              || null,
-    data_solicitacao:  saved.dataSolicitacao   || saved.data_solicitacao || '',
-    obs:               document.getElementById('audit-obs').value.trim(),
-    resp:              document.getElementById('audit-resp').value.trim(),
-    data_decisao:      new Date().toLocaleString('pt-BR'),
-    conclusao:         document.getElementById('audit-conclusao').value.trim(),
-  };
-
-  if(!decisao.obs){ alert('Informe o parecer do administrador.'); return; }
-
-  _sbUpsertAuditoria(decisao).then(() => {
-    _sincAuditoria(decisao);
-    _pset('ac_auditorias', JSON.stringify(auditoriasMap));
-    _posAvaliacaoAdmin(decisao);
-  }).catch(e => {
-    console.warn('[auditorias] Supabase falhou na decisão, salvando local:', e.message);
-    _sincAuditoria(decisao);
-    _pset('ac_auditorias', JSON.stringify(auditoriasMap));
-    _posAvaliacaoAdmin(decisao);
-  });
-}
-
-function _posAvaliacaoAdmin(decisao){
-  renderCrimes();
-  renderDashboard();
-  if(['validada','corrigida'].includes(decisao.status)){
-    document.getElementById('audit-btn-pdf').style.display = 'inline-block';
-    alert('✔ Avaliação registrada!\n\nA solicitação foi ' + (decisao.status === 'validada' ? 'VALIDADA' : 'CORRIGIDA') + '.\nAgora você pode gerar o PDF para envio ao BPM MAmb.');
-  } else {
-    fecharModal('modal-auditoria');
-    alert('✔ Avaliação registrada com sucesso!');
-  }
-}
-
 function limparTodasAuditorias(){
   if(sessao?.perfil !== 'admin') return;
   const total = Object.keys(auditoriasMap).filter(k => auditoriasMap[k]?.motivo || auditoriasMap[k]?.justificativa).length;
@@ -6125,8 +6070,8 @@ function renderAuditoriasLista(){
       <div style="display:flex;align-items:center;gap:6px;">
         <span style="font-size:10px;font-weight:700;color:${cor};background:${cor}22;border:1px solid ${cor}55;border-radius:4px;padding:3px 8px;">${label}</span>
         <button class="btn-outline" style="font-size:10px;padding:3px 10px;" onclick="abrirAuditoria('${a.bo}')">📋 Abrir</button>
-        <button title="Gerar PDF" onclick="event.stopPropagation();_auditBoAtual='${a.bo}';gerarPDFAuditoria()"
-          style="font-size:14px;padding:2px 7px;background:rgba(21,101,192,.15);border:1px solid rgba(21,101,192,.4);color:#42a5f5;border-radius:4px;cursor:pointer;line-height:1;">📄</button>
+        <button title="PDF Modelo Oficial (BPM MAmb)" onclick="event.stopPropagation();_auditBoAtual='${a.bo}';gerarPDFAuditoriaBPM()"
+          style="font-size:14px;padding:2px 7px;background:rgba(27,94,32,.2);border:1px solid rgba(27,94,32,.5);color:#66bb6a;border-radius:4px;cursor:pointer;line-height:1;">📄</button>
       </div>
     </div>`;
   }).join('');
