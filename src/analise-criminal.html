@@ -350,6 +350,12 @@
 
     .intel-list-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding:0 2px;}
     .intel-list-count{font-size:11px;color:rgba(255,255,255,.45);}
+    .intel-pag{display:flex;align-items:center;gap:4px;margin-top:12px;justify-content:center;}
+    .intel-pag-btn{min-width:30px;height:30px;padding:0 8px;border-radius:5px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:rgba(255,255,255,.6);font-size:12px;cursor:pointer;transition:all .12s;font-weight:600;}
+    .intel-pag-btn:hover{background:rgba(155,138,92,.2);border-color:rgba(155,138,92,.5);color:#d4b86a;}
+    .intel-pag-btn.active{background:rgba(155,138,92,.25);border-color:#9b8a5c;color:#d4b86a;}
+    .intel-pag-btn:disabled{opacity:.3;cursor:default;}
+    .intel-pag-info{font-size:11px;color:rgba(255,255,255,.35);padding:0 6px;}
   </style>
 </head>
 <body>
@@ -7744,7 +7750,11 @@ function _initMissoesFiltroGP(){
   if(badgeTxt) badgeTxt.textContent = gpUsuario;
 }
 
-function renderIntel(){
+let _intelPage = 1;
+const _INTEL_PER_PAGE = 10;
+
+function renderIntel(resetPage){
+  if(resetPage !== false) _intelPage = 1;
   const busca      = norm(document.getElementById('intel-busca-rat').value);
   const prioBusca  = document.getElementById('intel-busca-prio')?.value ?? '';
   const mun        = norm(document.getElementById('intel-busca-mun').value);
@@ -7813,6 +7823,13 @@ function renderIntel(){
   const STAT_BCR   = {em_analise:'rgba(66,165,245,.5)',monitoramento:'rgba(255,193,7,.5)',confirmado:'rgba(255,152,0,.5)',em_operacao:'rgba(239,83,80,.5)',encerrado:'rgba(100,100,100,.5)'};
   const TC_LABEL   = {homicidio:'Homicídio Consumado',tentativa_homicidio:'Homicídio Tentado',latrocinio:'Latrocínio',feminicidio:'Feminicídio',roubo:'Roubo',furto:'Furto',trafico:'Tráfico',porte_arma:'Porte de Arma',cvpa:'CVPA',cvpe:'CVPE',lesao_corporal:'Lesão Corporal',estupro:'Estupro',sequestro:'Sequestro',extorsao:'Extorsão',milicia:'Milícia',outros:'Outros'};
 
+  /* ── Paginação ── */
+  const totalFichas = fichas.length;
+  const totalPags   = Math.ceil(totalFichas / _INTEL_PER_PAGE);
+  _intelPage = Math.min(_intelPage, totalPags || 1);
+  const inicio = (_intelPage - 1) * _INTEL_PER_PAGE;
+  const fim    = Math.min(inicio + _INTEL_PER_PAGE, totalFichas);
+  fichas = fichas.slice(inicio, fim);
   const rows = fichas.map(f => {
     const muns = Array.isArray(f.municipio) ? f.municipio : (f.municipio ? [f.municipio] : []);
     const munLabel = muns.join(', ') || '—';
@@ -7877,11 +7894,46 @@ function renderIntel(){
     </div>`;
   }).join('');
 
+
+  /* ── Botões de paginação ── */
+  let pagHtml = '';
+  if(totalPags > 1){
+    const MAX_BTN = 7;
+    let btnPages = [];
+    if(totalPags <= MAX_BTN){
+      btnPages = Array.from({length:totalPags},(_,i)=>i+1);
+    } else {
+      btnPages = [1];
+      const lo = Math.max(2, _intelPage-2), hi = Math.min(totalPags-1, _intelPage+2);
+      if(lo > 2) btnPages.push('…');
+      for(let p=lo;p<=hi;p++) btnPages.push(p);
+      if(hi < totalPags-1) btnPages.push('…');
+      btnPages.push(totalPags);
+    }
+    const btns = btnPages.map(p => p==='…'
+      ? `<span class="intel-pag-info">…</span>`
+      : `<button class="intel-pag-btn${p===_intelPage?' active':''}" onclick="_intelGoTo(${p})">${p}</button>`
+    ).join('');
+    pagHtml = `<div class="intel-pag">
+      <button class="intel-pag-btn" onclick="_intelGoTo(${_intelPage-1})" ${_intelPage===1?'disabled':''}>‹</button>
+      ${btns}
+      <button class="intel-pag-btn" onclick="_intelGoTo(${_intelPage+1})" ${_intelPage===totalPags?'disabled':''}>›</button>
+    </div>`;
+  }
+
   el.innerHTML = bannerArquivadas +
     `<div class="intel-list-bar">
-       <span class="intel-list-count">${fichas.length} ficha${fichas.length!==1?'s':''} encontrada${fichas.length!==1?'s':''}</span>
+       <span class="intel-list-count">${totalFichas} ficha${totalFichas!==1?'s':''} encontrada${totalFichas!==1?'s':''} — mostrando ${inicio+1}–${fim}</span>
      </div>` +
-    `<div class="intel-rows-wrap">${rows}</div>`;
+    `<div class="intel-rows-wrap">${rows}</div>` +
+    pagHtml;
+}
+
+function _intelGoTo(p){
+  _intelPage = p;
+  renderIntel(false);
+  document.getElementById('intel-body').scrollIntoView({behavior:'smooth',block:'start'});
+}
 }
 
 /* ══════════════════════════════════
