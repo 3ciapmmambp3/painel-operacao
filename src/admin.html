@@ -402,6 +402,7 @@
           <input id="fg-mun" placeholder="Buscar município..." oninput="renderGruposAdmin()"
             style="padding:6px 10px;background:#1e1e1e;border:1px solid var(--border-hover);border-radius:5px;color:#fff;font-size:12px;width:180px;">
           <button class="btn-outline" onclick="limparFiltrosGrpAdmin()">✕ Limpar</button>
+          <button class="btn-gold" onclick="abrirModalGrp()">+ Novo GP</button>
         </div>
       </div>
       <div class="sec-body" style="padding:0;">
@@ -416,6 +417,7 @@
               <th>Pelotão</th>
               <th>RPM</th>
               <th>BPM</th>
+              <th style="text-align:center;">Ações</th>
             </tr></thead>
             <tbody id="grp-tbody"><tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text-muted);">Carregando...</td></tr></tbody>
           </table>
@@ -1303,37 +1305,55 @@ let _adminGrupos = [];
 let _grpAdminPage = 1;
 const GRP_PAGE_SZ = 30;
 
-async function renderGruposAdmin(){
-  if(!_adminGrupos.length) await _carregarGruposAdmin();
+async function renderGruposAdmin(forceReload){
+  if(!_adminGrupos.length || forceReload) await _carregarGruposAdmin();
   _filtrarRenderGrp();
 }
 
 async function _carregarGruposAdmin(){
   try{
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${ADMIN_GRUPOS_SID}/values/GRUPOS!A2:O?key=${ADMIN_GRUPOS_APIKEY}`;
-    const r = await fetch(url);
-    if(!r.ok) throw new Error('HTTP '+r.status);
-    const data = await r.json();
-    const rows = (data.values||[]).slice(1);
+    /* Carrega grupamentos do Supabase */
+    const grpsData = await sbFetch('grupos',
+      'select=id,gp_responsavel,grupamento_bpm,grupamento_completo,pelotao,rpm,bpm&order=gp_responsavel');
+
+    /* Carrega municípios vinculados */
+    const munsData = await sbFetch('municipios_grupos',
+      'select=id,municipio,gp_responsavel&order=municipio');
+
     _adminGrupos = [];
     const seen = new Set();
-    rows.forEach(row => {
-      if(!row[0]) return;
-      const colK = (row[10]||'').trim();
-      const key  = (row[0]||'').trim()+'|'+colK;
-      if(seen.has(key)) return;
+
+    munsData.forEach(m => {
+      const gpResp    = (m.gp_responsavel||'').trim();
+      const municipio = (m.municipio||'').trim();
+      const key = municipio + '|' + gpResp;
+      if(seen.has(key) || !municipio) return;
       seen.add(key);
+
+      /* Busca dados do GP correspondente */
+      const gp = grpsData.find(g => g.gp_responsavel === gpResp) || {};
+      const colK = (gp.grupamento_completo || gp.grupamento_bpm || gpResp).trim();
+      const pelMatch = colK.match(/(\d+)\s*PEL/i);
+      const pelNum = parseInt((pelMatch||[])[1]||99);
+      const pelLabel = pelNum < 99 ? `${pelNum}º Pelotão` : (gp.pelotao||'');
+
       _adminGrupos.push({
-        municipio:  (row[0]||'').trim(),
-        gp:         (row[1]||'').trim(),
-        pelotao:    (row[2]||'').trim(),
-        rpm:        (row[6]||'').trim(),
-        bpm:        (row[7]||'').trim(),
-        gpResp:     (row[8]||'').trim(),
+        munId:      m.id,
+        municipio,
+        gp:         pelNum < 99 ? `${pelNum} GP` : '—',
+        pelotao:    gp.pelotao || pelLabel,
+        rpm:        gp.rpm || '',
+        bpm:        gp.bpm || '',
+        gpResp,
         grupamento: colK,
-        pelNum:     parseInt((colK.match(/(\d+)\s*PEL/i)||[])[1]||99),
+        pelNum,
+        grpId:      gp.id,
+        grupBpm:    gp.grupamento_bpm || '',
+        grupCompleto: gp.grupamento_completo || '',
       });
     });
+
+    /* Popula o select de filtro */
     const grps = [...new Set(_adminGrupos.map(r=>r.grupamento).filter(Boolean))].sort((a,b)=>{
       const pa=parseInt((a.match(/(\d+)\s*PEL/i)||[])[1]||99);
       const pb=parseInt((b.match(/(\d+)\s*PEL/i)||[])[1]||99);
@@ -1342,9 +1362,10 @@ async function _carregarGruposAdmin(){
     const sel = document.getElementById('fg-grp');
     if(sel) sel.innerHTML = '<option value="">Todos os Grupamentos</option>' +
       grps.map(g=>`<option value="${g}">${g}</option>`).join('');
+
   }catch(e){
     const tb = document.getElementById('grp-tbody');
-    if(tb) tb.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--danger);">✗ Erro ao carregar: ${e.message}</td></tr>`;
+    if(tb) tb.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--danger);">✗ Erro ao carregar: ${e.message}</td></tr>`;
   }
 }
 
@@ -1355,7 +1376,7 @@ function _filtrarRenderGrp(){
 
   let data = _adminGrupos.filter(r => {
     if(gpF  && r.grupamento !== gpF) return false;
-    if(pelF){ const n=pelF.replace(/\D/g,''); if(!r.grupamento.includes(n+' PEL')&&r.pelotao!==pelF) return false; }
+    if(pelF){ const n=pelF.replace(/\D/g,''); if(r.pelNum!==parseInt(n)) return false; }
     if(munF && !r.municipio.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').includes(munF)) return false;
     return true;
   });
@@ -1367,7 +1388,7 @@ function _filtrarRenderGrp(){
   const tbody = document.getElementById('grp-tbody');
   if(!tbody) return;
   if(!slice.length){
-    tbody.innerHTML='<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text-muted);">Nenhum registro encontrado.</td></tr>';
+    tbody.innerHTML='<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--text-muted);">Nenhum registro encontrado.</td></tr>';
     const pag=document.getElementById('pag-grp-admin'); if(pag) pag.style.display='none';
     return;
   }
@@ -1380,6 +1401,12 @@ function _filtrarRenderGrp(){
     <td style="font-size:11px;">${r.pelotao}</td>
     <td style="font-size:11px;">${r.rpm}</td>
     <td style="font-size:11px;">${r.bpm}</td>
+    <td style="text-align:center;white-space:nowrap;">
+      <button class="btn-outline btn-sm" title="Editar GP" onclick="abrirModalGrpEditar('${encodeURIComponent(r.gpResp)}')"
+        style="padding:3px 9px;font-size:11px;margin-right:4px;">✏ Editar GP</button>
+      <button class="btn-danger btn-sm" title="Excluir GP" onclick="abrirModalDelGrp('${encodeURIComponent(r.gpResp)}')"
+        style="padding:3px 9px;font-size:11px;">🗑</button>
+    </td>
   </tr>`).join('');
 
   const pag=document.getElementById('pag-grp-admin');
@@ -1395,6 +1422,189 @@ function _filtrarRenderGrp(){
 function goGrpAdminPage(p){ const t=Math.ceil(_adminGrupos.length/GRP_PAGE_SZ)||1; if(p<1||p>t) return; _grpAdminPage=p; _filtrarRenderGrp(); }
 function limparFiltrosGrpAdmin(){ ['fg-grp','fg-pel','fg-mun'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; }); _grpAdminPage=1; _filtrarRenderGrp(); }
 
+/* ══════════════════════════════════
+   CRUD GRUPAMENTOS
+══════════════════════════════════ */
+
+/* ── Modal Criar / Editar ── */
+function abrirModalGrp(){
+  document.getElementById('modal-grp-title').textContent = '➕ Novo Grupamento';
+  document.getElementById('grp-edit-id').value = '';
+  ['grp-f-gpResp','grp-f-grupBpm','grp-f-grupCompleto','grp-f-rpm','grp-f-bpm'].forEach(id=>{
+    const el = document.getElementById(id); if(el) el.value = '';
+  });
+  document.getElementById('grp-f-pelotao').value = '';
+  _grpMsg('');
+  document.getElementById('modal-grp-overlay').style.display = 'flex';
+}
+
+function abrirModalGrpEditar(gpRespEnc){
+  const gpResp = decodeURIComponent(gpRespEnc);
+  /* Pega os dados do primeiro registro deste GP */
+  const r = _adminGrupos.find(x => x.gpResp === gpResp);
+  if(!r){ alert('GP não encontrado.'); return; }
+  document.getElementById('modal-grp-title').textContent = '✏ Editar Grupamento';
+  document.getElementById('grp-edit-id').value = r.grpId || '';
+  document.getElementById('grp-f-gpResp').value = r.gpResp;
+  document.getElementById('grp-f-pelotao').value = r.pelotao || '';
+  document.getElementById('grp-f-grupBpm').value = r.grupBpm || '';
+  document.getElementById('grp-f-grupCompleto').value = r.grupCompleto || '';
+  document.getElementById('grp-f-rpm').value = r.rpm || '';
+  document.getElementById('grp-f-bpm').value = r.bpm || '';
+  _grpMsg('');
+  document.getElementById('modal-grp-overlay').style.display = 'flex';
+}
+
+function fecharModalGrp(){
+  document.getElementById('modal-grp-overlay').style.display = 'none';
+}
+
+function _grpMsg(txt, tipo='error'){
+  const el = document.getElementById('grp-f-msg');
+  if(!txt){ el.style.display='none'; return; }
+  el.style.display = 'block';
+  el.style.background = tipo==='ok' ? 'rgba(82,196,26,.12)' : 'rgba(239,83,80,.12)';
+  el.style.color = tipo==='ok' ? '#52c41a' : 'var(--danger)';
+  el.style.border = `1px solid ${tipo==='ok'?'rgba(82,196,26,.3)':'rgba(239,83,80,.3)'}`;
+  el.textContent = txt;
+}
+
+async function salvarGrp(){
+  const id         = document.getElementById('grp-edit-id').value.trim();
+  const gpResp     = document.getElementById('grp-f-gpResp').value.trim();
+  const pelotao    = document.getElementById('grp-f-pelotao').value.trim();
+  const grupBpm    = document.getElementById('grp-f-grupBpm').value.trim();
+  const grupComp   = document.getElementById('grp-f-grupCompleto').value.trim();
+  const rpm        = document.getElementById('grp-f-rpm').value.trim();
+  const bpm        = document.getElementById('grp-f-bpm').value.trim();
+
+  if(!gpResp)   return _grpMsg('Informe o GP Responsável.');
+  if(!pelotao)  return _grpMsg('Selecione o Pelotão.');
+  if(!grupBpm)  return _grpMsg('Informe o Grupamento BPM (Col K).');
+
+  const payload = {
+    gp_responsavel:      gpResp,
+    grupamento_bpm:      grupBpm,
+    grupamento_completo: grupComp || grupBpm,
+    pelotao,
+    rpm,
+    bpm,
+  };
+
+  try{
+    let res;
+    if(id){
+      /* UPDATE */
+      res = await fetch(`${SB_URL}/rest/v1/grupos?id=eq.${id}`,{
+        method:'PATCH',
+        headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=representation'},
+        body: JSON.stringify(payload),
+      });
+    } else {
+      /* INSERT */
+      res = await fetch(`${SB_URL}/rest/v1/grupos`,{
+        method:'POST',
+        headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=representation'},
+        body: JSON.stringify(payload),
+      });
+    }
+    if(!res.ok){ const t=await res.text(); throw new Error(t); }
+    _grpMsg('✔ Salvo com sucesso!', 'ok');
+    _adminGrupos = []; /* força reload */
+    setTimeout(()=>{ fecharModalGrp(); renderGruposAdmin(true); }, 800);
+  }catch(e){
+    _grpMsg('Erro ao salvar: ' + e.message);
+  }
+}
+
+/* ── Modal Excluir / Reatribuir ── */
+let _delGrpResp = '';
+
+async function abrirModalDelGrp(gpRespEnc){
+  _delGrpResp = decodeURIComponent(gpRespEnc);
+  document.getElementById('del-grp-nome').textContent = _delGrpResp;
+  _delGrpMsg('');
+
+  /* Municípios deste GP */
+  const muns = _adminGrupos.filter(x => x.gpResp === _delGrpResp).map(x=>x.municipio).sort();
+  const box   = document.getElementById('del-grp-muns-box');
+  const count = document.getElementById('del-grp-muns-count');
+  const list  = document.getElementById('del-grp-muns-list');
+  const dest  = document.getElementById('del-grp-destino');
+
+  if(muns.length){
+    box.style.display = 'block';
+    count.textContent = muns.length;
+    list.textContent  = muns.join(' · ');
+
+    /* Preenche select de destino com outros GPs */
+    const outros = [...new Set(_adminGrupos.map(x=>x.gpResp).filter(g=>g&&g!==_delGrpResp))].sort();
+    dest.innerHTML = '<option value="">— Selecione o GP destino —</option>' +
+      outros.map(g=>`<option value="${encodeURIComponent(g)}">${g}</option>`).join('');
+  } else {
+    box.style.display = 'none';
+  }
+
+  document.getElementById('modal-del-grp-overlay').style.display = 'flex';
+}
+
+function fecharModalDelGrp(){
+  document.getElementById('modal-del-grp-overlay').style.display = 'none';
+  _delGrpResp = '';
+}
+
+function _delGrpMsg(txt, tipo='error'){
+  const el = document.getElementById('del-grp-msg');
+  if(!txt){ el.style.display='none'; return; }
+  el.style.display = 'block';
+  el.style.background = tipo==='ok' ? 'rgba(82,196,26,.12)' : 'rgba(239,83,80,.12)';
+  el.style.color = tipo==='ok' ? '#52c41a' : 'var(--danger)';
+  el.style.border = `1px solid ${tipo==='ok'?'rgba(82,196,26,.3)':'rgba(239,83,80,.3)'}`;
+  el.textContent = txt;
+}
+
+async function confirmarExcluirGrp(){
+  if(!_delGrpResp) return;
+
+  const muns = _adminGrupos.filter(x => x.gpResp === _delGrpResp);
+  const destEnc = document.getElementById('del-grp-destino')?.value || '';
+  const destGpResp = destEnc ? decodeURIComponent(destEnc) : '';
+
+  /* Se há municípios vinculados, deve selecionar destino */
+  if(muns.length && !destGpResp){
+    return _delGrpMsg('Selecione o GP destino para reatribuir os municípios.');
+  }
+
+  try{
+    /* 1. Reatribui municípios se necessário */
+    if(muns.length && destGpResp){
+      const updateRes = await fetch(`${SB_URL}/rest/v1/municipios_grupos?gp_responsavel=eq.${encodeURIComponent(_delGrpResp)}`,{
+        method:'PATCH',
+        headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=minimal'},
+        body: JSON.stringify({ gp_responsavel: destGpResp }),
+      });
+      if(!updateRes.ok){ const t=await updateRes.text(); throw new Error('Reatribuição falhou: '+t); }
+    }
+
+    /* 2. Exclui o GP da tabela grupos */
+    const grpRow = _adminGrupos.find(x=>x.gpResp===_delGrpResp&&x.grpId);
+    if(grpRow?.grpId){
+      const delRes = await fetch(`${SB_URL}/rest/v1/grupos?id=eq.${grpRow.grpId}`,{
+        method:'DELETE',
+        headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Prefer':'return=minimal'},
+      });
+      if(!delRes.ok){ const t=await delRes.text(); throw new Error('Exclusão falhou: '+t); }
+    }
+
+    _delGrpMsg(`✔ GP excluído${muns.length?` e ${muns.length} município(s) reatribuído(s) para ${destGpResp}`:''}!`, 'ok');
+    _adminGrupos = [];
+    setTimeout(()=>{ fecharModalDelGrp(); renderGruposAdmin(true); }, 1000);
+
+  }catch(e){
+    _delGrpMsg('Erro: ' + e.message);
+  }
+}
+
 function showMsg(id, tipo, txt) {
   const el = document.getElementById(id);
   if(!el) return;
@@ -1404,5 +1614,92 @@ function showMsg(id, tipo, txt) {
 }
 
 </script>
+<!-- ══════════════════════════════════
+     MODAL GRUPAMENTO — Criar / Editar
+══════════════════════════════════ -->
+<div class="modal-overlay" id="modal-grp-overlay" style="display:none;" onclick="if(event.target===this)fecharModalGrp()">
+  <div class="modal" style="max-width:560px;">
+    <div class="modal-head">
+      <h3 id="modal-grp-title">➕ Novo Grupamento</h3>
+      <button class="modal-close" onclick="fecharModalGrp()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="grp-edit-id">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div class="fg">
+          <label>GP Responsável <span style="color:var(--danger)">*</span></label>
+          <input type="text" id="grp-f-gpResp" placeholder="Ex: GP GOVERNADOR VALADARES">
+        </div>
+        <div class="fg">
+          <label>Pelotão <span style="color:var(--danger)">*</span></label>
+          <select id="grp-f-pelotao">
+            <option value="">— Selecione —</option>
+            <option>1º Pelotão</option><option>2º Pelotão</option><option>3º Pelotão</option>
+            <option>4º Pelotão</option><option>5º Pelotão</option>
+          </select>
+        </div>
+      </div>
+      <div class="fg" style="margin-bottom:12px;">
+        <label>Grupamento BPM (Col K) <span style="color:var(--danger)">*</span></label>
+        <input type="text" id="grp-f-grupBpm" placeholder="Ex: 1GP/1PEL/3CIA">
+      </div>
+      <div class="fg" style="margin-bottom:12px;">
+        <label>Grupamento Completo</label>
+        <input type="text" id="grp-f-grupCompleto" placeholder="Ex: 1 GP / 1 PEL / 3 CIA PM MAMB / BPM MAMB">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div class="fg">
+          <label>RPM</label>
+          <input type="text" id="grp-f-rpm" placeholder="Ex: 8 RPM">
+        </div>
+        <div class="fg">
+          <label>BPM</label>
+          <input type="text" id="grp-f-bpm" placeholder="Ex: 6 BPM">
+        </div>
+      </div>
+      <div id="grp-f-msg" style="font-size:12px;padding:6px 10px;border-radius:5px;display:none;"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-outline" onclick="fecharModalGrp()">Cancelar</button>
+      <button class="btn-gold" onclick="salvarGrp()">💾 Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+     MODAL EXCLUIR GP — Reatribuição
+══════════════════════════════════ -->
+<div class="modal-overlay" id="modal-del-grp-overlay" style="display:none;" onclick="if(event.target===this)fecharModalDelGrp()">
+  <div class="modal" style="max-width:600px;">
+    <div class="modal-head">
+      <h3 style="color:var(--danger);">🗑 Excluir Grupamento</h3>
+      <button class="modal-close" onclick="fecharModalDelGrp()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--text-white);margin-bottom:14px;">
+        Excluindo <b id="del-grp-nome" style="color:var(--danger);"></b>.
+      </p>
+      <div id="del-grp-muns-box" style="display:none;margin-bottom:14px;">
+        <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">
+          Este grupamento possui <b id="del-grp-muns-count" style="color:#fff;"></b> município(s) vinculado(s).
+          Escolha para qual GP eles serão <b style="color:var(--gold);">reatribuídos</b> antes de excluir:
+        </p>
+        <div class="fg" style="margin-bottom:10px;">
+          <label>Reatribuir municípios para:</label>
+          <select id="del-grp-destino" style="width:100%;padding:8px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:5px;color:#fff;">
+            <option value="">— Selecione o GP destino —</option>
+          </select>
+        </div>
+        <div id="del-grp-muns-list" style="max-height:140px;overflow-y:auto;background:#111;border:1px solid var(--border);border-radius:5px;padding:8px 10px;font-size:11px;color:var(--text-muted);line-height:1.8;"></div>
+      </div>
+      <div id="del-grp-msg" style="font-size:12px;padding:6px 10px;border-radius:5px;display:none;"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-outline" onclick="fecharModalDelGrp()">Cancelar</button>
+      <button class="btn-danger" onclick="confirmarExcluirGrp()" style="padding:8px 16px;font-size:12px;">🗑 Confirmar Exclusão</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
