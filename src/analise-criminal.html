@@ -7879,12 +7879,25 @@ function renderIntel(resetPage){
 
     /* ── Coluna 2: local + pessoas + tags ── */
     const locHtml = munLabel !== '—' ? `<div class="ir-loc">📍 ${munLabel}</div>` : '';
-    /* Suspeitos e vítimas */
+    /* Suspeitos e vítimas — detecta AUTOR/VÍTIMA por linha */
     let peopleHtml = '';
     if(f.suspeitos){
-      const susps = f.suspeitos.split(',').slice(0,2);
-      peopleHtml += susps.map(s=>`<div class="ir-people"><span class="ir-role susp">AUTOR</span>${s.trim()}</div>`).join('');
-      if(f.suspeitos.split(',').length > 2) peopleHtml += `<div class="ir-people" style="color:rgba(255,255,255,.3);font-size:10px;">+${f.suspeitos.split(',').length-2} autor(es)</div>`;
+      const _envLines = f.suspeitos.split('\n').map(l=>l.trim()).filter(Boolean);
+      const _envDetect = (s) => {
+        const u = s.toUpperCase();
+        if(u.startsWith('AUTOR'))                              return {role:'AUTOR',  bg:'rgba(255,152,0,.25)', cl:'#ffcc80'};
+        if(u.startsWith('VÍTIMA')||u.startsWith('VITIMA'))    return {role:'VÍTIMA', bg:'rgba(66,165,245,.2)', cl:'#90caf9'};
+        return {role:'SUSPEITO', bg:'rgba(239,83,80,.2)', cl:'#ef9a9a'};
+      };
+      const _envStrip = (s) => s.replace(/^(autor|v[ií]tima|suspeito):?\s*/i,'').trim();
+      const shown = _envLines.slice(0,3);
+      const extra = _envLines.length - shown.length;
+      peopleHtml = shown.map(s=>{
+        const {role,bg,cl} = _envDetect(s);
+        const nome = _envStrip(s);
+        return `<div class="ir-people"><span class="ir-role" style="background:${bg};color:${cl};font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;flex-shrink:0;">${role}</span>${nome}</div>`;
+      }).join('');
+      if(extra > 0) peopleHtml += `<div class="ir-people" style="color:rgba(255,255,255,.3);font-size:10px;">+${extra} envolvido(s)</div>`;
     }
     /* Tags extras: facção, complementos, anexos */
     const tagPills = [];
@@ -8267,18 +8280,32 @@ async function idExportarPDF(){
     y += h;
   };
 
-  /* block: label em linha própria, texto abaixo identado */
+  /* block: label em linha própria, texto abaixo justificado */
   const block = (label, val) => {
     if(!val) return;
     const txtLines = doc.splitTextToSize(String(val), TW);
-    const h = (label ? 5 : 0) + txtLines.length*5 + 3;
+    const h = (label ? 5 : 0) + txtLines.length*5.2 + 3;
     chk(h);
     if(label){
       doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(100,100,100);
       doc.text(label+':', ML, y); y+=5;
     }
     doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(30,30,30);
-    txtLines.forEach(l => { chk(5); doc.text(l, ML, y); y+=5; });
+    for(let li=0; li<txtLines.length; li++){
+      chk(5.5);
+      const isLast = li === txtLines.length-1;
+      if(!isLast && txtLines[li].trim().length > 5){
+        /* Justifica: distribui espaço extra entre palavras */
+        const words = txtLines[li].split(' ').filter(w=>w.length>0);
+        if(words.length > 1){
+          const totalW = doc.getTextWidth(txtLines[li].replace(/\s+/g,''));
+          const spaceW = (TW - totalW) / (words.length-1);
+          let wx = ML;
+          words.forEach((w,wi)=>{ doc.text(w,wx,y); wx+=doc.getTextWidth(w)+spaceW; });
+        } else { doc.text(txtLines[li], ML, y); }
+      } else { doc.text(txtLines[li], ML, y); }
+      y+=5.2;
+    }
     y+=2;
   };
 
@@ -8360,21 +8387,28 @@ async function idExportarPDF(){
   /* ── Seção 7: Arquivos / Fotos ── */
   if(fotasOk.length){
     sec('7. ARQUIVOS FOTOGRÁFICOS');
-    const IMG_W=55, IMG_H=42, GAP=5;
-    let ix=ML;
+    const COLS=2, GAP=6;
+    const IMG_W=(TW-(COLS-1)*GAP)/COLS;   /* ~82mm com 2 colunas */
+    const IMG_H=Math.round(IMG_W*0.72);   /* proporção 4:3 aprox */
+    let col=0, rowY=y;
     for(const ft of fotasOk){
-      if(ix+IMG_W > PW-MR){ ix=ML; y+=IMG_H+GAP+8; }
-      chk(IMG_H+10);
+      if(col===COLS){ col=0; rowY+=IMG_H+10; y=rowY; }
+      chk(IMG_H+12);
+      const ix = ML + col*(IMG_W+GAP);
       try{
         const ext = ft.tipo.includes('png')?'PNG':'JPEG';
-        doc.addImage(ft.b64, ext, ix, y, IMG_W, IMG_H);
-        doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(80,80,80);
+        doc.addImage(ft.b64, ext, ix, rowY, IMG_W, IMG_H, undefined, 'FAST');
+        /* Borda sutil */
+        doc.setDrawColor(200,200,200); doc.setLineWidth(0.3);
+        doc.rect(ix, rowY, IMG_W, IMG_H);
+        /* Nome da imagem */
+        doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(80,80,80);
         const nm = doc.splitTextToSize(ft.nome, IMG_W);
-        doc.text(nm[0], ix, y+IMG_H+3);
-      } catch(e){ /* skip falha */ }
-      ix+=IMG_W+GAP;
+        doc.text(nm[0], ix, rowY+IMG_H+4);
+      } catch(e){ /* skip */ }
+      col++;
     }
-    y+=IMG_H+12;
+    y = rowY + IMG_H + 14;
   }
 
   /* ── Seção 8: Complementos ── */
