@@ -1667,6 +1667,16 @@
             <label>Município de Atuação <span style="color:var(--text-muted);font-weight:400;">(um ou mais, separados por vírgula)</span></label>
             <input type="text" id="i-mun" placeholder="Ex: Governador Valadares, Ipatinga...">
           </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div class="intel-field" style="margin-bottom:0;">
+              <label>Bairro</label>
+              <input type="text" id="i-bairro" placeholder="Ex: Centro, São Diogo...">
+            </div>
+            <div class="intel-field" style="margin-bottom:0;">
+              <label>Unidade Responsável</label>
+              <input type="text" id="i-unidade" placeholder="Ex: 62º BPM...">
+            </div>
+          </div>
           <div class="intel-field">
             <label>Área de Atuação do Criminoso <span style="color:var(--text-muted);font-weight:400;">(grupamentos que verão esta ficha)</span></label>
             <div id="i-gp-wrap" style="background:var(--bg-input);border:1px solid var(--border-hover);border-radius:5px;padding:8px;max-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;">
@@ -1706,6 +1716,10 @@
           <div class="intel-field">
             <label>Conexões com Outros BOs</label>
             <textarea id="i-conexoes" placeholder="Nº BOs relacionados, padrão similar..."></textarea>
+          </div>
+          <div class="intel-field">
+            <label>Tags / Palavras-chave <span style="color:var(--text-muted);font-weight:400;">(separadas por vírgula)</span></label>
+            <input type="text" id="i-tags" placeholder="Ex: Arma de fogo, Facção criminosa, Homicídio...">
           </div>
           <div class="intel-field">
             <label>Observações de Inteligência</label>
@@ -6357,6 +6371,9 @@ async function _salvarFichasComAnexos(fichaId){
     reincidencia:  ficha.reincidencia||'nao',
     conexoes:      ficha.conexoes||'',
     obs:           ficha.obs||'',
+    bairro:        ficha.bairro  ||'',
+    unidade:       ficha.unidade ||'',
+    tags:          ficha.tags    ||'',
     fotos:         fotosComUrl.map(a => ({id:a.id, nome:a.nome, tipo:a.tipo||'', storage_url:a.storage_url||''})),
     complementos:  (ficha.complementos||[]).map(c=>({
       ...c,
@@ -6478,6 +6495,9 @@ async function _carregarFichasComAnexos(){
       reincidencia: r.reincidencia||'nao',
       conexoes:     r.conexoes||'',
       obs:          r.obs||'',
+      bairro:       r.bairro  ||'',
+      unidade:      r.unidade ||'',
+      tags:         r.tags    ||'',
       fotos:        (r.fotos||[]),
       complementos: (r.complementos||[]),
       /* ── Novos campos (retrocompatível — '' se coluna ainda não existe no banco) ── */
@@ -6966,6 +6986,9 @@ function abrirModalIntel(id){
       document.getElementById('i-reincidencia').value = f.reincidencia||'nao';
       document.getElementById('i-conexoes').value   = f.conexoes||'';
       document.getElementById('i-obs').value        = f.obs||'';
+      document.getElementById('i-bairro').value     = f.bairro   ||'';
+      document.getElementById('i-unidade').value    = f.unidade  ||'';
+      document.getElementById('i-tags').value       = f.tags     ||'';
       /* ── Novos campos de classificação ── */
       document.getElementById('i-data-fato').value      = f.dataFato     || '';
       document.getElementById('i-tipo-criminal').value  = f.tipoCriminal || '';
@@ -6974,7 +6997,7 @@ function abrirModalIntel(id){
       _intelFotosBuffer = (f.fotos||[]).map(fb=>({...fb}));
     }
   } else {
-    ['i-id','i-rat','i-mun','i-suspeitos','i-veiculos','i-facao','i-modus','i-armas','i-conexoes','i-obs',
+    ['i-id','i-rat','i-mun','i-bairro','i-unidade','i-tags','i-suspeitos','i-veiculos','i-facao','i-modus','i-armas','i-conexoes','i-obs',
      'i-data-fato','i-tipo-criminal','i-prioridade'].forEach(fid=>{
       document.getElementById(fid).value='';
     });
@@ -7004,7 +7027,7 @@ function abrirIntelPorRat(rat, mun){
   if(f) abrirModalIntel(f.id);
   else {
     _intelFotosBuffer = [];
-    ['i-id','i-rat','i-mun','i-suspeitos','i-veiculos','i-facao','i-modus','i-armas','i-conexoes','i-obs'].forEach(fid=>{
+    ['i-id','i-rat','i-mun','i-bairro','i-unidade','i-tags','i-suspeitos','i-veiculos','i-facao','i-modus','i-armas','i-conexoes','i-obs'].forEach(fid=>{
       document.getElementById(fid).value='';
     });
     document.getElementById('i-reincidencia').value='nao';
@@ -7037,6 +7060,9 @@ async function salvarIntel(){
       reincidencia: document.getElementById('i-reincidencia').value,
       conexoes:     document.getElementById('i-conexoes').value.trim(),
       obs:          document.getElementById('i-obs').value.trim(),
+      bairro:       document.getElementById('i-bairro').value.trim(),
+      unidade:      document.getElementById('i-unidade').value.trim(),
+      tags:         document.getElementById('i-tags').value.trim(),
       /* ── Novos campos de classificação ── */
       dataFato:     document.getElementById('i-data-fato').value || '',
       tipoCriminal: document.getElementById('i-tipo-criminal').value || '',
@@ -8010,57 +8036,86 @@ function idRenderTab(tab){
 
   const TC_LABEL = {homicidio:'🔴 Homicídio Consumado',tentativa_homicidio:'🟠 Homicídio Tentado',latrocinio:'🔴 Latrocínio',feminicidio:'🔴 Feminicídio',roubo:'🟠 Roubo',furto:'🟡 Furto',trafico:'🟣 Tráfico de Drogas',porte_arma:'🔫 Porte Ilegal de Arma',cvpa:'🏠 CVPA',cvpe:'👤 CVPE',lesao_corporal:'🩸 Lesão Corporal',estupro:'⚠ Estupro',sequestro:'⛓ Sequestro',extorsao:'💰 Extorsão',milicia:'🕵 Milícia',outros:'📝 Outros'};
   const REINC_LABEL = {nao:'Não',sim:'Sim — Suspeito Reincidente',local:'Sim — Local Reincidente'};
-  const s = (label, val, cls='') => val
-    ? `<div class="id-section"><div class="id-section-label">${label}</div><div class="id-section-val ${cls}">${val}</div></div>` : '';
+
+  /* Helper: seção de campo */
+  const field = (label, val, style='') => val
+    ? `<div class="id-section"><div class="id-section-label">${label}</div><div class="id-section-val" style="${style}">${val}</div></div>` : '';
+
+  /* Helper: card de 2 colunas */
+  const card2 = (pairs) => {
+    const cells = pairs.filter(([,v])=>v).map(([l,v,s=''])=>`<div><div class="id-section-label">${l}</div><div class="id-section-val" style="${s}">${v}</div></div>`).join('');
+    return cells ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;background:#111;border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:12px 14px;margin-bottom:10px;">${cells}</div>` : '';
+  };
+
+  const muns = Array.isArray(f.municipio) ? f.municipio : (f.municipio ? [f.municipio] : []);
+  const dataFmt = f.dataFato ? new Date(f.dataFato).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
 
   if(tab === 'geral'){
-    const muns = Array.isArray(f.municipio) ? f.municipio : (f.municipio ? [f.municipio] : []);
+    /* Seção 1: REDS + Data */
+    const sec1 = card2([
+      ['REDS', f.rat||'—'],
+      ['Data/Hora', dataFmt],
+      ['Município', muns.join(', ')||'—'],
+      ['Bairro', f.bairro||'—'],
+      ['Unidade Responsável', f.unidade||'—'],
+      ['Tipo Criminal', f.tipoCriminal ? TC_LABEL[f.tipoCriminal]||f.tipoCriminal : '—'],
+    ]);
+
+    /* Área de atuação */
     const gpsHtml = (f.gpsAtuacao||[]).length
-      ? (f.gpsAtuacao||[]).map(g=>`<span style="font-size:11px;background:rgba(155,138,92,.15);color:var(--gold);border:1px solid var(--gold-border);padding:2px 9px;border-radius:4px;">${g}</span>`).join(' ')
-      : '—';
-    const dataFatoFmt = f.dataFato ? new Date(f.dataFato).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
+      ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">${(f.gpsAtuacao||[]).map(g=>`<span style="font-size:11px;background:rgba(155,138,92,.15);color:#d4b86a;border:1px solid rgba(155,138,92,.4);padding:2px 8px;border-radius:4px;">${g}</span>`).join('')}</div>`
+      : '<span style="color:rgba(255,255,255,.3);font-size:12px;">—</span>';
+
+    /* Resumo (obs como narrativa) */
+    const resumo = f.obs
+      ? `<div class="id-section"><div class="id-section-label">📋 Resumo da Ocorrência</div><div class="id-narrative">${f.obs}</div></div>` : '';
+
+    /* Tags */
+    const tagsHtml = f.tags
+      ? `<div class="id-section"><div class="id-section-label">🏷 Tags / Palavras-chave</div><div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:4px;">${f.tags.split(',').map(t=>t.trim()).filter(Boolean).map(t=>`<span style="font-size:11px;background:rgba(255,255,255,.06);color:#ccc;border:1px solid rgba(255,255,255,.12);padding:2px 9px;border-radius:20px;">${t}</span>`).join('')}</div></div>` : '';
+
     body.innerHTML = `
-      <div class="id-2col">
-        ${s('📅 Data do Fato', dataFatoFmt)}
-        ${s('⚖ Tipo Criminal', f.tipoCriminal ? TC_LABEL[f.tipoCriminal]||f.tipoCriminal : '')}
-      </div>
-      ${s('📍 Município', muns.join(', '))}
-      <div class="id-section"><div class="id-section-label">🏛 Área de Atuação</div><div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:2px;">${gpsHtml}</div></div>
-      ${s('👤 Suspeitos', f.suspeitos)}
-      ${s('🕵 Facção / Vínculo', f.facao, 'danger')}
-      ${s('🚗 Veículos Suspeitos', f.veiculos)}
-      ${s('🔫 Armas Utilizadas', f.armas)}
-      ${f.reincidencia && f.reincidencia !== 'nao' ? `<div class="id-section"><div class="id-section-label">⚠ Reincidência</div><span class="id-reinc">${REINC_LABEL[f.reincidencia]||f.reincidencia}</span></div>` : ''}
-      ${s('🔗 Conexões', f.conexoes)}
-      ${s('📋 Observações', f.obs)}
-      <div style="font-size:10px;color:var(--text-hint);margin-top:10px;padding-top:8px;border-top:1px solid var(--border);">Criado por <b>${f.criadoPor||'—'}</b> em ${f.criadoEm||'—'}</div>`;
+      ${sec1}
+      <div class="id-section"><div class="id-section-label">🏛 Área de Atuação</div>${gpsHtml}</div>
+      <div style="height:1px;background:rgba(255,255,255,.07);margin:10px 0;"></div>
+      ${resumo}
+      ${tagsHtml}
+      ${f.conexoes ? field('🔗 Conexões com Outros BOs', f.conexoes) : ''}
+      <div style="font-size:10px;color:rgba(255,255,255,.25);margin-top:12px;padding-top:8px;border-top:1px solid rgba(255,255,255,.07);">
+        Criado por <b style="color:rgba(255,255,255,.4);">${f.criadoPor||'—'}</b> em ${f.criadoEm||'—'}
+      </div>`;
 
   } else if(tab === 'narrativa'){
     body.innerHTML = `
-      ${s('🔄 Modus Operandi', f.modus)}
-      ${f.obs ? `<div class="id-section"><div class="id-section-label">📋 Narrativa / Observações</div><div class="id-narrative">${f.obs}</div></div>` : ''}
-      ${!f.modus && !f.obs ? '<div class="empty-state" style="margin-top:20px;">Nenhuma narrativa registrada.</div>' : ''}`;
+      ${f.modus ? `<div class="id-section"><div class="id-section-label">🔄 Modus Operandi</div><div class="id-narrative">${f.modus}</div></div>` : ''}
+      ${f.armas ? field('🔫 Armas Utilizadas', f.armas, 'color:#ffcc80;') : ''}
+      ${f.reincidencia && f.reincidencia !== 'nao' ? `<div class="id-section"><div class="id-section-label">⚠ Reincidência</div><span class="id-reinc">${REINC_LABEL[f.reincidencia]||f.reincidencia}</span></div>` : ''}
+      ${!f.modus && !f.armas ? '<div class="empty-state" style="margin-top:20px;">Nenhuma narrativa registrada.</div>' : ''}`;
 
-  } else if(tab === 'comps'){
-    const comps = (f.complementos||[]).slice().sort((a,b) => new Date(b.registradoEmISO||0) - new Date(a.registradoEmISO||0));
-    const MC_TL = {avistamento:'👁 Avistamento',localizacao:'📍 Localização',veiculo:'🚗 Veículo',arma:'🔫 Arma/Drogas',movimentacao:'🔄 Movimentação',cumplice:'👥 Novo Suspeito',prisao:'🚨 Preso',fonte:'🗣 Fonte',documento:'📄 Documento',outros:'📝 Outros'};
-    const MC_CR = {avistamento:'#42a5f5',localizacao:'#ff9800',veiculo:'#ab47bc',arma:'#ef5350',movimentacao:'#26c6da',cumplice:'#ec407a',prisao:'#ef5350',fonte:'#66bb6a',documento:'#ffa726',outros:'#9b8a5c'};
-    if(!comps.length){
-      body.innerHTML = '<div class="empty-state" style="margin-top:20px;">Nenhum complemento registrado.</div>';
-      return;
-    }
-    body.innerHTML = comps.map(c => {
-      const cor = MC_CR[c.tipo||'outros']||'#9b8a5c';
-      const nAnx = (c.anexos||[]).length;
-      return `<div class="id-comp-card" style="border-left-color:${cor};">
-        <div class="id-comp-head" style="color:${cor};">
-          ${MC_TL[c.tipo||'outros']||'📝 Outros'} · 👮 ${c.autor||'—'} · ${c.registradoEm||'—'}
-          ${nAnx ? `<span style="float:right;font-size:9px;color:var(--text-muted);">📎 ${nAnx} anx.</span>` : ''}
-        </div>
-        <div class="id-comp-text">${(c.texto||'').slice(0,200)}${(c.texto||'').length>200?'…':''}</div>
-        ${c.providencia ? `<div style="margin-top:5px;font-size:10px;color:#42a5f5;">💡 ${c.providencia.slice(0,100)}</div>` : ''}
-      </div>`;
-    }).join('');
+  } else if(tab === 'envolvidos'){
+    const susp = (f.suspeitos||'').split('\n').map(l=>l.trim()).filter(Boolean);
+    const roles = susp.length
+      ? susp.map(s=>`<div style="background:#1e1e1e;border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:9px 12px;margin-bottom:6px;display:flex;align-items:center;gap:10px;">
+          <span style="font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px;background:rgba(239,83,80,.2);color:#ef9a9a;flex-shrink:0;">SUSPEITO</span>
+          <span style="font-size:12px;color:#e0e0e0;">${s}</span>
+        </div>`).join('')
+      : '<div class="empty-state" style="margin-top:10px;">Nenhum suspeito cadastrado.</div>';
+    const faccaoHtml = f.facao
+      ? `<div style="margin-top:10px;padding:10px 12px;background:rgba(239,83,80,.08);border:1px solid rgba(239,83,80,.25);border-radius:6px;">
+          <div class="id-section-label" style="margin-bottom:4px;">🕵 Facção / Vínculo Criminal</div>
+          <div style="font-size:13px;font-weight:700;color:#ef9a9a;">${f.facao}</div>
+        </div>` : '';
+    body.innerHTML = `<div class="id-section"><div class="id-section-label">👤 Suspeitos / Envolvidos</div>${roles}</div>${faccaoHtml}`;
+
+  } else if(tab === 'veiculos'){
+    const veics = (f.veiculos||'').split('\n').map(l=>l.trim()).filter(Boolean);
+    const veicHtml = veics.length
+      ? veics.map(v=>`<div style="background:#1e1e1e;border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:9px 12px;margin-bottom:6px;display:flex;align-items:center;gap:10px;">
+          <span style="font-size:18px;">🚗</span>
+          <span style="font-size:12px;color:#e0e0e0;">${v}</span>
+        </div>`).join('')
+      : '<div class="empty-state" style="margin-top:10px;">Nenhum veículo cadastrado.</div>';
+    body.innerHTML = `<div class="id-section"><div class="id-section-label">🚗 Veículos Suspeitos</div>${veicHtml}</div>`;
 
   } else if(tab === 'anexos'){
     const fotos = f.fotos||[];
@@ -8077,12 +8132,182 @@ function idRenderTab(tab){
       const thumb = isImg&&src
         ? `<img src="${src}" style="width:88px;height:66px;object-fit:cover;display:block;border-radius:4px 4px 0 0;">`
         : `<div style="width:88px;height:66px;display:flex;align-items:center;justify-content:center;background:#1a1a1a;border-radius:4px 4px 0 0;font-size:26px;">${isVid?'🎥':isPdf?'📄':'📎'}</div>`;
-      return `<div onclick="_abrirAnexoComp('${a.id}','${f.id}')" style="border:1px solid var(--border);border-radius:5px;overflow:hidden;cursor:pointer;width:88px;flex-shrink:0;" title="${a.nome}">
+      return `<div onclick="_abrirAnexoComp('${a.id}','${f.id}')" style="border:1px solid rgba(255,255,255,.1);border-radius:5px;overflow:hidden;cursor:pointer;width:88px;flex-shrink:0;" title="${a.nome}">
         ${thumb}
-        <div style="padding:3px 5px;background:#111;font-size:9px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${a.nome}</div>
+        <div style="padding:3px 5px;background:#111;font-size:9px;color:rgba(255,255,255,.4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${a.nome}</div>
       </div>`;
     }).join('')}</div>`;
+
+  } else if(tab === 'comps'){
+    const comps = (f.complementos||[]).slice().sort((a,b) => new Date(b.registradoEmISO||0) - new Date(a.registradoEmISO||0));
+    const MC_TL = {avistamento:'👁 Avistamento',localizacao:'📍 Localização',veiculo:'🚗 Veículo',arma:'🔫 Arma/Drogas',movimentacao:'🔄 Movimentação',cumplice:'👥 Novo Suspeito',prisao:'🚨 Preso',fonte:'🗣 Fonte',documento:'📄 Documento',outros:'📝 Outros'};
+    const MC_CR = {avistamento:'#42a5f5',localizacao:'#ff9800',veiculo:'#ab47bc',arma:'#ef5350',movimentacao:'#26c6da',cumplice:'#ec407a',prisao:'#ef5350',fonte:'#66bb6a',documento:'#ffa726',outros:'#9b8a5c'};
+    if(!comps.length){
+      body.innerHTML = '<div class="empty-state" style="margin-top:20px;">Nenhum complemento registrado.</div>';
+      return;
+    }
+    body.innerHTML = comps.map(c => {
+      const cor = MC_CR[c.tipo||'outros']||'#9b8a5c';
+      const nAnx = (c.anexos||[]).length;
+      return `<div class="id-comp-card" style="border-left-color:${cor};">
+        <div class="id-comp-head" style="color:${cor};">
+          ${MC_TL[c.tipo||'outros']||'📝 Outros'} · 👮 ${c.autor||'—'} · ${c.registradoEm||'—'}
+          ${nAnx ? `<span style="float:right;font-size:9px;color:rgba(255,255,255,.35);">📎 ${nAnx} anx.</span>` : ''}
+        </div>
+        <div class="id-comp-text">${(c.texto||'').slice(0,200)}${(c.texto||'').length>200?'…':''}</div>
+        ${c.providencia ? `<div style="margin-top:5px;font-size:10px;color:#42a5f5;">💡 ${c.providencia.slice(0,100)}</div>` : ''}
+      </div>`;
+    }).join('');
   }
+}
+
+
+
+async function idExportarPDF(){
+  const f = fichasIntel.find(x => x.id === _drawerFichaId);
+  if(!f){ alert('Ficha não encontrada.'); return; }
+  const { jsPDF } = window.jspdf;
+  if(!jsPDF){ alert('Biblioteca PDF não carregada.'); return; }
+
+  const doc = new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  const PW=210, ML=20, MR=20, TW=PW-ML-MR;
+  let y = 18;
+
+  const muns = Array.isArray(f.municipio)?f.municipio:(f.municipio?[f.municipio]:[]);
+  const TC_LABEL = {homicidio:'Homicídio Consumado',tentativa_homicidio:'Homicídio Tentado',latrocinio:'Latrocínio',feminicidio:'Feminicídio',roubo:'Roubo',furto:'Furto',trafico:'Tráfico de Drogas',porte_arma:'Porte Ilegal de Arma',cvpa:'CVPA',cvpe:'CVPE',lesao_corporal:'Lesão Corporal',estupro:'Estupro',sequestro:'Sequestro',extorsao:'Extorsão',milicia:'Milícia',outros:'Outros'};
+  const PRIO_LABEL = {baixa:'Baixa',media:'Média',alta:'Alta',critica:'Crítica'};
+  const STAT_LABEL = {em_analise:'Em Análise',monitoramento:'Monitoramento',confirmado:'Confirmado',em_operacao:'Em Operação',encerrado:'Encerrado'};
+  const REINC_LABEL = {nao:'Não',sim:'Sim — Suspeito Reincidente',local:'Sim — Local Reincidente'};
+
+  const addPage = () => { doc.addPage(); y=18; };
+  const chk = (h=8) => { if(y+h > 276) addPage(); };
+
+  /* ── Cabeçalho ── */
+  doc.setFillColor(17,17,17); doc.rect(0,0,PW,28,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(155,138,92);
+  doc.text('FICHA DE INTELIGÊNCIA — 3ª CIA PM MAMB', ML, 10);
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(180,180,180);
+  doc.text(`REDS: ${f.rat||'—'}   |   ${muns.join(', ')||'—'}   |   Gerado em: ${new Date().toLocaleString('pt-BR')}`, ML, 17);
+  doc.setDrawColor(155,138,92); doc.setLineWidth(0.5); doc.line(ML,22,PW-MR,22);
+  y = 32;
+
+  /* ── Badges ── */
+  const prio = f.prioridade ? (PRIO_LABEL[f.prioridade]||f.prioridade).toUpperCase() : '';
+  const stat = f.statusFicha ? (STAT_LABEL[f.statusFicha]||f.statusFicha) : '';
+  if(prio||stat){
+    doc.setFont('helvetica','bold'); doc.setFontSize(9);
+    let bx = ML;
+    if(prio){ doc.setFillColor(50,30,20); doc.roundedRect(bx,y-4,28,6,1.5,1.5,'F'); doc.setTextColor(255,180,100); doc.text('▶ '+prio,bx+2,y); bx+=32; }
+    if(stat){ doc.setFillColor(20,30,50); doc.roundedRect(bx,y-4,32,6,1.5,1.5,'F'); doc.setTextColor(100,180,255); doc.text(stat,bx+2,y); }
+    y += 10;
+  }
+
+  /* ── Linha helper ── */
+  const sec = (title) => {
+    chk(10);
+    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(155,138,92);
+    doc.text(title.toUpperCase(), ML, y); y+=5;
+    doc.setDrawColor(80,70,40); doc.setLineWidth(0.3); doc.line(ML,y,PW-MR,y); y+=4;
+  };
+  const row = (label, val) => {
+    if(!val) return;
+    chk(7);
+    doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(120,120,120);
+    doc.text(label+':', ML, y);
+    doc.setFont('helvetica','normal'); doc.setTextColor(40,40,40);
+    const lines = doc.splitTextToSize(val, TW-32);
+    doc.text(lines, ML+32, y);
+    y += lines.length*5+2;
+  };
+  const block = (label, val) => {
+    if(!val) return;
+    chk(12);
+    doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(120,120,120);
+    doc.text(label+':', ML, y); y+=5;
+    doc.setFont('helvetica','normal'); doc.setTextColor(40,40,40);
+    const lines = doc.splitTextToSize(val, TW);
+    lines.forEach(l => { chk(5); doc.text(l, ML, y); y+=5; });
+    y+=2;
+  };
+
+  /* ── Seção 1: Dados Gerais ── */
+  sec('1. Dados Gerais');
+  const dataFmt = f.dataFato ? new Date(f.dataFato).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
+  row('Nº REDS/BO', f.rat||'—');
+  row('Data / Hora', dataFmt);
+  row('Município', muns.join(', ')||'—');
+  row('Bairro', f.bairro||'');
+  row('Unidade Resp.', f.unidade||'');
+  row('Tipo Criminal', f.tipoCriminal ? TC_LABEL[f.tipoCriminal]||f.tipoCriminal : '');
+  row('Prioridade', prio);
+  row('Status', stat);
+  row('Reincidência', f.reincidencia && f.reincidencia!=='nao' ? REINC_LABEL[f.reincidencia]||f.reincidencia : '');
+  if((f.gpsAtuacao||[]).length){ row('Área de Atuação', f.gpsAtuacao.join(', ')); }
+  y+=4;
+
+  /* ── Seção 2: Envolvidos ── */
+  if(f.suspeitos||f.facao){
+    sec('2. Envolvidos');
+    block('Suspeitos', f.suspeitos||'');
+    row('Facção / Vínculo', f.facao||'');
+    y+=4;
+  }
+
+  /* ── Seção 3: Veículos ── */
+  if(f.veiculos){
+    sec('3. Veículos Suspeitos');
+    block('Veículos', f.veiculos);
+    y+=4;
+  }
+
+  /* ── Seção 4: Modus Operandi e Armas ── */
+  if(f.modus||f.armas){
+    sec('4. Modus Operandi e Armas');
+    block('Modus Operandi', f.modus||'');
+    row('Armas Utilizadas', f.armas||'');
+    y+=4;
+  }
+
+  /* ── Seção 5: Conexões e Observações ── */
+  if(f.conexoes||f.obs){
+    sec('5. Conexões e Observações');
+    row('Conexões c/ outros BOs', f.conexoes||'');
+    block('Observações de Inteligência', f.obs||'');
+    y+=4;
+  }
+
+  /* ── Seção 6: Tags ── */
+  if(f.tags){
+    sec('6. Tags / Palavras-chave');
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(60,60,60);
+    const tags = doc.splitTextToSize(f.tags, TW);
+    doc.text(tags, ML, y); y += tags.length*5+6;
+  }
+
+  /* ── Seção 7: Complementos ── */
+  const comps = (f.complementos||[]).slice().sort((a,b)=>new Date(b.registradoEmISO||0)-new Date(a.registradoEmISO||0));
+  if(comps.length){
+    sec(`7. Complementos (${comps.length})`);
+    const MC_TL = {avistamento:'Avistamento',localizacao:'Localização',veiculo:'Veículo',arma:'Arma/Drogas',movimentacao:'Movimentação',cumplice:'Novo Suspeito',prisao:'Preso',fonte:'Fonte',documento:'Documento',outros:'Outros'};
+    comps.forEach((c,i)=>{
+      chk(14);
+      doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(80,80,80);
+      doc.text(`${i+1}. ${MC_TL[c.tipo||'outros']||'Outros'} — ${c.autor||'—'} — ${c.registradoEm||'—'}`, ML, y); y+=5;
+      if(c.texto){ block('', c.texto); }
+      if(c.providencia){ row('Providência', c.providencia); }
+    });
+    y+=4;
+  }
+
+  /* ── Rodapé ── */
+  chk(12);
+  doc.setDrawColor(200,200,200); doc.setLineWidth(0.3); doc.line(ML,y,PW-MR,y); y+=4;
+  doc.setFont('helvetica','italic'); doc.setFontSize(8); doc.setTextColor(160,160,160);
+  doc.text(`Criado por: ${f.criadoPor||'—'} em ${f.criadoEm||'—'}`, ML, y); y+=4;
+  doc.text('Documento de uso restrito — 3ª CIA PM MAMB / BPM MAMB', ML, y);
+
+  const rat = (f.rat||'ficha').replace(/[^a-zA-Z0-9-]/g,'');
+  doc.save(`inteligencia_${rat}.pdf`);
 }
 
 function idAcaoEditar(){
@@ -9567,17 +9792,19 @@ function _buildPdfPrioridade(meses, pel) {
     </div>
     <div class="id-badges" id="idr-badges" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;"></div>
   </div>
-  <div class="id-tabs">
+  <div class="id-tabs" style="overflow-x:auto;flex-shrink:0;">
     <div class="id-tab active" onclick="idSwitchTab(this,'geral')">Dados Gerais</div>
     <div class="id-tab" onclick="idSwitchTab(this,'narrativa')">Narrativa</div>
-    <div class="id-tab" onclick="idSwitchTab(this,'comps')">Complementos</div>
+    <div class="id-tab" onclick="idSwitchTab(this,'envolvidos')">Envolvidos</div>
+    <div class="id-tab" onclick="idSwitchTab(this,'veiculos')">Veículos</div>
     <div class="id-tab" onclick="idSwitchTab(this,'anexos')">Arquivos</div>
+    <div class="id-tab" onclick="idSwitchTab(this,'comps')">Complementos</div>
   </div>
   <div class="id-body" id="idr-body"></div>
   <div class="id-footer">
     <button class="id-footer-btn" id="idr-btn-editar" onclick="idAcaoEditar()">✏ Editar</button>
     <button class="id-footer-btn primary" onclick="idAcaoComplementar()">📝 Complementar</button>
-    <button class="id-footer-btn" onclick="idAcaoExpandir()">⛶ Expandir</button>
+    <button class="id-footer-btn" onclick="idExportarPDF()" style="background:#1b5e20;border-color:#2e7d32;color:#a5d6a7;">⬇ Exportar PDF</button>
     <button class="id-footer-btn danger" id="idr-btn-excluir" onclick="idAcaoExcluir()" style="display:none">✕</button>
   </div>
 </div>
