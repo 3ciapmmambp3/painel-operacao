@@ -8094,12 +8094,26 @@ function idRenderTab(tab){
 
   } else if(tab === 'envolvidos'){
     const susp = (f.suspeitos||'').split('\n').map(l=>l.trim()).filter(Boolean);
+    /* Detecta role pela linha: AUTOR / VÍTIMA / SUSPEITO */
+    const roleConf = {
+      autor:   { label:'AUTOR',   bg:'rgba(255,152,0,.2)',  color:'#ffb74d', border:'rgba(255,152,0,.5)'  },
+      vitima:  { label:'VÍTIMA',  bg:'rgba(66,165,245,.2)', color:'#90caf9', border:'rgba(66,165,245,.5)' },
+      suspeito:{ label:'SUSPEITO',bg:'rgba(239,83,80,.2)',  color:'#ef9a9a', border:'rgba(239,83,80,.5)'  },
+    };
+    const detectRole = (s) => {
+      const u = s.toUpperCase();
+      if(u.startsWith('AUTOR'))                       return 'autor';
+      if(u.startsWith('VÍTIMA')||u.startsWith('VITIMA')) return 'vitima';
+      return 'suspeito';
+    };
+    const stripPrefix = (s) => s.replace(/^(autor|v[ií]tima|suspeito):?\s*/i,'');
     const roles = susp.length
-      ? susp.map(s=>`<div style="background:#1e1e1e;border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:9px 12px;margin-bottom:6px;display:flex;align-items:center;gap:10px;">
-          <span style="font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px;background:rgba(239,83,80,.2);color:#ef9a9a;flex-shrink:0;">SUSPEITO</span>
-          <span style="font-size:12px;color:#e0e0e0;">${s}</span>
-        </div>`).join('')
-      : '<div class="empty-state" style="margin-top:10px;">Nenhum suspeito cadastrado.</div>';
+      ? susp.map(s=>{ const r=detectRole(s); const c=roleConf[r]; const nome=stripPrefix(s);
+          return `<div style="background:#1e1e1e;border:1px solid rgba(255,255,255,.08);border-radius:6px;padding:9px 12px;margin-bottom:6px;display:flex;align-items:center;gap:10px;">
+          <span style="font-size:9px;font-weight:700;padding:2px 8px;border-radius:3px;background:${c.bg};color:${c.color};border:1px solid ${c.border};flex-shrink:0;">${c.label}</span>
+          <span style="font-size:12px;color:#e0e0e0;">${nome}</span>
+        </div>`;}).join('')
+      : '<div class="empty-state" style="margin-top:10px;">Nenhum envolvido cadastrado.</div>';
     const faccaoHtml = f.facao
       ? `<div style="margin-top:10px;padding:10px 12px;background:rgba(239,83,80,.08);border:1px solid rgba(239,83,80,.25);border-radius:6px;">
           <div class="id-section-label" style="margin-bottom:4px;">🕵 Facção / Vínculo Criminal</div>
@@ -8169,6 +8183,26 @@ async function idExportarPDF(){
   const { jsPDF } = window.jspdf;
   if(!jsPDF){ alert('Biblioteca PDF não carregada.'); return; }
 
+  /* ── Converte imagens para base64 via fetch ── */
+  const imgToB64 = async (url) => {
+    try {
+      const r = await fetch(url);
+      const blob = await r.blob();
+      return await new Promise(res => { const rd = new FileReader(); rd.onload=()=>res(rd.result); rd.readAsDataURL(blob); });
+    } catch(e){ return null; }
+  };
+
+  /* Pré-carrega imagens dos anexos da ficha */
+  const fotosImg = await Promise.all((f.fotos||[]).map(async a => {
+    const tipo = a.tipo||_tipoFromNome(a.nome||'');
+    if(!tipo.startsWith('image')) return null;
+    const src = a.storage_url||a.base64||'';
+    if(!src) return null;
+    const b64 = src.startsWith('data:') ? src : await imgToB64(src);
+    return b64 ? { b64, nome: a.nome||'', tipo } : null;
+  }));
+  const fotasOk = fotosImg.filter(Boolean);
+
   const doc = new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
   const PW=210, ML=20, MR=20, TW=PW-ML-MR;
   let y = 18;
@@ -8186,129 +8220,189 @@ async function idExportarPDF(){
   doc.setFillColor(17,17,17); doc.rect(0,0,PW,28,'F');
   doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(155,138,92);
   doc.text('FICHA DE INTELIGÊNCIA — 3ª CIA PM MAMB', ML, 10);
-  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(180,180,180);
-  doc.text(`REDS: ${f.rat||'—'}   |   ${muns.join(', ')||'—'}   |   Gerado em: ${new Date().toLocaleString('pt-BR')}`, ML, 17);
-  doc.setDrawColor(155,138,92); doc.setLineWidth(0.5); doc.line(ML,22,PW-MR,22);
-  y = 32;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(180,180,180);
+  const cabLine = `REDS: ${f.rat||'—'}   |   ${muns.join(', ')||'—'}   |   ${new Date().toLocaleString('pt-BR')}`;
+  doc.text(cabLine, ML, 18);
+  doc.setDrawColor(155,138,92); doc.setLineWidth(0.5); doc.line(0,25,PW,25);
+  y = 33;
 
-  /* ── Badges ── */
+  /* ── Badges prioridade + status ── */
   const prio = f.prioridade ? (PRIO_LABEL[f.prioridade]||f.prioridade).toUpperCase() : '';
   const stat = f.statusFicha ? (STAT_LABEL[f.statusFicha]||f.statusFicha) : '';
   if(prio||stat){
-    doc.setFont('helvetica','bold'); doc.setFontSize(9);
+    doc.setFontSize(8.5);
     let bx = ML;
-    if(prio){ doc.setFillColor(50,30,20); doc.roundedRect(bx,y-4,28,6,1.5,1.5,'F'); doc.setTextColor(255,180,100); doc.text('▶ '+prio,bx+2,y); bx+=32; }
-    if(stat){ doc.setFillColor(20,30,50); doc.roundedRect(bx,y-4,32,6,1.5,1.5,'F'); doc.setTextColor(100,180,255); doc.text(stat,bx+2,y); }
+    if(prio){
+      const pw = doc.getTextWidth('  '+prio+'  ');
+      doc.setFillColor(50,30,10); doc.roundedRect(bx,y-4,pw+2,6,1.5,1.5,'F');
+      doc.setFont('helvetica','bold'); doc.setTextColor(255,180,80); doc.text(prio,bx+2,y); bx+=pw+6;
+    }
+    if(stat){
+      const sw = doc.getTextWidth('  '+stat+'  ');
+      doc.setFillColor(15,30,55); doc.roundedRect(bx,y-4,sw+2,6,1.5,1.5,'F');
+      doc.setFont('helvetica','bold'); doc.setTextColor(90,170,255); doc.text(stat,bx+2,y);
+    }
     y += 10;
   }
 
-  /* ── Linha helper ── */
+  /* ── Helpers ── */
   const sec = (title) => {
-    chk(10);
+    chk(12);
     doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(155,138,92);
-    doc.text(title.toUpperCase(), ML, y); y+=5;
-    doc.setDrawColor(80,70,40); doc.setLineWidth(0.3); doc.line(ML,y,PW-MR,y); y+=4;
+    doc.text(title, ML, y); y+=3;
+    doc.setDrawColor(100,85,50); doc.setLineWidth(0.4); doc.line(ML,y,PW-MR,y); y+=5;
   };
+
+  /* row: label largura fixa 42mm, valor na coluna ao lado */
+  const LW = 42;
   const row = (label, val) => {
     if(!val) return;
-    chk(7);
-    doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(120,120,120);
+    const valLines = doc.splitTextToSize(String(val), TW-LW-2);
+    const h = valLines.length * 5 + 2;
+    chk(h);
+    doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(100,100,100);
     doc.text(label+':', ML, y);
-    doc.setFont('helvetica','normal'); doc.setTextColor(40,40,40);
-    const lines = doc.splitTextToSize(val, TW-32);
-    doc.text(lines, ML+32, y);
-    y += lines.length*5+2;
+    doc.setFont('helvetica','normal'); doc.setTextColor(30,30,30);
+    doc.text(valLines, ML+LW, y);
+    y += h;
   };
+
+  /* block: label em linha própria, texto abaixo identado */
   const block = (label, val) => {
     if(!val) return;
-    chk(12);
-    doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(120,120,120);
-    doc.text(label+':', ML, y); y+=5;
-    doc.setFont('helvetica','normal'); doc.setTextColor(40,40,40);
-    const lines = doc.splitTextToSize(val, TW);
-    lines.forEach(l => { chk(5); doc.text(l, ML, y); y+=5; });
+    const txtLines = doc.splitTextToSize(String(val), TW);
+    const h = (label ? 5 : 0) + txtLines.length*5 + 3;
+    chk(h);
+    if(label){
+      doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(100,100,100);
+      doc.text(label+':', ML, y); y+=5;
+    }
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(30,30,30);
+    txtLines.forEach(l => { chk(5); doc.text(l, ML, y); y+=5; });
     y+=2;
   };
 
   /* ── Seção 1: Dados Gerais ── */
-  sec('1. Dados Gerais');
+  sec('1. DADOS GERAIS');
   const dataFmt = f.dataFato ? new Date(f.dataFato).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
   row('Nº REDS/BO', f.rat||'—');
   row('Data / Hora', dataFmt);
   row('Município', muns.join(', ')||'—');
-  row('Bairro', f.bairro||'');
-  row('Unidade Resp.', f.unidade||'');
-  row('Tipo Criminal', f.tipoCriminal ? TC_LABEL[f.tipoCriminal]||f.tipoCriminal : '');
-  row('Prioridade', prio);
-  row('Status', stat);
-  row('Reincidência', f.reincidencia && f.reincidencia!=='nao' ? REINC_LABEL[f.reincidencia]||f.reincidencia : '');
-  if((f.gpsAtuacao||[]).length){ row('Área de Atuação', f.gpsAtuacao.join(', ')); }
+  if(f.bairro)    row('Bairro', f.bairro);
+  if(f.unidade)   row('Unidade Resp.', f.unidade);
+  row('Tipo Criminal', f.tipoCriminal ? TC_LABEL[f.tipoCriminal]||f.tipoCriminal : '—');
+  if(prio)        row('Prioridade', prio);
+  if(stat)        row('Status', stat);
+  if(f.reincidencia && f.reincidencia!=='nao') row('Reincidência', REINC_LABEL[f.reincidencia]);
+  if((f.gpsAtuacao||[]).length) row('Área de Atuação', f.gpsAtuacao.join(', '));
   y+=4;
 
   /* ── Seção 2: Envolvidos ── */
   if(f.suspeitos||f.facao){
-    sec('2. Envolvidos');
-    block('Suspeitos', f.suspeitos||'');
-    row('Facção / Vínculo', f.facao||'');
+    sec('2. ENVOLVIDOS');
+    if(f.suspeitos){
+      /* Detecta prefixos AUTOR / VÍTIMA por linha */
+      const envLines = f.suspeitos.split('\n').map(l=>l.trim()).filter(Boolean);
+      envLines.forEach(l => {
+        const upper = l.toUpperCase();
+        let role = 'SUSPEITO', cor = [150,30,30], nome = l;
+        if(upper.startsWith('AUTOR') || upper.startsWith('AUTOR:'))      { role='AUTOR';  cor=[180,60,0];  nome=l.replace(/^autor:?\s*/i,''); }
+        else if(upper.startsWith('VÍTIMA') || upper.startsWith('VITIMA') ||
+                upper.startsWith('VÍTIMA:') || upper.startsWith('VITIMA:')){ role='VÍTIMA'; cor=[30,80,160]; nome=l.replace(/^v[ií]tima:?\s*/i,''); }
+        else if(upper.startsWith('SUSPEITO') || upper.startsWith('SUSPEITO:')){ role='SUSPEITO'; nome=l.replace(/^suspeito:?\s*/i,''); }
+        chk(8);
+        const rw = doc.getTextWidth(role)+6;
+        doc.setFillColor(...cor); doc.roundedRect(ML,y-4,rw,5.5,1,1,'F');
+        doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(255,255,255);
+        doc.text(role, ML+2, y);
+        doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(30,30,30);
+        const nomeLines = doc.splitTextToSize(nome, TW-rw-4);
+        doc.text(nomeLines, ML+rw+4, y);
+        y += Math.max(nomeLines.length*5, 5)+2;
+      });
+    }
+    if(f.facao){ y+=2; row('Facção / Vínculo', f.facao); }
     y+=4;
   }
 
   /* ── Seção 3: Veículos ── */
   if(f.veiculos){
-    sec('3. Veículos Suspeitos');
-    block('Veículos', f.veiculos);
-    y+=4;
+    sec('3. VEÍCULOS SUSPEITOS');
+    block('', f.veiculos);
+    y+=2;
   }
 
   /* ── Seção 4: Modus Operandi e Armas ── */
   if(f.modus||f.armas){
-    sec('4. Modus Operandi e Armas');
-    block('Modus Operandi', f.modus||'');
-    row('Armas Utilizadas', f.armas||'');
-    y+=4;
+    sec('4. MODUS OPERANDI E ARMAS');
+    if(f.modus)  block('Modus Operandi', f.modus);
+    if(f.armas)  row('Armas Utilizadas', f.armas);
+    y+=2;
   }
 
   /* ── Seção 5: Conexões e Observações ── */
   if(f.conexoes||f.obs){
-    sec('5. Conexões e Observações');
-    row('Conexões c/ outros BOs', f.conexoes||'');
-    block('Observações de Inteligência', f.obs||'');
-    y+=4;
+    sec('5. CONEXÕES E OBSERVAÇÕES');
+    if(f.conexoes) block('Conexões c/ outros BOs', f.conexoes);
+    if(f.obs)      block('Observações de Inteligência', f.obs);
+    y+=2;
   }
 
   /* ── Seção 6: Tags ── */
   if(f.tags){
-    sec('6. Tags / Palavras-chave');
-    doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(60,60,60);
+    sec('6. TAGS / PALAVRAS-CHAVE');
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(50,50,50);
     const tags = doc.splitTextToSize(f.tags, TW);
-    doc.text(tags, ML, y); y += tags.length*5+6;
+    chk(tags.length*5+4);
+    doc.text(tags, ML, y); y+=tags.length*5+5;
   }
 
-  /* ── Seção 7: Complementos ── */
+  /* ── Seção 7: Arquivos / Fotos ── */
+  if(fotasOk.length){
+    sec('7. ARQUIVOS FOTOGRÁFICOS');
+    const IMG_W=55, IMG_H=42, GAP=5;
+    let ix=ML;
+    for(const ft of fotasOk){
+      if(ix+IMG_W > PW-MR){ ix=ML; y+=IMG_H+GAP+8; }
+      chk(IMG_H+10);
+      try{
+        const ext = ft.tipo.includes('png')?'PNG':'JPEG';
+        doc.addImage(ft.b64, ext, ix, y, IMG_W, IMG_H);
+        doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(80,80,80);
+        const nm = doc.splitTextToSize(ft.nome, IMG_W);
+        doc.text(nm[0], ix, y+IMG_H+3);
+      } catch(e){ /* skip falha */ }
+      ix+=IMG_W+GAP;
+    }
+    y+=IMG_H+12;
+  }
+
+  /* ── Seção 8: Complementos ── */
   const comps = (f.complementos||[]).slice().sort((a,b)=>new Date(b.registradoEmISO||0)-new Date(a.registradoEmISO||0));
   if(comps.length){
-    sec(`7. Complementos (${comps.length})`);
-    const MC_TL = {avistamento:'Avistamento',localizacao:'Localização',veiculo:'Veículo',arma:'Arma/Drogas',movimentacao:'Movimentação',cumplice:'Novo Suspeito',prisao:'Preso',fonte:'Fonte',documento:'Documento',outros:'Outros'};
+    sec(`8. COMPLEMENTOS (${comps.length})`);
+    const MC_TL={avistamento:'Avistamento',localizacao:'Localização',veiculo:'Veículo',arma:'Arma/Drogas',movimentacao:'Movimentação',cumplice:'Novo Suspeito',prisao:'Preso',fonte:'Fonte',documento:'Documento',outros:'Outros'};
     comps.forEach((c,i)=>{
-      chk(14);
+      chk(12);
       doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(80,80,80);
       doc.text(`${i+1}. ${MC_TL[c.tipo||'outros']||'Outros'} — ${c.autor||'—'} — ${c.registradoEm||'—'}`, ML, y); y+=5;
-      if(c.texto){ block('', c.texto); }
-      if(c.providencia){ row('Providência', c.providencia); }
+      if(c.texto)      block('', c.texto);
+      if(c.providencia) row('Providência', c.providencia);
+      y+=2;
     });
-    y+=4;
   }
 
   /* ── Rodapé ── */
-  chk(12);
+  chk(14);
   doc.setDrawColor(200,200,200); doc.setLineWidth(0.3); doc.line(ML,y,PW-MR,y); y+=4;
-  doc.setFont('helvetica','italic'); doc.setFontSize(8); doc.setTextColor(160,160,160);
+  doc.setFont('helvetica','italic'); doc.setFontSize(7.5); doc.setTextColor(150,150,150);
   doc.text(`Criado por: ${f.criadoPor||'—'} em ${f.criadoEm||'—'}`, ML, y); y+=4;
   doc.text('Documento de uso restrito — 3ª CIA PM MAMB / BPM MAMB', ML, y);
 
   const rat = (f.rat||'ficha').replace(/[^a-zA-Z0-9-]/g,'');
   doc.save(`inteligencia_${rat}.pdf`);
 }
+
 
 function idAcaoEditar(){
   const id = _drawerFichaId; if(!id) return;
