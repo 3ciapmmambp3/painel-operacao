@@ -2664,7 +2664,8 @@ async function carregarOpsGdo(){
   try {
     const r = await fetch(
       `${SB_URL}/rest/v1/bd_operacoes?select=numero_rat,data_fato,municipio,codigo_natureza_principal,` +
-      `descricao_localizacao,latitude,longitude,opr_tempo_total_minutos,unid_registro,unid_area_nivel_4` +
+      `descricao_localizacao,latitude,longitude,opr_tempo_total_minutos,unid_registro,unid_area_nivel_4,` +
+      `efetivos,viaturas,produtividade,rat_referencia` +
       `&limit=100000&order=data_fato`,
       { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
     );
@@ -2693,6 +2694,16 @@ async function carregarOpsGdo(){
       else if(p2) mesIdx = parseInt(p2[2]) - 1;
       const mes = (mesIdx >= 0 && mesIdx < MESES.length) ? MESES[mesIdx] : '';
 
+      /* Extrai campos de validação GDO */
+      const _tempo     = parseInt(r.opr_tempo_total_minutos) || 0;
+      const _militares = ((r.efetivos||'').toString().match(/numeroPolicia:/g)||[]).length;
+      const _viaturas  = ((r.viaturas||'').toString().match(/prefixo:/g)||[]).length;
+      const _prodStr   = (r.produtividade||'').toString();
+      const _mPess     = _prodStr.match(/idIndicador:15\/[^|]*quantidade:(\d+)/);
+      const _mVeic     = _prodStr.match(/idIndicador:18\/[^|]*quantidade:(\d+)/);
+      const _pessoas   = _mPess ? parseInt(_mPess[1]) : 0;
+      const _veiculos  = _mVeic ? parseInt(_mVeic[1]) : 0;
+
       dadosGdoRural.push({
         rat:        (r.numero_rat || '').toString().trim(),
         mes, data:  dataStr, municipio,
@@ -2701,6 +2712,12 @@ async function carregarOpsGdo(){
         natureza:   nat,
         grupamento: munMap[norm(municipio)]      || '',
         gpCurto:    munMapCurto[norm(municipio)] || '',
+        tempo:      _tempo,
+        militares:  _militares,
+        viaturas:   _viaturas,
+        pessoas:    _pessoas,
+        veiculos:   _veiculos,
+        ratRefs:    Array.isArray(r.rat_referencia) ? r.rat_referencia : (r.rat_referencia ? [r.rat_referencia] : []),
       });
     });
     console.log('[carregarOpsGdo] Supabase:', dadosGdoRural.length, 'ops GDO Rural');
@@ -4795,10 +4812,12 @@ function mostrarTooltipCrz(btn, idx){
           <td style="padding:5px 10px;font-weight:700;color:#fff;white-space:nowrap;font-size:11px;">${op.rat}</td>
           <td style="padding:5px 10px;">
             <span style="background:${op.cor}22;color:${op.cor};border:1px solid ${op.cor}55;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:700;">${op.nat}</span>
+            ${op.isDireto?'<span style="background:rgba(66,165,245,.15);color:#42a5f5;border:1px solid rgba(66,165,245,.4);padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;margin-left:4px;">🔗 DIRETO</span>':'<span style="background:rgba(155,138,92,.1);color:var(--gold);border:1px solid var(--gold-border);padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;margin-left:4px;">📡 RAIO</span>'}
+            ${op.validada?'':'<span style="background:rgba(239,83,80,.1);color:var(--danger);border:1px solid rgba(239,83,80,.3);padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;margin-left:2px;">⚠ INVÁLIDA</span>'}
           </td>
           <td style="padding:5px 10px;color:#bbb;font-size:11px;">${op.label}</td>
           <td style="padding:5px 10px;color:#aaa;white-space:nowrap;font-size:11px;">${op.data}</td>
-          <td style="padding:5px 10px;font-weight:700;font-size:11px;color:${parseFloat(op.dist)<5?'var(--success)':parseFloat(op.dist)<10?'#ff9800':'var(--danger)'};">${op.dist} km</td>
+          <td style="padding:5px 10px;font-weight:700;font-size:11px;color:${op.dist==='—'?'var(--text-muted)':parseFloat(op.dist)<5?'var(--success)':parseFloat(op.dist)<10?'#ff9800':'var(--danger)'};">${op.dist} km</td>
         </tr>`).join('')}
       </tbody>
     </table>
@@ -5069,6 +5088,209 @@ async function _salvarBoRef(bosVisita, boRefs) {
 }
 
 
+/* ══════════════════════════════════
+   VÍNCULO DIRETO RAT OPERAÇÃO ↔ CRIME
+══════════════════════════════════ */
+
+function _abrirModalVinculoRat(boCrime) {
+  const prev = document.getElementById('_modal-vinculo-rat');
+  if(prev) prev.remove();
+
+  const modal = document.createElement('div');
+  modal.id = '_modal-vinculo-rat';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:10000;display:flex;align-items:center;justify-content:center;';
+
+  const opsVinculadas = dadosGdoRural.filter(op => op.ratRefs && op.ratRefs.includes(boCrime));
+
+  modal.innerHTML = `
+    <div style="background:#1e1e1e;border:1px solid rgba(155,138,92,.4);border-radius:10px;padding:20px 24px;width:680px;max-width:92vw;min-height:420px;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.8);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div style="font-size:13px;font-weight:700;color:var(--gold);">🔗 Vincular RAT de Operação ao Crime</div>
+        <button onclick="document.getElementById('_modal-vinculo-rat').remove()" style="background:none;border:none;color:var(--text-muted);font-size:18px;cursor:pointer;line-height:1;">✕</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;">
+        BO do Crime: <span style="font-family:monospace;color:#fff;font-weight:700;">${boCrime}</span>
+      </div>
+
+      <!-- Ops já vinculadas -->
+      <div id="_vrat-lista" style="margin-bottom:14px;"></div>
+
+      <!-- Campo de busca -->
+      <div style="margin-bottom:10px;position:relative;">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Buscar RAT da operação para vincular: <span style="color:#ff9800;">(apenas operações que passam nos critérios GDO Rural)</span></div>
+        <input id="_vrat-input" type="text" placeholder="Ex: 2026-012345678-001"
+          autocomplete="off"
+          style="width:100%;box-sizing:border-box;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:8px 10px;border-radius:5px;font-size:12px;font-family:monospace;"
+          oninput="mascaraBO(this);_vratBuscar(this.value,'${boCrime}')">
+        <div id="_vrat-autocomplete" style="position:absolute;left:0;right:0;background:#252525;border:1px solid rgba(155,138,92,.3);border-top:none;border-radius:0 0 6px 6px;z-index:10001;display:none;max-height:350px;overflow-y:auto;"></div>
+      </div>
+
+      <!-- Observação obrigatória -->
+      <div style="margin-bottom:14px;">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Observação <span style="color:var(--danger);">*</span> <span style="color:var(--text-hint);">(obrigatório — justifique o vínculo)</span></div>
+        <textarea id="_vrat-obs" rows="3" placeholder="Descreva o motivo do vínculo desta operação ao crime..."
+          style="width:100%;box-sizing:border-box;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:8px 10px;border-radius:5px;font-size:12px;resize:vertical;font-family:inherit;"></textarea>
+      </div>
+
+      <div id="_vrat-msg" style="font-size:11px;margin-top:8px;"></div>
+    </div>`;
+
+  document.body.appendChild(modal);
+  _vratRenderLista(boCrime, opsVinculadas);
+  modal.addEventListener('click', e => { if(e.target === modal) modal.remove(); });
+  setTimeout(() => document.getElementById('_vrat-input')?.focus(), 100);
+}
+
+function _vratRenderLista(boCrime, opsVinc) {
+  const el = document.getElementById('_vrat-lista');
+  if(!el) return;
+  if(!opsVinc.length) {
+    el.innerHTML = '<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Nenhuma operação vinculada diretamente ainda.</div>';
+    return;
+  }
+  el.innerHTML = `
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">RATs vinculados a este crime:</div>
+    <div style="display:flex;flex-direction:column;gap:4px;">
+      ${opsVinc.map(op => `
+        <div style="display:flex;justify-content:space-between;align-items:center;background:#1a2010;border:1px solid rgba(155,138,92,.3);border-radius:4px;padding:6px 10px;gap:8px;">
+          <div style="display:flex;flex-direction:column;gap:2px;">
+            <span style="font-family:monospace;font-size:11px;color:var(--gold);font-weight:700;">${op.rat}</span>
+            <span style="font-size:10px;color:var(--text-muted);">${op.data||'—'} · ${op.municipio||'—'} · ${LABEL_NAT_OPS_CRZ[op.natureza]||op.natureza}</span>
+          </div>
+          <button onclick="_vratRemover('${op.rat}','${boCrime}')"
+            style="background:none;border:1px solid rgba(239,83,80,.4);color:var(--danger);font-size:11px;cursor:pointer;padding:2px 7px;border-radius:3px;white-space:nowrap;">✕ Remover</button>
+        </div>`).join('')}
+    </div>`;
+}
+
+function _vratBuscar(termo, boCrime) {
+  const ac = document.getElementById('_vrat-autocomplete');
+  if(!ac) return;
+  const t = (termo||'').trim();
+  if(t.length < 3) { ac.style.display = 'none'; ac.innerHTML = ''; return; }
+
+  /* Apenas ops que passam nos critérios GDO Rural */
+  const validas = dadosGdoRural.filter(op =>
+    _gdoValidaOp(op) && (op.rat||'').toLowerCase().includes(t.toLowerCase())
+  ).slice(0, 10);
+
+  if(!validas.length) {
+    ac.innerHTML = '<div style="padding:8px 12px;font-size:11px;color:var(--danger);">✗ Nenhuma operação válida encontrada.</div>';
+    ac.style.display = 'block';
+    return;
+  }
+
+  ac.innerHTML = validas.map((op, _i) => {
+    const jaVinc = op.ratRefs && op.ratRefs.includes(boCrime);
+    const jaRaio = dadosGdoRural.some(o => o.rat === op.rat &&
+      window._crzTooltipData && Object.values(window._crzTooltipData).some(d =>
+        d.bo === boCrime && d.ops && d.ops.some(o2 => o2.rat === op.rat && !o2.isDireto)
+      ));
+    const hId = '_vrac_' + _i;
+    return '<div id="' + hId + '" onclick="_vratSelecionar('' + op.rat.replace(/'/g,"\'") + '','' + boCrime.replace(/'/g,"\'") + '')"'
+      + ' style="padding:8px 12px;cursor:' + (jaVinc?'default':'pointer') + ';border-bottom:1px solid #2a2a2a;' + (jaVinc?'opacity:.5;':'') + 'transition:background .15s;">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;">'
+      + '<div>'
+      + '<span style="font-family:monospace;font-size:11px;color:var(--gold);font-weight:700;">' + op.rat + '</span>'
+      + '<span style="font-size:10px;color:var(--text-muted);margin-left:8px;">' + (op.data||'—') + ' · ' + (op.municipio||'—') + '</span>'
+      + '<span style="margin-left:6px;font-size:10px;color:var(--text-muted);">' + (LABEL_NAT_OPS_CRZ[op.natureza]||op.natureza) + '</span>'
+      + '</div>'
+      + (jaVinc ? '<span style="font-size:10px;color:#42a5f5;">🔗 já vinculado</span>' : '')
+      + '</div>'
+      + '<div style="margin-top:3px;font-size:10px;color:var(--text-hint);">'
+      + '⏱ ' + op.tempo + 'min · 👮 ' + op.militares + ' mil. · 🚗 ' + op.viaturas + ' viat.'
+      + ((['Y07001','Y07002'].includes(op.natureza)) ? ' · 👥 ' + op.pessoas + ' pess. · 🚘 ' + op.veiculos + ' veic.' : '')
+      + '</div>'
+      + '</div>';
+  }).join('');
+  ac.style.display = 'block';
+
+  validas.forEach((_op, _i) => {
+    const el2 = document.getElementById('_vrac_' + _i);
+    if(el2) { el2.addEventListener('mouseenter', ()=>el2.style.background='#2a2a2a'); el2.addEventListener('mouseleave', ()=>el2.style.background=''); }
+  });
+}
+
+async function _vratSelecionar(rat, boCrime) {
+  const ac  = document.getElementById('_vrat-autocomplete');
+  const inp = document.getElementById('_vrat-input');
+  const msg = document.getElementById('_vrat-msg');
+  if(ac)  { ac.style.display='none'; ac.innerHTML=''; }
+  if(inp) inp.value = rat;
+
+  const op = dadosGdoRural.find(o => o.rat === rat);
+  if(!op) { if(msg) msg.innerHTML = '<span style="color:var(--danger);">✗ RAT não encontrado.</span>'; return; }
+  if(!_gdoValidaOp(op)) { if(msg) msg.innerHTML = '<span style="color:var(--danger);">✗ Esta operação não passa nos critérios GDO Rural.</span>'; return; }
+  if(op.ratRefs && op.ratRefs.includes(boCrime)) {
+    if(msg) msg.innerHTML = '<span style="color:#42a5f5;">Esta operação já está vinculada a este crime.</span>';
+    return;
+  }
+
+  /* Verificar observação */
+  const obs = (document.getElementById('_vrat-obs')?.value||'').trim();
+  if(!obs) {
+    const obsEl = document.getElementById('_vrat-obs');
+    if(obsEl) { obsEl.style.borderColor='var(--danger)'; obsEl.focus(); }
+    if(msg) msg.innerHTML = '<span style="color:var(--danger);">⚠ Observação obrigatória — justifique o vínculo antes de vincular.</span>';
+    return;
+  }
+
+  const novosRefs = [...new Set([...(op.ratRefs||[]), boCrime])];
+  if(msg) msg.innerHTML = '<span style="color:var(--text-muted);">Salvando...</span>';
+  const ok = await _salvarRatRef(rat, novosRefs);
+  if(ok) {
+    op.ratRefs = novosRefs;
+    if(inp) inp.value = '';
+    if(document.getElementById('_vrat-obs')) document.getElementById('_vrat-obs').value = '';
+    const opsVinc = dadosGdoRural.filter(o => o.ratRefs && o.ratRefs.includes(boCrime));
+    _vratRenderLista(boCrime, opsVinc);
+    if(msg) msg.innerHTML = '<span style="color:var(--success);">✔ RAT vinculado com sucesso.</span>';
+    renderCruzamento();
+  } else {
+    if(msg) msg.innerHTML = '<span style="color:var(--danger);">✗ Erro ao salvar. Tente novamente.</span>';
+  }
+}
+
+async function _vratRemover(rat, boCrime) {
+  const op = dadosGdoRural.find(o => o.rat === rat);
+  if(!op) return;
+  const novosRefs = (op.ratRefs||[]).filter(b => b !== boCrime);
+  const msg = document.getElementById('_vrat-msg');
+  if(msg) msg.innerHTML = '<span style="color:var(--text-muted);">Removendo...</span>';
+  const ok = await _salvarRatRef(rat, novosRefs);
+  if(ok) {
+    op.ratRefs = novosRefs;
+    const opsVinc = dadosGdoRural.filter(o => o.ratRefs && o.ratRefs.includes(boCrime));
+    _vratRenderLista(boCrime, opsVinc);
+    if(msg) msg.innerHTML = '<span style="color:var(--success);">✔ Vínculo removido.</span>';
+    renderCruzamento();
+  } else {
+    if(msg) msg.innerHTML = '<span style="color:var(--danger);">✗ Erro ao remover.</span>';
+  }
+}
+
+async function _salvarRatRef(rat, ratRefs) {
+  try {
+    const res = await fetch(
+      `${SB_URL}/rest/v1/bd_operacoes?numero_rat=eq.${encodeURIComponent(rat)}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'apikey': SB_KEY,
+          'Authorization': 'Bearer ' + SB_KEY,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({ rat_referencia: ratRefs })
+      }
+    );
+    return res.ok;
+  } catch(e) {
+    console.error('[_salvarRatRef]', e);
+    return false;
+  }
+}
+
 function ocultarTooltipCrz(){
   const tt = document.getElementById('crz-tooltip-float');
   if(tt) tt.style.display = 'none';
@@ -5086,6 +5308,20 @@ function parseDataDDMMAAAA(s){
   const m = s.match(/(\d{2})\/(\d{2})\/(\d{4})/);
   if(!m) return null;
   return new Date(m[3], m[2]-1, m[1]);
+}
+
+/* Valida se operação GDO Rural passa nos critérios — igual ao painel.html */
+function _gdoValidaOp(op) {
+  const nat = op.natureza;
+  if(!['Y07001','Y07002','Y07014'].includes(nat)) return false;
+  if((op.tempo     || 0) <  30) return false;
+  if((op.militares || 0) <   2) return false;
+  if((op.viaturas  || 0) <   1) return false;
+  if(nat === 'Y07001' || nat === 'Y07002') {
+    if((op.pessoas  || 0) < 2) return false;
+    if((op.veiculos || 0) < 1) return false;
+  }
+  return true;
 }
 
 function renderCruzamento(){
@@ -5109,8 +5345,10 @@ function renderCruzamento(){
 
   const resultados = crimes.map(crime => {
     const dataCrime = parseDataDDMMAAAA(crime.data||'');
-    /* Busca operações no raio e período */
+    /* Busca operações no raio e período + vínculos diretos */
     const opsProximas = dadosGdoRural.filter(op => {
+      /* Vínculo direto: sempre inclui independente de raio/período */
+      if(op.ratRefs && op.ratRefs.includes(crime.bo || crime.rat || '')) return true;
       if(!op.lat||!op.lng) return false;
       const dist = distanciaKm(crime.lat, crime.lng, op.lat, op.lng);
       if(dist > raio) return false;
@@ -5214,13 +5452,16 @@ function renderCruzamento(){
 
     /* Guarda dados das ops + visitas para o tooltip */
     window._crzTooltipData[idx] = {
+      bo: r.crime.bo || r.crime.rat || '',
       ops: r.opsProximas.map(op => ({
-        rat:   op.rat,
-        nat:   op.natureza,
-        label: LABEL_NAT_OPS_CRZ[op.natureza] || op.natureza,
-        cor:   COR_NAT_OPS_CRZ[op.natureza]   || '#4caf50',
-        data:  op.data || '—',
-        dist:  distanciaKm(r.crime.lat, r.crime.lng, op.lat, op.lng).toFixed(1),
+        rat:       op.rat,
+        nat:       op.natureza,
+        label:     LABEL_NAT_OPS_CRZ[op.natureza] || op.natureza,
+        cor:       COR_NAT_OPS_CRZ[op.natureza]   || '#4caf50',
+        data:      op.data || '—',
+        dist:      (op.lat && op.lng) ? distanciaKm(r.crime.lat, r.crime.lng, op.lat, op.lng).toFixed(1) : '—',
+        isDireto:  op.ratRefs && op.ratRefs.includes(r.crime.bo || r.crime.rat || ''),
+        validada:  _gdoValidaOp(op),
       })),
       visitas: visitasVinc.map(v => ({
         bo:       v.bo,
@@ -5266,6 +5507,9 @@ function renderCruzamento(){
           <div class="cruzamento-distancia ${distClass}">${distLabel}</div>
           ${r.opsProximas.length ? `<div style="font-size:10px;color:var(--text-muted);">${r.opsProximas.length} op${r.opsProximas.length>1?'s':''} no raio</div>` : ''}
           ${visitasVinc.length ? `<div style="font-size:10px;color:var(--success);">🤝 ${visitasVinc.length} visita${visitasVinc.length>1?'s':''}</div>` : ''}
+          <button onclick="_abrirModalVinculoRat('${(r.crime.bo||r.crime.rat||'').replace(/'/g,"\'")}')"
+            style="background:none;border:1px solid rgba(155,138,92,.4);color:var(--gold);padding:2px 8px;border-radius:3px;font-size:10px;cursor:pointer;transition:all .15s;margin-top:2px;"
+            onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='rgba(155,138,92,.4)'">🔗 Vincular RAT</button>
         </div>
       </div>
       ${temQualquer ? `
