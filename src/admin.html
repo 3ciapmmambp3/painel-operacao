@@ -1092,9 +1092,18 @@ function renderTabela() {
   if (filStatus === 'pendente') lista = lista.filter(u => u.primeiro_acesso);
   if (filStatus === 'ativo')    lista = lista.filter(u => !u.primeiro_acesso);
 
-  /* admin_pelotao vê apenas seu grupamento */
+  /* admin_pelotao vê apenas usuários do seu pelotão */
   if (sessao?.nivel_acesso === 'admin_pelotao') {
-    lista = lista.filter(u => u.grupamento_id === sessao.grupamento_id || u.id === sessao.id);
+    const _pelNum = (gid) => {
+      const m = (gid || '').match(/(\d+)\s*PEL/i);
+      return m ? parseInt(m[1]) : null;
+    };
+    const meuPelNum = _pelNum(sessao.grupamento_id);
+    lista = lista.filter(u => {
+      if (u.id === sessao.id) return true;           // sempre vê a si mesmo
+      if (meuPelNum === null) return false;           // sem pelotão definido: restringe tudo
+      return _pelNum(u.grupamento_id) === meuPelNum; // mesmo pelotão
+    });
   }
 
   const tbody = document.getElementById('tabela-body');
