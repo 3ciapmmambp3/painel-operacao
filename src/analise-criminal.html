@@ -4874,12 +4874,14 @@ function mostrarTooltipCrz(btn, idx){
 
 
 /* ══════════════════════════════════
-   VÍNCULO DIRETO BO VISITA ↔ CRIME
+   VÍNCULO DIRETO BOS VISITA ↔ CRIME
 ══════════════════════════════════ */
 
-/** Abre modal para vincular uma visita a um BO de crime */
-function _abrirModalVinculo(boVisita, boCrimeSugerido) {
-  /* Remove modal anterior se existir */
+/**
+ * Abre modal a partir do CRIME para vincular um BOS de visita.
+ * boCrime: BO do crime (fixo, referência)
+ */
+function _abrirModalVinculo(boCrime) {
   const prev = document.getElementById('_modal-vinculo');
   if(prev) prev.remove();
 
@@ -4887,111 +4889,128 @@ function _abrirModalVinculo(boVisita, boCrimeSugerido) {
   modal.id = '_modal-vinculo';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:10000;display:flex;align-items:center;justify-content:center;';
 
-  /* Visita atual */
-  const visita = dadosVisitas.find(v => v.bo === boVisita);
-  const boRefsAtuais = visita ? [...(visita.boRefs||[])] : [];
+  /* Visitas já vinculadas a este crime */
+  const visitasVinculadas = dadosVisitas.filter(v => v.boRefs && v.boRefs.includes(boCrime));
 
   modal.innerHTML = `
-    <div style="background:#1e1e1e;border:1px solid rgba(155,138,92,.4);border-radius:10px;padding:20px 24px;width:520px;max-width:95vw;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.8);">
+    <div style="background:#1e1e1e;border:1px solid rgba(155,138,92,.4);border-radius:10px;padding:20px 24px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.8);">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-        <div style="font-size:13px;font-weight:700;color:var(--gold);">🔗 Vincular Visita a Crime(s)</div>
+        <div style="font-size:13px;font-weight:700;color:var(--gold);">🔗 Vincular BOS de Visita ao Crime</div>
         <button onclick="document.getElementById('_modal-vinculo').remove()" style="background:none;border:none;color:var(--text-muted);font-size:18px;cursor:pointer;line-height:1;">✕</button>
       </div>
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;">
-        BO da Visita: <span style="font-family:monospace;color:#fff;font-weight:700;">${boVisita}</span>
+        BO do Crime: <span style="font-family:monospace;color:#fff;font-weight:700;">${boCrime}</span>
       </div>
 
-      <!-- BOs já vinculados -->
+      <!-- Visitas já vinculadas -->
       <div id="_vinc-lista" style="margin-bottom:14px;"></div>
 
-      <!-- Campo de busca -->
-      <div style="margin-bottom:10px;">
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Buscar BO do crime para vincular:</div>
-        <div style="display:flex;gap:8px;">
-          <input id="_vinc-input" type="text" placeholder="Ex: 2026-024895849-001"
-            value="${boCrimeSugerido||''}"
-            style="flex:1;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:7px 10px;border-radius:5px;font-size:12px;font-family:monospace;"
-            oninput="_vincBuscar(this.value)">
-          <button onclick="_vincAdicionar('${boVisita}')"
-            style="background:rgba(66,165,245,.2);border:1px solid rgba(66,165,245,.5);color:#42a5f5;padding:7px 14px;border-radius:5px;font-size:12px;cursor:pointer;font-weight:700;">
-            + Adicionar
-          </button>
-        </div>
-        <div id="_vinc-busca-result" style="margin-top:6px;"></div>
+      <!-- Campo de busca autocomplete -->
+      <div style="margin-bottom:10px;position:relative;">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Buscar BOS da visita para vincular:</div>
+        <input id="_vinc-input" type="text" placeholder="Digite o número do BOS da visita..."
+          autocomplete="off"
+          style="width:100%;box-sizing:border-box;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:8px 10px;border-radius:5px;font-size:12px;font-family:monospace;"
+          oninput="_vincBuscar(this.value,'${boCrime}')">
+        <div id="_vinc-autocomplete" style="position:absolute;left:0;right:0;background:#252525;border:1px solid rgba(155,138,92,.3);border-top:none;border-radius:0 0 6px 6px;z-index:10001;display:none;max-height:200px;overflow-y:auto;"></div>
       </div>
       <div id="_vinc-msg" style="font-size:11px;margin-top:8px;"></div>
     </div>`;
 
   document.body.appendChild(modal);
-  _vincRenderLista(boVisita, boRefsAtuais);
-
-  /* Se veio com sugestão, busca automaticamente */
-  if(boCrimeSugerido) _vincBuscar(boCrimeSugerido);
-
-  /* Fecha ao clicar fora */
+  _vincRenderLista(boCrime, visitasVinculadas);
   modal.addEventListener('click', e => { if(e.target === modal) modal.remove(); });
+
+  /* Foca no input */
+  setTimeout(() => document.getElementById('_vinc-input')?.focus(), 100);
 }
 
-function _vincRenderLista(boVisita, boRefs) {
+/** Renderiza lista de visitas já vinculadas ao crime */
+function _vincRenderLista(boCrime, visitasVinc) {
   const el = document.getElementById('_vinc-lista');
   if(!el) return;
-  if(!boRefs.length) {
-    el.innerHTML = '<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Nenhum vínculo ainda.</div>';
+  if(!visitasVinc.length) {
+    el.innerHTML = '<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Nenhuma visita vinculada ainda.</div>';
     return;
   }
   el.innerHTML = `
-    <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">BOs vinculados:</div>
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">BOS vinculados a este crime:</div>
     <div style="display:flex;flex-direction:column;gap:4px;">
-      ${boRefs.map(b => {
-        const crime = dadosCrimes.find(d => (d.bo||d.rat||'') === b);
-        const info = crime ? ` <span style="color:var(--text-muted);font-size:10px;">— [${crime.indicador}] ${crime.municipio||'—'} · ${crime.data||'—'}</span>` : '';
-        return `<div style="display:flex;justify-content:space-between;align-items:center;background:#252525;border:1px solid rgba(66,165,245,.3);border-radius:4px;padding:5px 10px;">
-          <span style="font-family:monospace;font-size:11px;color:#42a5f5;">${b}</span>${info}
-          <button onclick="_vincRemover('${boVisita}','${b}')"
-            style="background:none;border:none;color:var(--danger);font-size:13px;cursor:pointer;padding:0 4px;line-height:1;" title="Remover vínculo">✕</button>
+      ${visitasVinc.map(v => {
+        const locBadge = v.localizacao === 'ZONA RURAL'
+          ? '<span style="background:rgba(102,187,106,.15);color:var(--success);border:1px solid rgba(102,187,106,.4);padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;">🌿 RURAL</span>'
+          : '<span style="background:rgba(255,152,0,.15);color:#ff9800;border:1px solid rgba(255,152,0,.4);padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;">🏙 URBANO</span>';
+        return `<div style="display:flex;justify-content:space-between;align-items:center;background:#1a2a1a;border:1px solid rgba(102,187,106,.3);border-radius:4px;padding:6px 10px;gap:8px;">
+          <div style="display:flex;flex-direction:column;gap:2px;">
+            <span style="font-family:monospace;font-size:11px;color:var(--success);font-weight:700;">${v.bo}</span>
+            <span style="font-size:10px;color:var(--text-muted);">${v.data||'—'} · ${v.municipio||'—'} ${locBadge}</span>
+          </div>
+          <button onclick="_vincRemover('${v.bo}','${boCrime}')"
+            style="background:none;border:1px solid rgba(239,83,80,.4);color:var(--danger);font-size:11px;cursor:pointer;padding:2px 7px;border-radius:3px;white-space:nowrap;" title="Remover vínculo">✕ Remover</button>
         </div>`;
       }).join('')}
     </div>`;
 }
 
-function _vincBuscar(termo) {
-  const el = document.getElementById('_vinc-busca-result');
-  if(!el) return;
+/** Autocomplete: busca BOS de visitas enquanto digita */
+function _vincBuscar(termo, boCrime) {
+  const ac  = document.getElementById('_vinc-autocomplete');
+  if(!ac) return;
   const t = (termo||'').trim();
-  if(!t) { el.innerHTML = ''; return; }
-  const encontrado = dadosCrimes.find(d => (d.bo||d.rat||'').includes(t));
-  if(encontrado) {
-    el.innerHTML = `<div style="background:rgba(66,165,245,.08);border:1px solid rgba(66,165,245,.3);border-radius:4px;padding:6px 10px;font-size:11px;">
-      ✔ <span style="color:#42a5f5;font-family:monospace;font-weight:700;">${encontrado.bo||encontrado.rat}</span>
-      — <span style="color:var(--success);">[${encontrado.indicador}]</span>
-      ${encontrado.municipio||'—'} · ${encontrado.data||'—'}
-    </div>`;
-  } else {
-    el.innerHTML = `<div style="font-size:11px;color:var(--danger);">✗ BO não encontrado no banco de dados.</div>`;
+  if(t.length < 3) { ac.style.display = 'none'; ac.innerHTML = ''; return; }
+
+  const resultados = dadosVisitas.filter(v =>
+    (v.bo||'').toLowerCase().includes(t.toLowerCase())
+  ).slice(0, 10);
+
+  if(!resultados.length) {
+    ac.innerHTML = '<div style="padding:8px 12px;font-size:11px;color:var(--danger);">✗ Nenhum BOS encontrado.</div>';
+    ac.style.display = 'block';
+    return;
   }
+
+  ac.innerHTML = resultados.map(v => {
+    const jaVinculado = v.boRefs && v.boRefs.includes(boCrime);
+    const locBadge = v.localizacao === 'ZONA RURAL'
+      ? '<span style="color:var(--success);font-size:10px;">🌿 RURAL</span>'
+      : '<span style="color:#ff9800;font-size:10px;">🏙 URBANO</span>';
+    return `<div onclick="_vincSelecionar('${v.bo}','${boCrime}')"
+      style="padding:8px 12px;cursor:${jaVinculado?'default':'pointer'};border-bottom:1px solid #2a2a2a;display:flex;justify-content:space-between;align-items:center;gap:8px;${jaVinculado?'opacity:.5;':''}"
+      ${!jaVinculado?'onmouseover="this.style.background='#2a2a2a'"onmouseout="this.style.background=''"':''}>
+      <div>
+        <span style="font-family:monospace;font-size:11px;color:var(--success);font-weight:700;">${v.bo}</span>
+        <span style="font-size:10px;color:var(--text-muted);margin-left:8px;">${v.data||'—'} · ${v.municipio||'—'}</span>
+        <span style="margin-left:6px;">${locBadge}</span>
+      </div>
+      ${jaVinculado ? '<span style="font-size:10px;color:#42a5f5;">🔗 já vinculado</span>' : ''}
+    </div>`;
+  }).join('');
+  ac.style.display = 'block';
 }
 
-async function _vincAdicionar(boVisita) {
-  const input = document.getElementById('_vinc-input');
-  const msg   = document.getElementById('_vinc-msg');
-  const boCrime = (input?.value||'').trim();
-  if(!boCrime) { if(msg) msg.innerHTML = '<span style="color:var(--danger);">Informe o número do BO.</span>'; return; }
+/** Seleciona um BOS do autocomplete e vincula */
+async function _vincSelecionar(bosVisita, boCrime) {
+  const ac  = document.getElementById('_vinc-autocomplete');
+  const inp = document.getElementById('_vinc-input');
+  const msg = document.getElementById('_vinc-msg');
+  if(ac)  { ac.style.display = 'none'; ac.innerHTML = ''; }
+  if(inp) inp.value = bosVisita;
 
-  const encontrado = dadosCrimes.find(d => (d.bo||d.rat||'') === boCrime);
-  if(!encontrado) { if(msg) msg.innerHTML = '<span style="color:var(--danger);">✗ BO não encontrado no banco de dados.</span>'; return; }
+  const visita = dadosVisitas.find(v => v.bo === bosVisita);
+  if(!visita) { if(msg) msg.innerHTML = '<span style="color:var(--danger);">✗ Visita não encontrada.</span>'; return; }
+  if(visita.boRefs && visita.boRefs.includes(boCrime)) {
+    if(msg) msg.innerHTML = '<span style="color:#42a5f5;">Esta visita já está vinculada a este crime.</span>';
+    return;
+  }
 
-  const visita = dadosVisitas.find(v => v.bo === boVisita);
-  if(!visita) return;
   const novosRefs = [...new Set([...(visita.boRefs||[]), boCrime])];
-
   if(msg) msg.innerHTML = '<span style="color:var(--text-muted);">Salvando...</span>';
-  const ok = await _salvarBoRef(boVisita, novosRefs);
+  const ok = await _salvarBoRef(bosVisita, novosRefs);
   if(ok) {
     visita.boRefs = novosRefs;
-    if(input) input.value = '';
-    const el = document.getElementById('_vinc-busca-result');
-    if(el) el.innerHTML = '';
-    _vincRenderLista(boVisita, novosRefs);
+    if(inp) inp.value = '';
+    const visitasVinc = dadosVisitas.filter(v => v.boRefs && v.boRefs.includes(boCrime));
+    _vincRenderLista(boCrime, visitasVinc);
     if(msg) msg.innerHTML = '<span style="color:var(--success);">✔ Vínculo salvo com sucesso.</span>';
     renderVisitas();
   } else {
@@ -4999,16 +5018,18 @@ async function _vincAdicionar(boVisita) {
   }
 }
 
-async function _vincRemover(boVisita, boCrime) {
-  const visita = dadosVisitas.find(v => v.bo === boVisita);
+/** Remove vínculo entre BOS da visita e BO do crime */
+async function _vincRemover(bosVisita, boCrime) {
+  const visita = dadosVisitas.find(v => v.bo === bosVisita);
   if(!visita) return;
   const novosRefs = (visita.boRefs||[]).filter(b => b !== boCrime);
   const msg = document.getElementById('_vinc-msg');
   if(msg) msg.innerHTML = '<span style="color:var(--text-muted);">Removendo...</span>';
-  const ok = await _salvarBoRef(boVisita, novosRefs);
+  const ok = await _salvarBoRef(bosVisita, novosRefs);
   if(ok) {
     visita.boRefs = novosRefs;
-    _vincRenderLista(boVisita, novosRefs);
+    const visitasVinc = dadosVisitas.filter(v => v.boRefs && v.boRefs.includes(boCrime));
+    _vincRenderLista(boCrime, visitasVinc);
     if(msg) msg.innerHTML = '<span style="color:var(--success);">✔ Vínculo removido.</span>';
     renderVisitas();
   } else {
@@ -5016,10 +5037,11 @@ async function _vincRemover(boVisita, boCrime) {
   }
 }
 
-async function _salvarBoRef(boVisita, boRefs) {
+/** Salva bo_referencia no Supabase para o BOS da visita */
+async function _salvarBoRef(bosVisita, boRefs) {
   try {
     const res = await fetch(
-      `${SB_URL}/rest/v1/bd_visitas?numero_bos=eq.${encodeURIComponent(boVisita)}`,
+      `${SB_URL}/rest/v1/bd_visitas?numero_bos=eq.${encodeURIComponent(bosVisita)}`,
       {
         method: 'PATCH',
         headers: {
@@ -5037,6 +5059,7 @@ async function _salvarBoRef(boVisita, boRefs) {
     return false;
   }
 }
+
 
 function ocultarTooltipCrz(){
   const tt = document.getElementById('crz-tooltip-float');
@@ -5342,14 +5365,6 @@ function _vtRenderLista(){
               ${v.boRefs.map(b => `<span style="font-family:monospace;font-size:10px;background:rgba(66,165,245,.12);color:#42a5f5;border:1px solid rgba(66,165,245,.3);padding:1px 6px;border-radius:3px;">${b}</span>`).join('')}
             </div>`
           : '';
-        /* Permissão para vincular */
-        const podeVincular = sessao && ['admin_geral','admin','admin_pelotao','operacional'].includes(sessao.nivel_acesso);
-        const btnVincular = podeVincular
-          ? `<button onclick="_abrirModalVinculo('${v.bo}','${(r.crime.bo||r.crime.rat||'').replace(/'/g,'')}')"
-              style="background:none;border:1px solid rgba(66,165,245,.4);color:#42a5f5;padding:2px 8px;border-radius:3px;font-size:10px;cursor:pointer;transition:all .15s;"
-              onmouseover="this.style.borderColor='#42a5f5'" onmouseout="this.style.borderColor='rgba(66,165,245,.4)'">🔗 Vincular BO</button>`
-          : '';
-
         return `<div style="background:#1e2a1e;border:1px solid rgba(102,187,106,.3);border-radius:6px;padding:10px 14px;margin-top:8px;">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:6px;">
             <div>
@@ -5379,7 +5394,6 @@ function _vtRenderLista(){
           </div>
           ${v.municipio ? `<div style="margin-top:6px;font-size:10px;color:var(--text-hint);">📍 ${v.municipio} · ${v.localizacao||'—'}</div>` : ''}
           ${boRefsHtml}
-          <div style="margin-top:8px;">${btnVincular}</div>
         </div>`;
       }).join('');
 
@@ -5398,6 +5412,9 @@ function _vtRenderLista(){
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
             <span style="background:rgba(102,187,106,.12);color:var(--success);border:1px solid rgba(102,187,106,.3);padding:2px 7px;border-radius:3px;font-size:10px;font-weight:700;">✔ VISITADO</span>
             <div style="font-size:10px;color:var(--text-muted);">${r.validas.length} visita${r.validas.length!==1?'s':''}</div>
+            <button onclick="_abrirModalVinculo('${r.crime.bo||r.crime.rat||''}')"
+              style="background:none;border:1px solid rgba(66,165,245,.4);color:#42a5f5;padding:2px 8px;border-radius:3px;font-size:10px;cursor:pointer;transition:all .15s;margin-top:2px;"
+              onmouseover="this.style.borderColor='#42a5f5'" onmouseout="this.style.borderColor='rgba(66,165,245,.4)'">🔗 Vincular BOS</button>
           </div>
         </div>
         ${visitasHtml}
@@ -5430,7 +5447,12 @@ function _vtRenderLista(){
             <span style="font-family:monospace;font-size:11px;font-weight:700;color:#fff;margin-left:6px;">${r.crime.bo||r.crime.rat||'—'}</span>
             <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">${r.crime.data||'—'} · ${r.crime.natureza||'—'} · ${r.crime.localizacao||'—'}</div>
           </div>
-          <span style="background:rgba(239,83,80,.15);color:var(--danger);border:1px solid rgba(239,83,80,.3);padding:2px 8px;border-radius:3px;font-size:10px;font-weight:700;white-space:nowrap;">✗ NÃO VISITADO</span>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+            <span style="background:rgba(239,83,80,.15);color:var(--danger);border:1px solid rgba(239,83,80,.3);padding:2px 8px;border-radius:3px;font-size:10px;font-weight:700;white-space:nowrap;">✗ NÃO VISITADO</span>
+            <button onclick="_abrirModalVinculo('${r.crime.bo||r.crime.rat||''}')"
+              style="background:none;border:1px solid rgba(66,165,245,.4);color:#42a5f5;padding:2px 8px;border-radius:3px;font-size:10px;cursor:pointer;transition:all .15s;"
+              onmouseover="this.style.borderColor='#42a5f5'" onmouseout="this.style.borderColor='rgba(66,165,245,.4)'">🔗 Vincular BOS</button>
+          </div>
         </div>`;
       });
 
