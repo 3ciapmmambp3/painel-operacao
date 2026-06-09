@@ -365,12 +365,23 @@ function auth_temPermissao(sessao, nivelMinimo) {
   return _nivelNum(sessao?.nivel_acesso) >= _nivelNum(nivelMinimo);
 }
 
+/** Extrai o número do pelotão de uma string de grupamento_id */
+function _pelotaoNum(gid) {
+  const m = (gid || '').match(/(\d+)\s*PEL/i);
+  return m ? parseInt(m[1]) : null;
+}
+
 /** Verifica se pode ver dados de um determinado grupamento */
 function auth_podeVerGrupamento(sessao, grupamento_id) {
   if (!sessao) return false;
   const nivel = sessao.nivel_acesso;
   if (nivel === 'admin_geral' || nivel === 'admin') return true;
-  if (nivel === 'admin_pelotao') return sessao.grupamento_id === grupamento_id;
+  if (nivel === 'admin_pelotao') {
+    // Compara pelo número do pelotão, não pelo grupamento exato
+    const meuPel = _pelotaoNum(sessao.grupamento_id);
+    if (meuPel === null) return sessao.grupamento_id === grupamento_id; // fallback
+    return _pelotaoNum(grupamento_id) === meuPel;
+  }
   return false; // operacional não acessa painel admin
 }
 
