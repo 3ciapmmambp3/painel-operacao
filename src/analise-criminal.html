@@ -3627,7 +3627,7 @@ function renderMapaFS(){
   if(elNormal) elNormal.id = '_ac-mapa-normal-hidden';
 
   try {
-    _renderMapaCriminalInterno(dados, gp, pel);
+    _renderMapaCriminalInterno(dados, gp, pel, norm(document.getElementById('mapa-busca')?.value||''));
   } finally {
     /* ── Sempre restaura IDs e globals, mesmo em caso de erro ── */
     elFS.id = 'mapa-fullscreen-inner';
@@ -3674,10 +3674,10 @@ function renderMapaCriminal(){
       '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#ef5350;font-size:13px;background:#1a1a1a;border-radius:8px;">⚠ Leaflet não carregado. Verifique a conexão com internet e recarregue a página.</div>';
     return;
   }
-  _renderMapaCriminalInterno(dados, gp, pel);
+  _renderMapaCriminalInterno(dados, gp, pel, mapaBusca);
 }
 
-function _renderMapaCriminalInterno(dados, gpFiltro, pelFiltro){
+function _renderMapaCriminalInterno(dados, gpFiltro, pelFiltro, mapaBusca){
   gpFiltro  = gpFiltro  || '';
   pelFiltro = pelFiltro || '';
   const pelFiltroNum = pelFiltro ? parseInt(pelFiltro) : 0;
@@ -3901,10 +3901,9 @@ function _renderMapaCriminalInterno(dados, gpFiltro, pelFiltro){
   let _mOps_last = null;
   const _mesMF = getMesDd('mapa'); const mesF = _mesMF.length===1?_mesMF[0]:'_MULTI_';
   const pelF  = document.getElementById('mapa-pel').value;
-  const _mapaBuscaOpsLayer = norm(document.getElementById('mapa-busca')?.value || '');
   dadosGdoRural.forEach(op => {
     if(!op.lat||!op.lng) return;
-    if(_mapaBuscaOpsLayer) return; /* busca ativa: oculta todas as ops */
+    if(mapaBusca && !norm(op.rat||'').includes(mapaBusca)) return; /* busca ativa: oculta todas as ops */
     if(mesF==='_MULTI_'){ if(!_mesMF.includes(op.mes)) return; } else if(mesF && op.mes!==mesF) return;
     const opPel = op.grupamento ? pelDoColk(op.grupamento) : 0;
     if(pelF && opPel !== parseInt(pelF)) return;
@@ -4017,9 +4016,8 @@ function _renderMapaCriminalInterno(dados, gpFiltro, pelFiltro){
   });
   _acLayers['ops'] = gOps;
   Object.entries(_gOpsPel).forEach(([pelN,grp]) => _acLayers['ops-pel-'+pelN] = grp);
-  /* Se busca ativa, não adiciona ops ao mapa */
-  const _mapaBuscaActive = norm(document.getElementById('mapa-busca')?.value || '');
-  if(!_mapaBuscaActive && document.getElementById('ml-ops')?.checked){
+  /* Se busca ativa sem resultado em ops, não adiciona ops ao mapa */
+  if((!mapaBusca || gOps.getLayers().length > 0) && document.getElementById('ml-ops')?.checked){
     Object.entries(_gOpsPel).forEach(([pelN,grp]) => {
       const pN2 = parseInt(pelN);
       let vis2 = true;
@@ -4044,10 +4042,9 @@ function _renderMapaCriminalInterno(dados, gpFiltro, pelFiltro){
     const pelF2l = document.getElementById('mapa-pel').value;
     const allL = [];
     dadosComCoord.forEach(d => allL.push({ lat:d.lat, lng:d.lng, tipo:'crime' }));
-    const _mBuscaLeque = norm(document.getElementById('mapa-busca')?.value || '');
     dadosGdoRural.forEach(op => {
       if(!op.lat||!op.lng) return;
-      if(_mBuscaLeque) return;
+      if(mapaBusca && !norm(op.rat||'').includes(mapaBusca)) return;
       if(mesF2l.length && !mesF2l.includes(op.mes)) return;
       if(pelF2l && pelDoColk(op.grupamento) !== parseInt(pelF2l)) return;
       allL.push({ lat:op.lat, lng:op.lng, tipo:'ops' });
@@ -4239,12 +4236,12 @@ function _renderMapaCriminalInterno(dados, gpFiltro, pelFiltro){
   const _mesVF = getMesDd('mapa');
   const mesVF  = _mesVF.length===1 ? _mesVF[0] : '_MULTI_';
   const pelFVis = document.getElementById('mapa-pel').value;
-  const _mapaBuscaVis = norm(document.getElementById('mapa-busca')?.value || '');
   dadosVisitas.forEach(v => {
     if(!v.lat||!v.lng) return;
-    /* Oculta visitas quando indicador específico está filtrado ou busca ativa */
+    /* Oculta visitas quando indicador específico está filtrado */
     if(_indFiltroMapa) return;
-    if(_mapaBuscaVis) return; /* busca ativa: mostra só o crime buscado */
+    /* Busca ativa: mostra só visita com BOS correspondente */
+    if(mapaBusca && !norm(v.bo||'').includes(mapaBusca)) return;
     /* Filtro de mês */
     if(mesVF==='_MULTI_'){ if(_mesVF.length && !_mesVF.includes(v.mes)) return; }
     else if(mesVF && v.mes!==mesVF) return;
@@ -4344,10 +4341,9 @@ function _renderMapaCriminalInterno(dados, gpFiltro, pelFiltro){
     });
 
     /* Ops GDO Rural */
-    const _mapaBuscaOps = norm(document.getElementById('mapa-busca')?.value || '');
     dadosGdoRural.forEach(op => {
       if(!op.lat||!op.lng) return;
-      if(_mapaBuscaOps) return; /* busca ativa: mostra só o crime buscado */
+      if(mapaBusca && !norm(op.rat||'').includes(mapaBusca)) return;
       if(mesF2.length && !mesF2.includes(op.mes)) return;
       if(pelF2 && pelDoColk(op.grupamento) !== parseInt(pelF2)) return;
       if(gpFiltro && norm(op.grupamento||'') !== norm(gpFiltro)) return;
@@ -4362,7 +4358,7 @@ function _renderMapaCriminalInterno(dados, gpFiltro, pelFiltro){
     /* Visitas */
     dadosVisitas.forEach(v => {
       if(!v.lat||!v.lng) return;
-      if(_mapaBuscaOps) return; /* busca ativa: mostra só o crime buscado */
+      if(mapaBusca && !norm(v.bo||'').includes(mapaBusca)) return;
       if(mesF2.length && !mesF2.includes(v.mes)) return;
       if(gpFiltro){
         const vg = dadosGrupos.find(g => norm(g.munNorm) === norm(v.municipio||''));
