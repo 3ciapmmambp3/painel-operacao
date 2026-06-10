@@ -760,6 +760,9 @@
       <select id="fs-gp" onchange="sincFiltrosFS()" style="padding:5px 8px;background:#252525;border:1px solid var(--border-hover);border-radius:4px;color:#fff;font-size:11px;min-width:180px;">
         <option value="">Todos Grupamentos</option>
       </select>
+      <input type="text" id="fs-busca" placeholder="Nº REDS..." maxlength="18"
+        oninput="mascaraBO(this);sincFiltrosFS()"
+        style="padding:5px 8px;background:#252525;border:1px solid var(--border-hover);border-radius:4px;color:#fff;font-size:11px;width:160px;font-family:monospace;">
     </div>
     <button onclick="fecharMapaFullscreen()"
       style="background:rgba(239,83,80,.15);border:1px solid var(--danger);color:var(--danger);padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;transition:all .2s;flex-shrink:0;"
@@ -3537,6 +3540,9 @@ function abrirMapaFullscreen(){
   document.getElementById('fs-indicador').value  = document.getElementById('mapa-indicador').value;
   document.getElementById('fs-pel').value        = document.getElementById('mapa-pel').value;
   document.getElementById('fs-loc').value        = document.getElementById('mapa-loc').value;
+  const _fsBuscaEl = document.getElementById('fs-busca');
+  const _mapaBuscaEl = document.getElementById('mapa-busca');
+  if(_fsBuscaEl && _mapaBuscaEl) _fsBuscaEl.value = _mapaBuscaEl.value;
   const _fsGpEl = document.getElementById('fs-gp');
   if(_fsGpEl) _fsGpEl.value = document.getElementById('mapa-gp')?.value || '';
 
@@ -3577,6 +3583,9 @@ function sincFiltrosFS(){
   document.getElementById('mapa-indicador').value  = document.getElementById('fs-indicador').value;
   document.getElementById('mapa-pel').value        = document.getElementById('fs-pel').value;
   document.getElementById('mapa-loc').value        = document.getElementById('fs-loc').value;
+  const _fsBusca2 = document.getElementById('fs-busca');
+  const _mapaBusca2 = document.getElementById('mapa-busca');
+  if(_fsBusca2 && _mapaBusca2) _mapaBusca2.value = _fsBusca2.value;
   const _fsGp2 = document.getElementById('fs-gp');
   if(_fsGp2) { const mapaGp = document.getElementById('mapa-gp'); if(mapaGp) mapaGp.value = _fsGp2.value; }
   renderMapaFS();
@@ -3589,8 +3598,10 @@ function renderMapaFS(){
   const loc = document.getElementById('fs-loc').value;
 
   const gp  = document.getElementById('fs-gp')?.value || '';
+  const fsBusca = norm(document.getElementById('fs-busca')?.value || '');
   let dados = getDadosFiltrados(mes, ind, '', pel, loc, '');
-  if(gp) dados = dados.filter(d => d.grupamento && norm(d.grupamento) === norm(gp));
+  if(gp)      dados = dados.filter(d => d.grupamento && norm(d.grupamento) === norm(gp));
+  if(fsBusca) dados = dados.filter(d => norm(d.bo||d.rat||'').includes(fsBusca));
 
   if(typeof L === 'undefined'){
     document.getElementById('mapa-fullscreen-inner').innerHTML =
@@ -3623,7 +3634,7 @@ function renderMapaFS(){
   if(elNormal) elNormal.id = '_ac-mapa-normal-hidden';
 
   try {
-    _renderMapaCriminalInterno(dados, gp, pel, norm(document.getElementById('mapa-busca')?.value||''));
+    _renderMapaCriminalInterno(dados, gp, pel, fsBusca || norm(document.getElementById('mapa-busca')?.value||''));
   } finally {
     /* ── Sempre restaura IDs e globals, mesmo em caso de erro ── */
     elFS.id = 'mapa-fullscreen-inner';
@@ -5460,7 +5471,8 @@ function renderCruzamento(){
           ? `<span style="background:rgba(66,165,245,.12);color:var(--info);border:1px solid rgba(66,165,245,.3);padding:2px 7px;border-radius:3px;font-size:10px;font-weight:700;">VISITA TRANQUILIZADORA</span>`
           : `<span style="background:rgba(255,152,0,.12);color:#ff9800;border:1px solid rgba(255,152,0,.3);padding:2px 7px;border-radius:3px;font-size:10px;font-weight:700;">OP. PRÓXIMA</span>`;
 
-    /* Visitas próximas ao crime por raio + período (igual à lógica das operações) */
+    /* Visitas próximas ao crime — raio fixo 200m (independente do raio de operações) */
+    const _RAIO_VISITA_CRZ = 0.2;
     const dataCrimeVt = parseDataDDMMAAAA(r.crime.data||'');
     const visitasVinc = r.crime.lat && r.crime.lng
       ? dadosVisitas.filter(v => {
@@ -5468,8 +5480,8 @@ function renderCruzamento(){
           /* Natureza compatível com indicador do crime */
           const natEsperada = r.crime.indicador === 'IF' ? 'A20028' : 'A20001';
           if(v.natCode !== natEsperada) return false;
-          /* Raio */
-          if(distanciaKm(r.crime.lat, r.crime.lng, v.lat, v.lng) > raio) return false;
+          /* Raio fixo 200m */
+          if(distanciaKm(r.crime.lat, r.crime.lng, v.lat, v.lng) > _RAIO_VISITA_CRZ) return false;
           /* Período: visita deve ocorrer APÓS o crime (até dias*2 dias depois) */
           if(dataCrimeVt){
             const dataVt = parseDataDDMMAAAA(v.data||'');
@@ -5855,7 +5867,7 @@ function renderVisitas(){
       ? dadosVisitas.filter(v => {
           if(!v.alertaUrbano || v.natCode !== natEsperada) return false;
           if(!v.lat || !v.lng) return false;
-          return distanciaKm(crime.lat, crime.lng, v.lat, v.lng) <= raio;
+          return distanciaKm(crime.lat, crime.lng, v.lat, v.lng) <= 0.2;
         })
       : [];
 
