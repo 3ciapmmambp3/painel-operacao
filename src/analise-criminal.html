@@ -4869,7 +4869,8 @@ function mostrarTooltipCrz(btn, idx){
           <td style="padding:5px 10px;">
             <span style="background:${op.cor}22;color:${op.cor};border:1px solid ${op.cor}55;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:700;">${op.nat}</span>
             ${op.isDireto?'<span style="background:rgba(66,165,245,.15);color:#42a5f5;border:1px solid rgba(66,165,245,.4);padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;margin-left:4px;">🔗 DIRETO</span>':'<span style="background:rgba(155,138,92,.1);color:var(--gold);border:1px solid var(--gold-border);padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;margin-left:4px;">📡 RAIO</span>'}
-            ${op.validada?'':'<span style="background:rgba(239,83,80,.1);color:var(--danger);border:1px solid rgba(239,83,80,.3);padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;margin-left:2px;">⚠ INVÁLIDA</span>'}
+            ${op.validada?'':`<span style="background:rgba(239,83,80,.1);color:var(--danger);border:1px solid rgba(239,83,80,.3);padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;margin-left:2px;" title="${op.motivos?op.motivos.join(' | '):''}">⚠ INVÁLIDA</span>`}
+            ${!op.validada && op.motivos && op.motivos.length ? `<div style="margin-top:3px;font-size:9px;color:#ff9800;padding-left:2px;">${op.motivos.map(m=>'• '+m).join('<br>')}</div>` : ''}
           </td>
           <td style="padding:5px 10px;color:#bbb;font-size:11px;">${op.label}</td>
           <td style="padding:5px 10px;color:#aaa;white-space:nowrap;font-size:11px;">${op.data}</td>
@@ -5388,6 +5389,27 @@ function _gdoValidaOp(op) {
   return true;
 }
 
+/** Retorna lista de motivos pelo qual a op não passou nos critérios GDO */
+function _gdoMotivoInvalido(op) {
+  const nat = op.natureza;
+  const motivos = [];
+  if(!['Y07001','Y07002','Y07014'].includes(nat))
+    motivos.push(`Natureza ${nat} não elegível`);
+  if((op.tempo || 0) < 30)
+    motivos.push(`Duração insuficiente: ${op.tempo||0} min (mín. 30 min)`);
+  if((op.militares || 0) < 2)
+    motivos.push(`Efetivo insuficiente: ${op.militares||0} militar(es) (mín. 2)`);
+  if((op.viaturas || 0) < 1)
+    motivos.push(`Sem viatura registrada (mín. 1)`);
+  if((nat === 'Y07001' || nat === 'Y07002')) {
+    if((op.pessoas || 0) < 2)
+      motivos.push(`Pessoas abordadas insuficientes: ${op.pessoas||0} (mín. 2)`);
+    if((op.veiculos || 0) < 1)
+      motivos.push(`Veículos fiscalizados insuficientes: ${op.veiculos||0} (mín. 1)`);
+  }
+  return motivos;
+}
+
 function renderCruzamento(){
   const _mesCx = getMesDd('cx');
   const mes   = _mesCx.length===1?_mesCx[0]:'';
@@ -5548,6 +5570,7 @@ function renderCruzamento(){
         dist:      (op.lat && op.lng) ? distanciaKm(r.crime.lat, r.crime.lng, op.lat, op.lng).toFixed(1) : '—',
         isDireto:  op.ratRefs && op.ratRefs.includes(r.crime.bo || r.crime.rat || ''),
         validada:  _gdoValidaOp(op),
+        motivos:   _gdoValidaOp(op) ? [] : _gdoMotivoInvalido(op),
       })),
       visitas: visitasVinc.map(v => ({
         bo:       v.bo,
@@ -5569,7 +5592,8 @@ function renderCruzamento(){
     const opsResumo = _allOps.length
       ? _allOps.slice(0,3).map(op => {
           const inv = !_gdoValidaOp(op);
-          return `<span style="background:${inv?'rgba(255,152,0,.12)':'rgba(155,138,92,.12)'};border:1px solid ${inv?'rgba(255,152,0,.4)':'var(--gold-border)'};color:${inv?'#ff9800':'var(--gold)'};padding:1px 7px;border-radius:3px;font-size:10px;font-weight:600;white-space:nowrap;" title="${inv?'⚠ Não passa nos critérios GDO':op.rat}">${inv?'⚠ ':''}${op.rat}</span>`;
+          const motTxt = inv ? _gdoMotivoInvalido(op).join(' | ') : op.rat;
+          return `<span style="background:${inv?'rgba(255,152,0,.12)':'rgba(155,138,92,.12)'};border:1px solid ${inv?'rgba(255,152,0,.4)':'var(--gold-border)'};color:${inv?'#ff9800':'var(--gold)'};padding:1px 7px;border-radius:3px;font-size:10px;font-weight:600;white-space:nowrap;" title="${motTxt}">${inv?'⚠ ':''}${op.rat}</span>`;
         }).join(' ')
         + (_allOps.length>3 ? ` <span style="color:var(--text-hint);font-size:10px;">+${_allOps.length-3} mais</span>` : '')
       : '';
