@@ -2489,14 +2489,22 @@ async function carregarCrimes(){
 
   let rows = [];
   try {
-    const r = await fetch(
-      `${SB_URL}/rest/v1/bd_crimes?select=numero_reds,ano_fato,mes_descricao,data_fato,municipio,` +
+    /* Paginação: Supabase Free limita 1000 por requisição */
+    const _crimesFields = `select=numero_reds,ano_fato,mes_descricao,data_fato,municipio,` +
       `descricao_localizacao,latitude,longitude,unid_area_nivel_4,unid_registro_nivel_4,unid_registro_nivel_7,` +
-      `imv_total,icvpe_total,icvpa_total,ifzr,descr_natureza_principal&limit=100000&order=data_fato`,
-      { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
-    );
-    if(!r.ok) throw new Error('bd_crimes HTTP ' + r.status);
-    rows = await r.json();
+      `imv_total,icvpe_total,icvpa_total,ifzr,descr_natureza_principal&order=data_fato`;
+    let _cOffset = 0, _cCont = true;
+    while(_cCont) {
+      const r = await fetch(
+        `${SB_URL}/rest/v1/bd_crimes?${_crimesFields}&limit=1000&offset=${_cOffset}`,
+        { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
+      );
+      if(!r.ok) throw new Error('bd_crimes HTTP ' + r.status);
+      const page = await r.json();
+      rows = rows.concat(page);
+      _cCont = page.length === 1000;
+      _cOffset += 1000;
+    }
     console.log('[carregarCrimes] Supabase bd_crimes:', rows.length, 'registros');
   } catch(e){
     console.error('[carregarCrimes] Erro Supabase:', e.message);
@@ -2673,15 +2681,23 @@ async function carregarGrupos(){
 async function carregarOpsGdo(){
   dadosGdoRural = [];
   try {
-    const r = await fetch(
-      `${SB_URL}/rest/v1/bd_operacoes?select=numero_rat,data_fato,municipio,codigo_natureza_principal,` +
+    /* Paginação: Supabase Free limita 1000 por requisição */
+    const _opsFields = `select=numero_rat,data_fato,municipio,codigo_natureza_principal,` +
       `descricao_localizacao,latitude,longitude,opr_tempo_total_minutos,unid_registro,unid_area_nivel_4,` +
-      `efetivos,viaturas,produtividade,rat_referencia` +
-      `&limit=100000&order=data_fato`,
-      { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
-    );
-    if(!r.ok) throw new Error('bd_operacoes HTTP ' + r.status);
-    const rows = await r.json();
+      `efetivos,viaturas,produtividade,rat_referencia&order=data_fato`;
+    const _PAGE = 1000;
+    let rows = [], _offset = 0, _continua = true;
+    while(_continua) {
+      const r = await fetch(
+        `${SB_URL}/rest/v1/bd_operacoes?${_opsFields}&limit=${_PAGE}&offset=${_offset}`,
+        { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
+      );
+      if(!r.ok) throw new Error('bd_operacoes HTTP ' + r.status);
+      const page = await r.json();
+      rows = rows.concat(page);
+      _continua = page.length === _PAGE;
+      _offset += _PAGE;
+    }
 
     const munMap = {};
     const munMapCurto = {};
@@ -2738,14 +2754,23 @@ async function carregarVisitas(){
   dadosVisitas = [];
   window._visitasPorBO = {};
   try {
-    const r = await fetch(
-      `${SB_URL}/rest/v1/bd_visitas?select=numero_bos,codigo_natureza,desc_natureza,mes_descricao,` +
+    /* Paginação: Supabase Free limita 1000 por requisição */
+    const _visitasFields = `select=numero_bos,codigo_natureza,desc_natureza,mes_descricao,` +
       `ano_fato,data_fato,municipio,descricao_localizacao,latitude,longitude,` +
-      `unid_registro,opr_tempo_total_minutos,bo_referencia&limit=100000&order=data_fato`,
-      { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
-    );
-    if(!r.ok) throw new Error('bd_visitas HTTP ' + r.status);
-    const rows = await r.json();
+      `unid_registro,opr_tempo_total_minutos,bo_referencia&order=data_fato`;
+    let _vtRows = [], _vtOffset = 0, _vtCont = true;
+    while(_vtCont) {
+      const _vtR = await fetch(
+        `${SB_URL}/rest/v1/bd_visitas?${_visitasFields}&limit=1000&offset=${_vtOffset}`,
+        { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
+      );
+      if(!_vtR.ok) throw new Error('bd_visitas HTTP ' + _vtR.status);
+      const _vtPage = await _vtR.json();
+      _vtRows = _vtRows.concat(_vtPage);
+      _vtCont = _vtPage.length === 1000;
+      _vtOffset += 1000;
+    }
+    const rows = _vtRows;
 
     const NATS = {'A20028':true,'A20001':true};
     let ultimaData = null;
