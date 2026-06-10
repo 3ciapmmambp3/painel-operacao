@@ -5385,8 +5385,9 @@ function renderCruzamento(){
   const resultados = crimes.map(crime => {
     const dataCrime = parseDataDDMMAAAA(crime.data||'');
     /* Busca operações no raio e período + vínculos diretos */
+    /* Ops no raio+período para contabilização */
     const opsProximas = dadosGdoRural.filter(op => {
-      /* Vínculo direto: sempre inclui independente de raio/período */
+      /* Vínculo direto: sempre inclui */
       if(op.ratRefs && op.ratRefs.includes(crime.bo || crime.rat || '')) return true;
       if(!op.lat||!op.lng) return false;
       const dist = distanciaKm(crime.lat, crime.lng, op.lat, op.lng);
@@ -5401,9 +5402,18 @@ function renderCruzamento(){
       return true;
     });
 
+    /* Ops inválidas no raio (sem restrição de período — para informação) */
+    const opsInvalidasRaio = dadosGdoRural.filter(op => {
+      if(opsProximas.includes(op)) return false; /* já está em opsProximas */
+      if(op.ratRefs && op.ratRefs.includes(crime.bo || crime.rat || '')) return false;
+      if(!op.lat||!op.lng) return false;
+      if(distanciaKm(crime.lat, crime.lng, op.lat, op.lng) > raio) return false;
+      return !_gdoValidaOp(op); /* só as inválidas */
+    });
+
     /* Separa ops válidas (passam critérios GDO) das inválidas */
     const opsValidas   = opsProximas.filter(op => _gdoValidaOp(op));
-    const opsInvalidas = opsProximas.filter(op => !_gdoValidaOp(op));
+    const opsInvalidas = [...opsProximas.filter(op => !_gdoValidaOp(op)), ...opsInvalidasRaio];
 
     const distMin = opsValidas.length
       ? Math.min(...opsValidas.map(op=>distanciaKm(crime.lat,crime.lng,op.lat,op.lng)))
