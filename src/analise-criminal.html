@@ -5189,6 +5189,14 @@ function _abrirModalVinculoRat(boCrime) {
           style="width:100%;box-sizing:border-box;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:8px 10px;border-radius:5px;font-size:12px;resize:vertical;font-family:inherit;"></textarea>
       </div>
 
+      <div style="margin-bottom:8px;">
+        <button id="_vrat-btn-confirmar"
+          style="display:none;align-items:center;gap:6px;background:rgba(102,187,106,.15);border:1px solid rgba(102,187,106,.5);color:var(--success);padding:8px 20px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;"
+          onmouseover="this.style.background='rgba(102,187,106,.25)'" onmouseout="this.style.background='rgba(102,187,106,.15)'">
+          ✔ Vincular RAT ao Crime
+        </button>
+      </div>
+
       <div id="_vrat-msg" style="font-size:11px;margin-top:8px;"></div>
     </div>`;
 
@@ -5276,7 +5284,8 @@ function _vratBuscar(termo, boCrime) {
   });
 }
 
-async function _vratSelecionar(rat, boCrime) {
+/* Seleção do RAT no autocomplete — preenche input e mostra botão confirmar */
+function _vratSelecionar(rat, boCrime) {
   const ac  = document.getElementById('_vrat-autocomplete');
   const inp = document.getElementById('_vrat-input');
   const msg = document.getElementById('_vrat-msg');
@@ -5291,22 +5300,41 @@ async function _vratSelecionar(rat, boCrime) {
     return;
   }
 
-  /* Verificar observação */
+  /* Mostra botão confirmar e foca observação */
+  const btnConfirm = document.getElementById('_vrat-btn-confirmar');
+  if(btnConfirm) {
+    btnConfirm.style.display = 'inline-flex';
+    btnConfirm.onclick = () => _vratConfirmar(rat, boCrime);
+  }
+  const obsEl = document.getElementById('_vrat-obs');
+  if(obsEl) { obsEl.style.borderColor = 'var(--border)'; obsEl.focus(); }
+  if(msg) msg.innerHTML = '<span style="color:var(--text-muted);">RAT selecionado — preencha a observação e clique em Vincular.</span>';
+}
+
+/* Confirmação do vínculo após preenchimento da observação */
+async function _vratConfirmar(rat, boCrime) {
+  const msg = document.getElementById('_vrat-msg');
   const obs = (document.getElementById('_vrat-obs')?.value||'').trim();
   if(!obs) {
     const obsEl = document.getElementById('_vrat-obs');
     if(obsEl) { obsEl.style.borderColor='var(--danger)'; obsEl.focus(); }
-    if(msg) msg.innerHTML = '<span style="color:var(--danger);">⚠ Observação obrigatória — justifique o vínculo antes de vincular.</span>';
+    if(msg) msg.innerHTML = '<span style="color:var(--danger);">⚠ Observação obrigatória — justifique o vínculo antes de confirmar.</span>';
     return;
   }
+
+  const op = dadosGdoRural.find(o => o.rat === rat);
+  if(!op) return;
 
   const novosRefs = [...new Set([...(op.ratRefs||[]), boCrime])];
   if(msg) msg.innerHTML = '<span style="color:var(--text-muted);">Salvando...</span>';
   const ok = await _salvarRatRef(rat, novosRefs);
   if(ok) {
     op.ratRefs = novosRefs;
+    const inp = document.getElementById('_vrat-input');
     if(inp) inp.value = '';
     if(document.getElementById('_vrat-obs')) document.getElementById('_vrat-obs').value = '';
+    const btnConfirm = document.getElementById('_vrat-btn-confirmar');
+    if(btnConfirm) btnConfirm.style.display = 'none';
     const opsVinc = dadosGdoRural.filter(o => o.ratRefs && o.ratRefs.includes(boCrime));
     _vratRenderLista(boCrime, opsVinc);
     if(msg) msg.innerHTML = '<span style="color:var(--success);">✔ RAT vinculado com sucesso.</span>';
