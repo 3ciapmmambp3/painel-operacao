@@ -972,6 +972,10 @@
           <option value="visita">🔵 Visita Tranquilizadora</option>
         </select>
       </div>
+      <div class="fg" style="min-width:200px;">
+        <label>Buscar (Nº BO / município)</label>
+        <input type="text" id="cx-busca" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this);renderCruzamento()" maxlength="18">
+      </div>
     </div>
   </div>
 
@@ -1069,11 +1073,15 @@
       </div>
       <div class="fg">
         <label>Raio tolerância (km)</label>
-        <input type="number" id="vt-raio" value="0.25" min="0.1" max="2" step="0.05" oninput="renderVisitas()">
+        <input type="number" id="vt-raio" value="0.5" min="0.1" max="2" step="0.05" oninput="renderVisitas()">
       </div>
       <div class="fg">
         <label>Período após crime (dias)</label>
         <input type="number" id="vt-dias" value="30" min="1" max="180" oninput="renderVisitas()">
+      </div>
+      <div class="fg" style="min-width:200px;">
+        <label>Buscar (Nº BO / município)</label>
+        <input type="text" id="vt-busca" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this);renderVisitas()" maxlength="18">
       </div>
     </div>
   </div>
@@ -3042,6 +3050,8 @@ function limparFiltrosCrimes(){
   mesDdClrAll('cr');
   ['cr-indicador','cr-mun','cr-loc','cr-audit'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   document.getElementById('cr-busca').value='';
+  const cxB = document.getElementById('cx-busca'); if(cxB) cxB.value='';
+  const vtB = document.getElementById('vt-busca'); if(vtB) vtB.value='';
   renderCrimes();
 }
 function toggleDivOutro(cb){
@@ -5410,7 +5420,11 @@ function renderCruzamento(){
   /* Renderiza lista */
   let html = '';
   const cxStatus = document.getElementById('cx-status')?.value || '';
-  const resultadosFiltrados = cxStatus ? resultados.filter(r => r.status === cxStatus) : resultados;
+  const cxBusca  = norm(document.getElementById('cx-busca')?.value || '');
+  let resultadosFiltrados = cxStatus ? resultados.filter(r => r.status === cxStatus) : resultados;
+  if(cxBusca) resultadosFiltrados = resultadosFiltrados.filter(r =>
+    norm(r.crime.bo||r.crime.rat||'').includes(cxBusca) || norm(r.crime.municipio||'').includes(cxBusca)
+  );
 
   if(munsSemOp.length){
     html += `<div style="background:rgba(239,83,80,.08);border:1px solid rgba(239,83,80,.3);border-radius:7px;padding:10px 14px;margin-bottom:12px;">
@@ -5727,11 +5741,12 @@ function renderVisitas(){
   const tipo = document.getElementById('vt-tipo').value;
   const _mesVt = getMesDd('vt');
   const mes  = _mesVt.length===1?_mesVt[0]:'';
-  const raio = parseFloat(document.getElementById('vt-raio')?.value) || 0.25;
+  const raio = parseFloat(document.getElementById('vt-raio')?.value) || 0.5;
   const dias = parseInt(document.getElementById('vt-dias')?.value) || 30;
 
-  const vtPel = document.getElementById('vt-pel')?.value || '';
-  const vtGp  = document.getElementById('vt-gp')?.value  || '';
+  const vtPel  = document.getElementById('vt-pel')?.value   || '';
+  const vtGp   = document.getElementById('vt-gp')?.value    || '';
+  const vtBusca = norm(document.getElementById('vt-busca')?.value || '');
   /* Visitas válidas filtradas por tipo/mês/pelotão/grupamento */
   const visitasFiltradas = dadosVisitas.filter(v => {
     if(!v.visitaValida) return false;
@@ -5796,6 +5811,10 @@ function renderVisitas(){
     _vtResultados = [];
     return;
   }
+
+  if(vtBusca) crimes = crimes.filter(c =>
+    norm(c.bo||c.rat||'').includes(vtBusca) || norm(c.municipio||'').includes(vtBusca)
+  );
 
   /* Cruza por coordenadas (raio) + período após o crime */
   _vtResultados = crimes.map(crime => {
