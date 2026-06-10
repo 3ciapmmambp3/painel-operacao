@@ -5401,8 +5401,12 @@ function renderCruzamento(){
       return true;
     });
 
-    const distMin = opsProximas.length
-      ? Math.min(...opsProximas.map(op=>distanciaKm(crime.lat,crime.lng,op.lat,op.lng)))
+    /* Separa ops válidas (passam critérios GDO) das inválidas */
+    const opsValidas   = opsProximas.filter(op => _gdoValidaOp(op));
+    const opsInvalidas = opsProximas.filter(op => !_gdoValidaOp(op));
+
+    const distMin = opsValidas.length
+      ? Math.min(...opsValidas.map(op=>distanciaKm(crime.lat,crime.lng,op.lat,op.lng)))
       : null;
 
     /* Status: verifica visitas vinculadas — raio fixo 200m, independente do raio de ops */
@@ -5419,17 +5423,18 @@ function renderCruzamento(){
       return true;
     });
 
-    const status = opsProximas.length === 0
+    const status = opsValidas.length === 0
       ? (temVisitaVinc ? 'visita' : 'sem-op')
       : distMin < raio/2 ? 'com-op'
       : 'op-proxima';
 
-    return { crime, opsProximas, distMin, status };
+    return { crime, opsProximas, opsValidas, opsInvalidas, distMin, status };
   });
 
   /* Contadores */
   const semOp   = resultados.filter(r=>r.status==='sem-op').length;
   const comOp   = resultados.filter(r=>r.status==='com-op').length;
+  /* Crimes com apenas ops inválidas contam como sem-op para fins de contagem */
   const proxima = resultados.filter(r=>r.status==='op-proxima').length;
 
   /* Municípios sem policiamento */
@@ -5499,7 +5504,7 @@ function renderCruzamento(){
     /* Guarda dados das ops + visitas para o tooltip */
     window._crzTooltipData[idx] = {
       bo: r.crime.bo || r.crime.rat || '',
-      ops: r.opsProximas.map(op => ({
+      ops: [...r.opsValidas, ...r.opsInvalidas].map(op => ({
         rat:       op.rat,
         nat:       op.natureza,
         label:     LABEL_NAT_OPS_CRZ[op.natureza] || op.natureza,
@@ -5524,12 +5529,14 @@ function renderCruzamento(){
       })),
     };
 
-    /* Linha resumo de ops */
-    const opsResumo = r.opsProximas.length
-      ? r.opsProximas.slice(0,3).map(op =>
-          `<span style="background:rgba(155,138,92,.12);border:1px solid var(--gold-border);color:var(--gold);padding:1px 7px;border-radius:3px;font-size:10px;font-weight:600;white-space:nowrap;">${op.rat}</span>`
-        ).join(' ')
-        + (r.opsProximas.length>3 ? ` <span style="color:var(--text-hint);font-size:10px;">+${r.opsProximas.length-3} mais</span>` : '')
+    /* Linha resumo de ops — válidas em ouro, inválidas em laranja com ⚠ */
+    const _allOps = [...r.opsValidas, ...r.opsInvalidas];
+    const opsResumo = _allOps.length
+      ? _allOps.slice(0,3).map(op => {
+          const inv = !_gdoValidaOp(op);
+          return `<span style="background:${inv?'rgba(255,152,0,.12)':'rgba(155,138,92,.12)'};border:1px solid ${inv?'rgba(255,152,0,.4)':'var(--gold-border)'};color:${inv?'#ff9800':'var(--gold)'};padding:1px 7px;border-radius:3px;font-size:10px;font-weight:600;white-space:nowrap;" title="${inv?'⚠ Não passa nos critérios GDO':op.rat}">${inv?'⚠ ':''}${op.rat}</span>`;
+        }).join(' ')
+        + (_allOps.length>3 ? ` <span style="color:var(--text-hint);font-size:10px;">+${_allOps.length-3} mais</span>` : '')
       : '';
 
     /* Linha resumo de visitas */
@@ -5540,7 +5547,7 @@ function renderCruzamento(){
         + (visitasVinc.length>2 ? ` <span style="color:var(--text-hint);font-size:10px;">+${visitasVinc.length-2} mais</span>` : '')
       : '';
 
-    const temQualquer = r.opsProximas.length || visitasVinc.length;
+    const temQualquer = r.opsValidas.length || r.opsInvalidas.length || visitasVinc.length;
 
     html += `<div class="cruzamento-row ${r.status}" data-crz-id="${idx}">
       <div class="cruzamento-header">
@@ -5551,7 +5558,8 @@ function renderCruzamento(){
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
           ${statusBadge}
           <div class="cruzamento-distancia ${distClass}">${distLabel}</div>
-          ${r.opsProximas.length ? `<div style="font-size:10px;color:var(--text-muted);">${r.opsProximas.length} op${r.opsProximas.length>1?'s':''} no raio</div>` : ''}
+          ${r.opsValidas.length ? `<div style="font-size:10px;color:var(--text-muted);">${r.opsValidas.length} op${r.opsValidas.length>1?'s':''} válida${r.opsValidas.length>1?'s':''} no raio</div>` : ''}
+          ${r.opsInvalidas.length ? `<div style="font-size:10px;color:#ff9800;">⚠ ${r.opsInvalidas.length} op${r.opsInvalidas.length>1?'s':''} inválida${r.opsInvalidas.length>1?'s':''}</div>` : ''}
           ${visitasVinc.length ? `<div style="font-size:10px;color:var(--success);">🤝 ${visitasVinc.length} visita${visitasVinc.length>1?'s':''}</div>` : ''}
           <button onclick="_abrirModalVinculoRat('${(r.crime.bo||r.crime.rat||'').replace(/'/g,"\'")}')"
             style="background:none;border:1px solid rgba(155,138,92,.4);color:var(--gold);padding:2px 8px;border-radius:3px;font-size:10px;cursor:pointer;transition:all .15s;margin-top:2px;"
@@ -5560,7 +5568,7 @@ function renderCruzamento(){
       </div>
       ${temQualquer ? `
         <div style="margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-          ${r.opsProximas.length ? `<span style="font-size:10px;color:var(--text-hint);">Operações:</span>${opsResumo}` : ''}
+          ${_allOps.length ? `<span style="font-size:10px;color:var(--text-hint);">Operações:</span>${opsResumo}` : ''}
           ${visitasVinc.length ? `<span style="font-size:10px;color:var(--text-hint);${r.opsProximas.length?'margin-left:8px;':''}">Visitas:</span>${visitasResumo}` : ''}
           <button
             style="background:none;border:1px solid var(--border-hover);color:var(--text-muted);padding:2px 9px;border-radius:3px;font-size:10px;cursor:pointer;transition:all .15s;"
