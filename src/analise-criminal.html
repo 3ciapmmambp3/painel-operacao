@@ -5496,15 +5496,17 @@ function _abrirModalVisitaPOG(pogParaEditar, boCrimeVincular) {
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
         <div>
-          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Latitude</div>
-          <input id="_pog-lat" type="text" placeholder="Ex: -18.801163"
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Latitude <span style="color:var(--text-hint);font-size:10px;">(ex: –16º 31' 45,1")</span></div>
+          <input id="_pog-lat" type="text" placeholder="–16º 31' 45,1&quot;"
             value="${pogParaEditar?.lat||''}"
+            oninput="_mascaraDMS(this)"
             style="width:100%;box-sizing:border-box;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:7px 10px;border-radius:5px;font-size:12px;font-family:monospace;">
         </div>
         <div>
-          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Longitude</div>
-          <input id="_pog-lng" type="text" placeholder="Ex: -41.847230"
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Longitude <span style="color:var(--text-hint);font-size:10px;">(ex: –42º 25' 0,99")</span></div>
+          <input id="_pog-lng" type="text" placeholder="–42º 25' 0,99&quot;"
             value="${pogParaEditar?.lng||''}"
+            oninput="_mascaraDMS(this)"
             style="width:100%;box-sizing:border-box;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:7px 10px;border-radius:5px;font-size:12px;font-family:monospace;">
         </div>
       </div>
@@ -5529,6 +5531,34 @@ function _abrirModalVisitaPOG(pogParaEditar, boCrimeVincular) {
   document.body.appendChild(modal);
   modal.addEventListener('click', e => { if(e.target === modal) modal.remove(); });
   setTimeout(() => document.getElementById('_pog-bos')?.focus(), 100);
+}
+
+/* Converte coordenada no formato DMS (graus, minutos, segundos) para decimal */
+function _dmsParaDecimal(dmsStr) {
+  if(!dmsStr) return null;
+  const s = dmsStr.toString().trim()
+    .replace('–', '-').replace('−', '-')
+    .replace(/[°º]/g, 'º').replace(/['"]/g, '')
+    .replace(',', '.');
+  // Tenta formato decimal direto
+  const dec = parseFloat(s.replace(',', '.'));
+  if(!isNaN(dec) && s.match(/^-?\d+[.,]\d+$/)) return dec;
+  // Formato: -16 31 45.1 ou -16º 31' 45,1"
+  const m = s.match(/^(-?)(\d+)[º\s]+(\d+)['\s]+([0-9.]+)/);
+  if(m) {
+    const sinal = m[1] === '-' ? -1 : 1;
+    const graus = parseInt(m[2]);
+    const min   = parseInt(m[3]);
+    const seg   = parseFloat(m[4]);
+    return sinal * (graus + min/60 + seg/3600);
+  }
+  return dec || null;
+}
+
+/* Máscara para campo de coordenada DMS */
+function _mascaraDMS(input) {
+  let v = input.value.replace(/[^0-9\-,.'"\s°º]/g, '');
+  input.value = v;
 }
 
 function _ddmmyyyyToISO(data) {
@@ -5556,12 +5586,16 @@ async function _salvarVisitaPOG(bosAntigo, boCrimeVincular) {
   if(!dataI){ if(msg) msg.innerHTML='<span style="color:var(--danger);">✗ Data obrigatória.</span>'; return; }
   if(!mun)  { if(msg) msg.innerHTML='<span style="color:var(--danger);">✗ Município obrigatório.</span>'; return; }
 
+  /* Converte coordenadas DMS para decimal */
+  const latDec = lat ? _dmsParaDecimal(lat) : null;
+  const lngDec = lng ? _dmsParaDecimal(lng) : null;
+
   const payload = {
     numero_bos:  bos,
     data_fato:   _isoToDDMMYYYY(dataI),
     municipio:   mun.toUpperCase(),
-    latitude:    lat || null,
-    longitude:   lng || null,
+    latitude:    latDec !== null ? latDec.toString().replace('.', ',') : null,
+    longitude:   lngDec !== null ? lngDec.toString().replace('.', ',') : null,
     observacao:  obs || null,
     criado_por:  sessao?.matricula || sessao?.matricula_clean || '',
     criado_em:   new Date().toISOString(),
@@ -5599,7 +5633,7 @@ async function _salvarVisitaPOG(bosAntigo, boCrimeVincular) {
       bo: bos, natCode:'A20028', natDesc:'Visita POG',
       mes: dp ? (MESES[dp.getMonth()]||'') : '', ano: dp ? dp.getFullYear().toString() : '',
       data: payload.data_fato, municipio: payload.municipio,
-      localizacao:'ZONA RURAL', lat: parseFloat(lat)||null, lng: parseFloat(lng)||null,
+      localizacao:'ZONA RURAL', lat: latDec, lng: lngDec,
       rpm:'', unidReg:'POG', dataInicio:'', horInicio:'', dataFim:'', horFim:'',
       minutos:60, faixaTempo:'', visitaValida:true, alertaUrbano:false,
       boRefs:[], isPOG:true, observacao:obs, criadoPor:payload.criado_por,
