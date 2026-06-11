@@ -5504,6 +5504,7 @@ function _abrirModalVisitaPOG(pogParaEditar, boCrimeVincular) {
       <div style="margin-bottom:12px;">
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Município <span style="color:var(--danger);">*</span></div>
         <input id="_pog-municipio" type="text" placeholder="Nome do município"
+          oninput="this.value=this.value.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')"
           value="${pogParaEditar?.municipio||''}"
           style="width:100%;box-sizing:border-box;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:7px 10px;border-radius:5px;font-size:12px;">
       </div>
@@ -5665,7 +5666,7 @@ async function _salvarVisitaPOG(bosAntigo, boCrimeVincular) {
   const payload = {
     numero_bos:  bos,
     data_fato:   _isoToDDMMYYYY(dataI),
-    municipio:   mun.toUpperCase(),
+    municipio:   mun.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''),
     latitude:    latDec2.toString().replace('.', ','),
     longitude:   lngDec2.toString().replace('.', ','),
     observacao:  obs || null,
@@ -5676,24 +5677,20 @@ async function _salvarVisitaPOG(bosAntigo, boCrimeVincular) {
   if(msg) msg.innerHTML = '<span style="color:var(--text-muted);">Salvando...</span>';
 
   try {
+    /* Usa _acHeaders() para garantir autenticação correta */
+    const _pogHdrs = _acHeaders({'Content-Type':'application/json','Prefer':'return=minimal'});
     let res;
     if(bosAntigo && bosAntigo !== bos) {
-      /* Deletar antigo e criar novo */
       await fetch(`${SB_URL}/rest/v1/bd_visitas_pog?numero_bos=eq.${encodeURIComponent(bosAntigo)}`,
-        { method:'DELETE', headers: { 'apikey':SB_KEY, 'Authorization':'Bearer '+SB_KEY } });
+        { method:'DELETE', headers: _acHeaders() });
       res = await fetch(`${SB_URL}/rest/v1/bd_visitas_pog`,
-        { method:'POST', headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
-          body: JSON.stringify(payload) });
+        { method:'POST', headers: _pogHdrs, body: JSON.stringify(payload) });
     } else if(bosAntigo) {
-      /* Atualizar */
       res = await fetch(`${SB_URL}/rest/v1/bd_visitas_pog?numero_bos=eq.${encodeURIComponent(bosAntigo)}`,
-        { method:'PATCH', headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
-          body: JSON.stringify(payload) });
+        { method:'PATCH', headers: _pogHdrs, body: JSON.stringify(payload) });
     } else {
-      /* Inserir novo */
       res = await fetch(`${SB_URL}/rest/v1/bd_visitas_pog`,
-        { method:'POST', headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
-          body: JSON.stringify(payload) });
+        { method:'POST', headers: _pogHdrs, body: JSON.stringify(payload) });
     }
 
     if(!res.ok) throw new Error('HTTP ' + res.status);
@@ -6103,7 +6100,7 @@ function _vtRenderLista(){
         const pogBadge = v.isPOG
           ? `<span style="background:rgba(155,138,92,.2);color:var(--gold);border:1px solid rgba(155,138,92,.5);padding:1px 7px;border-radius:3px;font-size:10px;font-weight:700;">🐴 POG</span>`
           : '';
-        const pogBtns = v.isPOG ? `
+        const pogBtns = (v.isPOG && sessao?.nivel_acesso === 'admin_geral') ? `
           <div style="display:flex;gap:6px;margin-top:8px;">
             <button onclick="_abrirModalVisitaPOG(dadosVisitas.find(x=>x.bo==='${v.bo}'&&x.isPOG))"
               style="background:none;border:1px solid rgba(155,138,92,.4);color:var(--gold);padding:2px 8px;border-radius:3px;font-size:10px;cursor:pointer;">✏️ Editar</button>
