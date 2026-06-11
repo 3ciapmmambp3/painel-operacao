@@ -1089,6 +1089,15 @@
     </div>
   </div>
 
+  <!-- Botão lançar visita POG -->
+  <div style="margin-bottom:10px;display:flex;justify-content:flex-end;">
+    <button onclick="_abrirModalVisitaPOG()"
+      style="background:rgba(155,138,92,.2);border:1px solid rgba(155,138,92,.5);color:var(--gold);padding:7px 16px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;"
+      onmouseover="this.style.background='rgba(155,138,92,.35)'" onmouseout="this.style.background='rgba(155,138,92,.2)'">
+      + Lançar Visita POG
+    </button>
+  </div>
+
   <!-- Cards resumo -->
   <div class="top-cards" style="margin-bottom:12px;">
     <div class="top-card green">
@@ -2853,7 +2862,46 @@ async function carregarVisitas(){
     _setUpdatedBadge('VIS', ultimaData);
     console.log('[carregarVisitas] Supabase:', dadosVisitas.length, 'registros |',
       dadosVisitas.filter(v=>v.visitaValida).length, 'validas');
+
+    /* Carrega visitas POG */
+    await _carregarVisitasPOG();
   } catch(e){ console.warn('[carregarVisitas] Erro:', e.message); }
+}
+
+/** Carrega bd_visitas_pog e integra em dadosVisitas */
+async function _carregarVisitasPOG() {
+  try {
+    const r = await fetch(
+      `${SB_URL}/rest/v1/bd_visitas_pog?select=numero_bos,data_fato,municipio,latitude,longitude,observacao,criado_por,criado_em&order=data_fato`,
+      { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
+    );
+    if(!r.ok) return;
+    const rows = await r.json();
+    rows.forEach(row => {
+      const bo  = (row.numero_bos || '').toString().trim();
+      const lat = parseFloat((row.latitude  || '').toString().replace(',','.')) || null;
+      const lng = parseFloat((row.longitude || '').toString().replace(',','.')) || null;
+      if(!bo) return;
+      const obj = {
+        bo, natCode: 'A20028', natDesc: 'Visita POG',
+        mes: '', ano: '', data: (row.data_fato || '').toString().trim(),
+        municipio: (row.municipio || '').toString().trim(),
+        localizacao: 'ZONA RURAL', lat, lng, rpm: '',
+        unidReg: 'POG', dataInicio:'', horInicio:'', dataFim:'', horFim:'',
+        minutos: 60, faixaTempo:'', visitaValida: true, alertaUrbano: false,
+        boRefs: [], isPOG: true,
+        observacao: (row.observacao || '').toString().trim(),
+        criadoPor: (row.criado_por || '').toString().trim(),
+      };
+      // Calcular mês a partir da data
+      const dp = parseDataDDMMAAAA(obj.data);
+      if(dp) obj.mes = MESES[dp.getMonth()] || '';
+      dadosVisitas.push(obj);
+      if(!window._visitasPorBO[bo]) window._visitasPorBO[bo] = [];
+      window._visitasPorBO[bo].push(obj);
+    });
+    console.log('[carregarVisitasPOG]', rows.length, 'visitas POG carregadas');
+  } catch(e){ console.warn('[carregarVisitasPOG] Erro:', e.message); }
 }
 /* ══════════════════════════════════
    VERIFICAÇÃO IBGE — ponto em polígono
@@ -5411,6 +5459,181 @@ async function _salvarRatRef(rat, ratRefs) {
   }
 }
 
+/* ══════════════════════════════════
+   VISITAS POG
+══════════════════════════════════ */
+
+function _abrirModalVisitaPOG(pogParaEditar) {
+  const prev = document.getElementById('_modal-visita-pog');
+  if(prev) prev.remove();
+
+  const modal = document.createElement('div');
+  modal.id = '_modal-visita-pog';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:10000;display:flex;align-items:center;justify-content:center;';
+
+  const titulo = pogParaEditar ? '✏️ Editar Visita POG' : '+ Lançar Visita POG';
+
+  modal.innerHTML = `
+    <div style="background:#1e1e1e;border:1px solid rgba(155,138,92,.4);border-radius:10px;padding:20px 24px;width:560px;max-width:92vw;max-height:85vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.8);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div style="font-size:13px;font-weight:700;color:var(--gold);">${titulo}</div>
+        <button onclick="document.getElementById('_modal-visita-pog').remove()" style="background:none;border:none;color:var(--text-muted);font-size:18px;cursor:pointer;">✕</button>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Nº BOS <span style="color:var(--danger);">*</span></div>
+          <input id="_pog-bos" type="text" placeholder="Ex: 2026-012345678-001" maxlength="18"
+            oninput="mascaraBO(this)"
+            value="${pogParaEditar?.bo||''}"
+            style="width:100%;box-sizing:border-box;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:7px 10px;border-radius:5px;font-size:12px;font-family:monospace;">
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Data da Visita <span style="color:var(--danger);">*</span></div>
+          <input id="_pog-data" type="date"
+            value="${pogParaEditar ? _ddmmyyyyToISO(pogParaEditar.data) : ''}"
+            style="width:100%;box-sizing:border-box;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:7px 10px;border-radius:5px;font-size:12px;">
+        </div>
+      </div>
+
+      <div style="margin-bottom:12px;">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Município <span style="color:var(--danger);">*</span></div>
+        <input id="_pog-municipio" type="text" placeholder="Nome do município"
+          value="${pogParaEditar?.municipio||''}"
+          style="width:100%;box-sizing:border-box;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:7px 10px;border-radius:5px;font-size:12px;">
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Latitude</div>
+          <input id="_pog-lat" type="text" placeholder="Ex: -18.801163"
+            value="${pogParaEditar?.lat||''}"
+            style="width:100%;box-sizing:border-box;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:7px 10px;border-radius:5px;font-size:12px;font-family:monospace;">
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Longitude</div>
+          <input id="_pog-lng" type="text" placeholder="Ex: -41.847230"
+            value="${pogParaEditar?.lng||''}"
+            style="width:100%;box-sizing:border-box;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:7px 10px;border-radius:5px;font-size:12px;font-family:monospace;">
+        </div>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Observação</div>
+        <textarea id="_pog-obs" rows="3" placeholder="Descrição da visita, local, contexto..."
+          style="width:100%;box-sizing:border-box;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:7px 10px;border-radius:5px;font-size:12px;resize:vertical;font-family:inherit;">${pogParaEditar?.observacao||''}</textarea>
+      </div>
+
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button onclick="document.getElementById('_modal-visita-pog').remove()"
+          style="background:none;border:1px solid var(--border);color:var(--text-muted);padding:8px 16px;border-radius:5px;font-size:12px;cursor:pointer;">Cancelar</button>
+        <button onclick="_salvarVisitaPOG('${pogParaEditar?.bo||''}')"
+          style="background:rgba(155,138,92,.2);border:1px solid rgba(155,138,92,.5);color:var(--gold);padding:8px 20px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;">
+          ✔ ${pogParaEditar ? 'Salvar Alterações' : 'Lançar Visita'}
+        </button>
+      </div>
+      <div id="_pog-msg" style="font-size:11px;margin-top:10px;text-align:right;"></div>
+    </div>`;
+
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if(e.target === modal) modal.remove(); });
+  setTimeout(() => document.getElementById('_pog-bos')?.focus(), 100);
+}
+
+function _ddmmyyyyToISO(data) {
+  if(!data) return '';
+  const m = data.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : data;
+}
+
+function _isoToDDMMYYYY(data) {
+  if(!data) return '';
+  const m = data.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : data;
+}
+
+async function _salvarVisitaPOG(bosAntigo) {
+  const msg   = document.getElementById('_pog-msg');
+  const bos   = (document.getElementById('_pog-bos')?.value||'').trim();
+  const dataI = document.getElementById('_pog-data')?.value||'';
+  const mun   = (document.getElementById('_pog-municipio')?.value||'').trim();
+  const lat   = document.getElementById('_pog-lat')?.value||'';
+  const lng   = document.getElementById('_pog-lng')?.value||'';
+  const obs   = (document.getElementById('_pog-obs')?.value||'').trim();
+
+  if(!bos)  { if(msg) msg.innerHTML='<span style="color:var(--danger);">✗ Nº BOS obrigatório.</span>'; return; }
+  if(!dataI){ if(msg) msg.innerHTML='<span style="color:var(--danger);">✗ Data obrigatória.</span>'; return; }
+  if(!mun)  { if(msg) msg.innerHTML='<span style="color:var(--danger);">✗ Município obrigatório.</span>'; return; }
+
+  const payload = {
+    numero_bos:  bos,
+    data_fato:   _isoToDDMMYYYY(dataI),
+    municipio:   mun.toUpperCase(),
+    latitude:    lat || null,
+    longitude:   lng || null,
+    observacao:  obs || null,
+    criado_por:  sessao?.matricula || sessao?.matricula_clean || '',
+    criado_em:   new Date().toISOString(),
+  };
+
+  if(msg) msg.innerHTML = '<span style="color:var(--text-muted);">Salvando...</span>';
+
+  try {
+    let res;
+    if(bosAntigo && bosAntigo !== bos) {
+      /* Deletar antigo e criar novo */
+      await fetch(`${SB_URL}/rest/v1/bd_visitas_pog?numero_bos=eq.${encodeURIComponent(bosAntigo)}`,
+        { method:'DELETE', headers: { 'apikey':SB_KEY, 'Authorization':'Bearer '+SB_KEY } });
+      res = await fetch(`${SB_URL}/rest/v1/bd_visitas_pog`,
+        { method:'POST', headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+          body: JSON.stringify(payload) });
+    } else if(bosAntigo) {
+      /* Atualizar */
+      res = await fetch(`${SB_URL}/rest/v1/bd_visitas_pog?numero_bos=eq.${encodeURIComponent(bosAntigo)}`,
+        { method:'PATCH', headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+          body: JSON.stringify(payload) });
+    } else {
+      /* Inserir novo */
+      res = await fetch(`${SB_URL}/rest/v1/bd_visitas_pog`,
+        { method:'POST', headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+          body: JSON.stringify(payload) });
+    }
+
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+
+    /* Atualiza dadosVisitas em memória */
+    const dp = parseDataDDMMAAAA(payload.data_fato);
+    const novaBOIdx = dadosVisitas.findIndex(v => v.bo === bosAntigo && v.isPOG);
+    const novaObj = {
+      bo: bos, natCode:'A20028', natDesc:'Visita POG',
+      mes: dp ? (MESES[dp.getMonth()]||'') : '', ano: dp ? dp.getFullYear().toString() : '',
+      data: payload.data_fato, municipio: payload.municipio,
+      localizacao:'ZONA RURAL', lat: parseFloat(lat)||null, lng: parseFloat(lng)||null,
+      rpm:'', unidReg:'POG', dataInicio:'', horInicio:'', dataFim:'', horFim:'',
+      minutos:60, faixaTempo:'', visitaValida:true, alertaUrbano:false,
+      boRefs:[], isPOG:true, observacao:obs, criadoPor:payload.criado_por,
+    };
+    if(novaBOIdx >= 0) dadosVisitas[novaBOIdx] = novaObj;
+    else dadosVisitas.push(novaObj);
+
+    if(msg) msg.innerHTML = '<span style="color:var(--success);">✔ Visita POG salva com sucesso.</span>';
+    setTimeout(() => { document.getElementById('_modal-visita-pog')?.remove(); renderVisitas(); }, 800);
+  } catch(e) {
+    if(msg) msg.innerHTML = `<span style="color:var(--danger);">✗ Erro ao salvar: ${e.message}</span>`;
+  }
+}
+
+async function _excluirVisitaPOG(bos) {
+  if(!confirm(`Excluir visita POG ${bos}? Esta ação não pode ser desfeita.`)) return;
+  try {
+    await fetch(`${SB_URL}/rest/v1/bd_visitas_pog?numero_bos=eq.${encodeURIComponent(bos)}`,
+      { method:'DELETE', headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY} });
+    const idx = dadosVisitas.findIndex(v => v.bo === bos && v.isPOG);
+    if(idx >= 0) dadosVisitas.splice(idx, 1);
+    renderVisitas();
+  } catch(e) { alert('Erro ao excluir: ' + e.message); }
+}
+
 function ocultarTooltipCrz(){
   const tt = document.getElementById('crz-tooltip-float');
   if(tt) tt.style.display = 'none';
@@ -5772,6 +5995,18 @@ function _vtRenderLista(){
           : gp;
         const gpExtra = gpParts.length >= 3 ? gpParts.slice(2).join(' / ') : '';
 
+        /* Badge POG */
+        const pogBadge = v.isPOG
+          ? `<span style="background:rgba(155,138,92,.2);color:var(--gold);border:1px solid rgba(155,138,92,.5);padding:1px 7px;border-radius:3px;font-size:10px;font-weight:700;">🐴 POG</span>`
+          : '';
+        const pogBtns = v.isPOG ? `
+          <div style="display:flex;gap:6px;margin-top:8px;">
+            <button onclick="_abrirModalVisitaPOG(dadosVisitas.find(x=>x.bo==='${v.bo}'&&x.isPOG))"
+              style="background:none;border:1px solid rgba(155,138,92,.4);color:var(--gold);padding:2px 8px;border-radius:3px;font-size:10px;cursor:pointer;">✏️ Editar</button>
+            <button onclick="_excluirVisitaPOG('${v.bo}')"
+              style="background:none;border:1px solid rgba(239,83,80,.4);color:var(--danger);padding:2px 8px;border-radius:3px;font-size:10px;cursor:pointer;">🗑 Excluir</button>
+          </div>` : '';
+
         /* Badge Rural/Urbano */
         const locBadge = v.localizacao === 'ZONA RURAL'
           ? `<span style="background:rgba(102,187,106,.15);color:var(--success);border:1px solid rgba(102,187,106,.4);padding:1px 7px;border-radius:3px;font-size:10px;font-weight:700;">🌿 RURAL</span>`
@@ -5803,6 +6038,7 @@ function _vtRenderLista(){
                 </span>
                 ${locBadge}
                 ${vinculoBadge}
+                ${pogBadge}
               </div>
             </div>
             <div style="text-align:right;">
@@ -5819,6 +6055,7 @@ function _vtRenderLista(){
           </div>
           ${v.municipio ? `<div style="margin-top:6px;font-size:10px;color:var(--text-hint);">📍 ${v.municipio} · ${v.localizacao||'—'}</div>` : ''}
           ${boRefsHtml}
+          ${pogBtns}
         </div>`;
       }).join('');
 
@@ -6119,7 +6356,7 @@ function abrirAuditoria(bo){
   _auditBoAtual = bo;
   const crime   = dadosCrimes.find(d => d.bo === bo || d.rat === bo);
   const saved   = auditoriasMap[bo];
-  const isAdmin = sessao?.perfil === 'admin';
+  const isAdmin = sessao?.nivel_acesso === 'admin_geral';
 
   /* Limpa imagens anteriores ao abrir */
   limparImgsAuditoria();
@@ -6379,17 +6616,19 @@ function excluirSolicitacaoUsuario(){
   if(!_auditBoAtual) return;
 
   const saved = auditoriasMap[_auditBoAtual];
-  const isAdmin = sessao?.perfil === 'admin';
+  const isAdmin = sessao?.nivel_acesso === 'admin_geral';
 
   if(!saved || (!saved.motivo && !saved.justificativa)){
     alert('Não há solicitação para excluir.');
     return;
   }
 
+  /* Admin pode excluir qualquer status */
   if(!isAdmin && !['aguardando','em_analise'].includes(saved.status || 'aguardando')){
     alert('Esta solicitação já foi avaliada e não pode ser excluída.');
     return;
   }
+  /* Admin pode excluir qualquer status */
 
   const msg = isAdmin
     ? `Admin: excluir a solicitação do BO ${_auditBoAtual}?\n\nEsta ação não pode ser desfeita.`
@@ -6812,7 +7051,7 @@ function excluirSolicitacaoUsuario(){
   if(!_auditBoAtual) return;
 
   const saved = auditoriasMap[_auditBoAtual];
-  const isAdmin = sessao?.perfil === 'admin';
+  const isAdmin = sessao?.nivel_acesso === 'admin_geral';
 
   if(!saved || !saved.motivo){
     alert('Não há solicitação para excluir.');
