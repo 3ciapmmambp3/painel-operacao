@@ -5724,6 +5724,19 @@ async function _salvarVisitaPOG(bosAntigo, boCrimeVincular) {
   }
 }
 
+/* Remove vínculo direto de um BOS com um crime */
+async function _desvincularBOS(bosVisita, boCrime) {
+  if(!confirm(`Desvincular BOS ${bosVisita} do crime ${boCrime}?`)) return;
+  const visita = dadosVisitas.find(v => v.bo === bosVisita);
+  if(!visita) return;
+  const novosRefs = (visita.boRefs||[]).filter(b => b !== boCrime);
+  const ok = await _salvarBoRef(bosVisita, novosRefs);
+  if(ok) {
+    visita.boRefs = novosRefs;
+    renderVisitas();
+  } else { alert('Erro ao desvincular.'); }
+}
+
 async function _excluirVisitaPOG(bos) {
   if(!confirm(`Excluir visita POG ${bos}? Esta ação não pode ser desfeita.`)) return;
   try {
@@ -6093,7 +6106,8 @@ function _vtRenderLista(){
 
   if(_vtView === 'todos' || _vtView === 'visitados'){
     /* ════ LISTA DE VISITADOS ════ */
-    lista.forEach(r => {
+    const listaVisitados = _vtView === 'todos' ? lista.filter(r => r.temVisita) : lista;
+    listaVisitados.forEach(r => {
       const cor = CORES_INDICADOR[r.crime.indicador] || '#9b8a5c';
       /* Uma linha por visita válida vinculada */
       const visitasHtml = r.validas.map(v => {
@@ -6108,14 +6122,15 @@ function _vtRenderLista(){
 
         /* Badge POG */
         const pogBadge = v.isPOG
-          ? `<span style="background:rgba(155,138,92,.2);color:var(--gold);border:1px solid rgba(155,138,92,.5);padding:1px 7px;border-radius:3px;font-size:10px;font-weight:700;">🐴 POG</span>`
+          ? `<span style="background:rgba(155,138,92,.2);color:var(--gold);border:1px solid rgba(155,138,92,.5);padding:1px 7px;border-radius:3px;font-size:10px;font-weight:700;">🚔 POG</span>`
           : '';
-        const pogBtns = (v.isPOG && sessao?.nivel_acesso === 'admin_geral') ? `
+        const isVinculoDireto = v.boRefs && v.boRefs.includes(r.crime.bo || r.crime.rat || '');
+        const pogBtns = (sessao?.nivel_acesso === 'admin_geral' && (v.isPOG || isVinculoDireto)) ? `
           <div style="display:flex;gap:6px;margin-top:8px;">
-            <button onclick="_abrirModalVisitaPOG(dadosVisitas.find(x=>x.bo==='${v.bo}'&&x.isPOG))"
-              style="background:none;border:1px solid rgba(155,138,92,.4);color:var(--gold);padding:2px 8px;border-radius:3px;font-size:10px;cursor:pointer;">✏️ Editar</button>
-            <button onclick="_excluirVisitaPOG('${v.bo}')"
-              style="background:none;border:1px solid rgba(239,83,80,.4);color:var(--danger);padding:2px 8px;border-radius:3px;font-size:10px;cursor:pointer;">🗑 Excluir</button>
+            ${v.isPOG ? `<button onclick="_abrirModalVisitaPOG(dadosVisitas.find(x=>x.bo==='${v.bo}'&&x.isPOG))"
+              style="background:none;border:1px solid rgba(155,138,92,.4);color:var(--gold);padding:2px 8px;border-radius:3px;font-size:10px;cursor:pointer;">✏️ Editar</button>` : ''}
+            <button onclick="${v.isPOG ? `_excluirVisitaPOG('${v.bo}')` : `_desvincularBOS('${v.bo}','${r.crime.bo||r.crime.rat||''}')`}"
+              style="background:none;border:1px solid rgba(239,83,80,.4);color:var(--danger);padding:2px 8px;border-radius:3px;font-size:10px;cursor:pointer;">🗑 ${v.isPOG ? 'Excluir' : 'Desvincular'}</button>
           </div>` : '';
 
         /* Badge Rural/Urbano */
@@ -6193,7 +6208,7 @@ function _vtRenderLista(){
               onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='rgba(155,138,92,.4)'">🚔 Lançar Visita POG</button>
           </div>
         </div>
-        ${visitasHtml}
+        ${r.validas.length ? visitasHtml : ''}
       </div>`;
     });
 
