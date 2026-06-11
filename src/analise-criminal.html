@@ -2896,6 +2896,7 @@ async function _carregarVisitasPOG() {
         boRefs: Array.isArray(row.bo_referencia) ? row.bo_referencia : (row.bo_referencia ? [row.bo_referencia] : []), isPOG: true,
         observacao: (row.observacao || '').toString().trim(),
         criadoPor: (row.criado_por || '').toString().trim(),
+        criadoEm: row.criado_em ? new Date(row.criado_em).toLocaleString('pt-BR') : '',
       };
       // Calcular mês a partir da data
       const dp = parseDataDDMMAAAA(obj.data);
@@ -5203,6 +5204,12 @@ async function _vincRemover(bosVisita, boCrime) {
 
 /** Salva bo_referencia no Supabase para o BOS da visita */
 async function _salvarBoRef(bosVisita, boRefs) {
+  /* Registra quem vinculou em memória */
+  const vObj = dadosVisitas.find(v => v.bo === bosVisita);
+  if(vObj && boRefs.length > 0 && !vObj.criadoPor) {
+    vObj.criadoPor = _formatarIdentMilitar(sessao) || sessao?.matricula || '';
+    vObj.criadoEm  = new Date().toLocaleString('pt-BR');
+  }
   try {
     const res = await fetch(
       `${SB_URL}/rest/v1/bd_visitas?numero_bos=eq.${encodeURIComponent(bosVisita)}`,
@@ -5730,7 +5737,7 @@ async function _salvarVisitaPOG(bosAntigo, boCrimeVincular) {
       localizacao:'ZONA RURAL', lat: latDec2, lng: lngDec2,
       rpm:'', unidReg:'POG', dataInicio:'', horInicio:'', dataFim:'', horFim:'',
       minutos:60, faixaTempo:'', visitaValida:true, alertaUrbano:false,
-      boRefs:[], isPOG:true, observacao:obs, criadoPor:payload.criado_por,
+      boRefs:[], isPOG:true, observacao:obs, criadoPor:payload.criado_por, criadoEm: new Date().toLocaleString('pt-BR'),
     };
     if(novaBOIdx >= 0) dadosVisitas[novaBOIdx] = novaObj;
     else dadosVisitas.push(novaObj);
@@ -6207,6 +6214,10 @@ function _vtRenderLista(){
           </div>
           ${v.municipio ? `<div style="margin-top:6px;font-size:10px;color:var(--text-hint);">📍 ${v.municipio} · ${v.localizacao||'—'}</div>` : ''}
           ${boRefsHtml}
+          ${(v.isPOG || _isVinculoDireto2) && v.criadoPor ? `
+            <div style="margin-top:6px;font-size:10px;color:var(--text-hint);border-top:1px solid rgba(255,255,255,.06);padding-top:6px;">
+              ${v.isPOG ? '🚔 Lançado' : '🔗 Vinculado'} por <span style="color:#ccc;font-weight:600;">${v.criadoPor}</span>${v.criadoEm ? ' em ' + v.criadoEm : ''}
+            </div>` : ''}
           ${pogBtns}
         </div>`;
       }).join('');
