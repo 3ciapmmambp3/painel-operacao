@@ -1089,15 +1089,6 @@
     </div>
   </div>
 
-  <!-- Botão lançar visita POG -->
-  <div style="margin-bottom:10px;display:flex;justify-content:flex-end;">
-    <button onclick="_abrirModalVisitaPOG()"
-      style="background:rgba(155,138,92,.2);border:1px solid rgba(155,138,92,.5);color:var(--gold);padding:7px 16px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;"
-      onmouseover="this.style.background='rgba(155,138,92,.35)'" onmouseout="this.style.background='rgba(155,138,92,.2)'">
-      + Lançar Visita POG
-    </button>
-  </div>
-
   <!-- Cards resumo -->
   <div class="top-cards" style="margin-bottom:12px;">
     <div class="top-card green">
@@ -2872,7 +2863,7 @@ async function carregarVisitas(){
 async function _carregarVisitasPOG() {
   try {
     const r = await fetch(
-      `${SB_URL}/rest/v1/bd_visitas_pog?select=numero_bos,data_fato,municipio,latitude,longitude,observacao,criado_por,criado_em&order=data_fato`,
+      `${SB_URL}/rest/v1/bd_visitas_pog?select=numero_bos,data_fato,municipio,latitude,longitude,observacao,bo_referencia,criado_por,criado_em&order=data_fato`,
       { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
     );
     if(!r.ok) return;
@@ -2889,7 +2880,7 @@ async function _carregarVisitasPOG() {
         localizacao: 'ZONA RURAL', lat, lng, rpm: '',
         unidReg: 'POG', dataInicio:'', horInicio:'', dataFim:'', horFim:'',
         minutos: 60, faixaTempo:'', visitaValida: true, alertaUrbano: false,
-        boRefs: [], isPOG: true,
+        boRefs: Array.isArray(row.bo_referencia) ? row.bo_referencia : (row.bo_referencia ? [row.bo_referencia] : []), isPOG: true,
         observacao: (row.observacao || '').toString().trim(),
         criadoPor: (row.criado_por || '').toString().trim(),
       };
@@ -5463,7 +5454,7 @@ async function _salvarRatRef(rat, ratRefs) {
    VISITAS POG
 ══════════════════════════════════ */
 
-function _abrirModalVisitaPOG(pogParaEditar) {
+function _abrirModalVisitaPOG(pogParaEditar, boCrimeVincular) {
   const prev = document.getElementById('_modal-visita-pog');
   if(prev) prev.remove();
 
@@ -5527,7 +5518,7 @@ function _abrirModalVisitaPOG(pogParaEditar) {
       <div style="display:flex;gap:8px;justify-content:flex-end;">
         <button onclick="document.getElementById('_modal-visita-pog').remove()"
           style="background:none;border:1px solid var(--border);color:var(--text-muted);padding:8px 16px;border-radius:5px;font-size:12px;cursor:pointer;">Cancelar</button>
-        <button onclick="_salvarVisitaPOG('${pogParaEditar?.bo||''}')"
+        <button onclick="_salvarVisitaPOG('${pogParaEditar?.bo||''}', '${boCrimeVincular||''}')"
           style="background:rgba(155,138,92,.2);border:1px solid rgba(155,138,92,.5);color:var(--gold);padding:8px 20px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;">
           ✔ ${pogParaEditar ? 'Salvar Alterações' : 'Lançar Visita'}
         </button>
@@ -5552,7 +5543,7 @@ function _isoToDDMMYYYY(data) {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : data;
 }
 
-async function _salvarVisitaPOG(bosAntigo) {
+async function _salvarVisitaPOG(bosAntigo, boCrimeVincular) {
   const msg   = document.getElementById('_pog-msg');
   const bos   = (document.getElementById('_pog-bos')?.value||'').trim();
   const dataI = document.getElementById('_pog-data')?.value||'';
@@ -5616,6 +5607,13 @@ async function _salvarVisitaPOG(bosAntigo) {
     if(novaBOIdx >= 0) dadosVisitas[novaBOIdx] = novaObj;
     else dadosVisitas.push(novaObj);
 
+    /* Se veio de um crime, vincula automaticamente */
+    if(boCrimeVincular) {
+      novaObj.boRefs = [boCrimeVincular];
+      await fetch(`${SB_URL}/rest/v1/bd_visitas_pog?numero_bos=eq.${encodeURIComponent(bos)}`,
+        { method:'PATCH', headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+          body: JSON.stringify({ bo_referencia: [boCrimeVincular] }) });
+    }
     if(msg) msg.innerHTML = '<span style="color:var(--success);">✔ Visita POG salva com sucesso.</span>';
     setTimeout(() => { document.getElementById('_modal-visita-pog')?.remove(); renderVisitas(); }, 800);
   } catch(e) {
@@ -6077,6 +6075,9 @@ function _vtRenderLista(){
             <button onclick="_abrirModalVinculo('${r.crime.bo||r.crime.rat||''}')"
               style="background:none;border:1px solid rgba(66,165,245,.4);color:#42a5f5;padding:2px 8px;border-radius:3px;font-size:10px;cursor:pointer;transition:all .15s;margin-top:2px;"
               onmouseover="this.style.borderColor='#42a5f5'" onmouseout="this.style.borderColor='rgba(66,165,245,.4)'">🔗 Vincular BOS</button>
+            <button onclick="_abrirModalVisitaPOG(null,'${r.crime.bo||r.crime.rat||''}')"
+              style="background:none;border:1px solid rgba(155,138,92,.4);color:var(--gold);padding:2px 8px;border-radius:3px;font-size:10px;cursor:pointer;transition:all .15s;"
+              onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='rgba(155,138,92,.4)'">🐴 Lançar POG</button>
           </div>
         </div>
         ${visitasHtml}
@@ -6114,6 +6115,9 @@ function _vtRenderLista(){
             <button onclick="_abrirModalVinculo('${r.crime.bo||r.crime.rat||''}')"
               style="background:none;border:1px solid rgba(66,165,245,.4);color:#42a5f5;padding:2px 8px;border-radius:3px;font-size:10px;cursor:pointer;transition:all .15s;"
               onmouseover="this.style.borderColor='#42a5f5'" onmouseout="this.style.borderColor='rgba(66,165,245,.4)'">🔗 Vincular BOS</button>
+            <button onclick="_abrirModalVisitaPOG(null,'${r.crime.bo||r.crime.rat||''}')"
+              style="background:none;border:1px solid rgba(155,138,92,.4);color:var(--gold);padding:2px 8px;border-radius:3px;font-size:10px;cursor:pointer;transition:all .15s;"
+              onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='rgba(155,138,92,.4)'">🐴 Lançar POG</button>
           </div>
         </div>`;
       });
