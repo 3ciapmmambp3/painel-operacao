@@ -6622,7 +6622,7 @@ function excluirSolicitacaoUsuario(){
   const saved = auditoriasMap[_auditBoAtual];
   const isAdmin = sessao?.nivel_acesso === 'admin_geral';
 
-  if(!saved || (!saved.motivo && !saved.justificativa)){
+  if(!saved){
     alert('Não há solicitação para excluir.');
     return;
   }
@@ -6817,9 +6817,29 @@ function renderAuditoriasLista(){
         <button class="btn-outline" style="font-size:10px;padding:3px 10px;" onclick="abrirAuditoria('${a.bo}')">📋 Abrir</button>
         <button title="Gerar PDF Modelo Oficial (BPM MAmb)" onclick="event.stopPropagation();_auditBoAtual='${a.bo}';gerarPDFAuditoriaBPM()"
           style="font-size:14px;padding:2px 7px;background:rgba(27,94,32,.2);border:1px solid rgba(27,94,32,.5);color:#66bb6a;border-radius:4px;cursor:pointer;line-height:1;" title="PDF Modelo Oficial BPM MAmb">📄</button>
+        <button onclick="event.stopPropagation();_excluirAuditoriaLista('${a.bo}')"
+          style="font-size:14px;padding:2px 7px;background:rgba(239,83,80,.15);border:1px solid rgba(239,83,80,.4);color:var(--danger);border-radius:4px;cursor:pointer;line-height:1;" title="Excluir auditoria">🗑</button>
       </div>
     </div>`;
   }).join('');
+}
+
+async function _excluirAuditoriaLista(bo) {
+  const isAdmin = sessao?.nivel_acesso === 'admin_geral';
+  if(!isAdmin) { alert('Apenas o Admin Geral pode excluir auditorias.'); return; }
+  if(!confirm(`Excluir a auditoria do BO ${bo}?\n\nEsta ação não pode ser desfeita.`)) return;
+
+  fetch(`${SB_URL}/rest/v1/auditorias?bo=eq.${encodeURIComponent(bo)}`, {
+    method: 'DELETE', headers: _acHeaders()
+  }).catch(e => console.warn('[auditorias] delete:', e.message));
+
+  delete auditoriasMap[bo];
+  _pset('ac_auditorias', JSON.stringify(auditoriasMap));
+
+  const crime = dadosCrimes.find(d => d.bo === bo || d.rat === bo);
+  if(crime){ crime._auditoria = null; crime._auditoriaPendente = pontoEmAreaUrbanaIBGE(crime.lat, crime.lng); }
+
+  renderAuditoriasLista();
 }
 
 async function gerarPDFAuditoria(){
