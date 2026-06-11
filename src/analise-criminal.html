@@ -4986,7 +4986,7 @@ function mostrarTooltipCrz(btn, idx){
             ${v.localizacao==='ZONA RURAL'?'<span style="background:rgba(102,187,106,.1);color:var(--success);border:1px solid rgba(102,187,106,.3);padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;margin-left:2px;">🌿 RURAL</span>':v.localizacao==='PERIMETRO URBANO'?'<span style="background:rgba(255,152,0,.1);color:#ff9800;border:1px solid rgba(255,152,0,.3);padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;margin-left:2px;">🏙 URBANO</span>':''}
           </td>
           <td style="padding:5px 10px;color:#aaa;white-space:nowrap;font-size:11px;">${v.data}${v.horInicio?' · '+v.horInicio:''}</td>
-          <td style="padding:5px 10px;color:#ddd;font-size:11px;">${gpLabel}${v.rpm?' <span style=\"color:var(--text-hint);font-size:10px;\">'+v.rpm+'</span>':''}</td>
+          <td style="padding:5px 10px;color:#ddd;font-size:11px;">${v.isPOG ? '<span style=\'color:var(--gold);font-weight:700;\'>🚔 POG</span>' : gpLabel}${v.rpm?' <span style=\"color:var(--text-hint);font-size:10px;\">'+v.rpm+'</span>':''}${v.criadoPor ? '<div style=\'font-size:9px;color:var(--text-hint);\'>Lançado: '+v.criadoPor+'</div>' : ''}${v.observacao ? '<div style=\'font-size:9px;color:var(--text-hint);\'>Obs: '+v.observacao+'</div>' : ''}</td>
           <td style="padding:5px 10px;color:#aaa;font-size:11px;white-space:nowrap;">${v.faixaTempo||'—'}<br><span style="font-size:10px;color:var(--text-hint);">${v.minutos} min</span></td>
         </tr>`;
       }).join('')}
@@ -5670,7 +5670,7 @@ async function _salvarVisitaPOG(bosAntigo, boCrimeVincular) {
     latitude:    latDec2.toString().replace('.', ','),
     longitude:   lngDec2.toString().replace('.', ','),
     observacao:  obs || null,
-    criado_por:  sessao?.matricula || sessao?.matricula_clean || '',
+    criado_por:  _formatarIdentMilitar(sessao) || sessao?.matricula || sessao?.matricula_clean || '',
     criado_em:   new Date().toISOString(),
   };
 
@@ -5852,9 +5852,11 @@ function renderCruzamento(){
 
     /* Status: verifica visitas vinculadas — raio fixo 200m, independente do raio de ops */
     const temVisitaVinc = dadosVisitas.some(v => {
-      if(!v.visitaValida||!v.lat||!v.lng) return false;
-      /* Vínculo direto */
-      if(v.boRefs && v.boRefs.includes(crime.bo||crime.rat||'')) return true;
+      if(!v.visitaValida) return false;
+      /* Vínculo direto (inclui POG) */
+      if(v.boRefs && (v.boRefs.includes(crime.bo||'') || v.boRefs.includes(crime.rat||''))) return true;
+      if(v.isPOG) return false;
+      if(!v.lat||!v.lng) return false;
       /* Raio fixo 200m */
       if(distanciaKm(crime.lat, crime.lng, v.lat, v.lng) > 0.2) return false;
       if(dataCrime){
@@ -5924,7 +5926,12 @@ function renderCruzamento(){
     const dataCrimeVt = parseDataDDMMAAAA(r.crime.data||'');
     const visitasVinc = r.crime.lat && r.crime.lng
       ? dadosVisitas.filter(v => {
-          if(!v.visitaValida || !v.lat || !v.lng) return false;
+          if(!v.visitaValida) return false;
+          /* Vínculo direto (inclui POG) — ignora natCode e raio */
+          if(v.boRefs && (v.boRefs.includes(r.crime.bo||'') || v.boRefs.includes(r.crime.rat||''))) return true;
+          /* Visita POG sem vínculo direto — não conta por raio */
+          if(v.isPOG) return false;
+          if(!v.lat || !v.lng) return false;
           /* Natureza compatível com indicador do crime */
           const natEsperada = r.crime.indicador === 'IF' ? 'A20028' : 'A20001';
           if(v.natCode !== natEsperada) return false;
@@ -5968,6 +5975,9 @@ function renderCruzamento(){
         faixaTempo: v.faixaTempo || '—',
         minutos:  v.minutos || 0,
         localizacao: v.localizacao || '—',
+        isPOG:    v.isPOG || false,
+        criadoPor: v.criadoPor || '',
+        observacao: v.observacao || '',
       })),
     };
 
@@ -6332,11 +6342,17 @@ function renderVisitas(){
     /* Natureza de visita esperada para este indicador */
     const natEsperada = crime.indicador === 'IF' ? 'A20028' : 'A20001';
 
-    const validas = visitasFiltradas.filter(v => {
+    /* Inclui visitas POG com vínculo direto + visitas normais por raio */
+    const _bosCrime = crime.bo || crime.rat || '';
+    const validas = dadosVisitas.filter(v => {
+        if(!v.visitaValida) return false;
+        /* Vínculo direto (inclui POG) — ignora natCode e raio */
+        if(v.boRefs && (v.boRefs.includes(_bosCrime))) return true;
+        /* Visita POG sem vínculo direto — não conta */
+        if(v.isPOG) return false;
+        /* Natureza compatível */
         if(v.natCode !== natEsperada) return false;
-        /* Vínculo direto: sempre inclui independente de raio/período */
-        if(v.boRefs && v.boRefs.includes(crime.bo || crime.rat || '')) return true;
-        /* Vínculo por raio: exige coordenadas, distância e período */
+        /* Raio e período */
         if(!crime.lat || !crime.lng || !v.lat || !v.lng) return false;
         if(distanciaKm(crime.lat, crime.lng, v.lat, v.lng) > raio) return false;
         if(dataCrime){
