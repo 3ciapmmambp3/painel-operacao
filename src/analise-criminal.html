@@ -1805,6 +1805,47 @@
             <label>Facção / Vínculo Criminal</label>
             <input type="text" id="i-facao" placeholder="Nome da facção ou grupo...">
           </div>
+          <div class="intel-field">
+            <label>Coordenadas Geográficas</label>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+              <div>
+                <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px;">Latitude <span style="color:var(--text-hint);font-size:10px;">DDº MM' SS,SS"</span></div>
+                <div style="display:flex;align-items:center;gap:3px;">
+                  <select id="i-lat-sinal" style="background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:5px 5px;border-radius:5px;font-size:13px;font-weight:700;cursor:pointer;">
+                    <option value="-">–</option><option value="+">+</option>
+                  </select>
+                  <input id="i-lat-g" type="text" maxlength="2" placeholder="DD" oninput="_intelDmsInput(this,'lat','g')"
+                    style="width:38px;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:5px 5px;border-radius:5px;font-size:12px;font-family:monospace;text-align:center;">
+                  <span style="color:var(--text-muted);">º</span>
+                  <input id="i-lat-m" type="text" maxlength="2" placeholder="MM" oninput="_intelDmsInput(this,'lat','m')"
+                    style="width:38px;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:5px 5px;border-radius:5px;font-size:12px;font-family:monospace;text-align:center;">
+                  <span style="color:var(--text-muted);">'</span>
+                  <input id="i-lat-s" type="text" maxlength="6" placeholder="SS,SS" oninput="_intelDmsInput(this,'lat','s')"
+                    style="width:56px;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:5px 5px;border-radius:5px;font-size:12px;font-family:monospace;text-align:center;">
+                  <span style="color:var(--text-muted);">"</span>
+                </div>
+                <div id="i-lat-err" style="font-size:10px;color:var(--danger);margin-top:2px;display:none;"></div>
+              </div>
+              <div>
+                <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px;">Longitude <span style="color:var(--text-hint);font-size:10px;">DDDº MM' SS,SS"</span></div>
+                <div style="display:flex;align-items:center;gap:3px;">
+                  <select id="i-lng-sinal" style="background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:5px 5px;border-radius:5px;font-size:13px;font-weight:700;cursor:pointer;">
+                    <option value="-">–</option><option value="+">+</option>
+                  </select>
+                  <input id="i-lng-g" type="text" maxlength="3" placeholder="DDD" oninput="_intelDmsInput(this,'lng','g')"
+                    style="width:46px;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:5px 5px;border-radius:5px;font-size:12px;font-family:monospace;text-align:center;">
+                  <span style="color:var(--text-muted);">º</span>
+                  <input id="i-lng-m" type="text" maxlength="2" placeholder="MM" oninput="_intelDmsInput(this,'lng','m')"
+                    style="width:38px;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:5px 5px;border-radius:5px;font-size:12px;font-family:monospace;text-align:center;">
+                  <span style="color:var(--text-muted);">'</span>
+                  <input id="i-lng-s" type="text" maxlength="6" placeholder="SS,SS" oninput="_intelDmsInput(this,'lng','s')"
+                    style="width:56px;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:5px 5px;border-radius:5px;font-size:12px;font-family:monospace;text-align:center;">
+                  <span style="color:var(--text-muted);">"</span>
+                </div>
+                <div id="i-lng-err" style="font-size:10px;color:var(--danger);margin-top:2px;display:none;"></div>
+              </div>
+            </div>
+          </div>
         </div>
         <div>
           <div class="intel-field">
@@ -3637,7 +3678,76 @@ function renderChartLocalizacao(dados){
 let _acMapFS = null;  /* instância Leaflet do fullscreen */
 let _acLayersFS = {};
 
-function abrirMapaFullscreen(){
+/* ── Tela cheia para o mapa da ficha de Inteligência ── */
+function abrirMapaFullscreen(sourceMapId, lat, lng){
+  /* Se chamado sem args = mapa criminal geral (comportamento original) */
+  if(sourceMapId === undefined){ _abrirMapaCriminalFullscreen(); return; }
+
+  /* Cria overlay dinamicamente se não existir */
+  let ov = document.getElementById('intel-map-fs-overlay');
+  if(!ov){
+    ov = document.createElement('div');
+    ov.id = 'intel-map-fs-overlay';
+    ov.style.cssText = 'display:none;position:fixed;inset:0;z-index:99999;background:#111;flex-direction:column;';
+    ov.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:#1a1a1a;border-bottom:1px solid rgba(255,255,255,.1);flex-shrink:0;">
+        <span style="font-size:13px;font-weight:700;color:#d4b86a;"><i class="ti ti-map-2"></i> Localização — Ficha de Inteligência</span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <a id="intel-map-fs-gmlink" href="#" target="_blank"
+             style="font-size:11px;padding:4px 10px;border-radius:4px;background:rgba(66,133,244,.15);color:#6ea6ff;border:1px solid rgba(66,133,244,.35);text-decoration:none;display:inline-flex;align-items:center;gap:5px;">
+            <i class="ti ti-brand-google-maps"></i> Google Maps
+          </a>
+          <button onclick="document.getElementById('intel-map-fs-overlay').style.display='none';document.body.style.overflow='';if(window._intelFsMap){try{window._intelFsMap.remove();}catch(e){}window._intelFsMap=null;};"
+                  style="font-size:11px;padding:4px 12px;border-radius:4px;background:rgba(255,255,255,.08);color:#ccc;border:1px solid rgba(255,255,255,.18);cursor:pointer;">
+            ✕ Fechar
+          </button>
+        </div>
+      </div>
+      <div id="intel-map-fs-inner" style="flex:1;width:100%;"></div>`;
+    document.body.appendChild(ov);
+  }
+
+  ov.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+
+  /* Atualiza link Google Maps */
+  const gmLink = document.getElementById('intel-map-fs-gmlink');
+  if(gmLink) gmLink.href = `https://www.google.com/maps?q=${lat},${lng}`;
+
+  /* Destroi instância anterior */
+  if(window._intelFsMap){ try{ window._intelFsMap.remove(); }catch(e){} window._intelFsMap=null; }
+  document.getElementById('intel-map-fs-inner').innerHTML = '';
+
+  setTimeout(() => {
+    try {
+      const m = L.map('intel-map-fs-inner', { zoomControl:true, attributionControl:false });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:18 }).addTo(m);
+      const redIcon = L.divIcon({
+        html: '<div style="width:16px;height:16px;background:#FF4D4F;border:2px solid #fff;border-radius:50%;box-shadow:0 0 8px rgba(255,77,79,.7);"></div>',
+        className:'', iconSize:[16,16], iconAnchor:[8,8],
+      });
+      L.marker([lat, lng], {icon: redIcon}).addTo(m)
+        .bindPopup(`<span style="font-size:11px;">${lat.toFixed(5)}, ${lng.toFixed(5)}</span>`, {maxWidth:180})
+        .openPopup();
+      m.setView([lat, lng], 15);
+      window._intelFsMap = m;
+      setTimeout(() => m.invalidateSize(), 150);
+    } catch(e){ console.warn('Intel FS map:', e); }
+  }, 100);
+
+  /* Esc fecha */
+  const _escFn = (e) => {
+    if(e.key === 'Escape'){
+      document.getElementById('intel-map-fs-overlay').style.display = 'none';
+      document.body.style.overflow = '';
+      if(window._intelFsMap){ try{ window._intelFsMap.remove(); }catch(ex){} window._intelFsMap=null; }
+      document.removeEventListener('keydown', _escFn);
+    }
+  };
+  document.addEventListener('keydown', _escFn);
+}
+
+function _abrirMapaCriminalFullscreen(){
   const overlay = document.getElementById('mapa-fullscreen-overlay');
   overlay.classList.add('ativo');
 
@@ -5579,6 +5689,70 @@ function _abrirModalVisitaPOG(pogParaEditar, boCrimeVincular) {
     setTimeout(() => { _pogPreencherDMS('lat', pogParaEditar.lat); _pogPreencherDMS('lng', pogParaEditar.lng); }, 50);
   }
   setTimeout(() => document.getElementById('_pog-bos')?.focus(), 100);
+}
+
+/* ── DMS helpers para a ficha de Inteligência (IDs: i-lat-*, i-lng-*) ── */
+function _intelDmsInput(el, tipo, campo) {
+  el.value = el.value.replace(/[^0-9,]/g, '');
+  const g = document.getElementById('i-' + tipo + '-g');
+  const m = document.getElementById('i-' + tipo + '-m');
+  const s = document.getElementById('i-' + tipo + '-s');
+  const errEl = document.getElementById('i-' + tipo + '-err');
+  const maxG = tipo === 'lat' ? 2 : 3;
+  if(campo === 'g' && el.value.length >= maxG) m?.focus();
+  if(campo === 'm' && el.value.length >= 2)    s?.focus();
+  const gv = parseInt(g?.value||'0')||0;
+  const mv = parseInt(m?.value||'0')||0;
+  const sv = parseFloat((s?.value||'0').replace(',','.'))||0;
+  let err = '';
+  if(tipo === 'lat'  && gv > 90)  err = 'Latitude máx. 90°';
+  if(tipo === 'lng'  && gv > 180) err = 'Longitude máx. 180°';
+  if(mv > 59) err = 'Minutos: 0–59';
+  if(sv >= 60) err = 'Segundos: 0–59,99';
+  if(errEl) { errEl.textContent = err; errEl.style.display = err ? 'block' : 'none'; }
+}
+
+function _intelGetDec(tipo) {
+  const sinal = document.getElementById('i-' + tipo + '-sinal')?.value === '+' ? 1 : -1;
+  const g = parseInt(document.getElementById('i-' + tipo + '-g')?.value||'')||null;
+  const m = parseInt(document.getElementById('i-' + tipo + '-m')?.value||'0')||0;
+  const s = parseFloat((document.getElementById('i-' + tipo + '-s')?.value||'0').replace(',','.'))||0;
+  if(g === null) return null;
+  return sinal * (g + m/60 + s/3600);
+}
+
+function _intelPreencherDMS(tipo, decVal) {
+  if(decVal === null || decVal === undefined) return;
+  const sinalEl = document.getElementById('i-' + tipo + '-sinal');
+  const gEl     = document.getElementById('i-' + tipo + '-g');
+  const mEl     = document.getElementById('i-' + tipo + '-m');
+  const sEl     = document.getElementById('i-' + tipo + '-s');
+  if(!gEl) return;
+  const neg = decVal < 0;
+  const abs = Math.abs(decVal);
+  const g = Math.floor(abs);
+  const mRem = (abs - g) * 60;
+  const mInt = Math.floor(mRem);
+  const sec  = (mRem - mInt) * 60;
+  if(sinalEl) sinalEl.value = neg ? '-' : '+';
+  gEl.value = String(g);
+  mEl.value = String(mInt).padStart(2, '0');
+  sEl.value = sec.toFixed(2).replace('.', ',');
+}
+
+function _intelLimparDMS() {
+  ['lat','lng'].forEach(t => {
+    const s = document.getElementById('i-' + t + '-sinal');
+    const g = document.getElementById('i-' + t + '-g');
+    const m = document.getElementById('i-' + t + '-m');
+    const sc = document.getElementById('i-' + t + '-s');
+    const e = document.getElementById('i-' + t + '-err');
+    if(s) s.value = '-';
+    if(g) g.value = '';
+    if(m) m.value = '';
+    if(sc) sc.value = '';
+    if(e) { e.textContent = ''; e.style.display = 'none'; }
+  });
 }
 
 /* Validação e autoavanço dos campos DMS do POG */
@@ -8216,6 +8390,9 @@ function abrirModalIntel(id){
       document.getElementById('i-tipo-criminal').value  = f.tipoCriminal || '';
       document.getElementById('i-prioridade').value     = f.prioridade   || '';
       document.getElementById('i-status-ficha').value   = f.statusFicha  || 'em_analise';
+      /* Preenche campos DMS de coordenadas ao editar */
+      if(f.coordenadas){ setTimeout(() => { _intelPreencherDMS('lat', f.coordenadas.lat); _intelPreencherDMS('lng', f.coordenadas.lng); }, 50); }
+      else { _intelLimparDMS(); }
       _intelFotosBuffer = (f.fotos||[]).map(fb=>({...fb}));
     }
   } else {
@@ -8223,6 +8400,7 @@ function abrirModalIntel(id){
      'i-data-fato','i-tipo-criminal','i-prioridade'].forEach(fid=>{
       document.getElementById(fid).value='';
     });
+    _intelLimparDMS();
     document.getElementById('i-reincidencia').value='nao';
     document.getElementById('i-status-ficha').value='em_analise';
   }
@@ -8290,6 +8468,7 @@ async function salvarIntel(){
       tipoCriminal: document.getElementById('i-tipo-criminal').value || '',
       prioridade:   document.getElementById('i-prioridade').value || '',
       statusFicha:  document.getElementById('i-status-ficha').value || 'em_analise',
+      coordenadas:  (() => { const lat = _intelGetDec('lat'); const lng = _intelGetDec('lng'); return (lat !== null && lng !== null) ? {lat, lng} : null; })(),
       fotos:        _intelFotosBuffer.map(f=>({id:f.id, base64:f.base64||'', nome:f.nome, tipo:f.tipo||'', storage_url:f.storage_url||''})),
       /* Preserva complementos, criadoPor e criadoEm se estiver editando */
       complementos: fichaExistente?.complementos || [],
@@ -9319,19 +9498,41 @@ function idRenderTab(tab){
     const tagsHtml = f.tags
       ? `<div class="ip-sec"><div class="ip-lbl">🏷 Tags / Palavras-chave</div><div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:4px;">${f.tags.split(',').map(t=>t.trim()).filter(Boolean).map(t=>`<span style="font-size:11px;background:rgba(255,255,255,.06);color:#ccc;border:1px solid rgba(255,255,255,.12);padding:2px 9px;border-radius:20px;">${t}</span>`).join('')}</div></div>` : '';
 
-    /* ── Extrai coordenadas do campo obs ou conexoes ── */
+    /* ── Coordenadas: campo DMS dedicado tem prioridade; fallback extrai de obs/conexoes/modus ── */
     const _coordRx = /(-?\d{1,3}\.\d{3,})\s*[\/,\s]\s*(-?\d{1,3}\.\d{3,})/g;
-    const _coordSrc = (f.obs||'') + ' ' + (f.conexoes||'') + ' ' + (f.modus||'');
     const _coords = [];
-    let _cm;
-    while((_cm = _coordRx.exec(_coordSrc)) !== null){
-      const lat = parseFloat(_cm[1]), lng = parseFloat(_cm[2]);
-      if(lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) _coords.push([lat, lng]);
+    if(f.coordenadas && f.coordenadas.lat !== null && f.coordenadas.lat !== undefined){
+      _coords.push([f.coordenadas.lat, f.coordenadas.lng]);
+    }
+    if(!_coords.length){
+      const _parseCoordStr = (src) => {
+        _coordRx.lastIndex = 0;
+        let _cm;
+        while((_cm = _coordRx.exec(src)) !== null){
+          const lat = parseFloat(_cm[1]), lng = parseFloat(_cm[2]);
+          if(lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) _coords.push([lat, lng]);
+        }
+      };
+      _parseCoordStr((f.obs||'') + ' ' + (f.conexoes||'') + ' ' + (f.modus||''));
     }
     const mapId = 'intel-map-' + f.id;
+    const _gmUrl = _coords.length ? `https://www.google.com/maps?q=${_coords[0][0]},${_coords[0][1]}` : '';
     const mapHtml = _coords.length
       ? `<div class="ip-sec">
-          <div class="ip-lbl"><i class="ti ti-map-2"></i> Localização</div>
+          <div class="ip-lbl" style="display:flex;align-items:center;justify-content:space-between;">
+            <span><i class="ti ti-map-2"></i> Localização</span>
+            <div style="display:flex;gap:6px;">
+              <a href="${_gmUrl}" target="_blank" title="Abrir no Google Maps"
+                 style="font-size:10px;padding:3px 8px;border-radius:4px;background:rgba(66,133,244,.15);color:#6ea6ff;border:1px solid rgba(66,133,244,.35);text-decoration:none;display:inline-flex;align-items:center;gap:4px;">
+                <i class="ti ti-brand-google-maps" style="font-size:12px;"></i> Google Maps
+              </a>
+              <button onclick="abrirMapaFullscreen('${mapId}',${_coords[0][0]},${_coords[0][1]})"
+                      title="Tela cheia"
+                      style="font-size:10px;padding:3px 8px;border-radius:4px;background:rgba(255,255,255,.07);color:#ccc;border:1px solid rgba(255,255,255,.15);cursor:pointer;">
+                <i class="ti ti-arrows-maximize" style="font-size:12px;"></i> Tela cheia
+              </button>
+            </div>
+          </div>
           <div id="${mapId}" style="height:180px;border-radius:6px;overflow:hidden;border:1px solid rgba(255,255,255,.1);margin-top:4px;background:#181B22;"></div>
         </div>`
       : '';
