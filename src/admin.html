@@ -14,7 +14,7 @@
         if (!raw) { window.location.replace('index.html'); return; }
         const s = JSON.parse(raw);
         const nivel = s.nivel_acesso || '';
-        if (!['admin_geral','admin','admin_pelotao'].includes(nivel)) {
+        if (!['admin_geral'].includes(nivel)) {
           window.location.replace('painel.html');
         }
       } catch(e) { window.location.replace('index.html'); }
@@ -961,7 +961,7 @@ let sessao = null;
 function lerSessaoAdmin() {
   const s = SbAuth.sessaoLer();
   if (!s) { window.location.replace('index.html'); return null; }
-  const niveis_admin = ['admin_geral','admin','admin_pelotao'];
+  const niveis_admin = ['admin_geral'];
   if (!niveis_admin.includes(s.nivel_acesso)) {
     document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#1a1a1a;flex-direction:column;gap:16px;"><div style="color:#ef5350;font-size:48px;">🔒</div><div style="color:#ef5350;font-size:18px;font-weight:700;">ACESSO RESTRITO</div><div style="color:#999;font-size:13px;">Apenas administradores podem acessar esta área.</div><button onclick="window.location.href=\'painel.html\'" style="margin-top:12px;background:#9b8a5c;color:#1a1000;border:none;padding:10px 24px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;">← Voltar ao Painel</button></div>';
     return null;
@@ -1095,20 +1095,6 @@ function renderTabela() {
   if (filStatus === 'pendente') lista = lista.filter(u => u.primeiro_acesso);
   if (filStatus === 'ativo')    lista = lista.filter(u => !u.primeiro_acesso);
 
-  /* admin_pelotao vê apenas usuários do seu pelotão */
-  if (sessao?.nivel_acesso === 'admin_pelotao') {
-    const _pelNum = (gid) => {
-      const m = (gid || '').match(/(\d+)\s*PEL/i);
-      return m ? parseInt(m[1]) : null;
-    };
-    const meuPelNum = _pelNum(sessao.grupamento_id);
-    lista = lista.filter(u => {
-      if (u.id === sessao.id) return true;           // sempre vê a si mesmo
-      if (meuPelNum === null) return false;           // sem pelotão definido: restringe tudo
-      return _pelNum(u.grupamento_id) === meuPelNum; // mesmo pelotão
-    });
-  }
-
   const tbody = document.getElementById('tabela-body');
   if (!lista.length) {
     tbody.innerHTML = '<tr class="empty-row"><td colspan="9">Nenhum usuário encontrado.</td></tr>';
@@ -1116,12 +1102,13 @@ function renderTabela() {
   }
 
   const isSelf = (id) => sessao && sessao.id === id;
-  const meuNivel = SbAuth.NIVEIS.indexOf(sessao?.nivel_acesso || 'operacional');
+  /* Apenas admin_geral pode promover/rebaixar/excluir/resetar */
+  const isAdminGeral = sessao?.nivel_acesso === 'admin_geral';
 
   tbody.innerHTML = lista.map(u => {
     const self   = isSelf(u.id);
     const alvNivel = SbAuth.NIVEIS.indexOf(u.nivel_acesso);
-    const podeAlt  = !self && meuNivel > alvNivel;
+    const podeAlt  = isAdminGeral && !self && SbAuth.NIVEIS.indexOf('admin_geral') > alvNivel;
 
     const bStatus = u.primeiro_acesso
       ? '<span class="badge badge-pending">⚠ Pendente</span>'
