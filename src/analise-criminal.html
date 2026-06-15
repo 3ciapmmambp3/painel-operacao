@@ -1289,6 +1289,28 @@
     </div>
   </div>
 
+  <!-- Painel de registros excluídos (só admin_geral) -->
+  <div id="rcr-excluidos-wrap" style="display:none;margin-top:14px;background:var(--bg-card);border-radius:8px;overflow:hidden;border:1px solid rgba(239,83,80,.3);">
+    <div style="padding:10px 16px;border-bottom:1px solid rgba(239,83,80,.2);display:flex;justify-content:space-between;align-items:center;">
+      <span style="font-size:12px;font-weight:700;color:#ef5350;">🗑 Registros Excluídos (Lista Negra)</span>
+      <span style="font-size:11px;color:var(--text-muted);">Serão ignorados nas importações futuras · Clique em Restaurar para reativar</span>
+    </div>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:11px;">
+        <thead>
+          <tr style="background:#1e1e1e;">
+            <th style="padding:6px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Nº BOS</th>
+            <th style="padding:6px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Excluído por</th>
+            <th style="padding:6px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Data</th>
+            <th style="padding:6px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Motivo</th>
+            <th style="padding:6px 10px;text-align:center;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Ação</th>
+          </tr>
+        </thead>
+        <tbody id="rcr-excluidos-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
 </div><!-- /tab-rcr -->
 
 <!-- ════════════════════════════════
@@ -6935,19 +6957,94 @@ function _rcrIsAdminGeral(){
 
 async function rcrExcluirRegistro(bo) {
   if(!_rcrIsAdminGeral()) return;
-  if(!confirm(`Excluir o registro\n${bo}\nda base de dados?\n\nEsta ação não pode ser desfeita.`)) return;
+  const motivo = prompt(
+    `Excluir o registro:\n${bo}\n\nInforme o motivo (opcional — pressione OK para continuar):`
+  );
+  if(motivo === null) return; /* Cancelou */
   try {
+    /* 1. Deleta de bd_visitas */
     const res = await fetch(
       `${SB_URL}/rest/v1/bd_visitas?numero_bos=eq.${encodeURIComponent(bo)}`,
       { method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Prefer': 'return=minimal' } }
     );
     if(!res.ok) throw new Error('HTTP ' + res.status);
-    /* Remove da memória local e re-renderiza */
+    /* 2. Insere na lista negra rcr_excluidos */
+    await fetch(`${SB_URL}/rest/v1/rcr_excluidos`, {
+      method: 'POST',
+      headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY,
+                 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({
+        numero_bos:   bo,
+        excluido_por: sessao?.nome || sessao?.matricula || 'Admin',
+        motivo:       motivo || null
+      })
+    });
+    /* 3. Remove da memória local e re-renderiza */
     dadosVisitas = dadosVisitas.filter(v => v.bo !== bo);
     if(window._visitasPorBO) delete window._visitasPorBO[bo];
     renderRCR();
+    /* 4. Atualiza painel de excluídos se estiver visível */
+    rcrRenderExcluidos();
   } catch(e) {
     alert('Erro ao excluir: ' + e.message);
+  }
+}
+
+let _rcrExcluidosCache = [];
+
+async function rcrCarregarExcluidos() {
+  try {
+    const r = await fetch(
+      `${SB_URL}/rest/v1/rcr_excluidos?select=id,numero_bos,excluido_por,excluido_em,motivo&order=excluido_em.desc`,
+      { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
+    );
+    _rcrExcluidosCache = r.ok ? await r.json() : [];
+  } catch(e) { _rcrExcluidosCache = []; }
+}
+
+async function rcrRenderExcluidos() {
+  if(!_rcrIsAdminGeral()) return;
+  await rcrCarregarExcluidos();
+  const wrap = document.getElementById('rcr-excluidos-wrap');
+  const tbody = document.getElementById('rcr-excluidos-tbody');
+  if(!wrap || !tbody) return;
+  if(!_rcrExcluidosCache.length){
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = '';
+  tbody.innerHTML = _rcrExcluidosCache.map(e => {
+    const dt = e.excluido_em ? new Date(e.excluido_em).toLocaleString('pt-BR') : '—';
+    return `<tr style="border-bottom:1px solid #1e1e1e;">
+      <td style="font-family:monospace;font-size:10px;color:#888;padding:6px 10px;">${e.numero_bos}</td>
+      <td style="padding:6px 10px;font-size:11px;color:var(--text-muted);">${e.excluido_por||'—'}</td>
+      <td style="padding:6px 10px;font-size:11px;color:var(--text-muted);">${dt}</td>
+      <td style="padding:6px 10px;font-size:11px;color:var(--text-muted);">${e.motivo||'—'}</td>
+      <td style="padding:6px 10px;text-align:center;">
+        <button onclick="rcrRestaurar('${e.numero_bos}',${e.id})"
+          style="background:none;border:1px solid rgba(46,160,67,.4);color:#2ea043;padding:3px 10px;border-radius:4px;font-size:10px;cursor:pointer;">
+          ↩ Restaurar
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function rcrRestaurar(bo, id) {
+  if(!_rcrIsAdminGeral()) return;
+  if(!confirm(`Restaurar o registro\n${bo}?\n\nEle voltará a aparecer na próxima importação.`)) return;
+  try {
+    /* Remove da lista negra */
+    const res = await fetch(
+      `${SB_URL}/rest/v1/rcr_excluidos?id=eq.${id}`,
+      { method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Prefer': 'return=minimal' } }
+    );
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    _rcrExcluidosCache = _rcrExcluidosCache.filter(e => e.id !== id);
+    rcrRenderExcluidos();
+    alert(`Registro ${bo} restaurado.\nEle voltará a aparecer na próxima importação de Visitas.`);
+  } catch(e) {
+    alert('Erro ao restaurar: ' + e.message);
   }
 }
 
@@ -10929,6 +11026,7 @@ function switchSubtab(el, id){
       _mesDdUpdateLabel('rcr');
     }
     renderRCR();
+    rcrRenderExcluidos();
   }
   if(id === 'auditorias'){
     /* Sempre recarrega do Supabase ao abrir a aba para garantir dados atualizados */
