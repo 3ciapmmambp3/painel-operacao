@@ -1194,7 +1194,7 @@
               <label class="mes-chk"><input type="checkbox" value="FEVEREIRO" onchange="onMesDdChange('rcr')"> <span>Fevereiro</span></label>
               <label class="mes-chk"><input type="checkbox" value="MARÇO"    onchange="onMesDdChange('rcr')"> <span>Março</span></label>
               <label class="mes-chk"><input type="checkbox" value="ABRIL"    onchange="onMesDdChange('rcr')"> <span>Abril</span></label>
-              <label class="mes-chk"><input type="checkbox" value="MAIO"     checked onchange="onMesDdChange('rcr')"> <span>Maio</span></label>
+              <label class="mes-chk"><input type="checkbox" value="MAIO"     onchange="onMesDdChange('rcr')"> <span>Maio</span></label>
               <label class="mes-chk"><input type="checkbox" value="JUNHO"    onchange="onMesDdChange('rcr')"> <span>Junho</span></label>
               <label class="mes-chk"><input type="checkbox" value="JULHO"    onchange="onMesDdChange('rcr')"> <span>Julho</span></label>
               <label class="mes-chk"><input type="checkbox" value="AGOSTO"   onchange="onMesDdChange('rcr')"> <span>Agosto</span></label>
@@ -1260,12 +1260,6 @@
 
   <!-- Grid por pelotão -->
   <div id="rcr-pel-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:14px;"></div>
-
-  <!-- Alertas urbano -->
-  <div id="rcr-alerta-urb-box" style="display:none;background:rgba(255,152,0,.08);border:1px solid rgba(255,152,0,.35);border-radius:7px;padding:12px 16px;margin-bottom:12px;">
-    <div style="font-size:11px;font-weight:700;color:#ff9800;margin-bottom:6px;">⚠ REUNIÕES EM PERÍMETRO URBANO — NÃO CONTABILIZADAS</div>
-    <div id="rcr-alerta-urb-lista" style="display:flex;flex-direction:column;gap:6px;"></div>
-  </div>
 
   <!-- Tabela de registros -->
   <div style="background:var(--bg-card);border-radius:8px;overflow:hidden;border:1px solid var(--border);">
@@ -3286,7 +3280,7 @@ function _mesDdUpdateLabel(prefix){
 
 function onMesDdChange(prefix){
   _mesDdUpdateLabel(prefix);
-  const renders = { mapa: renderMapaCriminal, cr: renderCrimes, cx: renderCruzamento, vt: renderVisitas };
+  const renders = { mapa: renderMapaCriminal, cr: renderCrimes, cx: renderCruzamento, vt: renderVisitas, rcr: renderRCR };
   if(renders[prefix]) renders[prefix]();
 }
 
@@ -6800,7 +6794,11 @@ let _rcrMetas = {}; /* { pelotao: metaMensal } */
 async function _rcrCarregarMetas() {
   try {
     const ano = new Date().getFullYear();
-    const rows = await sbFetch('rcr_metas', `ano=eq.${ano}&select=pelotao,meta_jan,meta_fev,meta_mar,meta_abr,meta_mai,meta_jun,meta_jul,meta_ago,meta_set,meta_out,meta_nov,meta_dez`);
+    const _rcrR = await fetch(
+      `${SB_URL}/rest/v1/rcr_metas?ano=eq.${ano}&select=pelotao,meta_jan,meta_fev,meta_mar,meta_abr,meta_mai,meta_jun,meta_jul,meta_ago,meta_set,meta_out,meta_nov,meta_dez`,
+      { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
+    );
+    const rows = _rcrR.ok ? await _rcrR.json() : [];
     _rcrMetas = {};
     rows.forEach(r => { _rcrMetas[parseInt(r.pelotao)] = r; });
   } catch(e) {
@@ -6848,32 +6846,13 @@ async function renderRCR() {
     if (v.localizacao !== 'ZONA RURAL') return false;
     if (_mesRcr.length > 0 && !_mesRcr.includes(v.mes)) return false;
     if (rcrNat && v.natCode !== rcrNat) return false;
-    const gi = dadosGrupos.find(g => g.munNorm === norm(v.municipio || ''));
-    if (rcrPel && (!gi || String(pelDoColk(gi.grupamento)) !== rcrPel)) return false;
-    if (rcrGp  && (!gi || gpDoColk(gi.grupamento) !== rcrGp))           return false;
+    if (rcrPel || rcrGp) {
+      const gi = dadosGrupos.find(g => g.munNorm === norm(v.municipio || ''));
+      if (rcrPel && (!gi || String(gi.pelNum) !== rcrPel)) return false;
+      if (rcrGp  && (!gi || gi.gpResp !== rcrGp))          return false;
+    }
     return true;
   });
-
-  /* Alertas urbano */
-  const urbanos = dadosVisitas.filter(v => {
-    if (!RCR_NATS.includes(v.natCode)) return false;
-    if (v.localizacao !== 'PERIMETRO URBANO') return false;
-    if (_mesRcr.length > 0 && !_mesRcr.includes(v.mes)) return false;
-    return true;
-  });
-  const boxUrb = document.getElementById('rcr-alerta-urb-box');
-  const lstUrb = document.getElementById('rcr-alerta-urb-lista');
-  if (urbanos.length) {
-    boxUrb.style.display = 'block';
-    lstUrb.innerHTML = urbanos.map(v => `
-      <div style="background:rgba(255,152,0,.07);border:1px solid rgba(255,152,0,.25);border-radius:5px;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
-        <div>
-          <span style="font-size:12px;font-weight:700;color:#ff9800;">${v.bo||'—'}</span>
-          <span style="font-size:11px;color:var(--text-muted);margin-left:8px;">${v.data||'—'} · ${v.municipio||'—'} · ${RCR_NAT_LABEL[v.natCode]||v.natCode}</span>
-        </div>
-        <span style="background:rgba(255,152,0,.15);color:#ff9800;border:1px solid rgba(255,152,0,.3);padding:2px 7px;border-radius:3px;font-size:10px;font-weight:700;">⚠ PERÍMETRO URBANO</span>
-      </div>`).join('');
-  } else { boxUrb.style.display = 'none'; lstUrb.innerHTML = ''; }
 
   /* Calcula por pelotão */
   const PELS = [1,2,3,4,5];
@@ -6882,7 +6861,7 @@ async function renderRCR() {
   registros.forEach(v => {
     const gi = dadosGrupos.find(g => g.munNorm === norm(v.municipio || ''));
     if (!gi) return;
-    const p = pelDoColk(gi.grupamento);
+    const p = gi.pelNum;
     if (PELS.includes(p)) pelCounts[p] = (pelCounts[p]||0) + 1;
   });
 
@@ -6924,15 +6903,15 @@ async function renderRCR() {
   }
   tbody.innerHTML = registros.map(v => {
     const gi  = dadosGrupos.find(g => g.munNorm === norm(v.municipio || ''));
-    const pel = gi ? pelDoColk(gi.grupamento) : '—';
-    const gp  = gi ? (gpDoColk(gi.grupamento) || gi.gpResp || '—') : '—';
+    const pel = gi ? gi.pelNum : null;
+    const gp  = gi ? (gi.gpResp || '—') : '—';
     const min = v.minutos ? `${v.minutos} min` : '—';
     return `<tr style="border-bottom:1px solid #1e1e1e;">
       <td style="font-family:monospace;font-size:10px;color:#888;padding:7px 10px;">${v.bo||'—'}</td>
       <td style="padding:7px 10px;">${v.data||'—'}</td>
       <td style="padding:7px 10px;">${v.municipio||'—'}</td>
       <td style="padding:7px 10px;"><span style="color:#ab47bc;font-size:10px;font-weight:600;">${v.natCode}</span><span style="color:var(--text-muted);font-size:10px;margin-left:4px;">${RCR_NAT_LABEL[v.natCode]||''}</span></td>
-      <td style="padding:7px 10px;text-align:center;color:var(--text-muted);">${pel !== 99 ? pel+'º' : '—'}</td>
+      <td style="padding:7px 10px;text-align:center;color:var(--text-muted);">${pel && pel !== 99 ? pel+'º' : '—'}</td>
       <td style="padding:7px 10px;font-size:10px;color:#ccc;">${gp}</td>
       <td style="padding:7px 10px;font-size:10px;color:var(--text-muted);">${v.unidReg||'—'}</td>
       <td style="padding:7px 10px;text-align:center;color:var(--text-muted);">${min}</td>
@@ -10909,6 +10888,14 @@ function switchSubtab(el, id){
     _prMesInit();
   }
   if(id === 'rcr'){
+    /* Inicializa mês atual se nenhum estiver marcado */
+    const _rcrCbs = document.querySelectorAll('#rcr-mes-list input[type=checkbox]');
+    const _rcrJaMarcado = [..._rcrCbs].some(cb => cb.checked);
+    if(!_rcrJaMarcado){
+      const _mesAtualNome = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'][new Date().getMonth()];
+      _rcrCbs.forEach(cb => { if(cb.value === _mesAtualNome) cb.checked = true; });
+      _mesDdUpdateLabel('rcr');
+    }
     renderRCR();
   }
   if(id === 'auditorias'){
