@@ -1033,6 +1033,16 @@
           <option value="A20001">A20001 — Vítima de Crime Violento (IMV / CVPE / CVPA)</option>
         </select>
       </div>
+      <div class="fg" style="min-width:220px;">
+        <label>Complemento da Natureza</label>
+        <select id="vt-complemento" onchange="renderVisitas()" style="font-size:11px;">
+          <option value="">Todos</option>
+          <option value="115">115 — Morador / Visitante de Residência</option>
+          <option value="2005">2005 — Bens/Valores de Morador / Visitante de Residência</option>
+          <option value="2002">2002 — Bens/Valores de Estabelecimento / Pessoa Jurídica</option>
+          <option value="2003">2003 — Bens/Valores de Cliente / Visitante de Estabelecimento</option>
+        </select>
+      </div>
 <div class="fg" style="min-width:180px;max-width:260px;">
         <label>Mês</label>
         <div class="mes-dropdown-wrap" id="vt-mes-wrap">
@@ -2573,7 +2583,8 @@ async function carregarCrimes(){
     /* Paginação: Supabase Free limita 1000 por requisição */
     const _crimesFields = `select=numero_reds,ano_fato,mes_descricao,data_fato,municipio,` +
       `descricao_localizacao,latitude,longitude,unid_area_nivel_4,unid_registro_nivel_4,unid_registro_nivel_7,` +
-      `imv_total,icvpe_total,icvpa_total,ifzr,descr_natureza_principal&order=data_fato`;
+      `imv_total,icvpe_total,icvpa_total,ifzr,descr_natureza_principal,` +
+      `codigo_complemento_natureza,complemento_natureza&order=data_fato`;
     let _cOffset = 0, _cCont = true;
     while(_cCont) {
       const r = await fetch(
@@ -2646,6 +2657,8 @@ async function carregarCrimes(){
         natureza:      (r.unid_area_nivel_4 || '').toString().trim(),
         descrNatureza: (r.descr_natureza_principal || '').toString().trim(),
         unidRegistro7: (r.unid_registro_nivel_7 || '').toString().trim(),
+        codComplemento:      parseInt(r.codigo_complemento_natureza) || null,
+        complementoNatureza: (r.complemento_natureza || '').toString().trim(),
         rpm:           '',
         qtdVitimas:    ind !== 'IF' ? String(qtdNum) : '',
         lat:           latVal,
@@ -6495,7 +6508,10 @@ function renderVisitas(){
   const vtPel  = document.getElementById('vt-pel')?.value   || '';
   const vtGp   = document.getElementById('vt-gp')?.value    || '';
   const vtBusca     = norm(document.getElementById('vt-busca')?.value || '');
-  const vtIndicador = document.getElementById('vt-indicador')?.value || '';
+  const vtIndicador   = document.getElementById('vt-indicador')?.value || '';
+  const vtComplemento = document.getElementById('vt-complemento')?.value || '';
+  /* Códigos válidos para visita (quando nenhum filtro selecionado, exibe todos) */
+  const COMP_VALIDOS  = [115, 2005, 2002, 2003];
   /* Visitas válidas filtradas por tipo/mês/pelotão/grupamento */
   const visitasFiltradas = dadosVisitas.filter(v => {
     if(!v.visitaValida) return false;
@@ -6559,6 +6575,15 @@ function renderVisitas(){
     norm(c.bo||c.rat||'').includes(vtBusca) || norm(c.municipio||'').includes(vtBusca)
   );
   if(vtIndicador) crimes = crimes.filter(c => c.indicador === vtIndicador);
+  /* Filtro por complemento da natureza:
+     - Se um complemento específico for selecionado, aplica só esse.
+     - Se "Todos" estiver selecionado, restringe aos 4 códigos válidos. */
+  if(vtComplemento){
+    const cod = parseInt(vtComplemento);
+    crimes = crimes.filter(c => c.codComplemento === cod);
+  } else {
+    crimes = crimes.filter(c => c.codComplemento !== null && COMP_VALIDOS.includes(c.codComplemento));
+  }
 
   if(!crimes.length){
     document.getElementById('visitas-body').innerHTML = '<div class="empty-state">Nenhum crime encontrado para os filtros selecionados.</div>';
