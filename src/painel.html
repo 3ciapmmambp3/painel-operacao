@@ -4792,6 +4792,28 @@ function impConfirmar(){
 
       /* Chaves não são mais salvas no localStorage — Supabase é a fonte de verdade */
 
+      /* ── Após upsert de bd_visitas: reaplica lista negra RCR ── */
+      if(tabela === 'bd_visitas'){
+        try {
+          const _excR = await fetch(
+            `${SB_URL}/rest/v1/rcr_excluidos?select=numero_bos`,
+            { headers:{ 'apikey':SB_KEY, 'Authorization':'Bearer '+SB_KEY } }
+          );
+          if(_excR.ok){
+            const _excList = await _excR.json();
+            for(const _excItem of _excList){
+              const _bos = _excItem.numero_bos;
+              await fetch(
+                `${SB_URL}/rest/v1/bd_visitas?numero_bos=eq.${encodeURIComponent(_bos)}`,
+                { method:'DELETE', headers:{ 'apikey':SB_KEY, 'Authorization':'Bearer '+SB_KEY, 'Prefer':'return=minimal' } }
+              );
+            }
+            if(_excList.length > 0)
+              console.log(`[RCR] Lista negra aplicada: ${_excList.length} registro(s) re-excluído(s) após importação.`);
+          }
+        } catch(_excE){ console.warn('[RCR] Erro ao aplicar lista negra:', _excE.message); }
+      }
+
       const hist = JSON.parse(localStorage.getItem(_IMP_HIST_KEY)||'[]');
       hist.unshift({ data:new Date().toLocaleString('pt-BR'), indicador:_impInd,
         novos:novos.length, atualizados:atualizados.length,
