@@ -6962,13 +6962,23 @@ async function rcrExcluirRegistro(bo) {
   );
   if(motivo === null) return; /* Cancelou */
   try {
-    /* 1. Deleta de bd_visitas */
+    /* 1. Busca snapshot completo antes de deletar */
+    let _snapshot = null;
+    try {
+      const _snapR = await fetch(
+        `${SB_URL}/rest/v1/bd_visitas?numero_bos=eq.${encodeURIComponent(bo)}&select=*`,
+        { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
+      );
+      if(_snapR.ok){ const _snapD = await _snapR.json(); _snapshot = _snapD[0] || null; }
+    } catch(_se){ console.warn('[RCR] snapshot:', _se.message); }
+
+    /* 2. Deleta de bd_visitas */
     const res = await fetch(
       `${SB_URL}/rest/v1/bd_visitas?numero_bos=eq.${encodeURIComponent(bo)}`,
       { method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Prefer': 'return=minimal' } }
     );
     if(!res.ok) throw new Error('HTTP ' + res.status);
-    /* 2. Insere na lista negra rcr_excluidos */
+    /* 3. Insere na lista negra rcr_excluidos com snapshot */
     await fetch(`${SB_URL}/rest/v1/rcr_excluidos`, {
       method: 'POST',
       headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY,
@@ -6976,7 +6986,8 @@ async function rcrExcluirRegistro(bo) {
       body: JSON.stringify({
         numero_bos:   bo,
         excluido_por: sessao?.nome || sessao?.matricula || 'Admin',
-        motivo:       motivo || null
+        motivo:       motivo || null,
+        snapshot:     _snapshot
       })
     });
     /* 3. Remove da memória local e re-renderiza */
@@ -6995,7 +7006,7 @@ let _rcrExcluidosCache = [];
 async function rcrCarregarExcluidos() {
   try {
     const r = await fetch(
-      `${SB_URL}/rest/v1/rcr_excluidos?select=id,numero_bos,excluido_por,excluido_em,motivo&order=excluido_em.desc`,
+      `${SB_URL}/rest/v1/rcr_excluidos?select=id,numero_bos,excluido_por,excluido_em,motivo,snapshot&order=excluido_em.desc`,
       { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
     );
     _rcrExcluidosCache = r.ok ? await r.json() : [];
@@ -7032,17 +7043,45 @@ async function rcrRenderExcluidos() {
 
 async function rcrRestaurar(bo, id) {
   if(!_rcrIsAdminGeral()) return;
-  if(!confirm(`Restaurar o registro\n${bo}?\n\nEle voltará a aparecer na próxima importação.`)) return;
+  if(!confirm(`Restaurar o registro\n${bo}\nde volta à base de dados agora?`)) return;
   try {
-    /* Remove da lista negra */
+    /* 1. Busca snapshot salvo */
+    const _entry = _rcrExcluidosCache.find(e => e.id === id);
+    const _snap  = _entry?.snapshot || null;
+
+    /* 2. Reinsere na bd_visitas se tiver snapshot */
+    if(_snap){
+      const _insR = await fetch(
+        `${SB_URL}/rest/v1/bd_visitas?on_conflict=numero_bos`,
+        {
+          method: 'POST',
+          headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY,
+                     'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+          body: JSON.stringify(_snap)
+        }
+      );
+      if(!_insR.ok) throw new Error('Reinserção HTTP ' + _insR.status);
+    }
+
+    /* 3. Remove da lista negra */
     const res = await fetch(
       `${SB_URL}/rest/v1/rcr_excluidos?id=eq.${id}`,
       { method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Prefer': 'return=minimal' } }
     );
-    if(!res.ok) throw new Error('HTTP ' + res.status);
+    if(!res.ok) throw new Error('Remoção lista negra HTTP ' + res.status);
+
+    /* 4. Atualiza memória e re-renderiza */
     _rcrExcluidosCache = _rcrExcluidosCache.filter(e => e.id !== id);
+
+    /* 5. Recarrega dadosVisitas para incluir o registro restaurado */
+    await carregarVisitas();
+    renderRCR();
     rcrRenderExcluidos();
-    alert(`Registro ${bo} restaurado.\nEle voltará a aparecer na próxima importação de Visitas.`);
+
+    alert(_snap
+      ? `Registro ${bo} restaurado com sucesso!`
+      : `Registro ${bo} removido da lista negra.\nEle voltará na próxima importação (snapshot não disponível).`
+    );
   } catch(e) {
     alert('Erro ao restaurar: ' + e.message);
   }
