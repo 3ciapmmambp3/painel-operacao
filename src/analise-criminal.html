@@ -1279,6 +1279,7 @@
             <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Grupamento</th>
             <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Unidade</th>
             <th style="padding:7px 10px;text-align:center;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Duração</th>
+            <th id="rcr-th-acoes" style="padding:7px 10px;text-align:center;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);display:none;">Ações</th>
           </tr>
         </thead>
         <tbody id="rcr-tbody">
@@ -6915,8 +6916,39 @@ async function renderRCR() {
       <td style="padding:7px 10px;font-size:10px;color:#ccc;">${gp}</td>
       <td style="padding:7px 10px;font-size:10px;color:var(--text-muted);">${v.unidReg||'—'}</td>
       <td style="padding:7px 10px;text-align:center;color:var(--text-muted);">${min}</td>
+      ${_rcrIsAdminGeral() ? `<td style="padding:7px 10px;text-align:center;">
+        <button onclick="rcrExcluirRegistro('${v.bo}')"
+          style="background:none;border:1px solid rgba(239,83,80,.4);color:#ef5350;padding:3px 10px;border-radius:4px;font-size:10px;cursor:pointer;white-space:nowrap;"
+          title="Excluir este registro da bd_visitas">🗑 Excluir</button>
+      </td>` : '<td></td>'}
     </tr>`;
   }).join('');
+
+  /* Mostra/esconde coluna de ações */
+  const thAcoes = document.getElementById('rcr-th-acoes');
+  if(thAcoes) thAcoes.style.display = _rcrIsAdminGeral() ? '' : 'none';
+}
+
+function _rcrIsAdminGeral(){
+  return sessao && sessao.nivel_acesso === 'admin_geral';
+}
+
+async function rcrExcluirRegistro(bo) {
+  if(!_rcrIsAdminGeral()) return;
+  if(!confirm(`Excluir o registro\n${bo}\nda base de dados?\n\nEsta ação não pode ser desfeita.`)) return;
+  try {
+    const res = await fetch(
+      `${SB_URL}/rest/v1/bd_visitas?numero_bos=eq.${encodeURIComponent(bo)}`,
+      { method: 'DELETE', headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Prefer': 'return=minimal' } }
+    );
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    /* Remove da memória local e re-renderiza */
+    dadosVisitas = dadosVisitas.filter(v => v.bo !== bo);
+    if(window._visitasPorBO) delete window._visitasPorBO[bo];
+    renderRCR();
+  } catch(e) {
+    alert('Erro ao excluir: ' + e.message);
+  }
 }
 
 /* ══════════════════════════════════
