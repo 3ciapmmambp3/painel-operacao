@@ -3692,44 +3692,42 @@ function initRelatorios(){
   if(cb) cb.checked = true;
   atualizarRelMesesLabel();
   popularRelGP();
-  /* Para não-admin: pré-filtra pelo GP do usuário */
-  if(sessaoPainel?.perfil !== 'admin'){
-    const userGP = _getUserGP();
-    const pelEl  = document.getElementById('rel-pel');
-    const gpEl   = document.getElementById('rel-gp');
-    const pelFg  = pelEl?.closest('.fg');
-    if(pelFg) pelFg.style.display = 'none';
-    if(pelEl && userGP.pelNum){ pelEl.value = userGP.pelNum; pelEl.disabled = true; }
-    /* Popula GPs filtrados pelo pelotão do usuário */
-    popularRelGP();
-    if(gpEl){
-      /* Usa gpResp (formato curto) para bater com as opções do select */
-      if(userGP.gpResp && ![...gpEl.options].some(o=>o.value===userGP.gpResp)){
-        const opt = document.createElement('option');
-        opt.value = userGP.gpResp; opt.textContent = userGP.gpResp;
-        gpEl.appendChild(opt);
-      }
-      if(userGP.gpResp) gpEl.value = userGP.gpResp;
-      gpEl.disabled = true;
-    }
-    /* Badge com nome legível */
-    const badge    = document.getElementById('rel-gp-badge');
-    const badgeTxt = document.getElementById('rel-gp-badge-txt');
-    if(badge) badge.style.display = 'block';
-    if(badgeTxt) badgeTxt.textContent = userGP.gpResp || userGP.gpStr || 'Não definido';
-  }
   renderRelatorio();
 }
 
 function renderRelatorio(){
-  const isAdmin = sessaoPainel?.perfil === 'admin';
+  const isAdmin       = sessaoPainel?.perfil === 'admin';
+  const isAdminPelotao = sessaoPainel?.nivel_acesso === 'admin_pelotao';
   const body    = document.getElementById('rel-body');
   const negado  = document.getElementById('rel-acesso-neg');
 
   /* Pelotão/GP do usuário operacional (extraído da lotação) */
   const userGP = _getUserGP();
 
-  if(!isAdmin){
+  if(isAdminPelotao){
+    /* Admin Pelotão: vê todos os grupamentos do PRÓPRIO pelotão, sem travar o GP */
+    const pelEl = document.getElementById('rel-pel');
+    const gpEl  = document.getElementById('rel-gp');
+    const pelFg = pelEl?.closest('.fg');
+
+    /* 1. Esconde o filtro de Pelotão (sempre o seu) */
+    if(pelFg) pelFg.style.display = 'none';
+    if(pelEl){ pelEl.value = userGP.pelNum || ''; pelEl.disabled = true; }
+
+    /* 2. Re-popula o select de Grupamento com TODOS os GPs do pelotão do usuário */
+    popularRelGP();
+
+    /* 3. Libera o select de Grupamento — pode escolher "Todos" ou qualquer GP do pelotão */
+    if(gpEl) gpEl.disabled = false;
+
+    /* 4. Badge informativo — indica pelotão, não grupamento único */
+    const badge    = document.getElementById('rel-gp-badge');
+    const badgeTxt = document.getElementById('rel-gp-badge-txt');
+    if(badge) badge.style.display = 'block';
+    if(badgeTxt) badgeTxt.textContent = (userGP.pelNum ? userGP.pelNum + 'º Pelotão — todos os grupamentos' : 'Pelotão não definido');
+    if(negado) negado.style.display = 'none';
+    if(body)   body.style.display   = 'block';
+  } else if(!isAdmin){
     /* Usuário operacional: esconde filtro de Pelotão e trava Grupamento */
     const pelEl = document.getElementById('rel-pel');
     const gpEl  = document.getElementById('rel-gp');
@@ -3794,7 +3792,11 @@ function renderRelatorio(){
   /* Para não-admin: usa gpResp (formato curto) como filtro — bate com dadosMetas.gp */
   let pelF = document.getElementById('rel-pel').value;
   let gpF  = document.getElementById('rel-gp')?.value || '';
-  if(!isAdmin){
+  if(isAdminPelotao){
+    /* Trava apenas o pelotão; grupamento vem livremente do select (pode ser "Todos" ou um GP específico) */
+    const _ug = _getUserGP();
+    if(_ug.pelNum) pelF = _ug.pelNum;
+  } else if(!isAdmin){
     const _ug = _getUserGP();
     if(_ug.pelNum) pelF = _ug.pelNum;
     if(_ug.gpResp) gpF  = _ug.gpResp; /* formato curto = chave de dadosMetas */
@@ -4081,10 +4083,16 @@ async function exportarRelPDF(){
   const mesNome    = mesesSel.length ? mesesSel[mesesSel.length-1] : MESES[new Date().getMonth()];
   const mesIdx     = MESES.indexOf(mesNome);
   const tipoVal    = document.getElementById('rel-tipo').value;
-  const _isAdmPDF  = sessaoPainel?.perfil === 'admin';
+  const _isAdmPDF       = sessaoPainel?.perfil === 'admin';
+  const _isAdmPelPDF    = sessaoPainel?.nivel_acesso === 'admin_pelotao';
   let pelF = document.getElementById('rel-pel').value;
   let gpF  = document.getElementById('rel-gp')?.value||'';
-  if(!_isAdmPDF){ const _ug=_getUserGP(); if(_ug.pelNum) pelF=_ug.pelNum; if(_ug.gpResp) gpF=_ug.gpResp; }
+  if(_isAdmPelPDF){
+    /* Admin Pelotão: trava apenas o pelotão; GP vem livre do select */
+    const _ug=_getUserGP(); if(_ug.pelNum) pelF=_ug.pelNum;
+  } else if(!_isAdmPDF){
+    const _ug=_getUserGP(); if(_ug.pelNum) pelF=_ug.pelNum; if(_ug.gpResp) gpF=_ug.gpResp;
+  }
   const ano = new Date().getFullYear();
   const filtroLabel = gpF ? gpF : (pelF ? pelF+'º Pelotão' : 'Todos os Grupamentos');
   const _mesInicio  = mesesSel.length>1 ? mesesSel[0] : null;
