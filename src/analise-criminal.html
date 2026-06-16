@@ -2343,7 +2343,9 @@ function lerSessao(){
     if(!s || !s.id){ window.location.href='index.html'; return null; }
     /* Mapeia nivel_acesso → perfil para compatibilidade */
     if(s.nivel_acesso && !s.perfil){
-      const niveis_admin = ['admin_geral','admin','admin_pelotao'];
+      /* Apenas admin_geral e admin têm perfil 'admin' pleno; admin_pelotao é tratado
+         separadamente (acesso restrito ao próprio pelotão) */
+      const niveis_admin = ['admin_geral','admin'];
       s.perfil  = niveis_admin.includes(s.nivel_acesso) ? 'admin' : 'operacional';
     }
     s.perfil  = s.perfil  || 'operacional';
@@ -2480,9 +2482,17 @@ window.addEventListener('DOMContentLoaded', async () => {
       const tabBtnAudit = document.getElementById('tab-btn-auditorias');
       if(tabBtnAudit) tabBtnAudit.style.display = '';
     }
+  } else if(sessao.nivel_acesso === 'admin_pelotao'){
+    badge.textContent='ADM PELOTÃO';
+    badge.style.cssText='font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;background:rgba(255,152,0,.15);color:#ffa726;border:1px solid rgba(255,152,0,.4);';
+    /* Prioridade Operacional também disponível para Admin Pelotão */
+    const tabBtnPrior2 = document.getElementById('tab-btn-prioridade');
+    if(tabBtnPrior2) tabBtnPrior2.style.display = '';
+    /* Restrição de filtros é aplicada em recarregarTudo(), após dadosGrupos carregar */
   } else {
     badge.textContent='OPERACIONAL';
     badge.style.cssText='font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;background:rgba(66,165,245,.15);color:var(--info);border:1px solid rgba(66,165,245,.3);';
+    /* Restrição de filtros é aplicada em recarregarTudo(), após dadosGrupos carregar */
   }
 
   /* Carrega dados locais como fallback imediato */
@@ -2582,6 +2592,15 @@ async function recarregarTudo(){
     /* 3. Renderiza o dashboard imediatamente com os dados de crimes */
     popularFiltrosMunicipios();
     popularFiltrosGPs();
+
+    /* Aplica restrição de filtros conforme o nível de acesso, agora que
+       dadosGrupos já está carregado */
+    if(sessao?.nivel_acesso === 'admin_pelotao'){
+      _restringirFiltrosAoPelotao();
+    } else if(sessao?.perfil !== 'admin'){
+      _restringirFiltrosAoGrupamento();
+    }
+
     renderDashboard();
     renderCrimes();
     renderIntel();
@@ -3369,10 +3388,13 @@ function popularFiltrosMunicipios(){
 }
 
 function popularFiltrosGPs(){
+  /* Admin Pelotão: restringe a lista de GPs ao próprio pelotão */
+  const _meuPel = (sessao?.nivel_acesso === 'admin_pelotao') ? _pelotaoDoUsuario() : '';
+
   /* Usa coluna K diretamente, ordenada por: pelotão → número do GP */
   const gpsUnicos = [...new Map(
     dadosGrupos
-      .filter(r => r.grupamento)
+      .filter(r => r.grupamento && (!_meuPel || String(r.pelNum) === _meuPel))
       .sort((a,b) => {
         if(a.pelNum !== b.pelNum) return a.pelNum - b.pelNum;
         return gpNumDoColk(a.grupamento) - gpNumDoColk(b.grupamento);
@@ -3387,6 +3409,132 @@ function popularFiltrosGPs(){
     el.innerHTML = `<option value="">${isModal?'Selecione...':'Todos'}</option>` +
       gpsUnicos.map(g=>`<option value="${g}">${g}</option>`).join('');
   });
+}
+
+/** Extrai o número do pelotão do usuário logado a partir da lotação. */
+/** Extrai o número do pelotão do usuário logado a partir da lotação. */
+function _pelotaoDoUsuario(){
+  if(!sessao) return '';
+  const lot = (sessao.lotacao || '').toString();
+  const m = lot.match(/(\d+)\s*PEL/i);
+  return m ? m[1] : '';
+}
+
+/** Retorna o grupamento completo (formato longo) do usuário logado,
+ *  cruzando dadosGrupos pelo município presente na lotação, ou usando
+ *  a própria lotação se já estiver no formato esperado. */
+function _grupamentoDoUsuario(){
+  if(!sessao) return '';
+  const lot = (sessao.lotacao || '').toString().trim();
+  if(!lot) return '';
+  /* Tenta achar correspondência exata em dadosGrupos (mesmo formato longo) */
+  const norm_lot = norm(lot);
+  const achado = dadosGrupos.find(g => norm(g.grupamento||'') === norm_lot);
+  if(achado) return achado.grupamento;
+  /* Fallback: usa a própria lotação como grupamento (já no formato longo) */
+  return lot;
+}
+
+/** Extrai o gpResp curto (ex: "GP TEOFILO OTONI") do grupamento do usuário,
+ *  usando o mesmo critério de painel.html (último segmento da lotação). */
+function _gpRespDoUsuario(){
+  const grup = _grupamentoDoUsuario();
+  if(!grup) return '';
+  const partes = grup.split('/').map(s => s.trim()).filter(Boolean);
+  if(!partes.length) return '';
+  return 'GP ' + partes[partes.length-1];
+}
+
+/** Restringe todos os filtros de Pelotão/Grupamento ao pelotão do Admin Pelotão logado.
+ *  O select de Pelotão é travado e ocultado; o de Grupamento fica livre
+ *  dentro do próprio pelotão (mesma lógica usada nos Relatórios). */
+function _restringirFiltrosAoPelotao(){
+  const meuPel = _pelotaoDoUsuario();
+  if(!meuPel) return;
+
+  /* Trava e oculta todos os selects de Pelotão existentes nas diversas abas */
+  ['mapa-pel','cx-pel','vt-pel','rcr-pel','pr-pel','fs-pel','f-pel-dash'].forEach(id => {
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.value = meuPel;
+    el.disabled = true;
+    const fg = el.closest('.fg');
+    if(fg) fg.style.display = 'none';
+  });
+
+  /* Repopula os selects de Grupamento já restritos ao pelotão (via popularFiltrosGPs) */
+  popularFiltrosGPs();
+
+  /* Mensagem informativa próxima à barra de status, se ainda não existir */
+  const aviso = document.createElement('div');
+  aviso.id = '_aviso-pelotao';
+  aviso.style.cssText = 'margin-bottom:12px;padding:6px 12px;background:rgba(255,152,0,.08);border:1px solid rgba(255,152,0,.3);border-radius:5px;font-size:11px;color:#ffa726;';
+  aviso.textContent = `🔒 Visualizando apenas dados do ${meuPel}º Pelotão — todos os grupamentos`;
+  const statusBar = document.getElementById('ac-status-bar');
+  if(statusBar && !document.getElementById('_aviso-pelotao')){
+    statusBar.insertAdjacentElement('afterend', aviso);
+  }
+}
+
+/** Restringe todos os filtros de Pelotão/Grupamento ao próprio grupamento do
+ *  usuário Operacional logado. Ambos os selects (Pelotão e Grupamento) ficam
+ *  travados e ocultos — visão restrita a um único GP. */
+function _restringirFiltrosAoGrupamento(){
+  const meuPel    = _pelotaoDoUsuario();
+  const meuGrup   = _grupamentoDoUsuario();
+  const meuGpResp = _gpRespDoUsuario();
+  if(!meuGrup) return;
+
+  /* Trava e oculta todos os selects de Pelotão */
+  ['mapa-pel','cx-pel','vt-pel','rcr-pel','pr-pel','fs-pel','f-pel-dash'].forEach(id => {
+    const el = document.getElementById(id);
+    if(!el) return;
+    if(meuPel) el.value = meuPel;
+    el.disabled = true;
+    const fg = el.closest('.fg');
+    if(fg) fg.style.display = 'none';
+  });
+
+  /* Repopula os selects de Grupamento (formato longo) restritos ao próprio pelotão,
+     depois trava no grupamento exato do usuário */
+  popularFiltrosGPs();
+  ['mapa-gp','cr-gp','cx-gp','vt-gp','mis-gp','f-gp-dash','fs-gp','intel-busca-gp'].forEach(id => {
+    const el = document.getElementById(id);
+    if(!el) return;
+    if(![...el.options].some(o => o.value === meuGrup)){
+      const opt = document.createElement('option');
+      opt.value = meuGrup; opt.textContent = meuGrup;
+      el.appendChild(opt);
+    }
+    el.value = meuGrup;
+    el.disabled = true;
+    const fg = el.closest('.fg');
+    if(fg) fg.style.display = 'none';
+  });
+
+  /* rcr-gp usa gpResp curto, não o formato longo */
+  const rcrGpEl = document.getElementById('rcr-gp');
+  if(rcrGpEl && meuGpResp){
+    if(![...rcrGpEl.options].some(o => o.value === meuGpResp)){
+      const opt = document.createElement('option');
+      opt.value = meuGpResp; opt.textContent = meuGpResp;
+      rcrGpEl.appendChild(opt);
+    }
+    rcrGpEl.value = meuGpResp;
+    rcrGpEl.disabled = true;
+    const fg = rcrGpEl.closest('.fg');
+    if(fg) fg.style.display = 'none';
+  }
+
+  /* Mensagem informativa */
+  const aviso = document.createElement('div');
+  aviso.id = '_aviso-grupamento';
+  aviso.style.cssText = 'margin-bottom:12px;padding:6px 12px;background:rgba(66,165,245,.08);border:1px solid rgba(66,165,245,.3);border-radius:5px;font-size:11px;color:var(--info);';
+  aviso.textContent = `🔒 Visualizando apenas dados do seu grupamento: ${meuGpResp || meuGrup}`;
+  const statusBar2 = document.getElementById('ac-status-bar');
+  if(statusBar2 && !document.getElementById('_aviso-grupamento')){
+    statusBar2.insertAdjacentElement('afterend', aviso);
+  }
 }
 
 /* ══════════════════════════════════
@@ -7083,7 +7231,13 @@ async function renderRCR() {
   /* Popula select de GP se vazio */
   const selGp = document.getElementById('rcr-gp');
   if (selGp && selGp.options.length <= 1 && dadosGrupos.length) {
-    const gps = [...new Set(dadosGrupos.map(g => g.gpResp).filter(Boolean))].sort();
+    const _meuPelRcr = (sessao?.nivel_acesso === 'admin_pelotao') ? _pelotaoDoUsuario() : '';
+    const gps = [...new Set(
+      dadosGrupos
+        .filter(g => !_meuPelRcr || String(g.pelNum) === _meuPelRcr)
+        .map(g => g.gpResp)
+        .filter(Boolean)
+    )].sort();
     gps.forEach(g => {
       const opt = document.createElement('option');
       opt.value = g; opt.textContent = g;
