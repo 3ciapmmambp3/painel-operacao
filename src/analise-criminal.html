@@ -1133,6 +1133,17 @@
       <div class="tc-val" id="vt-alertas-urbano">—</div>
       <div class="tc-sub">visitas em zona urbana</div>
     </div>
+    <div class="top-card" style="border-top-color:#ff9800;">
+      <div class="tc-label">Não Realizadas</div>
+      <div class="tc-val" id="vt-nao-realizadas" style="color:#ff9800;">—</div>
+      <div class="tc-sub">com situação registrada</div>
+    </div>
+  </div>
+
+  <!-- Motivos mais frequentes de não realização -->
+  <div id="vt-motivos-box" style="display:none;background:rgba(255,152,0,.05);border:1px solid rgba(255,152,0,.25);border-radius:7px;padding:10px 16px;margin-bottom:12px;">
+    <div style="font-size:11px;font-weight:700;color:#ff9800;margin-bottom:6px;">⚠ Motivos mais frequentes de não realização</div>
+    <div id="vt-motivos-lista" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
   </div>
 
   <!-- Alerta urbano -->
@@ -2377,6 +2388,7 @@ let dadosCrimes   = [];   /* dados brutos das 4 abas */
 let dadosGdoRural = [];   /* operações GDO Rural para cruzamento */
 let dadosVisitas  = [];   /* visitas tranquilizadoras BD_VISITA_REUNIAO */
 let dadosGrupos   = [];   /* tabela GRUPOS para lookup */
+let dadosSituacoes = {};  /* { bo_crime: {status,motivo,observacao,numero_rat,...} } — visitas_situacao */
 let fichasIntel   = [];   /* fichas de inteligência (localStorage) */
 let missoes       = [];   /* missões (localStorage) */
 let auditoriasMap = {};   /* RAT → dados de auditoria */
@@ -2622,7 +2634,7 @@ async function recarregarTudo(){
     }catch(e){ console.warn('Erro ao salvar crimes no storage:', e); }
 
     /* 4. Carrega ops, visitas e missões em background sem bloquear a UI */
-    Promise.all([carregarOpsGdo(), carregarVisitas()])
+    Promise.all([carregarOpsGdo(), carregarVisitas(), carregarSituacoes()])
       .then(() => {
         /* Atualiza abas que dependem de ops/visitas */
         try{ renderDashboard(); } catch(e){}
@@ -3074,6 +3086,155 @@ async function carregarVisitas(){
     /* Carrega visitas POG */
     await _carregarVisitasPOG();
   } catch(e){ console.warn('[carregarVisitas] Erro:', e.message); }
+}
+
+/* ══════════════════════════════════
+   SITUAÇÃO DA VISITA (visitas_situacao)
+   Para crimes onde a visita não pôde ser realizada
+══════════════════════════════════ */
+const SITUACAO_MOTIVOS = [
+  { value: 'vitima_nao_localizada', label: 'Vítima não localizada no endereço informado' },
+  { value: 'vitima_mudou',          label: 'Vítima mudou de endereço' },
+  { value: 'endereco_incorreto',    label: 'Endereço inexistente ou incorreto' },
+  { value: 'local_fechado',         label: 'Local fechado após várias tentativas' },
+  { value: 'outro',                 label: 'Outro motivo (detalhar na observação)' },
+];
+
+async function carregarSituacoes() {
+  try {
+    const r = await fetch(
+      `${SB_URL}/rest/v1/visitas_situacao?select=*`,
+      { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
+    );
+    if(!r.ok) { dadosSituacoes = {}; return; }
+    const rows = await r.json();
+    dadosSituacoes = {};
+    rows.forEach(row => { dadosSituacoes[row.bo_crime] = row; });
+  } catch(e) {
+    console.warn('[carregarSituacoes] Erro:', e.message);
+    dadosSituacoes = {};
+  }
+}
+
+function _abrirModalSituacao(boCrime) {
+  const prev = document.getElementById('_modal-situacao');
+  if(prev) prev.remove();
+
+  const existente = dadosSituacoes[boCrime] || null;
+
+  const modal = document.createElement('div');
+  modal.id = '_modal-situacao';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:10000;display:flex;align-items:center;justify-content:center;';
+
+  const opcoesMotivo = SITUACAO_MOTIVOS.map(m =>
+    `<option value="${m.value}" ${existente?.motivo===m.value?'selected':''}>${m.label}</option>`
+  ).join('');
+
+  modal.innerHTML = `
+    <div style="background:#1e1e1e;border:1px solid rgba(239,83,80,.4);border-radius:10px;padding:20px 24px;width:520px;max-width:92vw;max-height:85vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.8);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <div style="font-size:13px;font-weight:700;color:#ef5350;">⚠ ${existente?'Editar':'Registrar'} Situação da Visita</div>
+        <button onclick="document.getElementById('_modal-situacao').remove()" style="background:none;border:none;color:var(--text-muted);font-size:18px;cursor:pointer;">✕</button>
+      </div>
+
+      <div style="background:#161616;border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:14px;">
+        <div style="font-size:10px;color:var(--text-muted);">Crime / BOS vinculado</div>
+        <div style="font-size:12px;font-family:monospace;color:#ddd;">${boCrime}</div>
+      </div>
+
+      <div style="margin-bottom:12px;">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Motivo da Não Realização <span style="color:var(--danger);">*</span></div>
+        <select id="_sit-motivo" style="width:100%;box-sizing:border-box;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:7px 10px;border-radius:5px;font-size:12px;">
+          <option value="">Selecione...</option>
+          ${opcoesMotivo}
+        </select>
+      </div>
+
+      <div style="margin-bottom:12px;">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Observação Complementar</div>
+        <textarea id="_sit-obs" rows="3" placeholder="Detalhe o ocorrido..."
+          style="width:100%;box-sizing:border-box;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:7px 10px;border-radius:5px;font-size:12px;resize:vertical;font-family:inherit;">${existente?.observacao||''}</textarea>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Nº do RAT relacionado <span style="color:var(--text-hint);font-size:10px;">(se houver)</span></div>
+        <input id="_sit-rat" type="text" placeholder="Ex: 2026-012345"
+          value="${existente?.numero_rat||''}"
+          style="width:100%;box-sizing:border-box;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:7px 10px;border-radius:5px;font-size:12px;font-family:monospace;">
+      </div>
+
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        ${existente ? `<button onclick="_excluirSituacao('${boCrime}')" style="background:none;border:1px solid rgba(239,83,80,.4);color:#ef5350;padding:8px 14px;border-radius:5px;font-size:12px;cursor:pointer;">🗑 Remover</button>` : ''}
+        <button onclick="document.getElementById('_modal-situacao').remove()"
+          style="background:none;border:1px solid var(--border);color:var(--text-muted);padding:8px 16px;border-radius:5px;font-size:12px;cursor:pointer;">Cancelar</button>
+        <button onclick="_salvarSituacao('${boCrime}')"
+          style="background:rgba(239,83,80,.15);border:1px solid rgba(239,83,80,.5);color:#ef5350;padding:8px 20px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;">
+          ✔ Salvar
+        </button>
+      </div>
+      <div id="_sit-msg" style="font-size:11px;margin-top:10px;text-align:right;"></div>
+    </div>`;
+
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if(e.target === modal) modal.remove(); });
+}
+
+async function _salvarSituacao(boCrime) {
+  const msg    = document.getElementById('_sit-msg');
+  const motivo = document.getElementById('_sit-motivo')?.value || '';
+  const obs    = (document.getElementById('_sit-obs')?.value || '').trim();
+  const rat    = (document.getElementById('_sit-rat')?.value || '').trim();
+
+  if(!motivo) { if(msg) msg.innerHTML = '<span style="color:var(--danger);">✗ Selecione o motivo.</span>'; return; }
+
+  const payload = {
+    bo_crime:       boCrime,
+    status:         'nao_realizada',
+    motivo,
+    observacao:     obs || null,
+    numero_rat:     rat || null,
+    registrado_por: _formatarIdentMilitar(sessao) || sessao?.matricula || sessao?.matricula_clean || '',
+    registrado_em:  new Date().toISOString(),
+  };
+
+  if(msg) msg.innerHTML = '<span style="color:var(--text-muted);">Salvando...</span>';
+
+  try {
+    const existe = !!dadosSituacoes[boCrime];
+    const hdrs = _acHeaders({'Content-Type':'application/json','Prefer':'return=minimal'});
+    const res = await fetch(
+      `${SB_URL}/rest/v1/visitas_situacao${existe ? '?bo_crime=eq.'+encodeURIComponent(boCrime) : ''}`,
+      { method: existe ? 'PATCH' : 'POST', headers: hdrs, body: JSON.stringify(payload) }
+    );
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+
+    dadosSituacoes[boCrime] = payload;
+    if(msg) msg.innerHTML = '<span style="color:var(--success);">✔ Situação registrada com sucesso.</span>';
+    setTimeout(() => { document.getElementById('_modal-situacao')?.remove(); renderVisitas(); }, 700);
+  } catch(e) {
+    if(msg) msg.innerHTML = `<span style="color:var(--danger);">✗ Erro ao salvar: ${e.message}</span>`;
+  }
+}
+
+async function _excluirSituacao(boCrime) {
+  if(!confirm(`Remover o registro de situação para\n${boCrime}?\n\nO crime voltará a aparecer como pendente.`)) return;
+  try {
+    const res = await fetch(
+      `${SB_URL}/rest/v1/visitas_situacao?bo_crime=eq.${encodeURIComponent(boCrime)}`,
+      { method: 'DELETE', headers: _acHeaders() }
+    );
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    delete dadosSituacoes[boCrime];
+    document.getElementById('_modal-situacao')?.remove();
+    renderVisitas();
+  } catch(e) {
+    alert('Erro ao remover: ' + e.message);
+  }
+}
+
+function _situacaoMotivoLabel(motivo) {
+  const m = SITUACAO_MOTIVOS.find(x => x.value === motivo);
+  return m ? m.label : motivo;
 }
 
 /** Carrega bd_visitas_pog e integra em dadosVisitas */
@@ -6611,20 +6772,32 @@ function _vtRenderLista(){
 
       items.forEach(r => {
         const cor = CORES_INDICADOR[r.crime.indicador] || '#9b8a5c';
-        html += `<div style="background:#1e1a1a;border:1px solid rgba(239,83,80,.2);border-radius:5px;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+        const boCr = r.crime.bo||r.crime.rat||'';
+        const sit  = dadosSituacoes[boCr];
+        const badge = sit
+          ? `<span style="background:rgba(255,152,0,.15);color:#ff9800;border:1px solid rgba(255,152,0,.3);padding:2px 8px;border-radius:3px;font-size:10px;font-weight:700;white-space:nowrap;">⚠ NÃO REALIZADA</span>`
+          : `<span style="background:rgba(239,83,80,.15);color:var(--danger);border:1px solid rgba(239,83,80,.3);padding:2px 8px;border-radius:3px;font-size:10px;font-weight:700;white-space:nowrap;">✗ NÃO VISITADO</span>`;
+        const sitInfo = sit
+          ? `<div style="font-size:9px;color:#ff9800;margin-top:2px;">Motivo: ${_situacaoMotivoLabel(sit.motivo)}${sit.numero_rat?' · RAT '+sit.numero_rat:''}</div>`
+          : '';
+        html += `<div style="background:#1e1a1a;border:1px solid ${sit?'rgba(255,152,0,.25)':'rgba(239,83,80,.2)'};border-radius:5px;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
           <div>
             <span style="color:${cor};font-weight:700;font-size:11px;">[${r.crime.indicador}]</span>
-            <span style="font-family:monospace;font-size:11px;font-weight:700;color:#fff;margin-left:6px;">${r.crime.bo||r.crime.rat||'—'} — ${r.crime.municipio||'—'}</span>
+            <span style="font-family:monospace;font-size:11px;font-weight:700;color:#fff;margin-left:6px;">${boCr||'—'} — ${r.crime.municipio||'—'}</span>
             <div style="font-size:10px;color:var(--text-muted);margin-top:2px;">${r.crime.data||'—'} · ${r.crime.natureza||'—'} · ${r.crime.localizacao||'—'}</div>
+            ${sitInfo}
           </div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
-            <span style="background:rgba(239,83,80,.15);color:var(--danger);border:1px solid rgba(239,83,80,.3);padding:2px 8px;border-radius:3px;font-size:10px;font-weight:700;white-space:nowrap;">✗ NÃO VISITADO</span>
-            <button onclick="_abrirModalVinculo('${r.crime.bo||r.crime.rat||''}')"
+            ${badge}
+            <button onclick="_abrirModalVinculo('${boCr}')"
               style="background:none;border:1px solid rgba(66,165,245,.4);color:#42a5f5;padding:2px 8px;border-radius:3px;font-size:10px;cursor:pointer;transition:all .15s;"
               onmouseover="this.style.borderColor='#42a5f5'" onmouseout="this.style.borderColor='rgba(66,165,245,.4)'">🔗 Vincular BOS</button>
-            <button onclick="_abrirModalVisitaPOG(null,'${r.crime.bo||r.crime.rat||''}')"
+            <button onclick="_abrirModalVisitaPOG(null,'${boCr}')"
               style="background:none;border:1px solid rgba(155,138,92,.4);color:var(--gold);padding:2px 8px;border-radius:3px;font-size:10px;cursor:pointer;transition:all .15s;"
               onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='rgba(155,138,92,.4)'">🚔 Lançar Visita POG</button>
+            <button onclick="_abrirModalSituacao('${boCr}')"
+              style="background:none;border:1px solid rgba(255,152,0,.4);color:#ff9800;padding:2px 8px;border-radius:3px;font-size:10px;cursor:pointer;transition:all .15s;"
+              onmouseover="this.style.borderColor='#ff9800'" onmouseout="this.style.borderColor='rgba(255,152,0,.4)'">${sit?'✏️ Editar Situação':'⚠ Registrar Situação'}</button>
           </div>
         </div>`;
       });
@@ -6786,9 +6959,32 @@ function renderVisitas(){
   });
 
   const comVisita = _vtResultados.filter(r => r.temVisita).length;
-  const semVisita = _vtResultados.filter(r => !r.temVisita).length;
+  const semVisitaTodos = _vtResultados.filter(r => !r.temVisita);
+  const naoRealizadas  = semVisitaTodos.filter(r => dadosSituacoes[r.crime.bo||r.crime.rat||'']);
+  const semVisita      = semVisitaTodos.length; /* mantém total para o filtro "nao" */
   document.getElementById('vt-crimes-atendidos').textContent  = comVisita;
   document.getElementById('vt-crimes-sem-visita').textContent = semVisita;
+  document.getElementById('vt-nao-realizadas').textContent    = naoRealizadas.length;
+
+  /* Motivos mais frequentes */
+  const motivosBox  = document.getElementById('vt-motivos-box');
+  const motivosLista = document.getElementById('vt-motivos-lista');
+  if(naoRealizadas.length){
+    const contagem = {};
+    naoRealizadas.forEach(r => {
+      const sit = dadosSituacoes[r.crime.bo||r.crime.rat||''];
+      const mLabel = _situacaoMotivoLabel(sit.motivo);
+      contagem[mLabel] = (contagem[mLabel]||0) + 1;
+    });
+    const ordenado = Object.entries(contagem).sort((a,b)=>b[1]-a[1]);
+    motivosBox.style.display = 'block';
+    motivosLista.innerHTML = ordenado.map(([label,qtd]) =>
+      `<span style="background:rgba(255,152,0,.1);border:1px solid rgba(255,152,0,.3);color:#ffb74d;padding:4px 10px;border-radius:4px;font-size:11px;">${label}: <b>${qtd}</b></span>`
+    ).join('');
+  } else {
+    motivosBox.style.display = 'none';
+    motivosLista.innerHTML = '';
+  }
 
   /* Atualiza contadores dos botões */
   const btnC = document.getElementById('vt-btn-count-vis');
