@@ -1021,6 +1021,68 @@ let grpPage      = 1;
 
 const MESES = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
 
+/** Capitaliza um nome de mês: "JANEIRO" → "Janeiro" */
+function _capitalizarMes(m){
+  return m.charAt(0) + m.slice(1).toLowerCase();
+}
+
+/** Formata uma lista de meses selecionados (nomes em MAIÚSCULO, na ordem de MESES)
+ *  em um rótulo de período limpo e legível, lidando com três casos:
+ *  - Mês único:                "Janeiro/2026"
+ *  - Sequência consecutiva:     "Janeiro a Março/2026"
+ *  - Meses alternados/mistos:   "Janeiro, Março, Maio e Julho/2026"
+ *  Quando a seleção mistura blocos consecutivos com meses isolados,
+ *  cada bloco consecutivo é condensado (ex.: "Jan a Mar, Mai e Jul"). */
+function _formatarPeriodoMeses(mesesSel, ano){
+  if(!mesesSel || !mesesSel.length) return '';
+
+  /* Ordena pela posição real no calendário, não pela ordem de seleção */
+  const idxOrdenados = [...new Set(mesesSel.map(m => MESES.indexOf(m)))]
+    .filter(i => i >= 0)
+    .sort((a,b) => a-b);
+
+  if(!idxOrdenados.length) return '';
+
+  if(idxOrdenados.length === 1){
+    return `${_capitalizarMes(MESES[idxOrdenados[0]])}/${ano}`;
+  }
+
+  /* Agrupa em blocos de índices consecutivos */
+  const blocos = [];
+  let blocoAtual = [idxOrdenados[0]];
+  for(let i = 1; i < idxOrdenados.length; i++){
+    if(idxOrdenados[i] === idxOrdenados[i-1] + 1){
+      blocoAtual.push(idxOrdenados[i]);
+    } else {
+      blocos.push(blocoAtual);
+      blocoAtual = [idxOrdenados[i]];
+    }
+  }
+  blocos.push(blocoAtual);
+
+  /* Caso especial: um único bloco cobrindo tudo (ex: Jan a Dez) */
+  if(blocos.length === 1){
+    const ini = blocos[0][0], fim = blocos[0][blocos[0].length-1];
+    return `${_capitalizarMes(MESES[ini])} a ${_capitalizarMes(MESES[fim])}/${ano}`;
+  }
+
+  /* Múltiplos blocos: cada bloco consecutivo é condensado, blocos isolados ficam como mês único.
+     Junta tudo com vírgulas, e troca a última vírgula por " e " (regra de português). */
+  const partes = blocos.map(bloco => {
+    if(bloco.length === 1) return _capitalizarMes(MESES[bloco[0]]);
+    return `${_capitalizarMes(MESES[bloco[0]])} a ${_capitalizarMes(MESES[bloco[bloco.length-1]])}`;
+  });
+
+  let textoPartes;
+  if(partes.length === 2){
+    textoPartes = partes.join(' e ');
+  } else {
+    textoPartes = partes.slice(0, -1).join(', ') + ' e ' + partes[partes.length-1];
+  }
+
+  return `${textoPartes}/${ano}`;
+}
+
 function norm(s){return(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/-/g,' ').replace(/\s+/g,' ').trim().toUpperCase();}
 function normMes(m){ const s=(m||'').toString().trim().toUpperCase(); const map={'MARCO':'MARÇO','MAR':'MARÇO','FEVEREIRO':'FEVEREIRO','JAN':'JANEIRO','FEV':'FEVEREIRO','ABR':'ABRIL','MAI':'MAIO','JUN':'JUNHO','JUL':'JULHO','AGO':'AGOSTO','SET':'SETEMBRO','OUT':'OUTUBRO','NOV':'NOVEMBRO','DEZ':'DEZEMBRO'}; const sem=s.normalize('NFD').replace(/[̀-ͯ]/g,''); return map[sem]||map[s]||s; }
 
@@ -1820,9 +1882,7 @@ function renderOperacoes(){
   const getRealMeses=(gp,nat)=>mesesSel.reduce((s,m)=>s+getReal(gp,nat,m),0);
 
   /* Label dos meses selecionados */
-  const mesLabel = mesesSel.length===1
-    ? mesesSel[0]
-    : mesesSel.map(m=>m.substring(0,3)).join(' + ');
+  const mesLabel = _formatarPeriodoMeses(mesesSel, new Date().getFullYear());
 
   pelNums.forEach(pelN=>{
     const gps=pelotoes[pelN]; /* ordem já definida pelo sort numérico acima */
@@ -2668,9 +2728,7 @@ function renderGdoTabela(dados, natF){
   const mesIdxAcum = mesesSel.length > 0
     ? Math.max(...mesesSel.map(m => MESES.indexOf(m) + 1)) : 1;
   const mesAcumNome = MESES[mesIdxAcum - 1] || 'MAI';
-  const mesLabel = mesesSel.length === 1
-    ? mesesSel[0]
-    : mesesSel.map(m => m.substring(0,3)).join(' + ');
+  const mesLabel = _formatarPeriodoMeses(mesesSel, new Date().getFullYear());
 
   /* ── Passo 1: inicializa GPs com zeros ── */
   const pelF = document.getElementById('gdo-pel').value;
@@ -3826,8 +3884,7 @@ function renderRelatorio(){
   const mesNome   = mesesSel[mesesSel.length-1]; /* mês mais recente para acumulado */
   const mesIdx    = MESES.indexOf(mesNome);
   const gpLabel   = gpF ? gpF : (pelF ? pelF+'º Pelotão' : 'Todos os Grupamentos');
-  const mesLabel  = mesesSel.length===1 ? mesesSel[0]+'/'+ano
-    : mesesSel.map(m=>m.slice(0,3)).join('+') + '/'+ano;
+  const mesLabel  = _formatarPeriodoMeses(mesesSel, ano);
 
   let html = `
   <div id="rel-content" style="background:var(--bg-card);border-radius:10px;padding:24px;border:1px solid var(--border);">
@@ -3835,7 +3892,12 @@ function renderRelatorio(){
       <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">Polícia Militar de Minas Gerais</div>
       <div style="font-size:20px;font-weight:800;color:var(--gold);margin:6px 0;">3ª Companhia PM MAmb</div>
       <div style="font-size:15px;font-weight:700;color:#fff;">Diagnóstico Operacional — ${gpLabel}</div>
-      <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">${mesLabel} · Gerado em ${new Date().toLocaleString('pt-BR')}</div>
+      <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">
+        <span style="color:var(--text-hint);text-transform:uppercase;letter-spacing:.5px;font-size:10px;">Período Analisado:</span>
+        <span style="color:#fff;font-weight:600;margin-left:4px;">${mesLabel}</span>
+        <span style="margin:0 6px;color:var(--text-hint);">·</span>
+        <span>Gerado em ${new Date().toLocaleString('pt-BR')}</span>
+      </div>
     </div>`;
 
   if(tipo==='geral'||tipo==='poe')      html += _relSecaoPOE(mesNome, mesesSel, mesIdx, pelF, gpF, ano);
@@ -3918,7 +3980,7 @@ function _relSecaoPOE(mesNome, mesesSel, mesIdx, pelF, gpF, ano){
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
       <span style="font-size:18px;">🛡</span>
       <div style="font-size:15px;font-weight:800;color:var(--gold);">OP POE — Acompanhamento de Metas</div>
-      <span style="font-size:11px;color:var(--text-muted);">${mesesSel.length===1?mesesSel[0]+'/'+ano:mesesSel.map(m=>m.slice(0,3)).join('+')+'/'+ ano} · ${gpsFilt.length} grupamento${gpsFilt.length!==1?'s':''}</span>
+      <span style="font-size:11px;color:var(--text-muted);">${_formatarPeriodoMeses(mesesSel, ano)} · ${gpsFilt.length} grupamento${gpsFilt.length!==1?'s':''}</span>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:16px;">
       <div style="${_rCs('var(--gold)')}"><div style="font-size:10px;color:var(--text-muted);">Meta Período</div><div style="font-size:24px;font-weight:800;color:var(--gold);">${tMeta}</div></div>
@@ -4107,9 +4169,7 @@ async function exportarRelPDF(){
   }
   const ano = new Date().getFullYear();
   const filtroLabel = gpF ? gpF : (pelF ? pelF+'º Pelotão' : 'Todos os Grupamentos');
-  const _mesInicio  = mesesSel.length>1 ? mesesSel[0] : null;
-  const periodoLabel= mesesSel.length===1 ? mesNome+'/'+ano
-    : _mesInicio+' a '+mesNome+'/'+ano;
+  const periodoLabel = _formatarPeriodoMeses(mesesSel, ano);
   const tipoLabel   = tipoVal==='geral'?'Relatório Geral — Todos os Módulos':
                       tipoVal==='poe'  ?'OP POE — Metas':
                       tipoVal==='gdo'  ?'OP GDO Rural':
@@ -4149,7 +4209,7 @@ async function exportarRelPDF(){
     doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
     doc.text('Diagnóstico Operacional — '+tipoLabel, PW/2, 18, {align:'center'});
     doc.setFontSize(8); doc.setTextColor(...DOURADO);
-    doc.text('Período: '+periodoLabel+'  |  Filtro: '+filtroLabel, PW/2, 25, {align:'center'});
+    doc.text('Período Analisado: '+periodoLabel+'  |  Filtro: '+filtroLabel, PW/2, 25, {align:'center'});
     /* Rodapé */
     doc.setFillColor(...DOURADO); doc.rect(0,284,PW,1,'F');
     doc.setFillColor(...VERDE); doc.rect(0,285,PW,12,'F');
