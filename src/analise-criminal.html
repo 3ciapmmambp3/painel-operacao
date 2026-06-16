@@ -1100,10 +1100,6 @@
         <label>Grupamento</label>
         <select id="vt-gp" onchange="renderVisitas()" style="font-size:11px;"><option value="">Todos</option></select>
       </div>
-      <div class="fg">
-        <label>Período após crime (dias)</label>
-        <input type="number" id="vt-dias" value="30" min="1" max="180" oninput="renderVisitas()">
-      </div>
       <div class="fg" style="min-width:200px;">
         <label>Buscar (Nº BO / município)</label>
         <input type="text" id="vt-busca" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this);renderVisitas()" maxlength="18">
@@ -6717,6 +6713,16 @@ function _vtRenderLista(){
               ${v.boRefs.map(b => `<span style="font-family:monospace;font-size:10px;background:rgba(66,165,245,.12);color:#42a5f5;border:1px solid rgba(66,165,245,.3);padding:1px 6px;border-radius:3px;">${b}</span>`).join('')}
             </div>`
           : '';
+        /* Dias entre o crime e a visita */
+        const _dataCrimeVis = parseDataDDMMAAAA(r.crime.data||'');
+        const _dataVisitaVis = parseDataDDMMAAAA(v.data||'');
+        const _diasAposCrime = (_dataCrimeVis && _dataVisitaVis)
+          ? Math.round((_dataVisitaVis - _dataCrimeVis) / (1000*60*60*24))
+          : null;
+        const diasBadge = (_diasAposCrime !== null)
+          ? `<div style="font-size:10px;color:var(--text-hint);margin-top:2px;">${_diasAposCrime === 0 ? '🕐 Visita realizada no mesmo dia do crime' : '🕐 Visita realizada ' + _diasAposCrime + ' dia' + (_diasAposCrime!==1?'s':'') + ' após o crime'}</div>`
+          : '';
+
         return `<div style="background:#1e2a1e;border:1px solid rgba(102,187,106,.3);border-radius:6px;padding:10px 14px;margin-top:8px;">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:6px;">
             <div>
@@ -6732,6 +6738,7 @@ function _vtRenderLista(){
                 ${vinculoBadge}
                 ${pogBadge}
               </div>
+              ${diasBadge}
             </div>
             <div style="text-align:right;">
               <div style="font-size:13px;font-weight:800;color:#fff;">📅 ${v.data||'—'}</div>
@@ -6873,7 +6880,7 @@ function renderVisitas(){
   const _mesVt = getMesDd('vt');
   const mes  = _mesVt.length===1?_mesVt[0]:'';
   const raio = 0.2; /* fixo em 200m — vinculação manual para distâncias maiores */
-  const dias = parseInt(document.getElementById('vt-dias')?.value) || 30;
+  /* Sem limite de dias — todas as visitas são consideradas, qualquer período após o crime */
 
   const vtPel  = document.getElementById('vt-pel')?.value   || '';
   const vtGp   = document.getElementById('vt-gp')?.value    || '';
@@ -6957,7 +6964,7 @@ function renderVisitas(){
           const dataVt = parseDataDDMMAAAA(v.data||'');
           if(dataVt){
             const diff = (dataVt - dataCrime) / (1000*60*60*24);
-            if(diff < 0 || diff > dias) return false;
+            if(diff < 0) return false; /* visita não pode ser antes do crime */
           }
         }
         return true;
