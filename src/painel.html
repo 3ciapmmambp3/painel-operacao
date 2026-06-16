@@ -1041,6 +1041,16 @@ function pelDoColk(colK){
   return m?parseInt(m[1]):99;
 }
 
+/** Extrai o gpResp curto (ex: "GP TEOFILO OTONI") a partir do formato longo
+ *  salvo no crime (ex: "1 GP / 4 PEL / 3 CIA PM MAMB / TEOFILO OTONI").
+ *  O último segmento separado por "/" é o nome do município/GP. */
+function _gpRespDeGrupamentoLongo(grupamentoLongo){
+  if(!grupamentoLongo) return '';
+  const partes = grupamentoLongo.split('/').map(s => s.trim()).filter(Boolean);
+  if(!partes.length) return '';
+  return 'GP ' + partes[partes.length-1];
+}
+
 /* Meses acumulados até mesIdx (inclusive) */
 function mesesAte(mesIdx){return MESES.slice(0,mesIdx+1);}
 
@@ -4006,7 +4016,7 @@ function _relSecaoCriminal(mesNome, mesesSel, mesIdx, pelF, gpF){
   if(!crimes.length)
     return _rVazio('Análise Criminal','Dados criminais não disponíveis. Acesse a aba Análise Criminal e carregue os dados primeiro.');
   let dados=crimes.filter(d=>mesesSel.includes(d.mes));
-  if(gpF) dados=dados.filter(d=>d.gpResp===gpF||(d.grupamento&&norm(d.grupamento).startsWith(norm(gpF))));
+  if(gpF) dados=dados.filter(d=>d.gpResp===gpF||norm(_gpRespDeGrupamentoLongo(d.grupamento))===norm(gpF));
   else if(pelF) dados=dados.filter(d=>String(pelDoColk(d.grupamento||''))===pelF);
   if(!dados.length) return _rVazio('Análise Criminal','Nenhuma ocorrência no período/filtro selecionado.');
   const IND_COR={IMV:'#ef5350',CVPE:'#42a5f5',CVPA:'#ff9800',IF:'#ce93d8'};
@@ -4412,7 +4422,7 @@ async function exportarRelPDF(){
       doc.text('Dados não disponíveis. Carregue os dados na aba Análise Criminal.', ML+3, y+5); y+=10;
     } else {
       let cFilt=crm.filter(d=>mesesSel.includes(d.mes));
-      if(gpF) cFilt=cFilt.filter(d=>d.gpResp===gpF||(d.grupamento&&norm(d.grupamento).startsWith(norm(gpF))));
+      if(gpF) cFilt=cFilt.filter(d=>d.gpResp===gpF||norm(_gpRespDeGrupamentoLongo(d.grupamento))===norm(gpF));
       else if(pelF) cFilt=cFilt.filter(d=>String(pelDoColk(d.grupamento||''))===pelF);
       const pi={IMV:0,CVPE:0,CVPA:0,IF:0};
       const porMunC={},porGPC={},porLoc={URBANO:0,RURAL:0};
