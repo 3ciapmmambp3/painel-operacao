@@ -1034,17 +1034,6 @@
           <option value="A20001">A20001 — Vítima de Crime Violento (IMV / CVPE / CVPA)</option>
         </select>
       </div>
-      <div class="fg" style="min-width:220px;">
-        <label>Complemento da Natureza</label>
-        <select id="vt-complemento" onchange="renderVisitas()" style="font-size:11px;">
-          <option value="">Todos</option>
-          <option value="115">115 — Morador / Visitante de Residência</option>
-          <option value="2005">2005 — Bens/Valores de Morador / Visitante de Residência</option>
-          <option value="2002">2002 — Bens/Valores de Estabelecimento / Pessoa Jurídica</option>
-          <option value="2003">2003 — Bens/Valores de Cliente / Visitante de Estabelecimento</option>
-          <option value="2015">2015 — Bens/Valores de Condôminos</option>
-        </select>
-      </div>
 <div class="fg" style="min-width:180px;max-width:260px;">
         <label>Mês</label>
         <div class="mes-dropdown-wrap" id="vt-mes-wrap">
@@ -3106,6 +3095,16 @@ function _abrirModalSituacao(boCrime) {
 
   const existente = dadosSituacoes[boCrime] || null;
 
+  if(existente && !_sitPodeEditar(existente)) {
+    alert(
+      `Você não pode editar este registro.\n\n` +
+      `Apenas o militar que registrou (até 7 dias após o registro) ou o Admin Geral podem editar.\n` +
+      `Registrado por: ${existente.registrado_por || '—'}\n` +
+      `Em: ${existente.registrado_em ? new Date(existente.registrado_em).toLocaleString('pt-BR') : '—'}`
+    );
+    return;
+  }
+
   const modal = document.createElement('div');
   modal.id = '_modal-situacao';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:10000;display:flex;align-items:center;justify-content:center;';
@@ -3212,12 +3211,18 @@ function _sitColetarRegistros() {
 
 async function _salvarSituacao(boCrime) {
   const msg    = document.getElementById('_sit-msg');
+  const existeAntesCheck = dadosSituacoes[boCrime] || null;
+  if(existeAntesCheck && !_sitPodeEditar(existeAntesCheck)) {
+    if(msg) msg.innerHTML = '<span style="color:var(--danger);">✗ Você não tem permissão para editar este registro.</span>';
+    return;
+  }
   const motivo = document.getElementById('_sit-motivo')?.value || '';
   const obs    = (document.getElementById('_sit-obs')?.value || '').trim();
   const registros = _sitColetarRegistros();
 
   if(!motivo) { if(msg) msg.innerHTML = '<span style="color:var(--danger);">✗ Selecione o motivo.</span>'; return; }
 
+  const existeAntes = dadosSituacoes[boCrime] || null;
   const payload = {
     bo_crime:       boCrime,
     status:         'nao_realizada',
@@ -3225,8 +3230,9 @@ async function _salvarSituacao(boCrime) {
     observacao:     obs || null,
     numero_rat:     registros.find(r => r.tipo === 'RAT')?.valor || null, /* compat. retro */
     registros,
-    registrado_por: _formatarIdentMilitar(sessao) || sessao?.matricula || sessao?.matricula_clean || '',
-    registrado_em:  new Date().toISOString(),
+    registrado_por:           existeAntes?.registrado_por           || _formatarIdentMilitar(sessao) || sessao?.matricula || sessao?.matricula_clean || '',
+    registrado_por_matricula: existeAntes?.registrado_por_matricula || sessao?.matricula_clean || sessao?.matricula || sessao?.mat || '',
+    registrado_em:            existeAntes?.registrado_em            || new Date().toISOString(),
   };
 
   if(msg) msg.innerHTML = '<span style="color:var(--text-muted);">Salvando...</span>';
@@ -3249,6 +3255,11 @@ async function _salvarSituacao(boCrime) {
 }
 
 async function _excluirSituacao(boCrime) {
+  const sitAtual = dadosSituacoes[boCrime] || null;
+  if(sitAtual && !_sitPodeEditar(sitAtual)) {
+    alert('Você não tem permissão para remover este registro.\nApenas o autor (até 7 dias) ou o Admin Geral podem fazer isso.');
+    return;
+  }
   if(!confirm(`Remover o registro de situação para\n${boCrime}?\n\nO crime voltará a aparecer como pendente.`)) return;
   try {
     const res = await fetch(
@@ -3267,6 +3278,19 @@ async function _excluirSituacao(boCrime) {
 function _situacaoMotivoLabel(motivo) {
   const m = SITUACAO_MOTIVOS.find(x => x.value === motivo);
   return m ? m.label : motivo;
+}
+
+/** Regra: Admin Geral pode editar/excluir a qualquer tempo.
+ *  Quem registrou pode editar/excluir somente dentro de 7 dias do registro. */
+function _sitPodeEditar(sit) {
+  if(!sit) return true; /* novo registro, sempre pode criar */
+  if(sessao?.nivel_acesso === 'admin_geral') return true;
+  const minhaMatricula = sessao?.matricula_clean || sessao?.matricula || sessao?.mat || '';
+  if(!minhaMatricula || !sit.registrado_por_matricula) return false;
+  if(minhaMatricula !== sit.registrado_por_matricula) return false;
+  if(!sit.registrado_em) return false;
+  const dias = (Date.now() - new Date(sit.registrado_em).getTime()) / (1000*60*60*24);
+  return dias <= 7;
 }
 
 /** Carrega bd_visitas_pog e integra em dadosVisitas */
@@ -6849,8 +6873,8 @@ function _vtRenderLista(){
               style="background:none;border:1px solid rgba(155,138,92,.4);color:var(--gold);padding:2px 8px;border-radius:3px;font-size:10px;cursor:pointer;transition:all .15s;"
               onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='rgba(155,138,92,.4)'">🚔 Lançar Visita POG</button>
             <button onclick="_abrirModalSituacao('${boCr}')"
-              style="background:none;border:1px solid rgba(255,152,0,.4);color:#ff9800;padding:2px 8px;border-radius:3px;font-size:10px;cursor:pointer;transition:all .15s;"
-              onmouseover="this.style.borderColor='#ff9800'" onmouseout="this.style.borderColor='rgba(255,152,0,.4)'">${sit?'✏️ Editar Situação':'⚠ Registrar Situação'}</button>
+              style="background:none;border:1px solid ${sit && !_sitPodeEditar(sit) ? 'rgba(150,150,150,.3)' : 'rgba(255,152,0,.4)'};color:${sit && !_sitPodeEditar(sit) ? 'var(--text-hint)' : '#ff9800'};padding:2px 8px;border-radius:3px;font-size:10px;cursor:pointer;transition:all .15s;"
+              onmouseover="this.style.borderColor='${sit && !_sitPodeEditar(sit) ? 'var(--text-hint)' : '#ff9800'}'" onmouseout="this.style.borderColor='${sit && !_sitPodeEditar(sit) ? 'rgba(150,150,150,.3)' : 'rgba(255,152,0,.4)'}'">${sit ? (_sitPodeEditar(sit) ? '✏️ Editar Situação' : '🔒 Situação Registrada') : '⚠ Registrar Situação'}</button>
           </div>
         </div>`;
       });
@@ -6885,7 +6909,7 @@ function renderVisitas(){
   const vtGp   = document.getElementById('vt-gp')?.value    || '';
   const vtBusca     = norm(document.getElementById('vt-busca')?.value || '');
   const vtIndicador   = document.getElementById('vt-indicador')?.value || '';
-  const vtComplemento = document.getElementById('vt-complemento')?.value || '';
+  /* Sem seletor visível — restrição automática aos códigos válidos é sempre aplicada */
   /* Códigos válidos para visita (quando nenhum filtro selecionado, exibe todos) */
   const COMP_VALIDOS  = [115, 2005, 2002, 2003, 2015];
   /* Visitas válidas filtradas por tipo/mês/pelotão/grupamento */
@@ -6921,15 +6945,8 @@ function renderVisitas(){
     norm(c.bo||c.rat||'').includes(vtBusca) || norm(c.municipio||'').includes(vtBusca)
   );
   if(vtIndicador) crimes = crimes.filter(c => c.indicador === vtIndicador);
-  /* Filtro por complemento da natureza:
-     - Se um complemento específico for selecionado, aplica só esse.
-     - Se "Todos" estiver selecionado, restringe aos 4 códigos válidos. */
-  if(vtComplemento){
-    const cod = parseInt(vtComplemento);
-    crimes = crimes.filter(c => c.codComplemento === cod);
-  } else {
-    crimes = crimes.filter(c => c.codComplemento !== null && COMP_VALIDOS.includes(c.codComplemento));
-  }
+  /* Restrição automática: só crimes com complemento de natureza válido para visita */
+  crimes = crimes.filter(c => c.codComplemento !== null && COMP_VALIDOS.includes(c.codComplemento));
 
   if(!crimes.length){
     document.getElementById('visitas-body').innerHTML = '<div class="empty-state">Nenhum crime encontrado para os filtros selecionados.</div>';
