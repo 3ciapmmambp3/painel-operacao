@@ -3580,12 +3580,12 @@ function _restringirFiltrosAoGrupamento(){
     if(fg) fg.style.display = 'none';
   });
 
-  /* rcr-gp usa gpResp curto, não o formato longo */
+  /* rcr-gp usa gpResp curto como value (filtro), mas exibe o formato longo */
   const rcrGpEl = document.getElementById('rcr-gp');
   if(rcrGpEl && meuGpResp){
     if(![...rcrGpEl.options].some(o => o.value === meuGpResp)){
       const opt = document.createElement('option');
-      opt.value = meuGpResp; opt.textContent = meuGpResp;
+      opt.value = meuGpResp; opt.textContent = meuGrup || meuGpResp;
       rcrGpEl.appendChild(opt);
     }
     rcrGpEl.value = meuGpResp;
@@ -7542,15 +7542,19 @@ async function renderRCR() {
   const selGp = document.getElementById('rcr-gp');
   if (selGp && selGp.options.length <= 1 && dadosGrupos.length) {
     const _meuPelRcr = (sessao?.nivel_acesso === 'admin_pelotao') ? _pelotaoDoUsuario() : '';
-    const gps = [...new Set(
-      dadosGrupos
-        .filter(g => !_meuPelRcr || String(g.pelNum) === _meuPelRcr)
-        .map(g => g.gpResp)
-        .filter(Boolean)
-    )].sort();
+    /* Mapa gpResp (curto, usado como value/filtro) → grupamento completo (exibido no texto) */
+    const gpRespParaGrupamento = {};
+    dadosGrupos
+      .filter(g => !_meuPelRcr || String(g.pelNum) === _meuPelRcr)
+      .forEach(g => {
+        if(g.gpResp && !gpRespParaGrupamento[g.gpResp]) gpRespParaGrupamento[g.gpResp] = g.grupamento || g.gpResp;
+      });
+    const gps = Object.keys(gpRespParaGrupamento).sort((a,b) =>
+      gpRespParaGrupamento[a].localeCompare(gpRespParaGrupamento[b])
+    );
     gps.forEach(g => {
       const opt = document.createElement('option');
-      opt.value = g; opt.textContent = g;
+      opt.value = g; opt.textContent = gpRespParaGrupamento[g];
       selGp.appendChild(opt);
     });
   }
