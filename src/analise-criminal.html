@@ -1046,7 +1046,7 @@
         <select id="vt-tipo" onchange="renderVisitas()">
           <option value="">Todas</option>
           <option value="A20028">A20028 — Vítima de Furto (IF)</option>
-          <option value="A20001">A20001 — Vítima de Crime Violento (IMV / CVPE / CVPA)</option>
+          <option value="A20001">A20001 — Vítima de Crime Violento (CVPE / CVPA)</option>
         </select>
       </div>
 <div class="fg" style="min-width:180px;max-width:260px;">
@@ -1086,7 +1086,6 @@
         <select id="vt-indicador" onchange="renderVisitas()">
           <option value="">Todos</option>
           <option value="IF">IF</option>
-          <option value="IMV">IMV</option>
           <option value="CVPE">CVPE</option>
           <option value="CVPA">CVPA</option>
         </select>
@@ -1346,7 +1345,7 @@
   <div id="rcr-excluidos-wrap" style="display:none;margin-top:14px;background:var(--bg-card);border-radius:8px;overflow:hidden;border:1px solid rgba(239,83,80,.3);">
     <div style="padding:10px 16px;border-bottom:1px solid rgba(239,83,80,.2);display:flex;justify-content:space-between;align-items:center;">
       <span style="font-size:12px;font-weight:700;color:#ef5350;">🗑 Registros Excluídos / Não Contabilizados</span>
-      <span style="font-size:11px;color:var(--text-muted);">Exclusões manuais e registros em área urbana (não contam para a meta)</span>
+      <span id="rcr-excluidos-subtitulo" style="font-size:11px;color:var(--text-muted);display:none;">Exclusões manuais e registros em área urbana (não contam para a meta)</span>
     </div>
     <div style="overflow-x:auto;">
       <table style="width:100%;border-collapse:collapse;font-size:11px;">
@@ -3238,6 +3237,13 @@ function _abrirModalSituacao(boCrime) {
       </div>
 
       <div style="margin-bottom:12px;">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Data do Registro</div>
+        <input type="date" id="_sit-data"
+          value="${existente?.data_registro || new Date().toISOString().slice(0,10)}"
+          style="width:100%;box-sizing:border-box;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:7px 10px;border-radius:5px;font-size:12px;">
+      </div>
+
+      <div style="margin-bottom:12px;">
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Observação Complementar</div>
         <textarea id="_sit-obs" rows="3" placeholder="Detalhe o ocorrido..."
           style="width:100%;box-sizing:border-box;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:7px 10px;border-radius:5px;font-size:12px;resize:vertical;font-family:inherit;">${existente?.observacao||''}</textarea>
@@ -3321,6 +3327,7 @@ async function _salvarSituacao(boCrime) {
     return;
   }
   const motivo = document.getElementById('_sit-motivo')?.value || '';
+  const dataRegistro = document.getElementById('_sit-data')?.value || '';
   const obs    = (document.getElementById('_sit-obs')?.value || '').trim();
   const registros = _sitColetarRegistros();
 
@@ -3331,6 +3338,7 @@ async function _salvarSituacao(boCrime) {
     bo_crime:       boCrime,
     status:         'nao_realizada',
     motivo,
+    data_registro:  dataRegistro || null,
     observacao:     obs || null,
     numero_rat:     registros.find(r => r.tipo === 'RAT')?.valor || null, /* compat. retro */
     registros,
@@ -7092,7 +7100,8 @@ function _vtRenderLista(){
           ? sit.registros.map(r => r.tipo+' '+r.valor).join(' · ')
           : (sit?.numero_rat ? 'RAT '+sit.numero_rat : '');
         const sitInfo = sit
-          ? `<div style="font-size:9px;color:#ff9800;margin-top:2px;">Motivo: ${_situacaoMotivoLabel(sit.motivo)}${sitRegs?' · '+sitRegs:''}</div>`
+          ? `<div style="font-size:9px;color:#ff9800;margin-top:2px;">Motivo: ${_situacaoMotivoLabel(sit.motivo)}${sit.data_registro?' · Data: '+new Date(sit.data_registro+'T00:00:00').toLocaleDateString('pt-BR'):''}${sitRegs?' · '+sitRegs:''}</div>` +
+            (sit.observacao ? `<div style="font-size:9px;color:var(--text-muted);margin-top:2px;font-style:italic;">"${sit.observacao}"</div>` : '')
           : '';
         html += `<div style="background:#1e1a1a;border:1px solid ${sit?'rgba(255,152,0,.25)':'rgba(239,83,80,.2)'};border-radius:5px;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
           <div>
@@ -7173,11 +7182,13 @@ function renderVisitas(){
   document.getElementById('vt-total-validas').textContent = visitasFiltradas.length;
   _renderVtRegistros(visitasFiltradas);
 
-  /* Indicadores alvo por tipo de natureza */
+  /* Indicadores alvo por tipo de natureza.
+     IMV (Morte Violenta) é excluído: a vítima faleceu, não há visita
+     tranquilizadora a ser feita nesses casos. */
   let inds;
   if(tipo==='A20028')      inds = ['IF'];
-  else if(tipo==='A20001') inds = ['IMV','CVPE','CVPA'];
-  else                     inds = ['IMV','CVPE','CVPA','IF'];
+  else if(tipo==='A20001') inds = ['CVPE','CVPA'];
+  else                     inds = ['CVPE','CVPA','IF'];
 
   let crimes = getDadosFiltrados(mes,'','',vtPel,'','').filter(d => {
     if(!inds.includes(d.indicador)) return false;
@@ -7815,6 +7826,8 @@ async function rcrRenderExcluidos(mesesSelRcr) {
   if(thAcoesExcl) thAcoesExcl.style.display = _isAdmGeral ? '' : 'none';
   const thQuemExcl = document.getElementById('rcr-excluidos-th-quem');
   if(thQuemExcl) thQuemExcl.style.display = _isAdmGeral ? '' : 'none';
+  const subtituloExcl = document.getElementById('rcr-excluidos-subtitulo');
+  if(subtituloExcl) subtituloExcl.style.display = _isAdmGeral ? '' : 'none';
 
   tbody.innerHTML = todos.map(r => {
     const gi  = _giDoMunicipio(r.municipio);
