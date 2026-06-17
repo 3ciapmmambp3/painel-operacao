@@ -1283,6 +1283,12 @@
           <option value="A19099">A19099 — Outros tipos de entidades</option>
         </select>
       </div>
+      <div class="fg" style="align-self:flex-end;">
+        <button type="button" onclick="gerarPdfRcr()"
+          style="background:var(--gold);color:#1a1a1a;border:none;padding:8px 16px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">
+          📄 PDF
+        </button>
+      </div>
     </div>
   </div>
 
@@ -7687,6 +7693,314 @@ async function renderRCR() {
   /* Mostra/esconde coluna de ações */
   const thAcoes = document.getElementById('rcr-th-acoes');
   if(thAcoes) thAcoes.style.display = _rcrIsAdminGeral() ? '' : 'none';
+}
+
+/** Gera o PDF de Reuniões Comunitárias Rurais (RCR), no mesmo padrão visual
+ *  do PDF de OP GDO RURAL: agrupado por Pelotão (com cabeçalho colorido e
+ *  estatísticas de Meta/Real/Saldo do mês e acumulado), e dentro de cada
+ *  pelotão uma linha por Grupamento mostrando a contagem de reuniões por
+ *  natureza (A19000/A19001/A19004/A19099) e o total daquele GP.
+ *  Diferente do GDO, a meta aqui existe apenas no nível do Pelotão — não há
+ *  meta individual por Grupamento, já que qualquer natureza realizada por
+ *  qualquer GP do pelotão conta igualmente para o cumprimento da meta. */
+async function gerarPdfRcr(){
+  const { jsPDF } = window.jspdf;
+  if(!jsPDF){ alert('Biblioteca PDF não carregada.'); return; }
+
+  if (!Object.keys(_rcrMetas).length) await _rcrCarregarMetas();
+
+  const mesesSel = getMesDd('rcr');
+  const ano = new Date().getFullYear();
+  const mesIdxAcum = mesesSel.length > 0 ? Math.max(...mesesSel.map(m => MESES.indexOf(m) + 1)) : (new Date().getMonth()+1);
+  const mesAcumNome = MESES[mesIdxAcum - 1] || MESES[new Date().getMonth()];
+  const mesLabel = mesesSel.length === 12 || !mesesSel.length ? 'TODOS OS MESES'
+    : mesesSel.length === 1 ? mesesSel[0] : mesesSel.join(', ');
+
+  const rcrPel = document.getElementById('rcr-pel')?.value || '';
+  const rcrGp  = document.getElementById('rcr-gp')?.value  || '';
+  const rcrNat = document.getElementById('rcr-nat')?.value || '';
+  const nats = rcrNat ? [rcrNat] : RCR_NATS;
+
+  /* Filtra registros igual a renderRCR */
+  const registrosTodos = dadosVisitas.filter(v => {
+    if (!RCR_NATS.includes(v.natCode)) return false;
+    if (v.localizacao !== 'ZONA RURAL') return false;
+    if (rcrNat && v.natCode !== rcrNat) return false;
+    if (rcrPel || rcrGp) {
+      const gi = dadosGrupos.find(g => g.munNorm === norm(v.municipio || ''));
+      if (rcrPel && (!gi || String(gi.pelNum) !== rcrPel)) return false;
+      if (rcrGp  && (!gi || gi.gpResp !== rcrGp))          return false;
+    }
+    return true;
+  });
+  const registrosMes = registrosTodos.filter(v => mesesSel.length === 0 || mesesSel.includes(v.mes));
+  const registrosAcum = registrosTodos.filter(v => MESES.indexOf(v.mes) < mesIdxAcum);
+
+  if(!registrosMes.length && !registrosAcum.length){ alert('Nenhum dado para gerar PDF.'); return; }
+
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2,'0'), mm2 = String(now.getMonth()+1).padStart(2,'0');
+  const yyyy = now.getFullYear(), hh = String(now.getHours()).padStart(2,'0'), mi = String(now.getMinutes()).padStart(2,'0');
+  const nomeArq = `RCR_3CIA_PMAMB_${mesLabel.replace(/[, ]+/g,'_')}_EXTRAIDO_${dd}-${mm2}-${yyyy}_${hh}h${mi}min.pdf`;
+
+  /* A4 paisagem — mesmas medidas e paleta do GDO Rural */
+  const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
+  const PW=297, PH=210, ML=4, MR=4, TW=PW-ML-MR;
+
+  const GOLD=[100,80,30], GOLD2=[70,50,0];
+  const GREEN=[30,120,40], DANGER=[180,30,30], ORANGE=[180,100,0];
+  const BG_HEAD=[240,236,224], BG_ROW=[255,255,255], BG_ALT=[249,247,241], BG_TOT=[230,222,200], BG_PEL=[52,73,94];
+  const TXT=[20,20,20], TXT_M=[100,80,30], BRD=[190,175,145];
+  const NAT_CORS={'A19000':[171,71,188],'A19001':[66,165,245],'A19004':[255,167,38],'A19099':[120,144,156]};
+  function natCor(n){ return NAT_CORS[n]||GOLD; }
+  function saldoCor(s){ return s===0?GREEN:s<0?DANGER:ORANGE; }
+
+  /* Larguras das colunas */
+  const COL_GP=52;
+  const nNat=nats.length;
+  const COL_N=22;
+  const COL_TOTGP=16;
+  const COL_META=16, COL_REAL=16, COL_SALDO=16, COL_MACUM=16, COL_RACUM=16, COL_SACUM=16;
+  const COL_PCT=TW - COL_GP - (nNat*COL_N) - COL_TOTGP - COL_META - COL_REAL - COL_SALDO - COL_MACUM - COL_RACUM - COL_SACUM;
+
+  /* Monta estrutura: pelotão → grupamento → contagem por natureza */
+  const pel_gp = {};
+  dadosGrupos.forEach(g => {
+    const pelNum = pelDoColk(g.colK||g.grupamento);
+    if(pelNum === 99) return;
+    if(rcrPel && pelNum !== parseInt(rcrPel)) return;
+    const gpKey = g.gpResp;
+    if(!pel_gp[pelNum]) pel_gp[pelNum] = {};
+    if(!pel_gp[pelNum][gpKey]) pel_gp[pelNum][gpKey] = { porNat:{}, porNatAcum:{} };
+  });
+  registrosMes.forEach(v => {
+    const gi = dadosGrupos.find(g => g.munNorm === norm(v.municipio||''));
+    if(!gi) return;
+    const pelNum = gi.pelNum, gpKey = gi.gpResp;
+    if(pelNum === 99) return;
+    if(!pel_gp[pelNum]) pel_gp[pelNum] = {};
+    if(!pel_gp[pelNum][gpKey]) pel_gp[pelNum][gpKey] = { porNat:{}, porNatAcum:{} };
+    pel_gp[pelNum][gpKey].porNat[v.natCode] = (pel_gp[pelNum][gpKey].porNat[v.natCode]||0) + 1;
+  });
+  registrosAcum.forEach(v => {
+    const gi = dadosGrupos.find(g => g.munNorm === norm(v.municipio||''));
+    if(!gi) return;
+    const pelNum = gi.pelNum, gpKey = gi.gpResp;
+    if(pelNum === 99) return;
+    if(!pel_gp[pelNum]) pel_gp[pelNum] = {};
+    if(!pel_gp[pelNum][gpKey]) pel_gp[pelNum][gpKey] = { porNat:{}, porNatAcum:{} };
+    pel_gp[pelNum][gpKey].porNatAcum[v.natCode] = (pel_gp[pelNum][gpKey].porNatAcum[v.natCode]||0) + 1;
+  });
+
+  const pelNums = Object.keys(pel_gp).map(Number).sort((a,b)=>a-b);
+
+  let page=0;
+  function addPage(){
+    if(page>0) doc.addPage();
+    page++;
+    doc.setFillColor(255,255,255); doc.rect(0,0,PW,PH,'F');
+    doc.setFillColor(...BG_HEAD); doc.rect(0,0,PW,11,'F');
+    doc.setDrawColor(100,80,30); doc.setLineWidth(0.5); doc.line(0,11,PW,11);
+    doc.setFontSize(5.5); doc.setFont('helvetica','normal'); doc.setTextColor(100,80,30);
+    let lx=ML+1;
+    nats.forEach(n=>{ const c=natCor(n); doc.setTextColor(...c); doc.setFont('helvetica','bold'); doc.text(n,lx,PH-2); lx+=22; });
+    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...GOLD);
+    doc.text('3ª CIA PM MAMB — REUNIÕES COMUNITÁRIAS RURAIS (RCR) — ZONA RURAL',ML+1,7.5);
+    doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(...TXT_M);
+    doc.text(`MESES: ${mesLabel}  |  ACUM. ATÉ: ${mesAcumNome}  |  EXTRAÍDO: ${dd}/${mm2}/${yyyy} às ${hh}h${mi}min  |  PÁG. ${page}`,PW-MR,7.5,{align:'right'});
+    return 13;
+  }
+
+  function drawPelHeader(y,pelN,pMeta,pReal,pSaldo,pMetaAcum,pRealAcum,pSaldoAcum,pPct){
+    const h=7.5;
+    doc.setFillColor(...BG_PEL); doc.rect(0,y,PW,h,'F');
+    doc.setFillColor(...GOLD); doc.circle(ML+3,y+h/2,2.8,'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(6.5); doc.setTextColor(255,255,255);
+    doc.text(String(pelN),ML+3,y+h/2+0.8,{align:'center'});
+    doc.setFontSize(8); doc.setTextColor(255,240,180);
+    doc.text(`${pelN}º PELOTÃO — 3ª CIA PM MAMB`,ML+8,y+h/2+0.8);
+    const stats=[
+      {lbl:'META',val:String(pMeta),cor:[255,240,180]},
+      {lbl:'REAL.',val:String(pReal),cor:[150,255,170]},
+      {lbl:'SALDO',val:(pSaldo>=0?'+':'')+pSaldo,cor:pSaldo===0?[150,255,170]:pSaldo<0?[255,120,120]:[255,200,80]},
+      {lbl:'META ACUM.',val:String(pMetaAcum),cor:[180,240,200]},
+      {lbl:'REAL. ACUM.',val:String(pRealAcum),cor:[180,255,220]},
+      {lbl:'SALDO ACUM.',val:(pSaldoAcum>=0?'+':'')+pSaldoAcum,cor:pSaldoAcum===0?[150,255,170]:pSaldoAcum<0?[255,120,120]:[255,200,80]},
+      {lbl:'CUMPR.',val:pPct+'%',cor:[255,220,100]}
+    ];
+    let sx=PW-MR-stats.length*18;
+    stats.forEach(s=>{
+      doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...s.cor);
+      doc.text(s.val,sx+9,y+h/2+0.3,{align:'center'});
+      doc.setFontSize(4.5); doc.setTextColor(200,190,160);
+      doc.text(s.lbl,sx+9,y+h/2+3.2,{align:'center'});
+      sx+=18;
+    });
+    return y+h;
+  }
+
+  function drawTableHead(y){
+    const h1=5, h2=4;
+    doc.setFillColor(...BG_HEAD); doc.rect(0,y,PW,h1,'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(5.5); doc.setTextColor(...GOLD);
+    doc.setDrawColor(...BRD); doc.setLineWidth(0.13);
+    doc.rect(ML,y,COL_GP,h1+h2,'D');
+    doc.text('GRUPAMENTO',ML+1,y+h1*0.7);
+    let cx=ML+COL_GP;
+    nats.forEach(n=>{ const c=natCor(n); doc.setTextColor(...c); doc.text(n,cx+COL_N/2,y+h1*0.7,{align:'center'}); doc.rect(cx,y,COL_N,h1+h2,'D'); cx+=COL_N; });
+    doc.setTextColor(...GOLD2); doc.text('TOTAL',cx+COL_TOTGP/2,y+h1*0.7,{align:'center'}); doc.rect(cx,y,COL_TOTGP,h1+h2,'D');
+    cx+=COL_TOTGP;
+    doc.setTextColor(...GOLD2); doc.text('TOTAL MÊS (PELOTÃO)',cx+(COL_META+COL_REAL+COL_SALDO)/2,y+h1*0.7,{align:'center'});
+    doc.rect(cx,y,COL_META+COL_REAL+COL_SALDO,h1,'D');
+    const cxAcum=cx+COL_META+COL_REAL+COL_SALDO;
+    doc.setTextColor(30,90,160); doc.text('ACUMULADO (PELOTÃO)',cxAcum+(COL_MACUM+COL_RACUM+COL_SACUM)/2,y+h1*0.7,{align:'center'});
+    doc.rect(cxAcum,y,COL_MACUM+COL_RACUM+COL_SACUM,h1,'D');
+    const cxPct=cxAcum+COL_MACUM+COL_RACUM+COL_SACUM;
+    doc.setTextColor(...GOLD); doc.text('CUMPR.',cxPct+COL_PCT/2,y+h1*0.7,{align:'center'});
+    doc.rect(cxPct,y,COL_PCT,h1+h2,'D');
+    doc.setFillColor(...BG_HEAD); doc.rect(0,y+h1,PW,h2,'F');
+    doc.setFontSize(4.8);
+    let cx2=ML+COL_GP+nNat*COL_N+COL_TOTGP;
+    [['META',COL_META],['REAL.',COL_REAL],['SALDO',COL_SALDO],['META',COL_MACUM],['REAL.',COL_RACUM],['SALDO',COL_SACUM]].forEach(([lbl,w],i)=>{
+      const cor=i<3?GOLD2:[20,100,50];
+      doc.setTextColor(...cor); doc.text(lbl,cx2+w/2,y+h1+h2*0.72,{align:'center'});
+      doc.rect(cx2,y+h1,w,h2,'D'); cx2+=w;
+    });
+    return y+h1+h2;
+  }
+
+  function progBarCor(pct){
+    if(pct>=100) return [46,160,67];
+    if(pct>=75)  return [180,140,0];
+    return [200,50,50];
+  }
+
+  /* Linha de Grupamento: só contagem por natureza + total, sem meta/saldo (não existe meta por GP) */
+  function drawRowGp(y,label,natVals,totGp,alt){
+    const h=5.5;
+    doc.setFillColor(...(alt?BG_ALT:BG_ROW)); doc.rect(0,y,PW,h,'F');
+    doc.setFont('helvetica','normal'); doc.setFontSize(5.5);
+    doc.setTextColor(...TXT);
+    doc.text(label,ML+1.5,y+h*0.68);
+    doc.setDrawColor(...BRD); doc.setLineWidth(0.12); doc.rect(ML,y,COL_GP,h,'D');
+    let cx=ML+COL_GP;
+    natVals.forEach((v,i)=>{
+      const cor=v>0?natCor(nats[i]):[180,180,180];
+      doc.setFont('helvetica',v>0?'bold':'normal'); doc.setFontSize(6);
+      doc.setTextColor(...cor); doc.text(v>0?String(v):'—',cx+COL_N/2,y+h*0.68,{align:'center'});
+      doc.rect(cx,y,COL_N,h,'D'); cx+=COL_N;
+    });
+    doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.setTextColor(...GOLD2);
+    doc.text(String(totGp),cx+COL_TOTGP/2,y+h*0.68,{align:'center'}); doc.rect(cx,y,COL_TOTGP,h,'D'); cx+=COL_TOTGP;
+    /* Espaço de meta/saldo/acumulado/cumprimento fica em branco nas linhas de GP — só preenchido na linha TOTAL do pelotão */
+    doc.rect(cx,y,COL_META+COL_REAL+COL_SALDO+COL_MACUM+COL_RACUM+COL_SACUM+COL_PCT,h,'D');
+    return y+h;
+  }
+
+  /* Linha de TOTAL do pelotão: contagem por natureza + total + meta/real/saldo + acumulado + cumprimento */
+  function drawRowTotal(y,label,natVals,totGp,meta,real,saldo,metaAcum,realAcum,saldoAcum,pct){
+    const h=6;
+    doc.setFillColor(...BG_TOT); doc.rect(0,y,PW,h,'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(6.2);
+    doc.setTextColor(...GOLD2);
+    doc.text(label,ML+1.5,y+h*0.68);
+    doc.setDrawColor(...BRD); doc.setLineWidth(0.12); doc.rect(ML,y,COL_GP,h,'D');
+    let cx=ML+COL_GP;
+    natVals.forEach((v,i)=>{
+      const cor=v>0?natCor(nats[i]):[180,180,180];
+      doc.setFont('helvetica',v>0?'bold':'normal'); doc.setFontSize(6.5);
+      doc.setTextColor(...cor); doc.text(v>0?String(v):'—',cx+COL_N/2,y+h*0.68,{align:'center'});
+      doc.rect(cx,y,COL_N,h,'D'); cx+=COL_N;
+    });
+    doc.setFont('helvetica','bold'); doc.setFontSize(6.5); doc.setTextColor(...GOLD2);
+    doc.text(String(totGp),cx+COL_TOTGP/2,y+h*0.68,{align:'center'}); doc.rect(cx,y,COL_TOTGP,h,'D'); cx+=COL_TOTGP;
+    doc.setTextColor(...GOLD2);
+    doc.text(String(meta),cx+COL_META/2,y+h*0.68,{align:'center'}); doc.rect(cx,y,COL_META,h,'D'); cx+=COL_META;
+    doc.setTextColor(...GREEN);
+    doc.text(String(real),cx+COL_REAL/2,y+h*0.68,{align:'center'}); doc.rect(cx,y,COL_REAL,h,'D'); cx+=COL_REAL;
+    doc.setTextColor(...saldoCor(saldo));
+    doc.text((saldo>=0?'+':'')+saldo,cx+COL_SALDO/2,y+h*0.68,{align:'center'}); doc.rect(cx,y,COL_SALDO,h,'D'); cx+=COL_SALDO;
+    doc.setTextColor(30,90,160);
+    doc.text(String(metaAcum),cx+COL_MACUM/2,y+h*0.68,{align:'center'}); doc.rect(cx,y,COL_MACUM,h,'D'); cx+=COL_MACUM;
+    doc.setTextColor(20,120,90);
+    doc.text(String(realAcum),cx+COL_RACUM/2,y+h*0.68,{align:'center'}); doc.rect(cx,y,COL_RACUM,h,'D'); cx+=COL_RACUM;
+    doc.setTextColor(...saldoCor(saldoAcum));
+    doc.text((saldoAcum>=0?'+':'')+saldoAcum,cx+COL_SACUM/2,y+h*0.68,{align:'center'}); doc.rect(cx,y,COL_SACUM,h,'D'); cx+=COL_SACUM;
+    doc.rect(cx,y,COL_PCT,h,'D');
+    const pctTxtW=12, barPad=2;
+    const barAreaW=COL_PCT-barPad*2-pctTxtW;
+    const barH=3.5, barY=y+(h-barH)/2;
+    const barFillW=Math.min(pct/100,1)*barAreaW;
+    const barX=cx+barPad;
+    const bc=progBarCor(pct);
+    doc.setFillColor(215,215,215); doc.roundedRect(barX,barY,barAreaW,barH,0.8,0.8,'F');
+    if(barFillW>0.2){ doc.setFillColor(...bc); doc.roundedRect(barX,barY,barFillW,barH,0.8,0.8,'F'); }
+    doc.setFont('helvetica','bold'); doc.setFontSize(5.5); doc.setTextColor(...bc);
+    doc.text(pct+'%',cx+COL_PCT-barPad,y+h*0.72,{align:'right'});
+    return y+h;
+  }
+
+  let y=addPage();
+
+  let gMeta=0,gReal=0,gMetaAcum=0,gRealAcum=0;
+  const gNatTot={}; nats.forEach(n=>gNatTot[n]=0);
+  const mesFiltroUnico = mesesSel.length === 1 ? mesesSel[0] : MESES[new Date().getMonth()];
+
+  pelNums.forEach(pelN=>{
+    const gpMap=pel_gp[pelN];
+    const gps=Object.keys(gpMap).sort((a,b)=>{
+      const ga=dadosGrupos.find(r=>r.gpResp===a),gb=dadosGrupos.find(r=>r.gpResp===b);
+      return (ga?gpNumDoColk(ga.colK||ga.grupamento):99)-(gb?gpNumDoColk(gb.colK||gb.grupamento):99);
+    });
+
+    /* Meta/Real do pelotão: meta soma cada mês selecionado (ou o mês atual se nenhum selecionado);
+       real soma a contagem de TODOS os GPs do pelotão em qualquer natureza */
+    const mesesParaMeta = mesesSel.length ? mesesSel : [mesFiltroUnico];
+    let pMeta = 0; mesesParaMeta.forEach(m => { pMeta += _rcrMetaDoPelotao(pelN, m); });
+    let pMetaAcum = 0; for(let i=0;i<mesIdxAcum;i++){ pMetaAcum += _rcrMetaDoPelotao(pelN, MESES[i]); }
+
+    let pReal=0, pRealAcum=0;
+    const pNatTot={}; nats.forEach(n=>pNatTot[n]=0);
+    gps.forEach(gp=>{
+      nats.forEach(n=>{
+        pNatTot[n] += (gpMap[gp].porNat[n]||0);
+      });
+      pReal     += Object.values(gpMap[gp].porNat).reduce((s,v)=>s+v,0);
+      pRealAcum += Object.values(gpMap[gp].porNatAcum).reduce((s,v)=>s+v,0);
+    });
+    const pSaldo=pReal-pMeta, pSaldoAcum=pRealAcum-pMetaAcum;
+    const pPct=pMeta>0?Math.round(pReal/pMeta*100):(pReal>0?100:0);
+    gMeta+=pMeta; gReal+=pReal; gMetaAcum+=pMetaAcum; gRealAcum+=pRealAcum;
+    nats.forEach(n=>gNatTot[n]+=pNatTot[n]);
+
+    const nGps=gps.length;
+    const altNec=7.5+9+nGps*5.5+6+4;
+    if(y+altNec>PH-8){ y=addPage(); }
+
+    y=drawPelHeader(y,pelN,pMeta,pReal,pSaldo,pMetaAcum,pRealAcum,pSaldoAcum,pPct);
+    y=drawTableHead(y);
+
+    gps.forEach((gp,gi)=>{
+      const natVals=nats.map(n=>gpMap[gp].porNat[n]||0);
+      const totGp=natVals.reduce((s,v)=>s+v,0);
+      const label=gpDoColk(gp).replace('GP ','');
+      y=drawRowGp(y,label,natVals,totGp,gi%2===1);
+    });
+
+    const pelNatVals=nats.map(n=>pNatTot[n]);
+    y=drawRowTotal(y,`TOTAL ${pelN}º PEL`,pelNatVals,pReal,pMeta,pReal,pSaldo,pMetaAcum,pRealAcum,pSaldoAcum,pPct);
+
+    doc.setDrawColor(...GOLD); doc.setLineWidth(0.3); doc.line(0,y,PW,y);
+    y+=3;
+  });
+
+  if(y+7>PH-8){ y=addPage(); }
+  const gSaldo=gReal-gMeta, gSaldoAcum=gRealAcum-gMetaAcum;
+  const gPct=gMeta>0?Math.round(gReal/gMeta*100):(gReal>0?100:0);
+  const gNatVals=nats.map(n=>gNatTot[n]);
+  y=drawRowTotal(y,'TOTAL GERAL',gNatVals,gReal,gMeta,gReal,gSaldo,gMetaAcum,gRealAcum,gSaldoAcum,gPct);
+
+  doc.save(nomeArq);
 }
 
 function _rcrIsAdminGeral(){
