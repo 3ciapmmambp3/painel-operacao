@@ -3293,10 +3293,8 @@ function _sitAddRegistro(tipo, valor, data) {
   const rowId = '_sit-reg-' + Math.random().toString(36).slice(2,9);
   const row = document.createElement('div');
   row.id = rowId;
-  row.style.cssText = 'display:flex;gap:6px;align-items:center;';
+  row.style.cssText = 'display:flex;gap:6px;align-items:flex-end;';
   row.innerHTML = `
-    <input class="_sit-reg-data" type="date" value="${data||''}"
-      style="background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:7px 6px;border-radius:5px;font-size:11px;width:130px;flex-shrink:0;">
     <select class="_sit-reg-tipo" style="background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:7px 6px;border-radius:5px;font-size:11px;width:78px;flex-shrink:0;">
       <option value="RAT" ${tipo==='RAT'?'selected':''}>RAT</option>
       <option value="BOS" ${tipo==='BOS'?'selected':''}>BOS</option>
@@ -3304,6 +3302,11 @@ function _sitAddRegistro(tipo, valor, data) {
     <input class="_sit-reg-valor" type="text" placeholder="0000-000000000-000" maxlength="18" oninput="mascaraBO(this)"
       value="${valor||''}"
       style="flex:1;box-sizing:border-box;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:7px 10px;border-radius:5px;font-size:12px;font-family:monospace;">
+    <div style="flex-shrink:0;">
+      <div style="font-size:9px;color:var(--text-muted);margin-bottom:2px;">Data do Registro <span style="color:var(--danger);">*</span></div>
+      <input class="_sit-reg-data" type="date" value="${data||''}" required
+        style="background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:7px 6px;border-radius:5px;font-size:11px;width:130px;box-sizing:border-box;">
+    </div>
     <button type="button" onclick="document.getElementById('${rowId}').remove()"
       style="background:none;border:1px solid rgba(239,83,80,.4);color:#ef5350;padding:6px 9px;border-radius:5px;font-size:11px;cursor:pointer;flex-shrink:0;">✕</button>
   `;
@@ -3335,6 +3338,12 @@ async function _salvarSituacao(boCrime) {
   const registros = _sitColetarRegistros();
 
   if(!motivo) { if(msg) msg.innerHTML = '<span style="color:var(--danger);">✗ Selecione o motivo.</span>'; return; }
+
+  const registroSemData = registros.find(r => r.valor && !r.data);
+  if(registroSemData) {
+    if(msg) msg.innerHTML = `<span style="color:var(--danger);">✗ Informe a Data do Registro para o ${registroSemData.tipo} ${registroSemData.valor}.</span>`;
+    return;
+  }
 
   const existeAntes = dadosSituacoes[boCrime] || null;
   const payload = {
@@ -7103,8 +7112,8 @@ function _vtRenderLista(){
           ? sit.registros.map(r => r.tipo+' '+r.valor+(r.data?' ('+new Date(r.data+'T00:00:00').toLocaleDateString('pt-BR')+')':'')).join(' · ')
           : (sit?.numero_rat ? 'RAT '+sit.numero_rat : '');
         const sitInfo = sit
-          ? `<div style="font-size:9px;color:#ff9800;margin-top:2px;">Motivo: ${_situacaoMotivoLabel(sit.motivo)}${sit.data_registro?' · Data: '+new Date(sit.data_registro+'T00:00:00').toLocaleDateString('pt-BR'):''}${sitRegs?' · '+sitRegs:''}</div>` +
-            (sit.observacao ? `<div style="font-size:9px;color:var(--text-muted);margin-top:2px;font-style:italic;">Observação Complementar: "${sit.observacao}"</div>` : '')
+          ? `<div style="font-size:9px;color:#ff9800;margin-top:2px;">Motivo: ${_situacaoMotivoLabel(sit.motivo)}${sitRegs?' · '+sitRegs:''}${sit.data_registro?' · Data: '+new Date(sit.data_registro+'T00:00:00').toLocaleDateString('pt-BR'):''}</div>` +
+            (sit.observacao ? `<div style="font-size:11px;color:#e0c389;margin-top:4px;"><b>Observação Complementar:</b> <span style="color:var(--text-muted);font-style:italic;">"${sit.observacao}"</span></div>` : '')
           : '';
         html += `<div style="background:#1e1a1a;border:1px solid ${sit?'rgba(255,152,0,.25)':'rgba(239,83,80,.2)'};border-radius:5px;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
           <div>
