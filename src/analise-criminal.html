@@ -1345,8 +1345,8 @@
   <!-- Painel de registros excluídos (só admin_geral) -->
   <div id="rcr-excluidos-wrap" style="display:none;margin-top:14px;background:var(--bg-card);border-radius:8px;overflow:hidden;border:1px solid rgba(239,83,80,.3);">
     <div style="padding:10px 16px;border-bottom:1px solid rgba(239,83,80,.2);display:flex;justify-content:space-between;align-items:center;">
-      <span style="font-size:12px;font-weight:700;color:#ef5350;">🗑 Registros Excluídos (Lista Negra)</span>
-      <span style="font-size:11px;color:var(--text-muted);">Serão ignorados nas importações futuras · Clique em Restaurar para reativar</span>
+      <span style="font-size:12px;font-weight:700;color:#ef5350;">🗑 Registros Excluídos / Não Contabilizados</span>
+      <span style="font-size:11px;color:var(--text-muted);">Exclusões manuais e registros em área urbana (não contam para a meta)</span>
     </div>
     <div style="overflow-x:auto;">
       <table style="width:100%;border-collapse:collapse;font-size:11px;">
@@ -1356,7 +1356,7 @@
             <th style="padding:6px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Excluído por</th>
             <th style="padding:6px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Data</th>
             <th style="padding:6px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Motivo</th>
-            <th style="padding:6px 10px;text-align:center;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Ação</th>
+            <th id="rcr-excluidos-th-acoes" style="padding:6px 10px;text-align:center;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);display:none;">Ação</th>
           </tr>
         </thead>
         <tbody id="rcr-excluidos-tbody"></tbody>
@@ -2431,6 +2431,7 @@ let sessao        = null;
 let dadosCrimes   = [];   /* dados brutos das 4 abas */
 let dadosGdoRural = [];   /* operações GDO Rural para cruzamento */
 let dadosVisitas  = [];   /* visitas tranquilizadoras BD_VISITA_REUNIAO */
+let _rcrUrbanos   = [];   /* registros RCR descartados por estarem em área urbana (IBGE) */
 let dadosGrupos   = [];   /* tabela GRUPOS para lookup */
 let dadosSituacoes = {};  /* { bo_crime: {status,motivo,observacao,numero_rat,...} } — visitas_situacao */
 let fichasIntel   = [];   /* fichas de inteligência (localStorage) */
@@ -3069,6 +3070,7 @@ async function carregarOpsGdo(){
 async function carregarVisitas(){
   dadosVisitas = [];
   window._visitasPorBO = {};
+  _rcrUrbanos = []; /* registros RCR descartados por estarem em área urbana (IBGE) */
   try {
     /* Paginação: Supabase Free limita 1000 por requisição */
     const _visitasFields = `select=numero_bos,codigo_natureza,desc_natureza,mes_descricao,` +
@@ -3119,8 +3121,13 @@ async function carregarVisitas(){
         || mesRaw;
 
       const minutos      = parseInt(row.opr_tempo_total_minutos) || 0;
-      const isRCR       = ['A19000','A19001','A19004','A19099'].includes(natCode);
-      const visitaValida = bo && (isRCR ? locNorm === 'ZONA RURAL' : minutos >= 1);
+      const isRCR        = ['A19000','A19001','A19004','A19099'].includes(natCode);
+      /* RCR: validade decidida por coordenadas (polígono IBGE 2022), não pelo texto do BO.
+         Sem coordenadas disponíveis, mantém o critério textual como fallback. */
+      const rcrForaPerimetro = isRCR
+        ? (lat !== null && lng !== null ? !pontoEmAreaUrbanaIBGE(lat, lng) : locNorm === 'ZONA RURAL')
+        : true;
+      const visitaValida = bo && (isRCR ? rcrForaPerimetro : minutos >= 1);
       const alertaUrbano = false; /* Visitas em zona urbana são válidas — sem alerta */
       const dataStr      = (row.data_fato || '').toString().trim();
       if(dataStr && (!ultimaData || _dataParaISO(dataStr) > _dataParaISO(ultimaData))) ultimaData = dataStr;
@@ -3136,6 +3143,11 @@ async function carregarVisitas(){
         boRefs: Array.isArray(row.bo_referencia) ? row.bo_referencia : (row.bo_referencia ? [row.bo_referencia] : []),
       };
       dadosVisitas.push(obj);
+      /* Registro RCR descartado por estar em área urbana (IBGE) — guarda para
+         exibição no painel "Registros Excluídos", para o militar entender o motivo */
+      if(isRCR && !rcrForaPerimetro){
+        _rcrUrbanos.push(obj);
+      }
       if(!window._visitasPorBO[bo]) window._visitasPorBO[bo] = [];
       window._visitasPorBO[bo].push(obj);
     });
@@ -7714,29 +7726,93 @@ async function rcrCarregarExcluidos() {
 }
 
 async function rcrRenderExcluidos() {
-  if(!_rcrIsAdminGeral()) return;
+  /* Visível para todos os níveis de acesso — cada um vê apenas os registros
+     dentro do próprio pelotão/grupamento (mesma restrição já aplicada nos filtros) */
   await rcrCarregarExcluidos();
   const wrap = document.getElementById('rcr-excluidos-wrap');
   const tbody = document.getElementById('rcr-excluidos-tbody');
   if(!wrap || !tbody) return;
-  if(!_rcrExcluidosCache.length){
+
+  const _isAdmGeral = _rcrIsAdminGeral();
+
+  /* Determina o filtro de pelotão/grupamento do usuário, se não for admin pleno */
+  const _meuPel  = (sessao?.nivel_acesso === 'admin_pelotao') ? _pelotaoDoUsuario() : '';
+  const _meuGrup = (!_isAdmGeral && sessao?.perfil !== 'admin' && sessao?.nivel_acesso !== 'admin_pelotao')
+    ? _grupamentoDoUsuario() : '';
+
+  /* Acha o registro de dadosGrupos correspondente a um município, para checar pelotão/grupamento */
+  const _giDoMunicipio = (mun) => dadosGrupos.find(g => g.munNorm === norm(mun||''));
+
+  /* 1) Exclusões manuais (lista negra) */
+  const excluidosManual = _rcrExcluidosCache.map(e => ({
+    tipo: 'manual',
+    numero_bos: e.numero_bos,
+    municipio: e.snapshot?.municipio || '',
+    data: e.snapshot?.data_fato || '',
+    motivoLabel: e.motivo || 'Excluído manualmente',
+    excluido_por: e.excluido_por,
+    excluido_em: e.excluido_em,
+    id: e.id,
+  }));
+
+  /* 2) Registros descartados por estarem em área urbana (IBGE) */
+  const urbanos = _rcrUrbanos.map(v => ({
+    tipo: 'urbano',
+    numero_bos: v.bo,
+    municipio: v.municipio,
+    data: v.data,
+    motivoLabel: '📍 Registro feito em área urbana (IBGE) — apenas reuniões em zona rural são contabilizadas',
+    excluido_por: null,
+    excluido_em: null,
+    id: null,
+  }));
+
+  let todos = [...excluidosManual, ...urbanos];
+
+  /* Aplica restrição de pelotão/grupamento, se aplicável */
+  if(_meuPel || _meuGrup){
+    todos = todos.filter(r => {
+      const gi = _giDoMunicipio(r.municipio);
+      if(!gi) return false;
+      if(_meuGrup) return norm(gi.grupamento||'') === norm(_meuGrup);
+      if(_meuPel)  return String(gi.pelNum) === _meuPel;
+      return true;
+    });
+  }
+
+  if(!todos.length){
     wrap.style.display = 'none';
     return;
   }
+
+  /* Ordena por data decrescente quando disponível */
+  todos.sort((a,b) => {
+    const da = parseDataDDMMAAAA(a.data||a.excluido_em||'');
+    const db = parseDataDDMMAAAA(b.data||b.excluido_em||'');
+    if(da && db) return db - da;
+    return 0;
+  });
+
   wrap.style.display = '';
-  tbody.innerHTML = _rcrExcluidosCache.map(e => {
-    const dt = e.excluido_em ? new Date(e.excluido_em).toLocaleString('pt-BR') : '—';
+  const thAcoesExcl = document.getElementById('rcr-excluidos-th-acoes');
+  if(thAcoesExcl) thAcoesExcl.style.display = _isAdmGeral ? '' : 'none';
+
+  tbody.innerHTML = todos.map(r => {
+    const dt = r.excluido_em ? new Date(r.excluido_em).toLocaleString('pt-BR') : (r.data || '—');
+    const corMotivo = r.tipo === 'urbano' ? '#42a5f5' : 'var(--text-muted)';
     return `<tr style="border-bottom:1px solid #1e1e1e;">
-      <td style="font-family:monospace;font-size:10px;color:#888;padding:6px 10px;">${e.numero_bos}</td>
-      <td style="padding:6px 10px;font-size:11px;color:var(--text-muted);">${e.excluido_por||'—'}</td>
+      <td style="font-family:monospace;font-size:10px;color:#888;padding:6px 10px;">${r.numero_bos}</td>
+      <td style="padding:6px 10px;font-size:11px;color:var(--text-muted);">${r.excluido_por||'—'}</td>
       <td style="padding:6px 10px;font-size:11px;color:var(--text-muted);">${dt}</td>
-      <td style="padding:6px 10px;font-size:11px;color:var(--text-muted);">${e.motivo||'—'}</td>
-      <td style="padding:6px 10px;text-align:center;">
-        <button onclick="rcrRestaurar('${e.numero_bos}',${e.id})"
-          style="background:none;border:1px solid rgba(46,160,67,.4);color:#2ea043;padding:3px 10px;border-radius:4px;font-size:10px;cursor:pointer;">
-          ↩ Restaurar
-        </button>
-      </td>
+      <td style="padding:6px 10px;font-size:11px;color:${corMotivo};">${r.motivoLabel}</td>
+      ${_isAdmGeral ? `<td style="padding:6px 10px;text-align:center;">${
+        r.tipo === 'manual'
+          ? `<button onclick="rcrRestaurar('${r.numero_bos}',${r.id})"
+              style="background:none;border:1px solid rgba(46,160,67,.4);color:#2ea043;padding:3px 10px;border-radius:4px;font-size:10px;cursor:pointer;">
+              ↩ Restaurar
+            </button>`
+          : '<span style="color:var(--text-hint);font-size:10px;">—</span>'
+      }</td>` : ''}
     </tr>`;
   }).join('');
 }
