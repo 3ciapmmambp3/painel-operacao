@@ -1353,9 +1353,13 @@
         <thead>
           <tr style="background:#1e1e1e;">
             <th style="padding:6px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Nº BOS</th>
-            <th style="padding:6px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Excluído por</th>
             <th style="padding:6px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Data</th>
+            <th style="padding:6px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Município</th>
+            <th style="padding:6px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Natureza</th>
+            <th style="padding:6px 10px;text-align:center;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Pelotão</th>
+            <th style="padding:6px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Unidade</th>
             <th style="padding:6px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Motivo</th>
+            <th id="rcr-excluidos-th-quem" style="padding:6px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);display:none;">Excluído por</th>
             <th id="rcr-excluidos-th-acoes" style="padding:6px 10px;text-align:center;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);display:none;">Ação</th>
           </tr>
         </thead>
@@ -7550,6 +7554,10 @@ async function renderRCR() {
   const rcrGp   = document.getElementById('rcr-gp')?.value   || '';
   const rcrNat  = document.getElementById('rcr-nat')?.value  || '';
 
+  /* Mantém o painel de Registros Excluídos/Não Contabilizados sincronizado
+     com o(s) mês(es) selecionado(s) na tela */
+  rcrRenderExcluidos(_mesRcr);
+
   /* Popula select de GP se vazio */
   const selGp = document.getElementById('rcr-gp');
   if (selGp && selGp.options.length <= 1 && dadosGrupos.length) {
@@ -7705,9 +7713,7 @@ async function rcrExcluirRegistro(bo) {
     /* 3. Remove da memória local e re-renderiza */
     dadosVisitas = dadosVisitas.filter(v => v.bo !== bo);
     if(window._visitasPorBO) delete window._visitasPorBO[bo];
-    renderRCR();
-    /* 4. Atualiza painel de excluídos se estiver visível */
-    rcrRenderExcluidos();
+    renderRCR(); /* já atualiza o painel de Registros Excluídos com o filtro de mês atual */
   } catch(e) {
     alert('Erro ao excluir: ' + e.message);
   }
@@ -7725,7 +7731,7 @@ async function rcrCarregarExcluidos() {
   } catch(e) { _rcrExcluidosCache = []; }
 }
 
-async function rcrRenderExcluidos() {
+async function rcrRenderExcluidos(mesesSelRcr) {
   /* Visível para todos os níveis de acesso — cada um vê apenas os registros
      dentro do próprio pelotão/grupamento (mesma restrição já aplicada nos filtros) */
   await rcrCarregarExcluidos();
@@ -7743,12 +7749,14 @@ async function rcrRenderExcluidos() {
   /* Acha o registro de dadosGrupos correspondente a um município, para checar pelotão/grupamento */
   const _giDoMunicipio = (mun) => dadosGrupos.find(g => g.munNorm === norm(mun||''));
 
-  /* 1) Exclusões manuais (lista negra) */
+  /* 1) Exclusões manuais (lista negra) — natureza/mês vêm do snapshot salvo */
   const excluidosManual = _rcrExcluidosCache.map(e => ({
     tipo: 'manual',
     numero_bos: e.numero_bos,
     municipio: e.snapshot?.municipio || '',
     data: e.snapshot?.data_fato || '',
+    mes: (e.snapshot?.mes_descricao || '').toString().toUpperCase().trim(),
+    natCode: (e.snapshot?.codigo_natureza || '').toString().toUpperCase().trim(),
     motivoLabel: e.motivo || 'Excluído manualmente',
     excluido_por: e.excluido_por,
     excluido_em: e.excluido_em,
@@ -7761,6 +7769,8 @@ async function rcrRenderExcluidos() {
     numero_bos: v.bo,
     municipio: v.municipio,
     data: v.data,
+    mes: v.mes,
+    natCode: v.natCode,
     motivoLabel: '📍 Registro feito em área urbana (IBGE) — apenas reuniões em zona rural são contabilizadas',
     excluido_por: null,
     excluido_em: null,
@@ -7768,6 +7778,11 @@ async function rcrRenderExcluidos() {
   }));
 
   let todos = [...excluidosManual, ...urbanos];
+
+  /* Filtra pelo(s) mês(es) selecionado(s) na tela, igual ao restante da aba RCR */
+  if(Array.isArray(mesesSelRcr) && mesesSelRcr.length){
+    todos = todos.filter(r => mesesSelRcr.includes(r.mes));
+  }
 
   /* Aplica restrição de pelotão/grupamento, se aplicável */
   if(_meuPel || _meuGrup){
@@ -7787,8 +7802,8 @@ async function rcrRenderExcluidos() {
 
   /* Ordena por data decrescente quando disponível */
   todos.sort((a,b) => {
-    const da = parseDataDDMMAAAA(a.data||a.excluido_em||'');
-    const db = parseDataDDMMAAAA(b.data||b.excluido_em||'');
+    const da = parseDataDDMMAAAA(a.data||'');
+    const db = parseDataDDMMAAAA(b.data||'');
     if(da && db) return db - da;
     return 0;
   });
@@ -7796,15 +7811,22 @@ async function rcrRenderExcluidos() {
   wrap.style.display = '';
   const thAcoesExcl = document.getElementById('rcr-excluidos-th-acoes');
   if(thAcoesExcl) thAcoesExcl.style.display = _isAdmGeral ? '' : 'none';
+  const thQuemExcl = document.getElementById('rcr-excluidos-th-quem');
+  if(thQuemExcl) thQuemExcl.style.display = _isAdmGeral ? '' : 'none';
 
   tbody.innerHTML = todos.map(r => {
-    const dt = r.excluido_em ? new Date(r.excluido_em).toLocaleString('pt-BR') : (r.data || '—');
+    const gi  = _giDoMunicipio(r.municipio);
+    const pel = gi ? gi.pelNum : null;
     const corMotivo = r.tipo === 'urbano' ? '#42a5f5' : 'var(--text-muted)';
     return `<tr style="border-bottom:1px solid #1e1e1e;">
       <td style="font-family:monospace;font-size:10px;color:#888;padding:6px 10px;">${r.numero_bos}</td>
-      <td style="padding:6px 10px;font-size:11px;color:var(--text-muted);">${r.excluido_por||'—'}</td>
-      <td style="padding:6px 10px;font-size:11px;color:var(--text-muted);">${dt}</td>
+      <td style="padding:6px 10px;font-size:11px;color:var(--text-muted);">${r.data||'—'}</td>
+      <td style="padding:6px 10px;font-size:11px;">${r.municipio||'—'}</td>
+      <td style="padding:6px 10px;font-size:11px;"><span style="color:#ab47bc;font-weight:600;">${r.natCode||'—'}</span><span style="color:var(--text-muted);margin-left:4px;">${RCR_NAT_LABEL[r.natCode]||''}</span></td>
+      <td style="padding:6px 10px;font-size:11px;text-align:center;color:var(--text-muted);">${pel && pel !== 99 ? pel+'º' : '—'}</td>
+      <td style="padding:6px 10px;font-size:11px;color:var(--text-muted);">${gi?.unidReg || '—'}</td>
       <td style="padding:6px 10px;font-size:11px;color:${corMotivo};">${r.motivoLabel}</td>
+      ${_isAdmGeral ? `<td style="padding:6px 10px;font-size:11px;color:var(--text-muted);">${r.excluido_por||'—'}</td>` : ''}
       ${_isAdmGeral ? `<td style="padding:6px 10px;text-align:center;">${
         r.tipo === 'manual'
           ? `<button onclick="rcrRestaurar('${r.numero_bos}',${r.id})"
@@ -11867,7 +11889,7 @@ function switchSubtab(el, id){
       _mesDdUpdateLabel('rcr');
     }
     renderRCR();
-    rcrRenderExcluidos();
+    rcrRenderExcluidos(getMesDd('rcr'));
   }
   if(id === 'auditorias'){
     /* Sempre recarrega do Supabase ao abrir a aba para garantir dados atualizados */
