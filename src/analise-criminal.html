@@ -7892,8 +7892,17 @@ async function gerarPdfRcr(){
     });
     doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.setTextColor(...GOLD2);
     doc.text(String(totGp),cx+COL_TOTGP/2,y+h*0.68,{align:'center'}); doc.rect(cx,y,COL_TOTGP,h,'D'); cx+=COL_TOTGP;
-    /* Espaço de meta/saldo/acumulado/cumprimento fica em branco nas linhas de GP — só preenchido na linha TOTAL do pelotão */
-    doc.rect(cx,y,COL_META+COL_REAL+COL_SALDO+COL_MACUM+COL_RACUM+COL_SACUM+COL_PCT,h,'D');
+    /* Meta/Real/Saldo/Acumulado/Cumprimento não existem no nível de Grupamento
+       (a meta é só do Pelotão) — célula com fundo acinzentado e traço central,
+       indicando "não aplicável"; a explicação completa fica numa nota única
+       de rodapé da seção, em vez de repetir o texto em cada linha de GP */
+    [COL_META,COL_REAL,COL_SALDO,COL_MACUM,COL_RACUM,COL_SACUM,COL_PCT].forEach(w=>{
+      doc.setFillColor(238,235,228); doc.rect(cx,y,w,h,'F');
+      doc.setDrawColor(...BRD); doc.rect(cx,y,w,h,'D');
+      doc.setFont('helvetica','normal'); doc.setFontSize(6); doc.setTextColor(200,192,175);
+      doc.text('—',cx+w/2,y+h*0.68,{align:'center'});
+      cx+=w;
+    });
     return y+h;
   }
 
@@ -7999,6 +8008,30 @@ async function gerarPdfRcr(){
   const gPct=gMeta>0?Math.round(gReal/gMeta*100):(gReal>0?100:0);
   const gNatVals=nats.map(n=>gNatTot[n]);
   y=drawRowTotal(y,'TOTAL GERAL',gNatVals,gReal,gMeta,gReal,gSaldo,gMetaAcum,gRealAcum,gSaldoAcum,gPct);
+
+  /* Legenda das naturezas + nota explicativa sobre meta/saldo */
+  const legAlt = 6 + nats.length*5 + 8;
+  if(y+legAlt>PH-8){ y=addPage(); }
+  y += 4;
+  doc.setDrawColor(...BRD); doc.setLineWidth(0.2); doc.line(ML,y,ML+70,y);
+  y += 4;
+  doc.setFont('helvetica','bold'); doc.setFontSize(6.5); doc.setTextColor(...GOLD);
+  doc.text('LEGENDA — NATUREZAS RCR',ML+1,y);
+  y += 4;
+  RCR_NATS.forEach(n => {
+    const cor = natCor(n);
+    doc.setFillColor(...cor); doc.circle(ML+3,y-1,1.3,'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.setTextColor(...cor);
+    doc.text(n,ML+6,y);
+    doc.setFont('helvetica','normal'); doc.setTextColor(...TXT_M);
+    doc.text('— '+(RCR_NAT_LABEL[n]||''),ML+18,y);
+    y += 4.3;
+  });
+  y += 2;
+  doc.setFont('helvetica','italic'); doc.setFontSize(5.8); doc.setTextColor(150,140,120);
+  doc.text('Nota: a meta de reuniões é apurada apenas no nível do Pelotão (qualquer natureza realizada por qualquer',ML+1,y);
+  y += 3.2;
+  doc.text('Grupamento do pelotão conta igualmente para o cumprimento) — por isso não há meta individual por Grupamento.',ML+1,y);
 
   doc.save(nomeArq);
 }
