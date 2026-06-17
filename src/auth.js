@@ -130,11 +130,12 @@ const _SESSAO_KEY = 'poe_sessao_v2';
 function sessaoSalvar(user) {
   const data = { ...user, ts: Date.now() };
   sessionStorage.setItem(_SESSAO_KEY, JSON.stringify(data));
-  localStorage.setItem(_SESSAO_KEY, JSON.stringify(data));
+  /* Propositalmente NÃO grava em localStorage: a sessão deve expirar ao
+     fechar o navegador, exigindo login novamente — não apenas ao fechar a aba. */
 }
 
 function sessaoLer() {
-  const raw = sessionStorage.getItem(_SESSAO_KEY) || localStorage.getItem(_SESSAO_KEY);
+  const raw = sessionStorage.getItem(_SESSAO_KEY);
   if (!raw) return null;
   try { return JSON.parse(raw); } catch { return null; }
 }
