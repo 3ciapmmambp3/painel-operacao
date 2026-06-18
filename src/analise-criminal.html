@@ -2815,7 +2815,10 @@ async function carregarCrimes(){
     const _crimesFields = `select=numero_reds,ano_fato,mes_descricao,data_fato,municipio,` +
       `descricao_localizacao,latitude,longitude,unid_area_nivel_4,unid_registro_nivel_4,unid_registro_nivel_7,` +
       `imv_total,icvpe_total,icvpa_total,ifzr,descr_natureza_principal,` +
-      `codigo_complemento_natureza,complemento_natureza&order=data_fato`;
+      `codigo_complemento_natureza,complemento_natureza,` +
+      `imv_b01121,imv_b01129,imv_b01148,imv_b02001,imv_c01157,imv_b01504,` +
+      `icvpe_b01121,icvpe_b01121_militar,icvpe_b02001,icvpe_b01148,icvpe_b01504,` +
+      `icvpa_c01157,icvpa_c01158,icvpa_c01159&order=data_fato`;
     let _cOffset = 0, _cCont = true;
     while(_cCont) {
       const r = await fetch(
@@ -2898,6 +2901,27 @@ async function carregarCrimes(){
         indicador:     ind,
         _auditoriaPendente: false,
         _auditoria:    null,
+        /* Componentes por sub-tipo, conforme metodologia da GDO Especializada
+           (BPM MAmb): cada coluna já vem pré-calculada e classificada na
+           fonte (BISP/CGA), respeitando natureza exata e grau de lesão. */
+        componentesGdoEsp: ind === 'IMV' ? {
+            HC:  parseInt(r.imv_b01121) || 0,
+            LC:  parseInt(r.imv_b01129) || 0,
+            SEQ: parseInt(r.imv_b01148) || 0,
+            TT:  parseInt(r.imv_b02001) || 0,
+            RLF: parseInt(r.imv_c01157) || 0,
+            FEM: parseInt(r.imv_b01504) || 0,
+          } : ind === 'CVPE' ? {
+            HT_CIVIL: parseInt(r.icvpe_b01121) || 0,
+            HT_PM:    parseInt(r.icvpe_b01121_militar) || 0,
+            TORT:     parseInt(r.icvpe_b02001) || 0,
+            SEQ:      parseInt(r.icvpe_b01148) || 0,
+            FEM:      parseInt(r.icvpe_b01504) || 0,
+          } : ind === 'CVPA' ? {
+            ROUBO: parseInt(r.icvpa_c01157) || 0,
+            EXT:   parseInt(r.icvpa_c01158) || 0,
+            EXTMS: parseInt(r.icvpa_c01159) || 0,
+          } : null,
       };
 
       if(obj.lat && obj.lng && typeof IBGE_DATA !== 'undefined' && IBGE_DATA.length){
