@@ -8008,49 +8008,58 @@ function _gdoespRenderMapa(indCode, cor, varPct){
         <div style="font-size:12px;font-weight:700;color:var(--gold);">🗺️ ${GDOESP_CONFIG[indCode].icone} ${GDOESP_CONFIG[indCode].titulo} — ocorrências rurais</div>
         <div style="font-size:10px;color:var(--text-muted);">${registros.length} ocorrência(s) | ${nComCoor} com coordenada${semCoor?' | <span style="color:#ef5350;">'+semCoor+' sem coord.</span>':''}</div>
       </div>
-      <div id="gdoesp-mapa-leaflet" style="height:440px;border-radius:6px;overflow:hidden;"></div>
+      <div id="gdoesp-mapa-leaflet" style="height:440px;border-radius:6px;overflow:hidden;border:1px solid var(--border);"></div>
       <div style="display:flex;gap:12px;margin-top:8px;flex-wrap:wrap;font-size:10px;color:var(--text-muted);align-items:center;">
         <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:50%;background:${corCrime};display:inline-block;"></span> Ocorrência rural</span>
-        <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:50%;background:#ff9800;border:2px solid #ff9800;display:inline-block;"></span> Em área urbana (auditoria)</span>
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:50%;background:#ff9800;display:inline-block;"></span> Em área urbana</span>
       </div>
     </div>`;
 
-  setTimeout(() => {
+  /* Aguarda o DOM renderizar antes de iniciar o Leaflet */
+  requestAnimationFrame(() => setTimeout(() => {
     const mapDiv = document.getElementById('gdoesp-mapa-leaflet');
     if(!mapDiv || typeof L === 'undefined') return;
-    if(_gdoespMapaLeaflet){ _gdoespMapaLeaflet.remove(); _gdoespMapaLeaflet = null; }
-    _gdoespMapaLeaflet = L.map('gdoesp-mapa-leaflet', { zoomControl:true, attributionControl:false });
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{maxZoom:18}).addTo(_gdoespMapaLeaflet);
 
-    const allPoints = [];
+    /* Destrói instância anterior */
+    if(_gdoespMapaLeaflet){
+      try{ _gdoespMapaLeaflet.off(); _gdoespMapaLeaflet.remove(); }catch(e){}
+      _gdoespMapaLeaflet = null;
+    }
+    mapDiv.innerHTML = ''; /* limpa resíduo */
 
-    /* ── Camadas por Pelotão (igual ao Mapa Criminal) ── */
+    _gdoespMapaLeaflet = L.map(mapDiv, { zoomControl:true, attributionControl:false });
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+      {maxZoom:18, subdomains:'abcd'}).addTo(_gdoespMapaLeaflet);
+
+    const allBounds = [];
+
+    /* ── Polígonos dos Pelotões — cada pelotão na sua cor do KML_DATA ── */
     if(typeof KML_DATA !== 'undefined' && KML_DATA.pelotoes){
       Object.entries(KML_DATA.pelotoes).forEach(([pelKey, pelData]) => {
-        const pelNum = parseInt(pelKey.replace(/\D/g,''));
-        const grp = L.layerGroup();
-        if(pelData.gps){
-          Object.entries(pelData.gps).forEach(([gpKey, gpData]) => {
-            const gpNum = parseInt(gpKey.replace(/\D/g,''));
-            const gpInfo = dadosGrupos.find(r => r.pelNum === pelNum && gpNumDoColk(r.grupamento||r.colK||'') === gpNum);
-            const gpNome = gpInfo ? gpInfo.gpResp : gpData.label;
-            const ttHtml = `<div style="white-space:nowrap;line-height:1.7;">
-              <span style="font-size:12px;font-weight:700;color:${pelData.cor||gpData.cor};">${pelData.label}</span>
-              <span style="color:#888;margin:0 4px;">·</span>
-              <span style="font-size:11px;color:#333;">${gpData.label}</span>
-              ${gpNome ? `<br><span style="font-size:11px;font-weight:600;color:#111;">${gpNome}</span>` : ''}
-            </div>`;
-            (gpData.polys||[]).forEach(poly => {
-              const latlngs = poly.map(p => [p[1], p[0]]);
-              L.polygon(latlngs, {
-                color: gpData.cor, weight:1.5, opacity:0.9,
-                fillColor: gpData.cor, fillOpacity:0.13
-              }).bindTooltip(ttHtml, {sticky:true, className:'leaflet-tooltip-pel'}).addTo(grp);
-              latlngs.forEach(p => allPoints.push(p));
-            });
+        const pelNum = parseInt(pelKey.replace(/[^0-9]/g,''));
+        if(!pelData.gps) return;
+        Object.entries(pelData.gps).forEach(([gpKey, gpData]) => {
+          const gpNum  = parseInt(gpKey.replace(/[^0-9]/g,''));
+          const gpInfo = dadosGrupos.find(r =>
+            r.pelNum === pelNum && gpNumDoColk(r.colK||r.grupamento||'') === gpNum
+          );
+          const gpNome = gpInfo ? gpInfo.gpResp : gpData.label;
+          const ttHtml = `<div style="line-height:1.8;padding:2px 0;">
+            <b style="color:${gpData.cor};">${pelData.label}</b>
+            <span style="color:#888;margin:0 4px;">·</span>${gpData.label}
+            ${gpNome ? '<br><b style="color:#111;">'+gpNome+'</b>' : ''}
+          </div>`;
+          (gpData.polys||[]).forEach(poly => {
+            if(!poly.length) return;
+            const latlngs = poly.map(p => [p[1], p[0]]);
+            L.polygon(latlngs, {
+              color: gpData.cor, weight:1.8, opacity:1,
+              fillColor: gpData.cor, fillOpacity:0.15
+            }).bindTooltip(ttHtml, {sticky:true, className:'leaflet-tooltip-pel'})
+              .addTo(_gdoespMapaLeaflet);
+            latlngs.forEach(p => allBounds.push(p));
           });
-        }
-        grp.addTo(_gdoespMapaLeaflet);
+        });
       });
     }
 
@@ -8061,25 +8070,32 @@ function _gdoespRenderMapa(indCode, cor, varPct){
       const gpNome = gpInfo ? gpInfo.gpResp : (c.grupamento ? gpDoColk(c.grupamento) : '—');
       const pelN   = gpInfo ? gpInfo.pelNum : (c.grupamento ? pelDoColk(c.grupamento) : 99);
       const isUrb  = c._auditoriaPendente;
-      const cor2   = isUrb ? '#ff9800' : corCrime;
-      const ttHtml = `<div style="background:#fff;border:1px solid ${cor2};border-radius:7px;padding:8px 12px;font-size:11px;min-width:180px;box-shadow:0 2px 8px rgba(0,0,0,.15);">
-        <div style="font-weight:700;color:${cor2};margin-bottom:4px;">${GDOESP_CONFIG[indCode].icone} ${GDOESP_CONFIG[indCode].titulo}</div>
-        <div style="color:#333;"><b>BO:</b> ${c.bo||'—'}</div>
-        <div style="color:#333;"><b>Município:</b> ${c.municipio||'—'}</div>
-        <div style="color:#333;"><b>Grupamento:</b> <span style="color:#7a5c00;font-weight:600;">${gpNome}</span></div>
-        ${pelN && pelN!==99 ? `<div style="color:#333;"><b>Pelotão:</b> ${pelN}º PEL</div>` : ''}
-        <div style="color:#333;"><b>Data:</b> ${c.data||'—'} ${c.mes||''}</div>
-        ${isUrb ? '<div style="margin-top:5px;color:#ff9800;font-weight:700;font-size:10px;">⚠ ÁREA URBANA — verificar</div>' : ''}
+      const corPt  = isUrb ? '#ff9800' : corCrime;
+      const ttHtml = `<div style="background:#fff;border:1.5px solid ${corPt};border-radius:7px;padding:8px 12px;font-size:11px;min-width:190px;box-shadow:0 2px 10px rgba(0,0,0,.18);">
+        <div style="font-weight:800;color:${corPt};margin-bottom:5px;">${GDOESP_CONFIG[indCode].icone} ${GDOESP_CONFIG[indCode].titulo}</div>
+        <div style="color:#333;line-height:1.8;">
+          <b>BO:</b> ${c.bo||'—'}<br>
+          <b>Município:</b> ${c.municipio||'—'}<br>
+          <b>Grupamento:</b> <span style="color:#7a5c00;font-weight:700;">${gpNome}</span><br>
+          ${pelN && pelN!==99 ? '<b>Pelotão:</b> '+pelN+'º PEL<br>' : ''}
+          <b>Data:</b> ${c.data||'—'} ${c.mes||''}
+        </div>
+        ${isUrb ? '<div style="margin-top:5px;color:#ff9800;font-weight:700;font-size:10px;">⚠ ÁREA URBANA</div>' : ''}
       </div>`;
       L.circleMarker([c.lat, c.lng], {
-        radius:6, color:'#fff', weight:1.5,
-        fillColor: cor2, fillOpacity:0.9
-      }).bindTooltip(ttHtml, {sticky:true, opacity:1, className:''}).addTo(_gdoespMapaLeaflet);
+        radius:7, color:'#fff', weight:2,
+        fillColor: corPt, fillOpacity:0.9
+      }).bindTooltip(ttHtml, {sticky:true, opacity:1, className:''})
+        .addTo(_gdoespMapaLeaflet);
     });
 
-    if(allPoints.length) _gdoespMapaLeaflet.fitBounds(allPoints, {padding:[15,15]});
-    else _gdoespMapaLeaflet.setView([-18.5,-42.0],7);
-  }, 50);
+    /* fitBounds nos polígonos de MG */
+    if(allBounds.length){
+      _gdoespMapaLeaflet.fitBounds(allBounds, {padding:[10,10]});
+    } else {
+      _gdoespMapaLeaflet.setView([-18.5,-42.0], 7);
+    }
+  }, 120));
 }
 
 /* ============================================================
@@ -8096,427 +8112,290 @@ async function gerarPdfGdoEsp(){
 
   const mesesSel = getMesDd('gdoesp');
   const mesLabel = !mesesSel.length ? 'TODOS OS MESES'
-    : mesesSel.length === 1 ? mesesSel[0] : mesesSel.join(', ');
+    : mesesSel.length===1 ? mesesSel[0] : mesesSel.join(', ');
   const CIA = 3;
 
-  const now = new Date();
-  const dd  = String(now.getDate()).padStart(2,'0');
-  const mm2 = String(now.getMonth()+1).padStart(2,'0');
-  const yyyy= now.getFullYear();
-  const hh  = String(now.getHours()).padStart(2,'0');
-  const mi  = String(now.getMinutes()).padStart(2,'0');
-  const nomeArq = 'GDO_ESPECIALIZADA_3CIA_PMAMB_'+mesLabel.replace(/[, ]+/g,'_')+'_'+dd+'-'+mm2+'-'+yyyy+'.pdf';
+  const now=new Date();
+  const dd=String(now.getDate()).padStart(2,'0'), mm2=String(now.getMonth()+1).padStart(2,'0');
+  const yyyy=now.getFullYear(), hh=String(now.getHours()).padStart(2,'0'), mi=String(now.getMinutes()).padStart(2,'0');
+  const nomeArq='GDO_ESPECIALIZADA_3CIA_'+mesLabel.replace(/[, ]+/g,'_')+'_'+dd+'-'+mm2+'-'+yyyy+'.pdf';
 
-  const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
-  const PW=297, PH=210, ML=4, MR=4, TW=PW-ML-MR;
+  const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  const PW=297,PH=210,ML=4,MR=4,TW=PW-ML-MR;
 
-  /* Paleta */
-  const GOLD=[100,80,30], GOLD2=[70,50,0];
-  const GREEN=[30,120,40], DANGER=[180,30,30], ORANGE=[180,100,0];
-  const BG_HEAD=[240,236,224], BG_ROW=[255,255,255], BG_ALT=[249,247,241];
-  const BG_TOT=[230,222,200], BG_GERAL=[215,205,182], BG_PEL=[52,73,94];
-  const TXT=[20,20,20], TXT_M=[100,80,30], BRD=[190,175,145];
+  const GOLD=[100,80,30],GOLD2=[70,50,0];
+  const GREEN=[30,120,40],DANGER=[180,30,30],ORANGE=[180,100,0];
+  const BG_HEAD=[240,236,224],BG_ROW=[255,255,255],BG_ALT=[249,247,241];
+  const BG_TOT=[230,222,200],BG_GERAL=[215,205,182],BG_PEL=[52,73,94];
+  const TXT=[20,20,20],TXT_M=[100,80,30],BRD=[190,175,145];
 
   function cvBg(v){ return v<=0?[214,238,217]:v<=10?[245,228,196]:[244,210,210]; }
   function cvRgb(v){ return v<=0?GREEN:v<=10?ORANGE:DANGER; }
+  function hexRgb(h){ const r=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(h); return r?[parseInt(r[1],16),parseInt(r[2],16),parseInt(r[3],16)]:[100,100,100]; }
 
-  /* Cores dos pelotões — extraídas do KML_DATA (mesmas do Mapa Criminal) */
-  const PEL_CORES = {};
-  if(typeof KML_DATA !== 'undefined' && KML_DATA.pelotoes){
-    Object.entries(KML_DATA.pelotoes).forEach(([pelKey, pelData]) => {
-      const pelNum = parseInt(pelKey.replace(/\D/g,''));
-      PEL_CORES[pelNum] = pelData.cor || '#888';
-    });
+  /* Cores dos pelotões do KML_DATA */
+  const PEL_COR={};
+  if(typeof KML_DATA!=='undefined'&&KML_DATA.pelotoes){
+    Object.entries(KML_DATA.pelotoes).forEach(([k,v])=>{ PEL_COR[parseInt(k.replace(/[^0-9]/g,''))]=v.cor||'#888'; });
   }
-  /* Fallback */
-  const PEL_CORES_FB = {1:'#1E88E5',2:'#43A047',3:'#FB8C00',4:'#D81B60',5:'#8E24AA'};
-  function corPel(n){ return PEL_CORES[n] || PEL_CORES_FB[n] || '#888'; }
-
-  /* Converte cor hex para rgb array */
-  function hex2rgb(hex){
-    const r = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return r ? [parseInt(r[1],16),parseInt(r[2],16),parseInt(r[3],16)] : [100,100,100];
-  }
+  const PEL_FB={1:'#1E88E5',2:'#43A047',3:'#FB8C00',4:'#D81B60',5:'#8E24AA'};
+  function corPel(n){ return PEL_COR[n]||PEL_FB[n]||'#888'; }
 
   let page=0;
-  function addPage(indTitulo){
+  function addPage(titulo){
     if(page>0) doc.addPage();
     page++;
     doc.setFillColor(255,255,255); doc.rect(0,0,PW,PH,'F');
     doc.setFillColor(...BG_HEAD); doc.rect(0,0,PW,11,'F');
     doc.setDrawColor(100,80,30); doc.setLineWidth(0.5); doc.line(0,11,PW,11);
     doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...GOLD);
-    doc.text('3\u00aa CIA PM MAMB \u2014 GDO ESPECIALIZADA \u2014 '+indTitulo, ML+1, 7.5);
+    doc.text('3ª CIA PM MAMB — GDO ESPECIALIZADA — '+titulo,ML+1,7.5);
     doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(...TXT_M);
-    doc.text('PERIOD O: '+mesLabel+'  |  EXTRA\u00cdDO: '+dd+'/'+mm2+'/'+yyyy+' \u00e0s '+hh+'h'+mi+'min  |  P\u00c1G. '+page, PW-MR, 7.5, {align:'right'});
+    doc.text('PERÍODO: '+mesLabel+'  |  EXTRAÍDO: '+dd+'/'+mm2+'/'+yyyy+' às '+hh+'h'+mi+'min  |  PÁG. '+page,PW-MR,7.5,{align:'right'});
     return 14;
   }
 
-  /* Cabeçalho de Pelotão — barra azul-escuro estilo GDO Rural */
-  function drawPelHeader(y, pelN, totalPel, cfg){
-    const h=7;
-    const pelCor = hex2rgb(corPel(pelN));
-    doc.setFillColor(...BG_PEL); doc.rect(0,y,PW,h,'F');
-    /* Círculo dourado com número */
-    doc.setFillColor(...pelCor); doc.circle(ML+3.5,y+h/2,3,'F');
-    doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(255,255,255);
-    doc.text(String(pelN), ML+3.5, y+h/2+0.9, {align:'center'});
-    doc.setFontSize(8.5); doc.setTextColor(255,240,180);
-    doc.text(pelN+'\u00ba PELOT\u00c3O \u2014 3\u00aa CIA PM MAMB', ML+9, y+h/2+0.9);
-    doc.setFontSize(6); doc.setTextColor(180,170,145);
-    doc.text('Total: '+totalPel+' ocorr\u00eancia(s)', PW-MR, y+h/2+0.9, {align:'right'});
-    return y+h;
-  }
-
-  /* Cabeçalho de tabela — apenas colunas de quantidade */
-  function drawTableHead(y, cfg, colPel, colSub, colTot){
-    const h=5.5;
-    doc.setFillColor(...BG_HEAD); doc.rect(0,y,PW,h,'F');
-    doc.setDrawColor(...BRD); doc.setLineWidth(0.13);
-    doc.setFont('helvetica','bold'); doc.setFontSize(5.8); doc.setTextColor(...GOLD2);
-    doc.rect(ML,y,colPel,h,'D');
-    doc.text('PELOT\u00c3O / GRUPAMENTO', ML+1.5, y+h*0.65);
-    let cx = ML+colPel;
-    if(cfg.subColunas){
-      cfg.subColunas.forEach(function(pair){
-        var key=pair[0];
-        doc.rect(cx,y,colSub,h,'D');
-        doc.setTextColor(...GOLD2);
-        doc.text(key.replace(/_/g,' '), cx+colSub/2, y+h*0.65, {align:'center'});
-        cx += colSub;
-      });
-    }
-    doc.rect(cx,y,colTot,h,'D');
-    doc.text('TOTAL', cx+colTot/2, y+h*0.65, {align:'center'});
-    return y+h;
-  }
-
-  /* Linha de Grupamento — só quantidades absolutas */
-  function drawRowGp(y, label, sub, total, alt, cfg, colPel, colSub, colTot){
-    const h=5.5;
-    doc.setFillColor(...(alt?BG_ALT:BG_ROW)); doc.rect(0,y,PW,h,'F');
-    doc.setDrawColor(...BRD); doc.setLineWidth(0.12);
-    doc.setFont('helvetica','normal'); doc.setFontSize(5.8); doc.setTextColor(...TXT);
-    doc.rect(ML,y,colPel,h,'D');
-    doc.text('    '+label, ML+1.5, y+h*0.68);
-    let cx = ML+colPel;
-    if(cfg.subColunas){
-      cfg.subColunas.forEach(function(pair){
-        var key=pair[0], v=(sub[key]||0);
-        doc.setFont('helvetica',v>0?'bold':'normal'); doc.setFontSize(6);
-        doc.setTextColor(v>0?60:185, v>0?60:185, v>0?60:185);
-        doc.rect(cx,y,colSub,h,'D');
-        doc.text(v>0?String(v):'\u2014', cx+colSub/2, y+h*0.68, {align:'center'});
-        cx += colSub;
-      });
-    }
-    doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.setTextColor(...GOLD2);
-    doc.rect(cx,y,colTot,h,'D');
-    doc.text(String(total), cx+colTot/2, y+h*0.68, {align:'center'});
-    return y+h;
-  }
-
-  /* Linha TOTAL do Pelotão — só quantidades, sem taxa/meta/var */
-  function drawRowTotalPel(y, pelN, sub, total, cfg, colPel, colSub, colTot){
+  /* ── Cabeçalho da tabela ── */
+  function drawTableHead(y, cfg, nSub, colPel, colSub, colTot, colTaxa, colMeta, colVar){
     const h=6;
-    const pelCor = hex2rgb(corPel(pelN));
-    doc.setFillColor(...BG_TOT); doc.rect(0,y,PW,h,'F');
-    /* Barra lateral colorida do pelotão */
-    doc.setFillColor(...pelCor); doc.rect(0,y,2.5,h,'F');
-    doc.setDrawColor(...BRD); doc.setLineWidth(0.12);
-    doc.setFont('helvetica','bold'); doc.setFontSize(6.3); doc.setTextColor(...GOLD2);
-    doc.rect(ML,y,colPel,h,'D');
-    doc.text('TOTAL '+pelN+'\u00ba PEL', ML+1.5, y+h*0.65);
-    let cx = ML+colPel;
-    if(cfg.subColunas){
-      cfg.subColunas.forEach(function(pair){
-        var key=pair[0], v=(sub[key]||0);
-        doc.setTextColor(...TXT); doc.setFontSize(6.5);
-        doc.rect(cx,y,colSub,h,'D');
-        doc.text(String(v), cx+colSub/2, y+h*0.65, {align:'center'});
-        cx += colSub;
-      });
-    }
-    doc.setTextColor(...GOLD2); doc.setFontSize(7);
-    doc.rect(cx,y,colTot,h,'D');
-    doc.text(String(total), cx+colTot/2, y+h*0.65, {align:'center'});
-    doc.setDrawColor(...GOLD); doc.setLineWidth(0.25); doc.line(0,y+h,PW,y+h);
-    return y+h;
-  }
-
-  /* Linha TOTAL CIA — quantidades + taxa + meta + VAR(%) semafórico */
-  function drawRowTotalCia(y, sub, total, taxa, meta, varPct, cfg, colPel, colSub, colTot, colTaxa, colMeta, colVar){
-    const h=7.5;
-    doc.setFillColor(...BG_GERAL); doc.rect(0,y,PW,h,'F');
-    doc.setDrawColor(...GOLD); doc.setLineWidth(0.4); doc.rect(0,y,PW,h,'D');
-    doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...GOLD2);
-    doc.rect(ML,y,colPel,h,'D');
-    doc.text('BPM MAMB (3\u00aa CIA)', ML+1.5, y+h*0.62);
-    let cx = ML+colPel;
-    if(cfg.subColunas){
-      cfg.subColunas.forEach(function(pair){
-        var key=pair[0], v=(sub[key]||0);
-        doc.setTextColor(...TXT); doc.setFontSize(7);
-        doc.rect(cx,y,colSub,h,'D');
-        doc.text(String(v), cx+colSub/2, y+h*0.62, {align:'center'});
-        cx += colSub;
-      });
-    }
-    /* ABS TOTAL */
-    doc.setTextColor(...GOLD2); doc.setFontSize(8);
-    doc.rect(cx,y,colTot,h,'D');
-    doc.text(String(total), cx+colTot/2, y+h*0.62, {align:'center'}); cx+=colTot;
-    /* TAXA */
-    doc.setTextColor(20,100,50); doc.setFontSize(7.5);
-    doc.rect(cx,y,colTaxa,h,'D');
-    doc.text(taxa.toFixed(2), cx+colTaxa/2, y+h*0.62, {align:'center'}); cx+=colTaxa;
-    /* META */
-    doc.setTextColor(30,90,160);
-    doc.rect(cx,y,colMeta,h,'D');
-    doc.text(meta.toFixed(2), cx+colMeta/2, y+h*0.62, {align:'center'}); cx+=colMeta;
-    /* VAR(%) semafórico */
-    var vBg=cvBg(varPct), vRgb=cvRgb(varPct);
-    doc.setFillColor(...vBg); doc.rect(cx,y,colVar,h,'F');
-    doc.setDrawColor(...GOLD); doc.rect(cx,y,colVar,h,'D');
-    doc.setTextColor(...vRgb); doc.setFont('helvetica','bold'); doc.setFontSize(8);
-    var sinal = varPct>=0?'+':'';
-    doc.text(sinal+varPct.toFixed(2)+'%', cx+colVar/2, y+h*0.62, {align:'center'});
-    return y+h;
-  }
-
-  /* Cabeçalho da linha TOTAL CIA — mostra os rótulos extras */
-  function drawTotalCiaHead(y, cfg, colPel, colSub, colTot, colTaxa, colMeta, colVar){
-    const h=5;
     doc.setFillColor(...BG_HEAD); doc.rect(0,y,PW,h,'F');
-    doc.setDrawColor(...BRD); doc.setLineWidth(0.13);
-    doc.setFont('helvetica','bold'); doc.setFontSize(5.8);
-    doc.setTextColor(...GOLD2); doc.rect(ML,y,colPel,h,'D');
+    doc.setDrawColor(...BRD); doc.setLineWidth(0.15);
+    doc.setFont('helvetica','bold'); doc.setFontSize(6.2); doc.setTextColor(...GOLD2);
+    doc.rect(ML,y,colPel,h,'D'); doc.text('PELOTÃO',ML+1.5,y+h*0.68);
     let cx=ML+colPel;
     if(cfg.subColunas){
-      cfg.subColunas.forEach(function(pair){ doc.rect(cx,y,colSub,h,'D'); cx+=colSub; });
+      cfg.subColunas.forEach(([key,label])=>{
+        doc.rect(cx,y,colSub,h,'D');
+        doc.text(key.replace(/_/g,' '),cx+colSub/2,y+h*0.68,{align:'center'});
+        cx+=colSub;
+      });
     }
-    doc.rect(cx,y,colTot,h,'D'); cx+=colTot;
-    doc.setTextColor(20,100,50); doc.rect(cx,y,colTaxa,h,'D');
-    doc.text('TAXA MV', cx+colTaxa/2, y+h*0.7, {align:'center'}); cx+=colTaxa;
-    doc.setTextColor(30,90,160); doc.rect(cx,y,colMeta,h,'D');
-    doc.text('META RURAL', cx+colMeta/2, y+h*0.7, {align:'center'}); cx+=colMeta;
-    doc.setTextColor(...GOLD); doc.rect(cx,y,colVar,h,'D');
-    doc.text('VAR(%) TAXA/META', cx+colVar/2, y+h*0.7, {align:'center'});
+    /* Coluna TOTAL */
+    doc.rect(cx,y,colTot,h,'D'); doc.text('TOTAL',cx+colTot/2,y+h*0.68,{align:'center'}); cx+=colTot;
+    /* Coluna TAXA, META, VAR apenas no cabeçalho */
+    doc.setTextColor(20,100,50); doc.rect(cx,y,colTaxa,h,'D'); doc.text('TAXA',cx+colTaxa/2,y+h*0.68,{align:'center'}); cx+=colTaxa;
+    doc.setTextColor(30,90,160); doc.rect(cx,y,colMeta,h,'D'); doc.text('META',cx+colMeta/2,y+h*0.68,{align:'center'}); cx+=colMeta;
+    doc.setTextColor(...GOLD); doc.rect(cx,y,colVar,h,'D'); doc.text('VAR(%)',cx+colVar/2,y+h*0.68,{align:'center'});
     return y+h;
   }
 
-  /* Mapa PDF: camadas de pelotão (cores KML_DATA) + pontos de crime */
+  /* ── Linha de Pelotão — só quantidade, taxa/meta/var vazias ── */
+  function drawRowPel(y, pelN, sub, total, alt, cfg, colPel, colSub, colTot, colTaxa, colMeta, colVar){
+    const h=6;
+    const pelRgb=hexRgb(corPel(pelN));
+    doc.setFillColor(Math.min(255,pelRgb[0]+140),Math.min(255,pelRgb[1]+140),Math.min(255,pelRgb[2]+140));
+    doc.rect(0,y,PW,h,'F');
+    /* Barra lateral cor do pelotão */
+    doc.setFillColor(...pelRgb); doc.rect(0,y,2.5,h,'F');
+    /* Círculo com número */
+    doc.setFillColor(...pelRgb); doc.circle(ML+4,y+h/2,2.5,'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(6.5); doc.setTextColor(255,255,255);
+    doc.text(String(pelN),ML+4,y+h/2+0.7,{align:'center'});
+    doc.setFontSize(7); doc.setTextColor(...pelRgb);
+    doc.text(pelN+'º Pelotão',ML+9,y+h/2+0.7);
+    doc.setDrawColor(...BRD); doc.setLineWidth(0.12); doc.rect(ML,y,colPel,h,'D');
+    let cx=ML+colPel;
+    if(cfg.subColunas){
+      cfg.subColunas.forEach(([key])=>{
+        const v=sub[key]||0;
+        doc.setFont('helvetica',v>0?'bold':'normal'); doc.setFontSize(v>0?7:6);
+        doc.setTextColor(v>0?40:180,v>0?40:180,v>0?40:180);
+        doc.rect(cx,y,colSub,h,'D'); doc.text(v>0?String(v):'—',cx+colSub/2,y+h/2+0.7,{align:'center'});
+        cx+=colSub;
+      });
+    }
+    doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...pelRgb);
+    doc.rect(cx,y,colTot,h,'D'); doc.text(String(total),cx+colTot/2,y+h/2+0.7,{align:'center'}); cx+=colTot;
+    /* Taxa/Meta/Var: vazio para linhas de pelotão */
+    [colTaxa,colMeta,colVar].forEach(w=>{
+      doc.setFillColor(245,243,238); doc.rect(cx,y,w,h,'F');
+      doc.setDrawColor(...BRD); doc.rect(cx,y,w,h,'D');
+      doc.setFont('helvetica','normal'); doc.setFontSize(6); doc.setTextColor(200,192,175);
+      doc.text('—',cx+w/2,y+h/2+0.7,{align:'center'});
+      cx+=w;
+    });
+    return y+h;
+  }
+
+  /* ── Linha TOTAL BPM MAMB — todas as colunas ── */
+  function drawRowTotalCia(y, sub, total, taxa, meta, varPct, cfg, colPel, colSub, colTot, colTaxa, colMeta, colVar){
+    const h=8;
+    doc.setFillColor(...BG_GERAL); doc.rect(0,y,PW,h,'F');
+    doc.setDrawColor(...GOLD); doc.setLineWidth(0.5); doc.line(0,y,PW,y);
+    doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...GOLD2);
+    doc.rect(ML,y,colPel,h,'D'); doc.text('BPM MAMB (3ª CIA)',ML+1.5,y+h*0.62);
+    let cx=ML+colPel;
+    if(cfg.subColunas){
+      cfg.subColunas.forEach(([key])=>{
+        const v=sub[key]||0;
+        doc.setTextColor(...TXT); doc.setFontSize(7.5);
+        doc.rect(cx,y,colSub,h,'D'); doc.text(String(v),cx+colSub/2,y+h*0.62,{align:'center'});
+        cx+=colSub;
+      });
+    }
+    doc.setTextColor(...GOLD2); doc.setFontSize(9);
+    doc.rect(cx,y,colTot,h,'D'); doc.text(String(total),cx+colTot/2,y+h*0.62,{align:'center'}); cx+=colTot;
+    doc.setTextColor(20,100,50); doc.setFontSize(8);
+    doc.rect(cx,y,colTaxa,h,'D'); doc.text(taxa.toFixed(2),cx+colTaxa/2,y+h*0.62,{align:'center'}); cx+=colTaxa;
+    doc.setTextColor(30,90,160);
+    doc.rect(cx,y,colMeta,h,'D'); doc.text(meta.toFixed(2),cx+colMeta/2,y+h*0.62,{align:'center'}); cx+=colMeta;
+    const vBg=cvBg(varPct),vRgb=cvRgb(varPct);
+    doc.setFillColor(...vBg); doc.rect(cx,y,colVar,h,'F');
+    doc.setDrawColor(...BRD); doc.rect(cx,y,colVar,h,'D');
+    doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...vRgb);
+    doc.text((varPct>=0?'+':'')+varPct.toFixed(2)+'%',cx+colVar/2,y+h*0.62,{align:'center'});
+    doc.setDrawColor(...GOLD); doc.setLineWidth(0.5); doc.line(0,y+h,PW,y+h);
+    return y+h;
+  }
+
+  /* ── Mapa PDF: camadas de pelotão + pontos de crime ── */
   function drawMapaOcorrencias(y, alturaDisp, indCode, registros){
-    var areaX=ML, areaY=y, areaW=TW, areaH=alturaDisp;
+    const areaX=ML,areaY=y,areaW=TW,areaH=alturaDisp;
     doc.setFillColor(252,252,252); doc.setDrawColor(...BRD); doc.setLineWidth(0.3);
     doc.rect(areaX,areaY,areaW,areaH,'FD');
 
-    /* Bounding box dos polígonos */
-    var minLng=Infinity,maxLng=-Infinity,minLat=Infinity,maxLat=-Infinity;
-    var pelPolyMap = {};  /* pelNum -> {cor, polys[]} */
-    if(typeof KML_DATA !== 'undefined' && KML_DATA.pelotoes){
-      Object.entries(KML_DATA.pelotoes).forEach(function(entry){
-        var pelKey=entry[0], pelData=entry[1];
-        var pelNum=parseInt(pelKey.replace(/\D/g,''));
+    let minLng=Infinity,maxLng=-Infinity,minLat=Infinity,maxLat=-Infinity;
+    const pelPolyMap={};
+    if(typeof KML_DATA!=='undefined'&&KML_DATA.pelotoes){
+      Object.entries(KML_DATA.pelotoes).forEach(([pelKey,pelData])=>{
+        const pelNum=parseInt(pelKey.replace(/[^0-9]/g,''));
         if(!pelPolyMap[pelNum]) pelPolyMap[pelNum]={cor:pelData.cor||'#888',polys:[]};
         if(pelData.gps){
-          Object.values(pelData.gps).forEach(function(gpData){
-            (gpData.polys||[]).forEach(function(poly){
+          Object.values(pelData.gps).forEach(gpData=>{
+            (gpData.polys||[]).forEach(poly=>{
               pelPolyMap[pelNum].polys.push(poly);
-              poly.forEach(function(p){
-                if(p[0]<minLng) minLng=p[0]; if(p[0]>maxLng) maxLng=p[0];
-                if(p[1]<minLat) minLat=p[1]; if(p[1]>maxLat) maxLat=p[1];
+              poly.forEach(([lng,lat])=>{
+                if(lng<minLng)minLng=lng; if(lng>maxLng)maxLng=lng;
+                if(lat<minLat)minLat=lat; if(lat>maxLat)maxLat=lat;
               });
             });
           });
         }
       });
     }
-    registros.forEach(function(c){
-      if(c.lat&&c.lng){
-        if(c.lng<minLng) minLng=c.lng; if(c.lng>maxLng) maxLng=c.lng;
-        if(c.lat<minLat) minLat=c.lat; if(c.lat>maxLat) maxLat=c.lat;
-      }
-    });
-    if(!isFinite(minLng)){
-      doc.setFont('helvetica','italic'); doc.setFontSize(7); doc.setTextColor(150,150,150);
-      doc.text('Dados geogr\u00e1ficos indispon\u00edveis.', areaX+areaW/2, areaY+areaH/2, {align:'center'});
-      return;
-    }
+    registros.forEach(c=>{ if(c.lat&&c.lng){ if(c.lng<minLng)minLng=c.lng; if(c.lng>maxLng)maxLng=c.lng; if(c.lat<minLat)minLat=c.lat; if(c.lat>maxLat)maxLat=c.lat; }});
+    if(!isFinite(minLng)){ doc.setFont('helvetica','italic'); doc.setFontSize(7); doc.setTextColor(150,150,150); doc.text('Dados geográficos indisponíveis.',areaX+areaW/2,areaY+areaH/2,{align:'center'}); return; }
 
-    /* Projeção */
-    var pad=5;
-    var iX=areaX+pad, iY=areaY+pad, iW=areaW-pad*2, iH=areaH-pad*2;
-    var lR=Math.max(maxLng-minLng,1e-6), ltR=Math.max(maxLat-minLat,1e-6);
-    var midLat=(minLat+maxLat)/2, ac=Math.cos(midLat*Math.PI/180);
-    var sX=iW/(lR*ac), sY=iH/ltR, sc=Math.min(sX,sY);
-    var dW=lR*ac*sc, dH=ltR*sc;
-    var oX=iX+(iW-dW)/2, oY=iY+(iH-dH)/2;
-    function proj(lng,lat){ return [oX+(lng-minLng)*ac*sc, oY+(maxLat-lat)*sc]; }
+    const pad=5,iX=areaX+pad,iY=areaY+pad,iW=areaW-pad*2,iH=areaH-pad*2;
+    const lR=Math.max(maxLng-minLng,1e-6),ltR=Math.max(maxLat-minLat,1e-6);
+    const midLat=(minLat+maxLat)/2,ac=Math.cos(midLat*Math.PI/180);
+    const sX=iW/(lR*ac),sY=iH/ltR,sc=Math.min(sX,sY);
+    const dW=lR*ac*sc,dH=ltR*sc,oX=iX+(iW-dW)/2,oY=iY+(iH-dH)/2;
+    function proj(lng,lat){return[oX+(lng-minLng)*ac*sc,oY+(maxLat-lat)*sc];}
 
-    /* Desenha cada pelotão com sua cor */
-    Object.entries(pelPolyMap).forEach(function(entry){
-      var pelNum=parseInt(entry[0]), pd=entry[1];
-      var rgb=hex2rgb(pd.cor);
-      /* Fundo claro da cor do pelotão */
-      var bgR=Math.min(255,rgb[0]+130), bgG=Math.min(255,rgb[1]+130), bgB=Math.min(255,rgb[2]+130);
-      doc.setFillColor(bgR,bgG,bgB);
-      doc.setDrawColor(...rgb); doc.setLineWidth(0.5);
-      pd.polys.forEach(function(poly){
+    /* Polígonos por pelotão com a cor do KML */
+    Object.entries(pelPolyMap).forEach(([pelN,pd])=>{
+      const rgb=hexRgb(pd.cor);
+      const bgR=Math.min(255,rgb[0]+130),bgG=Math.min(255,rgb[1]+130),bgB=Math.min(255,rgb[2]+130);
+      pd.polys.forEach(poly=>{
         if(poly.length<3) return;
-        var pts=poly.map(function(p){ return proj(p[0],p[1]); });
-        var segs=pts.slice(1).map(function(p,i){ return [p[0]-pts[i][0],p[1]-pts[i][1]]; });
+        const pts=poly.map(([lng,lat])=>proj(lng,lat));
+        const segs=pts.slice(1).map((p,i)=>[p[0]-pts[i][0],p[1]-pts[i][1]]);
+        doc.setFillColor(bgR,bgG,bgB); doc.setDrawColor(...rgb); doc.setLineWidth(0.6);
         try{ doc.lines(segs,pts[0][0],pts[0][1],[1,1],'FD',true); }catch(e){}
       });
     });
 
-    /* Pontos de crime — círculos coloridos por indicador */
-    var IND_COR_PDF = {MV:[220,50,50], CVPE:[50,100,200], CVPA:[220,120,30], IF:[50,150,50]};
-    var crimeCor = IND_COR_PDF[indCode] || [100,80,30];
-    var nPlot=0;
-    registros.forEach(function(c){
+    /* Pontos de crime */
+    const IND_COR_PDF={MV:[220,50,50],CVPE:[50,100,200],CVPA:[220,120,30],IF:[50,150,50]};
+    const crimeCor=IND_COR_PDF[indCode]||[100,80,30];
+    let nPlot=0;
+    registros.forEach(c=>{
       if(!c.lat||!c.lng) return;
-      var p=proj(c.lng,c.lat);
+      const p=proj(c.lng,c.lat);
       if(p[0]<areaX||p[0]>areaX+areaW||p[1]<areaY||p[1]>areaY+areaH) return;
-      doc.setFillColor(...crimeCor); doc.setDrawColor(255,255,255); doc.setLineWidth(0.4);
-      doc.circle(p[0],p[1],1.5,'FD');
-      nPlot++;
+      doc.setFillColor(...crimeCor); doc.setDrawColor(255,255,255); doc.setLineWidth(0.5);
+      doc.circle(p[0],p[1],1.8,'FD'); nPlot++;
     });
 
-    /* Legenda dos pelotões */
-    var legX=areaX+4, legY=areaY+areaH-3;
-    Object.entries(pelPolyMap).forEach(function(entry,i){
-      var pelNum=parseInt(entry[0]), pd=entry[1];
-      var rgb=hex2rgb(pd.cor);
-      doc.setFillColor(...rgb); doc.circle(legX,legY,1.2,'F');
-      doc.setFont('helvetica','normal'); doc.setFontSize(5); doc.setTextColor(60,60,60);
-      doc.text(pelNum+'\u00ba PEL', legX+3, legY+0.7);
-      legX += 18;
+    /* Legenda dos pelotões + crimes */
+    let legX=areaX+6,legY=areaY+areaH-4;
+    Object.entries(pelPolyMap).forEach(([pelN,pd])=>{
+      const rgb=hexRgb(pd.cor);
+      doc.setFillColor(...rgb); doc.circle(legX,legY,1.3,'F');
+      doc.setFont('helvetica','normal'); doc.setFontSize(5.5); doc.setTextColor(60,60,60);
+      doc.text(pelN+'º PEL',legX+3,legY+0.8); legX+=20;
     });
-    /* Legenda do crime */
-    doc.setFillColor(...crimeCor); doc.circle(legX,legY,1.2,'F');
-    doc.setFont('helvetica','normal'); doc.setFontSize(5); doc.setTextColor(60,60,60);
-    doc.text('Ocorr\u00eancia ('+nPlot+')', legX+3, legY+0.7);
+    doc.setFillColor(...crimeCor); doc.circle(legX,legY,1.3,'F');
+    doc.setFont('helvetica','normal'); doc.setFontSize(5.5); doc.setTextColor(60,60,60);
+    doc.text('Ocorrência ('+nPlot+')',legX+3,legY+0.8);
 
     doc.setDrawColor(...BRD); doc.setLineWidth(0.3); doc.rect(areaX,areaY,areaW,areaH,'D');
   }
 
-  /* ── Monta dados por Pelotão ── */
-  function montarPelGp(indCode, mesesSel){
-    var cfg=GDOESP_CONFIG[indCode];
-    var registros=_gdoespRegistrosRurais(indCode, mesesSel);
-    var pel_gp={};
-    dadosGrupos.forEach(function(g){
-      var pelNum=pelDoColk(g.colK||g.grupamento);
+  /* ── GERAÇÃO: 4 páginas ── */
+  const INDS=['MV','CVPE','CVPA','IF'];
+  for(const indCode of INDS){
+    const cfg=GDOESP_CONFIG[indCode];
+    const nSub=cfg.subColunas?cfg.subColunas.length:0;
+    const colTaxa=22,colMeta=22,colVar=28;
+    const colTot=nSub?14:18;
+    let colPel=nSub===0?TW-colTot-colTaxa-colMeta-colVar:nSub<=3?52:nSub<=5?48:44;
+    const colSubTotal=nSub?(TW-colPel-colTot-colTaxa-colMeta-colVar):0;
+    const colSub=nSub?colSubTotal/nSub:0;
+
+    const pop=_gdoespPopulacaoRural(CIA,indCode);
+    const metaReg=_gdoespMetas[CIA+'-'+indCode];
+    let metaTaxa;
+    if(!mesesSel.length) metaTaxa=metaReg?(parseFloat(metaReg.meta_anual_taxa)||0):0;
+    else if(mesesSel.length===1) metaTaxa=_gdoespMetaMes(CIA,indCode,mesesSel[0]);
+    else metaTaxa=mesesSel.reduce((s,m)=>s+_gdoespMetaMes(CIA,indCode,m),0);
+
+    const registrosTodos=_gdoespRegistrosRurais(indCode,mesesSel);
+
+    /* Agrega por Pelotão — sem nível de grupamento */
+    const pel_totais={};  /* pelNum -> {total, sub} */
+    dadosGrupos.forEach(g=>{
+      const pelNum=pelDoColk(g.colK||g.grupamento);
       if(pelNum===99) return;
-      var gpKey=g.gpResp||gpDoColk(g.colK||g.grupamento);
-      if(!pel_gp[pelNum]) pel_gp[pelNum]={};
-      if(!pel_gp[pelNum][gpKey]){ pel_gp[pelNum][gpKey]={sub:{},total:0}; if(cfg.subColunas) cfg.subColunas.forEach(function(p){ pel_gp[pelNum][gpKey].sub[p[0]]=0; }); }
+      if(!pel_totais[pelNum]){ pel_totais[pelNum]={total:0,sub:{}}; if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ pel_totais[pelNum].sub[k]=0; }); }
     });
-    registros.forEach(function(c){
-      var gi=dadosGrupos.find(function(g){ return g.munNorm===norm(c.municipio||''); });
-      var colK=gi?(gi.colK||gi.grupamento):(c.grupamento||'desconhecido');
-      var pelNum=pelDoColk(colK);
+    registrosTodos.forEach(c=>{
+      const gi=dadosGrupos.find(g=>g.munNorm===norm(c.municipio||''));
+      const colK=gi?(gi.colK||gi.grupamento):(c.grupamento||'?');
+      const pelNum=pelDoColk(colK);
       if(pelNum===99) return;
-      var gpKey=gi?gi.gpResp:gpDoColk(colK);
-      if(!pel_gp[pelNum]) pel_gp[pelNum]={};
-      if(!pel_gp[pelNum][gpKey]){ pel_gp[pelNum][gpKey]={sub:{},total:0}; if(cfg.subColunas) cfg.subColunas.forEach(function(p){ pel_gp[pelNum][gpKey].sub[p[0]]=0; }); }
+      if(!pel_totais[pelNum]){ pel_totais[pelNum]={total:0,sub:{}}; if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ pel_totais[pelNum].sub[k]=0; }); }
       if(indCode==='IF'){
-        pel_gp[pelNum][gpKey].total+=1;
-      } else if(c.componentesGdoEsp && cfg.subColunas){
-        cfg.subColunas.forEach(function(pair){
-          var k=pair[0], v=c.componentesGdoEsp[k]||0;
-          pel_gp[pelNum][gpKey].sub[k]=(pel_gp[pelNum][gpKey].sub[k]||0)+v;
-          pel_gp[pelNum][gpKey].total+=v;
+        pel_totais[pelNum].total+=1;
+      } else if(c.componentesGdoEsp&&cfg.subColunas){
+        cfg.subColunas.forEach(([k])=>{
+          const v=c.componentesGdoEsp[k]||0;
+          pel_totais[pelNum].sub[k]=(pel_totais[pelNum].sub[k]||0)+v;
+          pel_totais[pelNum].total+=v;
         });
       }
     });
-    return pel_gp;
-  }
 
-  /* ── Geração: 4 páginas (MV, CVPE, CVPA, IF) ── */
-  var INDS = ['MV','CVPE','CVPA','IF'];
-  for(var ii=0; ii<INDS.length; ii++){
-    var indCode = INDS[ii];
-    var cfg = GDOESP_CONFIG[indCode];
-    var nSub = cfg.subColunas ? cfg.subColunas.length : 0;
+    const pelNums=Object.keys(pel_totais).map(Number).sort((a,b)=>a-b);
+    let ciaTot=0,ciaSub={};
+    if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ ciaSub[k]=0; });
+    pelNums.forEach(pelN=>{
+      ciaTot+=pel_totais[pelN].total;
+      if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ ciaSub[k]+=(pel_totais[pelN].sub[k]||0); });
+    });
+    const taxaCia=pop>0?(ciaTot/pop)*100000:0;
+    const varCia=_gdoespVarPct(taxaCia,metaTaxa);
 
-    /* Larguras: ajusta para caber em A4 paisagem
-       Sem sub-colunas (IF): colPel maior */
-    var colTaxa=22, colMeta=22, colVar=26;
-    var colTot = nSub ? 14 : 18;
-    var colPel;
-    if(nSub===0)      colPel = TW - colTot - colTaxa - colMeta - colVar;
-    else if(nSub<=3)  colPel = 52;
-    else if(nSub<=5)  colPel = 48;
-    else              colPel = 44;
-    var colSubTotal = nSub ? (TW - colPel - colTot - colTaxa - colMeta - colVar) : 0;
-    var colSub = nSub ? colSubTotal/nSub : 0;
+    let y=addPage(cfg.icone+' '+cfg.titulo);
+    y=drawTableHead(y,cfg,nSub,colPel,colSub,colTot,colTaxa,colMeta,colVar);
 
-    /* Metas e taxa da CIA */
-    var pop = _gdoespPopulacaoRural(CIA, indCode);
-    var metaReg = _gdoespMetas[CIA+'-'+indCode];
-    var metaTaxa;
-    if(!mesesSel.length){
-      metaTaxa = metaReg ? (parseFloat(metaReg.meta_anual_taxa)||0) : 0;
-    } else if(mesesSel.length===1){
-      metaTaxa = _gdoespMetaMes(CIA, indCode, mesesSel[0]);
-    } else {
-      metaTaxa = mesesSel.reduce(function(s,m){ return s+_gdoespMetaMes(CIA,indCode,m); },0);
-    }
-
-    var registrosTodos = _gdoespRegistrosRurais(indCode, mesesSel);
-    var pel_gp = montarPelGp(indCode, mesesSel);
-    var pelNums = Object.keys(pel_gp).map(Number).sort(function(a,b){return a-b;});
-
-    var y = addPage(cfg.icone+' '+cfg.titulo);
-
-    /* Totais da CIA */
-    var ciaTotalAbs=0, ciaSub={};
-    if(cfg.subColunas) cfg.subColunas.forEach(function(p){ ciaSub[p[0]]=0; });
-
-    pelNums.forEach(function(pelN){
-      var gpMap=pel_gp[pelN];
-      var gps=Object.keys(gpMap).sort(function(a,b){return gpNumDoColk(a)-gpNumDoColk(b);});
-
-      /* Totais do pelotão */
-      var pelTot=0, pelSub={};
-      if(cfg.subColunas) cfg.subColunas.forEach(function(p){ pelSub[p[0]]=0; });
-      gps.forEach(function(gpKey){
-        pelTot+=gpMap[gpKey].total;
-        if(cfg.subColunas) cfg.subColunas.forEach(function(p){ pelSub[p[0]]+=(gpMap[gpKey].sub[p[0]]||0); });
-      });
-      ciaTotalAbs+=pelTot;
-      if(cfg.subColunas) cfg.subColunas.forEach(function(p){ ciaSub[p[0]]+=(pelSub[p[0]]||0); });
-
-      /* Espaço necessário */
-      var altNec = 7+5.5+gps.length*5.5+6+1;
-      if(y+altNec>PH-55){ y=addPage(cfg.icone+' '+cfg.titulo+' (cont.)'); }
-
-      y = drawPelHeader(y, pelN, pelTot, cfg);
-      y = drawTableHead(y, cfg, colPel, colSub, colTot);
-      gps.forEach(function(gpKey,gi){
-        y = drawRowGp(y, gpDoColk(gpKey), gpMap[gpKey].sub, gpMap[gpKey].total, gi%2===1, cfg, colPel, colSub, colTot);
-      });
-      y = drawRowTotalPel(y, pelN, pelSub, pelTot, cfg, colPel, colSub, colTot);
-      y += 1.5;
+    pelNums.forEach((pelN,pi)=>{
+      const pd=pel_totais[pelN];
+      if(y+6.5>PH-55){ y=addPage(cfg.icone+' '+cfg.titulo+' (cont.)'); y=drawTableHead(y,cfg,nSub,colPel,colSub,colTot,colTaxa,colMeta,colVar); }
+      y=drawRowPel(y,pelN,pd.sub,pd.total,pi%2===1,cfg,colPel,colSub,colTot,colTaxa,colMeta,colVar);
     });
 
-    /* Linha TOTAL CIA */
-    var taxaCia = pop>0 ? (ciaTotalAbs/pop)*100000 : 0;
-    var varCia  = _gdoespVarPct(taxaCia, metaTaxa);
-    if(y+14>PH-55){ y=addPage(cfg.icone+' '+cfg.titulo+' (cont.)'); }
-    y = drawTotalCiaHead(y, cfg, colPel, colSub, colTot, colTaxa, colMeta, colVar);
-    y = drawRowTotalCia(y, ciaSub, ciaTotalAbs, taxaCia, metaTaxa, varCia, cfg, colPel, colSub, colTot, colTaxa, colMeta, colVar);
-    y += 3;
+    if(y+10>PH-55){ y=addPage(cfg.icone+' '+cfg.titulo+' (cont.)'); }
+    y=drawRowTotalCia(y,ciaSub,ciaTot,taxaCia,metaTaxa,varCia,cfg,colPel,colSub,colTot,colTaxa,colMeta,colVar);
+    y+=4;
 
-    /* Info pop + mapa */
     doc.setFont('helvetica','italic'); doc.setFontSize(6); doc.setTextColor(120,100,70);
-    doc.text('Pop. Rural 3\u00aa CIA PM MAMB: '+(pop?pop.toLocaleString('pt-BR'):'\u2014')+'  |  Meta taxa: '+metaTaxa.toFixed(2)+'  |  Taxa realizada: '+taxaCia.toFixed(2), ML+1, y);
-    y += 5;
+    doc.text('Pop. Rural 3ª CIA: '+(pop?pop.toLocaleString('pt-BR'):'—')+'  |  Meta taxa: '+metaTaxa.toFixed(2)+'  |  Taxa realizada: '+taxaCia.toFixed(2),ML+1,y);
+    y+=6;
 
-    var alturaMapa = PH-6-y;
-    if(alturaMapa>30) drawMapaOcorrencias(y, alturaMapa, indCode, registrosTodos);
+    const alturaMapa=PH-6-y;
+    if(alturaMapa>30) drawMapaOcorrencias(y,alturaMapa,indCode,registrosTodos);
   }
 
   doc.save(nomeArq);
