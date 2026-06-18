@@ -1717,14 +1717,23 @@
       </div>
     </div>
     <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">
-      Indicadores rurais do BPM MAmb (MV, CVPE, CVPA, IF), conforme metodologia do Caderno da GDO Especializada 2026.
-      Hoje exibe apenas a 3ª CIA PM MAMB; se outras CIAs vierem a ser extraídas pelo sistema, aparecerão automaticamente nas mesmas tabelas.
+      Indicadores rurais do BPM MAmb, conforme metodologia do Caderno da GDO Especializada 2026.
+      Hoje exibe apenas a 3ª CIA PM MAMB; se outras CIAs vierem a ser extraídas pelo sistema, aparecerão automaticamente.
     </div>
   </div>
 
-  <div id="gdoesp-tabelas-container">
-    <div style="color:var(--text-muted);font-size:12px;text-align:center;padding:30px;">Carregando indicadores...</div>
+  <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+    <button class="imp-ind-btn active" id="gdoesp-tab-btn-MV" onclick="gdoespSelIndTab('MV')">💀 MV</button>
+    <button class="imp-ind-btn" id="gdoesp-tab-btn-CVPE" onclick="gdoespSelIndTab('CVPE')">🔪 CVPE</button>
+    <button class="imp-ind-btn" id="gdoesp-tab-btn-CVPA" onclick="gdoespSelIndTab('CVPA')">🏠 CVPA</button>
+    <button class="imp-ind-btn" id="gdoesp-tab-btn-IF" onclick="gdoespSelIndTab('IF')">🔑 IF</button>
   </div>
+
+  <div id="gdoesp-tabela-container">
+    <div style="color:var(--text-muted);font-size:12px;text-align:center;padding:30px;">Carregando indicador...</div>
+  </div>
+
+  <div id="gdoesp-mapa-container" style="margin-top:18px;"></div>
 
 </div><!-- /tab-gdoesp -->
 
@@ -7795,70 +7804,81 @@ function _gdoespPopulacaoRural(cia, indCode){
   return reg ? (parseFloat(reg.populacao_rural) || 0) : 0;
 }
 
+let _gdoespIndAtivo = 'MV';
+
+function gdoespSelIndTab(ind){
+  _gdoespIndAtivo = ind;
+  ['MV','CVPE','CVPA','IF'].forEach(i => {
+    const btn = document.getElementById('gdoesp-tab-btn-'+i);
+    if(btn) btn.classList.toggle('active', i === ind);
+  });
+  renderGdoEsp();
+}
+
 async function renderGdoEsp(){
-  const container = document.getElementById('gdoesp-tabelas-container');
-  if(!container) return;
+  const tabelaEl = document.getElementById('gdoesp-tabela-container');
+  const mapaEl = document.getElementById('gdoesp-mapa-container');
+  if(!tabelaEl) return;
   if(sessao?.nivel_acesso !== 'admin_geral'){
-    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:30px;">Acesso restrito ao Admin Geral.</div>';
+    tabelaEl.innerHTML = '<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:30px;">Acesso restrito ao Admin Geral.</div>';
+    if(mapaEl) mapaEl.innerHTML = '';
     return;
   }
-  container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:30px;">Carregando indicadores...</div>';
+  tabelaEl.innerHTML = '<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:30px;">Carregando indicador...</div>';
 
   try{
     if(!Object.keys(_gdoespMetas).length) await _gdoespCarregarMetas();
   }catch(e){
-    container.innerHTML = `<div style="color:#ef5350;font-size:12px;text-align:center;padding:30px;">Erro ao carregar metas: ${e.message}</div>`;
+    tabelaEl.innerHTML = `<div style="color:#ef5350;font-size:12px;text-align:center;padding:30px;">Erro ao carregar metas: ${e.message}</div>`;
     return;
   }
 
   const mesesSel = getMesDd('gdoesp');
   const CIA = 3; /* Sistema monocompanhia: hoje só processa a 3ª CIA PM MAMB */
+  const indCode = _gdoespIndAtivo;
+  const cfg = GDOESP_CONFIG[indCode];
 
-  const html = ['MV','CVPE','CVPA','IF'].map(indCode => {
-    const cfg = GDOESP_CONFIG[indCode];
-    const { porGrupamento, totalGeral } = _gdoespAgregarPorGrupamento(indCode, mesesSel);
-    const pop = _gdoespPopulacaoRural(CIA, indCode);
-    const taxa = pop > 0 ? (totalGeral.total / pop) * 100000 : 0;
+  const { porGrupamento, totalGeral } = _gdoespAgregarPorGrupamento(indCode, mesesSel);
+  const pop = _gdoespPopulacaoRural(CIA, indCode);
+  const taxa = pop > 0 ? (totalGeral.total / pop) * 100000 : 0;
 
-    /* Meta: soma dos meses selecionados (ou meta anual se nenhum selecionado) */
-    const metaReg = _gdoespMetas[CIA+'-'+indCode];
-    let metaTaxa;
-    if(mesesSel.length === 0){
-      metaTaxa = metaReg ? (parseFloat(metaReg.meta_anual_taxa) || 0) : 0;
-    } else if(mesesSel.length === 1){
-      metaTaxa = _gdoespMetaMes(CIA, indCode, mesesSel[0]);
-    } else {
-      /* Múltiplos meses selecionados: soma as metas mensais correspondentes (aproximação acumulada) */
-      metaTaxa = mesesSel.reduce((s,m) => s + _gdoespMetaMes(CIA, indCode, m), 0);
-    }
+  const metaReg = _gdoespMetas[CIA+'-'+indCode];
+  let metaTaxa;
+  if(mesesSel.length === 0){
+    metaTaxa = metaReg ? (parseFloat(metaReg.meta_anual_taxa) || 0) : 0;
+  } else if(mesesSel.length === 1){
+    metaTaxa = _gdoespMetaMes(CIA, indCode, mesesSel[0]);
+  } else {
+    metaTaxa = mesesSel.reduce((s,m) => s + _gdoespMetaMes(CIA, indCode, m), 0);
+  }
 
-    const varPct = _gdoespVarPct(taxa, metaTaxa);
-    const cor = _gdoespCorVar(varPct);
+  const varPct = _gdoespVarPct(taxa, metaTaxa);
+  const cor = _gdoespCorVar(varPct);
 
-    const temSub = !!cfg.subColunas;
-    const nCols = temSub ? cfg.subColunas.length : 0;
+  const temSub = !!cfg.subColunas;
+  const nCols = temSub ? cfg.subColunas.length : 0;
 
-    const headerSub = temSub
-      ? cfg.subColunas.map(([key,label]) => `<th style="padding:6px 4px;text-align:center;font-size:9px;color:var(--text-muted);border-bottom:1px solid var(--border);min-width:46px;" title="${label}">${key.replace('_',' ')}</th>`).join('')
+  const headerSub = temSub
+    ? cfg.subColunas.map(([key,label]) => `<th style="padding:6px 4px;text-align:center;font-size:9px;color:var(--text-muted);border-bottom:1px solid var(--border);min-width:46px;" title="${label}">${key.replace('_',' ')}</th>`).join('')
+    : '';
+
+  const rowsGp = porGrupamento.map((g,i) => {
+    const subCells = temSub
+      ? cfg.subColunas.map(([key]) => `<td style="padding:5px 4px;text-align:center;color:${g.sub[key]>0?'#ccc':'#666'};">${g.sub[key]>0?g.sub[key]:'—'}</td>`).join('')
       : '';
+    return `<tr style="background:${i%2===1?'#1a1a1a':'transparent'};border-bottom:1px solid #252525;">
+      <td style="padding:5px 10px;color:#ccc;white-space:nowrap;">${g.label}</td>
+      ${subCells}
+      <td style="padding:5px 8px;text-align:center;font-weight:700;color:var(--gold);">${g.total}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="${2+nCols}" style="padding:14px;text-align:center;color:var(--text-muted);">Nenhum registro rural no período.</td></tr>`;
 
-    const rowsGp = porGrupamento.map((g,i) => {
-      const subCells = temSub
-        ? cfg.subColunas.map(([key]) => `<td style="padding:5px 4px;text-align:center;color:${g.sub[key]>0?'#ccc':'#666'};">${g.sub[key]>0?g.sub[key]:'—'}</td>`).join('')
-        : '';
-      return `<tr style="background:${i%2===1?'#1a1a1a':'transparent'};border-bottom:1px solid #252525;">
-        <td style="padding:5px 10px;color:#ccc;white-space:nowrap;">${g.label}</td>
-        ${subCells}
-        <td style="padding:5px 8px;text-align:center;font-weight:700;color:var(--gold);">${g.total}</td>
-      </tr>`;
-    }).join('') || `<tr><td colspan="${2+nCols}" style="padding:14px;text-align:center;color:var(--text-muted);">Nenhum registro rural no período.</td></tr>`;
+  const subCellsTotal = temSub
+    ? cfg.subColunas.map(([key]) => `<td style="padding:6px 4px;text-align:center;font-weight:700;color:#ccc;">${totalGeral.sub[key]}</td>`).join('')
+    : '';
 
-    const subCellsTotal = temSub
-      ? cfg.subColunas.map(([key]) => `<td style="padding:6px 4px;text-align:center;font-weight:700;color:#ccc;">${totalGeral.sub[key]}</td>`).join('')
-      : '';
-
-    return `
-    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:18px;">
+  tabelaEl.innerHTML = `
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:14px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
         <div style="font-size:13px;font-weight:700;color:var(--gold);">${cfg.icone} ${cfg.titulo}</div>
         <div style="font-size:10px;color:var(--text-muted);">Pop. Rural (3ª CIA): ${pop ? pop.toLocaleString('pt-BR') : '—'}</div>
@@ -7897,10 +7917,63 @@ async function renderGdoEsp(){
         </div>
       </div>
     </div>`;
-  }).join('');
 
-  container.innerHTML = html;
+  _gdoespRenderMapa(indCode, cor, varPct);
 }
+
+/* Mapa colorido por situação da CIA, reaproveitando os mesmos polígonos de
+   Pelotão/Grupamento já usados na aba Mapa Criminal (KML_DATA). Como o
+   sistema hoje processa só a 3ª CIA, todo o território aparece com a MESMA
+   cor (a situação da CIA como um todo); se outras CIAs vierem a ser
+   adicionadas, cada uma teria sua própria cor calculada individualmente. */
+let _gdoespMapaLeaflet = null;
+
+function _gdoespRenderMapa(indCode, cor, varPct){
+  const mapaEl = document.getElementById('gdoesp-mapa-container');
+  if(!mapaEl) return;
+
+  if(typeof KML_DATA === 'undefined' || !KML_DATA.pelotoes){
+    mapaEl.innerHTML = '';
+    return;
+  }
+
+  const legenda = varPct <= 0 ? 'Variação positiva (dentro da meta)' : varPct <= 10 ? 'Estado de atenção' : 'Variação negativa (acima da meta)';
+
+  mapaEl.innerHTML = `
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:14px;">
+      <div style="font-size:12px;font-weight:700;color:var(--gold);margin-bottom:10px;">🗺️ Mapa — ${GDOESP_CONFIG[indCode].titulo}, 3ª CIA PM MAMB</div>
+      <div id="gdoesp-mapa-leaflet" style="height:420px;border-radius:6px;overflow:hidden;"></div>
+      <div style="display:flex;gap:14px;margin-top:10px;font-size:10px;color:var(--text-muted);align-items:center;flex-wrap:wrap;">
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:12px;height:12px;border-radius:2px;background:${cor.bg.includes('rgba')?cor.txt:cor.bg};display:inline-block;"></span> ${legenda}</span>
+      </div>
+    </div>`;
+
+  setTimeout(() => {
+    const mapDiv = document.getElementById('gdoesp-mapa-leaflet');
+    if(!mapDiv || typeof L === 'undefined') return;
+    if(_gdoespMapaLeaflet){ _gdoespMapaLeaflet.remove(); _gdoespMapaLeaflet = null; }
+    _gdoespMapaLeaflet = L.map('gdoesp-mapa-leaflet', { zoomControl:true, attributionControl:false });
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:18}).addTo(_gdoespMapaLeaflet);
+
+    const corFill = cor.txt;
+    const allPoints = [];
+    Object.values(KML_DATA.pelotoes).forEach(pelData => {
+      if(!pelData.gps) return;
+      Object.values(pelData.gps).forEach(gpData => {
+        (gpData.polys||[]).forEach(poly => {
+          const latlngs = poly.map(p => [p[1], p[0]]);
+          L.polygon(latlngs, { color: corFill, weight:1.3, opacity:0.85, fillColor: corFill, fillOpacity:0.28 }).addTo(_gdoespMapaLeaflet);
+          latlngs.forEach(p => allPoints.push(p));
+        });
+      });
+    });
+
+    if(allPoints.length) _gdoespMapaLeaflet.fitBounds(allPoints, { padding:[20,20] });
+    else _gdoespMapaLeaflet.setView([-18.5, -42.0], 7);
+  }, 50);
+}
+
+
 
 
 async function renderRCR() {
