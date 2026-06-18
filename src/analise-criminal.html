@@ -1709,10 +1709,11 @@
           </div>
         </div>
       </div>
-      <div class="fg" style="align-self:flex-end;">
-        <button type="button" onclick="gerarPdfGdoEsp()"
-          style="background:var(--gold);color:#1a1a1a;border:none;padding:8px 16px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">
-          📄 PDF
+      <div class="fg" style="align-self:center;margin-left:auto;">
+        <button id="btn-pdf-gdoesp" onclick="gerarPdfGdoEsp()"
+          style="background:rgba(100,80,30,.15);border:1px solid rgba(100,80,30,.4);color:var(--gold);padding:6px 14px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap;transition:all .2s;"
+          onmouseover="this.style.background='rgba(100,80,30,.3)'" onmouseout="this.style.background='rgba(100,80,30,.15)'">
+          📄 Gerar PDF
         </button>
       </div>
     </div>
@@ -7821,64 +7822,114 @@ function gdoespSelIndTab(ind){
 
 async function renderGdoEsp(){
   const tabelaEl = document.getElementById('gdoesp-tabela-container');
-  const mapaEl = document.getElementById('gdoesp-mapa-container');
+  const mapaEl   = document.getElementById('gdoesp-mapa-container');
   if(!tabelaEl) return;
   if(sessao?.nivel_acesso !== 'admin_geral'){
     tabelaEl.innerHTML = '<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:30px;">Acesso restrito ao Admin Geral.</div>';
     if(mapaEl) mapaEl.innerHTML = '';
     return;
   }
-  tabelaEl.innerHTML = '<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:30px;">Carregando indicador...</div>';
-
+  tabelaEl.innerHTML = '<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:30px;">Carregando...</div>';
   try{
     if(!Object.keys(_gdoespMetas).length) await _gdoespCarregarMetas();
   }catch(e){
-    tabelaEl.innerHTML = `<div style="color:#ef5350;font-size:12px;text-align:center;padding:30px;">Erro ao carregar metas: ${e.message}</div>`;
+    tabelaEl.innerHTML = `<div style="color:#ef5350;font-size:12px;text-align:center;padding:30px;">Erro: ${e.message}</div>`;
     return;
   }
 
   const mesesSel = getMesDd('gdoesp');
-  const CIA = 3; /* Sistema monocompanhia: hoje só processa a 3ª CIA PM MAMB */
+  const CIA = 3;
   const indCode = _gdoespIndAtivo;
   const cfg = GDOESP_CONFIG[indCode];
-
-  const { porGrupamento, totalGeral } = _gdoespAgregarPorGrupamento(indCode, mesesSel);
   const pop = _gdoespPopulacaoRural(CIA, indCode);
-  const taxa = pop > 0 ? (totalGeral.total / pop) * 100000 : 0;
 
   const metaReg = _gdoespMetas[CIA+'-'+indCode];
   let metaTaxa;
-  if(mesesSel.length === 0){
-    metaTaxa = metaReg ? (parseFloat(metaReg.meta_anual_taxa) || 0) : 0;
-  } else if(mesesSel.length === 1){
-    metaTaxa = _gdoespMetaMes(CIA, indCode, mesesSel[0]);
-  } else {
-    metaTaxa = mesesSel.reduce((s,m) => s + _gdoespMetaMes(CIA, indCode, m), 0);
-  }
+  if(!mesesSel.length) metaTaxa = metaReg ? (parseFloat(metaReg.meta_anual_taxa)||0) : 0;
+  else if(mesesSel.length===1) metaTaxa = _gdoespMetaMes(CIA, indCode, mesesSel[0]);
+  else metaTaxa = mesesSel.reduce((s,m)=>s+_gdoespMetaMes(CIA,indCode,m), 0);
 
+  /* Monta dados por Pelotão */
+  const pelRegs = _gdoespRegistrosRurais(indCode, mesesSel);
+  const pel_gp = {};
+  dadosGrupos.forEach(g => {
+    const pelNum = pelDoColk(g.colK||g.grupamento);
+    if(pelNum===99) return;
+    if(!pel_gp[pelNum]) pel_gp[pelNum] = {total:0, sub:{}};
+    if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ if(!(k in pel_gp[pelNum].sub)) pel_gp[pelNum].sub[k]=0; });
+  });
+  pelRegs.forEach(c => {
+    const gi = dadosGrupos.find(g => g.munNorm === norm(c.municipio||''));
+    const colK = gi ? (gi.colK||gi.grupamento) : (c.grupamento||'?');
+    const pelNum = pelDoColk(colK);
+    if(pelNum===99) return;
+    if(!pel_gp[pelNum]) pel_gp[pelNum] = {total:0, sub:{}};
+    if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ if(!(k in pel_gp[pelNum].sub)) pel_gp[pelNum].sub[k]=0; });
+    if(indCode==='IF'){
+      pel_gp[pelNum].total += 1;
+    } else if(c.componentesGdoEsp && cfg.subColunas){
+      cfg.subColunas.forEach(([k])=>{
+        const v = c.componentesGdoEsp[k]||0;
+        pel_gp[pelNum].sub[k] = (pel_gp[pelNum].sub[k]||0)+v;
+        pel_gp[pelNum].total  += v;
+      });
+    }
+  });
+
+  const pelNums = Object.keys(pel_gp).map(Number).sort((a,b)=>a-b);
+
+  /* Totais CIA */
+  let ciaTot=0, ciaSub={};
+  if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ ciaSub[k]=0; });
+  pelNums.forEach(pelN=>{
+    ciaTot += pel_gp[pelN].total;
+    if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ ciaSub[k]+=(pel_gp[pelN].sub[k]||0); });
+  });
+  const taxa = pop>0 ? (ciaTot/pop)*100000 : 0;
   const varPct = _gdoespVarPct(taxa, metaTaxa);
   const cor = _gdoespCorVar(varPct);
-
   const temSub = !!cfg.subColunas;
-  const nCols = temSub ? cfg.subColunas.length : 0;
 
-  const headerSub = temSub
-    ? cfg.subColunas.map(([key,label]) => `<th style="padding:6px 4px;text-align:center;font-size:9px;color:var(--text-muted);border-bottom:1px solid var(--border);min-width:46px;" title="${label}">${key.replace('_',' ')}</th>`).join('')
+  /* Cores dos pelotões do KML_DATA */
+  const PEL_COR_CSS = {};
+  if(typeof KML_DATA !== 'undefined' && KML_DATA.pelotoes){
+    Object.entries(KML_DATA.pelotoes).forEach(([pelKey, pelData])=>{
+      PEL_COR_CSS[parseInt(pelKey.replace(/\D/g,''))] = pelData.cor || '#888';
+    });
+  }
+  const PEL_FB = {1:'#1E88E5',2:'#43A047',3:'#FB8C00',4:'#D81B60',5:'#8E24AA'};
+  function pelCssColor(n){ return PEL_COR_CSS[n]||PEL_FB[n]||'#888'; }
+
+  /* Helper: hex -> rgba string */
+  function hexAlpha(hex,a){
+    const r=parseInt(hex.slice(1,3),16), g2=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+    return `rgba(${r},${g2},${b},${a})`;
+  }
+
+  const thSub = temSub
+    ? cfg.subColunas.map(([key,label])=>`<th style="padding:5px 4px;text-align:center;font-size:9px;color:var(--text-muted);border-bottom:1px solid var(--border);min-width:40px;" title="${label}">${key.replace(/_/g,' ')}</th>`).join('')
     : '';
 
-  const rowsGp = porGrupamento.map((g,i) => {
+  const rowsPel = pelNums.map(pelN=>{
+    const pd = pel_gp[pelN];
+    const pelCor = pelCssColor(pelN);
     const subCells = temSub
-      ? cfg.subColunas.map(([key]) => `<td style="padding:5px 4px;text-align:center;color:${g.sub[key]>0?'#ccc':'#666'};">${g.sub[key]>0?g.sub[key]:'—'}</td>`).join('')
+      ? cfg.subColunas.map(([k])=>{
+          const v=pd.sub[k]||0;
+          return `<td style="padding:5px 4px;text-align:center;color:${v>0?'#ccc':'#555'};">${v>0?v:'—'}</td>`;
+        }).join('')
       : '';
-    return `<tr style="background:${i%2===1?'#1a1a1a':'transparent'};border-bottom:1px solid #252525;">
-      <td style="padding:5px 10px;color:#ccc;white-space:nowrap;">${g.label}</td>
+    return `<tr style="background:${hexAlpha(pelCor,.07)};border-bottom:1px solid #252525;border-left:3px solid ${pelCor};">
+      <td style="padding:6px 10px;font-weight:700;color:${pelCor};white-space:nowrap;">
+        <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:${pelCor};color:#fff;font-size:10px;font-weight:800;margin-right:7px;">${pelN}</span>${pelN}º Pelotão
+      </td>
       ${subCells}
-      <td style="padding:5px 8px;text-align:center;font-weight:700;color:var(--gold);">${g.total}</td>
+      <td style="padding:6px 8px;text-align:center;font-weight:800;color:${pelCor};font-size:13px;">${pd.total}</td>
     </tr>`;
-  }).join('') || `<tr><td colspan="${2+nCols}" style="padding:14px;text-align:center;color:var(--text-muted);">Nenhum registro rural no período.</td></tr>`;
+  }).join('') || `<tr><td colspan="${2+(temSub?cfg.subColunas.length:0)}" style="padding:14px;text-align:center;color:var(--text-muted);">Nenhum registro rural no período.</td></tr>`;
 
-  const subCellsTotal = temSub
-    ? cfg.subColunas.map(([key]) => `<td style="padding:6px 4px;text-align:center;font-weight:700;color:#ccc;">${totalGeral.sub[key]}</td>`).join('')
+  const subTotCells = temSub
+    ? cfg.subColunas.map(([k])=>`<td style="padding:7px 4px;text-align:center;font-weight:700;color:#ddd;">${ciaSub[k]||0}</td>`).join('')
     : '';
 
   tabelaEl.innerHTML = `
@@ -7891,33 +7942,33 @@ async function renderGdoEsp(){
         <table style="width:100%;border-collapse:collapse;font-size:11px;">
           <thead>
             <tr style="background:#1a1a1a;">
-              <th style="padding:6px 10px;text-align:left;font-size:9px;color:var(--text-muted);border-bottom:1px solid var(--border);">GRUPAMENTO</th>
-              ${headerSub}
-              <th style="padding:6px 8px;text-align:center;font-size:9px;color:var(--gold);border-bottom:1px solid var(--border);">TOTAL</th>
+              <th style="padding:5px 10px;text-align:left;font-size:9px;color:var(--text-muted);border-bottom:1px solid var(--border);">PELOTÃO</th>
+              ${thSub}
+              <th style="padding:5px 8px;text-align:center;font-size:9px;color:var(--gold);border-bottom:1px solid var(--border);">TOTAL</th>
             </tr>
           </thead>
-          <tbody>${rowsGp}</tbody>
+          <tbody>${rowsPel}</tbody>
           <tfoot>
-            <tr style="background:rgba(155,138,92,.12);border-top:2px solid var(--gold-border);">
+            <tr style="background:rgba(155,138,92,.18);border-top:2px solid var(--gold-border);">
               <td style="padding:7px 10px;font-weight:700;color:var(--gold);white-space:nowrap;">TOTAL 3 CIA PM MAMB</td>
-              ${subCellsTotal}
-              <td style="padding:7px 8px;text-align:center;font-weight:700;color:var(--gold);">${totalGeral.total}</td>
+              ${subTotCells}
+              <td style="padding:7px 8px;text-align:center;font-weight:800;color:var(--gold);font-size:13px;">${ciaTot}</td>
             </tr>
           </tfoot>
         </table>
       </div>
-      <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;">
-        <div style="flex:1;min-width:120px;background:#1a1a1a;border-radius:6px;padding:8px 12px;text-align:center;">
-          <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;">Taxa Realizada</div>
-          <div style="font-size:16px;font-weight:700;color:#fff;">${taxa.toFixed(2)}</div>
+      <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:110px;background:#1a1a1a;border-radius:6px;padding:9px 12px;text-align:center;">
+          <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Taxa Realizada</div>
+          <div style="font-size:20px;font-weight:700;color:#fff;margin-top:3px;">${taxa.toFixed(2)}</div>
         </div>
-        <div style="flex:1;min-width:120px;background:#1a1a1a;border-radius:6px;padding:8px 12px;text-align:center;">
-          <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;">Meta</div>
-          <div style="font-size:16px;font-weight:700;color:var(--gold);">${metaTaxa.toFixed(2)}</div>
+        <div style="flex:1;min-width:110px;background:#1a1a1a;border-radius:6px;padding:9px 12px;text-align:center;">
+          <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Meta</div>
+          <div style="font-size:20px;font-weight:700;color:var(--gold);margin-top:3px;">${metaTaxa.toFixed(2)}</div>
         </div>
-        <div style="flex:1;min-width:120px;background:${cor.bg};border-radius:6px;padding:8px 12px;text-align:center;">
-          <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;">Var (%) Taxa/Meta</div>
-          <div style="font-size:16px;font-weight:700;color:${cor.txt};">${varPct>=0?'+':''}${varPct.toFixed(2)}%</div>
+        <div style="flex:1;min-width:110px;background:${cor.bg};border-radius:6px;padding:9px 12px;text-align:center;border:1px solid ${cor.txt}55;">
+          <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">VAR (%) Taxa/Meta</div>
+          <div style="font-size:20px;font-weight:700;color:${cor.txt};margin-top:3px;">${varPct>=0?'+':''}${varPct.toFixed(2)}%</div>
         </div>
       </div>
     </div>`;
