@@ -454,6 +454,7 @@
   <div class="subtab" onclick="switchSubtab(this,'inteligencia')">🕵 Inteligência</div>
   <div class="subtab" onclick="switchSubtab(this,'missoes')">🎯 Missões</div>
   <div class="subtab" id="tab-btn-auditorias" style="display:none;" onclick="switchSubtab(this,'auditorias')">🔐 Auditorias</div>
+  <div class="subtab" id="tab-btn-gdoesp" style="display:none;" onclick="switchSubtab(this,'gdoesp');renderGdoEsp()">📊 Relatório de Monitoramento GDO</div>
 </nav>
 
 <main class="content">
@@ -1668,6 +1669,65 @@
   </div>
 </div><!-- /tab-auditorias -->
 
+<!-- ════════════════════════════════
+     ABA: RELATÓRIO DE MONITORAMENTO GDO ESPECIALIZADA (Admin Geral)
+════════════════════════════════ -->
+<div class="tab-pane" id="tab-gdoesp">
+
+  <div class="filter-box">
+    <div class="filter-box-title">📊 Relatório de Monitoramento GDO Especializada — BPM MAmb</div>
+    <div class="filter-row">
+      <div class="fg" style="min-width:180px;max-width:260px;">
+        <label>Mês</label>
+        <div class="mes-dropdown-wrap" id="gdoesp-mes-wrap">
+          <button type="button" class="mes-dropdown-btn" id="gdoesp-mes-btn" onclick="toggleMesDd('gdoesp')">
+            <span id="gdoesp-mes-lbl">Maio</span>
+            <span style="font-size:10px;margin-left:auto;">▼</span>
+          </button>
+          <div class="mes-dropdown" id="gdoesp-mes-dd" style="display:none;">
+            <div class="mes-dd-header">
+              <span style="font-size:10px;font-weight:700;color:var(--text-muted);">SELECIONAR MESES</span>
+              <div style="display:flex;gap:6px;">
+                <span class="mes-dd-link" onclick="mesDdSelAll('gdoesp')">Todos</span>
+                <span class="mes-dd-link" onclick="mesDdClrAll('gdoesp')">Limpar</span>
+              </div>
+            </div>
+            <div class="mes-dd-list" id="gdoesp-mes-list">
+              <label class="mes-chk"><input type="checkbox" value="JANEIRO"  onchange="onMesDdChange('gdoesp')"> <span>Janeiro</span></label>
+              <label class="mes-chk"><input type="checkbox" value="FEVEREIRO" onchange="onMesDdChange('gdoesp')"> <span>Fevereiro</span></label>
+              <label class="mes-chk"><input type="checkbox" value="MARÇO"    onchange="onMesDdChange('gdoesp')"> <span>Março</span></label>
+              <label class="mes-chk"><input type="checkbox" value="ABRIL"    onchange="onMesDdChange('gdoesp')"> <span>Abril</span></label>
+              <label class="mes-chk"><input type="checkbox" value="MAIO"     onchange="onMesDdChange('gdoesp')"> <span>Maio</span></label>
+              <label class="mes-chk"><input type="checkbox" value="JUNHO"    onchange="onMesDdChange('gdoesp')"> <span>Junho</span></label>
+              <label class="mes-chk"><input type="checkbox" value="JULHO"    onchange="onMesDdChange('gdoesp')"> <span>Julho</span></label>
+              <label class="mes-chk"><input type="checkbox" value="AGOSTO"   onchange="onMesDdChange('gdoesp')"> <span>Agosto</span></label>
+              <label class="mes-chk"><input type="checkbox" value="SETEMBRO" onchange="onMesDdChange('gdoesp')"> <span>Setembro</span></label>
+              <label class="mes-chk"><input type="checkbox" value="OUTUBRO"  onchange="onMesDdChange('gdoesp')"> <span>Outubro</span></label>
+              <label class="mes-chk"><input type="checkbox" value="NOVEMBRO" onchange="onMesDdChange('gdoesp')"> <span>Novembro</span></label>
+              <label class="mes-chk"><input type="checkbox" value="DEZEMBRO" onchange="onMesDdChange('gdoesp')"> <span>Dezembro</span></label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="fg" style="align-self:flex-end;">
+        <button type="button" onclick="gerarPdfGdoEsp()"
+          style="background:var(--gold);color:#1a1a1a;border:none;padding:8px 16px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">
+          📄 PDF
+        </button>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">
+      Indicadores rurais do BPM MAmb (MV, CVPE, CVPA, IF), conforme metodologia do Caderno da GDO Especializada 2026.
+      Hoje exibe apenas a 3ª CIA PM MAMB; se outras CIAs vierem a ser extraídas pelo sistema, aparecerão automaticamente nas mesmas tabelas.
+    </div>
+  </div>
+
+  <div id="gdoesp-tabelas-container">
+    <div style="color:var(--text-muted);font-size:12px;text-align:center;padding:30px;">Carregando indicadores...</div>
+  </div>
+
+</div><!-- /tab-gdoesp -->
+
 </main><!-- /content -->
 
 <!-- ════════════════════════════════
@@ -2558,6 +2618,9 @@ window.addEventListener('DOMContentLoaded', async () => {
     if(sessao.nivel_acesso === 'admin_geral') {
       const tabBtnAudit = document.getElementById('tab-btn-auditorias');
       if(tabBtnAudit) tabBtnAudit.style.display = '';
+      /* Relatório de Monitoramento GDO Especializada apenas para Admin Geral */
+      const tabBtnGdoEsp = document.getElementById('tab-btn-gdoesp');
+      if(tabBtnGdoEsp) tabBtnGdoEsp.style.display = '';
     }
   } else if(sessao.nivel_acesso === 'admin_pelotao'){
     badge.textContent='ADM PELOTÃO';
@@ -3797,7 +3860,7 @@ function _mesDdUpdateLabel(prefix){
 
 function onMesDdChange(prefix){
   _mesDdUpdateLabel(prefix);
-  const renders = { mapa: renderMapaCriminal, cr: renderCrimes, cx: renderCruzamento, vt: renderVisitas, rcr: renderRCR };
+  const renders = { mapa: renderMapaCriminal, cr: renderCrimes, cx: renderCruzamento, vt: renderVisitas, rcr: renderRCR, gdoesp: renderGdoEsp };
   if(renders[prefix]) renders[prefix]();
 }
 
@@ -7609,6 +7672,236 @@ function _rcrMetaDoPelotao(pel, mes) {
   const col = COL_MAP[mes];
   return col && r[col] !== null && r[col] !== undefined ? parseInt(r[col]) : 1;
 }
+
+/* ════════════════════════════════
+   RELATÓRIO DE MONITORAMENTO GDO ESPECIALIZADA (Admin Geral)
+════════════════════════════════ */
+const GDOESP_MESES_COLS = ['meta_jan','meta_fev','meta_mar','meta_abr','meta_mai','meta_jun','meta_jul','meta_ago','meta_set','meta_out','meta_nov','meta_dez'];
+let _gdoespMetas = {}; /* { 'CIA-IND': registro } */
+
+async function _gdoespCarregarMetas(){
+  const ano = new Date().getFullYear();
+  const url = `${SB_URL}/rest/v1/gdo_especializada_metas?ano=eq.${ano}&select=*`;
+  const r = await fetch(url, { headers: { apikey: SB_KEY, Authorization: 'Bearer '+SB_KEY } });
+  if(!r.ok) throw new Error('gdo_especializada_metas HTTP '+r.status);
+  const rows = await r.json();
+  _gdoespMetas = {};
+  rows.forEach(row => { _gdoespMetas[row.cia+'-'+row.indicador] = row; });
+}
+
+function _gdoespMetaMes(cia, ind, mesNome){
+  const reg = _gdoespMetas[cia+'-'+ind];
+  if(!reg) return 0;
+  const idx = MESES.indexOf(mesNome);
+  if(idx < 0) return 0;
+  const v = reg[GDOESP_MESES_COLS[idx]];
+  return (v !== null && v !== undefined) ? parseFloat(v) : 0;
+}
+
+/* Cor semafórica conforme Quadro 01 do Caderno Metodológico:
+   Resultado ≤100% da meta → verde; >100% e ≤110% → amarelo; >110% → vermelho.
+   Como a polaridade de todos os indicadores é "quanto menor, melhor", o "resultado"
+   aqui é a Var(%) já calculada: Var ≤0% → verde, 0–10% → amarelo, >10% → vermelho. */
+function _gdoespCorVar(varPct){
+  if(varPct === null || varPct === undefined || isNaN(varPct)) return {bg:'#2a2a2a', txt:'#888'};
+  if(varPct <= 0)  return {bg:'rgba(46,160,67,.18)',  txt:'#2ea043'};
+  if(varPct <= 10) return {bg:'rgba(255,193,7,.18)',  txt:'#ffc107'};
+  return {bg:'rgba(239,83,80,.18)', txt:'#ef5350'};
+}
+
+function _gdoespVarPct(realizado, meta){
+  if(!meta || meta === 0) return realizado > 0 ? 100 : 0;
+  return ((realizado - meta) / meta) * 100;
+}
+
+/* Filtra os crimes de um indicador específico, em zona rural, dentro dos meses selecionados,
+   agrupando por Grupamento. Reaproveita a mesma checagem de área rural usada no RCR/Auditorias. */
+function _gdoespRegistrosRurais(indCode, mesesSel){
+  return dadosCrimes.filter(c => {
+    if(c.indicador !== indCode) return false;
+    if(mesesSel.length && !mesesSel.includes(c.mes)) return false;
+    /* Prioriza checagem por coordenada (IBGE); cai para o texto de localização quando não há coordenada */
+    if(c.lat && c.lng && typeof IBGE_DATA !== 'undefined' && IBGE_DATA.length){
+      return !pontoEmAreaUrbanaIBGE(c.lat, c.lng);
+    }
+    return c.localizacao === 'ZONA RURAL';
+  });
+}
+
+const GDOESP_CONFIG = {
+  MV: {
+    titulo: 'Mortes Violentas (MV)', icone: '💀',
+    subColunas: [['HC','Homicídio'],['LC','Lesão Corporal'],['SEQ','Sequestro e Cárcere Privado'],['TT','Tortura'],['RLF','Roubo c/ resultado morte'],['FEM','Feminicídio']],
+  },
+  CVPE: {
+    titulo: 'Crimes Violentos Contra a Pessoa (CVPE)', icone: '🔪',
+    subColunas: [['HT_CIVIL','Homicídio Tentado (civil)'],['HT_PM','Homicídio Tentado (PM)'],['TORT','Tortura'],['SEQ','Sequestro e Cárcere Privado'],['FEM','Feminicídio Tentado']],
+  },
+  CVPA: {
+    titulo: 'Crimes Violentos Contra o Patrimônio (CVPA)', icone: '🏠',
+    subColunas: [['ROUBO','Roubo'],['EXT','Extorsão'],['EXTMS','Extorsão Mediante Sequestro']],
+  },
+  IF: {
+    titulo: 'Furtos em Ambiente Rural (IF)', icone: '🔑',
+    subColunas: null, /* sem detalhamento por sub-tipo; só absoluto/taxa */
+  },
+};
+
+/* Monta a estrutura agregada por Grupamento para um indicador, dentro dos meses selecionados.
+   Retorna { porGrupamento: [{label, sub:{...}, total}], totalGeral: {sub:{...}, total} } */
+function _gdoespAgregarPorGrupamento(indCode, mesesSel){
+  const cfg = GDOESP_CONFIG[indCode];
+  const registros = _gdoespRegistrosRurais(indCode, mesesSel);
+
+  const porGp = {}; /* colK → {sub, total} */
+  let totalGeralAbs = 0;
+  const totalGeralSub = {};
+  if(cfg.subColunas) cfg.subColunas.forEach(([key]) => { totalGeralSub[key] = 0; });
+
+  registros.forEach(c => {
+    const gi = dadosGrupos.find(g => g.munNorm === norm(c.municipio || ''));
+    const colK = gi ? (gi.colK || gi.grupamento) : (c.grupamento || '—');
+    if(!porGp[colK]) {
+      porGp[colK] = { sub:{}, total:0 };
+      if(cfg.subColunas) cfg.subColunas.forEach(([key]) => { porGp[colK].sub[key] = 0; });
+    }
+    if(indCode === 'IF'){
+      porGp[colK].total += 1;
+      totalGeralAbs += 1;
+    } else if(c.componentesGdoEsp){
+      cfg.subColunas.forEach(([key]) => {
+        const v = c.componentesGdoEsp[key] || 0;
+        porGp[colK].sub[key] += v;
+        totalGeralSub[key] += v;
+        porGp[colK].total += v;
+        totalGeralAbs += v;
+      });
+    }
+  });
+
+  const porGrupamento = Object.keys(porGp)
+    .sort((a,b) => {
+      const pa = pelDoColk(a), pb = pelDoColk(b);
+      if(pa !== pb) return pa - pb;
+      return gpNumDoColk(a) - gpNumDoColk(b);
+    })
+    .map(colK => ({ label: gpDoColk(colK), sub: porGp[colK].sub, total: porGp[colK].total }));
+
+  return { porGrupamento, totalGeral: { sub: totalGeralSub, total: totalGeralAbs } };
+}
+
+function _gdoespPopulacaoRural(cia, indCode){
+  const reg = _gdoespMetas[cia+'-'+indCode];
+  return reg ? (parseFloat(reg.populacao_rural) || 0) : 0;
+}
+
+async function renderGdoEsp(){
+  const container = document.getElementById('gdoesp-tabelas-container');
+  if(!container) return;
+  if(sessao?.nivel_acesso !== 'admin_geral'){
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:30px;">Acesso restrito ao Admin Geral.</div>';
+    return;
+  }
+  container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:30px;">Carregando indicadores...</div>';
+
+  try{
+    if(!Object.keys(_gdoespMetas).length) await _gdoespCarregarMetas();
+  }catch(e){
+    container.innerHTML = `<div style="color:#ef5350;font-size:12px;text-align:center;padding:30px;">Erro ao carregar metas: ${e.message}</div>`;
+    return;
+  }
+
+  const mesesSel = getMesDd('gdoesp');
+  const CIA = 3; /* Sistema monocompanhia: hoje só processa a 3ª CIA PM MAMB */
+
+  const html = ['MV','CVPE','CVPA','IF'].map(indCode => {
+    const cfg = GDOESP_CONFIG[indCode];
+    const { porGrupamento, totalGeral } = _gdoespAgregarPorGrupamento(indCode, mesesSel);
+    const pop = _gdoespPopulacaoRural(CIA, indCode);
+    const taxa = pop > 0 ? (totalGeral.total / pop) * 100000 : 0;
+
+    /* Meta: soma dos meses selecionados (ou meta anual se nenhum selecionado) */
+    const metaReg = _gdoespMetas[CIA+'-'+indCode];
+    let metaTaxa;
+    if(mesesSel.length === 0){
+      metaTaxa = metaReg ? (parseFloat(metaReg.meta_anual_taxa) || 0) : 0;
+    } else if(mesesSel.length === 1){
+      metaTaxa = _gdoespMetaMes(CIA, indCode, mesesSel[0]);
+    } else {
+      /* Múltiplos meses selecionados: soma as metas mensais correspondentes (aproximação acumulada) */
+      metaTaxa = mesesSel.reduce((s,m) => s + _gdoespMetaMes(CIA, indCode, m), 0);
+    }
+
+    const varPct = _gdoespVarPct(taxa, metaTaxa);
+    const cor = _gdoespCorVar(varPct);
+
+    const temSub = !!cfg.subColunas;
+    const nCols = temSub ? cfg.subColunas.length : 0;
+
+    const headerSub = temSub
+      ? cfg.subColunas.map(([key,label]) => `<th style="padding:6px 4px;text-align:center;font-size:9px;color:var(--text-muted);border-bottom:1px solid var(--border);min-width:46px;" title="${label}">${key.replace('_',' ')}</th>`).join('')
+      : '';
+
+    const rowsGp = porGrupamento.map((g,i) => {
+      const subCells = temSub
+        ? cfg.subColunas.map(([key]) => `<td style="padding:5px 4px;text-align:center;color:${g.sub[key]>0?'#ccc':'#666'};">${g.sub[key]>0?g.sub[key]:'—'}</td>`).join('')
+        : '';
+      return `<tr style="background:${i%2===1?'#1a1a1a':'transparent'};border-bottom:1px solid #252525;">
+        <td style="padding:5px 10px;color:#ccc;white-space:nowrap;">${g.label}</td>
+        ${subCells}
+        <td style="padding:5px 8px;text-align:center;font-weight:700;color:var(--gold);">${g.total}</td>
+      </tr>`;
+    }).join('') || `<tr><td colspan="${2+nCols}" style="padding:14px;text-align:center;color:var(--text-muted);">Nenhum registro rural no período.</td></tr>`;
+
+    const subCellsTotal = temSub
+      ? cfg.subColunas.map(([key]) => `<td style="padding:6px 4px;text-align:center;font-weight:700;color:#ccc;">${totalGeral.sub[key]}</td>`).join('')
+      : '';
+
+    return `
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:18px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+        <div style="font-size:13px;font-weight:700;color:var(--gold);">${cfg.icone} ${cfg.titulo}</div>
+        <div style="font-size:10px;color:var(--text-muted);">Pop. Rural (3ª CIA): ${pop ? pop.toLocaleString('pt-BR') : '—'}</div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+          <thead>
+            <tr style="background:#1a1a1a;">
+              <th style="padding:6px 10px;text-align:left;font-size:9px;color:var(--text-muted);border-bottom:1px solid var(--border);">GRUPAMENTO</th>
+              ${headerSub}
+              <th style="padding:6px 8px;text-align:center;font-size:9px;color:var(--gold);border-bottom:1px solid var(--border);">TOTAL</th>
+            </tr>
+          </thead>
+          <tbody>${rowsGp}</tbody>
+          <tfoot>
+            <tr style="background:rgba(155,138,92,.12);border-top:2px solid var(--gold-border);">
+              <td style="padding:7px 10px;font-weight:700;color:var(--gold);white-space:nowrap;">TOTAL 3 CIA PM MAMB</td>
+              ${subCellsTotal}
+              <td style="padding:7px 8px;text-align:center;font-weight:700;color:var(--gold);">${totalGeral.total}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:120px;background:#1a1a1a;border-radius:6px;padding:8px 12px;text-align:center;">
+          <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;">Taxa Realizada</div>
+          <div style="font-size:16px;font-weight:700;color:#fff;">${taxa.toFixed(2)}</div>
+        </div>
+        <div style="flex:1;min-width:120px;background:#1a1a1a;border-radius:6px;padding:8px 12px;text-align:center;">
+          <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;">Meta</div>
+          <div style="font-size:16px;font-weight:700;color:var(--gold);">${metaTaxa.toFixed(2)}</div>
+        </div>
+        <div style="flex:1;min-width:120px;background:${cor.bg};border-radius:6px;padding:8px 12px;text-align:center;">
+          <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;">Var (%) Taxa/Meta</div>
+          <div style="font-size:16px;font-weight:700;color:${cor.txt};">${varPct>=0?'+':''}${varPct.toFixed(2)}%</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  container.innerHTML = html;
+}
+
 
 async function renderRCR() {
   /* Carrega metas se ainda não carregou */
