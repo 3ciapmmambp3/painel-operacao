@@ -2661,7 +2661,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   const mesAtual = MESES[new Date().getMonth()];
   /* Marca mês atual nos selects simples */
   /* Marca mês atual nos dropdowns multi-select das abas */
-  ['mapa','cr','cx','vt'].forEach(prefix => {
+  ['mapa','cr','cx','vt','rcr','gdoesp'].forEach(prefix => {
     const cbs = document.querySelectorAll('#'+prefix+'-mes-list input[type=checkbox]');
     cbs.forEach(cb => { cb.checked = (cb.value === mesAtual); });
     _mesDdUpdateLabel(prefix);
@@ -7724,10 +7724,14 @@ function _gdoespVarPct(realizado, meta){
 }
 
 /* Filtra os crimes de um indicador específico, em zona rural, dentro dos meses selecionados,
-   agrupando por Grupamento. Reaproveita a mesma checagem de área rural usada no RCR/Auditorias. */
+   agrupando por Grupamento. Reaproveita a mesma checagem de área rural usada no RCR/Auditorias.
+   Nota: no bd_crimes o indicador Morte Violenta é gravado como 'IMV'; na UI/config usamos 'MV'.
+   A conversão é feita aqui para isolar o mapeamento num único ponto. */
+const _GDOESP_IND_DBKEY = { MV: 'IMV', CVPE: 'CVPE', CVPA: 'CVPA', IF: 'IF' };
 function _gdoespRegistrosRurais(indCode, mesesSel){
+  const dbKey = _GDOESP_IND_DBKEY[indCode] || indCode;
   return dadosCrimes.filter(c => {
-    if(c.indicador !== indCode) return false;
+    if(c.indicador !== dbKey) return false;
     if(mesesSel.length && !mesesSel.includes(c.mes)) return false;
     /* Prioriza checagem por coordenada (IBGE); cai para o texto de localização quando não há coordenada */
     if(c.lat && c.lng && typeof IBGE_DATA !== 'undefined' && IBGE_DATA.length){
@@ -7975,11 +7979,10 @@ function _gdoespRenderMapa(indCode, cor, varPct){
 
 /* ============================================================
    PDF — Relatório de Monitoramento GDO Especializada (MV/CVPE/CVPA/IF)
-   Layout espelha o relatório oficial (Tabelas 01–04), mas substitui as
-   linhas "CIAS PM MAMB" por linhas de Grupamento e a linha final "BPM MAMB"
-   por "TOTAL 3 CIA PM MAMB" — mesma reestruturação já aplicada na tela.
-   O mapa de cada página é desenhado vetorialmente (sem captura de Leaflet),
-   reaproveitando os polígonos de KML_DATA já usados no mapa em tela. */
+   Estrutura: uma seção por indicador, tabelas por Pelotão (igual ao OP GDO Rural),
+   com linha de Grupamento mostrando sub-contagens absolutas e linha TOTAL do pelotão
+   com Taxa/Meta/Var(%). Mapa com pontos de ocorrência (igual ao Mapa Criminal).
+   Fundo branco, formato A4 paisagem, mesmo estilo visual dourado. */
 async function gerarPdfGdoEsp(){
   const { jsPDF } = window.jspdf;
   if(!jsPDF){ alert('Biblioteca PDF não carregada.'); return; }
@@ -7987,70 +7990,86 @@ async function gerarPdfGdoEsp(){
   if(!Object.keys(_gdoespMetas).length) await _gdoespCarregarMetas();
 
   const mesesSel = getMesDd('gdoesp');
-  const mesLabel = mesesSel.length === 12 || !mesesSel.length ? 'ANO COMPLETO'
+  const mesLabel = !mesesSel.length ? 'TODOS OS MESES'
     : mesesSel.length === 1 ? mesesSel[0] : mesesSel.join(', ');
-  const CIA = 3; /* sistema monocompanhia: só processa a 3ª CIA PM MAMB */
+  const CIA = 3;
 
   const now = new Date();
   const dd = String(now.getDate()).padStart(2,'0'), mm2 = String(now.getMonth()+1).padStart(2,'0');
   const yyyy = now.getFullYear(), hh = String(now.getHours()).padStart(2,'0'), mi = String(now.getMinutes()).padStart(2,'0');
-  const nomeArq = `GDO_ESPECIALIZADA_3CIA_PMAMB_${mesLabel.replace(/[, ]+/g,'_')}_EXTRAIDO_${dd}-${mm2}-${yyyy}_${hh}h${mi}min.pdf`;
+  const nomeArq = `GDO_ESPECIALIZADA_3CIA_PMAMB_${mesLabel.replace(/[, ]+/g,'_')}_${dd}-${mm2}-${yyyy}.pdf`;
 
-  /* A4 paisagem — mesma paleta/medidas do PDF de RCR */
   const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
   const PW=297, PH=210, ML=4, MR=4, TW=PW-ML-MR;
 
   const GOLD=[100,80,30], GOLD2=[70,50,0];
   const GREEN=[30,120,40], DANGER=[180,30,30], ORANGE=[180,100,0];
-  const BG_HEAD=[240,236,224], BG_ROW=[255,255,255], BG_ALT=[249,247,241], BG_TOT=[230,222,200];
+  const BG_HEAD=[240,236,224], BG_ROW=[255,255,255], BG_ALT=[249,247,241], BG_TOT=[230,222,200], BG_PEL=[52,73,94];
   const TXT=[20,20,20], TXT_M=[100,80,30], BRD=[190,175,145];
 
-  /* Cor por Var(%): ≤0 verde, 0–10 amarelo, >10 vermelho — mesma regra de _gdoespCorVar */
-  function corVarPdf(varPct){
-    if(varPct === null || varPct === undefined || isNaN(varPct)) return {rgb:[140,140,140], bgRgb:[235,235,235]};
-    if(varPct <= 0)  return {rgb: GREEN,   bgRgb:[214,238,217]};
-    if(varPct <= 10) return {rgb: ORANGE,  bgRgb:[245,228,196]};
-    return {rgb: DANGER, bgRgb:[244,210,210]};
+  /* Cores semafóricas para Var(%): ≤0 verde, 0–10 amarelo, >10 vermelho */
+  function corVarRgb(varPct){
+    if(varPct <= 0)  return GREEN;
+    if(varPct <= 10) return ORANGE;
+    return DANGER;
+  }
+  function corVarBg(varPct){
+    if(varPct <= 0)  return [214,238,217];
+    if(varPct <= 10) return [245,228,196];
+    return [244,210,210];
   }
 
   let page=0;
-  function addPage(titulo){
+  function addPage(indTitulo){
     if(page>0) doc.addPage();
     page++;
     doc.setFillColor(255,255,255); doc.rect(0,0,PW,PH,'F');
     doc.setFillColor(...BG_HEAD); doc.rect(0,0,PW,11,'F');
     doc.setDrawColor(100,80,30); doc.setLineWidth(0.5); doc.line(0,11,PW,11);
     doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...GOLD);
-    doc.text(`3ª CIA PM MAMB — RELATÓRIO DE MONITORAMENTO GDO ESPECIALIZADA — ${titulo}`,ML+1,7.5);
+    doc.text(`3ª CIA PM MAMB — GDO ESPECIALIZADA — ${indTitulo}`,ML+1,7.5);
     doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(...TXT_M);
     doc.text(`PERÍODO: ${mesLabel}  |  EXTRAÍDO: ${dd}/${mm2}/${yyyy} às ${hh}h${mi}min  |  PÁG. ${page}`,PW-MR,7.5,{align:'right'});
     return 14;
   }
 
-  /* Cabeçalho de tabela — colunas variam conforme o indicador tenha sub-tipos ou não */
-  function drawTableHead(y, cfg, colGp, colSub, colTot, colTaxa, colMeta, colVar){
-    const h=6;
+  /* Cabeçalho de Pelotão — igual ao GDO Rural */
+  function drawPelHeader(y, pelN, totalPel){
+    const h=7.5;
+    doc.setFillColor(...BG_PEL); doc.rect(0,y,PW,h,'F');
+    doc.setFillColor(...GOLD); doc.circle(ML+3,y+h/2,2.8,'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(6.5); doc.setTextColor(255,255,255);
+    doc.text(String(pelN),ML+3,y+h/2+0.8,{align:'center'});
+    doc.setFontSize(8); doc.setTextColor(255,240,180);
+    doc.text(`${pelN}º PELOTÃO — 3ª CIA PM MAMB`,ML+8,y+h/2+0.8);
+    doc.setFontSize(5); doc.setTextColor(180,170,145);
+    doc.text(`Total de ocorrências: ${totalPel}`,PW-MR,y+h/2+0.8,{align:'right'});
+    return y+h;
+  }
+
+  /* Cabeçalho da tabela — colunas variam por indicador */
+  function drawTableHead(y, cfg, colGp, colSub, colTot){
+    const h=5.5;
     doc.setFillColor(...BG_HEAD); doc.rect(0,y,PW,h,'F');
     doc.setDrawColor(...BRD); doc.setLineWidth(0.13);
     doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.setTextColor(...GOLD);
     doc.rect(ML,y,colGp,h,'D'); doc.text('GRUPAMENTO',ML+1.5,y+h*0.65);
     let cx=ML+colGp;
     if(cfg.subColunas){
-      cfg.subColunas.forEach(([key])=>{
+      cfg.subColunas.forEach(([key,label])=>{
         doc.rect(cx,y,colSub,h,'D');
+        doc.setTextColor(...GOLD2); doc.setFontSize(5.5);
         doc.text(key.replace('_',' '),cx+colSub/2,y+h*0.65,{align:'center'});
         cx+=colSub;
       });
     }
-    doc.setTextColor(...GOLD2); doc.rect(cx,y,colTot,h,'D'); doc.text('TOTAL',cx+colTot/2,y+h*0.65,{align:'center'}); cx+=colTot;
-    doc.setTextColor(20,100,50); doc.rect(cx,y,colTaxa,h,'D'); doc.text('TAXA',cx+colTaxa/2,y+h*0.65,{align:'center'}); cx+=colTaxa;
-    doc.setTextColor(30,90,160); doc.rect(cx,y,colMeta,h,'D'); doc.text('META',cx+colMeta/2,y+h*0.65,{align:'center'}); cx+=colMeta;
-    doc.setTextColor(...GOLD); doc.rect(cx,y,colVar,h,'D'); doc.text('VAR(%)',cx+colVar/2,y+h*0.65,{align:'center'});
+    doc.setTextColor(...GOLD2);
+    doc.rect(cx,y,colTot,h,'D'); doc.text('TOTAL',cx+colTot/2,y+h*0.65,{align:'center'});
     return y+h;
   }
 
-  /* Linha de Grupamento: sub-tipos absolutos + total (sem taxa/meta/var — não existem por GP) */
-  function drawRowGp(y, label, sub, total, alt, cfg, colGp, colSub, colTot, colTaxa, colMeta, colVar){
+  /* Linha de Grupamento */
+  function drawRowGp(y, label, sub, total, alt, cfg, colGp, colSub, colTot){
     const h=5.5;
     doc.setFillColor(...(alt?BG_ALT:BG_ROW)); doc.rect(0,y,PW,h,'F');
     doc.setDrawColor(...BRD); doc.setLineWidth(0.12);
@@ -8061,31 +8080,23 @@ async function gerarPdfGdoEsp(){
       cfg.subColunas.forEach(([key])=>{
         const v=sub[key]||0;
         doc.setFont('helvetica',v>0?'bold':'normal'); doc.setFontSize(6);
-        doc.setTextColor(v>0?20:180,v>0?20:180,v>0?20:180);
+        doc.setTextColor(v>0?60:180,v>0?60:180,v>0?60:180);
         doc.rect(cx,y,colSub,h,'D'); doc.text(v>0?String(v):'—',cx+colSub/2,y+h*0.68,{align:'center'});
         cx+=colSub;
       });
     }
     doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.setTextColor(...GOLD2);
-    doc.rect(cx,y,colTot,h,'D'); doc.text(String(total),cx+colTot/2,y+h*0.68,{align:'center'}); cx+=colTot;
-    [colTaxa,colMeta,colVar].forEach(w=>{
-      doc.setFillColor(238,235,228); doc.rect(cx,y,w,h,'F');
-      doc.setDrawColor(...BRD); doc.rect(cx,y,w,h,'D');
-      doc.setFont('helvetica','normal'); doc.setFontSize(6); doc.setTextColor(200,192,175);
-      doc.text('—',cx+w/2,y+h*0.68,{align:'center'});
-      cx+=w;
-    });
+    doc.rect(cx,y,colTot,h,'D'); doc.text(String(total),cx+colTot/2,y+h*0.68,{align:'center'});
     return y+h;
   }
 
-  /* Linha TOTAL 3 CIA PM MAMB: sub-tipos + total + taxa + meta + var(%) com cor semafórica */
-  function drawRowTotal(y, sub, total, taxa, meta, varPct, cfg, colGp, colSub, colTot, colTaxa, colMeta, colVar){
+  /* Linha TOTAL do Pelotão: sub-contagens + total + taxa + meta + var(%) semafórico */
+  function drawRowTotalPel(y, labelPel, sub, total, taxa, meta, varPct, cfg, colGp, colSub, colTot, colTaxa, colMeta, colVar){
     const h=6.5;
-    const cv = corVarPdf(varPct);
     doc.setFillColor(...BG_TOT); doc.rect(0,y,PW,h,'F');
     doc.setDrawColor(...BRD); doc.setLineWidth(0.12);
     doc.setFont('helvetica','bold'); doc.setFontSize(6.3); doc.setTextColor(...GOLD2);
-    doc.rect(ML,y,colGp,h,'D'); doc.text('TOTAL 3 CIA PM MAMB',ML+1.5,y+h*0.65);
+    doc.rect(ML,y,colGp,h,'D'); doc.text(labelPel,ML+1.5,y+h*0.65);
     let cx=ML+colGp;
     if(cfg.subColunas){
       cfg.subColunas.forEach(([key])=>{
@@ -8101,128 +8112,252 @@ async function gerarPdfGdoEsp(){
     doc.rect(cx,y,colTaxa,h,'D'); doc.text(taxa.toFixed(2),cx+colTaxa/2,y+h*0.65,{align:'center'}); cx+=colTaxa;
     doc.setTextColor(30,90,160);
     doc.rect(cx,y,colMeta,h,'D'); doc.text(meta.toFixed(2),cx+colMeta/2,y+h*0.65,{align:'center'}); cx+=colMeta;
-    doc.setFillColor(...cv.bgRgb); doc.rect(cx,y,colVar,h,'F');
+    const vBg=corVarBg(varPct), vRgb=corVarRgb(varPct);
+    doc.setFillColor(...vBg); doc.rect(cx,y,colVar,h,'F');
     doc.setDrawColor(...BRD); doc.rect(cx,y,colVar,h,'D');
-    doc.setTextColor(...cv.rgb); doc.setFont('helvetica','bold');
+    doc.setTextColor(...vRgb); doc.setFont('helvetica','bold');
     doc.text((varPct>=0?'+':'')+varPct.toFixed(2)+'%',cx+colVar/2,y+h*0.65,{align:'center'});
     return y+h;
   }
 
-  /* Mapa vetorial: projeta as coordenadas lat/lng de KML_DATA para um bounding-box
-     em mm dentro da área reservada, replicando um fitBounds simples. Como o sistema
-     é monocompanhia, todos os polígonos recebem a MESMA cor (situação da CIA). */
-  function drawMapaVetorial(y, alturaDisp, cor){
-    const areaX=ML, areaY=y, areaW=TW, areaH=alturaDisp;
-    doc.setDrawColor(...BRD); doc.setLineWidth(0.2);
-    doc.setFillColor(250,250,248); doc.rect(areaX,areaY,areaW,areaH,'FD');
+  /* Linha TOTAL GERAL da CIA */
+  function drawRowTotalCia(y, sub, total, taxa, meta, varPct, cfg, colGp, colSub, colTot, colTaxa, colMeta, colVar){
+    const h=7;
+    const vBg=corVarBg(varPct), vRgb=corVarRgb(varPct);
+    doc.setFillColor(220,212,192); doc.rect(0,y,PW,h,'F');
+    doc.setDrawColor(...GOLD); doc.setLineWidth(0.35); doc.rect(0,y,PW,h,'D');
+    doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(...GOLD2);
+    doc.rect(ML,y,colGp,h,'D'); doc.text('TOTAL 3 CIA PM MAMB',ML+1.5,y+h*0.65);
+    let cx=ML+colGp;
+    if(cfg.subColunas){
+      cfg.subColunas.forEach(([key])=>{
+        const v=sub[key]||0;
+        doc.setFontSize(7); doc.setTextColor(...TXT);
+        doc.rect(cx,y,colSub,h,'D'); doc.text(String(v),cx+colSub/2,y+h*0.65,{align:'center'});
+        cx+=colSub;
+      });
+    }
+    doc.setTextColor(...GOLD2); doc.setFontSize(7.5);
+    doc.rect(cx,y,colTot,h,'D'); doc.text(String(total),cx+colTot/2,y+h*0.65,{align:'center'}); cx+=colTot;
+    doc.setTextColor(20,100,50);
+    doc.rect(cx,y,colTaxa,h,'D'); doc.text(taxa.toFixed(2),cx+colTaxa/2,y+h*0.65,{align:'center'}); cx+=colTaxa;
+    doc.setTextColor(30,90,160);
+    doc.rect(cx,y,colMeta,h,'D'); doc.text(meta.toFixed(2),cx+colMeta/2,y+h*0.65,{align:'center'}); cx+=colMeta;
+    doc.setFillColor(...vBg); doc.rect(cx,y,colVar,h,'F');
+    doc.setDrawColor(...BRD); doc.rect(cx,y,colVar,h,'D');
+    doc.setTextColor(...vRgb); doc.setFont('helvetica','bold');
+    doc.text((varPct>=0?'+':'')+varPct.toFixed(2)+'%',cx+colVar/2,y+h*0.65,{align:'center'});
+    return y+h;
+  }
 
-    if(typeof KML_DATA === 'undefined' || !KML_DATA.pelotoes){
+  /* ── Mapa com pontos de ocorrência (replicando o Mapa Criminal) ──
+     Polígonos de KML_DATA como fundo (cinza claro), círculos coloridos nos crimes. */
+  function drawMapaOcorrencias(y, alturaDisp, indCode, registros){
+    const areaX=ML, areaY=y, areaW=TW, areaH=alturaDisp;
+    /* Fundo branco + borda */
+    doc.setFillColor(252,252,252); doc.setDrawColor(...BRD); doc.setLineWidth(0.3);
+    doc.rect(areaX,areaY,areaW,areaH,'FD');
+
+    /* Computa bounding box a partir de KML_DATA */
+    let minLng=Infinity,maxLng=-Infinity,minLat=Infinity,maxLat=-Infinity;
+    const allPolys=[];
+    if(typeof KML_DATA !== 'undefined' && KML_DATA.pelotoes){
+      Object.values(KML_DATA.pelotoes).forEach(pelData=>{
+        if(!pelData.gps) return;
+        Object.values(pelData.gps).forEach(gpData=>{
+          (gpData.polys||[]).forEach(poly=>{
+            allPolys.push(poly);
+            poly.forEach(([lng,lat])=>{
+              if(lng<minLng) minLng=lng; if(lng>maxLng) maxLng=lng;
+              if(lat<minLat) minLat=lat; if(lat>maxLat) maxLat=lat;
+            });
+          });
+        });
+      });
+    }
+    /* Inclui pontos de crime no bounding box para garantir que aparecem */
+    registros.forEach(c=>{ if(c.lat && c.lng){ if(c.lng<minLng) minLng=c.lng; if(c.lng>maxLng) maxLng=c.lng; if(c.lat<minLat) minLat=c.lat; if(c.lat>maxLat) maxLat=c.lat; } });
+
+    if(!isFinite(minLng)){
       doc.setFont('helvetica','italic'); doc.setFontSize(7); doc.setTextColor(150,150,150);
       doc.text('Dados geográficos indisponíveis.', areaX+areaW/2, areaY+areaH/2, {align:'center'});
       return;
     }
 
-    /* 1ª passada: bounding box de todas as coordenadas */
-    let minLng=Infinity,maxLng=-Infinity,minLat=Infinity,maxLat=-Infinity;
-    const allPolys=[];
-    Object.values(KML_DATA.pelotoes).forEach(pelData=>{
-      if(!pelData.gps) return;
-      Object.values(pelData.gps).forEach(gpData=>{
-        (gpData.polys||[]).forEach(poly=>{
-          allPolys.push(poly);
-          poly.forEach(([lng,lat])=>{
-            if(lng<minLng) minLng=lng; if(lng>maxLng) maxLng=lng;
-            if(lat<minLat) minLat=lat; if(lat>maxLat) maxLat=lat;
-          });
-        });
-      });
-    });
-    if(!allPolys.length || !isFinite(minLng)){
-      doc.setFont('helvetica','italic'); doc.setFontSize(7); doc.setTextColor(150,150,150);
-      doc.text('Sem polígonos para exibir.', areaX+areaW/2, areaY+areaH/2, {align:'center'});
-      return;
-    }
-
-    /* Padding interno e correção de aspecto (latitude "encolhe" a longitude visualmente) */
-    const pad=4;
+    /* Funções de projeção */
+    const pad=5;
     const innerX=areaX+pad, innerY=areaY+pad, innerW=areaW-pad*2, innerH=areaH-pad*2;
-    const lngRange=Math.max(maxLng-minLng, 1e-6), latRange=Math.max(maxLat-minLat, 1e-6);
+    const lngRange=Math.max(maxLng-minLng,1e-6), latRange=Math.max(maxLat-minLat,1e-6);
     const midLat=(minLat+maxLat)/2;
     const aspectCorr=Math.cos(midLat*Math.PI/180);
     const scaleX=innerW/(lngRange*aspectCorr), scaleY=innerH/latRange;
     const scale=Math.min(scaleX,scaleY);
     const drawW=lngRange*aspectCorr*scale, drawH=latRange*scale;
     const offX=innerX+(innerW-drawW)/2, offY=innerY+(innerH-drawH)/2;
+    function proj(lng,lat){ return [offX+(lng-minLng)*aspectCorr*scale, offY+(maxLat-lat)*scale]; }
 
-    function proj(lng,lat){
-      const x=offX+(lng-minLng)*aspectCorr*scale;
-      const yy=offY+(maxLat-lat)*scale; /* inverte Y: lat maior fica mais acima */
-      return [x,yy];
-    }
-
-    doc.setFillColor(...cor.rgb); doc.setDrawColor(...cor.rgb); doc.setLineWidth(0.15);
-    /* jsPDF não tem polígono nativo preenchido multi-ponto direto; usa lines() a partir do 1º ponto */
+    /* Desenha polígonos de Pelotão como fundo cinza claro */
+    doc.setFillColor(225,222,215); doc.setDrawColor(190,185,175); doc.setLineWidth(0.12);
     allPolys.forEach(poly=>{
-      if(poly.length < 3) return;
-      const pts = poly.map(([lng,lat]) => proj(lng,lat));
-      const [x0,y0] = pts[0];
-      const segs = pts.slice(1).map((p,i)=>[p[0]-pts[i][0], p[1]-pts[i][1]]);
-      try{
-        doc.lines(segs, x0, y0, [1,1], 'FD', true);
-      }catch(e){ /* polígono degenerado — ignora silenciosamente */ }
+      if(poly.length<3) return;
+      const pts=poly.map(([lng,lat])=>proj(lng,lat));
+      const [x0,y0]=pts[0];
+      const segs=pts.slice(1).map((p,i)=>[p[0]-pts[i][0],p[1]-pts[i][1]]);
+      try{ doc.lines(segs,x0,y0,[1,1],'FD',true); }catch(e){}
     });
 
-    doc.setDrawColor(...BRD); doc.setLineWidth(0.2); doc.rect(areaX,areaY,areaW,areaH,'D');
+    /* Círculos dos crimes com coordenadas */
+    const IND_COR = { MV:[180,30,30], CVPE:[40,100,200], CVPA:[200,100,30], IF:[60,140,60] };
+    const cor = IND_COR[indCode] || GOLD;
+    const semCoordenada = registros.filter(c=>!c.lat||!c.lng).length;
+
+    doc.setFillColor(...cor); doc.setDrawColor(255,255,255); doc.setLineWidth(0.3);
+    registros.forEach(c=>{
+      if(!c.lat || !c.lng) return;
+      const [px,py] = proj(c.lng,c.lat);
+      if(px<areaX||px>areaX+areaW||py<areaY||py>areaY+areaH) return;
+      doc.circle(px,py,1.4,'FD');
+    });
+
+    /* Legenda */
+    doc.setFillColor(...cor); doc.circle(areaX+5,areaY+areaH-4,1.4,'F');
+    doc.setFont('helvetica','normal'); doc.setFontSize(5.5); doc.setTextColor(...TXT_M);
+    const nComCoor = registros.filter(c=>c.lat&&c.lng).length;
+    doc.text(`${nComCoor} ocorrência(s) com coordenada${semCoordenada?' ('+semCoordenada+' sem coordenada)':''}`,areaX+8,areaY+areaH-3);
+
+    /* Borda final */
+    doc.setDrawColor(...BRD); doc.setLineWidth(0.3); doc.rect(areaX,areaY,areaW,areaH,'D');
+  }
+
+  /* ── Monta dados agregados por Pelotão → GP ── */
+  function montarDadosPorPelotao(indCode, mesesSel){
+    const registros = _gdoespRegistrosRurais(indCode, mesesSel);
+    const cfg = GDOESP_CONFIG[indCode];
+
+    const pel_gp = {}; /* pelNum → { gpKey → { sub, total } } */
+
+    /* Inicializa todos os GPs com zeros para que pelotões sem ocorrências apareçam */
+    dadosGrupos.forEach(g=>{
+      const pelNum=pelDoColk(g.colK||g.grupamento);
+      if(pelNum===99) return;
+      const gpKey=g.gpResp||gpDoColk(g.colK||g.grupamento);
+      if(!pel_gp[pelNum]) pel_gp[pelNum]={};
+      if(!pel_gp[pelNum][gpKey]) {
+        pel_gp[pelNum][gpKey]={ sub:{}, total:0 };
+        if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ pel_gp[pelNum][gpKey].sub[k]=0; });
+      }
+    });
+
+    registros.forEach(c=>{
+      const gi=dadosGrupos.find(g=>g.munNorm===norm(c.municipio||''));
+      const colK=gi?(gi.colK||gi.grupamento):(c.grupamento||'—');
+      const pelNum=pelDoColk(colK);
+      if(pelNum===99) return;
+      const gpKey=gi?gi.gpResp:gpDoColk(colK);
+      if(!pel_gp[pelNum]) pel_gp[pelNum]={};
+      if(!pel_gp[pelNum][gpKey]){
+        pel_gp[pelNum][gpKey]={ sub:{}, total:0 };
+        if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ pel_gp[pelNum][gpKey].sub[k]=0; });
+      }
+      if(indCode==='IF'){
+        pel_gp[pelNum][gpKey].total+=1;
+      } else if(c.componentesGdoEsp && cfg.subColunas){
+        cfg.subColunas.forEach(([k])=>{
+          const v=c.componentesGdoEsp[k]||0;
+          pel_gp[pelNum][gpKey].sub[k]=(pel_gp[pelNum][gpKey].sub[k]||0)+v;
+          pel_gp[pelNum][gpKey].total+=v;
+        });
+      }
+    });
+
+    return pel_gp;
   }
 
   /* ── Geração: uma seção por indicador (MV, CVPE, CVPA, IF) ── */
   const ordemInd = ['MV','CVPE','CVPA','IF'];
   for(const indCode of ordemInd){
     const cfg = GDOESP_CONFIG[indCode];
-    const { porGrupamento, totalGeral } = _gdoespAgregarPorGrupamento(indCode, mesesSel);
-    const pop = _gdoespPopulacaoRural(CIA, indCode);
-    const taxa = pop > 0 ? (totalGeral.total / pop) * 100000 : 0;
+    const nSub = cfg.subColunas ? cfg.subColunas.length : 0;
+    /* Larguras de coluna — distribui espaço para sub-tipos */
+    const colGp=50, colTot=14, colTaxa=19, colMeta=19, colVar=22;
+    const colSubTotal = TW - colGp - colTot - colTaxa - colMeta - colVar;
+    const colSub = nSub ? colSubTotal / nSub : 0;
 
+    const pop = _gdoespPopulacaoRural(CIA, indCode);
     const metaReg = _gdoespMetas[CIA+'-'+indCode];
     let metaTaxa;
-    if(mesesSel.length === 0){
-      metaTaxa = metaReg ? (parseFloat(metaReg.meta_anual_taxa) || 0) : 0;
-    } else if(mesesSel.length === 1){
+    if(!mesesSel.length){
+      metaTaxa = metaReg ? (parseFloat(metaReg.meta_anual_taxa)||0) : 0;
+    } else if(mesesSel.length===1){
       metaTaxa = _gdoespMetaMes(CIA, indCode, mesesSel[0]);
     } else {
-      metaTaxa = mesesSel.reduce((s,m) => s + _gdoespMetaMes(CIA, indCode, m), 0);
+      metaTaxa = mesesSel.reduce((s,m)=>s+_gdoespMetaMes(CIA,indCode,m),0);
     }
-    const varPct = _gdoespVarPct(taxa, metaTaxa);
-    const corMapa = corVarPdf(varPct);
 
-    const nSub = cfg.subColunas ? cfg.subColunas.length : 0;
-    const colGp=58, colTot=16, colTaxa=20, colMeta=20, colVar=22;
-    const colSub = nSub ? (TW - colGp - colTot - colTaxa - colMeta - colVar) / nSub : 0;
+    const registrosTodos = _gdoespRegistrosRurais(indCode, mesesSel);
+    const pel_gp = montarDadosPorPelotao(indCode, mesesSel);
+    const pelNums = Object.keys(pel_gp).map(Number).sort((a,b)=>a-b);
 
     let y = addPage(`${cfg.icone} ${cfg.titulo}`);
-    y = drawTableHead(y, cfg, colGp, colSub, colTot, colTaxa, colMeta, colVar);
 
-    porGrupamento.forEach((g,i)=>{
-      y = drawRowGp(y, g.label, g.sub, g.total, i%2===1, cfg, colGp, colSub, colTot, colTaxa, colMeta, colVar);
+    /* ── Tabelas por Pelotão ── */
+    let totalCiaSub={}, totalCiaAbs=0;
+    if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ totalCiaSub[k]=0; });
+
+    pelNums.forEach(pelN=>{
+      const gpMap = pel_gp[pelN];
+      const gps = Object.keys(gpMap).sort((a,b)=>gpNumDoColk(a)-gpNumDoColk(b));
+
+      /* Totais do pelotão */
+      let pelTotal=0, pelSub={};
+      if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ pelSub[k]=0; });
+      gps.forEach(gpKey=>{
+        pelTotal += gpMap[gpKey].total;
+        if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ pelSub[k]+=(gpMap[gpKey].sub[k]||0); });
+      });
+      /* Acumula para o total da CIA */
+      totalCiaAbs += pelTotal;
+      if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ totalCiaSub[k]+=(pelSub[k]||0); });
+
+      /* Meta e taxa do pelotão: como a meta é da CIA, todos os pelotões compartilham a mesma — 
+         usamos a taxa proporcional (pelTotal/totalCIA) * taxa_realizada, mas na linha de TOTAL
+         do pelotão exibimos apenas o absoluto + a taxa+meta+var da CIA inteira para contexto */
+      /* Checagem de espaço */
+      const altNec = 7.5 + 5.5 + gps.length*5.5 + 6.5 + 3;
+      if(y + altNec > PH - 8){ y = addPage(`${cfg.icone} ${cfg.titulo} (cont.)`); }
+
+      y = drawPelHeader(y, pelN, pelTotal);
+      y = drawTableHead(y, cfg, colGp, colSub, colTot);
+      gps.forEach((gpKey,gi)=>{
+        const g = gpMap[gpKey];
+        y = drawRowGp(y, gpDoColk(gpKey), g.sub, g.total, gi%2===1, cfg, colGp, colSub, colTot);
+      });
+
+      /* Taxa e var do pelotão (usando proporção da população rural disponível) */
+      const taxaPel = pop > 0 ? (pelTotal/pop)*100000 : 0;
+      const varPctPel = _gdoespVarPct(taxaPel, metaTaxa);
+      y = drawRowTotalPel(y, `TOTAL ${pelN}º PEL`, pelSub, pelTotal, taxaPel, metaTaxa, varPctPel, cfg, colGp, colSub, colTot, colTaxa, colMeta, colVar);
+
+      doc.setDrawColor(...GOLD); doc.setLineWidth(0.25); doc.line(0,y,PW,y);
+      y += 2;
     });
-    if(!porGrupamento.length){
-      doc.setFillColor(...BG_ROW); doc.rect(0,y,PW,6,'F');
-      doc.setFont('helvetica','italic'); doc.setFontSize(6.5); doc.setTextColor(150,150,150);
-      doc.text('Nenhum registro rural no período selecionado.', PW/2, y+4, {align:'center'});
-      y+=6;
-    }
-    y = drawRowTotal(y, totalGeral.sub, totalGeral.total, taxa, metaTaxa, varPct, cfg, colGp, colSub, colTot, colTaxa, colMeta, colVar);
 
-    doc.setDrawColor(...GOLD); doc.setLineWidth(0.3); doc.line(0,y,PW,y);
+    /* Linha TOTAL CIA */
+    if(y+8>PH-8){ y=addPage(`${cfg.icone} ${cfg.titulo} (cont.)`); }
+    const taxaCia = pop > 0 ? (totalCiaAbs/pop)*100000 : 0;
+    const varCia = _gdoespVarPct(taxaCia, metaTaxa);
+    y = drawRowTotalCia(y, totalCiaSub, totalCiaAbs, taxaCia, metaTaxa, varCia, cfg, colGp, colSub, colTot, colTaxa, colMeta, colVar);
     y += 3;
 
-    doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(...TXT_M);
-    doc.text(`População Rural (3ª CIA PM MAMB): ${pop ? pop.toLocaleString('pt-BR') : '—'}`, ML+1, y+3);
-    y += 6;
+    /* Info de pop */
+    doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(...TXT_M);
+    doc.text(`Pop. Rural 3ª CIA: ${pop?pop.toLocaleString('pt-BR'):'—'}  |  Meta: ${metaTaxa.toFixed(2)}  |  Taxa realizada: ${taxaCia.toFixed(2)}`,ML+1,y+2);
+    y += 7;
 
+    /* Mapa com pontos de ocorrência */
     const alturaMapa = PH - 8 - y;
-    if(alturaMapa > 30){
-      drawMapaVetorial(y, alturaMapa, corMapa);
+    if(alturaMapa > 25){
+      drawMapaOcorrencias(y, alturaMapa, indCode, registrosTodos);
     }
   }
 
