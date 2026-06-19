@@ -447,6 +447,7 @@
         <button class="imp-ind-btn active" id="meta-btn-gdo" onclick="metaSelTipo(this,'gdo')">🌿 Metas GDO Rural</button>
         <button class="imp-ind-btn" id="meta-btn-rcr" onclick="metaSelTipo(this,'rcr')">🏘️ Metas RCR</button>
         <button class="imp-ind-btn" id="meta-btn-gdoesp" onclick="metaSelTipo(this,'gdoesp')">📊 Metas GDO Especializada</button>
+        <button class="imp-ind-btn" id="meta-btn-popmun" onclick="metaSelTipo(this,'popmun')">👥 População Rural</button>
         <select id="meta-ano" onchange="metasCarregar()" style="background:#222;border:1px solid var(--border);color:#ccc;padding:6px 12px;border-radius:6px;font-size:12px;">
           <option value="2026">2026</option>
           <option value="2027">2027</option>
@@ -599,6 +600,46 @@
             </thead>
             <tbody id="meta-gdoesp-tbody">
               <tr><td colspan="16" style="padding:20px;text-align:center;color:var(--text-muted);">Carregando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- POPULAÇÃO RURAL POR MUNICÍPIO -->
+      <div id="meta-popmun-section" style="display:none;">
+        <div style="background:var(--bg-card);border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid var(--border);font-size:11px;color:var(--text-muted);">
+          População rural por município (base para o cálculo da meta proporcional de cada Pelotão na GDO Especializada).
+          O Pelotão de cada município é sempre derivado da tabela de Grupamentos — se um município mudar de área, a soma se ajusta automaticamente.
+          Atualize aqui sempre que uma nova edição do Censo/contagem populacional for divulgada.
+        </div>
+
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+          <button onclick="document.getElementById('popmun-file-input').click()"
+            style="background:rgba(100,80,30,.15);border:1px solid rgba(100,80,30,.4);color:var(--gold);padding:8px 16px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:7px;"
+            onmouseover="this.style.background='rgba(100,80,30,.3)'" onmouseout="this.style.background='rgba(100,80,30,.15)'">
+            📥 Importar Planilha (.xlsx)
+          </button>
+          <input type="file" id="popmun-file-input" accept=".xlsx,.xls" style="display:none;" onchange="popMunImportarArquivo(this)">
+          <span id="popmun-import-status" style="font-size:11px;color:var(--text-muted);"></span>
+          <span style="margin-left:auto;font-size:10.5px;color:var(--text-muted);">
+            Colunas esperadas: <code style="color:#ccc;">codigo_municipio</code>, <code style="color:#ccc;">nome_municipio</code>, <code style="color:#ccc;">pop_2025</code> (ou nome de coluna similar)
+          </span>
+        </div>
+
+        <div id="popmun-resumo-pelotao" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;"></div>
+
+        <div style="overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 360px);border:1px solid var(--border);border-radius:8px;">
+          <table style="width:100%;border-collapse:collapse;font-size:11px;">
+            <thead>
+              <tr style="background:#1a1a1a;">
+                <th style="padding:8px 12px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;left:0;top:0;background:#1a1a1a;min-width:200px;z-index:11;">MUNICÍPIO</th>
+                <th style="padding:8px 8px;color:#aaa;font-size:10px;border-bottom:1px solid var(--border);text-align:center;min-width:60px;position:sticky;top:0;background:#1a1a1a;z-index:10;">COD. IBGE</th>
+                <th style="padding:8px 8px;color:#aaa;font-size:10px;border-bottom:1px solid var(--border);text-align:center;min-width:90px;position:sticky;top:0;background:#1a1a1a;z-index:10;">PELOTÃO</th>
+                <th style="padding:8px 8px;color:var(--gold);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);text-align:center;min-width:110px;position:sticky;top:0;background:#1a1a1a;z-index:10;">POPULAÇÃO RURAL</th>
+              </tr>
+            </thead>
+            <tbody id="meta-popmun-tbody">
+              <tr><td colspan="4" style="padding:20px;text-align:center;color:var(--text-muted);">Carregando...</td></tr>
             </tbody>
           </table>
         </div>
@@ -759,6 +800,21 @@ async function sbPatch(table, params, body){
   return res.json();
 }
 
+/* Upsert em massa — usado pelo importador de população rural por município.
+   onConflict define a(s) coluna(s) usada(s) para detectar duplicidade. */
+async function sbUpsert(table, rows, onConflict){
+  const res = await fetch(`${SB_URL}/rest/v1/${table}?on_conflict=${onConflict}`,{
+    method:'POST',
+    headers:{
+      'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json',
+      'Prefer':'resolution=merge-duplicates,return=representation'
+    },
+    body: JSON.stringify(rows)
+  });
+  if(!res.ok) throw new Error(`Supabase upsert ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
 function switchTab(el, id) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-pane').forEach(t => t.classList.remove('active'));
@@ -803,6 +859,7 @@ function metaSelTipo(btn, tipo){
   document.getElementById('meta-poe-section').style.display = tipo === 'poe' ? '' : 'none';
   document.getElementById('meta-rcr-section').style.display = tipo === 'rcr' ? '' : 'none';
   document.getElementById('meta-gdoesp-section').style.display = tipo === 'gdoesp' ? '' : 'none';
+  document.getElementById('meta-popmun-section').style.display = tipo === 'popmun' ? '' : 'none';
   metasCarregar();
 }
 
@@ -827,6 +884,8 @@ async function metasCarregar(){
       await metasRcrCarregar(ano);
     } else if(_metaTipo === 'gdoesp'){
       await metasGdoespCarregar(ano);
+    } else if(_metaTipo === 'popmun'){
+      await metasPopMunCarregar(ano);
     } else {
       await metasGdoCarregar(ano);
     }
@@ -1202,6 +1261,213 @@ async function metaGdoespAnualSalvar(id, col, novoVal, cia){
   }
 }
 
+
+/* ════════════════════════════════════════════════════════════
+   POPULAÇÃO RURAL POR MUNICÍPIO
+   Base para o cálculo proporcional da meta de cada Pelotão na
+   GDO Especializada. O Pelotão de cada município é sempre
+   derivado da tabela `grupos`/`municipios_grupos` (mesma lógica
+   usada na aba Grupamentos), nunca armazenado nesta tabela.
+════════════════════════════════════════════════════════════ */
+let _popMunDados = [];      /* registros de gdo_especializada_populacao_municipio do ano vigente */
+let _popMunGrupos = [];     /* municípios x pelotão, vindos de grupos/municipios_grupos */
+
+function _normNome(s){
+  return (s||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+}
+
+/* Carrega o vínculo município → pelotão (reaproveita a mesma fonte da aba Grupamentos) */
+async function _carregarPopMunGrupos(){
+  if(_popMunGrupos.length) return _popMunGrupos;
+  const grpsData = await sbFetch('grupos', 'select=id,gp_responsavel,pelotao&order=gp_responsavel');
+  const munsData = await sbFetch('municipios_grupos', 'select=id,municipio,gp_responsavel&order=municipio');
+  const seen = new Set();
+  _popMunGrupos = [];
+  munsData.forEach(m => {
+    const gpResp    = (m.gp_responsavel||'').trim();
+    const municipio = (m.municipio||'').trim();
+    const key = _normNome(municipio);
+    if(!municipio || seen.has(key)) return;
+    seen.add(key);
+    const gp = grpsData.find(g => g.gp_responsavel === gpResp) || {};
+    _popMunGrupos.push({ municipio, municipioNorm: key, pelotao: gp.pelotao || '—' });
+  });
+  return _popMunGrupos;
+}
+
+async function metasPopMunCarregar(ano){
+  const tbody = document.getElementById('meta-popmun-tbody');
+  tbody.innerHTML = `<tr><td colspan="4" style="padding:20px;text-align:center;color:var(--text-muted);">Carregando...</td></tr>`;
+
+  await _carregarPopMunGrupos();
+  const data = await sbFetch('gdo_especializada_populacao_municipio', `ano=eq.${ano}&select=*&order=nome_municipio`);
+  _popMunDados = data;
+
+  if(!_popMunGrupos.length){
+    tbody.innerHTML = `<tr><td colspan="4" style="padding:20px;text-align:center;color:var(--text-muted);">Nenhum município cadastrado em Grupamentos. Cadastre os Grupamentos antes de importar a população.</td></tr>`;
+    return;
+  }
+
+  /* Junta municípios de Grupamentos (fonte da verdade p/ pelotão) com a população cadastrada (se houver) */
+  const linhas = _popMunGrupos.map(g => {
+    const reg = _popMunDados.find(d => _normNome(d.nome_municipio) === g.municipioNorm);
+    return { ...g, regId: reg?.id || null, codigo: reg?.codigo_municipio || null, pop: reg?.populacao_rural ?? null };
+  }).sort((a,b) => {
+    const pa = parseInt(a.pelotao) || 99, pb = parseInt(b.pelotao) || 99;
+    if(pa !== pb) return pa - pb;
+    return a.municipio.localeCompare(b.municipio);
+  });
+
+  _popMunRenderTabela(linhas, ano);
+  _popMunRenderResumo(linhas);
+}
+
+function _popMunRenderTabela(linhas, ano){
+  const tbody = document.getElementById('meta-popmun-tbody');
+  let pelAtual = null;
+  const rows = [];
+  linhas.forEach(l => {
+    if(l.pelotao !== pelAtual){
+      pelAtual = l.pelotao;
+      rows.push(`<tr style="background:rgba(155,138,92,.1);">
+        <td colspan="4" style="padding:6px 12px;font-weight:700;color:var(--gold);font-size:10px;text-transform:uppercase;letter-spacing:.4px;position:sticky;left:0;background:rgba(40,34,20,.95);">${pelAtual}</td>
+      </tr>`);
+    }
+    rows.push(`<tr style="border-bottom:1px solid #252525;">
+      <td style="padding:5px 12px;color:#ccc;white-space:nowrap;position:sticky;left:0;background:#1e1e1e;">${l.municipio}</td>
+      <td style="padding:3px 8px;text-align:center;color:var(--text-muted);font-size:10px;">${l.codigo ?? '—'}</td>
+      <td style="padding:3px 8px;text-align:center;color:var(--text-muted);font-size:10px;">${l.pelotao}</td>
+      <td style="padding:3px 2px;text-align:center;">
+        <input type="number" min="0" value="${l.pop ?? ''}"
+          style="width:100px;background:#1a1a1a;border:1px solid #333;color:#ccc;text-align:center;padding:4px 2px;border-radius:3px;font-size:11px;"
+          onchange="popMunSalvarLinha('${l.municipioNorm}','${l.municipio.replace(/'/g,"\\'")}',${ano},this.value)"
+          title="População rural de ${l.municipio}">
+      </td>
+    </tr>`);
+  });
+  tbody.innerHTML = rows.join('') || `<tr><td colspan="4" style="padding:20px;text-align:center;color:var(--text-muted);">Nenhum município encontrado.</td></tr>`;
+}
+
+function _popMunRenderResumo(linhas){
+  const porPel = {};
+  linhas.forEach(l => {
+    const key = l.pelotao || '—';
+    porPel[key] = (porPel[key]||0) + (l.pop || 0);
+  });
+  const total = Object.values(porPel).reduce((a,b)=>a+b, 0);
+  const el = document.getElementById('popmun-resumo-pelotao');
+  const cards = Object.entries(porPel)
+    .sort(([a],[b]) => (parseInt(a)||99) - (parseInt(b)||99))
+    .map(([pel,pop]) => `
+      <div style="background:#1a1a1a;border:1px solid var(--border);border-radius:6px;padding:8px 14px;min-width:120px;">
+        <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;">${pel}</div>
+        <div style="font-size:16px;font-weight:700;color:#fff;margin-top:2px;">${pop.toLocaleString('pt-BR')}</div>
+      </div>`).join('');
+  el.innerHTML = cards + `
+    <div style="background:rgba(155,138,92,.15);border:1px solid var(--gold-border);border-radius:6px;padding:8px 14px;min-width:130px;">
+      <div style="font-size:9px;color:var(--gold);text-transform:uppercase;">Total Geral</div>
+      <div style="font-size:16px;font-weight:700;color:var(--gold);margin-top:2px;">${total.toLocaleString('pt-BR')}</div>
+    </div>`;
+}
+
+/* Salva uma única linha editada manualmente (insert se não existir, update se já existir) */
+async function popMunSalvarLinha(municipioNorm, municipioNome, ano, novoVal){
+  const val = parseInt(novoVal) || 0;
+  const statusEl = document.getElementById('popmun-import-status');
+  try{
+    const reg = _popMunDados.find(d => _normNome(d.nome_municipio) === municipioNorm);
+    const payload = {
+      ano, nome_municipio: municipioNome, populacao_rural: val,
+      codigo_municipio: reg?.codigo_municipio || 0,
+      atualizado_em: new Date().toISOString(),
+      atualizado_por: (sessao?.nome || sessao?.matricula || '')
+    };
+    await sbUpsert('gdo_especializada_populacao_municipio', [payload], 'ano,codigo_municipio');
+    statusEl.textContent = `✓ ${municipioNome} = ${val.toLocaleString('pt-BR')} hab`;
+    statusEl.style.color = '#2ea043';
+    setTimeout(()=>{ statusEl.textContent=''; }, 3000);
+    await metasPopMunCarregar(ano);
+  }catch(e){
+    statusEl.textContent = '✗ Erro: '+e.message; statusEl.style.color='#ef5350';
+  }
+}
+
+/* ── Importador de planilha .xlsx ──
+   Aceita cabeçalhos com nomes variados (case-insensitive), reconhecendo:
+   código do município, nome do município, e população (ano vigente). */
+function popMunImportarArquivo(input){
+  const file = input.files[0];
+  if(!file) return;
+  const statusEl = document.getElementById('popmun-import-status');
+  statusEl.textContent = 'Lendo planilha...'; statusEl.style.color = 'var(--text-muted)';
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try{
+      const wb = XLSX.read(e.target.result, { type:'array' });
+      /* Usa a primeira aba que contiver as colunas esperadas */
+      let linhas = null;
+      for(const sheetName of wb.SheetNames){
+        const ws = wb.Sheets[sheetName];
+        const json = XLSX.utils.sheet_to_json(ws, { defval:null });
+        if(!json.length) continue;
+        const headers = Object.keys(json[0]).map(h => _normNome(h));
+        const temCodigo = headers.some(h => h.includes('CODIGO') && h.includes('MUNICIPIO'));
+        const temNome   = headers.some(h => h.includes('NOME') && h.includes('MUNICIPIO')) || headers.some(h => h === 'MUNICIPIO');
+        const temPop    = headers.some(h => h.includes('POP'));
+        if(temCodigo && temNome && temPop){ linhas = json; break; }
+      }
+      if(!linhas){
+        statusEl.textContent = '✗ Não foi possível identificar as colunas esperadas na planilha.';
+        statusEl.style.color = '#ef5350';
+        return;
+      }
+
+      /* Identifica as chaves reais (preservando o nome original do cabeçalho) */
+      const sampleKeys = Object.keys(linhas[0]);
+      const kCodigo = sampleKeys.find(k => _normNome(k).includes('CODIGO') && _normNome(k).includes('MUNICIPIO'));
+      const kNome   = sampleKeys.find(k => _normNome(k).includes('NOME') && _normNome(k).includes('MUNICIPIO')) || sampleKeys.find(k => _normNome(k)==='MUNICIPIO');
+      const kPop    = sampleKeys.find(k => _normNome(k).includes('POP'));
+
+      const ano = parseInt(document.getElementById('meta-ano').value);
+      const payload = [];
+      linhas.forEach(l => {
+        const nome = (l[kNome]||'').toString().trim();
+        const cod  = parseInt(l[kCodigo]) || 0;
+        const pop  = parseInt(l[kPop]) || 0;
+        if(!nome || !cod) return;
+        payload.push({
+          ano, codigo_municipio: cod, nome_municipio: nome, populacao_rural: pop,
+          atualizado_em: new Date().toISOString(),
+          atualizado_por: (sessao?.nome || sessao?.matricula || '')
+        });
+      });
+
+      if(!payload.length){
+        statusEl.textContent = '✗ Nenhuma linha válida encontrada na planilha.';
+        statusEl.style.color = '#ef5350';
+        return;
+      }
+
+      statusEl.textContent = `Importando ${payload.length} municípios...`;
+
+      /* Envia em lotes de 100 para evitar payload excessivo */
+      const lote = 100;
+      for(let i=0; i<payload.length; i+=lote){
+        await sbUpsert('gdo_especializada_populacao_municipio', payload.slice(i, i+lote), 'ano,codigo_municipio');
+      }
+
+      statusEl.textContent = `✓ ${payload.length} municípios importados com sucesso.`;
+      statusEl.style.color = '#2ea043';
+      input.value = '';
+      await metasPopMunCarregar(ano);
+    }catch(err){
+      statusEl.textContent = '✗ Erro ao importar: '+err.message;
+      statusEl.style.color = '#ef5350';
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
 
 async function metasCriarAno(){
   const ano = parseInt(document.getElementById('meta-ano').value);
