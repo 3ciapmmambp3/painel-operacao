@@ -7839,149 +7839,206 @@ async function renderGdoEsp(){
 
   const mesesSel = getMesDd('gdoesp');
   const CIA = 3;
+  const N_PEL = 5;
   const indCode = _gdoespIndAtivo;
   const cfg = GDOESP_CONFIG[indCode];
   const pop = _gdoespPopulacaoRural(CIA, indCode);
-
-  const metaReg = _gdoespMetas[CIA+'-'+indCode];
-  let metaTaxa;
-  if(!mesesSel.length) metaTaxa = metaReg ? (parseFloat(metaReg.meta_anual_taxa)||0) : 0;
-  else if(mesesSel.length===1) metaTaxa = _gdoespMetaMes(CIA, indCode, mesesSel[0]);
-  else metaTaxa = mesesSel.reduce((s,m)=>s+_gdoespMetaMes(CIA,indCode,m), 0);
-
-  /* Monta dados por Pelotão */
-  const pelRegs = _gdoespRegistrosRurais(indCode, mesesSel);
-  const pel_gp = {};
-  dadosGrupos.forEach(g => {
-    const pelNum = pelDoColk(g.colK||g.grupamento);
-    if(pelNum===99) return;
-    if(!pel_gp[pelNum]) pel_gp[pelNum] = {total:0, sub:{}};
-    if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ if(!(k in pel_gp[pelNum].sub)) pel_gp[pelNum].sub[k]=0; });
-  });
-  pelRegs.forEach(c => {
-    const gi = dadosGrupos.find(g => g.munNorm === norm(c.municipio||''));
-    const colK = gi ? (gi.colK||gi.grupamento) : (c.grupamento||'?');
-    const pelNum = pelDoColk(colK);
-    if(pelNum===99) return;
-    if(!pel_gp[pelNum]) pel_gp[pelNum] = {total:0, sub:{}};
-    if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ if(!(k in pel_gp[pelNum].sub)) pel_gp[pelNum].sub[k]=0; });
-    if(indCode==='IF'){
-      pel_gp[pelNum].total += 1;
-    } else if(c.componentesGdoEsp && cfg.subColunas){
-      cfg.subColunas.forEach(([k])=>{
-        const v = c.componentesGdoEsp[k]||0;
-        pel_gp[pelNum].sub[k] = (pel_gp[pelNum].sub[k]||0)+v;
-        pel_gp[pelNum].total  += v;
-      });
-    }
-  });
-
-  const pelNums = Object.keys(pel_gp).map(Number).sort((a,b)=>a-b);
-
-  /* Totais CIA */
-  let ciaTot=0, ciaSub={};
-  if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ ciaSub[k]=0; });
-  pelNums.forEach(pelN=>{
-    ciaTot += pel_gp[pelN].total;
-    if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ ciaSub[k]+=(pel_gp[pelN].sub[k]||0); });
-  });
-  const taxa = pop>0 ? (ciaTot/pop)*100000 : 0;
-  const varPct = _gdoespVarPct(taxa, metaTaxa);
-  const cor = _gdoespCorVar(varPct);
   const temSub = !!cfg.subColunas;
 
-  /* Cores semafóricas (mesmas do PDF oficial) */
-  function semBgCss(v){ return v<=0?'rgba(46,160,67,.18)':v<=10?'rgba(255,193,7,.18)':'rgba(239,83,80,.18)'; }
+  /* Acumulado = Jan até o mês mais alto selecionado */
+  let mesesAcum = [];
+  if(mesesSel.length){
+    const idxMax = Math.max(...mesesSel.map(m=>MESES.indexOf(m)));
+    mesesAcum = MESES.slice(0, idxMax+1);
+  }
+
+  const mesLabel  = !mesesSel.length ? 'TODOS' : mesesSel.length===1 ? mesesSel[0] : mesesSel.join(', ');
+  const acumLabel = mesesAcum.length ? 'JAN–'+mesesAcum[mesesAcum.length-1] : 'ACUMULADO';
+
+  /* Cores semafóricas */
+  function semBgCss(v){ return v<=0?'rgba(46,160,67,.22)':v<=10?'rgba(230,172,0,.22)':'rgba(239,83,80,.22)'; }
   function semTxtCss(v){ return v<=0?'#2ea043':v<=10?'#e6ac00':'#ef5350'; }
   function semBdrCss(v){ return v<=0?'#2ea04355':v<=10?'#e6ac0055':'#ef535055'; }
 
-  /* VAR(%) por pelotão — meta igualitária CIA÷5 provisória */
-  const N_PEL = 5;
-  const varPorPel = {};
-  pelNums.forEach(pelN => {
-    const popPel = pop / N_PEL;
-    const taxaPel = popPel > 0 ? (pel_gp[pelN].total / popPel) * 100000 : 0;
-    varPorPel[pelN] = metaTaxa > 0 ? _gdoespVarPct(taxaPel, metaTaxa) : null;
+  /* Metas */
+  function calcMeta(mesesFiltro){
+    if(!mesesFiltro.length){ const reg=_gdoespMetas[CIA+'-'+indCode]; return reg?(parseFloat(reg.meta_anual_taxa)||0):0; }
+    if(mesesFiltro.length===1) return _gdoespMetaMes(CIA,indCode,mesesFiltro[0]);
+    return mesesFiltro.reduce((s,m)=>s+_gdoespMetaMes(CIA,indCode,m),0);
+  }
+  const metaMes  = calcMeta(mesesSel);
+  const metaAcum = calcMeta(mesesAcum);
+
+  /* Agrega por pelotão */
+  function agregaPel(mesesFiltro){
+    const regs = _gdoespRegistrosRurais(indCode, mesesFiltro);
+    const pel = {};
+    dadosGrupos.forEach(g=>{
+      const p=pelDoColk(g.colK||g.grupamento);
+      if(p===99) return;
+      if(!pel[p]){ pel[p]={total:0,sub:{}}; if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{pel[p].sub[k]=0;}); }
+    });
+    regs.forEach(c=>{
+      const gi=dadosGrupos.find(g=>g.munNorm===norm(c.municipio||''));
+      const colK=gi?(gi.colK||gi.grupamento):(c.grupamento||'?');
+      const p=pelDoColk(colK);
+      if(p===99) return;
+      if(!pel[p]){ pel[p]={total:0,sub:{}}; if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{pel[p].sub[k]=0;}); }
+      if(indCode==='IF'){ pel[p].total+=1; }
+      else if(c.componentesGdoEsp&&cfg.subColunas){
+        cfg.subColunas.forEach(([k])=>{
+          const v=c.componentesGdoEsp[k]||0;
+          pel[p].sub[k]=(pel[p].sub[k]||0)+v; pel[p].total+=v;
+        });
+      }
+    });
+    return pel;
+  }
+
+  const pelM = agregaPel(mesesSel);
+  const pelA = agregaPel(mesesAcum);
+  const pelNums = [...new Set([...Object.keys(pelM),...Object.keys(pelA)].map(Number))].sort((a,b)=>a-b);
+
+  /* Totais CIA */
+  let totM=0,subM={},totA=0,subA={};
+  if(cfg.subColunas){ cfg.subColunas.forEach(([k])=>{subM[k]=0;subA[k]=0;}); }
+  pelNums.forEach(p=>{
+    totM+=(pelM[p]?.total||0); totA+=(pelA[p]?.total||0);
+    if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ subM[k]+=(pelM[p]?.sub[k]||0); subA[k]+=(pelA[p]?.sub[k]||0); });
+  });
+  const taxaM=pop>0?(totM/pop)*100000:0;
+  const taxaA=pop>0?(totA/pop)*100000:0;
+  const varM=_gdoespVarPct(taxaM,metaMes);
+  const varA=_gdoespVarPct(taxaA,metaAcum);
+
+  /* VAR(%) por pelotão (acumulado) para o mapa */
+  const varPorPel={};
+  pelNums.forEach(p=>{
+    const popPel=pop/N_PEL;
+    const taxaP=popPel>0?((pelA[p]?.total||0)/popPel)*100000:0;
+    varPorPel[p]=metaAcum>0?_gdoespVarPct(taxaP,metaAcum):null;
   });
 
+  /* VAR(%) por pelotão para tabela (mês e acumulado) */
+  function varPelMes(p){
+    const popPel=pop/N_PEL; if(!popPel||!metaMes) return null;
+    return _gdoespVarPct(((pelM[p]?.total||0)/popPel)*100000, metaMes);
+  }
+  function varPelAcum(p){
+    const popPel=pop/N_PEL; if(!popPel||!metaAcum) return null;
+    return _gdoespVarPct(((pelA[p]?.total||0)/popPel)*100000, metaAcum);
+  }
+
+  /* Células sub-colunas */
+  function subCells(pelObj){
+    if(!temSub) return '';
+    return cfg.subColunas.map(([k])=>{
+      const v=pelObj?.sub[k]||0;
+      return `<td style="padding:5px 4px;text-align:center;font-size:10px;color:${v>0?'#ccc':'#444'};">${v>0?v:'—'}</td>`;
+    }).join('');
+  }
+
+  /* Célula VAR(%) */
+  function varCell(v){
+    if(v===null) return `<td style="padding:5px 8px;text-align:center;color:#444;font-size:10px;">—</td>`;
+    return `<td style="padding:4px 6px;text-align:center;background:${semBgCss(v)};border-radius:3px;">
+      <span style="color:${semTxtCss(v)};font-weight:800;font-size:10px;">${v>=0?'+':''}${v.toFixed(2)}%</span>
+    </td>`;
+  }
+
+  /* Sub-colunas cabeçalho */
   const thSub = temSub
-    ? cfg.subColunas.map(([key,label])=>`<th style="padding:5px 4px;text-align:center;font-size:9px;color:var(--text-muted);border-bottom:1px solid var(--border);min-width:36px;" title="${label}">${key.replace(/_/g,' ')}</th>`).join('')
+    ? cfg.subColunas.map(([key,lbl])=>`<th style="padding:5px 3px;text-align:center;font-size:8px;color:var(--text-muted);min-width:30px;" title="${lbl}">${key.replace(/_/g,'.')}</th>`).join('')
     : '';
+  const thSubA = thSub; /* mesmo cabeçalho para acumulado */
 
-  const rowsPel = pelNums.map((pelN,pi)=>{
-    const pd = pel_gp[pelN];
-    const vp = varPorPel[pelN];
-    const rowBg = pi%2===0 ? '#1e1e1e' : '#242424';
-    const varCell = vp===null
-      ? `<td style="padding:6px 8px;text-align:center;color:#444;">—</td>`
-      : `<td style="padding:4px 6px;text-align:center;background:${semBgCss(vp)};border-radius:3px;">
-           <span style="color:${semTxtCss(vp)};font-weight:800;font-size:11px;">${vp>=0?'+':''}${vp.toFixed(2)}%</span>
-         </td>`;
-    const subCells = temSub
-      ? cfg.subColunas.map(([k])=>{
-          const v=pd.sub[k]||0;
-          return `<td style="padding:5px 4px;text-align:center;color:${v>0?'#ccc':'#444'};">${v>0?v:'—'}</td>`;
-        }).join('')
-      : '';
-    return `<tr style="background:${rowBg};border-bottom:1px solid #2a2a2a;">
-      <td style="padding:6px 10px;font-weight:600;color:#bbb;white-space:nowrap;">
-        <span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#333;color:#888;font-size:9px;font-weight:800;margin-right:6px;">${pelN}</span>${pelN}º Pelotão
+  /* Linhas dos pelotões */
+  const rowsPel = pelNums.map((p,pi)=>{
+    const bgRow = pi%2===0?'#1e1e1e':'#242424';
+    return `<tr style="background:${bgRow};border-bottom:1px solid #2a2a2a;">
+      <td style="padding:5px 8px;font-weight:600;color:#bbb;white-space:nowrap;font-size:10px;">
+        <span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#333;color:#888;font-size:8px;font-weight:800;margin-right:5px;">${p}</span>${p}º Pelotão
       </td>
-      ${subCells}
-      <td style="padding:6px 8px;text-align:center;font-weight:700;color:#ddd;">${pd.total||0}</td>
-      <td style="padding:6px 8px;text-align:center;color:#444;">—</td>
-      <td style="padding:6px 8px;text-align:center;color:#444;">—</td>
-      ${varCell}
+      ${subCells(pelM[p])}
+      <td style="padding:5px 6px;text-align:center;font-weight:700;color:#ddd;font-size:11px;">${pelM[p]?.total||0}</td>
+      <td style="padding:5px 6px;text-align:center;color:#444;font-size:10px;">—</td>
+      <td style="padding:5px 6px;text-align:center;color:#444;font-size:10px;">—</td>
+      ${varCell(varPelMes(p))}
+      <td style="padding:0;width:3px;background:#2a2a2a;"></td>
+      ${subCells(pelA[p])}
+      <td style="padding:5px 6px;text-align:center;font-weight:700;color:#ddd;font-size:11px;">${pelA[p]?.total||0}</td>
+      <td style="padding:5px 6px;text-align:center;color:#444;font-size:10px;">—</td>
+      <td style="padding:5px 6px;text-align:center;color:#444;font-size:10px;">—</td>
+      ${varCell(varPelAcum(p))}
     </tr>`;
-  }).join('') || `<tr><td colspan="${5+(temSub?cfg.subColunas.length:0)}" style="padding:14px;text-align:center;color:var(--text-muted);">Nenhum registro rural no período.</td></tr>`;
+  }).join('');
 
-  const subTotCells = temSub
-    ? cfg.subColunas.map(([k])=>`<td style="padding:7px 4px;text-align:center;font-weight:700;color:#ddd;">${ciaSub[k]||0}</td>`).join('')
-    : '';
+  /* Sub-total cells */
+  const subTotM = temSub ? cfg.subColunas.map(([k])=>`<td style="padding:6px 4px;text-align:center;font-weight:700;color:#ddd;font-size:10px;">${subM[k]||0}</td>`).join('') : '';
+  const subTotA = temSub ? cfg.subColunas.map(([k])=>`<td style="padding:6px 4px;text-align:center;font-weight:700;color:#ddd;font-size:10px;">${subA[k]||0}</td>`).join('') : '';
 
   tabelaEl.innerHTML = `
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:14px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
         <div style="font-size:13px;font-weight:700;color:var(--gold);">${cfg.icone} ${cfg.titulo}</div>
-        <div style="font-size:10px;color:var(--text-muted);">Pop. Rural (3ª CIA): ${pop ? pop.toLocaleString('pt-BR') : '—'}</div>
+        <div style="font-size:10px;color:var(--text-muted);">Pop. Rural (3ª CIA): ${pop?pop.toLocaleString('pt-BR'):'—'}</div>
       </div>
       <div style="overflow-x:auto;">
-        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+        <table style="width:100%;border-collapse:collapse;font-size:10px;">
           <thead>
+            <!-- Linha 1: seções MÊS e ACUMULADO -->
+            <tr style="background:#161616;">
+              <th rowspan="2" style="padding:6px 8px;text-align:left;font-size:9px;color:var(--text-muted);border-right:1px solid #333;min-width:100px;">CIAS PM MAMB</th>
+              <th colspan="${(temSub?cfg.subColunas.length:0)+4}" style="padding:5px;text-align:center;font-size:9px;color:var(--gold);border-bottom:1px solid #444;border-right:3px solid var(--gold-border);">${mesLabel}</th>
+              <th style="width:3px;background:#2a2a2a;" rowspan="2"></th>
+              <th colspan="${(temSub?cfg.subColunas.length:0)+4}" style="padding:5px;text-align:center;font-size:9px;color:#aaa;border-bottom:1px solid #444;">${acumLabel}</th>
+            </tr>
+            <!-- Linha 2: nomes das colunas -->
             <tr style="background:#181818;border-bottom:1px solid var(--border);">
-              <th style="padding:6px 10px;text-align:left;font-size:9px;color:var(--text-muted);">PELOTÃO</th>
               ${thSub}
-              <th style="padding:6px 8px;text-align:center;font-size:9px;color:var(--gold);">TOTAL</th>
-              <th style="padding:6px 8px;text-align:center;font-size:9px;color:#2ea043;">TAXA</th>
-              <th style="padding:6px 8px;text-align:center;font-size:9px;color:#4e8fd4;">META</th>
-              <th style="padding:6px 8px;text-align:center;font-size:9px;color:var(--text-muted);">VAR(%)</th>
+              <th style="padding:5px 6px;text-align:center;font-size:8px;color:var(--gold);">ABS</th>
+              <th style="padding:5px 6px;text-align:center;font-size:8px;color:#2ea043;">TAXA</th>
+              <th style="padding:5px 6px;text-align:center;font-size:8px;color:#4e8fd4;">META</th>
+              <th style="padding:5px 6px;text-align:center;font-size:8px;color:var(--text-muted);border-right:3px solid var(--gold-border);">VAR(%)</th>
+              ${thSubA}
+              <th style="padding:5px 6px;text-align:center;font-size:8px;color:var(--gold);">ABS</th>
+              <th style="padding:5px 6px;text-align:center;font-size:8px;color:#2ea043;">TAXA</th>
+              <th style="padding:5px 6px;text-align:center;font-size:8px;color:#4e8fd4;">META</th>
+              <th style="padding:5px 6px;text-align:center;font-size:8px;color:var(--text-muted);">VAR(%)</th>
             </tr>
           </thead>
           <tbody>${rowsPel}</tbody>
           <tfoot>
-            <tr style="background:rgba(155,138,92,.18);border-top:2px solid var(--gold-border);">
-              <td style="padding:7px 10px;font-weight:700;color:var(--gold);white-space:nowrap;">TOTAL 3 CIA PM MAMB</td>
-              ${subTotCells}
-              <td style="padding:7px 8px;text-align:center;font-weight:800;color:var(--gold);">${ciaTot}</td>
-              <td style="padding:7px 8px;text-align:center;font-weight:700;color:#2ea043;">${taxa.toFixed(2)}</td>
-              <td style="padding:7px 8px;text-align:center;font-weight:700;color:#4e8fd4;">${metaTaxa.toFixed(2)}</td>
-              <td style="padding:7px 8px;text-align:center;font-weight:800;color:${semTxtCss(varPct)};background:${semBgCss(varPct)};border-radius:3px;">${varPct>=0?'+':''}${varPct.toFixed(2)}%</td>
+            <tr style="background:rgba(155,138,92,.2);border-top:2px solid var(--gold-border);">
+              <td style="padding:6px 8px;font-weight:700;color:var(--gold);font-size:10px;border-right:1px solid #333;">BPM MAMB (3ª CIA)</td>
+              ${subTotM}
+              <td style="padding:6px 6px;text-align:center;font-weight:800;color:var(--gold);font-size:11px;">${totM}</td>
+              <td style="padding:6px 6px;text-align:center;font-weight:700;color:#2ea043;font-size:10px;">${taxaM.toFixed(2)}</td>
+              <td style="padding:6px 6px;text-align:center;font-weight:700;color:#4e8fd4;font-size:10px;">${metaMes.toFixed(2)}</td>
+              <td style="padding:5px 6px;text-align:center;font-weight:800;font-size:10px;color:${semTxtCss(varM)};background:${semBgCss(varM)};border-radius:3px;border-right:3px solid var(--gold-border);">${varM>=0?'+':''}${varM.toFixed(2)}%</td>
+              <td style="width:3px;background:#2a2a2a;"></td>
+              ${subTotA}
+              <td style="padding:6px 6px;text-align:center;font-weight:800;color:var(--gold);font-size:11px;">${totA}</td>
+              <td style="padding:6px 6px;text-align:center;font-weight:700;color:#2ea043;font-size:10px;">${taxaA.toFixed(2)}</td>
+              <td style="padding:6px 6px;text-align:center;font-weight:700;color:#4e8fd4;font-size:10px;">${metaAcum.toFixed(2)}</td>
+              <td style="padding:5px 6px;text-align:center;font-weight:800;font-size:10px;color:${semTxtCss(varA)};background:${semBgCss(varA)};border-radius:3px;">${varA>=0?'+':''}${varA.toFixed(2)}%</td>
             </tr>
           </tfoot>
         </table>
       </div>
+      <!-- Cards resumo (acumulado) -->
       <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;">
         <div style="flex:1;min-width:110px;background:#1a1a1a;border-radius:6px;padding:9px 12px;text-align:center;">
-          <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Taxa Realizada</div>
-          <div style="font-size:20px;font-weight:700;color:#fff;margin-top:3px;">${taxa.toFixed(2)}</div>
+          <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Taxa Realizada (${acumLabel})</div>
+          <div style="font-size:20px;font-weight:700;color:#fff;margin-top:3px;">${taxaA.toFixed(2)}</div>
         </div>
         <div style="flex:1;min-width:110px;background:#1a1a1a;border-radius:6px;padding:9px 12px;text-align:center;">
-          <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Meta</div>
-          <div style="font-size:20px;font-weight:700;color:var(--gold);margin-top:3px;">${metaTaxa.toFixed(2)}</div>
+          <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Meta (${acumLabel})</div>
+          <div style="font-size:20px;font-weight:700;color:var(--gold);margin-top:3px;">${metaAcum.toFixed(2)}</div>
         </div>
-        <div style="flex:1;min-width:110px;background:${semBgCss(varPct)};border-radius:6px;padding:9px 12px;text-align:center;border:1px solid ${semBdrCss(varPct)};">
-          <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">VAR (%) Taxa/Meta</div>
-          <div style="font-size:20px;font-weight:700;color:${semTxtCss(varPct)};margin-top:3px;">${varPct>=0?'+':''}${varPct.toFixed(2)}%</div>
+        <div style="flex:1;min-width:110px;background:${semBgCss(varA)};border-radius:6px;padding:9px 12px;text-align:center;border:1px solid ${semBdrCss(varA)};">
+          <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">VAR (%) ${acumLabel}</div>
+          <div style="font-size:20px;font-weight:700;color:${semTxtCss(varA)};margin-top:3px;">${varA>=0?'+':''}${varA.toFixed(2)}%</div>
         </div>
       </div>
     </div>`;
