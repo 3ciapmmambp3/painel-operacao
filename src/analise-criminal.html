@@ -8370,24 +8370,28 @@ async function gerarPdfGdoEsp(){
   /* Cada "lado" (MÊS ou ACUMULADO) tem: [sub-colunas] + ABS + TAXA + META + VAR(%) */
   function calcDims(cfg){
     const nSub=cfg.subColunas?cfg.subColunas.length:0;
-    /* Largura total = colPel (uma única vez, à esquerda) + 2 lados de dados (ABS+TAXA+META+VAR [+sub]) */
-    const colVar=14, colTaxa=10, colMeta=10, colAbs=9;
-    const ladoFixo=colAbs+colTaxa+colMeta+colVar;
-    const colPelBase=22;
-    const ladoDados = (TW - colPelBase) / 2;
+    /* Coluna PELOTÕES: largura fixa e enxuta (cabe "3 CIA PM MAMB" / "5º Pelotão") */
+    const colPel = 16;
+    const ladoDados = (TW - colPel) / 2;
 
-    let colSub, colPel, ladoDadosReal;
+    /* Bloco de sub-colunas: até 35% do lado, com teto de 8.5mm cada, para não esmagar ABS/TAXA/META/VAR */
+    let colSub = 0;
     if(nSub){
-      const espacoRestante = ladoDados - ladoFixo;
-      colSub = Math.max(4.8, Math.min(9, espacoRestante/nSub));
-      const sobraSub = Math.max(0, espacoRestante - (colSub*nSub));
-      colPel = colPelBase + sobraSub*2; /* sobra de ambos os lados retorna à coluna única */
-      ladoDadosReal = (nSub*colSub)+ladoFixo;
-    } else {
-      colSub = 0;
-      colPel = colPelBase + (ladoDados - ladoFixo)*2; /* sem sub-colunas: toda a sobra vai pra coluna PELOTÃO */
-      ladoDadosReal = ladoFixo;
+      colSub = Math.min(8.5, Math.max(4.8, (ladoDados*0.35)/nSub));
     }
+    const espacoSub = colSub*nSub;
+    const espacoFixo = ladoDados - espacoSub;
+
+    /* Distribui o espaço fixo entre ABS / TAXA / META / VAR proporcionalmente
+       (pesos inspirados no relatório oficial: VAR é a mais larga, META um pouco maior que ABS/TAXA). */
+    const pesos = { abs:1.0, taxa:1.0, meta:1.1, var:1.3 };
+    const pesoTotal = pesos.abs+pesos.taxa+pesos.meta+pesos.var;
+    const colAbs  = espacoFixo * pesos.abs/pesoTotal;
+    const colTaxa = espacoFixo * pesos.taxa/pesoTotal;
+    const colMeta = espacoFixo * pesos.meta/pesoTotal;
+    const colVar  = espacoFixo * pesos.var/pesoTotal;
+
+    const ladoDadosReal = espacoSub + colAbs+colTaxa+colMeta+colVar;
     const midX = ML + colPel + ladoDadosReal;
     return { colPel, colSub, colAbs, colTaxa, colMeta, colVar, midX, nSub };
   }
@@ -8492,7 +8496,7 @@ async function gerarPdfGdoEsp(){
 
     /* Label pelotão */
     doc.rect(ML,y,colPel,h,'D');
-    doc.setFont('helvetica',isTot?'bold':'normal'); doc.setFontSize(isTot?5.6:5.2);
+    doc.setFont('helvetica',isTot?'bold':'normal'); doc.setFontSize(isTot?5.2:5.2);
     doc.setTextColor(...(isTot?C_GOLD2:C_TXT));
     doc.text(labelTxt, ML+1.5, y+h*0.65);
     let cx=ML+colPel;
@@ -8802,7 +8806,7 @@ async function gerarPdfGdoEsp(){
     });
 
     /* Linha total BPM MAMB */
-    y=linha(y, true, '3 CIA PM MAMB',
+    y=linha(y, true, '3ª CIA MAMB',
       totSubM, totAbsM, taxaCiaM, metaMes, varCiaM,
       totSubA, totAbsA, taxaCiaA, metaAcum, varCiaA,
       cfg, dims, false);
