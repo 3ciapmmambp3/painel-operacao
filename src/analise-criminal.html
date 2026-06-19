@@ -8370,16 +8370,25 @@ async function gerarPdfGdoEsp(){
   /* Cada "lado" (MÊS ou ACUMULADO) tem: [sub-colunas] + ABS + TAXA + META + VAR(%) */
   function calcDims(cfg){
     const nSub=cfg.subColunas?cfg.subColunas.length:0;
-    /* Largura útil de cada lado da tabela (MÊS / ACUMULADO) — calibrada para retrato */
-    const ladoTotal = TW/2;
+    /* Largura total = colPel (uma única vez, à esquerda) + 2 lados de dados (ABS+TAXA+META+VAR [+sub]) */
     const colVar=14, colTaxa=10, colMeta=10, colAbs=9;
     const ladoFixo=colAbs+colTaxa+colMeta+colVar;
-    const colPelBase=18;
-    const espacoRestanteBase = ladoTotal - colPelBase - ladoFixo;
-    const colSub = nSub ? Math.max(4.8, espacoRestanteBase/nSub) : 0;
-    const colPel = nSub ? colPelBase : colPelBase + espacoRestanteBase;
-    const ladoW = colPel+(nSub*colSub)+ladoFixo;
-    const midX = ML+ladoW;
+    const colPelBase=22;
+    const ladoDados = (TW - colPelBase) / 2;
+
+    let colSub, colPel, ladoDadosReal;
+    if(nSub){
+      const espacoRestante = ladoDados - ladoFixo;
+      colSub = Math.max(4.8, Math.min(9, espacoRestante/nSub));
+      const sobraSub = Math.max(0, espacoRestante - (colSub*nSub));
+      colPel = colPelBase + sobraSub*2; /* sobra de ambos os lados retorna à coluna única */
+      ladoDadosReal = (nSub*colSub)+ladoFixo;
+    } else {
+      colSub = 0;
+      colPel = colPelBase + (ladoDados - ladoFixo)*2; /* sem sub-colunas: toda a sobra vai pra coluna PELOTÃO */
+      ladoDadosReal = ladoFixo;
+    }
+    const midX = ML + colPel + ladoDadosReal;
     return { colPel, colSub, colAbs, colTaxa, colMeta, colVar, midX, nSub };
   }
 
