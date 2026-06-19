@@ -8142,6 +8142,9 @@ function _gdoespRenderMapa(indCode, varPorPel){
       _gdoespMapaLeaflet = null;
     }
     mapDiv.innerHTML = '';
+    /* Força reflow do browser para garantir que o container já tem suas
+       dimensões finais (largura/altura) antes do Leaflet medir o espaço. */
+    void mapDiv.offsetWidth;
 
     _gdoespMapaLeaflet = L.map(mapDiv, { zoomControl:true, attributionControl:false });
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
@@ -8221,14 +8224,23 @@ function _gdoespRenderMapa(indCode, varPorPel){
 
     /* Garante que o Leaflet recalcule corretamente as dimensões do container
        antes de ajustar o zoom — evita o mapa "encolher" para a esquerda quando
-       o container ainda não tinha largura final no momento da criação. */
-    _gdoespMapaLeaflet.invalidateSize();
-
+       o container ainda não tinha largura final no momento da criação.
+       Chamado duas vezes (imediato + após um pequeno delay) para cobrir casos
+       em que o layout flex/grid da página ainda está se ajustando. */
+    _gdoespMapaLeaflet.invalidateSize(false);
     if(allBounds.length){
       _gdoespMapaLeaflet.fitBounds(allBounds, {padding:[10,10]});
     } else {
       _gdoespMapaLeaflet.setView([-18.5,-42.0], 7);
     }
+
+    setTimeout(() => {
+      if(!_gdoespMapaLeaflet) return;
+      _gdoespMapaLeaflet.invalidateSize(false);
+      if(allBounds.length){
+        _gdoespMapaLeaflet.fitBounds(allBounds, {padding:[10,10]});
+      }
+    }, 300);
   }, 120));
 }
 
@@ -8394,7 +8406,7 @@ async function gerarPdfGdoEsp(){
     doc.text(mesLabel, ML+(midX-ML)/2, y+h1*0.72, {align:'center'});
     doc.text(acumLabel, midX+(ML+TW-midX)/2, y+h1*0.72, {align:'center'});
     /* Divisor central forte */
-    doc.setDrawColor(...C_GOLD2); doc.setLineWidth(0.35); doc.line(midX,y,midX,y+h1+h2);
+    doc.setDrawColor(...C_GOLD2); doc.setLineWidth(0.15); doc.line(midX,y,midX,y+h1+h2);
     y+=h1;
 
     /* Linha 2: nomes das colunas */
@@ -8496,7 +8508,7 @@ async function gerarPdfGdoEsp(){
     }
 
     /* Divisor central */
-    doc.setDrawColor(...C_GOLD2); doc.setLineWidth(0.35); doc.line(midX,y,midX,y+h);
+    doc.setDrawColor(...C_GOLD2); doc.setLineWidth(0.15); doc.line(midX,y,midX,y+h);
     doc.setDrawColor(...C_BRD); doc.setLineWidth(0.15);
 
     /* ACUMULADO */
