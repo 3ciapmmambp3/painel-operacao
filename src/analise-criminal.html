@@ -8173,6 +8173,22 @@ function _gdoespRenderMapa(indCode, varPorPel){
         const vColor = corPel.fill;
 
         if(!pelData.gps) return;
+
+        /* Coleta todos os polígonos do pelotão para achar o maior (âncora do rótulo numérico) */
+        let maiorPoly=null, maiorArea=0;
+        Object.values(pelData.gps).forEach(gpData=>{
+          (gpData.polys||[]).forEach(poly=>{
+            if(!poly.length) return;
+            let minLng=Infinity,maxLng=-Infinity,minLat=Infinity,maxLat=-Infinity;
+            poly.forEach(([lng,lat])=>{
+              if(lng<minLng)minLng=lng;if(lng>maxLng)maxLng=lng;
+              if(lat<minLat)minLat=lat;if(lat>maxLat)maxLat=lat;
+            });
+            const area=(maxLng-minLng)*(maxLat-minLat);
+            if(area>maiorArea){ maiorArea=area; maiorPoly=poly; }
+          });
+        });
+
         Object.entries(pelData.gps).forEach(([gpKey, gpData]) => {
           const gpNum  = parseInt(gpKey.replace(/[^0-9]/g,''));
           const gpInfo = dadosGrupos.find(r =>
@@ -8196,6 +8212,20 @@ function _gdoespRenderMapa(indCode, varPorPel){
             latlngs.forEach(p => allBounds.push(p));
           });
         });
+
+        /* Marcador numérico do Pelotão no centroide do seu maior polígono — identifica
+           qual pelotão é qual sem depender da cor de preenchimento (que segue o semáforo). */
+        if(maiorPoly && maiorPoly.length>=3){
+          let cLat=0,cLng=0;
+          maiorPoly.forEach(([lng,lat])=>{ cLat+=lat; cLng+=lng; });
+          cLat/=maiorPoly.length; cLng/=maiorPoly.length;
+          const numIcon = L.divIcon({
+            className:'pel-numero-icon',
+            html:`<div style="width:22px;height:22px;border-radius:50%;background:#282828;border:2px solid #fff;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:11px;box-shadow:0 1px 4px rgba(0,0,0,.4);">${pelNum}</div>`,
+            iconSize:[22,22], iconAnchor:[11,11]
+          });
+          L.marker([cLat,cLng], {icon:numIcon, interactive:false}).addTo(_gdoespMapaLeaflet);
+        }
       });
     }
 
@@ -8342,12 +8372,18 @@ async function gerarPdfGdoEsp(){
   /* Cada "lado" (MÊS ou ACUMULADO) tem: [sub-colunas] + ABS + TAXA + META + VAR(%) */
   function calcDims(cfg){
     const nSub=cfg.subColunas?cfg.subColunas.length:0;
-    const colVar=24, colTaxa=18, colMeta=18, colAbs=nSub?12:16;
+    /* Largura útil de cada lado da tabela (MÊS / ACUMULADO) */
+    const ladoTotal = TW/2;
+    /* Colunas de largura fixa, proporcionais ao conteúdo */
+    const colVar=22, colTaxa=16, colMeta=16, colAbs=14;
     const ladoFixo=colAbs+colTaxa+colMeta+colVar;
-    const colSub=nSub ? Math.min(16, (TW/2-40-ladoFixo)/nSub) : 0;
-    const colPel=Math.max(32, TW/2-(nSub*colSub)-ladoFixo);
-    const ladoW=colPel+(nSub*colSub)+ladoFixo;
-    const midX=ML+ladoW;
+    /* Coluna PELOTÃO: largura base; cresce quando não há sub-colunas para preencher o espaço */
+    const colPelBase=34;
+    const espacoRestanteBase = ladoTotal - colPelBase - ladoFixo;
+    const colSub = nSub ? Math.max(9, Math.min(15, espacoRestanteBase/nSub)) : 0;
+    const colPel = nSub ? colPelBase : colPelBase + espacoRestanteBase;
+    const ladoW = colPel+(nSub*colSub)+ladoFixo;
+    const midX = ML+ladoW;
     return { colPel, colSub, colAbs, colTaxa, colMeta, colVar, midX, nSub };
   }
 
@@ -8592,6 +8628,36 @@ async function gerarPdfGdoEsp(){
         doc.setFillColor(...cor.fill); doc.setDrawColor(...cor.brd); doc.setLineWidth(0.5);
         try{ doc.lines(segs,pts[0][0],pts[0][1],[1,1],'FD',true); }catch(e){}
       });
+    });
+
+    /* Rótulo numérico do Pelotão no centroide geral de toda a sua área
+       (permite identificar qual pelotão é qual sem depender da cor de preenchimento,
+       que segue o semáforo de VAR(%) e não a identidade do pelotão). Um único rótulo
+       por pelotão, posicionado no centroide do maior polígono de sua área. */
+    Object.entries(pelPolyMap).forEach(([pelN,pd])=>{
+      if(!pd.polys.length) return;
+      /* Escolhe o maior polígono (por área aproximada via bounding box) para ancorar o rótulo */
+      let maior=pd.polys[0], maiorArea=0;
+      pd.polys.forEach(poly=>{
+        if(poly.length<3) return;
+        let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+        poly.forEach(([lng,lat])=>{
+          if(lng<minX)minX=lng;if(lng>maxX)maxX=lng;
+          if(lat<minY)minY=lat;if(lat>maxY)maxY=lat;
+        });
+        const area=(maxX-minX)*(maxY-minY);
+        if(area>maiorArea){ maiorArea=area; maior=poly; }
+      });
+      if(!maior||maior.length<3) return;
+      const pts=maior.map(([lng,lat])=>proj(lng,lat));
+      let cx=0,cy=0;
+      pts.forEach(p=>{cx+=p[0];cy+=p[1];});
+      cx/=pts.length; cy/=pts.length;
+      if(cx<aX||cx>aX+aW-legW||cy<aY||cy>aY+aH) return;
+      doc.setFillColor(40,40,40); doc.setDrawColor(255,255,255); doc.setLineWidth(0.45);
+      doc.circle(cx,cy,3.2,'FD');
+      doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.setTextColor(255,255,255);
+      doc.text(pelN, cx, cy+1.05, {align:'center'});
     });
 
     /* Pontos de ocorrência */
