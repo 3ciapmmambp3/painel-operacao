@@ -8065,14 +8065,10 @@ function _gdoespRenderMapa(indCode, varPorPel){
   const CORES_IND_ESP = { MV:'#ef5350', CVPE:'#42a5f5', CVPA:'#ffa726', IF:'#66bb6a' };
   const corCrime = CORES_IND_ESP[indCode] || '#c9a84c';
 
-  /* Usa acumulado Jan→mês selecionado para os pontos do mapa */
+  /* Mostra apenas o(s) mês(es) selecionado(s) no filtro; se nenhum mês selecionado
+     ("Todos os meses"), mostra todos os registros do ano. */
   const mesesSel = getMesDd('gdoesp');
-  let mesesAcum = [];
-  if(mesesSel.length){
-    const idxMax = Math.max(...mesesSel.map(m=>MESES.indexOf(m)));
-    mesesAcum = MESES.slice(0, idxMax+1);
-  }
-  const mesesMapa = mesesAcum.length ? mesesAcum : mesesSel;
+  const mesesMapa = mesesSel; /* vazio = todos os meses */
 
   const dbKey = _GDOESP_IND_DBKEY[indCode] || indCode;
   const registros = dadosCrimes.filter(c => {
@@ -8123,7 +8119,7 @@ function _gdoespRenderMapa(indCode, varPorPel){
         ${legendaItens}
         <span style="display:flex;align-items:center;gap:5px;margin-left:8px;padding-left:8px;border-left:1px solid #333;">
           <span style="width:10px;height:10px;border-radius:50%;background:${corCrime};display:inline-block;"></span>
-          <span>Ocorrência rural (acumulado)</span>
+          <span>Ocorrência rural (${mesesSel.length ? mesesSel.join(', ') : 'todos os meses'})</span>
         </span>
         <span style="display:flex;align-items:center;gap:5px;">
           <span style="width:10px;height:10px;border-radius:2px;background:#2ea043;opacity:.8;display:inline-block;"></span><span style="color:#2ea043;">Variação positiva</span>
@@ -8174,21 +8170,6 @@ function _gdoespRenderMapa(indCode, varPorPel){
 
         if(!pelData.gps) return;
 
-        /* Coleta todos os polígonos do pelotão para achar o maior (âncora do rótulo numérico) */
-        let maiorPoly=null, maiorArea=0;
-        Object.values(pelData.gps).forEach(gpData=>{
-          (gpData.polys||[]).forEach(poly=>{
-            if(!poly.length) return;
-            let minLng=Infinity,maxLng=-Infinity,minLat=Infinity,maxLat=-Infinity;
-            poly.forEach(([lng,lat])=>{
-              if(lng<minLng)minLng=lng;if(lng>maxLng)maxLng=lng;
-              if(lat<minLat)minLat=lat;if(lat>maxLat)maxLat=lat;
-            });
-            const area=(maxLng-minLng)*(maxLat-minLat);
-            if(area>maiorArea){ maiorArea=area; maiorPoly=poly; }
-          });
-        });
-
         Object.entries(pelData.gps).forEach(([gpKey, gpData]) => {
           const gpNum  = parseInt(gpKey.replace(/[^0-9]/g,''));
           const gpInfo = dadosGrupos.find(r =>
@@ -8212,20 +8193,6 @@ function _gdoespRenderMapa(indCode, varPorPel){
             latlngs.forEach(p => allBounds.push(p));
           });
         });
-
-        /* Marcador numérico do Pelotão no centroide do seu maior polígono — identifica
-           qual pelotão é qual sem depender da cor de preenchimento (que segue o semáforo). */
-        if(maiorPoly && maiorPoly.length>=3){
-          let cLat=0,cLng=0;
-          maiorPoly.forEach(([lng,lat])=>{ cLat+=lat; cLng+=lng; });
-          cLat/=maiorPoly.length; cLng/=maiorPoly.length;
-          const numIcon = L.divIcon({
-            className:'pel-numero-icon',
-            html:`<div style="width:22px;height:22px;border-radius:50%;background:#282828;border:2px solid #fff;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:11px;box-shadow:0 1px 4px rgba(0,0,0,.4);">${pelNum}</div>`,
-            iconSize:[22,22], iconAnchor:[11,11]
-          });
-          L.marker([cLat,cLng], {icon:numIcon, interactive:false}).addTo(_gdoespMapaLeaflet);
-        }
       });
     }
 
@@ -8611,14 +8578,7 @@ async function gerarPdfGdoEsp(){
     }
 
     /* Contorno do estado de Minas Gerais (camada de fundo, cor mais escura) */
-    if(typeof MG_ESTADO_CONTORNO!=='undefined' && MG_ESTADO_CONTORNO.length>2){
-      const mgPts=MG_ESTADO_CONTORNO.map(([lng,lat])=>proj(lng,lat));
-      const mgSegs=mgPts.slice(1).map((p,i)=>[p[0]-mgPts[i][0],p[1]-mgPts[i][1]]);
-      doc.setFillColor(225,222,215); doc.setDrawColor(140,135,120); doc.setLineWidth(0.6);
-      try{ doc.lines(mgSegs,mgPts[0][0],mgPts[0][1],[1,1],'FD',true); }catch(e){}
-    }
-
-    /* Desenha polígonos coloridos por pelotão */
+    /* Desenha polígonos coloridos por pelotão (apenas os pelotões, sem contorno do Estado) */
     Object.entries(pelPolyMap).forEach(([pelN,pd])=>{
       const cor=corPoly(parseInt(pelN));
       pd.polys.forEach(poly=>{
@@ -8628,36 +8588,6 @@ async function gerarPdfGdoEsp(){
         doc.setFillColor(...cor.fill); doc.setDrawColor(...cor.brd); doc.setLineWidth(0.5);
         try{ doc.lines(segs,pts[0][0],pts[0][1],[1,1],'FD',true); }catch(e){}
       });
-    });
-
-    /* Rótulo numérico do Pelotão no centroide geral de toda a sua área
-       (permite identificar qual pelotão é qual sem depender da cor de preenchimento,
-       que segue o semáforo de VAR(%) e não a identidade do pelotão). Um único rótulo
-       por pelotão, posicionado no centroide do maior polígono de sua área. */
-    Object.entries(pelPolyMap).forEach(([pelN,pd])=>{
-      if(!pd.polys.length) return;
-      /* Escolhe o maior polígono (por área aproximada via bounding box) para ancorar o rótulo */
-      let maior=pd.polys[0], maiorArea=0;
-      pd.polys.forEach(poly=>{
-        if(poly.length<3) return;
-        let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
-        poly.forEach(([lng,lat])=>{
-          if(lng<minX)minX=lng;if(lng>maxX)maxX=lng;
-          if(lat<minY)minY=lat;if(lat>maxY)maxY=lat;
-        });
-        const area=(maxX-minX)*(maxY-minY);
-        if(area>maiorArea){ maiorArea=area; maior=poly; }
-      });
-      if(!maior||maior.length<3) return;
-      const pts=maior.map(([lng,lat])=>proj(lng,lat));
-      let cx=0,cy=0;
-      pts.forEach(p=>{cx+=p[0];cy+=p[1];});
-      cx/=pts.length; cy/=pts.length;
-      if(cx<aX||cx>aX+aW-legW||cy<aY||cy>aY+aH) return;
-      doc.setFillColor(40,40,40); doc.setDrawColor(255,255,255); doc.setLineWidth(0.45);
-      doc.circle(cx,cy,3.2,'FD');
-      doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.setTextColor(255,255,255);
-      doc.text(pelN, cx, cy+1.05, {align:'center'});
     });
 
     /* Pontos de ocorrência */
@@ -8671,41 +8601,72 @@ async function gerarPdfGdoEsp(){
       doc.circle(p[0],p[1],1.3,'FD'); nPlot++;
     });
 
-    /* Legenda */
-    const lX=aX+aW-legW+3, lY0=aY+6;
-    doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.setTextColor(...C_TXT_HDR);
-    const tit=GDOESP_CONFIG[indCode].titulo;
-    doc.text(tit.length>22?tit.substring(0,22)+'…':tit, lX, lY0);
-    let lY=lY0+6;
+    /* ── Legenda — caixa com fundo, seções bem separadas ── */
+    const lBoxX=aX+aW-legW+2, lBoxY=aY+2, lBoxW=legW-4, lBoxH=aH-4;
+    doc.setFillColor(255,255,255); doc.setDrawColor(...C_BRD); doc.setLineWidth(0.25);
+    doc.roundedRect(lBoxX,lBoxY,lBoxW,lBoxH,1.2,1.2,'FD');
 
-    /* Pelotões na legenda */
+    const lX=lBoxX+4, lXEnd=lBoxX+lBoxW-3;
+    let lY=lBoxY+7;
+
+    /* Título do indicador (sem truncar, quebra em até 2 linhas) */
+    doc.setFont('helvetica','bold'); doc.setFontSize(6.6); doc.setTextColor(...C_TXT_HDR);
+    const titLines=doc.splitTextToSize(GDOESP_CONFIG[indCode].titulo, lBoxW-6);
+    doc.text(titLines.slice(0,2), lX, lY);
+    lY += titLines.slice(0,2).length*3.6 + 2.5;
+    doc.setDrawColor(...C_BRD); doc.setLineWidth(0.2); doc.line(lX,lY,lXEnd,lY);
+    lY += 5;
+
+    /* Seção: Pelotões e suas variações */
+    doc.setFont('helvetica','bold'); doc.setFontSize(5.6); doc.setTextColor(120,105,60);
+    doc.text('VAR(%) POR PELOTÃO', lX, lY); lY+=4.5;
     const pelNums=Object.keys(pelPolyMap).map(Number).sort((a,b)=>a-b);
     pelNums.forEach(pelN=>{
       const cor=corPoly(pelN);
       doc.setFillColor(...cor.fill); doc.setDrawColor(...cor.brd); doc.setLineWidth(0.4);
-      doc.rect(lX,lY-3,5,4,'FD');
+      doc.rect(lX,lY-2.6,5.5,4,'FD');
       doc.setFont('helvetica','normal'); doc.setFontSize(5.8); doc.setTextColor(...C_TXT);
+      doc.text(pelN+'º Pelotão', lX+7.5, lY);
       const v=varPorPel[pelN];
-      const vStr=v!==undefined&&v!==null ? ' ('+fmtVar(v)+')' : '';
-      doc.text(pelN+'º Pelotão'+vStr, lX+7, lY); lY+=5;
+      const vTxt=v!==undefined&&v!==null ? fmtVar(v) : '—';
+      const vCol=v===undefined||v===null ? [150,150,150] : corPoly(pelN).brd;
+      doc.setFont('helvetica','bold'); doc.setTextColor(...vCol);
+      doc.text(vTxt, lXEnd, lY, {align:'right'});
+      lY+=5.2;
     });
 
-    lY+=2;
-    /* Legenda semáforo */
-    [[C_SEM_G,[0,138,0],'Variação positiva'],[C_SEM_Y,[180,130,0],'Requer atenção'],[C_SEM_R,[180,0,20],'Desempenho insatisfatório']].forEach(([bg,brd,txt])=>{
+    lY+=2.5;
+    doc.setDrawColor(...C_BRD); doc.setLineWidth(0.2); doc.line(lX,lY,lXEnd,lY);
+    lY+=5;
+
+    /* Seção: legenda semáforo */
+    doc.setFont('helvetica','bold'); doc.setFontSize(5.6); doc.setTextColor(120,105,60);
+    doc.text('DESEMPENHO (VAR%)', lX, lY); lY+=4.5;
+    [[C_SEM_G,[0,138,0],'≤ 0% — Satisfatório'],
+     [C_SEM_Y,[180,130,0],'0–10% — Atenção'],
+     [C_SEM_R,[180,0,20],'> 10% — Insatisfatório']].forEach(([bg,brd,txt])=>{
       doc.setFillColor(...bg); doc.setDrawColor(...brd); doc.setLineWidth(0.4);
-      doc.rect(lX,lY-3,5,4,'FD');
+      doc.rect(lX,lY-2.6,5.5,4,'FD');
       doc.setFont('helvetica','normal'); doc.setFontSize(5.5); doc.setTextColor(...C_TXT);
-      doc.text(txt, lX+7, lY); lY+=5;
+      doc.text(txt, lX+7.5, lY); lY+=5.2;
     });
 
-    lY+=2;
-    /* Ponto de ocorrência */
-    doc.setFillColor(30,30,30); doc.circle(lX+2.5,lY-1.5,1.3,'F');
+    lY+=2.5;
+    doc.setDrawColor(...C_BRD); doc.setLineWidth(0.2); doc.line(lX,lY,lXEnd,lY);
+    lY+=5;
+
+    /* Seção: pontos de ocorrência + total */
+    doc.setFillColor(30,30,30); doc.setDrawColor(255,255,255); doc.setLineWidth(0.3);
+    doc.circle(lX+2.2,lY-1.3,1.5,'FD');
     doc.setFont('helvetica','normal'); doc.setFontSize(5.8); doc.setTextColor(...C_TXT);
-    doc.text(GDOESP_CONFIG[indCode].titulo.split(' ')[0]+' Rural', lX+7, lY); lY+=5;
-    doc.setFont('helvetica','bold'); doc.setFontSize(5.8);
-    doc.text('Total acumulado: '+nPlot, lX+7, lY);
+    doc.text('Ocorrência rural', lX+7.5, lY); lY+=6;
+
+    doc.setFillColor(245,240,225); doc.setDrawColor(...C_GOLD2); doc.setLineWidth(0.3);
+    doc.roundedRect(lX,lY-3.5,lXEnd-lX,9,1,1,'FD');
+    doc.setFont('helvetica','normal'); doc.setFontSize(5.3); doc.setTextColor(110,95,55);
+    doc.text('TOTAL — '+mesLabel, lX+2.5, lY+0.2);
+    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...C_GOLD2);
+    doc.text(String(nPlot), lXEnd-2.5, lY+3.3, {align:'right'});
 
     doc.setDrawColor(...C_BRD); doc.setLineWidth(0.3); doc.rect(aX,aY,aW,aH,'D');
   }
@@ -8812,7 +8773,7 @@ async function gerarPdfGdoEsp(){
 
     /* Mapa */
     const altMapa=PH-4-y;
-    if(altMapa>25) drawMapa(y, altMapa, indCode, regsA, varPorPel);
+    if(altMapa>25) drawMapa(y, altMapa, indCode, regsM, varPorPel);
   }
 
   doc.save(nomeArq);
