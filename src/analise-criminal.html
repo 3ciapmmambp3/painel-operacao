@@ -8110,149 +8110,284 @@ async function gerarPdfGdoEsp(){
 
   if(!Object.keys(_gdoespMetas).length) await _gdoespCarregarMetas();
 
-  const mesesSel = getMesDd('gdoesp');
+  /* ── Períodos ── */
+  const mesesSel = getMesDd('gdoesp'); /* mês(es) selecionado(s) na tela = "período mensal" */
+  const CIA = 3;
+
+  /* Mês de referência para o acumulado: se há seleção, pega o mais alto; senão usa todos */
+  let mesesAcum = [];
+  if(mesesSel.length){
+    /* acumulado = Jan até o mês mais alto selecionado */
+    const idxMax = Math.max(...mesesSel.map(m=>MESES.indexOf(m)));
+    mesesAcum = MESES.slice(0, idxMax+1);
+  } /* se mesesSel vazio → mesesAcum vazio → acumulado = todos os dados */
+
   const mesLabel = !mesesSel.length ? 'TODOS OS MESES'
     : mesesSel.length===1 ? mesesSel[0] : mesesSel.join(', ');
-  const CIA = 3;
+  const acumLabel = mesesAcum.length
+    ? 'JAN–'+mesesAcum[mesesAcum.length-1]
+    : 'ACUMULADO';
 
   const now=new Date();
   const dd=String(now.getDate()).padStart(2,'0'), mm2=String(now.getMonth()+1).padStart(2,'0');
   const yyyy=now.getFullYear(), hh=String(now.getHours()).padStart(2,'0'), mi=String(now.getMinutes()).padStart(2,'0');
   const nomeArq='GDO_ESPECIALIZADA_3CIA_'+mesLabel.replace(/[, ]+/g,'_')+'_'+dd+'-'+mm2+'-'+yyyy+'.pdf';
 
+  /* ── Dimensões A4 paisagem ── */
   const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
-  const PW=297,PH=210,ML=4,MR=4,TW=PW-ML-MR;
+  const PW=297, PH=210, ML=5, MR=5, TW=PW-ML-MR;
 
-  const GOLD=[100,80,30],GOLD2=[70,50,0];
-  const GREEN=[30,120,40],DANGER=[180,30,30],ORANGE=[180,100,0];
-  const BG_HEAD=[240,236,224],BG_ROW=[255,255,255],BG_ALT=[249,247,241];
-  const BG_TOT=[230,222,200],BG_GERAL=[215,205,182],BG_PEL=[52,73,94];
-  const TXT=[20,20,20],TXT_M=[100,80,30],BRD=[190,175,145];
+  /* ── Paleta de cores ── */
+  const C_DARK=[52,40,10],C_GOLD=[100,80,30],C_GOLD2=[70,55,5];
+  const C_HEAD_BG=[58,45,12];        /* cabeçalho escuro estilo GDO */
+  const C_SUB_BG=[230,222,200];      /* fundo seção ACUMULADO */
+  const C_MES_BG=[240,235,220];      /* fundo seção MÊS */
+  const C_PELROW=[248,246,240];
+  const C_ALTROW=[255,255,255];
+  const C_TOTAL=[220,210,185];
+  const C_BRD=[180,165,130];
+  const C_TXT=[30,25,10];
+  const C_GREEN=[20,120,50],C_YELLOW=[160,120,0],C_RED=[180,30,30];
+  const C_GBG_G=[210,240,215],C_GBGBG_Y=[250,235,190],C_GBGBG_R=[245,210,210];
 
-  function cvBg(v){ return v<=0?[214,238,217]:v<=10?[245,228,196]:[244,210,210]; }
-  function cvRgb(v){ return v<=0?GREEN:v<=10?ORANGE:DANGER; }
-  function hexRgb(h){ const r=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(h); return r?[parseInt(r[1],16),parseInt(r[2],16),parseInt(r[3],16)]:[100,100,100]; }
+  function semBg(v){ return v<=0?C_GBG_G:v<=10?C_GBGBG_Y:C_GBGBG_R; }
+  function semRgb(v){ return v<=0?C_GREEN:v<=10?C_YELLOW:C_RED; }
+  function hexRgb(h){
+    const r=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(h);
+    return r?[parseInt(r[1],16),parseInt(r[2],16),parseInt(r[3],16)]:[100,100,100];
+  }
+  function fmtVar(v){ return (v>=0?'+':'')+v.toFixed(2)+'%'; }
+  function fmtN(v){ return v===0?'0':String(v); }
+  function fmtT(v){ return v.toFixed(2); }
 
   /* Cores dos pelotões do KML_DATA */
   const PEL_COR={};
   if(typeof KML_DATA!=='undefined'&&KML_DATA.pelotoes){
-    Object.entries(KML_DATA.pelotoes).forEach(([k,v])=>{ PEL_COR[parseInt(k.replace(/[^0-9]/g,''))]=v.cor||'#888'; });
-  }
-  const PEL_FB={1:'#1E88E5',2:'#43A047',3:'#FB8C00',4:'#D81B60',5:'#8E24AA'};
-  function corPel(n){ return PEL_COR[n]||PEL_FB[n]||'#888'; }
-
-  let page=0;
-  function addPage(titulo){
-    if(page>0) doc.addPage();
-    page++;
-    doc.setFillColor(255,255,255); doc.rect(0,0,PW,PH,'F');
-    doc.setFillColor(...BG_HEAD); doc.rect(0,0,PW,11,'F');
-    doc.setDrawColor(100,80,30); doc.setLineWidth(0.5); doc.line(0,11,PW,11);
-    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...GOLD);
-    doc.text('3ª CIA PM MAMB — GDO ESPECIALIZADA — '+titulo,ML+1,7.5);
-    doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(...TXT_M);
-    doc.text('PERÍODO: '+mesLabel+'  |  EXTRAÍDO: '+dd+'/'+mm2+'/'+yyyy+' às '+hh+'h'+mi+'min  |  PÁG. '+page,PW-MR,7.5,{align:'right'});
-    return 14;
-  }
-
-  /* ── Cabeçalho da tabela ── */
-  function drawTableHead(y, cfg, nSub, colPel, colSub, colTot, colTaxa, colMeta, colVar){
-    const h=6;
-    doc.setFillColor(...BG_HEAD); doc.rect(0,y,PW,h,'F');
-    doc.setDrawColor(...BRD); doc.setLineWidth(0.15);
-    doc.setFont('helvetica','bold'); doc.setFontSize(6.2); doc.setTextColor(...GOLD2);
-    doc.rect(ML,y,colPel,h,'D'); doc.text('PELOTÃO',ML+1.5,y+h*0.68);
-    let cx=ML+colPel;
-    if(cfg.subColunas){
-      cfg.subColunas.forEach(([key,label])=>{
-        doc.rect(cx,y,colSub,h,'D');
-        doc.text(key.replace(/_/g,' '),cx+colSub/2,y+h*0.68,{align:'center'});
-        cx+=colSub;
-      });
-    }
-    /* Coluna TOTAL */
-    doc.rect(cx,y,colTot,h,'D'); doc.text('TOTAL',cx+colTot/2,y+h*0.68,{align:'center'}); cx+=colTot;
-    /* Coluna TAXA, META, VAR apenas no cabeçalho */
-    doc.setTextColor(20,100,50); doc.rect(cx,y,colTaxa,h,'D'); doc.text('TAXA',cx+colTaxa/2,y+h*0.68,{align:'center'}); cx+=colTaxa;
-    doc.setTextColor(30,90,160); doc.rect(cx,y,colMeta,h,'D'); doc.text('META',cx+colMeta/2,y+h*0.68,{align:'center'}); cx+=colMeta;
-    doc.setTextColor(...GOLD); doc.rect(cx,y,colVar,h,'D'); doc.text('VAR(%)',cx+colVar/2,y+h*0.68,{align:'center'});
-    return y+h;
-  }
-
-  /* ── Linha de Pelotão — só quantidade, taxa/meta/var vazias ── */
-  function drawRowPel(y, pelN, sub, total, alt, cfg, colPel, colSub, colTot, colTaxa, colMeta, colVar){
-    const h=6;
-    const pelRgb=hexRgb(corPel(pelN));
-    doc.setFillColor(Math.min(255,pelRgb[0]+140),Math.min(255,pelRgb[1]+140),Math.min(255,pelRgb[2]+140));
-    doc.rect(0,y,PW,h,'F');
-    /* Barra lateral cor do pelotão */
-    doc.setFillColor(...pelRgb); doc.rect(0,y,2.5,h,'F');
-    /* Círculo com número */
-    doc.setFillColor(...pelRgb); doc.circle(ML+4,y+h/2,2.5,'F');
-    doc.setFont('helvetica','bold'); doc.setFontSize(6.5); doc.setTextColor(255,255,255);
-    doc.text(String(pelN),ML+4,y+h/2+0.7,{align:'center'});
-    doc.setFontSize(7); doc.setTextColor(...pelRgb);
-    doc.text(pelN+'º Pelotão',ML+9,y+h/2+0.7);
-    doc.setDrawColor(...BRD); doc.setLineWidth(0.12); doc.rect(ML,y,colPel,h,'D');
-    let cx=ML+colPel;
-    if(cfg.subColunas){
-      cfg.subColunas.forEach(([key])=>{
-        const v=sub[key]||0;
-        doc.setFont('helvetica',v>0?'bold':'normal'); doc.setFontSize(v>0?7:6);
-        doc.setTextColor(v>0?40:180,v>0?40:180,v>0?40:180);
-        doc.rect(cx,y,colSub,h,'D'); doc.text(v>0?String(v):'—',cx+colSub/2,y+h/2+0.7,{align:'center'});
-        cx+=colSub;
-      });
-    }
-    doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...pelRgb);
-    doc.rect(cx,y,colTot,h,'D'); doc.text(String(total),cx+colTot/2,y+h/2+0.7,{align:'center'}); cx+=colTot;
-    /* Taxa/Meta/Var: vazio para linhas de pelotão */
-    [colTaxa,colMeta,colVar].forEach(w=>{
-      doc.setFillColor(245,243,238); doc.rect(cx,y,w,h,'F');
-      doc.setDrawColor(...BRD); doc.rect(cx,y,w,h,'D');
-      doc.setFont('helvetica','normal'); doc.setFontSize(6); doc.setTextColor(200,192,175);
-      doc.text('—',cx+w/2,y+h/2+0.7,{align:'center'});
-      cx+=w;
+    Object.entries(KML_DATA.pelotoes).forEach(([k,v])=>{
+      PEL_COR[parseInt(k.replace(/[^0-9]/g,''))]=v.cor||'#888';
     });
-    return y+h;
+  }
+  const PEL_FB={1:'#1565C0',2:'#2E7D32',3:'#E65100',4:'#6A1B9A',5:'#00695C'};
+  function corPel(n){ return PEL_COR[n]||PEL_FB[n]||'#607D8B'; }
+
+  /* ── Agrega registros por pelotão ── */
+  function agregaPelotoes(indCode, mesesFiltro){
+    const cfg=GDOESP_CONFIG[indCode];
+    const regs=_gdoespRegistrosRurais(indCode, mesesFiltro);
+    const pel={};
+    dadosGrupos.forEach(g=>{
+      const p=pelDoColk(g.colK||g.grupamento);
+      if(p===99) return;
+      if(!pel[p]){ pel[p]={total:0,sub:{}}; if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{pel[p].sub[k]=0;}); }
+    });
+    regs.forEach(c=>{
+      const gi=dadosGrupos.find(g=>g.munNorm===norm(c.municipio||''));
+      const colK=gi?(gi.colK||gi.grupamento):(c.grupamento||'?');
+      const p=pelDoColk(colK);
+      if(p===99) return;
+      if(!pel[p]){ pel[p]={total:0,sub:{}}; if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{pel[p].sub[k]=0;}); }
+      if(indCode==='IF'){
+        pel[p].total+=1;
+      } else if(c.componentesGdoEsp&&cfg.subColunas){
+        cfg.subColunas.forEach(([k])=>{
+          const v=c.componentesGdoEsp[k]||0;
+          pel[p].sub[k]=(pel[p].sub[k]||0)+v;
+          pel[p].total+=v;
+        });
+      }
+    });
+    return { pel, regs };
   }
 
-  /* ── Linha TOTAL BPM MAMB — todas as colunas ── */
-  function drawRowTotalCia(y, sub, total, taxa, meta, varPct, cfg, colPel, colSub, colTot, colTaxa, colMeta, colVar){
-    const h=8;
-    doc.setFillColor(...BG_GERAL); doc.rect(0,y,PW,h,'F');
-    doc.setDrawColor(...GOLD); doc.setLineWidth(0.5); doc.line(0,y,PW,y);
-    doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...GOLD2);
-    doc.rect(ML,y,colPel,h,'D'); doc.text('BPM MAMB (3ª CIA)',ML+1.5,y+h*0.62);
+  /* ── Página de indicador ── */
+  let pageNum=0;
+  function novaPagina(tituloInd, nomeInd){
+    if(pageNum>0) doc.addPage();
+    pageNum++;
+    /* Cabeçalho escuro estilo PDF oficial */
+    doc.setFillColor(...C_HEAD_BG); doc.rect(0,0,PW,16,'F');
+    doc.setDrawColor(...C_GOLD); doc.setLineWidth(0.8); doc.line(0,16,PW,16);
+    doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(...C_GOLD);
+    doc.text('GDO ESPECIALIZADA - 2026',PW-MR,7,{align:'right'});
+    doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(255,255,255);
+    doc.text(nomeInd.toUpperCase()+' - RURAL - 3ª CIA PM MAMB',ML,12);
+    /* Rodapé topo-direita com info de extração */
+    doc.setFont('helvetica','normal'); doc.setFontSize(5.5); doc.setTextColor(200,185,140);
+    doc.text('Extraído em '+dd+'/'+mm2+'/'+yyyy+' às '+hh+'h'+mi+'  |  Pág. '+pageNum,PW-MR,6,{align:'right'});
+    return 19; /* y inicial após cabeçalho */
+  }
+
+  /* ── Título da tabela ── */
+  function tituloTabela(y, label){
+    doc.setFont('helvetica','bold'); doc.setFontSize(6.5); doc.setTextColor(...C_DARK);
+    doc.text(label, PW/2, y+3.5, {align:'center'});
+    return y+6;
+  }
+
+  /* ── Cabeçalho duplo da tabela (MÊS + ACUMULADO lado a lado) ── */
+  function cabecalhoDuplo(y, cfg, dims){
+    const { colPel, colSub, colTot, colAbs, colTaxa, colMeta, colVar, midX } = dims;
+    const nSub=cfg.subColunas?cfg.subColunas.length:0;
+    const h1=5, h2=5;
+
+    /* Linha 1: seções "MÊS" e "ACUMULADO" */
+    doc.setFillColor(...C_MES_BG); doc.rect(ML,y,midX-ML,h1,'F');
+    doc.setFillColor(...C_SUB_BG); doc.rect(midX,y,ML+TW-midX,h1,'F');
+    doc.setDrawColor(...C_BRD); doc.setLineWidth(0.2);
+    doc.setFont('helvetica','bold'); doc.setFontSize(6.5); doc.setTextColor(...C_GOLD2);
+    doc.text(mesLabel,ML+(midX-ML)/2,y+h1*0.72,{align:'center'});
+    doc.text(acumLabel,midX+(ML+TW-midX)/2,y+h1*0.72,{align:'center'});
+    /* Divisor central destacado */
+    doc.setDrawColor(...C_GOLD); doc.setLineWidth(1.2); doc.line(midX,y,midX,y+h1+h2);
+    doc.setLineWidth(0.2); doc.setDrawColor(...C_BRD);
+    doc.rect(ML,y,TW,h1,'D');
+    y+=h1;
+
+    /* Linha 2: nomes das colunas */
+    doc.setFillColor(...C_MES_BG); doc.rect(ML,y,midX-ML,h2,'F');
+    doc.setFillColor(...C_SUB_BG); doc.rect(midX,y,ML+TW-midX,h2,'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(5.5); doc.setTextColor(...C_GOLD2);
+
+    /* Coluna PELOTÃO (compartilhada) */
+    doc.rect(ML,y,colPel,h2,'D'); doc.text('PELOTÃO',ML+colPel/2,y+h2*0.72,{align:'center'});
     let cx=ML+colPel;
+
+    /* Sub-colunas MÊS */
     if(cfg.subColunas){
       cfg.subColunas.forEach(([key])=>{
-        const v=sub[key]||0;
-        doc.setTextColor(...TXT); doc.setFontSize(7.5);
-        doc.rect(cx,y,colSub,h,'D'); doc.text(String(v),cx+colSub/2,y+h*0.62,{align:'center'});
+        doc.rect(cx,y,colSub,h2,'D');
+        doc.text(key.replace(/_/g,'.'),cx+colSub/2,y+h2*0.72,{align:'center'});
         cx+=colSub;
       });
     }
-    doc.setTextColor(...GOLD2); doc.setFontSize(9);
-    doc.rect(cx,y,colTot,h,'D'); doc.text(String(total),cx+colTot/2,y+h*0.62,{align:'center'}); cx+=colTot;
-    doc.setTextColor(20,100,50); doc.setFontSize(8);
-    doc.rect(cx,y,colTaxa,h,'D'); doc.text(taxa.toFixed(2),cx+colTaxa/2,y+h*0.62,{align:'center'}); cx+=colTaxa;
+    /* ABS, TAXA, META, VAR do mês */
+    doc.rect(cx,y,colAbs,h2,'D'); doc.text('ABS',cx+colAbs/2,y+h2*0.72,{align:'center'}); cx+=colAbs;
+    doc.setTextColor(20,100,50);
+    doc.rect(cx,y,colTaxa,h2,'D'); doc.text('TAXA',cx+colTaxa/2,y+h2*0.72,{align:'center'}); cx+=colTaxa;
     doc.setTextColor(30,90,160);
-    doc.rect(cx,y,colMeta,h,'D'); doc.text(meta.toFixed(2),cx+colMeta/2,y+h*0.62,{align:'center'}); cx+=colMeta;
-    const vBg=cvBg(varPct),vRgb=cvRgb(varPct);
-    doc.setFillColor(...vBg); doc.rect(cx,y,colVar,h,'F');
-    doc.setDrawColor(...BRD); doc.rect(cx,y,colVar,h,'D');
-    doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...vRgb);
-    doc.text((varPct>=0?'+':'')+varPct.toFixed(2)+'%',cx+colVar/2,y+h*0.62,{align:'center'});
-    doc.setDrawColor(...GOLD); doc.setLineWidth(0.5); doc.line(0,y+h,PW,y+h);
+    doc.rect(cx,y,colMeta,h2,'D'); doc.text('META',cx+colMeta/2,y+h2*0.72,{align:'center'}); cx+=colMeta;
+    doc.setTextColor(...C_GOLD2);
+    doc.rect(cx,y,colVar,h2,'D'); doc.text('VAR(%)',cx+colVar/2,y+h2*0.72,{align:'center'}); cx+=colVar;
+
+    /* Sub-colunas ACUMULADO */
+    doc.setDrawColor(...C_GOLD); doc.setLineWidth(1.2); doc.line(midX,y,midX,y+h2);
+    doc.setDrawColor(...C_BRD); doc.setLineWidth(0.2);
+    if(cfg.subColunas){
+      cfg.subColunas.forEach(([key])=>{
+        doc.rect(cx,y,colSub,h2,'D');
+        doc.setTextColor(...C_GOLD2); doc.setFontSize(5.5);
+        doc.text(key.replace(/_/g,'.'),cx+colSub/2,y+h2*0.72,{align:'center'});
+        cx+=colSub;
+      });
+    }
+    doc.setTextColor(...C_GOLD2);
+    doc.rect(cx,y,colAbs,h2,'D'); doc.text('ABS',cx+colAbs/2,y+h2*0.72,{align:'center'}); cx+=colAbs;
+    doc.setTextColor(20,100,50);
+    doc.rect(cx,y,colTaxa,h2,'D'); doc.text('TAXA',cx+colTaxa/2,y+h2*0.72,{align:'center'}); cx+=colTaxa;
+    doc.setTextColor(30,90,160);
+    doc.rect(cx,y,colMeta,h2,'D'); doc.text('META',cx+colMeta/2,y+h2*0.72,{align:'center'}); cx+=colMeta;
+    doc.setTextColor(...C_GOLD2);
+    doc.rect(cx,y,colVar,h2,'D'); doc.text('VAR(%)',cx+colVar/2,y+h2*0.72,{align:'center'});
+    return y+h2;
+  }
+
+  /* ── Linha de dados (pelotão ou total) ── */
+  function linhaTabela(y, label, rgbLabel, isBold, isTotalRow,
+                       subM, absM, taxaM, metaM, varM,
+                       subA, absA, taxaA, metaA, varA,
+                       cfg, dims, altRow){
+    const { colPel, colSub, colAbs, colTaxa, colMeta, colVar, midX } = dims;
+    const nSub=cfg.subColunas?cfg.subColunas.length:0;
+    const h=isTotalRow?8:6;
+    const bgM=isTotalRow?C_TOTAL:altRow?[248,246,240]:[255,255,255];
+    const bgA=isTotalRow?[205,195,170]:altRow?[240,236,225]:[248,245,238];
+
+    doc.setFillColor(...bgM); doc.rect(ML,y,midX-ML,h,'F');
+    doc.setFillColor(...bgA); doc.rect(midX,y,ML+TW-midX,h,'F');
+
+    /* Barra lateral colorida (só pelotões, não total) */
+    if(!isTotalRow && rgbLabel){
+      doc.setFillColor(...rgbLabel); doc.rect(ML,y,2,h,'F');
+    } else if(isTotalRow){
+      doc.setFillColor(...C_GOLD); doc.rect(ML,y,2.5,h,'F');
+    }
+
+    doc.setDrawColor(...C_BRD); doc.setLineWidth(0.15);
+
+    /* Label coluna PELOTÃO */
+    doc.rect(ML,y,colPel,h,'D');
+    if(!isTotalRow && rgbLabel){
+      /* Círculo colorido com número */
+      doc.setFillColor(...rgbLabel); doc.circle(ML+5, y+h/2, 2.8, 'F');
+      doc.setFont('helvetica','bold'); doc.setFontSize(6.5); doc.setTextColor(255,255,255);
+      doc.text(label.replace(/[^0-9]/g,''), ML+5, y+h/2+0.8, {align:'center'});
+      doc.setFont('helvetica',isBold?'bold':'normal'); doc.setFontSize(6.5);
+      doc.setTextColor(...rgbLabel);
+      doc.text(label+'º Pelotão', ML+10, y+h/2+0.8);
+    } else {
+      doc.setFont('helvetica','bold'); doc.setFontSize(isTotalRow?7:6.5);
+      doc.setTextColor(...C_GOLD2);
+      doc.text(label, ML+4, y+h*0.62);
+    }
+
+    let cx=ML+colPel;
+    /* Dados do MÊS */
+    const _cell=(v,w,bold,tColor)=>{
+      doc.rect(cx,y,w,h,'D');
+      doc.setFont('helvetica',bold?'bold':'normal');
+      doc.setFontSize(isTotalRow?7:6.5); doc.setTextColor(...tColor);
+      doc.text(v, cx+w/2, y+h*0.62, {align:'center'});
+      cx+=w;
+    };
+    if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ const v=subM?subM[k]||0:0; _cell(v>0?fmtN(v):'—',colSub,v>0,[40,40,40]); });
+    _cell(fmtN(absM),colAbs,isTotalRow,isTotalRow?C_GOLD2:[40,40,40]);
+    if(isTotalRow){
+      _cell(fmtT(taxaM),colTaxa,true,[20,100,50]);
+      _cell(fmtT(metaM),colMeta,true,[30,90,160]);
+      const vb=semBg(varM),vr=semRgb(varM);
+      doc.setFillColor(...vb); doc.rect(cx,y,colVar,h,'F');
+      doc.setDrawColor(...C_BRD); doc.rect(cx,y,colVar,h,'D');
+      doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(...vr);
+      doc.text(fmtVar(varM),cx+colVar/2,y+h*0.62,{align:'center'}); cx+=colVar;
+    } else {
+      [colTaxa,colMeta,colVar].forEach(w=>{ _cell('—',w,false,[200,190,175]); });
+    }
+
+    /* Divisor central */
+    doc.setDrawColor(...C_GOLD); doc.setLineWidth(1.2); doc.line(midX,y,midX,y+h);
+    doc.setDrawColor(...C_BRD); doc.setLineWidth(0.15);
+
+    /* Dados do ACUMULADO */
+    if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ const v=subA?subA[k]||0:0; _cell(v>0?fmtN(v):'—',colSub,v>0,[40,40,40]); });
+    _cell(fmtN(absA),colAbs,isTotalRow,isTotalRow?C_GOLD2:[40,40,40]);
+    if(isTotalRow){
+      _cell(fmtT(taxaA),colTaxa,true,[20,100,50]);
+      _cell(fmtT(metaA),colMeta,true,[30,90,160]);
+      const vb=semBg(varA),vr=semRgb(varA);
+      doc.setFillColor(...vb); doc.rect(cx,y,colVar,h,'F');
+      doc.setDrawColor(...C_BRD); doc.rect(cx,y,colVar,h,'D');
+      doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(...vr);
+      doc.text(fmtVar(varA),cx+colVar/2,y+h*0.62,{align:'center'}); cx+=colVar;
+    } else {
+      [colTaxa,colMeta,colVar].forEach(w=>{ _cell('—',w,false,[200,190,175]); });
+    }
+
+    if(isTotalRow){
+      doc.setDrawColor(...C_GOLD); doc.setLineWidth(0.6);
+      doc.line(ML,y,ML+TW,y); doc.line(ML,y+h,ML+TW,y+h);
+    }
     return y+h;
   }
 
-  /* ── Mapa PDF: camadas de pelotão + pontos de crime ── */
-  function drawMapaOcorrencias(y, alturaDisp, indCode, registros){
-    const areaX=ML,areaY=y,areaW=TW,areaH=alturaDisp;
-    doc.setFillColor(252,252,252); doc.setDrawColor(...BRD); doc.setLineWidth(0.3);
-    doc.rect(areaX,areaY,areaW,areaH,'FD');
+  /* ── Mapa de ocorrências (acumulado) ── */
+  function drawMapa(y, altH, indCode, regsAcum){
+    const aX=ML, aY=y, aW=TW, aH=altH;
+    doc.setFillColor(252,252,252); doc.setDrawColor(...C_BRD); doc.setLineWidth(0.3);
+    doc.rect(aX,aY,aW,aH,'FD');
+
+    /* Título do mapa */
+    doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.setTextColor(...C_DARK);
+    doc.text('MAPA - Ocorrências '+acumLabel, aX+aW/2, aY+4, {align:'center'});
 
     let minLng=Infinity,maxLng=-Infinity,minLat=Infinity,maxLat=-Infinity;
     const pelPolyMap={};
@@ -8265,25 +8400,30 @@ async function gerarPdfGdoEsp(){
             (gpData.polys||[]).forEach(poly=>{
               pelPolyMap[pelNum].polys.push(poly);
               poly.forEach(([lng,lat])=>{
-                if(lng<minLng)minLng=lng; if(lng>maxLng)maxLng=lng;
-                if(lat<minLat)minLat=lat; if(lat>maxLat)maxLat=lat;
+                if(lng<minLng)minLng=lng;if(lng>maxLng)maxLng=lng;
+                if(lat<minLat)minLat=lat;if(lat>maxLat)maxLat=lat;
               });
             });
           });
         }
       });
     }
-    registros.forEach(c=>{ if(c.lat&&c.lng){ if(c.lng<minLng)minLng=c.lng; if(c.lng>maxLng)maxLng=c.lng; if(c.lat<minLat)minLat=c.lat; if(c.lat>maxLat)maxLat=c.lat; }});
-    if(!isFinite(minLng)){ doc.setFont('helvetica','italic'); doc.setFontSize(7); doc.setTextColor(150,150,150); doc.text('Dados geográficos indisponíveis.',areaX+areaW/2,areaY+areaH/2,{align:'center'}); return; }
+    regsAcum.forEach(c=>{ if(c.lat&&c.lng){ if(c.lng<minLng)minLng=c.lng;if(c.lng>maxLng)maxLng=c.lng;if(c.lat<minLat)minLat=c.lat;if(c.lat>maxLat)maxLat=c.lat; }});
+    if(!isFinite(minLng)){
+      doc.setFont('helvetica','italic'); doc.setFontSize(7); doc.setTextColor(150,150,150);
+      doc.text('Dados geográficos indisponíveis.',aX+aW/2,aY+aH/2,{align:'center'}); return;
+    }
 
-    const pad=5,iX=areaX+pad,iY=areaY+pad,iW=areaW-pad*2,iH=areaH-pad*2;
+    /* Área útil do mapa: deixa espaço para legenda à direita */
+    const legW=38, pad=7;
+    const mX=aX+pad, mY=aY+7, mW=aW-legW-pad*2, mH=aH-7-pad;
     const lR=Math.max(maxLng-minLng,1e-6),ltR=Math.max(maxLat-minLat,1e-6);
     const midLat=(minLat+maxLat)/2,ac=Math.cos(midLat*Math.PI/180);
-    const sX=iW/(lR*ac),sY=iH/ltR,sc=Math.min(sX,sY);
-    const dW=lR*ac*sc,dH=ltR*sc,oX=iX+(iW-dW)/2,oY=iY+(iH-dH)/2;
+    const sX=mW/(lR*ac),sY=mH/ltR,sc=Math.min(sX,sY);
+    const dW=lR*ac*sc,dH=ltR*sc,oX=mX+(mW-dW)/2,oY=mY+(mH-dH)/2;
     function proj(lng,lat){return[oX+(lng-minLng)*ac*sc,oY+(maxLat-lat)*sc];}
 
-    /* Polígonos por pelotão com a cor do KML */
+    /* Polígonos */
     Object.entries(pelPolyMap).forEach(([pelN,pd])=>{
       const rgb=hexRgb(pd.cor);
       const bgR=Math.min(255,rgb[0]+130),bgG=Math.min(255,rgb[1]+130),bgB=Math.min(255,rgb[2]+130);
@@ -8291,111 +8431,135 @@ async function gerarPdfGdoEsp(){
         if(poly.length<3) return;
         const pts=poly.map(([lng,lat])=>proj(lng,lat));
         const segs=pts.slice(1).map((p,i)=>[p[0]-pts[i][0],p[1]-pts[i][1]]);
-        doc.setFillColor(bgR,bgG,bgB); doc.setDrawColor(...rgb); doc.setLineWidth(0.6);
+        doc.setFillColor(bgR,bgG,bgB); doc.setDrawColor(...rgb); doc.setLineWidth(0.5);
         try{ doc.lines(segs,pts[0][0],pts[0][1],[1,1],'FD',true); }catch(e){}
       });
     });
 
     /* Pontos de crime */
-    const IND_COR_PDF={MV:[220,50,50],CVPE:[50,100,200],CVPA:[220,120,30],IF:[50,150,50]};
-    const crimeCor=IND_COR_PDF[indCode]||[100,80,30];
+    const IND_COR={MV:[220,50,50],CVPE:[50,100,200],CVPA:[220,120,30],IF:[50,150,50]};
+    const crimeCor=IND_COR[indCode]||[100,80,30];
     let nPlot=0;
-    registros.forEach(c=>{
+    regsAcum.forEach(c=>{
       if(!c.lat||!c.lng) return;
       const p=proj(c.lng,c.lat);
-      if(p[0]<areaX||p[0]>areaX+areaW||p[1]<areaY||p[1]>areaY+areaH) return;
-      doc.setFillColor(...crimeCor); doc.setDrawColor(255,255,255); doc.setLineWidth(0.5);
-      doc.circle(p[0],p[1],1.8,'FD'); nPlot++;
+      if(p[0]<aX||p[0]>aX+aW-legW||p[1]<aY||p[1]>aY+aH) return;
+      doc.setFillColor(...crimeCor); doc.setDrawColor(255,255,255); doc.setLineWidth(0.4);
+      doc.circle(p[0],p[1],1.6,'FD'); nPlot++;
     });
 
-    /* Legenda dos pelotões + crimes */
-    let legX=areaX+6,legY=areaY+areaH-4;
-    Object.entries(pelPolyMap).forEach(([pelN,pd])=>{
+    /* Legenda à direita */
+    const lX=aX+aW-legW+2, lY0=aY+8;
+    doc.setFont('helvetica','bold'); doc.setFontSize(5.5); doc.setTextColor(...C_DARK);
+    doc.text(GDOESP_CONFIG[indCode].titulo.split('(')[0].trim().toUpperCase(),lX,lY0);
+    let lY=lY0+5;
+    /* Legenda por pelotão */
+    Object.entries(pelPolyMap).sort(([a],[b])=>Number(a)-Number(b)).forEach(([pelN,pd])=>{
       const rgb=hexRgb(pd.cor);
-      doc.setFillColor(...rgb); doc.circle(legX,legY,1.3,'F');
-      doc.setFont('helvetica','normal'); doc.setFontSize(5.5); doc.setTextColor(60,60,60);
-      doc.text(pelN+'º PEL',legX+3,legY+0.8); legX+=20;
+      const bgR=Math.min(255,rgb[0]+130),bgG=Math.min(255,rgb[1]+130),bgB=Math.min(255,rgb[2]+130);
+      doc.setFillColor(bgR,bgG,bgB); doc.setDrawColor(...rgb); doc.setLineWidth(0.4);
+      doc.rect(lX,lY-2.5,4.5,3.5,'FD');
+      doc.setFont('helvetica','normal'); doc.setFontSize(5.5); doc.setTextColor(...C_TXT);
+      doc.text(pelN+'º Pelotão',lX+6,lY); lY+=5;
     });
-    doc.setFillColor(...crimeCor); doc.circle(legX,legY,1.3,'F');
-    doc.setFont('helvetica','normal'); doc.setFontSize(5.5); doc.setTextColor(60,60,60);
-    doc.text('Ocorrência ('+nPlot+')',legX+3,legY+0.8);
+    /* Ponto de ocorrência */
+    doc.setFillColor(...crimeCor); doc.circle(lX+2.2,lY-1.5,1.6,'F');
+    doc.setDrawColor(255,255,255); doc.setLineWidth(0.3); doc.circle(lX+2.2,lY-1.5,1.6,'D');
+    doc.setFont('helvetica','normal'); doc.setFontSize(5.5); doc.setTextColor(...C_TXT);
+    doc.text('Ocorrência Rural',lX+6,lY);
+    lY+=5;
+    doc.setFont('helvetica','bold'); doc.setFontSize(5.5); doc.setTextColor(...C_DARK);
+    doc.text('Total: '+nPlot,lX+6,lY);
 
-    doc.setDrawColor(...BRD); doc.setLineWidth(0.3); doc.rect(areaX,areaY,areaW,areaH,'D');
+    doc.setDrawColor(...C_BRD); doc.setLineWidth(0.3); doc.rect(aX,aY,aW,aH,'D');
   }
 
-  /* ── GERAÇÃO: 4 páginas ── */
+  /* ── LOOP PRINCIPAL: 4 indicadores ── */
   const INDS=['MV','CVPE','CVPA','IF'];
+
   for(const indCode of INDS){
     const cfg=GDOESP_CONFIG[indCode];
     const nSub=cfg.subColunas?cfg.subColunas.length:0;
-    const colTaxa=22,colMeta=22,colVar=28;
-    const colTot=nSub?14:18;
-    let colPel=nSub===0?TW-colTot-colTaxa-colMeta-colVar:nSub<=3?52:nSub<=5?48:44;
-    const colSubTotal=nSub?(TW-colPel-colTot-colTaxa-colMeta-colVar):0;
-    const colSub=nSub?colSubTotal/nSub:0;
-
     const pop=_gdoespPopulacaoRural(CIA,indCode);
-    const metaReg=_gdoespMetas[CIA+'-'+indCode];
-    let metaTaxa;
-    if(!mesesSel.length) metaTaxa=metaReg?(parseFloat(metaReg.meta_anual_taxa)||0):0;
-    else if(mesesSel.length===1) metaTaxa=_gdoespMetaMes(CIA,indCode,mesesSel[0]);
-    else metaTaxa=mesesSel.reduce((s,m)=>s+_gdoespMetaMes(CIA,indCode,m),0);
 
-    const registrosTodos=_gdoespRegistrosRurais(indCode,mesesSel);
+    /* Metas do MÊS selecionado */
+    let metaMes=0;
+    if(!mesesSel.length){ const reg=_gdoespMetas[CIA+'-'+indCode]; metaMes=reg?(parseFloat(reg.meta_anual_taxa)||0)/12:0; }
+    else if(mesesSel.length===1) metaMes=_gdoespMetaMes(CIA,indCode,mesesSel[0]);
+    else metaMes=mesesSel.reduce((s,m)=>s+_gdoespMetaMes(CIA,indCode,m),0);
 
-    /* Agrega por Pelotão — sem nível de grupamento */
-    const pel_totais={};  /* pelNum -> {total, sub} */
-    dadosGrupos.forEach(g=>{
-      const pelNum=pelDoColk(g.colK||g.grupamento);
-      if(pelNum===99) return;
-      if(!pel_totais[pelNum]){ pel_totais[pelNum]={total:0,sub:{}}; if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ pel_totais[pelNum].sub[k]=0; }); }
+    /* Metas do ACUMULADO */
+    let metaAcum=0;
+    if(!mesesAcum.length){ const reg=_gdoespMetas[CIA+'-'+indCode]; metaAcum=reg?(parseFloat(reg.meta_anual_taxa)||0):0; }
+    else metaAcum=mesesAcum.reduce((s,m)=>s+_gdoespMetaMes(CIA,indCode,m),0);
+
+    /* Agrega pelotões */
+    const { pel: pelMes, regs: regsMes } = agregaPelotoes(indCode, mesesSel);
+    const { pel: pelAcum, regs: regsAcum } = agregaPelotoes(indCode, mesesAcum);
+
+    const pelNums=[...new Set([...Object.keys(pelMes),...Object.keys(pelAcum)].map(Number))].sort((a,b)=>a-b);
+
+    /* Totais CIA */
+    let totAbsM=0, totSubM={}, totAbsA=0, totSubA={};
+    if(cfg.subColunas){ cfg.subColunas.forEach(([k])=>{totSubM[k]=0;totSubA[k]=0;}); }
+    pelNums.forEach(p=>{
+      const pm=pelMes[p]||{total:0,sub:{}}; totAbsM+=pm.total;
+      const pa=pelAcum[p]||{total:0,sub:{}}; totAbsA+=pa.total;
+      if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ totSubM[k]+=(pm.sub[k]||0); totSubA[k]+=(pa.sub[k]||0); });
     });
-    registrosTodos.forEach(c=>{
-      const gi=dadosGrupos.find(g=>g.munNorm===norm(c.municipio||''));
-      const colK=gi?(gi.colK||gi.grupamento):(c.grupamento||'?');
-      const pelNum=pelDoColk(colK);
-      if(pelNum===99) return;
-      if(!pel_totais[pelNum]){ pel_totais[pelNum]={total:0,sub:{}}; if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ pel_totais[pelNum].sub[k]=0; }); }
-      if(indCode==='IF'){
-        pel_totais[pelNum].total+=1;
-      } else if(c.componentesGdoEsp&&cfg.subColunas){
-        cfg.subColunas.forEach(([k])=>{
-          const v=c.componentesGdoEsp[k]||0;
-          pel_totais[pelNum].sub[k]=(pel_totais[pelNum].sub[k]||0)+v;
-          pel_totais[pelNum].total+=v;
-        });
-      }
-    });
+    const taxaM=pop>0?(totAbsM/pop)*100000:0;
+    const taxaA=pop>0?(totAbsA/pop)*100000:0;
+    const varM=_gdoespVarPct(taxaM,metaMes);
+    const varA=_gdoespVarPct(taxaA,metaAcum);
 
-    const pelNums=Object.keys(pel_totais).map(Number).sort((a,b)=>a-b);
-    let ciaTot=0,ciaSub={};
-    if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ ciaSub[k]=0; });
-    pelNums.forEach(pelN=>{
-      ciaTot+=pel_totais[pelN].total;
-      if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{ ciaSub[k]+=(pel_totais[pelN].sub[k]||0); });
-    });
-    const taxaCia=pop>0?(ciaTot/pop)*100000:0;
-    const varCia=_gdoespVarPct(taxaCia,metaTaxa);
+    /* Dimensões das colunas: dividir TW em 2 metades simétricas */
+    /* Cada metade tem: colPel(compartilhado só na esq) | nSub*colSub | colAbs | colTaxa | colMeta | colVar */
+    const colAbs=nSub?11:15, colTaxa=18, colMeta=18, colVar=22;
+    const colSub=nSub?Math.min(14,(TW/2-colAbs-colTaxa-colMeta-colVar)/(nSub+0.6)):0;
+    const colPel=Math.max(28,(TW/2-(nSub*colSub)-colAbs-colTaxa-colMeta-colVar));
+    const ladoW=colPel+(nSub*colSub)+colAbs+colTaxa+colMeta+colVar;
+    const midX=ML+ladoW;
+    const dims={ colPel, colSub, colAbs, colTaxa, colMeta, colVar, midX };
 
-    let y=addPage(cfg.icone+' '+cfg.titulo);
-    y=drawTableHead(y,cfg,nSub,colPel,colSub,colTot,colTaxa,colMeta,colVar);
+    /* ── PÁGINA ── */
+    const nomeInd=cfg.titulo;
+    let y=novaPagina(cfg.icone+' '+cfg.titulo, nomeInd);
 
+    /* Título da tabela */
+    const tabelaTitulo='TABELA - Monitoramento do Indicador de '+cfg.titulo+' na Zona Rural, por Pelotões da 3ª CIA PM MAMB  |  Período: '+mesLabel+' e Acumulado de 2026';
+    doc.setFont('helvetica','bold'); doc.setFontSize(5.8); doc.setTextColor(...C_DARK);
+    const linhas=doc.splitTextToSize(tabelaTitulo, TW);
+    doc.text(linhas, PW/2, y+2.5, {align:'center'});
+    y+=linhas.length*3.5+2;
+
+    /* Cabeçalho duplo */
+    y=cabecalhoDuplo(y, cfg, dims);
+
+    /* Linhas por pelotão */
     pelNums.forEach((pelN,pi)=>{
-      const pd=pel_totais[pelN];
-      if(y+6.5>PH-55){ y=addPage(cfg.icone+' '+cfg.titulo+' (cont.)'); y=drawTableHead(y,cfg,nSub,colPel,colSub,colTot,colTaxa,colMeta,colVar); }
-      y=drawRowPel(y,pelN,pd.sub,pd.total,pi%2===1,cfg,colPel,colSub,colTot,colTaxa,colMeta,colVar);
+      const pm=pelMes[pelN]||{total:0,sub:{}}; const pa=pelAcum[pelN]||{total:0,sub:{}};
+      const rgb=hexRgb(corPel(pelN));
+      y=linhaTabela(y, String(pelN), rgb, false, false,
+        pm.sub, pm.total, 0, 0, 0,
+        pa.sub, pa.total, 0, 0, 0,
+        cfg, dims, pi%2===1);
     });
 
-    if(y+10>PH-55){ y=addPage(cfg.icone+' '+cfg.titulo+' (cont.)'); }
-    y=drawRowTotalCia(y,ciaSub,ciaTot,taxaCia,metaTaxa,varCia,cfg,colPel,colSub,colTot,colTaxa,colMeta,colVar);
-    y+=4;
+    /* Linha BPM MAMB */
+    y=linhaTabela(y, 'BPM MAMB (3ª CIA)', null, true, true,
+      totSubM, totAbsM, taxaM, metaMes, varM,
+      totSubA, totAbsA, taxaA, metaAcum, varA,
+      cfg, dims, false);
 
-    doc.setFont('helvetica','italic'); doc.setFontSize(6); doc.setTextColor(120,100,70);
-    doc.text('Pop. Rural 3ª CIA: '+(pop?pop.toLocaleString('pt-BR'):'—')+'  |  Meta taxa: '+metaTaxa.toFixed(2)+'  |  Taxa realizada: '+taxaCia.toFixed(2),ML+1,y);
-    y+=6;
+    /* Fonte */
+    y+=2;
+    doc.setFont('helvetica','italic'); doc.setFontSize(5.5); doc.setTextColor(130,110,70);
+    doc.text('Fonte: 3ª CIA PM MAMB — painel-operacao  |  Pop. rural: '+(pop?pop.toLocaleString('pt-BR'):'—')+'  |  Atualizado em: '+dd+'/'+mm2+'/'+yyyy, ML, y);
+    y+=3;
 
-    const alturaMapa=PH-6-y;
-    if(alturaMapa>30) drawMapaOcorrencias(y,alturaMapa,indCode,registrosTodos);
+    /* Mapa */
+    const altMapa=PH-5-y;
+    if(altMapa>28) drawMapa(y, altMapa, indCode, regsAcum);
   }
 
   doc.save(nomeArq);
