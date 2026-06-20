@@ -7825,6 +7825,43 @@ function _gdoespPopulacaoRural(cia, indCode){
   return reg ? (parseFloat(reg.populacao_rural) || 0) : 0;
 }
 
+/* ── População rural REAL por Pelotão (substitui a divisão igualitária CIA÷5) ──
+   Fonte: tabela gdo_especializada_populacao_municipio, somada por Pelotão usando
+   o mesmo vínculo município→pelotão já usado no resto do sistema (dadosGrupos).
+   IMPORTANTE: o total da CIA (linha "3 CIA PM MAMB") continua vindo de
+   _gdoespPopulacaoRural (gdo_especializada_metas), sem nenhuma alteração — esta
+   função afeta apenas a distribuição interna entre os 5 Pelotões. */
+let _gdoespPopPorPelotao = null; /* cache: { 1: pop, 2: pop, ... } */
+
+async function _gdoespCarregarPopulacaoPelotoes(){
+  if(_gdoespPopPorPelotao) return _gdoespPopPorPelotao;
+  const ano = new Date().getFullYear();
+  const url = `${SB_URL}/rest/v1/gdo_especializada_populacao_municipio?ano=eq.${ano}&select=nome_municipio,populacao_rural`;
+  const r = await fetch(url, { headers: { apikey: SB_KEY, Authorization: 'Bearer '+SB_KEY } });
+  if(!r.ok) throw new Error('gdo_especializada_populacao_municipio HTTP '+r.status);
+  const rows = await r.json();
+
+  const porPel = {};
+  rows.forEach(row => {
+    const nomeNorm = norm(row.nome_municipio||'');
+    const gi = dadosGrupos.find(g => g.munNorm === nomeNorm);
+    if(!gi || gi.pelNum === 99) return; /* município sem vínculo de grupamento cadastrado — ignora */
+    porPel[gi.pelNum] = (porPel[gi.pelNum] || 0) + (parseFloat(row.populacao_rural) || 0);
+  });
+
+  _gdoespPopPorPelotao = porPel;
+  return porPel;
+}
+
+/* Retorna a população rural do pelotão informado. Se os dados ainda não tiverem
+   sido carregados (cache vazio) ou o pelotão não tiver registro, retorna null —
+   quem chama deve tratar esse caso (ex.: pular o cálculo de VAR para aquele pelotão). */
+function _gdoespPopulacaoPelotao(pelNum){
+  if(!_gdoespPopPorPelotao) return null;
+  const v = _gdoespPopPorPelotao[pelNum];
+  return (v !== undefined && v > 0) ? v : null;
+}
+
 let _gdoespIndAtivo = 'MV';
 
 function gdoespSelIndTab(ind){
@@ -7897,6 +7934,7 @@ async function renderGdoEsp(){
   tabelaEl.innerHTML = '<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:30px;">Carregando...</div>';
   try{
     if(!Object.keys(_gdoespMetas).length) await _gdoespCarregarMetas();
+    await _gdoespCarregarPopulacaoPelotoes();
   }catch(e){
     tabelaEl.innerHTML = `<div style="color:#ef5350;font-size:12px;text-align:center;padding:30px;">Erro: ${e.message}</div>`;
     return;
@@ -7904,7 +7942,6 @@ async function renderGdoEsp(){
 
   const mesesSel = getMesDd('gdoesp');
   const CIA = 3;
-  const N_PEL = 5;
   const indCode = _gdoespIndAtivo;
   const cfg = GDOESP_CONFIG[indCode];
   const pop = _gdoespPopulacaoRural(CIA, indCode);
@@ -7976,21 +8013,22 @@ async function renderGdoEsp(){
   const varM=_gdoespVarPct(taxaM,metaMes);
   const varA=_gdoespVarPct(taxaA,metaAcum);
 
-  /* VAR(%) por pelotão (acumulado) para o mapa */
+  /* VAR(%) por pelotão (acumulado) para o mapa — usa população REAL do pelotão */
   const varPorPel={};
   pelNums.forEach(p=>{
-    const popPel=pop/N_PEL;
-    const taxaP=popPel>0?((pelA[p]?.total||0)/popPel)*100000:0;
+    const popPel=_gdoespPopulacaoPelotao(p);
+    if(popPel===null){ varPorPel[p]=null; return; }
+    const taxaP=((pelA[p]?.total||0)/popPel)*100000;
     varPorPel[p]=metaAcum>0?_gdoespVarPct(taxaP,metaAcum):null;
   });
 
-  /* VAR(%) por pelotão para tabela (mês e acumulado) */
+  /* VAR(%) por pelotão para tabela (mês e acumulado) — usa população REAL do pelotão */
   function varPelMes(p){
-    const popPel=pop/N_PEL; if(!popPel||!metaMes) return null;
+    const popPel=_gdoespPopulacaoPelotao(p); if(popPel===null||!metaMes) return null;
     return _gdoespVarPct(((pelM[p]?.total||0)/popPel)*100000, metaMes);
   }
   function varPelAcum(p){
-    const popPel=pop/N_PEL; if(!popPel||!metaAcum) return null;
+    const popPel=_gdoespPopulacaoPelotao(p); if(popPel===null||!metaAcum) return null;
     return _gdoespVarPct(((pelA[p]?.total||0)/popPel)*100000, metaAcum);
   }
 
@@ -8330,10 +8368,10 @@ async function gerarPdfGdoEsp(){
   if(!jsPDF){ alert('Biblioteca PDF não carregada.'); return; }
 
   if(!Object.keys(_gdoespMetas).length) await _gdoespCarregarMetas();
+  await _gdoespCarregarPopulacaoPelotoes();
 
   const mesesSel = getMesDd('gdoesp');
   const CIA = 3;
-  const N_PEL = 5; /* número de pelotões — divisão igualitária provisória */
 
   /* Acumulado = Jan até o mês mais alto selecionado */
   let mesesAcum = [];
@@ -8382,10 +8420,7 @@ async function gerarPdfGdoEsp(){
     return r?[parseInt(r[1],16),parseInt(r[2],16),parseInt(r[3],16)]:[100,100,100];
   }
 
-  /* ── Meta por pelotão: igualitária (CIA ÷ N_PEL) ── */
-  /* TODO: quando populacao_rural por pelotão estiver cadastrada, usar:
-     meta_taxa_pel = meta_taxa_CIA (mesma taxa)
-     var_pct_pel = ((taxa_pel - meta_taxa_CIA) / meta_taxa_CIA) * 100          */
+  /* ── Meta por pelotão: mesma taxa-meta da CIA, aplicada à população REAL de cada pelotão ── */
   function metaTaxaPel(indCode, mesesFiltro){
     let metaCia=0;
     if(!mesesFiltro.length){ const reg=_gdoespMetas[CIA+'-'+indCode]; metaCia=reg?(parseFloat(reg.meta_anual_taxa)||0):0; }
@@ -8405,14 +8440,14 @@ async function gerarPdfGdoEsp(){
     const pel={};
     dadosGrupos.forEach(g=>{
       const p=pelDoColk(g.colK||g.grupamento);
-      if(p===99||p<1||p>N_PEL) return;
+      if(p===99||p<1||p>5) return;
       if(!pel[p]){ pel[p]={total:0,sub:{},pop:0}; if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{pel[p].sub[k]=0;}); }
     });
     regs.forEach(c=>{
       const gi=dadosGrupos.find(g=>g.munNorm===norm(c.municipio||''));
       const colK=gi?(gi.colK||gi.grupamento):(c.grupamento||'?');
       const p=pelDoColk(colK);
-      if(p===99||p<1||p>N_PEL) return;
+      if(p===99||p<1||p>5) return;
       if(!pel[p]){ pel[p]={total:0,sub:{},pop:0}; if(cfg.subColunas) cfg.subColunas.forEach(([k])=>{pel[p].sub[k]=0;}); }
       if(indCode==='IF'){
         pel[p].total+=1;
@@ -8818,27 +8853,29 @@ async function gerarPdfGdoEsp(){
     const varCiaM=_gdoespVarPct(taxaCiaM,metaMes);
     const varCiaA=_gdoespVarPct(taxaCiaA,metaAcum);
 
-    /* VAR(%) por pelotão (acumulado) para colorir mapa */
+    /* VAR(%) por pelotão (acumulado) para colorir mapa — usa população REAL do pelotão */
     const varPorPel={};
     pelNums.forEach(p=>{
       const absP=pelA[p]?.total||0;
-      /* Pop pelotão: igualitária CIA÷N_PEL (provisório) */
-      const popPel=pop/N_PEL;
-      const taxaP=popPel>0?(absP/popPel)*100000:0;
-      varPorPel[p]=_gdoespVarPct(taxaP, metaAcum); /* usa mesma taxa-meta da CIA */
+      const popPel=_gdoespPopulacaoPelotao(p);
+      if(popPel===null){ varPorPel[p]=null; return; }
+      const taxaP=(absP/popPel)*100000;
+      varPorPel[p]=metaAcum>0?_gdoespVarPct(taxaP, metaAcum):null; /* usa mesma taxa-meta da CIA */
     });
 
-    /* VAR(%) por pelotão para a tabela (mês e acumulado) */
+    /* VAR(%) por pelotão para a tabela (mês e acumulado) — usa população REAL do pelotão */
     function varPelMes(p){
       const absP=pelM[p]?.total||0;
-      const popPel=pop/N_PEL;
-      const taxaP=popPel>0?(absP/popPel)*100000:0;
+      const popPel=_gdoespPopulacaoPelotao(p);
+      if(popPel===null) return null;
+      const taxaP=(absP/popPel)*100000;
       return metaMes>0?_gdoespVarPct(taxaP,metaMes):null;
     }
     function varPelAcum(p){
       const absP=pelA[p]?.total||0;
-      const popPel=pop/N_PEL;
-      const taxaP=popPel>0?(absP/popPel)*100000:0;
+      const popPel=_gdoespPopulacaoPelotao(p);
+      if(popPel===null) return null;
+      const taxaP=(absP/popPel)*100000;
       return metaAcum>0?_gdoespVarPct(taxaP,metaAcum):null;
     }
 
