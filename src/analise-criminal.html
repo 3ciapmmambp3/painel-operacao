@@ -8022,6 +8022,18 @@ async function renderGdoEsp(){
     varPorPel[p]=metaAcum>0?_gdoespVarPct(taxaP,metaAcum):null;
   });
 
+  /* TAXA por pelotão (mês e acumulado) — usa população REAL do pelotão.
+     A linha "3 CIA PM MAMB" (taxaM/taxaA) NÃO usa estas funções — continua
+     calculada com a população total da CIA, sem nenhuma alteração. */
+  function taxaPelMes(p){
+    const popPel=_gdoespPopulacaoPelotao(p); if(popPel===null) return null;
+    return ((pelM[p]?.total||0)/popPel)*100000;
+  }
+  function taxaPelAcum(p){
+    const popPel=_gdoespPopulacaoPelotao(p); if(popPel===null) return null;
+    return ((pelA[p]?.total||0)/popPel)*100000;
+  }
+
   /* VAR(%) por pelotão para tabela (mês e acumulado) — usa população REAL do pelotão */
   function varPelMes(p){
     const popPel=_gdoespPopulacaoPelotao(p); if(popPel===null||!metaMes) return null;
@@ -8058,20 +8070,21 @@ async function renderGdoEsp(){
   /* Linhas dos pelotões */
   const rowsPel = pelNums.map((p,pi)=>{
     const bgRow = pi%2===0?'#1e1e1e':'#242424';
+    const tM = taxaPelMes(p), tA = taxaPelAcum(p);
     return `<tr style="background:${bgRow};border-bottom:1px solid #2a2a2a;">
       <td style="padding:5px 8px;font-weight:600;color:#bbb;white-space:nowrap;font-size:10px;">
         <span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#333;color:#888;font-size:8px;font-weight:800;margin-right:5px;">${p}</span>${p}º Pelotão
       </td>
       ${subCells(pelM[p])}
       <td style="padding:5px 6px;text-align:center;font-weight:700;color:#ddd;font-size:11px;">${pelM[p]?.total||0}</td>
-      <td style="padding:5px 6px;text-align:center;color:#444;font-size:10px;">—</td>
-      <td style="padding:5px 6px;text-align:center;color:#444;font-size:10px;">—</td>
+      <td style="padding:5px 6px;text-align:center;color:#2ea043;font-size:10px;">${tM!==null?tM.toFixed(2):'—'}</td>
+      <td style="padding:5px 6px;text-align:center;color:#4e8fd4;font-size:10px;">${metaMes>0?metaMes.toFixed(2):'—'}</td>
       ${varCell(varPelMes(p))}
       <td style="padding:0;width:3px;background:#2a2a2a;"></td>
       ${subCells(pelA[p])}
       <td style="padding:5px 6px;text-align:center;font-weight:700;color:#ddd;font-size:11px;">${pelA[p]?.total||0}</td>
-      <td style="padding:5px 6px;text-align:center;color:#444;font-size:10px;">—</td>
-      <td style="padding:5px 6px;text-align:center;color:#444;font-size:10px;">—</td>
+      <td style="padding:5px 6px;text-align:center;color:#2ea043;font-size:10px;">${tA!==null?tA.toFixed(2):'—'}</td>
+      <td style="padding:5px 6px;text-align:center;color:#4e8fd4;font-size:10px;">${metaAcum>0?metaAcum.toFixed(2):'—'}</td>
       ${varCell(varPelAcum(p))}
     </tr>`;
   }).join('');
@@ -8625,8 +8638,8 @@ async function gerarPdfGdoEsp(){
       _val(fmtT(metaM),colMeta,true,[0,50,120]);
       _var(varM,colVar);
     } else {
-      _val('—',colTaxa,false,[180,180,180]);
-      _val('—',colMeta,false,[180,180,180]);
+      _val(taxaM!==null?fmtT(taxaM):'—',colTaxa,false,taxaM!==null?[0,80,40]:[180,180,180]);
+      _val(metaM!==null?fmtT(metaM):'—',colMeta,false,metaM!==null?[0,50,120]:[180,180,180]);
       _var(varM,colVar); /* VAR(%) por pelotão */
     }
 
@@ -8645,8 +8658,8 @@ async function gerarPdfGdoEsp(){
       _val(fmtT(metaA),colMeta,true,[0,50,120]);
       _var(varA,colVar);
     } else {
-      _val('—',colTaxa,false,[180,180,180]);
-      _val('—',colMeta,false,[180,180,180]);
+      _val(taxaA!==null?fmtT(taxaA):'—',colTaxa,false,taxaA!==null?[0,80,40]:[180,180,180]);
+      _val(metaA!==null?fmtT(metaA):'—',colMeta,false,metaA!==null?[0,50,120]:[180,180,180]);
       _var(varA,colVar); /* VAR(%) acumulado por pelotão */
     }
 
@@ -8863,6 +8876,22 @@ async function gerarPdfGdoEsp(){
       varPorPel[p]=metaAcum>0?_gdoespVarPct(taxaP, metaAcum):null; /* usa mesma taxa-meta da CIA */
     });
 
+    /* TAXA por pelotão (mês e acumulado) — usa população REAL do pelotão.
+       A linha "3 CIA PM MAMB" (taxaCiaM/taxaCiaA) NÃO usa estas funções — continua
+       calculada com a população total da CIA, sem nenhuma alteração. */
+    function taxaPelMes(p){
+      const absP=pelM[p]?.total||0;
+      const popPel=_gdoespPopulacaoPelotao(p);
+      if(popPel===null) return null;
+      return (absP/popPel)*100000;
+    }
+    function taxaPelAcum(p){
+      const absP=pelA[p]?.total||0;
+      const popPel=_gdoespPopulacaoPelotao(p);
+      if(popPel===null) return null;
+      return (absP/popPel)*100000;
+    }
+
     /* VAR(%) por pelotão para a tabela (mês e acumulado) — usa população REAL do pelotão */
     function varPelMes(p){
       const absP=pelM[p]?.total||0;
@@ -8897,9 +8926,10 @@ async function gerarPdfGdoEsp(){
     pelNums.forEach((p,pi)=>{
       const pm=pelM[p]||{total:0,sub:{}}; const pa=pelA[p]||{total:0,sub:{}};
       const vM=varPelMes(p), vA=varPelAcum(p);
+      const tM=taxaPelMes(p), tA=taxaPelAcum(p);
       y=linha(y, false, p+'º Pelotão',
-        pm.sub, pm.total, 0, 0, vM,
-        pa.sub, pa.total, 0, 0, vA,
+        pm.sub, pm.total, tM, (metaMes>0?metaMes:null), vM,
+        pa.sub, pa.total, tA, (metaAcum>0?metaAcum:null), vA,
         cfg, dims, pi%2===1);
     });
 
