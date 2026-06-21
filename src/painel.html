@@ -7025,17 +7025,28 @@ async function atendCarregarDados(){
   const container = document.getElementById('atend-lista-container');
   container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:30px;">Carregando propriedades...</div>';
   try{
-    const [props, pontos, pessoas, registros] = await Promise.all([
+    const [props, pontos, pessoas, registros, bos, autos] = await Promise.all([
       sbFetch('property_information', 'select=*&order=nome_local'),
       sbFetch('map_points', 'select=*&order=criado_em.desc'),
       sbFetch('pessoas_vinculadas', 'select=id,property_id,nome,cpf,tipo_vinculo'),
-      sbFetch('service_records', 'select=id,point_id,numero_bo,numero_auto_infracao,origem_demanda,data_fato')
+      sbFetch('service_records', 'select=id,point_id,origem_demanda,data_fato'),
+      sbFetch('bos_rats', 'select=service_record_id,numero_bo'),
+      sbFetch('autos_infracao', 'select=service_record_id,numero_auto_infracao')
     ]);
     _propDados = props;
     _pontosDados = pontos;
     /* Cache global para busca instantânea por CPF/BO sem nova consulta a cada tecla */
     _atendTodasPessoas = pessoas;
-    _atendTodosRegistros = registros;
+    /* numero_bo/numero_auto_infracao vivem em tabelas filhas (bos_rats/autos_infracao),
+       vinculadas por service_record_id — anexa ao registro pai para a busca funcionar. */
+    const mapBos = {}, mapAutos = {};
+    bos.forEach(b => { (mapBos[b.service_record_id] = mapBos[b.service_record_id] || []).push(b.numero_bo); });
+    autos.forEach(a => { (mapAutos[a.service_record_id] = mapAutos[a.service_record_id] || []).push(a.numero_auto_infracao); });
+    _atendTodosRegistros = registros.map(r => ({
+      ...r,
+      numero_bo: (mapBos[r.id] || []).filter(Boolean).join(' '),
+      numero_auto_infracao: (mapAutos[r.id] || []).filter(Boolean).join(' ')
+    }));
     _atendCarregado = true;
     _atendPopularFiltroGp();
     atendVoltarLista();
@@ -8009,14 +8020,14 @@ function atendFiscAutoAdicionar(){
   const lista = document.getElementById('afisc-autos-lista');
   const div = document.createElement('div');
   div.className = 'afisc-auto-item';
-  div.style.cssText = 'background:#1f1f1f;border-radius:6px;padding:10px;padding-right:36px;display:flex;flex-direction:column;gap:8px;position:relative;';
+  div.style.cssText = 'background:#1f1f1f;border-radius:6px;padding:10px;padding-right:36px;display:flex;gap:10px;align-items:flex-start;position:relative;flex-wrap:wrap;';
   div.innerHTML = `
     <button type="button" onclick="this.parentElement.remove()" style="position:absolute;top:8px;right:8px;background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.35);color:#ef5350;font-size:12px;width:24px;height:24px;line-height:1;border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">✕</button>
-    <div class="fg" style="margin:0;">
+    <div class="fg" style="margin:0;flex:0 0 180px;min-width:160px;">
       <label style="font-size:11px;">Nº do Auto de Infração</label>
-      <input type="text" class="auto-numero atend-input" oninput="caixaAlta(this)" style="padding:7px 10px;font-size:12px;box-sizing:border-box;">
+      <input type="text" class="auto-numero atend-input" oninput="caixaAlta(this)" style="padding:7px 10px;font-size:12px;box-sizing:border-box;width:100%;">
     </div>
-    <div class="fg" style="margin:0;">
+    <div class="fg" style="margin:0;flex:1 1 220px;">
       <label style="font-size:11px;">Observações</label>
       <textarea class="auto-obs" rows="2" oninput="caixaAlta(this)" style="width:100%;padding:7px 10px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:5px;color:#fff;font-size:12px;resize:vertical;text-transform:uppercase;box-sizing:border-box;"></textarea>
     </div>`;
@@ -8026,14 +8037,14 @@ function atendFiscBoAdicionar(){
   const lista = document.getElementById('afisc-bos-lista');
   const div = document.createElement('div');
   div.className = 'afisc-bo-item';
-  div.style.cssText = 'background:#1f1f1f;border-radius:6px;padding:10px;padding-right:36px;display:flex;flex-direction:column;gap:8px;position:relative;';
+  div.style.cssText = 'background:#1f1f1f;border-radius:6px;padding:10px;padding-right:36px;display:flex;gap:10px;align-items:flex-start;position:relative;flex-wrap:wrap;';
   div.innerHTML = `
     <button type="button" onclick="this.parentElement.remove()" style="position:absolute;top:8px;right:8px;background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.35);color:#ef5350;font-size:12px;width:24px;height:24px;line-height:1;border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">✕</button>
-    <div class="fg" style="margin:0;">
+    <div class="fg" style="margin:0;flex:0 0 180px;min-width:160px;">
       <label style="font-size:11px;">Nº do BO/RAT/BOS</label>
-      <input type="text" class="bo-numero atend-input" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this)" maxlength="18" style="padding:7px 10px;font-size:12px;box-sizing:border-box;">
+      <input type="text" class="bo-numero atend-input" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this)" maxlength="18" style="padding:7px 10px;font-size:12px;box-sizing:border-box;width:100%;">
     </div>
-    <div class="fg" style="margin:0;">
+    <div class="fg" style="margin:0;flex:1 1 220px;">
       <label style="font-size:11px;">Observações</label>
       <textarea class="bo-obs" rows="2" oninput="caixaAlta(this)" style="width:100%;padding:7px 10px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:5px;color:#fff;font-size:12px;resize:vertical;text-transform:uppercase;box-sizing:border-box;"></textarea>
     </div>`;
@@ -8422,7 +8433,7 @@ function wizFiscalizacaoAdicionar(){
 function wizFiscToggleSub(chk, tipo){
   const item = chk.closest('.wiz-fiscalizacao-item');
   const bloco = item.querySelector('.fisc-bloco-'+tipo);
-  bloco.style.display = chk.checked ? 'flex' : 'none';
+  bloco.style.display = chk.checked ? (tipo==='ambiental' ? 'flex' : 'block') : 'none';
   if(tipo === 'ambiental') return;
   const listaSel = tipo==='auto' ? '.fisc-autos-lista' : '.fisc-bos-lista';
   const lista = item.querySelector(listaSel);
@@ -8436,14 +8447,14 @@ function wizFiscAutoAdicionar(btn){
   const lista = btn.closest('.fisc-bloco-auto').querySelector('.fisc-autos-lista');
   const div = document.createElement('div');
   div.className = 'fisc-auto-item';
-  div.style.cssText = 'background:#1f1f1f;border-radius:6px;padding:10px;padding-right:36px;display:flex;flex-direction:column;gap:8px;position:relative;';
+  div.style.cssText = 'background:#1f1f1f;border-radius:6px;padding:10px;padding-right:36px;display:flex;gap:10px;align-items:flex-start;position:relative;flex-wrap:wrap;';
   div.innerHTML = `
     <button type="button" onclick="this.parentElement.remove()" style="position:absolute;top:8px;right:8px;background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.35);color:#ef5350;font-size:12px;width:24px;height:24px;line-height:1;border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">✕</button>
-    <div class="fg" style="margin:0;">
+    <div class="fg" style="margin:0;flex:0 0 180px;min-width:160px;">
       <label style="font-size:11px;">Nº do Auto de Infração</label>
-      <input type="text" class="auto-numero atend-input" oninput="caixaAlta(this)" style="padding:7px 10px;font-size:12px;box-sizing:border-box;">
+      <input type="text" class="auto-numero atend-input" oninput="caixaAlta(this)" style="padding:7px 10px;font-size:12px;box-sizing:border-box;width:100%;">
     </div>
-    <div class="fg" style="margin:0;">
+    <div class="fg" style="margin:0;flex:1 1 220px;">
       <label style="font-size:11px;">Observações</label>
       <textarea class="auto-obs" rows="2" oninput="caixaAlta(this)" style="width:100%;padding:7px 10px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:5px;color:#fff;font-size:12px;resize:vertical;text-transform:uppercase;box-sizing:border-box;"></textarea>
     </div>`;
@@ -8453,14 +8464,14 @@ function wizFiscBoAdicionar(btn){
   const lista = btn.closest('.fisc-bloco-bo').querySelector('.fisc-bos-lista');
   const div = document.createElement('div');
   div.className = 'fisc-bo-item';
-  div.style.cssText = 'background:#1f1f1f;border-radius:6px;padding:10px;padding-right:36px;display:flex;flex-direction:column;gap:8px;position:relative;';
+  div.style.cssText = 'background:#1f1f1f;border-radius:6px;padding:10px;padding-right:36px;display:flex;gap:10px;align-items:flex-start;position:relative;flex-wrap:wrap;';
   div.innerHTML = `
     <button type="button" onclick="this.parentElement.remove()" style="position:absolute;top:8px;right:8px;background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.35);color:#ef5350;font-size:12px;width:24px;height:24px;line-height:1;border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">✕</button>
-    <div class="fg" style="margin:0;">
+    <div class="fg" style="margin:0;flex:0 0 180px;min-width:160px;">
       <label style="font-size:11px;">Nº do BO/RAT/BOS</label>
-      <input type="text" class="bo-numero atend-input" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this)" maxlength="18" style="padding:7px 10px;font-size:12px;box-sizing:border-box;">
+      <input type="text" class="bo-numero atend-input" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this)" maxlength="18" style="padding:7px 10px;font-size:12px;box-sizing:border-box;width:100%;">
     </div>
-    <div class="fg" style="margin:0;">
+    <div class="fg" style="margin:0;flex:1 1 220px;">
       <label style="font-size:11px;">Observações</label>
       <textarea class="bo-obs" rows="2" oninput="caixaAlta(this)" style="width:100%;padding:7px 10px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:5px;color:#fff;font-size:12px;resize:vertical;text-transform:uppercase;box-sizing:border-box;"></textarea>
     </div>`;
