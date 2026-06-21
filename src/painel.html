@@ -7282,8 +7282,8 @@ function _atendRenderCardPonto(ponto, fiscalizacoes){
 
   const fiscalizacoesHtml = fiscalizacoes.map(f => {
     const origemInfo = f.origem_demanda ? ORIGEM_DEMANDA_VISUAL[f.origem_demanda] : null;
-    const autosHtml = (f.autos||[]).map(a => `<div style="font-size:10.5px;color:#ccc;">🧾 Auto: ${a.numero_auto_infracao}</div>`).join('');
-    const bosHtml = (f.bos||[]).map(b => `<div style="font-size:10.5px;color:#ccc;">📄 BO: ${b.numero_bo}</div>`).join('');
+    const autosHtml = (f.autos||[]).map(a => `<div style="font-size:10.5px;color:#ccc;">🧾 Auto: ${a.numero_auto_infracao||'—'}${a.observacoes ? '<br><span style="color:#999;margin-left:18px;">'+a.observacoes+'</span>' : ''}</div>`).join('');
+    const bosHtml = (f.bos||[]).map(b => `<div style="font-size:10.5px;color:#ccc;">📄 BO: ${b.numero_bo||'—'}${b.observacoes ? '<br><span style="color:#999;margin-left:18px;">'+b.observacoes+'</span>' : ''}</div>`).join('');
     const ambFlags = f.ambiental ? AMB_CAMPOS.filter(([k]) => f.ambiental[k]).map(([,lbl]) => lbl) : [];
 
     return `<div style="background:#1a1a1a;border-radius:6px;padding:10px;margin-top:8px;font-size:11px;">
@@ -7956,20 +7956,34 @@ function atendFiscAutoAdicionar(){
   const lista = document.getElementById('afisc-autos-lista');
   const div = document.createElement('div');
   div.className = 'afisc-auto-item';
-  div.style.cssText = 'background:#1f1f1f;border-radius:5px;padding:8px;display:flex;gap:8px;align-items:flex-start;';
+  div.style.cssText = 'background:#1f1f1f;border-radius:5px;padding:8px;display:flex;flex-direction:column;gap:6px;position:relative;';
   div.innerHTML = `
-    <input type="text" class="auto-numero atend-input" placeholder="Nº do Auto de Infração" oninput="caixaAlta(this)" style="flex:1;padding:6px 8px;font-size:11px;">
-    <button type="button" onclick="this.parentElement.remove()" style="background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.35);color:#ef5350;font-size:11px;padding:5px 9px;border-radius:4px;cursor:pointer;">✕</button>`;
+    <button type="button" onclick="this.parentElement.remove()" style="position:absolute;top:6px;right:6px;background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.35);color:#ef5350;font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer;">✕</button>
+    <div class="fg" style="margin:0;">
+      <label style="font-size:10px;">Nº do Auto de Infração</label>
+      <input type="text" class="auto-numero atend-input" oninput="caixaAlta(this)" style="padding:6px 8px;font-size:11px;">
+    </div>
+    <div class="fg" style="margin:0;">
+      <label style="font-size:10px;">Observações</label>
+      <textarea class="auto-obs" rows="2" oninput="caixaAlta(this)" style="width:100%;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:5px;color:#fff;font-size:11px;resize:vertical;text-transform:uppercase;"></textarea>
+    </div>`;
   lista.appendChild(div);
 }
 function atendFiscBoAdicionar(){
   const lista = document.getElementById('afisc-bos-lista');
   const div = document.createElement('div');
   div.className = 'afisc-bo-item';
-  div.style.cssText = 'background:#1f1f1f;border-radius:5px;padding:8px;display:flex;gap:8px;align-items:flex-start;';
+  div.style.cssText = 'background:#1f1f1f;border-radius:5px;padding:8px;display:flex;flex-direction:column;gap:6px;position:relative;';
   div.innerHTML = `
-    <input type="text" class="bo-numero atend-input" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this)" maxlength="18" style="flex:1;padding:6px 8px;font-size:11px;">
-    <button type="button" onclick="this.parentElement.remove()" style="background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.35);color:#ef5350;font-size:11px;padding:5px 9px;border-radius:4px;cursor:pointer;">✕</button>`;
+    <button type="button" onclick="this.parentElement.remove()" style="position:absolute;top:6px;right:6px;background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.35);color:#ef5350;font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer;">✕</button>
+    <div class="fg" style="margin:0;">
+      <label style="font-size:10px;">Nº do BO/RAT/BOS</label>
+      <input type="text" class="bo-numero atend-input" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this)" maxlength="18" style="padding:6px 8px;font-size:11px;">
+    </div>
+    <div class="fg" style="margin:0;">
+      <label style="font-size:10px;">Observações</label>
+      <textarea class="bo-obs" rows="2" oninput="caixaAlta(this)" style="width:100%;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:5px;color:#fff;font-size:11px;resize:vertical;text-transform:uppercase;"></textarea>
+    </div>`;
   lista.appendChild(div);
 }
 
@@ -8001,15 +8015,23 @@ async function atendFiscalizacaoSalvar(){
     const fiscId = resFisc[0].id;
 
     if(fiscPayload.gerou_auto_infracao){
-      const autos = [...document.querySelectorAll('.afisc-auto-item .auto-numero')]
-        .map(i => i.value.trim()).filter(Boolean)
-        .map(numero_auto_infracao => ({ numero_auto_infracao, service_record_id: fiscId, criado_por: meuId, criado_por_nome: meuNome, criado_em: agora, atualizado_em: agora }));
+      const autos = [...document.querySelectorAll('.afisc-auto-item')]
+        .map(item => ({
+          numero_auto_infracao: item.querySelector('.auto-numero').value.trim() || null,
+          observacoes: item.querySelector('.auto-obs')?.value.trim() || null
+        }))
+        .filter(a => a.numero_auto_infracao || a.observacoes)
+        .map(a => ({ ...a, service_record_id: fiscId, criado_por: meuId, criado_por_nome: meuNome, criado_em: agora, atualizado_em: agora }));
       if(autos.length) await sbUpsert('autos_infracao', autos);
     }
     if(fiscPayload.gerou_bo){
-      const bos = [...document.querySelectorAll('.afisc-bo-item .bo-numero')]
-        .map(i => i.value.trim()).filter(Boolean)
-        .map(numero_bo => ({ numero_bo, service_record_id: fiscId, criado_por: meuId, criado_por_nome: meuNome, criado_em: agora, atualizado_em: agora }));
+      const bos = [...document.querySelectorAll('.afisc-bo-item')]
+        .map(item => ({
+          numero_bo: item.querySelector('.bo-numero').value.trim() || null,
+          observacoes: item.querySelector('.bo-obs')?.value.trim() || null
+        }))
+        .filter(b => b.numero_bo || b.observacoes)
+        .map(b => ({ ...b, service_record_id: fiscId, criado_por: meuId, criado_por_nome: meuNome, criado_em: agora, atualizado_em: agora }));
       if(bos.length) await sbUpsert('bos_rats', bos);
     }
     if(document.getElementById('afisc-chk-ambiental').checked){
@@ -8361,20 +8383,34 @@ function wizFiscAutoAdicionar(btn){
   const lista = btn.closest('.fisc-bloco-auto').querySelector('.fisc-autos-lista');
   const div = document.createElement('div');
   div.className = 'fisc-auto-item';
-  div.style.cssText = 'background:#1f1f1f;border-radius:5px;padding:8px;display:flex;gap:8px;align-items:flex-start;';
+  div.style.cssText = 'background:#1f1f1f;border-radius:5px;padding:8px;display:flex;flex-direction:column;gap:6px;position:relative;';
   div.innerHTML = `
-    <input type="text" class="auto-numero atend-input" placeholder="Nº do Auto de Infração" oninput="caixaAlta(this)" style="flex:1;padding:6px 8px;font-size:11px;">
-    <button type="button" onclick="this.parentElement.remove()" style="background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.35);color:#ef5350;font-size:11px;padding:5px 9px;border-radius:4px;cursor:pointer;">✕</button>`;
+    <button type="button" onclick="this.parentElement.remove()" style="position:absolute;top:6px;right:6px;background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.35);color:#ef5350;font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer;">✕</button>
+    <div class="fg" style="margin:0;">
+      <label style="font-size:10px;">Nº do Auto de Infração</label>
+      <input type="text" class="auto-numero atend-input" oninput="caixaAlta(this)" style="padding:6px 8px;font-size:11px;">
+    </div>
+    <div class="fg" style="margin:0;">
+      <label style="font-size:10px;">Observações</label>
+      <textarea class="auto-obs" rows="2" oninput="caixaAlta(this)" style="width:100%;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:5px;color:#fff;font-size:11px;resize:vertical;text-transform:uppercase;"></textarea>
+    </div>`;
   lista.appendChild(div);
 }
 function wizFiscBoAdicionar(btn){
   const lista = btn.closest('.fisc-bloco-bo').querySelector('.fisc-bos-lista');
   const div = document.createElement('div');
   div.className = 'fisc-bo-item';
-  div.style.cssText = 'background:#1f1f1f;border-radius:5px;padding:8px;display:flex;gap:8px;align-items:flex-start;';
+  div.style.cssText = 'background:#1f1f1f;border-radius:5px;padding:8px;display:flex;flex-direction:column;gap:6px;position:relative;';
   div.innerHTML = `
-    <input type="text" class="bo-numero atend-input" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this)" maxlength="18" style="flex:1;padding:6px 8px;font-size:11px;">
-    <button type="button" onclick="this.parentElement.remove()" style="background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.35);color:#ef5350;font-size:11px;padding:5px 9px;border-radius:4px;cursor:pointer;">✕</button>`;
+    <button type="button" onclick="this.parentElement.remove()" style="position:absolute;top:6px;right:6px;background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.35);color:#ef5350;font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer;">✕</button>
+    <div class="fg" style="margin:0;">
+      <label style="font-size:10px;">Nº do BO/RAT/BOS</label>
+      <input type="text" class="bo-numero atend-input" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this)" maxlength="18" style="padding:6px 8px;font-size:11px;">
+    </div>
+    <div class="fg" style="margin:0;">
+      <label style="font-size:10px;">Observações</label>
+      <textarea class="bo-obs" rows="2" oninput="caixaAlta(this)" style="width:100%;padding:6px 8px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:5px;color:#fff;font-size:11px;resize:vertical;text-transform:uppercase;"></textarea>
+    </div>`;
   lista.appendChild(div);
 }
 
@@ -8403,12 +8439,14 @@ function _wizColetarFiscalizacoes(){
     };
 
     const autos = gerouAuto ? [...item.querySelectorAll('.fisc-auto-item')].map(a => ({
-      numero_auto_infracao: a.querySelector('.auto-numero').value.trim() || null
-    })).filter(a => a.numero_auto_infracao) : [];
+      numero_auto_infracao: a.querySelector('.auto-numero').value.trim() || null,
+      observacoes: a.querySelector('.auto-obs')?.value.trim() || null
+    })).filter(a => a.numero_auto_infracao || a.observacoes) : [];
 
     const bos = gerouBo ? [...item.querySelectorAll('.fisc-bo-item')].map(b => ({
-      numero_bo: b.querySelector('.bo-numero').value.trim() || null
-    })).filter(b => b.numero_bo) : [];
+      numero_bo: b.querySelector('.bo-numero').value.trim() || null,
+      observacoes: b.querySelector('.bo-obs')?.value.trim() || null
+    })).filter(b => b.numero_bo || b.observacoes) : [];
 
     const ambiental = temAmbiental ? {
       data_constatacao: fiscalizacao.data_fato || new Date().toISOString(),
