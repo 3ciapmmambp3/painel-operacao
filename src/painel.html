@@ -6486,10 +6486,11 @@ async function _cuBuscarUltimoRegistro(pontoId){
 }
 
 function _cuMontarTooltipPonto(ponto, prop){
-  const tipoIcone = prop.tipo_local === 'EMPREENDIMENTO' ? '🏭' : '🏡';
   const cor = NIVEL_ATENCAO_COR[prop.nivel_atencao] || '#888';
-  let html = `<div style="font-size:11.5px;line-height:1.7;min-width:220px;max-width:300px;">
-    <b style="color:${cor};">${tipoIcone} ${prop.nome_local}</b>`;
+  /* Sem ícone de tipo de local aqui — o próprio marcador no mapa já mostra
+     o ícone (origem da demanda ou tipo de local), evita duplicação visual. */
+  let html = `<div style="font-size:11.5px;line-height:1.7;min-width:230px;max-width:320px;">
+    <b style="color:${cor};">${prop.nome_local}</b>`;
   if(ponto.rotulo) html += `<br><span style="color:#888;">📍 ${ponto.rotulo}</span>`;
   html += `<div id="cu-tt-loading-${ponto.id}" style="color:#999;font-size:10.5px;margin-top:4px;">Carregando histórico...</div>`;
   html += `<div style="margin-top:6px;"><button onclick="atendVerNoMapa2(${prop.id})" style="background:var(--gold);border:none;color:#1a1408;font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:4px;cursor:pointer;">Ver dados completos →</button></div>`;
@@ -6497,8 +6498,10 @@ function _cuMontarTooltipPonto(ponto, prop){
   return html;
 }
 
-/* Monta o conteúdo assíncrono do popup (proprietário, fiscalizações com data e ID
-   da demanda, ícones de origem). Usado tanto no mapa principal quanto na tela cheia. */
+/* Monta o conteúdo assíncrono do popup, espelhando as mesmas informações do
+   card "Histórico de Fiscalizações" da tela de detalhe (data, órgão, situação,
+   ID da demanda, observações, autos e BOs) — sem repetir o ícone de origem,
+   que já aparece no próprio marcador do mapa. Usado no mapa principal e tela cheia. */
 async function _cuPreencherConteudoPopup(ponto, prop){
   const regs = await _cuBuscarUltimoRegistro(ponto.id);
   const pessoas = await (_atendCarregarPessoas ? _atendCarregarPessoas(prop.id) : []);
@@ -6506,30 +6509,42 @@ async function _cuPreencherConteudoPopup(ponto, prop){
   if(!loadingEl) return;
 
   const proprietario = (pessoas||[]).find(p => p.tipo_vinculo === 'PROPRIETARIO' || p.tipo_vinculo === 'REPRESENTANTE_LEGAL');
-  const fiscalizacoes = (regs||[]).filter(r => r.data_fato).sort((a,b) => new Date(b.data_fato)-new Date(a.data_fato));
-  const origensUnicas = [...new Set((regs||[]).map(r => r.origem_demanda).filter(Boolean))];
+  const fiscalizacoes = [...(regs||[])].sort((a,b) => new Date(b.data_fato||0)-new Date(a.data_fato||0));
+
+  /* Busca autos/BOs vinculados só das 2 fiscalizações que serão exibidas
+     (evita N+1 desnecessário para fiscalizações que não aparecem no popup). */
+  const visiveis = fiscalizacoes.slice(0, 2);
+  await Promise.all(visiveis.map(async f => {
+    try{
+      const [autos, bos] = await Promise.all([
+        sbFetch('autos_infracao', `service_record_id=eq.${f.id}&select=numero_auto_infracao`).catch(()=>[]),
+        sbFetch('bos_rats', `service_record_id=eq.${f.id}&select=numero_bo`).catch(()=>[])
+      ]);
+      f._autos = autos; f._bos = bos;
+    }catch(e){ f._autos = []; f._bos = []; }
+  }));
 
   let html = '';
   if(proprietario) html += `<div>👤 ${proprietario.nome}</div>`;
 
-  if(fiscalizacoes.length){
-    const visiveis = fiscalizacoes.slice(0, 2);
-    html += `<div style="margin-top:5px;font-size:10.5px;color:var(--text-muted);font-weight:700;">FISCALIZAÇÕES</div>`;
+  if(visiveis.length){
+    html += `<div style="margin-top:6px;font-size:10.5px;color:var(--text-muted);font-weight:700;">FISCALIZAÇÕES</div>`;
     visiveis.forEach(f => {
-      const dataFmt = new Date(f.data_fato).toLocaleDateString('pt-BR');
-      html += `<div style="font-size:10.5px;color:#ccc;margin-top:2px;">📅 ${dataFmt}${f.id_demanda ? ' · ID: '+f.id_demanda : ''}</div>`;
+      const dataFmt = f.data_fato ? new Date(f.data_fato).toLocaleDateString('pt-BR') : '—';
+      const autosTxt = (f._autos||[]).map(a=>a.numero_auto_infracao).filter(Boolean).join(', ');
+      const bosTxt = (f._bos||[]).map(b=>b.numero_bo).filter(Boolean).join(', ');
+      html += `<div style="background:#1a1a1a;border-radius:5px;padding:6px 8px;margin-top:4px;">
+        <div style="font-size:10.5px;color:#ccc;">📅 ${dataFmt}${f.id_demanda ? ' · ID: '+f.id_demanda : ''}</div>
+        ${f.orgao_responsavel ? '<div style="font-size:10px;color:#999;">Órgão: '+f.orgao_responsavel+'</div>' : ''}
+        ${f.situacao ? '<div style="font-size:10px;color:#999;">'+(SITUACAO_LABEL[f.situacao]||f.situacao)+'</div>' : ''}
+        ${autosTxt ? '<div style="font-size:10px;color:#999;">🧾 Auto: '+autosTxt+'</div>' : ''}
+        ${bosTxt ? '<div style="font-size:10px;color:#999;">📄 BO: '+bosTxt+'</div>' : ''}
+        ${f.observacoes ? '<div style="font-size:10px;color:#888;margin-top:2px;">'+f.observacoes+'</div>' : ''}
+      </div>`;
     });
     if(fiscalizacoes.length > visiveis.length){
       html += `<div style="font-size:10px;color:#888;margin-top:2px;">+${fiscalizacoes.length - visiveis.length} outra(s)...</div>`;
     }
-  }
-
-  if(origensUnicas.length){
-    html += `<div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;">` +
-      origensUnicas.map(k => {
-        const v = ORIGEM_DEMANDA_VISUAL[k]; if(!v) return '';
-        return `<span title="${v.label}" style="font-size:18px;background:${v.cor}22;border:1px solid ${v.cor};border-radius:6px;padding:3px 6px;">${v.icone}</span>`;
-      }).join('') + `</div>`;
   }
 
   if(!html) html = '<div style="color:#777;">Sem registros detalhados ainda.</div>';
@@ -7325,10 +7340,11 @@ function _atendRenderCardPonto(ponto, fiscalizacoes){
 
     return `<div style="background:#1a1a1a;border-radius:6px;padding:10px;margin-top:8px;font-size:11px;">
       <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;align-items:center;">
-        <b style="color:var(--gold);">🔍 Fiscalização${f.data_fato ? ' — '+new Date(f.data_fato).toLocaleString('pt-BR') : ''}</b>
+        <b style="color:var(--gold);">🔍 Fiscalização</b>
         <span>${SITUACAO_LABEL[f.situacao]||f.situacao||''}</span>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;color:#ccc;font-size:10.5px;">
+        <span>📅 Data: ${f.data_fato ? new Date(f.data_fato).toLocaleString('pt-BR') : '—'}</span>
         ${f.orgao_responsavel ? '<span>Órgão: '+f.orgao_responsavel+'</span>' : ''}
         ${f.id_demanda ? '<span>ID Demanda: '+f.id_demanda+'</span>' : ''}
       </div>
