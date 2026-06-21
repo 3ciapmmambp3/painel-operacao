@@ -260,6 +260,9 @@
     .atend-input{width:100%;padding:7px 10px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:5px;color:#fff;font-size:12px;}
     .atend-input:focus{outline:none;border-color:var(--gold);}
     .atend-badge{font-size:10.5px;font-weight:600;padding:3px 9px;border-radius:4px;white-space:nowrap;}
+    .cu-pin-icon{background:none!important;border:none!important;transition:transform .15s ease;}
+    .cu-pin-icon:hover .cu-pin-wrap{transform:scale(1.15) translateY(-2px);}
+    .cu-pin-wrap{transition:transform .15s ease;}
     .imp-ind-btn:hover:not(.active){border-color:var(--gold);color:var(--gold);}
     .imp-stat-box{background:#1a1a1a;border-radius:8px;padding:12px 18px;text-align:center;min-width:110px;border:1px solid var(--border);}
     .imp-stat-box .n{font-size:24px;font-weight:700;}
@@ -6108,8 +6111,8 @@ function _cuInitMapa(){
           .filter(([lat,lng]) => Number.isFinite(lat) && Number.isFinite(lng));
         if(latlngs.length < 3) return;
         L.polygon(latlngs, {
-          color:'#8B5E3C', weight:0.8, opacity:0.9,
-          fillColor:'#A0784A', fillOpacity:0.25
+          color:'#ff3333', weight:2, opacity:0.9,
+          fillColor:'#ff3333', fillOpacity:0.06
         }).bindTooltip('Área Urbana IBGE 2022',{sticky:true,className:'leaflet-tooltip-pel'}).addTo(_cuMapaLeaflet);
         nIbgeOk++;
       }catch(err){ nIbgeErro++; }
@@ -6156,6 +6159,22 @@ function _cuInitMapa(){
    tipo de local, nível de atenção e grupamento. */
 /* ── Seletor de camadas de mapa (Claro / Escuro / Satélite) ──
    Reutilizado em todos os mapas da aba Consulta/Atendimentos. */
+/* ── Ícone de pino customizado (estilo Google Maps) para pontos de propriedades ──
+   Mostra o emoji do tipo de local dentro de um "alfinete" colorido pelo nível
+   de atenção, com leve animação de escala no hover via CSS. */
+function _criarIconePonto(prop){
+  const cor = NIVEL_ATENCAO_COR[prop.nivel_atencao] || '#888';
+  const emoji = prop.tipo_local === 'EMPREENDIMENTO' ? '🏭' : '🏡';
+  const html = `
+    <div class="cu-pin-wrap" style="position:relative;width:34px;height:44px;cursor:pointer;">
+      <svg width="34" height="44" viewBox="0 0 34 44" style="position:absolute;top:0;left:0;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5));">
+        <path d="M17 0C7.6 0 0 7.6 0 17c0 12.7 17 27 17 27s17-14.3 17-27C34 7.6 26.4 0 17 0z" fill="${cor}" stroke="#fff" stroke-width="2"/>
+      </svg>
+      <div style="position:absolute;top:5px;left:0;width:34px;height:24px;display:flex;align-items:center;justify-content:center;font-size:15px;">${emoji}</div>
+    </div>`;
+  return L.divIcon({ html, className:'cu-pin-icon', iconSize:[34,44], iconAnchor:[17,42], popupAnchor:[0,-40] });
+}
+
 function _mapaCamadas(){
   return {
     claro: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {maxZoom:18, subdomains:'abcd'}),
@@ -6295,11 +6314,8 @@ function cuAtualizarPontosMapa(){
   pontosVisiveis.forEach(ponto => {
     const prop = _cuPropDadosCache.find(p => p.id === ponto.property_id);
     if(!prop) return;
-    const cor = NIVEL_ATENCAO_COR[prop.nivel_atencao] || '#888';
 
-    const marker = L.circleMarker([ponto.lat, ponto.lng], {
-      radius:8, color:'#fff', weight:2, fillColor:cor, fillOpacity:0.9
-    });
+    const marker = L.marker([ponto.lat, ponto.lng], { icon: _criarIconePonto(prop) });
     marker.bindPopup(_cuMontarTooltipPonto(ponto, prop), {maxWidth:280, className:'leaflet-dark-popup'});
 
     marker.on('popupopen', async () => {
@@ -6368,8 +6384,14 @@ function cuAbrirTelaCheia(){
     _cuFsCamadaPelGrupLayer = L.layerGroup().addTo(_cuFsMapaLeaflet);
     if(typeof IBGE_DATA !== 'undefined' && IBGE_DATA.length){
       IBGE_DATA.forEach(poly => {
-        const latlngs = poly.map(p=>[p[1],p[0]]);
-        L.polygon(latlngs, { color:'#8B5E3C', weight:0.8, opacity:0.9, fillColor:'#A0784A', fillOpacity:0.25 }).addTo(_cuFsMapaLeaflet);
+        try{
+          if(!Array.isArray(poly) || poly.length < 3) return;
+          const latlngs = poly
+            .map(p => [p[1], p[0]])
+            .filter(([lat,lng]) => Number.isFinite(lat) && Number.isFinite(lng));
+          if(latlngs.length < 3) return;
+          L.polygon(latlngs, { color:'#ff3333', weight:2, opacity:0.9, fillColor:'#ff3333', fillOpacity:0.06 }).addTo(_cuFsMapaLeaflet);
+        }catch(err){}
       });
     }
     _cuFsMapaLeaflet.invalidateSize(false);
@@ -6405,8 +6427,7 @@ function cuFsAtualizar(){
   pontosVisiveis.forEach(ponto => {
     const prop = _cuPropDadosCache.find(p => p.id === ponto.property_id);
     if(!prop) return;
-    const cor = NIVEL_ATENCAO_COR[prop.nivel_atencao] || '#888';
-    const marker = L.circleMarker([ponto.lat, ponto.lng], { radius:9, color:'#fff', weight:2, fillColor:cor, fillOpacity:0.9 });
+    const marker = L.marker([ponto.lat, ponto.lng], { icon: _criarIconePonto(prop) });
     marker.bindPopup(_cuMontarTooltipPonto(ponto, prop), {maxWidth:280, className:'leaflet-dark-popup'});
     marker.on('popupopen', async () => {
       const regs = await _cuBuscarUltimoRegistro(ponto.id);
@@ -6960,8 +6981,9 @@ function _atendRenderMapaDetalhe(propertyId){
 
   const bounds = [];
   pontos.forEach(p => {
-    const cor = p.area_classificacao === 'URBANA' ? '#A0784A' : '#2ea043';
-    L.circleMarker([p.lat, p.lng], { radius:9, color:'#fff', weight:2, fillColor:cor, fillOpacity:0.9 })
+    const icon = _propAtualDetalhe ? _criarIconePonto(_propAtualDetalhe) : null;
+    const marker = icon ? L.marker([p.lat, p.lng], { icon }) : L.circleMarker([p.lat, p.lng], { radius:9, color:'#fff', weight:2, fillColor: p.area_classificacao==='URBANA'?'#A0784A':'#2ea043', fillOpacity:0.9 });
+    marker
       .bindPopup(`<b>${p.rotulo || 'Ponto sem rótulo'}</b><br><span style="font-size:11px;color:#666;">${Number(p.lat).toFixed(6)}, ${Number(p.lng).toFixed(6)}</span>${_gmapsBtnHtml(p.lat,p.lng,'atenddet-'+p.id)}`)
       .addTo(_atendDetalheMapa);
     bounds.push([p.lat, p.lng]);
@@ -6997,8 +7019,9 @@ function atendDetalheAbrirTelaCheia(){
 
     const bounds = [];
     pontos.forEach(p => {
-      const cor = p.area_classificacao === 'URBANA' ? '#A0784A' : '#2ea043';
-      L.circleMarker([p.lat, p.lng], { radius:10, color:'#fff', weight:2, fillColor:cor, fillOpacity:0.9 })
+      const icon = _propAtualDetalhe ? _criarIconePonto(_propAtualDetalhe) : null;
+      const marker = icon ? L.marker([p.lat, p.lng], { icon }) : L.circleMarker([p.lat, p.lng], { radius:10, color:'#fff', weight:2, fillColor: p.area_classificacao==='URBANA'?'#A0784A':'#2ea043', fillOpacity:0.9 });
+      marker
         .bindPopup(`<b>${p.rotulo || 'Ponto sem rótulo'}</b><br><span style="font-size:11px;color:#666;">${Number(p.lat).toFixed(6)}, ${Number(p.lng).toFixed(6)}</span>${_gmapsBtnHtml(p.lat,p.lng,'atenddetfs-'+p.id)}`)
         .addTo(_atendDetalheFsMapa);
       bounds.push([p.lat, p.lng]);
