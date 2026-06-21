@@ -1066,8 +1066,8 @@
 
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:4px;">
           <div class="fg" style="min-width:220px;flex:2;">
-            <label>Buscar (propriedade, proprietário, CPF/CNPJ)</label>
-            <input type="text" id="atend-busca" placeholder="Digite para filtrar..." oninput="atendRenderListaPropriedades()"
+            <label>Buscar (propriedade, proprietário, CPF/CNPJ, nº BO)</label>
+            <input type="text" id="atend-busca" placeholder="Digite nome, CPF, CNPJ ou número do BO..." oninput="atendBuscaInput(this)"
               style="width:100%;padding:7px 10px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:5px;color:#fff;font-size:12px;">
           </div>
           <div class="fg" style="min-width:160px;" id="atend-filtro-gp-wrap">
@@ -1395,9 +1395,26 @@
         <label>Número do Auto de Infração</label>
         <input type="text" id="evento-auto-numero" class="atend-input">
       </div>
-      <div class="fg" id="evento-campo-bo" style="display:none;">
-        <label>Número do Boletim de Ocorrência</label>
-        <input type="text" id="evento-bo-numero" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this)" maxlength="18" class="atend-input">
+      <div class="fg" id="evento-campo-bo" style="display:none;flex-direction:column;gap:14px;">
+        <div class="fg" style="margin:0;">
+          <label>Número do Boletim de Ocorrência</label>
+          <input type="text" id="evento-bo-numero" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this)" maxlength="18" class="atend-input">
+        </div>
+        <div class="fg" style="margin:0;">
+          <label>Origem da Demanda</label>
+          <select id="evento-bo-origem" class="atend-input">
+            <option value="">SELECIONE...</option>
+            <option value="MC">MONITORAMENTO CONTÍNUO (MC)</option>
+            <option value="RI">REGISTRO DE INCÊNDIO (RI)</option>
+            <option value="NUDEN">NUDEN</option>
+            <option value="PAF">PAF</option>
+            <option value="DDU">DDU</option>
+            <option value="FTP">FORÇA TAREFA PRÉ-INCÊNDIO (FTP)</option>
+            <option value="EMERGENCIA_AMBIENTAL">EMERGÊNCIA AMBIENTAL</option>
+            <option value="REQUISICAO">REQUISIÇÃO</option>
+            <option value="OUTROS">OUTROS</option>
+          </select>
+        </div>
       </div>
 
       <div style="display:flex;gap:12px;flex-wrap:wrap;">
@@ -6102,8 +6119,13 @@ async function cuCarregarPontosMapa(){
 }
 
 function _cuPopularFiltrosGp(){
-  const visiveis = _atendFiltrarVisiveis ? _atendFiltrarVisiveis(_cuPropDadosCache) : _cuPropDadosCache;
-  const gps = [...new Set(visiveis.map(p=>p.grupamento).filter(Boolean))].sort();
+  let gps = (typeof dadosGrupos !== 'undefined' && dadosGrupos.length)
+    ? [...new Set(dadosGrupos.map(g => g.gp_responsavel).filter(Boolean))].sort()
+    : [];
+  if(!gps.length){
+    const visiveis = _atendFiltrarVisiveis ? _atendFiltrarVisiveis(_cuPropDadosCache) : _cuPropDadosCache;
+    gps = [...new Set(visiveis.map(p=>p.grupamento).filter(Boolean))].sort();
+  }
   ['cu-filtro-gp','cu-fs-filtro-gp'].forEach(id => {
     const sel = document.getElementById(id);
     if(!sel) return;
@@ -6550,6 +6572,8 @@ function caixaAlta(input){
 ════════════════════════════════════════════════════════════ */
 let _propDados = [];     /* cache de property_information visíveis */
 let _pontosDados = [];   /* cache de map_points visíveis */
+let _atendTodasPessoas = [];   /* cache global de pessoas_vinculadas, para busca por CPF */
+let _atendTodosRegistros = []; /* cache global de service_records, para busca por BO/Auto */
 let _atendCarregado = false;
 let _propAtualDetalhe = null; /* property_information sendo exibida na tela de detalhe */
 let _atendDetalheMapa = null; /* instância Leaflet da tela de detalhe */
@@ -6585,12 +6609,17 @@ async function atendCarregarDados(){
   const container = document.getElementById('atend-lista-container');
   container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:30px;">Carregando propriedades...</div>';
   try{
-    const [props, pontos] = await Promise.all([
+    const [props, pontos, pessoas, registros] = await Promise.all([
       sbFetch('property_information', 'select=*&order=nome_local'),
-      sbFetch('map_points', 'select=*&order=criado_em.desc')
+      sbFetch('map_points', 'select=*&order=criado_em.desc'),
+      sbFetch('pessoas_vinculadas', 'select=id,property_id,nome,cpf,tipo_vinculo'),
+      sbFetch('service_records', 'select=id,point_id,numero_bo,numero_auto_infracao')
     ]);
     _propDados = props;
     _pontosDados = pontos;
+    /* Cache global para busca instantânea por CPF/BO sem nova consulta a cada tecla */
+    _atendTodasPessoas = pessoas;
+    _atendTodosRegistros = registros;
     _atendCarregado = true;
     _atendPopularFiltroGp();
     atendVoltarLista();
@@ -6602,8 +6631,16 @@ async function atendCarregarDados(){
 function _atendPopularFiltroGp(){
   const sel = document.getElementById('atend-filtro-gp');
   if(!sel) return;
-  const visiveis = _atendFiltrarVisiveis(_propDados);
-  const gps = [...new Set(visiveis.map(d=>d.grupamento).filter(Boolean))].sort();
+  /* Usa a lista completa de Grupamentos do sistema (tabela `grupos`) — não só os
+     que já aparecem em propriedades cadastradas, para o filtro sempre vir populado. */
+  let gps = (typeof dadosGrupos !== 'undefined' && dadosGrupos.length)
+    ? [...new Set(dadosGrupos.map(g => g.gp_responsavel).filter(Boolean))].sort()
+    : [];
+  /* Fallback: se por algum motivo dadosGrupos ainda não carregou, usa os grupamentos já em uso */
+  if(!gps.length){
+    const visiveis = _atendFiltrarVisiveis(_propDados);
+    gps = [...new Set(visiveis.map(d=>d.grupamento).filter(Boolean))].sort();
+  }
   const valorAtual = sel.value;
   sel.innerHTML = '<option value="">Todos</option>' + gps.map(g=>`<option value="${g}">${g}</option>`).join('');
   sel.value = valorAtual;
@@ -6619,17 +6656,65 @@ function atendVoltarLista(){
   atendRenderListaPropriedades();
 }
 
+/* ── Máscara inteligente no campo de busca: detecta se o usuário está
+   digitando um CPF, CNPJ ou número de BO (com o padrão AAAA-...), e aplica
+   a máscara correspondente automaticamente, sem atrapalhar busca por nome. */
+function atendBuscaInput(input){
+  const raw = input.value;
+  const onlyDigits = raw.replace(/\D/g,'');
+  /* Se o texto é só dígitos (e tem tamanho compatível), aplica máscara de CPF/CNPJ/BO.
+     Se tiver letras (nome de propriedade/proprietário), não mexe — busca livre normal. */
+  if(/^[\d.\-\/]*$/.test(raw) && onlyDigits.length > 0){
+    if(onlyDigits.length <= 11){
+      mascaraCPF(input);
+    } else if(onlyDigits.length <= 14){
+      mascaraCNPJ(input);
+    } else {
+      mascaraBO(input);
+    }
+  }
+  atendRenderListaPropriedades();
+}
+
 function atendRenderListaPropriedades(){
   const container = document.getElementById('atend-lista-container');
-  const busca = (document.getElementById('atend-busca')?.value || '').toUpperCase().trim();
+  const buscaRaw = (document.getElementById('atend-busca')?.value || '').trim();
+  const busca = buscaRaw.toUpperCase();
+  /* Versão "só dígitos" da busca — usada para comparar com CPF/CNPJ/BO/Auto
+     que estão armazenados com máscara (pontos, traços, barras). */
+  const buscaDigitos = buscaRaw.replace(/\D/g,'');
   const gpFiltro = document.getElementById('atend-filtro-gp')?.value || '';
+
+  /* IDs de propriedade encontradas via CPF de pessoa vinculada */
+  const propIdsPorPessoa = buscaDigitos.length >= 3
+    ? new Set(_atendTodasPessoas.filter(p => (p.cpf||'').replace(/\D/g,'').includes(buscaDigitos)).map(p=>p.property_id))
+    : new Set();
+
+  /* point_ids encontrados via número de BO ou Auto de Infração → propriedade correspondente */
+  const propIdsPorRegistro = (buscaDigitos.length >= 3 || busca.length >= 3)
+    ? new Set(
+        _atendTodosRegistros
+          .filter(r =>
+            (r.numero_bo && r.numero_bo.replace(/\D/g,'').includes(buscaDigitos) && buscaDigitos.length >= 3) ||
+            (r.numero_auto_infracao && r.numero_auto_infracao.toUpperCase().includes(busca) && busca.length >= 2)
+          )
+          .map(r => {
+            const ponto = _pontosDados.find(p => p.id === r.point_id);
+            return ponto ? ponto.property_id : null;
+          })
+          .filter(Boolean)
+      )
+    : new Set();
 
   let dados = _atendFiltrarVisiveis(_propDados);
   if(gpFiltro) dados = dados.filter(d => d.grupamento === gpFiltro);
   if(busca){
     dados = dados.filter(d =>
       (d.nome_local||'').toUpperCase().includes(busca) ||
-      (d.cnpj||'').toUpperCase().includes(busca) || (d.razao_social||'').toUpperCase().includes(busca)
+      (d.cnpj||'').replace(/\D/g,'').includes(buscaDigitos) && buscaDigitos.length>=3 ||
+      (d.razao_social||'').toUpperCase().includes(busca) ||
+      propIdsPorPessoa.has(d.id) ||
+      propIdsPorRegistro.has(d.id)
     );
   }
 
@@ -6817,6 +6902,7 @@ function _atendRenderCardPonto(ponto, eventos, ambiental){
         ${ev.numero_auto_infracao ? 'Auto: '+ev.numero_auto_infracao+' · ' : ''}${ev.numero_bo ? 'BO: '+ev.numero_bo+' · ' : ''}
         ${ev.data_fato ? new Date(ev.data_fato).toLocaleString('pt-BR') : ''}
       </div>
+      ${ev.origem_demanda ? '<div style="color:#888;font-size:10px;">Origem: <span style="color:var(--gold);">'+(ORIGEM_DEMANDA_LABEL[ev.origem_demanda]||ev.origem_demanda)+'</span></div>' : ''}
       ${ev.orgao_responsavel ? '<div style="color:var(--text-muted);">Órgão: '+ev.orgao_responsavel+'</div>' : ''}
       ${ev.observacoes ? '<div style="color:#aaa;margin-top:3px;">'+ev.observacoes+'</div>' : ''}
     </div>`).join('');
@@ -7223,6 +7309,24 @@ const SITUACAO_OPTIONS = `
   <option value="ARQUIVADO">ARQUIVADO</option>
   <option value="OUTRO">OUTRO</option>`;
 
+/* Origem da demanda que gerou o BO/RAT */
+const ORIGEM_DEMANDA_LABEL = {
+  MC:'Monitoramento Contínuo (MC)', RI:'Registro de Incêndio (RI)', NUDEN:'NUDEN', PAF:'PAF', DDU:'DDU',
+  FTP:'Força Tarefa Pré-Incêndio (FTP)', EMERGENCIA_AMBIENTAL:'Emergência Ambiental',
+  REQUISICAO:'Requisição', OUTROS:'Outros'
+};
+const ORIGEM_DEMANDA_OPTIONS = `
+  <option value="">SELECIONE...</option>
+  <option value="MC">MONITORAMENTO CONTÍNUO (MC)</option>
+  <option value="RI">REGISTRO DE INCÊNDIO (RI)</option>
+  <option value="NUDEN">NUDEN</option>
+  <option value="PAF">PAF</option>
+  <option value="DDU">DDU</option>
+  <option value="FTP">FORÇA TAREFA PRÉ-INCÊNDIO (FTP)</option>
+  <option value="EMERGENCIA_AMBIENTAL">EMERGÊNCIA AMBIENTAL</option>
+  <option value="REQUISICAO">REQUISIÇÃO</option>
+  <option value="OUTROS">OUTROS</option>`;
+
 function pontoAutoAdicionar(){
   const lista = document.getElementById('ponto-autos-lista');
   const div = document.createElement('div');
@@ -7265,6 +7369,10 @@ function pontoBoAdicionar(){
     <div class="fg" style="margin:0;">
       <label style="font-size:10.5px;">Número do BO/RAT</label>
       <input type="text" class="bo-numero atend-input" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this)" maxlength="18" style="padding:6px 8px;font-size:11.5px;">
+    </div>
+    <div class="fg" style="margin:0;">
+      <label style="font-size:10.5px;">Origem da Demanda</label>
+      <select class="bo-origem atend-input" style="padding:6px 8px;font-size:11.5px;">${ORIGEM_DEMANDA_OPTIONS}</select>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <div class="fg" style="flex:1;min-width:150px;margin:0;">
@@ -7394,6 +7502,7 @@ function _pontoColetarBos(){
   return [...document.querySelectorAll('.ponto-bo-item')].map(item => ({
     tipo_ocorrencia: 'BO',
     numero_bo: item.querySelector('.bo-numero').value.trim() || null,
+    origem_demanda: item.querySelector('.bo-origem').value || null,
     data_fato: item.querySelector('.bo-data').value || null,
     orgao_responsavel: item.querySelector('.bo-orgao').value.trim() || null,
     situacao: item.querySelector('.bo-situacao').value,
@@ -7500,6 +7609,7 @@ function atendEventoAbrir(pontoId){
   document.getElementById('evento-tipo').value = 'AUTO_INFRACAO';
   document.getElementById('evento-auto-numero').value = '';
   document.getElementById('evento-bo-numero').value = '';
+  document.getElementById('evento-bo-origem').value = '';
   document.getElementById('evento-data-fato').value = '';
   document.getElementById('evento-orgao').value = '';
   document.getElementById('evento-situacao').value = 'EM_ANDAMENTO';
@@ -7513,7 +7623,7 @@ function atendEventoFechar(){ document.getElementById('atend-evento-modal').styl
 function atendEventoToggleCampos(){
   const tipo = document.getElementById('evento-tipo').value;
   document.getElementById('evento-campo-auto').style.display = (tipo==='AUTO_INFRACAO') ? '' : 'none';
-  document.getElementById('evento-campo-bo').style.display = (tipo==='BO') ? '' : 'none';
+  document.getElementById('evento-campo-bo').style.display = (tipo==='BO') ? 'flex' : 'none';
 }
 
 async function atendEventoSalvar(){
@@ -7526,6 +7636,7 @@ async function atendEventoSalvar(){
     tipo_ocorrencia: document.getElementById('evento-tipo').value,
     numero_auto_infracao: document.getElementById('evento-auto-numero').value.trim() || null,
     numero_bo: document.getElementById('evento-bo-numero').value.trim() || null,
+    origem_demanda: document.getElementById('evento-bo-origem')?.value || null,
     data_fato: document.getElementById('evento-data-fato').value || null,
     orgao_responsavel: document.getElementById('evento-orgao').value.trim() || null,
     situacao: document.getElementById('evento-situacao').value,
