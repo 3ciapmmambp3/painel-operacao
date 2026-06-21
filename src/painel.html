@@ -6020,8 +6020,19 @@ function initConsultaUrbanaRural(){
 /* ── Camada de Pelotões/Grupamentos — mesmos polígonos coloridos usados
    no Mapa Criminal/OP GDO RURAL (KML_DATA), com tooltip mostrando
    pelotão + grupamento + cidade. Reutilizável em qualquer mapa Leaflet. */
-function _desenharCamadaPelGrupamento(layerOuMapa, filtroGrupamentoLongo){
-  if(typeof KML_DATA === 'undefined' || !KML_DATA.pelotoes) return;
+function _desenharCamadaPelGrupamento(layerOuMapa, filtroGrupamentoLongo, _tentativa){
+  if(typeof KML_DATA === 'undefined' || !KML_DATA.pelotoes){
+    /* KML_DATA (assets/kml_data.js) pode ainda não ter terminado de carregar/parsear
+       no momento em que o mapa é aberto pela primeira vez — tenta novamente por
+       alguns segundos antes de desistir. */
+    const tentativa = (_tentativa||0) + 1;
+    if(tentativa <= 20){
+      setTimeout(() => _desenharCamadaPelGrupamento(layerOuMapa, filtroGrupamentoLongo, tentativa), 250);
+    } else {
+      console.warn('[_desenharCamadaPelGrupamento] KML_DATA não carregou a tempo — camada de Pelotão/Grupamento não desenhada.');
+    }
+    return;
+  }
   const filtroAtivo = !!filtroGrupamentoLongo;
   Object.entries(KML_DATA.pelotoes).forEach(([pelKey, pelData]) => {
     const pelNum = parseInt(pelKey.replace(/\D/g,''));
@@ -6167,13 +6178,20 @@ async function cuCarregarPontosMapa(){
   }catch(e){ console.error('Erro ao carregar pontos de propriedades:', e); }
 }
 
-function _cuPopularFiltrosGp(){
+function _cuPopularFiltrosGp(_tentativa){
   let gps = (typeof dadosGrupos !== 'undefined' && dadosGrupos.length)
     ? [...new Set(dadosGrupos.map(g => g.grupamento).filter(Boolean))].sort()
     : [];
   if(!gps.length){
     const visiveis = _atendFiltrarVisiveis ? _atendFiltrarVisiveis(_cuPropDadosCache) : _cuPropDadosCache;
     gps = [...new Set(visiveis.map(p=>p.grupamento).filter(Boolean))].sort();
+  }
+  /* Se dadosGrupos ainda não carregou e também não há propriedades visíveis com
+     grupamento preenchido, tenta novamente — evita o filtro ficar permanentemente vazio
+     numa condição de corrida com o carregamento inicial do sistema. */
+  if(!gps.length){
+    const tentativa = (_tentativa||0) + 1;
+    if(tentativa <= 20) setTimeout(() => _cuPopularFiltrosGp(tentativa), 250);
   }
   ['cu-filtro-gp','cu-fs-filtro-gp'].forEach(id => {
     const sel = document.getElementById(id);
@@ -6540,11 +6558,19 @@ function consultaUrbRurConsultar(){
         ${_gmapsBtnHtml(lat, lng, 'consulta-pt')}
       </div>`)
       .addTo(_cuMapaLeaflet);
-    _cuMapaLeaflet.setView([lat,lng], Math.max(_cuMapaLeaflet.getZoom(), 12));
+    /* invalidateSize garante que o Leaflet recalculou corretamente as dimensões
+       do container antes de tentar centralizar — evita o setView "não fazer nada"
+       quando o mapa estava com tamanho zero no momento da última medição. */
+    _cuMapaLeaflet.invalidateSize(false);
+    _cuMapaLeaflet.setView([lat,lng], Math.max(_cuMapaLeaflet.getZoom(), 13));
   }
 
   const statusEl = document.getElementById('cu-mapa-status');
   if(statusEl) statusEl.textContent = 'Último ponto consultado: '+_cuUltimoDecimal;
+
+  /* Rola a tela até o mapa, para o usuário ver o ponto marcado sem precisar rolar manualmente */
+  const mapaContainer = document.getElementById('cu-mapa');
+  if(mapaContainer) mapaContainer.scrollIntoView({ behavior:'smooth', block:'center' });
 }
 
 let _cuUltimaRotaUrl = null;
