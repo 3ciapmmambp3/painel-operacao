@@ -6296,9 +6296,13 @@ function _cuInitMapa(){
 /* ── Ícone de pino customizado (estilo Google Maps) para pontos de propriedades ──
    Mostra o emoji do tipo de local dentro de um "alfinete" colorido pelo nível
    de atenção, com leve animação de escala no hover via CSS. */
-function _criarIconePonto(prop){
+function _criarIconePonto(prop, origemKey){
   const cor = NIVEL_ATENCAO_COR[prop.nivel_atencao] || '#888';
-  const emoji = prop.tipo_local === 'EMPREENDIMENTO' ? '🏭' : '🏡';
+  /* Se o ponto tem uma origem de demanda registrada (ex: RI, MC, FTP...), mostra
+     o ícone dela no pino — assim dá pra identificar o tipo de ocorrência sem
+     precisar abrir o popup. Sem origem registrada, usa o ícone genérico do local. */
+  const origemInfo = origemKey ? ORIGEM_DEMANDA_VISUAL[origemKey] : null;
+  const emoji = origemInfo ? origemInfo.icone : (prop.tipo_local === 'EMPREENDIMENTO' ? '🏭' : '🏡');
   const html = `
     <div class="cu-pin-wrap" style="position:relative;width:34px;height:44px;cursor:pointer;">
       <svg width="34" height="44" viewBox="0 0 34 44" style="position:absolute;top:0;left:0;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5));">
@@ -6307,6 +6311,26 @@ function _criarIconePonto(prop){
       <div style="position:absolute;top:5px;left:0;width:34px;height:24px;display:flex;align-items:center;justify-content:center;font-size:15px;">${emoji}</div>
     </div>`;
   return L.divIcon({ html, className:'cu-pin-icon', iconSize:[34,44], iconAnchor:[17,42], popupAnchor:[0,-40] });
+}
+
+/* Busca a origem de demanda mais recente entre as fiscalizações do ponto (se
+   houver), para usar no ícone do pino. Usa o mesmo cache de _cuBuscarUltimoRegistro. */
+async function _cuOrigemMaisRecente(pontoId){
+  const regs = await _cuBuscarUltimoRegistro(pontoId);
+  const comOrigem = (regs||[]).filter(r => r.origem_demanda);
+  if(!comOrigem.length) return null;
+  comOrigem.sort((a,b) => new Date(b.data_fato||0) - new Date(a.data_fato||0));
+  return comOrigem[0].origem_demanda;
+}
+
+/* Atualiza o ícone de um marcador já criado, assim que a origem de demanda
+   do ponto é conhecida — evita travar a criação inicial do mapa numa
+   chamada assíncrona por ponto. */
+async function _cuAtualizarIconeComOrigem(marker, ponto, prop){
+  try{
+    const origem = await _cuOrigemMaisRecente(ponto.id);
+    if(origem) marker.setIcon(_criarIconePonto(prop, origem));
+  }catch(e){ /* silencioso — mantém o ícone genérico em caso de erro */ }
 }
 
 function _mapaCamadas(){
@@ -6544,6 +6568,7 @@ function cuAtualizarPontosMapa(){
     marker.bindPopup(_cuMontarTooltipPonto(ponto, prop), {maxWidth:320, className:'leaflet-dark-popup'});
 
     marker.on('popupopen', () => _cuPreencherConteudoPopup(ponto, prop));
+    _cuAtualizarIconeComOrigem(marker, ponto, prop);
 
     marker.addTo(_cuPropPontosLayer);
   });
@@ -6645,6 +6670,7 @@ function cuFsAtualizar(){
     const marker = L.marker([ponto.lat, ponto.lng], { icon: _criarIconePonto(prop) });
     marker.bindPopup(_cuMontarTooltipPonto(ponto, prop), {maxWidth:320, className:'leaflet-dark-popup'});
     marker.on('popupopen', () => _cuPreencherConteudoPopup(ponto, prop));
+    _cuAtualizarIconeComOrigem(marker, ponto, prop);
     marker.addTo(_cuFsLayer);
     bounds.push([ponto.lat, ponto.lng]);
   });
