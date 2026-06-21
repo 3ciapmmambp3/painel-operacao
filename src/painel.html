@@ -6091,10 +6091,11 @@ function _cuInitMapa(){
   camadasCu.claro.addTo(_cuMapaLeaflet);
   _mapaAdicionarSeletorCamadas(_cuMapaLeaflet, camadasCu, 'claro');
 
-  /* Camada Pelotões/Grupamentos (mesma do Mapa Criminal/OP GDO RURAL) —
-     usa um layerGroup próprio para poder ser redesenhada ao mudar o filtro de Grupamento. */
+  /* Camada Pelotões/Grupamentos — DESATIVADA temporariamente (estava causando
+     instabilidade no mapa). O layerGroup continua existindo vazio para não quebrar
+     o resto do código que referencia _cuCamadaPelGrupLayer (ex: ao trocar o filtro). */
   _cuCamadaPelGrupLayer = L.layerGroup().addTo(_cuMapaLeaflet);
-  _desenharCamadaPelGrupamento(_cuCamadaPelGrupLayer);
+  // _desenharCamadaPelGrupamento(_cuCamadaPelGrupLayer);
 
   /* Camada Área Urbana IBGE 2022 */
   if(typeof IBGE_DATA !== 'undefined' && IBGE_DATA.length){
@@ -6159,18 +6160,24 @@ function _mapaCamadas(){
   return {
     claro: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {maxZoom:18, subdomains:'abcd'}),
     ruas: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, subdomains:'abc'}),
-    satelite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxZoom:18})
+    satelite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxZoom:18}),
+    /* Híbrido: imagem de satélite + nomes de ruas/cidades sobrepostos — visual
+       equivalente ao modo "Satélite" do Google Maps/Earth. */
+    hibrido: L.layerGroup([
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxZoom:18}),
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {maxZoom:18})
+    ])
   };
 }
 
-/* Adiciona um controle de camadas (botões Claro/Ruas/Satélite) no canto do mapa.
-   mapaInstance: instância L.map já criada. camadaPadrao: 'claro'|'ruas'|'satelite' (já adicionada ao mapa antes de chamar). */
+/* Adiciona um controle de camadas (botões Claro/Ruas/Satélite/Híbrido) no canto do mapa.
+   mapaInstance: instância L.map já criada. camadaPadrao: 'claro'|'ruas'|'satelite'|'hibrido' (já adicionada ao mapa antes de chamar). */
 function _mapaAdicionarSeletorCamadas(mapaInstance, camadas, camadaAtivaKey){
   const ctrl = L.control({position:'bottomleft'});
   ctrl.onAdd = function(){
     const div = L.DomUtil.create('div');
     div.style.cssText = 'background:#1e1e1e;border:1px solid rgba(155,138,92,.4);border-radius:6px;overflow:hidden;display:flex;box-shadow:0 2px 8px rgba(0,0,0,.4);';
-    const opts = [['claro','☀️ Claro'],['ruas','🗺️ Ruas'],['satelite','🛰️ Satélite']];
+    const opts = [['claro','☀️ Claro'],['ruas','🗺️ Ruas'],['satelite','🛰️ Satélite'],['hibrido','🌍 Híbrido']];
     opts.forEach(([key,label]) => {
       const btn = document.createElement('button');
       btn.textContent = label;
@@ -6270,11 +6277,12 @@ function cuAtualizarPontosMapa(){
   const filtroAtencao = document.getElementById('cu-filtro-atencao')?.value || '';
   const filtroGp = document.getElementById('cu-filtro-gp')?.value || '';
 
-  /* Redesenha a camada de polígonos Pelotão/Grupamento destacando o grupamento filtrado */
-  if(_cuCamadaPelGrupLayer){
-    _cuCamadaPelGrupLayer.clearLayers();
-    _desenharCamadaPelGrupamento(_cuCamadaPelGrupLayer, filtroGp);
-  }
+  /* Camada Pelotões/Grupamentos — DESATIVADA temporariamente (estava causando
+     instabilidade no mapa e impedindo os pontos de serem desenhados). */
+  // if(_cuCamadaPelGrupLayer){
+  //   _cuCamadaPelGrupLayer.clearLayers();
+  //   _desenharCamadaPelGrupamento(_cuCamadaPelGrupLayer, filtroGp);
+  // }
 
   let propsVisiveis = _atendFiltrarVisiveis ? _atendFiltrarVisiveis(_cuPropDadosCache) : _cuPropDadosCache;
   if(filtroTipo) propsVisiveis = propsVisiveis.filter(p => p.tipo_local === filtroTipo);
@@ -6376,11 +6384,11 @@ function cuFsAtualizar(){
   const filtroAtencao = document.getElementById('cu-fs-filtro-atencao')?.value || '';
   const filtroGp = document.getElementById('cu-fs-filtro-gp')?.value || '';
 
-  /* Redesenha a camada de polígonos Pelotão/Grupamento destacando o grupamento filtrado */
-  if(_cuFsCamadaPelGrupLayer){
-    _cuFsCamadaPelGrupLayer.clearLayers();
-    _desenharCamadaPelGrupamento(_cuFsCamadaPelGrupLayer, filtroGp);
-  }
+  /* Camada Pelotões/Grupamentos — DESATIVADA temporariamente. */
+  // if(_cuFsCamadaPelGrupLayer){
+  //   _cuFsCamadaPelGrupLayer.clearLayers();
+  //   _desenharCamadaPelGrupamento(_cuFsCamadaPelGrupLayer, filtroGp);
+  // }
 
   if(_cuFsLayer) _cuFsLayer.clearLayers();
   else _cuFsLayer = L.layerGroup().addTo(_cuFsMapaLeaflet);
@@ -6948,7 +6956,7 @@ function _atendRenderMapaDetalhe(propertyId){
   const camadasDet = _mapaCamadas();
   camadasDet.claro.addTo(_atendDetalheMapa);
   _mapaAdicionarSeletorCamadas(_atendDetalheMapa, camadasDet, 'claro');
-  _desenharCamadaPelGrupamento(_atendDetalheMapa, _propAtualDetalhe?.grupamento || null);
+  // _desenharCamadaPelGrupamento(_atendDetalheMapa, _propAtualDetalhe?.grupamento || null); /* DESATIVADA temporariamente */
 
   const bounds = [];
   pontos.forEach(p => {
@@ -6985,7 +6993,7 @@ function atendDetalheAbrirTelaCheia(){
     const camadasFsDet = _mapaCamadas();
     camadasFsDet.claro.addTo(_atendDetalheFsMapa);
     _mapaAdicionarSeletorCamadas(_atendDetalheFsMapa, camadasFsDet, 'claro');
-    _desenharCamadaPelGrupamento(_atendDetalheFsMapa, _propAtualDetalhe?.grupamento || null);
+    // _desenharCamadaPelGrupamento(_atendDetalheFsMapa, _propAtualDetalhe?.grupamento || null); /* DESATIVADA temporariamente */
 
     const bounds = [];
     pontos.forEach(p => {
