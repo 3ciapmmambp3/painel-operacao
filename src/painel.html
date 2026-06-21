@@ -1153,10 +1153,11 @@
 <div id="atend-prop-modal" style="display:none;position:fixed;inset:0;z-index:2001;background:rgba(0,0,0,.75);align-items:center;justify-content:center;padding:20px;overflow-y:auto;">
   <div style="background:#1a1a1a;border:1px solid var(--gold-border);border-radius:10px;max-width:640px;width:100%;max-height:90vh;overflow-y:auto;">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:#1a1a1a;z-index:1;">
-      <div style="font-size:14px;font-weight:700;color:var(--gold);">➕ Novo Cadastro</div>
+      <div style="font-size:14px;font-weight:700;color:var(--gold);" id="atend-prop-modal-titulo">➕ Novo Cadastro</div>
       <button onclick="atendPropFechar()" style="background:none;border:none;color:#888;font-size:20px;cursor:pointer;line-height:1;">×</button>
     </div>
     <div style="padding:20px;display:flex;flex-direction:column;gap:14px;">
+      <input type="hidden" id="prop-id">
 
       <!-- Tipo de local -->
       <div class="fg">
@@ -6730,15 +6731,20 @@ function atendRenderListaPropriedades(){
     const nPontos = meusPontos.length;
     const tipoIcone = prop.tipo_local === 'EMPREENDIMENTO' ? '🏭' : '🏡';
     const NIVEL_DOT = { NORMAL:'🟢', MONITORAR:'🟡', PRIORITARIO:'🔴' };
+    const podeEditar = _atendPodeEditar(prop);
     return `<div class="filter-box" style="margin-bottom:10px;cursor:pointer;" onclick="atendAbrirDetalhe(${prop.id})">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
         <div style="flex:1;min-width:220px;">
           <div style="font-size:13.5px;font-weight:700;color:var(--gold);">${tipoIcone} ${prop.nome_local} <span style="font-size:11px;">${NIVEL_DOT[prop.nivel_atencao]||''}</span></div>
           <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${prop.municipio || ''}${prop.corrego_comunidade ? ' · '+prop.corrego_comunidade : ''}</div>
         </div>
-        <div style="text-align:right;font-size:10.5px;color:var(--text-muted);">
+        <div style="text-align:right;font-size:10.5px;color:var(--text-muted);display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
           <div style="background:rgba(155,138,92,.18);color:var(--gold);padding:3px 10px;border-radius:10px;font-weight:700;display:inline-block;">📍 ${nPontos} ponto${nPontos!==1?'s':''}</div>
-          <div style="margin-top:4px;">${prop.grupamento || '—'}</div>
+          <div>${prop.grupamento || '—'}</div>
+          ${podeEditar ? `<div style="display:flex;gap:5px;">
+            <button onclick="event.stopPropagation();atendPropAbrirEdicao(${prop.id})" style="background:rgba(100,80,30,.15);border:1px solid rgba(100,80,30,.4);color:var(--gold);font-size:10.5px;padding:4px 9px;border-radius:4px;cursor:pointer;">✏️ Editar</button>
+            <button onclick="event.stopPropagation();atendPropExcluir(${prop.id})" style="background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.35);color:#ef5350;font-size:10.5px;padding:4px 9px;border-radius:4px;cursor:pointer;">🗑️ Excluir</button>
+          </div>` : ''}
         </div>
       </div>
     </div>`;
@@ -6778,10 +6784,16 @@ function atendAbrirDetalhe(propertyId){
         <div style="font-size:11.5px;color:var(--text-muted);">${prop.municipio||''}${prop.corrego_comunidade ? ' · '+prop.corrego_comunidade : ''}</div>
         ${prop.observacoes_inteligencia ? '<div style="font-size:11.5px;color:#aaa;margin-top:8px;background:#1a1a1a;padding:8px 10px;border-radius:5px;">🔎 '+prop.observacoes_inteligencia+'</div>' : ''}
       </div>
-      <div style="text-align:right;font-size:10.5px;color:var(--text-muted);">
-        <div>${prop.grupamento||'—'}</div>
-        <div>Cadastrado por ${prop.criado_por_nome||prop.criado_por}</div>
-        <div>${prop.criado_em ? new Date(prop.criado_em).toLocaleDateString('pt-BR') : ''}</div>
+      <div style="text-align:right;font-size:10.5px;color:var(--text-muted);display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+        <div>
+          <div>${prop.grupamento||'—'}</div>
+          <div>Cadastrado por ${prop.criado_por_nome||prop.criado_por}</div>
+          <div>${prop.criado_em ? new Date(prop.criado_em).toLocaleDateString('pt-BR') : ''}</div>
+        </div>
+        ${_atendPodeEditar(prop) ? `<div style="display:flex;gap:6px;">
+          <button onclick="atendPropAbrirEdicao(${prop.id})" style="background:rgba(100,80,30,.15);border:1px solid rgba(100,80,30,.4);color:var(--gold);font-size:11px;font-weight:700;padding:5px 11px;border-radius:5px;cursor:pointer;">✏️ Editar</button>
+          <button onclick="atendPropExcluir(${prop.id})" style="background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.35);color:#ef5350;font-size:11px;font-weight:700;padding:5px 11px;border-radius:5px;cursor:pointer;">🗑️ Excluir</button>
+        </div>` : ''}
       </div>
     </div>`;
 
@@ -7026,6 +7038,9 @@ function propSelTipo(tipo){
 
 function atendPropAbrir(){
   document.getElementById('atend-prop-erro').style.display = 'none';
+  document.getElementById('atend-prop-modal-titulo').textContent = '➕ Novo Cadastro';
+  document.getElementById('atend-prop-btn-salvar').textContent = 'Continuar →';
+  document.getElementById('prop-id').value = '';
   ['prop-nome','prop-razao-social','prop-nome-fantasia','prop-cnpj','prop-endereco','prop-corrego','prop-municipio','prop-obs-intel'].forEach(id => {
     document.getElementById(id).value = '';
   });
@@ -7033,6 +7048,29 @@ function atendPropAbrir(){
   propSelTipo('PROPRIEDADE_RURAL');
   document.getElementById('atend-prop-modal').style.display = 'flex';
 }
+
+function atendPropAbrirEdicao(propertyId){
+  const prop = _propDados.find(p => p.id === propertyId);
+  if(!prop) return;
+  if(!_atendPodeEditar(prop)){ alert('Você não tem permissão para editar esta propriedade.'); return; }
+
+  document.getElementById('atend-prop-erro').style.display = 'none';
+  document.getElementById('atend-prop-modal-titulo').textContent = '✏️ Editar Cadastro';
+  document.getElementById('atend-prop-btn-salvar').textContent = '💾 Salvar';
+  document.getElementById('prop-id').value = prop.id;
+  document.getElementById('prop-nome').value = prop.nome_local || '';
+  document.getElementById('prop-razao-social').value = prop.razao_social || '';
+  document.getElementById('prop-nome-fantasia').value = prop.nome_fantasia || '';
+  document.getElementById('prop-cnpj').value = prop.cnpj || '';
+  document.getElementById('prop-endereco').value = prop.endereco || '';
+  document.getElementById('prop-corrego').value = prop.corrego_comunidade || '';
+  document.getElementById('prop-municipio').value = prop.municipio || '';
+  document.getElementById('prop-nivel-atencao').value = prop.nivel_atencao || 'NORMAL';
+  document.getElementById('prop-obs-intel').value = prop.observacoes_inteligencia || '';
+  propSelTipo(prop.tipo_local || 'PROPRIEDADE_RURAL');
+  document.getElementById('atend-prop-modal').style.display = 'flex';
+}
+
 function atendPropFechar(){ document.getElementById('atend-prop-modal').style.display = 'none'; }
 
 async function atendPropSalvar(){
@@ -7040,10 +7078,15 @@ async function atendPropSalvar(){
   erroEl.style.display = 'none';
   const nome = document.getElementById('prop-nome').value.trim();
   if(!nome){ erroEl.textContent = 'Informe o nome do local.'; erroEl.style.display = 'block'; return; }
-  if(!_atendVincCoord){ erroEl.textContent = 'Coordenada não definida. Reabra o fluxo a partir da consulta no mapa.'; erroEl.style.display = 'block'; return; }
+
+  const idEdicao = document.getElementById('prop-id').value;
+  if(!idEdicao && !_atendVincCoord){
+    erroEl.textContent = 'Coordenada não definida. Reabra o fluxo a partir da consulta no mapa.';
+    erroEl.style.display = 'block';
+    return;
+  }
 
   const tipoLocal = document.getElementById('prop-tipo-local').value;
-  const { pelNum, gpResp } = _getUserGP();
   const payload = {
     tipo_local: tipoLocal,
     nome_local: nome,
@@ -7055,27 +7098,58 @@ async function atendPropSalvar(){
     municipio: document.getElementById('prop-municipio').value.trim() || null,
     nivel_atencao: document.getElementById('prop-nivel-atencao').value,
     observacoes_inteligencia: document.getElementById('prop-obs-intel').value.trim() || null,
-    pelotao: pelNum || null,
-    grupamento: gpResp || null,
-    criado_por: _atendMeuId(),
-    criado_por_nome: sessaoPainel.nome || '',
-    criado_em: new Date().toISOString(),
-    atualizado_em: new Date().toISOString()
+    atualizado_em: new Date().toISOString(),
+    atualizado_por: _atendMeuId()
   };
 
   const btn = document.getElementById('atend-prop-btn-salvar');
   const txt = btn.textContent; btn.textContent = 'Salvando...'; btn.disabled = true;
   try{
-    const res = await sbUpsert('property_information', [payload]);
-    const novaPropriedade = res[0];
-    _propDados.push(novaPropriedade);
-    atendPropFechar();
-    /* Próximo passo: cadastrar a primeira pessoa vinculada (opcional, mas já abre o convite) */
-    atendPessoaAbrirNovo(novaPropriedade.id, _atendVincCoord);
+    if(idEdicao){
+      await sbPatchRow('property_information', `id=eq.${idEdicao}`, payload);
+      atendPropFechar();
+      _atendCarregado = false;
+      await atendCarregarDados();
+      /* Se estávamos vendo o detalhe dessa propriedade, reabre atualizado */
+      if(_propAtualDetalhe && _propAtualDetalhe.id === parseInt(idEdicao)){
+        atendAbrirDetalhe(parseInt(idEdicao));
+      }
+    } else {
+      const { pelNum, gpResp } = _getUserGP();
+      payload.pelotao = pelNum || null;
+      payload.grupamento = gpResp || null;
+      payload.criado_por = _atendMeuId();
+      payload.criado_por_nome = sessaoPainel.nome || '';
+      payload.criado_em = new Date().toISOString();
+      const res = await sbUpsert('property_information', [payload]);
+      const novaPropriedade = res[0];
+      _propDados.push(novaPropriedade);
+      atendPropFechar();
+      /* Próximo passo: cadastrar a primeira pessoa vinculada (opcional, mas já abre o convite) */
+      atendPessoaAbrirNovo(novaPropriedade.id, _atendVincCoord);
+    }
   }catch(e){
     erroEl.textContent = 'Erro ao salvar: '+e.message; erroEl.style.display = 'block';
   }finally{
     btn.textContent = txt; btn.disabled = false;
+  }
+}
+
+async function atendPropExcluir(propertyId){
+  const prop = _propDados.find(p => p.id === propertyId);
+  if(!prop) return;
+  if(!_atendPodeEditar(prop)){ alert('Você não tem permissão para excluir esta propriedade.'); return; }
+  const nPontos = _pontosDados.filter(p => p.property_id === propertyId).length;
+  const aviso = nPontos > 0
+    ? `Excluir "${prop.nome_local}"? Isso também excluirá os ${nPontos} ponto(s) cadastrados, junto com todo o histórico de eventos e constatações ambientais vinculados a eles, e as pessoas vinculadas a esta propriedade. Esta ação não pode ser desfeita.`
+    : `Excluir "${prop.nome_local}"? Esta ação não pode ser desfeita.`;
+  if(!confirm(aviso)) return;
+  try{
+    await sbDeleteRow('property_information', `id=eq.${propertyId}`);
+    _atendCarregado = false;
+    await atendCarregarDados();
+  }catch(e){
+    alert('Erro ao excluir: '+e.message);
   }
 }
 
