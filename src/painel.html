@@ -649,6 +649,14 @@
   <div id="cu-mapa-fs-inner" style="flex:1;width:100%;"></div>
 </div>
 
+<div id="atend-detalhe-mapa-fullscreen-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:#111;flex-direction:column;">
+  <div style="background:#1a1a1a;border-bottom:1px solid var(--border);padding:8px 14px;display:flex;align-items:center;gap:10px;flex-shrink:0;">
+    <span style="font-size:13px;font-weight:700;color:var(--gold);" id="atend-detalhe-fs-titulo">🗺️ Pontos da Propriedade — Tela Cheia</span>
+    <button onclick="atendDetalheFecharTelaCheia()" style="margin-left:auto;background:rgba(200,50,50,.2);border:1px solid #c03030;color:#ef5350;padding:5px 14px;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">✕ Fechar</button>
+  </div>
+  <div id="atend-detalhe-mapa-fs-inner" style="flex:1;width:100%;"></div>
+</div>
+
 <div class="tab-pane" id="tab-relatorios">
   <div class="filter-box">
     <div class="filter-box-title">📋 Diagnóstico Operacional — Filtros</div>
@@ -1093,8 +1101,9 @@
       </div>
 
       <div class="filter-box" style="padding:0;overflow:hidden;margin-bottom:14px;">
-        <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:12px;font-weight:700;color:var(--gold);">
-          🗺️ Todos os pontos desta propriedade
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:12px;font-weight:700;color:var(--gold);display:flex;align-items:center;justify-content:space-between;">
+          <span>🗺️ Todos os pontos desta propriedade</span>
+          <button onclick="atendDetalheAbrirTelaCheia()" style="background:rgba(155,138,92,.18);border:1px solid var(--gold-border);color:var(--gold);font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:5px;cursor:pointer;">⛶ Tela Cheia</button>
         </div>
         <div id="atend-detalhe-mapa" style="height:340px;"></div>
       </div>
@@ -5993,8 +6002,9 @@ function _cuInitMapa(){
   void mapDiv.offsetWidth; /* força reflow antes de medir o container */
 
   _cuMapaLeaflet = L.map(mapDiv, { zoomControl:true, attributionControl:false });
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-    {maxZoom:18, subdomains:'abcd'}).addTo(_cuMapaLeaflet);
+  const camadasCu = _mapaCamadas();
+  camadasCu.claro.addTo(_cuMapaLeaflet);
+  _mapaAdicionarSeletorCamadas(_cuMapaLeaflet, camadasCu, 'claro');
 
   /* Camada Área Urbana IBGE 2022 */
   const bounds = [];
@@ -6034,6 +6044,43 @@ function _cuInitMapa(){
 /* ── Pontos de propriedades cadastradas no mapa principal da Consulta ──
    Camada separada e permanente, com tooltip rico e filtros por
    tipo de local, nível de atenção e grupamento. */
+/* ── Seletor de camadas de mapa (Claro / Escuro / Satélite) ──
+   Reutilizado em todos os mapas da aba Consulta/Atendimentos. */
+function _mapaCamadas(){
+  return {
+    claro: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {maxZoom:18, subdomains:'abcd'}),
+    escuro: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {maxZoom:18, subdomains:'abcd'}),
+    satelite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxZoom:18})
+  };
+}
+
+/* Adiciona um controle de camadas (botões Claro/Escuro/Satélite) no canto do mapa.
+   mapaInstance: instância L.map já criada. camadaPadrao: 'claro'|'escuro'|'satelite' (já adicionada ao mapa antes de chamar). */
+function _mapaAdicionarSeletorCamadas(mapaInstance, camadas, camadaAtivaKey){
+  const ctrl = L.control({position:'bottomleft'});
+  ctrl.onAdd = function(){
+    const div = L.DomUtil.create('div');
+    div.style.cssText = 'background:#1e1e1e;border:1px solid rgba(155,138,92,.4);border-radius:6px;overflow:hidden;display:flex;box-shadow:0 2px 8px rgba(0,0,0,.4);';
+    const opts = [['claro','☀️ Claro'],['escuro','🌙 Escuro'],['satelite','🛰️ Satélite']];
+    opts.forEach(([key,label]) => {
+      const btn = document.createElement('button');
+      btn.textContent = label;
+      btn.style.cssText = `border:none;background:${key===camadaAtivaKey?'rgba(155,138,92,.3)':'transparent'};color:${key===camadaAtivaKey?'var(--gold)':'#ccc'};font-size:10.5px;font-weight:600;padding:6px 9px;cursor:pointer;white-space:nowrap;`;
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        Object.values(camadas).forEach(layer => mapaInstance.removeLayer(layer));
+        camadas[key].addTo(mapaInstance);
+        [...div.children].forEach(b => { b.style.background='transparent'; b.style.color='#ccc'; });
+        btn.style.background = 'rgba(155,138,92,.3)'; btn.style.color = 'var(--gold)';
+      };
+      div.appendChild(btn);
+    });
+    L.DomEvent.disableClickPropagation(div);
+    return div;
+  };
+  ctrl.addTo(mapaInstance);
+}
+
 let _cuPropPontosLayer = null;
 let _cuPropPontosCarregados = false;
 let _cuPropDadosCache = [];   /* property_information */
@@ -6167,7 +6214,9 @@ function cuAbrirTelaCheia(){
   if(!_cuFsMapaLeaflet){
     const inner = document.getElementById('cu-mapa-fs-inner');
     _cuFsMapaLeaflet = L.map(inner, { zoomControl:true, attributionControl:false });
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {maxZoom:18, subdomains:'abcd'}).addTo(_cuFsMapaLeaflet);
+    const camadasFs = _mapaCamadas();
+    camadasFs.claro.addTo(_cuFsMapaLeaflet);
+    _mapaAdicionarSeletorCamadas(_cuFsMapaLeaflet, camadasFs, 'claro');
     if(typeof IBGE_DATA !== 'undefined' && IBGE_DATA.length){
       IBGE_DATA.forEach(poly => {
         const latlngs = poly.map(p=>[p[1],p[0]]);
@@ -6666,7 +6715,9 @@ function _atendRenderMapaDetalhe(propertyId){
   void mapDiv.offsetWidth;
 
   _atendDetalheMapa = L.map(mapDiv, { zoomControl:true, attributionControl:false });
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {maxZoom:18, subdomains:'abcd'}).addTo(_atendDetalheMapa);
+  const camadasDet = _mapaCamadas();
+  camadasDet.claro.addTo(_atendDetalheMapa);
+  _mapaAdicionarSeletorCamadas(_atendDetalheMapa, camadasDet, 'claro');
 
   const bounds = [];
   pontos.forEach(p => {
@@ -6680,6 +6731,47 @@ function _atendRenderMapaDetalhe(propertyId){
   if(bounds.length) _atendDetalheMapa.fitBounds(bounds, {padding:[30,30], maxZoom:15});
   else _atendDetalheMapa.setView([-18.5,-42.0], 7);
   setTimeout(()=>_atendDetalheMapa.invalidateSize(false), 150);
+}
+
+/* ── Tela cheia do mini-mapa de detalhe da propriedade ── */
+let _atendDetalheFsMapa = null;
+
+function atendDetalheAbrirTelaCheia(){
+  if(!_propAtualDetalhe) return;
+  const titEl = document.getElementById('atend-detalhe-fs-titulo');
+  if(titEl) titEl.textContent = '🗺️ '+_propAtualDetalhe.nome_local+' — Pontos (Tela Cheia)';
+
+  document.getElementById('atend-detalhe-mapa-fullscreen-overlay').style.display = 'flex';
+
+  const pontos = _pontosDados.filter(p => p.property_id === _propAtualDetalhe.id);
+  const inner = document.getElementById('atend-detalhe-mapa-fs-inner');
+
+  if(_atendDetalheFsMapa){ try{ _atendDetalheFsMapa.remove(); }catch(e){} _atendDetalheFsMapa = null; }
+  inner.innerHTML = '';
+
+  setTimeout(() => {
+    _atendDetalheFsMapa = L.map(inner, { zoomControl:true, attributionControl:false });
+    const camadasFsDet = _mapaCamadas();
+    camadasFsDet.claro.addTo(_atendDetalheFsMapa);
+    _mapaAdicionarSeletorCamadas(_atendDetalheFsMapa, camadasFsDet, 'claro');
+
+    const bounds = [];
+    pontos.forEach(p => {
+      const cor = p.area_classificacao === 'URBANA' ? '#A0784A' : '#2ea043';
+      L.circleMarker([p.lat, p.lng], { radius:10, color:'#fff', weight:2, fillColor:cor, fillOpacity:0.9 })
+        .bindPopup(`<b>${p.rotulo || 'Ponto sem rótulo'}</b><br><span style="font-size:11px;color:#666;">${Number(p.lat).toFixed(6)}, ${Number(p.lng).toFixed(6)}</span>${_gmapsBtnHtml(p.lat,p.lng,'atenddetfs-'+p.id)}`)
+        .addTo(_atendDetalheFsMapa);
+      bounds.push([p.lat, p.lng]);
+    });
+
+    if(bounds.length) _atendDetalheFsMapa.fitBounds(bounds, {padding:[40,40]});
+    else _atendDetalheFsMapa.setView([-18.5,-42.0], 7);
+    _atendDetalheFsMapa.invalidateSize(false);
+  }, 100);
+}
+
+function atendDetalheFecharTelaCheia(){
+  document.getElementById('atend-detalhe-mapa-fullscreen-overlay').style.display = 'none';
 }
 
 function _atendRenderPontosDetalhe(propertyId){
