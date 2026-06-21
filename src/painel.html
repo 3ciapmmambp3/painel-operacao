@@ -6033,36 +6033,47 @@ function _desenharCamadaPelGrupamento(layerOuMapa, filtroGrupamentoLongo, _tenta
     }
     return;
   }
+  let nPoligonos = 0, nErros = 0;
   const filtroAtivo = !!filtroGrupamentoLongo;
   Object.entries(KML_DATA.pelotoes).forEach(([pelKey, pelData]) => {
     const pelNum = parseInt(pelKey.replace(/\D/g,''));
     if(!pelData.gps) return;
     Object.entries(pelData.gps).forEach(([gpKey, gpData]) => {
-      const gpNum = parseInt(gpKey.replace(/\D/g,''));
-      const gpInfo = (typeof dadosGrupos !== 'undefined' ? dadosGrupos : []).find(r =>
-        r.pelNum === pelNum && gpNumDoColk(r.colK||r.grupamento) === gpNum
-      );
-      const cidade = gpInfo ? gpInfo.gpResp.replace('GP ','') : '';
-      const tooltipLabel = cidade
-        ? `${pelData.label} — ${gpData.label} — ${cidade}`
-        : `${pelData.label} — ${gpData.label}`;
+      try{
+        const gpNum = parseInt(gpKey.replace(/\D/g,''));
+        const gpInfo = (typeof dadosGrupos !== 'undefined' ? dadosGrupos : []).find(r => {
+          if(r.pelNum !== pelNum) return false;
+          const chave = r.colK || r.grupamento || '';
+          if(!chave) return false;
+          return gpNumDoColk(chave) === gpNum;
+        });
+        const cidade = gpInfo ? (gpInfo.gpResp||'').replace('GP ','') : '';
+        const tooltipLabel = cidade
+          ? `${pelData.label} — ${gpData.label} — ${cidade}`
+          : `${pelData.label} — ${gpData.label}`;
 
-      /* Compara contra o nome longo (grupamento_completo), que é o que fica
-         salvo em property_information.grupamento e o que o filtro seleciona. */
-      const esteGrupamento = filtroAtivo && gpInfo && gpInfo.grupamento === filtroGrupamentoLongo;
-      const esmaecido = filtroAtivo && !esteGrupamento;
+        /* Compara contra o nome longo (grupamento_completo), que é o que fica
+           salvo em property_information.grupamento e o que o filtro seleciona. */
+        const esteGrupamento = filtroAtivo && gpInfo && gpInfo.grupamento === filtroGrupamentoLongo;
+        const esmaecido = filtroAtivo && !esteGrupamento;
 
-      (gpData.polys||[]).forEach(poly => {
-        L.polygon(poly.map(p=>[p[1],p[0]]), {
-          color: gpData.cor,
-          weight: esteGrupamento ? 3 : esmaecido ? 0.6 : 1.2,
-          opacity: esteGrupamento ? 1 : esmaecido ? 0.18 : 0.75,
-          fillColor: gpData.cor,
-          fillOpacity: esteGrupamento ? 0.28 : esmaecido ? 0.02 : 0.08
-        }).bindTooltip(tooltipLabel, {sticky:true, className:'leaflet-tooltip-pel'}).addTo(layerOuMapa);
-      });
+        (gpData.polys||[]).forEach(poly => {
+          L.polygon(poly.map(p=>[p[1],p[0]]), {
+            color: gpData.cor,
+            weight: esteGrupamento ? 3 : esmaecido ? 0.6 : 1.2,
+            opacity: esteGrupamento ? 1 : esmaecido ? 0.18 : 0.75,
+            fillColor: gpData.cor,
+            fillOpacity: esteGrupamento ? 0.28 : esmaecido ? 0.02 : 0.08
+          }).bindTooltip(tooltipLabel, {sticky:true, className:'leaflet-tooltip-pel'}).addTo(layerOuMapa);
+          nPoligonos++;
+        });
+      }catch(err){
+        nErros++;
+        console.error('[_desenharCamadaPelGrupamento] erro ao desenhar', pelKey, gpKey, err);
+      }
     });
   });
+  console.log('[_desenharCamadaPelGrupamento] polígonos desenhados:', nPoligonos, '| erros:', nErros, '| filtro:', filtroGrupamentoLongo||'(nenhum)');
 }
 
 function _cuInitMapa(){
@@ -6081,7 +6092,6 @@ function _cuInitMapa(){
   _desenharCamadaPelGrupamento(_cuCamadaPelGrupLayer);
 
   /* Camada Área Urbana IBGE 2022 */
-  const bounds = [];
   if(typeof IBGE_DATA !== 'undefined' && IBGE_DATA.length){
     IBGE_DATA.forEach(poly => {
       const latlngs = poly.map(p=>[p[1],p[0]]);
@@ -6089,7 +6099,6 @@ function _cuInitMapa(){
         color:'#8B5E3C', weight:0.8, opacity:0.9,
         fillColor:'#A0784A', fillOpacity:0.25
       }).bindTooltip('Área Urbana IBGE 2022',{sticky:true,className:'leaflet-tooltip-pel'}).addTo(_cuMapaLeaflet);
-      latlngs.forEach(p=>bounds.push(p));
     });
   }
 
@@ -6099,8 +6108,10 @@ function _cuInitMapa(){
     L.polygon(mgLatLngs, { color:'#5a5a5a', weight:1.5, opacity:0.5, fillOpacity:0, interactive:false }).addTo(_cuMapaLeaflet);
   }
 
-  if(bounds.length) _cuMapaLeaflet.fitBounds(bounds, {padding:[15,15]});
-  else _cuMapaLeaflet.setView([-18.5,-42.0], 7);
+  /* Posição inicial fixa centrada em Minas Gerais — evita calcular bounds a partir
+     de milhares de pontos da malha urbana IBGE, que pode gerar erro no Leaflet
+     (LatLngBounds inválido) se algum polígono tiver coordenada fora do padrão. */
+  _cuMapaLeaflet.setView([-18.5,-42.0], 7);
 
   setTimeout(()=>_cuMapaLeaflet.invalidateSize(false), 150);
 
@@ -6186,6 +6197,8 @@ function _cuPopularFiltrosGp(_tentativa){
     const visiveis = _atendFiltrarVisiveis ? _atendFiltrarVisiveis(_cuPropDadosCache) : _cuPropDadosCache;
     gps = [...new Set(visiveis.map(p=>p.grupamento).filter(Boolean))].sort();
   }
+  console.log('[_cuPopularFiltrosGp] dadosGrupos.length:', (typeof dadosGrupos!=='undefined'?dadosGrupos.length:'undefined'),
+    '| gps encontrados:', gps.length, '| tentativa:', _tentativa||0);
   /* Se dadosGrupos ainda não carregou e também não há propriedades visíveis com
      grupamento preenchido, tenta novamente — evita o filtro ficar permanentemente vazio
      numa condição de corrida com o carregamento inicial do sistema. */
