@@ -6297,20 +6297,22 @@ function _cuInitMapa(){
    Mostra o emoji do tipo de local dentro de um "alfinete" colorido pelo nível
    de atenção, com leve animação de escala no hover via CSS. */
 function _criarIconePonto(prop, origemKey){
-  const cor = NIVEL_ATENCAO_COR[prop.nivel_atencao] || '#888';
-  /* Se o ponto tem uma origem de demanda registrada (ex: RI, MC, FTP...), mostra
-     o ícone dela no pino — assim dá pra identificar o tipo de ocorrência sem
-     precisar abrir o popup. Sem origem registrada, usa o ícone genérico do local. */
+  const corNivel = NIVEL_ATENCAO_COR[prop.nivel_atencao] || '#888';
+  /* Se o ponto tem uma origem de demanda registrada (ex: RI, MC, FTP...), o pino
+     inteiro muda de cor para a cor da origem (não só o emoji interno) — garante
+     que a diferença visual é óbvia mesmo em zoom baixo do mapa. Sem origem
+     registrada, mantém a cor por nível de atenção e o ícone genérico do local. */
   const origemInfo = origemKey ? ORIGEM_DEMANDA_VISUAL[origemKey] : null;
+  const cor = origemInfo ? origemInfo.cor : corNivel;
   const emoji = origemInfo ? origemInfo.icone : (prop.tipo_local === 'EMPREENDIMENTO' ? '🏭' : '🏡');
   const html = `
-    <div class="cu-pin-wrap" style="position:relative;width:34px;height:44px;cursor:pointer;">
-      <svg width="34" height="44" viewBox="0 0 34 44" style="position:absolute;top:0;left:0;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5));">
+    <div class="cu-pin-wrap" style="position:relative;width:36px;height:46px;cursor:pointer;">
+      <svg width="36" height="46" viewBox="0 0 34 44" style="position:absolute;top:0;left:0;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6));">
         <path d="M17 0C7.6 0 0 7.6 0 17c0 12.7 17 27 17 27s17-14.3 17-27C34 7.6 26.4 0 17 0z" fill="${cor}" stroke="#fff" stroke-width="2"/>
       </svg>
-      <div style="position:absolute;top:5px;left:0;width:34px;height:24px;display:flex;align-items:center;justify-content:center;font-size:15px;">${emoji}</div>
+      <div style="position:absolute;top:4px;left:0;width:36px;height:26px;display:flex;align-items:center;justify-content:center;font-size:18px;line-height:1;">${emoji}</div>
     </div>`;
-  return L.divIcon({ html, className:'cu-pin-icon', iconSize:[34,44], iconAnchor:[17,42], popupAnchor:[0,-40] });
+  return L.divIcon({ html, className:'cu-pin-icon', iconSize:[36,46], iconAnchor:[18,44], popupAnchor:[0,-42] });
 }
 
 /* Busca a origem de demanda mais recente entre as fiscalizações do ponto (se
@@ -6323,25 +6325,15 @@ async function _cuOrigemMaisRecente(pontoId){
   return comOrigem[0].origem_demanda;
 }
 
-/* Atualiza o ícone de um marcador já criado, assim que a origem de demanda
-   do ponto é conhecida. Remove e recria o marcador em vez de usar setIcon()
-   diretamente — mais garantido visualmente com ícones divIcon complexos,
-   que às vezes não repintam corretamente só com setIcon(). */
-async function _cuAtualizarIconeComOrigem(marker, ponto, prop, layerGroup){
-  try{
-    const origem = await _cuOrigemMaisRecente(ponto.id);
-    if(!origem) return;
-    const novoIcone = _criarIconePonto(prop, origem);
-    marker.setIcon(novoIcone);
-    /* Reforço: alguns navegadores não repintam o divIcon corretamente só com
-       setIcon(); remover e re-adicionar a camada força o Leaflet a redesenhar. */
-    if(layerGroup && layerGroup.hasLayer(marker)){
-      layerGroup.removeLayer(marker);
-      layerGroup.addLayer(marker);
-    }
-  }catch(e){
-    console.error('[_cuAtualizarIconeComOrigem] erro no ponto', ponto.id, ':', e);
-  }
+/* Versão SÍNCRONA: lê direto de _cuRegistrosDadosCache (já carregado junto com
+   os pontos/propriedades no início). Usada para já criar o marcador com o
+   ícone certo desde o início, sem precisar trocar o ícone depois — evita
+   problemas de repintura do Leaflet com setIcon() em divIcons. */
+function _cuOrigemMaisRecenteSync(pontoId){
+  const comOrigem = (_cuRegistrosDadosCache||[]).filter(r => r.point_id === pontoId && r.origem_demanda);
+  if(!comOrigem.length) return null;
+  comOrigem.sort((a,b) => new Date(b.data_fato||0) - new Date(a.data_fato||0));
+  return comOrigem[0].origem_demanda;
 }
 
 function _mapaCamadas(){
@@ -6438,7 +6430,7 @@ async function cuCarregarPontosMapa(){
     const [props, pontos, registros] = await Promise.all([
       sbFetch('property_information', 'select=*'),
       sbFetch('map_points', 'select=*'),
-      sbFetch('service_records', 'select=point_id,origem_demanda')
+      sbFetch('service_records', 'select=point_id,origem_demanda,data_fato')
     ]);
     _cuPropDadosCache = props;
     _cuPontosDadosCache = pontos;
@@ -6575,12 +6567,12 @@ function cuAtualizarPontosMapa(){
     const prop = _cuPropDadosCache.find(p => p.id === ponto.property_id);
     if(!prop) return;
 
-    const marker = L.marker([ponto.lat, ponto.lng], { icon: _criarIconePonto(prop) });
+    const origemSync = _cuOrigemMaisRecenteSync(ponto.id);
+    const marker = L.marker([ponto.lat, ponto.lng], { icon: _criarIconePonto(prop, origemSync) });
     marker.bindPopup(_cuMontarTooltipPonto(ponto, prop), {maxWidth:320, className:'leaflet-dark-popup'});
 
     marker.on('popupopen', () => _cuPreencherConteudoPopup(ponto, prop));
     marker.addTo(_cuPropPontosLayer);
-    _cuAtualizarIconeComOrigem(marker, ponto, prop, _cuPropPontosLayer);
   });
 }
 
@@ -6677,11 +6669,11 @@ function cuFsAtualizar(){
   pontosVisiveis.forEach(ponto => {
     const prop = _cuPropDadosCache.find(p => p.id === ponto.property_id);
     if(!prop) return;
-    const marker = L.marker([ponto.lat, ponto.lng], { icon: _criarIconePonto(prop) });
+    const origemSync = _cuOrigemMaisRecenteSync(ponto.id);
+    const marker = L.marker([ponto.lat, ponto.lng], { icon: _criarIconePonto(prop, origemSync) });
     marker.bindPopup(_cuMontarTooltipPonto(ponto, prop), {maxWidth:320, className:'leaflet-dark-popup'});
     marker.on('popupopen', () => _cuPreencherConteudoPopup(ponto, prop));
     marker.addTo(_cuFsLayer);
-    _cuAtualizarIconeComOrigem(marker, ponto, prop, _cuFsLayer);
     bounds.push([ponto.lat, ponto.lng]);
   });
 
