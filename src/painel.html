@@ -6020,8 +6020,9 @@ function initConsultaUrbanaRural(){
 /* ── Camada de Pelotões/Grupamentos — mesmos polígonos coloridos usados
    no Mapa Criminal/OP GDO RURAL (KML_DATA), com tooltip mostrando
    pelotão + grupamento + cidade. Reutilizável em qualquer mapa Leaflet. */
-function _desenharCamadaPelGrupamento(mapaInstance){
+function _desenharCamadaPelGrupamento(layerOuMapa, filtroGrupamentoLongo){
   if(typeof KML_DATA === 'undefined' || !KML_DATA.pelotoes) return;
+  const filtroAtivo = !!filtroGrupamentoLongo;
   Object.entries(KML_DATA.pelotoes).forEach(([pelKey, pelData]) => {
     const pelNum = parseInt(pelKey.replace(/\D/g,''));
     if(!pelData.gps) return;
@@ -6034,11 +6035,20 @@ function _desenharCamadaPelGrupamento(mapaInstance){
       const tooltipLabel = cidade
         ? `${pelData.label} — ${gpData.label} — ${cidade}`
         : `${pelData.label} — ${gpData.label}`;
+
+      /* Compara contra o nome longo (grupamento_completo), que é o que fica
+         salvo em property_information.grupamento e o que o filtro seleciona. */
+      const esteGrupamento = filtroAtivo && gpInfo && gpInfo.grupamento === filtroGrupamentoLongo;
+      const esmaecido = filtroAtivo && !esteGrupamento;
+
       (gpData.polys||[]).forEach(poly => {
         L.polygon(poly.map(p=>[p[1],p[0]]), {
-          color: gpData.cor, weight:1.2, opacity:0.75,
-          fillColor: gpData.cor, fillOpacity:0.08
-        }).bindTooltip(tooltipLabel, {sticky:true, className:'leaflet-tooltip-pel'}).addTo(mapaInstance);
+          color: gpData.cor,
+          weight: esteGrupamento ? 3 : esmaecido ? 0.6 : 1.2,
+          opacity: esteGrupamento ? 1 : esmaecido ? 0.18 : 0.75,
+          fillColor: gpData.cor,
+          fillOpacity: esteGrupamento ? 0.28 : esmaecido ? 0.02 : 0.08
+        }).bindTooltip(tooltipLabel, {sticky:true, className:'leaflet-tooltip-pel'}).addTo(layerOuMapa);
       });
     });
   });
@@ -6054,8 +6064,10 @@ function _cuInitMapa(){
   camadasCu.claro.addTo(_cuMapaLeaflet);
   _mapaAdicionarSeletorCamadas(_cuMapaLeaflet, camadasCu, 'claro');
 
-  /* Camada Pelotões/Grupamentos (mesma do Mapa Criminal/OP GDO RURAL) */
-  _desenharCamadaPelGrupamento(_cuMapaLeaflet);
+  /* Camada Pelotões/Grupamentos (mesma do Mapa Criminal/OP GDO RURAL) —
+     usa um layerGroup próprio para poder ser redesenhada ao mudar o filtro de Grupamento. */
+  _cuCamadaPelGrupLayer = L.layerGroup().addTo(_cuMapaLeaflet);
+  _desenharCamadaPelGrupamento(_cuCamadaPelGrupLayer);
 
   /* Camada Área Urbana IBGE 2022 */
   const bounds = [];
@@ -6100,18 +6112,19 @@ function _cuInitMapa(){
 function _mapaCamadas(){
   return {
     claro: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {maxZoom:18, subdomains:'abcd'}),
+    ruas: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, subdomains:'abc'}),
     satelite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {maxZoom:18})
   };
 }
 
-/* Adiciona um controle de camadas (botões Claro/Satélite) no canto do mapa.
-   mapaInstance: instância L.map já criada. camadaPadrao: 'claro'|'satelite' (já adicionada ao mapa antes de chamar). */
+/* Adiciona um controle de camadas (botões Claro/Ruas/Satélite) no canto do mapa.
+   mapaInstance: instância L.map já criada. camadaPadrao: 'claro'|'ruas'|'satelite' (já adicionada ao mapa antes de chamar). */
 function _mapaAdicionarSeletorCamadas(mapaInstance, camadas, camadaAtivaKey){
   const ctrl = L.control({position:'bottomleft'});
   ctrl.onAdd = function(){
     const div = L.DomUtil.create('div');
     div.style.cssText = 'background:#1e1e1e;border:1px solid rgba(155,138,92,.4);border-radius:6px;overflow:hidden;display:flex;box-shadow:0 2px 8px rgba(0,0,0,.4);';
-    const opts = [['claro','☀️ Claro'],['satelite','🛰️ Satélite']];
+    const opts = [['claro','☀️ Claro'],['ruas','🗺️ Ruas'],['satelite','🛰️ Satélite']];
     opts.forEach(([key,label]) => {
       const btn = document.createElement('button');
       btn.textContent = label;
@@ -6132,6 +6145,8 @@ function _mapaAdicionarSeletorCamadas(mapaInstance, camadas, camadaAtivaKey){
 }
 
 let _cuPropPontosLayer = null;
+let _cuCamadaPelGrupLayer = null;   /* mapa principal: camada de polígonos pelotão/grupamento */
+let _cuFsCamadaPelGrupLayer = null; /* tela cheia: idem */
 let _cuPropPontosCarregados = false;
 let _cuPropDadosCache = [];   /* property_information */
 let _cuPontosDadosCache = []; /* map_points */
@@ -6200,6 +6215,12 @@ function cuAtualizarPontosMapa(){
   const filtroAtencao = document.getElementById('cu-filtro-atencao')?.value || '';
   const filtroGp = document.getElementById('cu-filtro-gp')?.value || '';
 
+  /* Redesenha a camada de polígonos Pelotão/Grupamento destacando o grupamento filtrado */
+  if(_cuCamadaPelGrupLayer){
+    _cuCamadaPelGrupLayer.clearLayers();
+    _desenharCamadaPelGrupamento(_cuCamadaPelGrupLayer, filtroGp);
+  }
+
   let propsVisiveis = _atendFiltrarVisiveis ? _atendFiltrarVisiveis(_cuPropDadosCache) : _cuPropDadosCache;
   if(filtroTipo) propsVisiveis = propsVisiveis.filter(p => p.tipo_local === filtroTipo);
   if(filtroAtencao) propsVisiveis = propsVisiveis.filter(p => p.nivel_atencao === filtroAtencao);
@@ -6266,21 +6287,31 @@ function cuAbrirTelaCheia(){
   const overlay = document.getElementById('cu-mapa-fullscreen-overlay');
   overlay.style.display = 'flex';
 
-  if(!_cuFsMapaLeaflet){
-    const inner = document.getElementById('cu-mapa-fs-inner');
+  /* Sempre recria o mapa do zero ao abrir — evita o bug clássico do Leaflet de
+     ficar com dimensão 0×0 (tela branca) quando criado num container ainda
+     oculto/sem layout finalizado na primeira abertura. */
+  const inner = document.getElementById('cu-mapa-fs-inner');
+  if(_cuFsMapaLeaflet){ try{ _cuFsMapaLeaflet.remove(); }catch(e){} _cuFsMapaLeaflet = null; }
+  _cuFsLayer = null;
+  _cuFsCamadaPelGrupLayer = null;
+  inner.innerHTML = '';
+
+  requestAnimationFrame(() => setTimeout(() => {
+    void inner.offsetWidth; /* força reflow antes de medir o container */
     _cuFsMapaLeaflet = L.map(inner, { zoomControl:true, attributionControl:false });
     const camadasFs = _mapaCamadas();
     camadasFs.claro.addTo(_cuFsMapaLeaflet);
     _mapaAdicionarSeletorCamadas(_cuFsMapaLeaflet, camadasFs, 'claro');
-    _desenharCamadaPelGrupamento(_cuFsMapaLeaflet);
+    _cuFsCamadaPelGrupLayer = L.layerGroup().addTo(_cuFsMapaLeaflet);
     if(typeof IBGE_DATA !== 'undefined' && IBGE_DATA.length){
       IBGE_DATA.forEach(poly => {
         const latlngs = poly.map(p=>[p[1],p[0]]);
         L.polygon(latlngs, { color:'#8B5E3C', weight:0.8, opacity:0.9, fillColor:'#A0784A', fillOpacity:0.25 }).addTo(_cuFsMapaLeaflet);
       });
     }
-  }
-  setTimeout(()=>{ _cuFsMapaLeaflet.invalidateSize(false); cuFsAtualizar(); }, 150);
+    _cuFsMapaLeaflet.invalidateSize(false);
+    cuFsAtualizar();
+  }, 150));
 }
 
 function cuFsAtualizar(){
@@ -6289,6 +6320,12 @@ function cuFsAtualizar(){
   const filtroTipo = document.getElementById('cu-fs-filtro-tipo')?.value || '';
   const filtroAtencao = document.getElementById('cu-fs-filtro-atencao')?.value || '';
   const filtroGp = document.getElementById('cu-fs-filtro-gp')?.value || '';
+
+  /* Redesenha a camada de polígonos Pelotão/Grupamento destacando o grupamento filtrado */
+  if(_cuFsCamadaPelGrupLayer){
+    _cuFsCamadaPelGrupLayer.clearLayers();
+    _desenharCamadaPelGrupamento(_cuFsCamadaPelGrupLayer, filtroGp);
+  }
 
   if(_cuFsLayer) _cuFsLayer.clearLayers();
   else _cuFsLayer = L.layerGroup().addTo(_cuFsMapaLeaflet);
@@ -6848,7 +6885,7 @@ function _atendRenderMapaDetalhe(propertyId){
   const camadasDet = _mapaCamadas();
   camadasDet.claro.addTo(_atendDetalheMapa);
   _mapaAdicionarSeletorCamadas(_atendDetalheMapa, camadasDet, 'claro');
-  _desenharCamadaPelGrupamento(_atendDetalheMapa);
+  _desenharCamadaPelGrupamento(_atendDetalheMapa, _propAtualDetalhe?.grupamento || null);
 
   const bounds = [];
   pontos.forEach(p => {
@@ -6885,7 +6922,7 @@ function atendDetalheAbrirTelaCheia(){
     const camadasFsDet = _mapaCamadas();
     camadasFsDet.claro.addTo(_atendDetalheFsMapa);
     _mapaAdicionarSeletorCamadas(_atendDetalheFsMapa, camadasFsDet, 'claro');
-    _desenharCamadaPelGrupamento(_atendDetalheFsMapa);
+    _desenharCamadaPelGrupamento(_atendDetalheFsMapa, _propAtualDetalhe?.grupamento || null);
 
     const bounds = [];
     pontos.forEach(p => {
