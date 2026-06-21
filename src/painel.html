@@ -6331,7 +6331,13 @@ async function _cuOrigemMaisRecente(pontoId){
    ícone certo desde o início, sem precisar trocar o ícone depois — evita
    problemas de repintura do Leaflet com setIcon() em divIcons. */
 function _cuOrigemMaisRecenteSync(pontoId){
-  const comOrigem = (_cuRegistrosDadosCache||[]).filter(r => r.point_id === pontoId && r.origem_demanda);
+  return _origemMaisRecenteDeArray(_cuRegistrosDadosCache, pontoId);
+}
+/* Versão genérica: recebe o array de registros a usar — permite reaproveitar
+   a mesma lógica tanto no cache da aba Consulta (_cuRegistrosDadosCache)
+   quanto no cache da aba Atendimentos (_atendTodosRegistros). */
+function _origemMaisRecenteDeArray(registros, pontoId){
+  const comOrigem = (registros||[]).filter(r => r.point_id === pontoId && r.origem_demanda);
   if(!comOrigem.length) return null;
   comOrigem.sort((a,b) => new Date(b.data_fato||0) - new Date(a.data_fato||0));
   return comOrigem[0].origem_demanda;
@@ -7008,7 +7014,7 @@ async function atendCarregarDados(){
       sbFetch('property_information', 'select=*&order=nome_local'),
       sbFetch('map_points', 'select=*&order=criado_em.desc'),
       sbFetch('pessoas_vinculadas', 'select=id,property_id,nome,cpf,tipo_vinculo'),
-      sbFetch('service_records', 'select=id,point_id,numero_bo,numero_auto_infracao')
+      sbFetch('service_records', 'select=id,point_id,numero_bo,numero_auto_infracao,origem_demanda,data_fato')
     ]);
     _propDados = props;
     _pontosDados = pontos;
@@ -7212,7 +7218,8 @@ function _atendRenderMapaDetalhe(propertyId){
 
   const bounds = [];
   pontos.forEach(p => {
-    const icon = _propAtualDetalhe ? _criarIconePonto(_propAtualDetalhe) : null;
+    const origemP = _origemMaisRecenteDeArray(_atendTodosRegistros, p.id);
+    const icon = _propAtualDetalhe ? _criarIconePonto(_propAtualDetalhe, origemP) : null;
     const marker = icon ? L.marker([p.lat, p.lng], { icon }) : L.circleMarker([p.lat, p.lng], { radius:9, color:'#fff', weight:2, fillColor: p.area_classificacao==='URBANA'?'#A0784A':'#2ea043', fillOpacity:0.9 });
     marker
       .bindPopup(`<b>${p.rotulo || 'Ponto sem rótulo'}</b><br><span style="font-size:11px;color:#666;">${Number(p.lat).toFixed(6)}, ${Number(p.lng).toFixed(6)}</span>${_gmapsBtnHtml(p.lat,p.lng,'atenddet-'+p.id)}`)
@@ -7250,7 +7257,8 @@ function atendDetalheAbrirTelaCheia(){
 
     const bounds = [];
     pontos.forEach(p => {
-      const icon = _propAtualDetalhe ? _criarIconePonto(_propAtualDetalhe) : null;
+      const origemP = _origemMaisRecenteDeArray(_atendTodosRegistros, p.id);
+      const icon = _propAtualDetalhe ? _criarIconePonto(_propAtualDetalhe, origemP) : null;
       const marker = icon ? L.marker([p.lat, p.lng], { icon }) : L.circleMarker([p.lat, p.lng], { radius:10, color:'#fff', weight:2, fillColor: p.area_classificacao==='URBANA'?'#A0784A':'#2ea043', fillOpacity:0.9 });
       marker
         .bindPopup(`<b>${p.rotulo || 'Ponto sem rótulo'}</b><br><span style="font-size:11px;color:#666;">${Number(p.lat).toFixed(6)}, ${Number(p.lng).toFixed(6)}</span>${_gmapsBtnHtml(p.lat,p.lng,'atenddetfs-'+p.id)}`)
