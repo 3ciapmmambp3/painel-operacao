@@ -1158,6 +1158,8 @@
         <span id="atend-vinc-area" style="margin-left:10px;"></span>
       </div>
 
+      <div id="atend-vinc-aviso-proximidade" style="display:none;"></div>
+
       <div style="font-size:12.5px;color:#ddd;margin-bottom:10px;">Essa propriedade já existe no sistema?</div>
 
       <div class="fg" style="margin-bottom:12px;">
@@ -1367,7 +1369,7 @@
       <!-- BLOCO: BOLETIM DE OCORRÊNCIA -->
       <div style="border-top:1px solid var(--border);padding-top:12px;">
         <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:12.5px;color:#ddd;">
-          <input type="checkbox" id="ponto-chk-bo" onchange="pontoToggleBloco('bo')" style="width:14px;height:14px;accent-color:var(--gold);"> Cadastrar BO/RAT
+          <input type="checkbox" id="ponto-chk-bo" onchange="pontoToggleBloco('bo')" style="width:14px;height:14px;accent-color:var(--gold);"> Cadastrar BO/RAT/BOS
         </label>
         <div id="ponto-bloco-bo" style="display:none;margin-top:10px;">
           <div id="ponto-bos-lista" style="display:flex;flex-direction:column;gap:10px;"></div>
@@ -1660,7 +1662,7 @@
         <!-- BOLETIM DE OCORRÊNCIA -->
         <div style="border-top:1px solid var(--border);padding-top:12px;">
           <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:12.5px;color:#ddd;">
-            <input type="checkbox" id="wiz-chk-bo" onchange="wizToggleBloco('bo')" style="width:14px;height:14px;accent-color:var(--gold);"> Cadastrar BO/RAT
+            <input type="checkbox" id="wiz-chk-bo" onchange="wizToggleBloco('bo')" style="width:14px;height:14px;accent-color:var(--gold);"> Cadastrar BO/RAT/BOS
           </label>
           <div id="wiz-bloco-bo" style="display:none;margin-top:10px;">
             <div id="wiz-bos-lista" style="display:flex;flex-direction:column;gap:10px;"></div>
@@ -6579,11 +6581,21 @@ function cuAtualizarPontosMapa(){
       const proprietario = (pessoas||[]).find(p => p.tipo_vinculo === 'PROPRIETARIO' || p.tipo_vinculo === 'REPRESENTANTE_LEGAL');
       const ultimoBo = (regs||[]).find(r => r.tipo_ocorrencia === 'BO' && r.numero_bo);
       const ultimaFiscalizacao = (regs||[]).find(r => r.tipo_ocorrencia === 'FISCALIZACAO' || r.data_fato);
+      /* Origens da demanda distintas presentes nos registros deste ponto — exibidas
+         como ícones grandes e coloridos, já que o seletor visual saiu do formulário. */
+      const origensUnicas = [...new Set((regs||[]).map(r => r.origem_demanda).filter(Boolean))];
 
       let html = '';
       if(proprietario) html += `<div>👤 ${proprietario.nome}</div>`;
       if(ultimoBo) html += `<div>📄 BO: ${ultimoBo.numero_bo}</div>`;
       if(ultimaFiscalizacao && ultimaFiscalizacao.data_fato) html += `<div>🔍 Últ. fiscalização: ${new Date(ultimaFiscalizacao.data_fato).toLocaleDateString('pt-BR')}</div>`;
+      if(origensUnicas.length){
+        html += `<div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;">` +
+          origensUnicas.map(k => {
+            const v = ORIGEM_DEMANDA_VISUAL[k]; if(!v) return '';
+            return `<span title="${v.label}" style="font-size:18px;background:${v.cor}22;border:1px solid ${v.cor};border-radius:6px;padding:3px 6px;">${v.icone}</span>`;
+          }).join('') + `</div>`;
+      }
       if(!html) html = '<div style="color:#777;">Sem registros detalhados ainda.</div>';
       loadingEl.outerHTML = `<div style="margin-top:4px;color:#ccc;">${html}</div>`;
     });
@@ -6642,6 +6654,7 @@ function cuAbrirTelaCheia(){
     });
 
     _cuFsCamadaPelGrupLayer = L.layerGroup().addTo(_cuFsMapaLeaflet);
+    _cuFsMapaLeaflet.setView([-18.5,-42.0], 7); /* posição inicial — evita mapa "perdido" sem tiles visíveis */
     _cuFsMapaLeaflet.invalidateSize(false);
     cuFsAtualizar();
   }, 150));
@@ -6694,10 +6707,18 @@ function cuFsAtualizar(){
       const proprietario = (pessoas||[]).find(p => p.tipo_vinculo === 'PROPRIETARIO' || p.tipo_vinculo === 'REPRESENTANTE_LEGAL');
       const ultimoBo = (regs||[]).find(r => r.tipo_ocorrencia === 'BO' && r.numero_bo);
       const ultimaFiscalizacao = (regs||[]).find(r => r.tipo_ocorrencia === 'FISCALIZACAO' || r.data_fato);
+      const origensUnicas = [...new Set((regs||[]).map(r => r.origem_demanda).filter(Boolean))];
       let html = '';
       if(proprietario) html += `<div>👤 ${proprietario.nome}</div>`;
       if(ultimoBo) html += `<div>📄 BO: ${ultimoBo.numero_bo}</div>`;
       if(ultimaFiscalizacao && ultimaFiscalizacao.data_fato) html += `<div>🔍 Últ. fiscalização: ${new Date(ultimaFiscalizacao.data_fato).toLocaleDateString('pt-BR')}</div>`;
+      if(origensUnicas.length){
+        html += `<div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;">` +
+          origensUnicas.map(k => {
+            const v = ORIGEM_DEMANDA_VISUAL[k]; if(!v) return '';
+            return `<span title="${v.label}" style="font-size:18px;background:${v.cor}22;border:1px solid ${v.cor};border-radius:6px;padding:3px 6px;">${v.icone}</span>`;
+          }).join('') + `</div>`;
+      }
       if(!html) html = '<div style="color:#777;">Sem registros detalhados ainda.</div>';
       loadingEl.outerHTML = `<div style="margin-top:4px;color:#ccc;">${html}</div>`;
     });
@@ -6706,6 +6727,7 @@ function cuFsAtualizar(){
   });
 
   if(bounds.length) _cuFsMapaLeaflet.fitBounds(bounds, {padding:[30,30]});
+  else _cuFsMapaLeaflet.setView([-18.5,-42.0], 7);
 }
 let _cuFsLayer = null;
 
@@ -7391,6 +7413,17 @@ function atendVerNoMapa(lat, lng){
 ════════════════════════════════════════════════════════════ */
 let _atendVincCoord = null; /* {lat, lng, ehUrbana} */
 
+/* Distância em metros entre duas coordenadas (fórmula de Haversine) */
+function _distanciaMetros(lat1, lng1, lat2, lng2){
+  const R = 6371000;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2-lat1), dLng = toRad(lng2-lng1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+const RAIO_ALERTA_PROXIMIDADE_M = 500; /* raio de busca para pontos já cadastrados próximos */
+
 function atendVincAbrir(){
   if(!sessaoPainel){ alert('Sessão expirada. Faça login novamente.'); return; }
   if(!_cuUltimoDecimal){
@@ -7407,9 +7440,54 @@ function atendVincAbrir(){
   document.getElementById('atend-vinc-busca').value = '';
   document.getElementById('atend-vinc-resultados').innerHTML = '';
 
-  if(!_atendCarregado) atendCarregarDados();
+  if(!_atendCarregado){
+    atendCarregarDados().then(() => _atendVincChecarProximidade());
+  } else {
+    _atendVincChecarProximidade();
+  }
   document.getElementById('atend-vinc-modal').style.display = 'flex';
 }
+
+/* Verifica se já existe algum ponto cadastrado num raio próximo da coordenada
+   consultada, e exibe um aviso sugerindo vincular o atendimento à mesma
+   propriedade em vez de criar uma nova — comum quando se trata da mesma
+   fazenda/proprietário, só uma nova fiscalização/ocorrência no local. */
+function _atendVincChecarProximidade(){
+  const avisoEl = document.getElementById('atend-vinc-aviso-proximidade');
+  if(!avisoEl || !_atendVincCoord) return;
+
+  const proximos = _pontosDados
+    .map(pt => ({ ponto: pt, dist: _distanciaMetros(_atendVincCoord.lat, _atendVincCoord.lng, pt.lat, pt.lng) }))
+    .filter(x => x.dist <= RAIO_ALERTA_PROXIMIDADE_M)
+    .sort((a,b) => a.dist - b.dist);
+
+  if(!proximos.length){ avisoEl.innerHTML = ''; avisoEl.style.display = 'none'; return; }
+
+  avisoEl.style.display = 'block';
+  avisoEl.innerHTML = `
+    <div style="background:rgba(230,172,0,.12);border:1px solid #e6ac00;border-radius:8px;padding:12px 14px;margin-bottom:14px;">
+      <div style="font-size:12px;font-weight:700;color:#e6ac00;display:flex;align-items:center;gap:6px;">⚠️ Ponto(s) próximo(s) já cadastrado(s)</div>
+      <div style="font-size:11px;color:#ddd;margin-top:4px;">Pode ser a mesma propriedade/proprietário — considere apenas adicionar uma nova fiscalização ao ponto existente em vez de criar um novo.</div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;">
+        ${proximos.slice(0,3).map(({ponto, dist}) => {
+          const prop = _propDados.find(p => p.id === ponto.property_id);
+          return `<div style="background:#1a1a1a;border-radius:6px;padding:7px 10px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span style="font-size:11px;color:#fff;">🏡 ${prop ? prop.nome_local : '—'} ${ponto.rotulo ? '— '+ponto.rotulo : ''} <span style="color:#888;">(${Math.round(dist)}m)</span></span>
+            <button onclick="atendVincIrParaPontoProximo(${ponto.property_id})" style="background:rgba(155,138,92,.2);border:1px solid var(--gold-border);color:var(--gold);font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:4px;cursor:pointer;">Ver / Adicionar aqui</button>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+}
+
+/* Leva o usuário direto para o detalhe da propriedade próxima encontrada,
+   onde ele pode adicionar um novo ponto ou registrar evento num já existente. */
+function atendVincIrParaPontoProximo(propertyId){
+  atendVincFechar();
+  consultaSelSub('atend');
+  setTimeout(() => atendAbrirDetalhe(propertyId), 150);
+}
+
 function atendVincFechar(){ document.getElementById('atend-vinc-modal').style.display = 'none'; }
 
 function atendVincBuscarPropriedade(){
@@ -7811,9 +7889,10 @@ const SITUACAO_OPTIONS = `
 const ORIGEM_DEMANDA_LABEL = {
   MC:'Monitoramento Contínuo (MC)', RI:'Registro de Incêndio (RI)', NUDEN:'NUDEN', PAF:'PAF', DDU:'DDU',
   FTP:'Força Tarefa Pré-Incêndio (FTP)', EMERGENCIA_AMBIENTAL:'Emergência Ambiental',
-  REQUISICAO:'Requisição', OUTROS:'Outros'
+  REQUISICAO:'Requisição', OPERACAO:'Operação', OUTROS:'Outros'
 };
-/* Ícone + cor por origem de demanda — usados no seletor visual destacado do wizard */
+/* Ícone + cor por origem de demanda — usado nos marcadores do mapa (não mais no formulário,
+   que agora usa uma lista suspensa simples, mais compacta). */
 const ORIGEM_DEMANDA_VISUAL = {
   MC:                    { icone:'🔄', cor:'#42a5f5', label:'MC' },
   RI:                    { icone:'🔥', cor:'#ef5350', label:'RI' },
@@ -7823,44 +7902,35 @@ const ORIGEM_DEMANDA_VISUAL = {
   FTP:                   { icone:'🚒', cor:'#ff7043', label:'FTP' },
   EMERGENCIA_AMBIENTAL:  { icone:'⚠️', cor:'#ffca28', label:'EMERGÊNCIA' },
   REQUISICAO:            { icone:'📋', cor:'#8d6e63', label:'REQUISIÇÃO' },
+  OPERACAO:              { icone:'🛡️', cor:'#5c6bc0', label:'OPERAÇÃO' },
   OUTROS:                { icone:'📌', cor:'#90a4ae', label:'OUTROS' }
 };
-function _origemDemandaSeletorHtml(inputName){
-  return Object.entries(ORIGEM_DEMANDA_VISUAL).map(([key,v]) => `
-    <button type="button" class="origem-demanda-btn" data-origem="${key}" data-input="${inputName}"
-      onclick="origemDemandaSelecionar(this)"
-      style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 6px;border-radius:6px;border:1.5px solid #333;background:#1a1a1a;cursor:pointer;min-width:64px;transition:all .12s;">
-      <span style="font-size:16px;">${v.icone}</span>
-      <span style="font-size:9px;font-weight:700;color:#999;text-align:center;line-height:1.2;">${v.label}</span>
-    </button>`).join('');
-}
-function origemDemandaSelecionar(btn){
-  const grupo = btn.parentElement;
-  const inputName = btn.dataset.input;
-  const hidden = grupo.parentElement.querySelector('input[type=hidden].'+inputName);
-  [...grupo.children].forEach(b => {
-    b.style.border = '1.5px solid #333';
-    b.style.background = '#1a1a1a';
-    b.querySelector('span:last-child').style.color = '#999';
-  });
-  const key = btn.dataset.origem;
-  const v = ORIGEM_DEMANDA_VISUAL[key];
-  btn.style.border = `1.5px solid ${v.cor}`;
-  btn.style.background = v.cor+'22';
-  btn.querySelector('span:last-child').style.color = v.cor;
-  if(hidden) hidden.value = key;
-}
+
+/* Lista suspensa de Origem da Demanda — usada em todo formulário (Auto, BO/RAT, Fiscalização). */
 const ORIGEM_DEMANDA_OPTIONS = `
-  <option value="">SELECIONE...</option>
-  <option value="MC">MONITORAMENTO CONTÍNUO (MC)</option>
-  <option value="RI">REGISTRO DE INCÊNDIO (RI)</option>
-  <option value="NUDEN">NUDEN</option>
-  <option value="PAF">PAF</option>
-  <option value="DDU">DDU</option>
-  <option value="FTP">FORÇA TAREFA PRÉ-INCÊNDIO (FTP)</option>
-  <option value="EMERGENCIA_AMBIENTAL">EMERGÊNCIA AMBIENTAL</option>
-  <option value="REQUISICAO">REQUISIÇÃO</option>
-  <option value="OUTROS">OUTROS</option>`;
+  <option value="">SELECIONE A ORIGEM...</option>
+  <option value="MC">🔄 MONITORAMENTO CONTÍNUO (MC)</option>
+  <option value="RI">🔥 REGISTRO DE INCÊNDIO (RI)</option>
+  <option value="NUDEN">🚨 NUDEN</option>
+  <option value="PAF">🌲 PAF</option>
+  <option value="DDU">🏞️ DDU</option>
+  <option value="FTP">🚒 FORÇA TAREFA PRÉ-INCÊNDIO (FTP)</option>
+  <option value="EMERGENCIA_AMBIENTAL">⚠️ EMERGÊNCIA AMBIENTAL</option>
+  <option value="REQUISICAO">📋 REQUISIÇÃO</option>
+  <option value="OPERACAO">🛡️ OPERAÇÃO</option>
+  <option value="OUTROS">📌 OUTROS</option>`;
+
+/* Bloco padrão de "Origem da Demanda" (label + select), reutilizado em
+   Auto de Infração, BO/RAT/BOS e Fiscalização. className identifica o
+   campo na hora de coletar os dados (ex: 'auto-origem', 'bo-origem', 'fisc-origem'). */
+function _origemDemandaBlocoHtml(className){
+  return `
+    <div class="fg" style="margin:0;background:rgba(155,138,92,.08);border:1px solid rgba(155,138,92,.3);border-radius:6px;padding:10px;">
+      <label style="font-size:10.5px;color:var(--gold);font-weight:700;">⭐ Origem da Demanda</label>
+      <select class="${className} atend-input" style="padding:6px 8px;font-size:11.5px;margin-top:5px;">${ORIGEM_DEMANDA_OPTIONS}</select>
+    </div>`;
+}
+
 
 function pontoAutoAdicionar(){
   const lista = document.getElementById('ponto-autos-lista');
@@ -7873,6 +7943,7 @@ function pontoAutoAdicionar(){
       <label style="font-size:10.5px;">Número do Auto de Infração</label>
       <input type="text" class="auto-numero atend-input" oninput="caixaAlta(this)" style="padding:6px 8px;font-size:11.5px;">
     </div>
+    ${_origemDemandaBlocoHtml('auto-origem')}
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <div class="fg" style="flex:1;min-width:150px;margin:0;">
         <label style="font-size:10.5px;">Data do Fato</label>
@@ -7902,14 +7973,10 @@ function pontoBoAdicionar(){
   div.innerHTML = `
     <button type="button" onclick="this.parentElement.remove()" style="position:absolute;top:8px;right:8px;background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.35);color:#ef5350;font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer;">✕</button>
     <div class="fg" style="margin:0;">
-      <label style="font-size:10.5px;">Número do BO/RAT</label>
+      <label style="font-size:10.5px;">Número do BO/RAT/BOS</label>
       <input type="text" class="bo-numero atend-input" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this)" maxlength="18" style="padding:6px 8px;font-size:11.5px;">
     </div>
-    <div class="fg" style="margin:0;background:rgba(155,138,92,.08);border:1px solid rgba(155,138,92,.3);border-radius:6px;padding:10px;">
-      <label style="font-size:10.5px;color:var(--gold);font-weight:700;">⭐ Origem da Demanda</label>
-      <input type="hidden" class="bo-origem-hidden bo-origem" value="">
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">${_origemDemandaSeletorHtml('bo-origem-hidden')}</div>
-    </div>
+    ${_origemDemandaBlocoHtml('bo-origem')}
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <div class="fg" style="flex:1;min-width:150px;margin:0;">
         <label style="font-size:10.5px;">Data do Fato</label>
@@ -7938,6 +8005,7 @@ function pontoFiscalizacaoAdicionar(){
   div.style.cssText = 'background:#1a1a1a;border-radius:6px;padding:12px;display:flex;flex-direction:column;gap:8px;position:relative;';
   div.innerHTML = `
     <button type="button" onclick="this.parentElement.remove()" style="position:absolute;top:8px;right:8px;background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.35);color:#ef5350;font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer;">✕</button>
+    ${_origemDemandaBlocoHtml('fisc-origem')}
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <div class="fg" style="flex:1;min-width:150px;margin:0;">
         <label style="font-size:10.5px;">Data da Fiscalização</label>
@@ -8027,6 +8095,7 @@ function _pontoColetarAutos(){
   return [...document.querySelectorAll('.ponto-auto-item')].map(item => ({
     tipo_ocorrencia: 'AUTO_INFRACAO',
     numero_auto_infracao: item.querySelector('.auto-numero').value.trim() || null,
+    origem_demanda: item.querySelector('.auto-origem')?.value || null,
     data_fato: item.querySelector('.auto-data').value || null,
     orgao_responsavel: item.querySelector('.auto-orgao').value.trim() || null,
     situacao: item.querySelector('.auto-situacao').value,
@@ -8038,7 +8107,7 @@ function _pontoColetarBos(){
   return [...document.querySelectorAll('.ponto-bo-item')].map(item => ({
     tipo_ocorrencia: 'BO',
     numero_bo: item.querySelector('.bo-numero').value.trim() || null,
-    origem_demanda: item.querySelector('.bo-origem').value || null,
+    origem_demanda: item.querySelector('.bo-origem')?.value || null,
     data_fato: item.querySelector('.bo-data').value || null,
     orgao_responsavel: item.querySelector('.bo-orgao').value.trim() || null,
     situacao: item.querySelector('.bo-situacao').value,
@@ -8049,6 +8118,7 @@ function _pontoColetarFiscalizacoes(){
   if(!document.getElementById('ponto-chk-fiscalizacao').checked) return [];
   return [...document.querySelectorAll('.ponto-fiscalizacao-item')].map(item => ({
     tipo_ocorrencia: 'FISCALIZACAO',
+    origem_demanda: item.querySelector('.fisc-origem')?.value || null,
     data_fato: item.querySelector('.fisc-data').value || null,
     orgao_responsavel: item.querySelector('.fisc-orgao').value.trim() || null,
     situacao: item.querySelector('.fisc-situacao').value,
@@ -8439,6 +8509,7 @@ function wizAutoAdicionar(){
       <label style="font-size:10.5px;">Número do Auto de Infração</label>
       <input type="text" class="auto-numero atend-input" oninput="caixaAlta(this)" style="padding:6px 8px;font-size:11.5px;">
     </div>
+    ${_origemDemandaBlocoHtml('auto-origem')}
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <div class="fg" style="flex:1;min-width:150px;margin:0;">
         <label style="font-size:10.5px;">Data do Fato</label>
@@ -8467,14 +8538,10 @@ function wizBoAdicionar(){
   div.innerHTML = `
     <button type="button" onclick="this.parentElement.remove()" style="position:absolute;top:8px;right:8px;background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.35);color:#ef5350;font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer;">✕</button>
     <div class="fg" style="margin:0;">
-      <label style="font-size:10.5px;">Número do BO/RAT</label>
+      <label style="font-size:10.5px;">Número do BO/RAT/BOS</label>
       <input type="text" class="bo-numero atend-input" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this)" maxlength="18" style="padding:6px 8px;font-size:11.5px;">
     </div>
-    <div class="fg" style="margin:0;background:rgba(155,138,92,.08);border:1px solid rgba(155,138,92,.3);border-radius:6px;padding:10px;">
-      <label style="font-size:10.5px;color:var(--gold);font-weight:700;">⭐ Origem da Demanda</label>
-      <input type="hidden" class="bo-origem-hidden bo-origem" value="">
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">${_origemDemandaSeletorHtml('bo-origem-hidden')}</div>
-    </div>
+    ${_origemDemandaBlocoHtml('bo-origem')}
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <div class="fg" style="flex:1;min-width:150px;margin:0;">
         <label style="font-size:10.5px;">Data do Fato</label>
@@ -8502,6 +8569,7 @@ function wizFiscalizacaoAdicionar(){
   div.style.cssText = 'background:#1a1a1a;border-radius:6px;padding:12px;display:flex;flex-direction:column;gap:8px;position:relative;';
   div.innerHTML = `
     <button type="button" onclick="this.parentElement.remove()" style="position:absolute;top:8px;right:8px;background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.35);color:#ef5350;font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer;">✕</button>
+    ${_origemDemandaBlocoHtml('fisc-origem')}
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <div class="fg" style="flex:1;min-width:150px;margin:0;">
         <label style="font-size:10.5px;">Data da Fiscalização</label>
@@ -8536,6 +8604,7 @@ function _wizColetarAutos(){
   return [...document.querySelectorAll('.wiz-auto-item')].map(item => ({
     tipo_ocorrencia: 'AUTO_INFRACAO',
     numero_auto_infracao: item.querySelector('.auto-numero').value.trim() || null,
+    origem_demanda: item.querySelector('.auto-origem')?.value || null,
     data_fato: item.querySelector('.auto-data').value || null,
     orgao_responsavel: item.querySelector('.auto-orgao').value.trim() || null,
     situacao: item.querySelector('.auto-situacao').value,
@@ -8547,7 +8616,7 @@ function _wizColetarBos(){
   return [...document.querySelectorAll('.wiz-bo-item')].map(item => ({
     tipo_ocorrencia: 'BO',
     numero_bo: item.querySelector('.bo-numero').value.trim() || null,
-    origem_demanda: item.querySelector('.bo-origem').value || null,
+    origem_demanda: item.querySelector('.bo-origem')?.value || null,
     data_fato: item.querySelector('.bo-data').value || null,
     orgao_responsavel: item.querySelector('.bo-orgao').value.trim() || null,
     situacao: item.querySelector('.bo-situacao').value,
@@ -8558,6 +8627,7 @@ function _wizColetarFiscalizacoes(){
   if(!document.getElementById('wiz-chk-fiscalizacao').checked) return [];
   return [...document.querySelectorAll('.wiz-fiscalizacao-item')].map(item => ({
     tipo_ocorrencia: 'FISCALIZACAO',
+    origem_demanda: item.querySelector('.fisc-origem')?.value || null,
     data_fato: item.querySelector('.fisc-data').value || null,
     orgao_responsavel: item.querySelector('.fisc-orgao').value.trim() || null,
     situacao: item.querySelector('.fisc-situacao').value,
