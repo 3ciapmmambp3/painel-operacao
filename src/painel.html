@@ -6324,13 +6324,21 @@ async function _cuOrigemMaisRecente(pontoId){
 }
 
 /* Atualiza o ícone de um marcador já criado, assim que a origem de demanda
-   do ponto é conhecida — evita travar a criação inicial do mapa numa
-   chamada assíncrona por ponto. */
-async function _cuAtualizarIconeComOrigem(marker, ponto, prop){
+   do ponto é conhecida. Remove e recria o marcador em vez de usar setIcon()
+   diretamente — mais garantido visualmente com ícones divIcon complexos,
+   que às vezes não repintam corretamente só com setIcon(). */
+async function _cuAtualizarIconeComOrigem(marker, ponto, prop, layerGroup){
   try{
     const origem = await _cuOrigemMaisRecente(ponto.id);
-    console.log('[_cuAtualizarIconeComOrigem] ponto', ponto.id, '| origem encontrada:', origem);
-    if(origem) marker.setIcon(_criarIconePonto(prop, origem));
+    if(!origem) return;
+    const novoIcone = _criarIconePonto(prop, origem);
+    marker.setIcon(novoIcone);
+    /* Reforço: alguns navegadores não repintam o divIcon corretamente só com
+       setIcon(); remover e re-adicionar a camada força o Leaflet a redesenhar. */
+    if(layerGroup && layerGroup.hasLayer(marker)){
+      layerGroup.removeLayer(marker);
+      layerGroup.addLayer(marker);
+    }
   }catch(e){
     console.error('[_cuAtualizarIconeComOrigem] erro no ponto', ponto.id, ':', e);
   }
@@ -6571,9 +6579,8 @@ function cuAtualizarPontosMapa(){
     marker.bindPopup(_cuMontarTooltipPonto(ponto, prop), {maxWidth:320, className:'leaflet-dark-popup'});
 
     marker.on('popupopen', () => _cuPreencherConteudoPopup(ponto, prop));
-    _cuAtualizarIconeComOrigem(marker, ponto, prop);
-
     marker.addTo(_cuPropPontosLayer);
+    _cuAtualizarIconeComOrigem(marker, ponto, prop, _cuPropPontosLayer);
   });
 }
 
@@ -6673,8 +6680,8 @@ function cuFsAtualizar(){
     const marker = L.marker([ponto.lat, ponto.lng], { icon: _criarIconePonto(prop) });
     marker.bindPopup(_cuMontarTooltipPonto(ponto, prop), {maxWidth:320, className:'leaflet-dark-popup'});
     marker.on('popupopen', () => _cuPreencherConteudoPopup(ponto, prop));
-    _cuAtualizarIconeComOrigem(marker, ponto, prop);
     marker.addTo(_cuFsLayer);
+    _cuAtualizarIconeComOrigem(marker, ponto, prop, _cuFsLayer);
     bounds.push([ponto.lat, ponto.lng]);
   });
 
