@@ -6092,33 +6092,21 @@ function _cuInitMapa(){
   _cuMapaLeaflet = L.map(mapDiv, { zoomControl:true, attributionControl:false });
   const camadasCu = _mapaCamadas();
   camadasCu.claro.addTo(_cuMapaLeaflet);
-  _mapaAdicionarSeletorCamadas(_cuMapaLeaflet, camadasCu, 'claro');
+
+  /* Camada Área Urbana IBGE 2022 — cor muda conforme a camada de base
+     (marrom discreto em Claro/Ruas, vermelho de contraste em Satélite/Híbrido). */
+  _cuCamadaIbgeLayer = L.layerGroup().addTo(_cuMapaLeaflet);
+  _desenharCamadaIbge(_cuCamadaIbgeLayer, 'claro');
+
+  _mapaAdicionarSeletorCamadas(_cuMapaLeaflet, camadasCu, 'claro', (key) => {
+    _desenharCamadaIbge(_cuCamadaIbgeLayer, key);
+  });
 
   /* Camada Pelotões/Grupamentos — DESATIVADA temporariamente (estava causando
      instabilidade no mapa). O layerGroup continua existindo vazio para não quebrar
      o resto do código que referencia _cuCamadaPelGrupLayer (ex: ao trocar o filtro). */
   _cuCamadaPelGrupLayer = L.layerGroup().addTo(_cuMapaLeaflet);
   // _desenharCamadaPelGrupamento(_cuCamadaPelGrupLayer);
-
-  /* Camada Área Urbana IBGE 2022 */
-  if(typeof IBGE_DATA !== 'undefined' && IBGE_DATA.length){
-    let nIbgeOk=0, nIbgeErro=0;
-    IBGE_DATA.forEach(poly => {
-      try{
-        if(!Array.isArray(poly) || poly.length < 3) return;
-        const latlngs = poly
-          .map(p => [p[1], p[0]])
-          .filter(([lat,lng]) => Number.isFinite(lat) && Number.isFinite(lng));
-        if(latlngs.length < 3) return;
-        L.polygon(latlngs, {
-          color:'#8B5E3C', weight:0.8, opacity:0.9,
-          fillColor:'#A0784A', fillOpacity:0.25
-        }).bindTooltip('Área Urbana IBGE 2022',{sticky:true,className:'leaflet-tooltip-pel'}).addTo(_cuMapaLeaflet);
-        nIbgeOk++;
-      }catch(err){ nIbgeErro++; }
-    });
-    console.log('[_cuInitMapa] IBGE_DATA polígonos desenhados:', nIbgeOk, '| erros:', nIbgeErro);
-  }
 
   /* Contorno do estado (se disponível) só para orientação visual */
   if(typeof MG_ESTADO_CONTORNO !== 'undefined' && MG_ESTADO_CONTORNO.length){
@@ -6191,7 +6179,7 @@ function _mapaCamadas(){
 
 /* Adiciona um controle de camadas (botões Claro/Ruas/Satélite/Híbrido) no canto do mapa.
    mapaInstance: instância L.map já criada. camadaPadrao: 'claro'|'ruas'|'satelite'|'hibrido' (já adicionada ao mapa antes de chamar). */
-function _mapaAdicionarSeletorCamadas(mapaInstance, camadas, camadaAtivaKey){
+function _mapaAdicionarSeletorCamadas(mapaInstance, camadas, camadaAtivaKey, onTrocarCamada){
   const ctrl = L.control({position:'bottomleft'});
   ctrl.onAdd = function(){
     const div = L.DomUtil.create('div');
@@ -6207,6 +6195,7 @@ function _mapaAdicionarSeletorCamadas(mapaInstance, camadas, camadaAtivaKey){
         camadas[key].addTo(mapaInstance);
         [...div.children].forEach(b => { b.style.background='transparent'; b.style.color='#ccc'; });
         btn.style.background = 'rgba(155,138,92,.3)'; btn.style.color = 'var(--gold)';
+        if(typeof onTrocarCamada === 'function') onTrocarCamada(key);
       };
       div.appendChild(btn);
     });
@@ -6216,8 +6205,43 @@ function _mapaAdicionarSeletorCamadas(mapaInstance, camadas, camadaAtivaKey){
   ctrl.addTo(mapaInstance);
 }
 
+/* Estilo da camada Área Urbana IBGE conforme a camada de base ativa:
+   marrom discreto sobre fundos claros (Claro/Ruas), vermelho de alto
+   contraste sobre fundos de imagem (Satélite/Híbrido). */
+function _estiloIbgePorCamada(camadaKey){
+  if(camadaKey === 'satelite' || camadaKey === 'hibrido'){
+    return { color:'#ff3333', weight:2, opacity:0.9, fillColor:'#ff3333', fillOpacity:0.06 };
+  }
+  return { color:'#8B5E3C', weight:0.8, opacity:0.9, fillColor:'#A0784A', fillOpacity:0.25 };
+}
+
+/* Desenha a camada Área Urbana IBGE 2022 num layerGroup próprio (separado da
+   camada de base), permitindo trocar a cor sem precisar redesenhar tudo do zero. */
+function _desenharCamadaIbge(layerGroup, camadaKey){
+  layerGroup.clearLayers();
+  if(typeof IBGE_DATA === 'undefined' || !IBGE_DATA.length) return;
+  const estilo = _estiloIbgePorCamada(camadaKey);
+  let nOk=0, nErro=0;
+  IBGE_DATA.forEach(poly => {
+    try{
+      if(!Array.isArray(poly) || poly.length < 3) return;
+      const latlngs = poly
+        .map(p => [p[1], p[0]])
+        .filter(([lat,lng]) => Number.isFinite(lat) && Number.isFinite(lng));
+      if(latlngs.length < 3) return;
+      L.polygon(latlngs, estilo)
+        .bindTooltip('Área Urbana IBGE 2022',{sticky:true,className:'leaflet-tooltip-pel'})
+        .addTo(layerGroup);
+      nOk++;
+    }catch(err){ nErro++; }
+  });
+  console.log('[_desenharCamadaIbge] polígonos:', nOk, '| erros:', nErro, '| camada:', camadaKey);
+}
+
 let _cuPropPontosLayer = null;
 let _cuCamadaPelGrupLayer = null;   /* mapa principal: camada de polígonos pelotão/grupamento */
+let _cuCamadaIbgeLayer = null;      /* mapa principal: camada Área Urbana IBGE (cor dinâmica) */
+let _cuFsCamadaIbgeLayer = null;    /* tela cheia: idem */
 let _cuFsCamadaPelGrupLayer = null; /* tela cheia: idem */
 let _cuPropPontosCarregados = false;
 let _cuPropDadosCache = [];   /* property_information */
@@ -6373,6 +6397,7 @@ function cuAbrirTelaCheia(){
   if(_cuFsMapaLeaflet){ try{ _cuFsMapaLeaflet.remove(); }catch(e){} _cuFsMapaLeaflet = null; }
   _cuFsLayer = null;
   _cuFsCamadaPelGrupLayer = null;
+  _cuFsCamadaIbgeLayer = null;
   inner.innerHTML = '';
 
   requestAnimationFrame(() => setTimeout(() => {
@@ -6380,20 +6405,15 @@ function cuAbrirTelaCheia(){
     _cuFsMapaLeaflet = L.map(inner, { zoomControl:true, attributionControl:false });
     const camadasFs = _mapaCamadas();
     camadasFs.claro.addTo(_cuFsMapaLeaflet);
-    _mapaAdicionarSeletorCamadas(_cuFsMapaLeaflet, camadasFs, 'claro');
+
+    _cuFsCamadaIbgeLayer = L.layerGroup().addTo(_cuFsMapaLeaflet);
+    _desenharCamadaIbge(_cuFsCamadaIbgeLayer, 'claro');
+
+    _mapaAdicionarSeletorCamadas(_cuFsMapaLeaflet, camadasFs, 'claro', (key) => {
+      _desenharCamadaIbge(_cuFsCamadaIbgeLayer, key);
+    });
+
     _cuFsCamadaPelGrupLayer = L.layerGroup().addTo(_cuFsMapaLeaflet);
-    if(typeof IBGE_DATA !== 'undefined' && IBGE_DATA.length){
-      IBGE_DATA.forEach(poly => {
-        try{
-          if(!Array.isArray(poly) || poly.length < 3) return;
-          const latlngs = poly
-            .map(p => [p[1], p[0]])
-            .filter(([lat,lng]) => Number.isFinite(lat) && Number.isFinite(lng));
-          if(latlngs.length < 3) return;
-          L.polygon(latlngs, { color:'#8B5E3C', weight:0.8, opacity:0.9, fillColor:'#A0784A', fillOpacity:0.25 }).addTo(_cuFsMapaLeaflet);
-        }catch(err){}
-      });
-    }
     _cuFsMapaLeaflet.invalidateSize(false);
     cuFsAtualizar();
   }, 150));
