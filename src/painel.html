@@ -1612,10 +1612,10 @@ let sessaoPainel = null;
 /* ── Retorna {pelNum, gpNum, gpStr, gpResp} da lotação do usuário logado ──
    Usa gpDoColk() — mesma lógica que funciona na aba Missões do analise-criminal ── */
 function _getUserGP(){
-  if(!sessaoPainel) return { pelNum:'', gpNum:'', gpStr:'', gpResp:'' };
+  if(!sessaoPainel) return { pelNum:'', gpNum:'', gpStr:'', gpResp:'', gpLongo:'' };
   const lot = (sessaoPainel.lotacao||'').trim();
   if(!lot || lot.toUpperCase() === 'ADM' || lot.toUpperCase().startsWith('CMDO'))
-    return { pelNum:'', gpNum:'', gpStr:'', gpResp:'' };
+    return { pelNum:'', gpNum:'', gpStr:'', gpResp:'', gpLongo:'' };
   const lotUp  = lot.toUpperCase();
   const gpM    = lotUp.match(/(\d+)\s*GP/);
   const pelM   = lotUp.match(/(\d+)\s*PEL/);
@@ -1623,8 +1623,11 @@ function _getUserGP(){
   const pelNum = pelM ? pelM[1] : '';
   /* gpDoColk extrai "GP CIDADE" do formato longo — igual à aba Missões */
   const gpResp = gpDoColk(lot);
-  console.log('[_getUserGP] lotacao:', lot, '→ gpResp:', gpResp, '| pelNum:', pelNum);
-  return { pelNum, gpNum, gpStr: lot, gpResp };
+  /* Nome longo (grupamento_completo) — busca em dadosGrupos pelo gpResp correspondente */
+  const gInfo = (typeof dadosGrupos !== 'undefined' ? dadosGrupos : []).find(g => g.gpResp === gpResp);
+  const gpLongo = gInfo ? gInfo.grupamento : gpResp;
+  console.log('[_getUserGP] lotacao:', lot, '→ gpResp:', gpResp, '| gpLongo:', gpLongo, '| pelNum:', pelNum);
+  return { pelNum, gpNum, gpStr: lot, gpResp, gpLongo };
 }
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -6014,6 +6017,33 @@ function initConsultaUrbanaRural(){
   _cuInitMapa();
 }
 
+/* ── Camada de Pelotões/Grupamentos — mesmos polígonos coloridos usados
+   no Mapa Criminal/OP GDO RURAL (KML_DATA), com tooltip mostrando
+   pelotão + grupamento + cidade. Reutilizável em qualquer mapa Leaflet. */
+function _desenharCamadaPelGrupamento(mapaInstance){
+  if(typeof KML_DATA === 'undefined' || !KML_DATA.pelotoes) return;
+  Object.entries(KML_DATA.pelotoes).forEach(([pelKey, pelData]) => {
+    const pelNum = parseInt(pelKey.replace(/\D/g,''));
+    if(!pelData.gps) return;
+    Object.entries(pelData.gps).forEach(([gpKey, gpData]) => {
+      const gpNum = parseInt(gpKey.replace(/\D/g,''));
+      const gpInfo = (typeof dadosGrupos !== 'undefined' ? dadosGrupos : []).find(r =>
+        r.pelNum === pelNum && gpNumDoColk(r.colK||r.grupamento) === gpNum
+      );
+      const cidade = gpInfo ? gpInfo.gpResp.replace('GP ','') : '';
+      const tooltipLabel = cidade
+        ? `${pelData.label} — ${gpData.label} — ${cidade}`
+        : `${pelData.label} — ${gpData.label}`;
+      (gpData.polys||[]).forEach(poly => {
+        L.polygon(poly.map(p=>[p[1],p[0]]), {
+          color: gpData.cor, weight:1.2, opacity:0.75,
+          fillColor: gpData.cor, fillOpacity:0.08
+        }).bindTooltip(tooltipLabel, {sticky:true, className:'leaflet-tooltip-pel'}).addTo(mapaInstance);
+      });
+    });
+  });
+}
+
 function _cuInitMapa(){
   const mapDiv = document.getElementById('cu-mapa');
   if(!mapDiv) return;
@@ -6023,6 +6053,9 @@ function _cuInitMapa(){
   const camadasCu = _mapaCamadas();
   camadasCu.claro.addTo(_cuMapaLeaflet);
   _mapaAdicionarSeletorCamadas(_cuMapaLeaflet, camadasCu, 'claro');
+
+  /* Camada Pelotões/Grupamentos (mesma do Mapa Criminal/OP GDO RURAL) */
+  _desenharCamadaPelGrupamento(_cuMapaLeaflet);
 
   /* Camada Área Urbana IBGE 2022 */
   const bounds = [];
@@ -6121,7 +6154,7 @@ async function cuCarregarPontosMapa(){
 
 function _cuPopularFiltrosGp(){
   let gps = (typeof dadosGrupos !== 'undefined' && dadosGrupos.length)
-    ? [...new Set(dadosGrupos.map(g => g.gp_responsavel).filter(Boolean))].sort()
+    ? [...new Set(dadosGrupos.map(g => g.grupamento).filter(Boolean))].sort()
     : [];
   if(!gps.length){
     const visiveis = _atendFiltrarVisiveis ? _atendFiltrarVisiveis(_cuPropDadosCache) : _cuPropDadosCache;
@@ -6239,6 +6272,7 @@ function cuAbrirTelaCheia(){
     const camadasFs = _mapaCamadas();
     camadasFs.claro.addTo(_cuFsMapaLeaflet);
     _mapaAdicionarSeletorCamadas(_cuFsMapaLeaflet, camadasFs, 'claro');
+    _desenharCamadaPelGrupamento(_cuFsMapaLeaflet);
     if(typeof IBGE_DATA !== 'undefined' && IBGE_DATA.length){
       IBGE_DATA.forEach(poly => {
         const latlngs = poly.map(p=>[p[1],p[0]]);
@@ -6593,12 +6627,12 @@ function _atendPodeEditar(registro){
 function _atendFiltrarVisiveis(dados){
   if(!sessaoPainel) return [];
   if(sessaoPainel.nivel_acesso === 'admin_geral') return dados;
-  const { pelNum, gpResp } = _getUserGP();
+  const { pelNum, gpLongo } = _getUserGP();
   if(!pelNum) return dados; /* sem lotação de pelotão (ex: comando) — vê tudo, padrão do sistema */
   if(sessaoPainel.nivel_acesso === 'admin_pelotao'){
     return dados.filter(d => String(d.pelotao) === String(pelNum));
   }
-  return dados.filter(d => d.grupamento === gpResp);
+  return dados.filter(d => d.grupamento === gpLongo);
 }
 
 function atendInicializar(){
@@ -6635,7 +6669,7 @@ function _atendPopularFiltroGp(){
   /* Usa a lista completa de Grupamentos do sistema (tabela `grupos`) — não só os
      que já aparecem em propriedades cadastradas, para o filtro sempre vir populado. */
   let gps = (typeof dadosGrupos !== 'undefined' && dadosGrupos.length)
-    ? [...new Set(dadosGrupos.map(g => g.gp_responsavel).filter(Boolean))].sort()
+    ? [...new Set(dadosGrupos.map(g => g.grupamento).filter(Boolean))].sort()
     : [];
   /* Fallback: se por algum motivo dadosGrupos ainda não carregou, usa os grupamentos já em uso */
   if(!gps.length){
@@ -6814,6 +6848,7 @@ function _atendRenderMapaDetalhe(propertyId){
   const camadasDet = _mapaCamadas();
   camadasDet.claro.addTo(_atendDetalheMapa);
   _mapaAdicionarSeletorCamadas(_atendDetalheMapa, camadasDet, 'claro');
+  _desenharCamadaPelGrupamento(_atendDetalheMapa);
 
   const bounds = [];
   pontos.forEach(p => {
@@ -6850,6 +6885,7 @@ function atendDetalheAbrirTelaCheia(){
     const camadasFsDet = _mapaCamadas();
     camadasFsDet.claro.addTo(_atendDetalheFsMapa);
     _mapaAdicionarSeletorCamadas(_atendDetalheFsMapa, camadasFsDet, 'claro');
+    _desenharCamadaPelGrupamento(_atendDetalheFsMapa);
 
     const bounds = [];
     pontos.forEach(p => {
@@ -7115,9 +7151,9 @@ async function atendPropSalvar(){
         atendAbrirDetalhe(parseInt(idEdicao));
       }
     } else {
-      const { pelNum, gpResp } = _getUserGP();
+      const { pelNum, gpLongo } = _getUserGP();
       payload.pelotao = pelNum || null;
-      payload.grupamento = gpResp || null;
+      payload.grupamento = gpLongo || null;
       payload.criado_por = _atendMeuId();
       payload.criado_por_nome = sessaoPainel.nome || '';
       payload.criado_em = new Date().toISOString();
@@ -7617,13 +7653,13 @@ async function atendPontoSalvar(){
     if(idEdicao){
       await sbPatchRow('map_points', `id=eq.${idEdicao}`, payload);
     } else {
-      const { pelNum, gpResp } = _getUserGP();
+      const { pelNum, gpLongo } = _getUserGP();
       payload.property_id = propertyId;
       payload.lat = _atendPontoCoordNovo.lat;
       payload.lng = _atendPontoCoordNovo.lng;
       payload.area_classificacao = _atendPontoCoordNovo.ehUrbana ? 'URBANA' : 'RURAL';
       payload.pelotao = pelNum || null;
-      payload.grupamento = gpResp || null;
+      payload.grupamento = gpLongo || null;
       payload.criado_por = _atendMeuId();
       payload.criado_por_nome = sessaoPainel.nome || '';
       payload.criado_em = new Date().toISOString();
