@@ -6058,7 +6058,12 @@ function _desenharCamadaPelGrupamento(layerOuMapa, filtroGrupamentoLongo, _tenta
         const esmaecido = filtroAtivo && !esteGrupamento;
 
         (gpData.polys||[]).forEach(poly => {
-          L.polygon(poly.map(p=>[p[1],p[0]]), {
+          if(!Array.isArray(poly) || poly.length < 3) return; /* polígono inválido: precisa de ≥3 pontos */
+          const latlngs = poly
+            .map(p => [p[1], p[0]])
+            .filter(([lat,lng]) => Number.isFinite(lat) && Number.isFinite(lng));
+          if(latlngs.length < 3) return; /* após filtrar inválidos, não sobrou polígono válido */
+          L.polygon(latlngs, {
             color: gpData.cor,
             weight: esteGrupamento ? 3 : esmaecido ? 0.6 : 1.2,
             opacity: esteGrupamento ? 1 : esmaecido ? 0.18 : 0.75,
@@ -6093,25 +6098,44 @@ function _cuInitMapa(){
 
   /* Camada Área Urbana IBGE 2022 */
   if(typeof IBGE_DATA !== 'undefined' && IBGE_DATA.length){
+    let nIbgeOk=0, nIbgeErro=0;
     IBGE_DATA.forEach(poly => {
-      const latlngs = poly.map(p=>[p[1],p[0]]);
-      L.polygon(latlngs, {
-        color:'#8B5E3C', weight:0.8, opacity:0.9,
-        fillColor:'#A0784A', fillOpacity:0.25
-      }).bindTooltip('Área Urbana IBGE 2022',{sticky:true,className:'leaflet-tooltip-pel'}).addTo(_cuMapaLeaflet);
+      try{
+        if(!Array.isArray(poly) || poly.length < 3) return;
+        const latlngs = poly
+          .map(p => [p[1], p[0]])
+          .filter(([lat,lng]) => Number.isFinite(lat) && Number.isFinite(lng));
+        if(latlngs.length < 3) return;
+        L.polygon(latlngs, {
+          color:'#8B5E3C', weight:0.8, opacity:0.9,
+          fillColor:'#A0784A', fillOpacity:0.25
+        }).bindTooltip('Área Urbana IBGE 2022',{sticky:true,className:'leaflet-tooltip-pel'}).addTo(_cuMapaLeaflet);
+        nIbgeOk++;
+      }catch(err){ nIbgeErro++; }
     });
+    console.log('[_cuInitMapa] IBGE_DATA polígonos desenhados:', nIbgeOk, '| erros:', nIbgeErro);
   }
 
   /* Contorno do estado (se disponível) só para orientação visual */
   if(typeof MG_ESTADO_CONTORNO !== 'undefined' && MG_ESTADO_CONTORNO.length){
-    const mgLatLngs = MG_ESTADO_CONTORNO.map(([lng,lat]) => [lat,lng]);
-    L.polygon(mgLatLngs, { color:'#5a5a5a', weight:1.5, opacity:0.5, fillOpacity:0, interactive:false }).addTo(_cuMapaLeaflet);
+    try{
+      const mgLatLngs = MG_ESTADO_CONTORNO
+        .map(([lng,lat]) => [lat,lng])
+        .filter(([lat,lng]) => Number.isFinite(lat) && Number.isFinite(lng));
+      if(mgLatLngs.length >= 3){
+        L.polygon(mgLatLngs, { color:'#5a5a5a', weight:1.5, opacity:0.5, fillOpacity:0, interactive:false }).addTo(_cuMapaLeaflet);
+      }
+    }catch(err){ console.error('[_cuInitMapa] erro ao desenhar contorno MG:', err); }
   }
 
   /* Posição inicial fixa centrada em Minas Gerais — evita calcular bounds a partir
      de milhares de pontos da malha urbana IBGE, que pode gerar erro no Leaflet
      (LatLngBounds inválido) se algum polígono tiver coordenada fora do padrão. */
-  _cuMapaLeaflet.setView([-18.5,-42.0], 7);
+  try{
+    _cuMapaLeaflet.setView([-18.5,-42.0], 7);
+  }catch(err){
+    console.error('[_cuInitMapa] erro ao centralizar mapa (setView) — provável polígono com coordenada inválida em alguma camada:', err);
+  }
 
   setTimeout(()=>_cuMapaLeaflet.invalidateSize(false), 150);
 
