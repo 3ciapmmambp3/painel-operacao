@@ -6520,7 +6520,7 @@ async function _cuPreencherConteudoPopup(ponto, prop){
     try{
       const [autos, bos] = await Promise.all([
         sbFetch('autos_infracao', `service_record_id=eq.${f.id}&select=numero_auto_infracao`).catch(()=>[]),
-        sbFetch('bos_rats', `service_record_id=eq.${f.id}&select=numero_bo`).catch(()=>[])
+        sbFetch('bos_rats', `service_record_id=eq.${f.id}&select=numero_bo,natureza_atividade`).catch(()=>[])
       ]);
       f._autos = autos; f._bos = bos;
     }catch(e){ f._autos = []; f._bos = []; }
@@ -6535,11 +6535,13 @@ async function _cuPreencherConteudoPopup(ponto, prop){
       const dataFmt = f.data_fato ? (d => d[2]+'/'+d[1]+'/'+d[0])(f.data_fato.substring(0,10).split('-')) : '—';
       const autosTxt = (f._autos||[]).map(a=>a.numero_auto_infracao).filter(Boolean).join(', ');
       const bosTxt = (f._bos||[]).map(b=>b.numero_bo).filter(Boolean).join(', ');
+      const natTxt = (f._bos||[]).map(b=>b.natureza_atividade).filter(Boolean).join(', ');
       html += `<div style="background:#1a1a1a;border-radius:5px;padding:6px 8px;margin-top:4px;">
         <div style="font-size:10.5px;color:#ccc;">📅 ${dataFmt}${f.id_demanda ? ' · ID: '+f.id_demanda : ''}</div>
         ${f.orgao_responsavel ? '<div style="font-size:10px;color:#999;">Órgão: '+f.orgao_responsavel+'</div>' : ''}
         ${f.situacao ? '<div style="font-size:10px;color:#999;">'+(SITUACAO_LABEL[f.situacao]||f.situacao)+'</div>' : ''}
         ${autosTxt ? '<div style="font-size:10px;color:#999;">🧾 Auto: '+autosTxt+'</div>' : ''}
+        ${natTxt ? '<div style="font-size:10px;color:#999;">🏷️ Natureza: '+natTxt+'</div>' : ''}
         ${bosTxt ? '<div style="font-size:10px;color:#999;">📄 BO: '+bosTxt+'</div>' : ''}
         ${f.observacoes ? '<div style="font-size:10px;color:#888;margin-top:2px;">'+f.observacoes+'</div>' : ''}
       </div>`;
@@ -7034,7 +7036,7 @@ async function atendCarregarDados(){
       sbFetch('map_points', 'select=*&order=criado_em.desc'),
       sbFetch('pessoas_vinculadas', 'select=id,property_id,nome,cpf,tipo_vinculo'),
       sbFetch('service_records', 'select=id,point_id,origem_demanda,data_fato'),
-      sbFetch('bos_rats', 'select=service_record_id,numero_bo'),
+      sbFetch('bos_rats', 'select=service_record_id,numero_bo,natureza_atividade'),
       sbFetch('autos_infracao', 'select=service_record_id,numero_auto_infracao')
     ]);
     _propDados = props;
@@ -8062,6 +8064,10 @@ function atendFiscBoAdicionar(){
       <input type="text" class="bo-numero atend-input" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this)" maxlength="18" style="padding:7px 10px;font-size:12px;box-sizing:border-box;width:100%;">
     </div>
     <div class="fg" style="margin:0;flex:1 1 220px;">
+      <label style="font-size:11px;">Natureza da Atividade</label>
+      <input type="text" class="bo-natureza atend-input" placeholder="Ex: Y12001 - FISCALIZACAO DE LOCAIS DE DESMATE" oninput="caixaAlta(this)" style="padding:7px 10px;font-size:12px;box-sizing:border-box;width:100%;">
+    </div>
+    <div class="fg" style="margin:0;flex:1 1 220px;">
       <label style="font-size:11px;">Observações</label>
       <textarea class="bo-obs" rows="2" oninput="caixaAlta(this)" style="width:100%;padding:7px 10px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:5px;color:#fff;font-size:12px;resize:vertical;text-transform:uppercase;box-sizing:border-box;"></textarea>
     </div>`;
@@ -8109,6 +8115,7 @@ async function atendFiscalizacaoSalvar(){
       const bos = [...document.querySelectorAll('.afisc-bo-item')]
         .map(item => ({
           numero_bo: item.querySelector('.bo-numero').value.trim() || null,
+          natureza_atividade: item.querySelector('.bo-natureza')?.value.trim() || null,
           observacoes: item.querySelector('.bo-obs')?.value.trim() || null
         }))
         .filter(b => b.numero_bo || b.observacoes)
@@ -8488,6 +8495,10 @@ function wizFiscBoAdicionar(btn){
       <input type="text" class="bo-numero atend-input" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this)" maxlength="18" style="padding:7px 10px;font-size:12px;box-sizing:border-box;width:100%;">
     </div>
     <div class="fg" style="margin:0;flex:1 1 220px;">
+      <label style="font-size:11px;">Natureza da Atividade</label>
+      <input type="text" class="bo-natureza atend-input" placeholder="Ex: Y12001 - FISCALIZACAO DE LOCAIS DE DESMATE" oninput="caixaAlta(this)" style="padding:7px 10px;font-size:12px;box-sizing:border-box;width:100%;">
+    </div>
+    <div class="fg" style="margin:0;flex:1 1 220px;">
       <label style="font-size:11px;">Observações</label>
       <textarea class="bo-obs" rows="2" oninput="caixaAlta(this)" style="width:100%;padding:7px 10px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:5px;color:#fff;font-size:12px;resize:vertical;text-transform:uppercase;box-sizing:border-box;"></textarea>
     </div>`;
@@ -8525,6 +8536,7 @@ function _wizColetarFiscalizacoes(){
 
     const bos = gerouBo ? [...item.querySelectorAll('.fisc-bo-item')].map(b => ({
       numero_bo: b.querySelector('.bo-numero').value.trim() || null,
+      natureza_atividade: b.querySelector('.bo-natureza')?.value.trim() || null,
       observacoes: b.querySelector('.bo-obs')?.value.trim() || null
     })).filter(b => b.numero_bo || b.observacoes) : [];
 
