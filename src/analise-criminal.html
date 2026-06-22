@@ -3730,19 +3730,8 @@ function _restringirFiltrosAoGrupamento(){
     if(fg) fg.style.display = 'none';
   });
 
-  /* rcr-gp usa gpResp curto como value (filtro), mas exibe o formato longo */
-  const rcrGpEl = document.getElementById('rcr-gp');
-  if(rcrGpEl && meuGpResp){
-    if(![...rcrGpEl.options].some(o => o.value === meuGpResp)){
-      const opt = document.createElement('option');
-      opt.value = meuGpResp; opt.textContent = meuGrup || meuGpResp;
-      rcrGpEl.appendChild(opt);
-    }
-    rcrGpEl.value = meuGpResp;
-    rcrGpEl.disabled = true;
-    const fg = rcrGpEl.closest('.fg');
-    if(fg) fg.style.display = 'none';
-  }
+  /* rcr-gp: operacional vê todos os GPs do próprio pelotão — não trava em um único GP */
+  /* (restrição por pelotão é aplicada dentro de renderRCR) */
 
   /* Mensagem informativa */
   const aviso = document.createElement('div');
@@ -8971,7 +8960,8 @@ async function renderRCR() {
   /* Popula select de GP se vazio */
   const selGp = document.getElementById('rcr-gp');
   if (selGp && selGp.options.length <= 1 && dadosGrupos.length) {
-    const _meuPelRcr = (sessao?.nivel_acesso === 'admin_pelotao') ? _pelotaoDoUsuario() : '';
+    const _isAdminRcr = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
+    const _meuPelRcr = !_isAdminRcr ? _pelotaoDoUsuario() : '';
     /* Mapa gpResp (curto, usado como value/filtro) → grupamento completo (exibido no texto) */
     const gpRespParaGrupamento = {};
     dadosGrupos
@@ -8999,8 +8989,12 @@ async function renderRCR() {
     if (v.localizacao !== 'ZONA RURAL') return false;
     if (_mesRcr.length > 0 && !_mesRcr.includes(v.mes)) return false;
     if (rcrNat && v.natCode !== rcrNat) return false;
+    const gi2 = dadosGrupos.find(g => g.munNorm === norm(v.municipio || ''));
+    const _isAdminRcrFilt = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
+    const _meuPelRcrFilt  = !_isAdminRcrFilt ? _pelotaoDoUsuario() : '';
+    if (_meuPelRcrFilt && (!gi2 || String(gi2.pelNum) !== _meuPelRcrFilt)) return false;
     if (rcrPel || rcrGp) {
-      const gi = dadosGrupos.find(g => g.munNorm === norm(v.municipio || ''));
+      const gi = gi2 || dadosGrupos.find(g => g.munNorm === norm(v.municipio || ''));
       if (rcrPel && (!gi || String(gi.pelNum) !== rcrPel)) return false;
       if (rcrGp  && (!gi || gi.gpResp !== rcrGp))          return false;
     }
@@ -9112,8 +9106,12 @@ async function gerarPdfRcr(){
     if (!RCR_NATS.includes(v.natCode)) return false;
     if (v.localizacao !== 'ZONA RURAL') return false;
     if (rcrNat && v.natCode !== rcrNat) return false;
+    const gi2 = dadosGrupos.find(g => g.munNorm === norm(v.municipio || ''));
+    const _isAdminRcrFilt = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
+    const _meuPelRcrFilt  = !_isAdminRcrFilt ? _pelotaoDoUsuario() : '';
+    if (_meuPelRcrFilt && (!gi2 || String(gi2.pelNum) !== _meuPelRcrFilt)) return false;
     if (rcrPel || rcrGp) {
-      const gi = dadosGrupos.find(g => g.munNorm === norm(v.municipio || ''));
+      const gi = gi2 || dadosGrupos.find(g => g.munNorm === norm(v.municipio || ''));
       if (rcrPel && (!gi || String(gi.pelNum) !== rcrPel)) return false;
       if (rcrGp  && (!gi || gi.gpResp !== rcrGp))          return false;
     }
