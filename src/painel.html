@@ -7007,13 +7007,15 @@ function _atendPodeEditar(registro){
 /* ── Visibilidade: o que o usuário pode VER ── */
 function _atendFiltrarVisiveis(dados){
   if(!sessaoPainel) return [];
+  /* Operacional vê todos os registros — o filtro de GP pré-seleciona o seu grupamento
+     mas ele pode trocar livremente para consultar qualquer área (ex: apoio a outro GP) */
   if(sessaoPainel.nivel_acesso === 'admin_geral') return dados;
-  const { pelNum, gpLongo } = _getUserGP();
-  if(!pelNum) return dados; /* sem lotação de pelotão (ex: comando) — vê tudo, padrão do sistema */
   if(sessaoPainel.nivel_acesso === 'admin_pelotao'){
+    const { pelNum } = _getUserGP();
+    if(!pelNum) return dados;
     return dados.filter(d => String(d.pelotao) === String(pelNum));
   }
-  return dados.filter(d => d.grupamento === gpLongo);
+  return dados; /* operacional: sem restrição de visibilidade — filtro de GP pré-selecionado */
 }
 
 function atendInicializar(){
@@ -7070,7 +7072,13 @@ function _atendPopularFiltroGp(){
   }
   const valorAtual = sel.value;
   sel.innerHTML = '<option value="">Todos</option>' + gps.map(g=>`<option value="${g}">${g}</option>`).join('');
-  sel.value = valorAtual;
+  /* Pré-seleciona o GP do usuário na primeira carga (operacional) */
+  if(!valorAtual && sessaoPainel?.nivel_acesso !== 'admin_geral' && sessaoPainel?.nivel_acesso !== 'admin_pelotao'){
+    const { gpLongo } = _getUserGP();
+    if(gpLongo) sel.value = gpLongo;
+  } else {
+    sel.value = valorAtual;
+  }
   const wrap = document.getElementById('atend-filtro-gp-wrap');
   if(wrap) wrap.style.display = (sessaoPainel?.nivel_acesso === 'admin_geral' || gps.length > 1) ? '' : 'none';
 }
