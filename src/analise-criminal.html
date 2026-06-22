@@ -12160,22 +12160,12 @@ function _initIntelFiltroGP(){
     return;
   }
 
-  /* Operacional: trava no GP exato do usuário */
-  const gpUsuario = sessao?.lotacao ? gpDoColk(
-    dadosGrupos.find(r => norm(r.grupamento).includes(norm(sessao.lotacao)))?.grupamento || sessao.lotacao
-  ) : '';
-  if(!gpUsuario) return;
-  if(gpSelect){
-    if(![...gpSelect.options].some(o=>o.value===gpUsuario)){
-      const opt = document.createElement('option');
-      opt.value = gpUsuario; opt.textContent = gpUsuario;
-      gpSelect.appendChild(opt);
-    }
-    gpSelect.value = gpUsuario;
-    gpSelect.disabled = true;
-  }
+  /* Operacional: vê todos os grupamentos do próprio pelotão */
+  const meuPelOp = _pelotaoDoUsuario();
+  if(!meuPelOp) return;
+  if(gpSelect) gpSelect.disabled = false;
   if(badge) badge.style.display = 'block';
-  if(badgeTxt) badgeTxt.textContent = gpUsuario;
+  if(badgeTxt) badgeTxt.textContent = `${meuPelOp}º Pelotão — todos os grupamentos`;
 }
 
 function _initMissoesFiltroGP(){
@@ -12226,9 +12216,12 @@ function renderIntel(resetPage){
   const statusBusca= document.getElementById('intel-busca-status')?.value ?? 'ativas';
 
   const _isAdmin = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
-  const gpUsuario = !_isAdmin && sessao?.lotacao ? gpDoColk(
-    dadosGrupos.find(r => norm(r.grupamento).includes(norm(sessao.lotacao)))?.grupamento || ''
-  ) : '';
+
+  /* Operacional e admin_pelotao: restringe ao pelotão do usuário */
+  const _meuPelNum = !_isAdmin ? _pelotaoDoUsuario() : '';
+  const _gpsDoMeuPelotao = _meuPelNum
+    ? [...new Set(dadosGrupos.filter(r => String(r.pelNum) === String(_meuPelNum)).map(r => r.gpResp).filter(Boolean))]
+    : [];
 
   let fichas = fichasIntel.filter(f => {
     const status = f.statusFicha || 'em_analise';
@@ -12242,8 +12235,9 @@ function renderIntel(resetPage){
       if(!muns.some(m => norm(m).includes(munNorm))) return false;
     }
     if(gpBusca && !(f.gpsAtuacao||[]).includes(gpBusca)) return false;
-    if(!_isAdmin && gpUsuario && f.gpsAtuacao && f.gpsAtuacao.length){
-      if(!f.gpsAtuacao.includes(gpUsuario)) return false;
+    /* Restrição por pelotão: operacional e admin_pelotao veem apenas fichas do próprio pelotão */
+    if(!_isAdmin && _gpsDoMeuPelotao.length && f.gpsAtuacao && f.gpsAtuacao.length){
+      if(!f.gpsAtuacao.some(gp => _gpsDoMeuPelotao.includes(gp))) return false;
     }
     return true;
   });
@@ -12251,8 +12245,8 @@ function renderIntel(resetPage){
   const totalEncerradas = fichasIntel.filter(f => {
     const status = f.statusFicha || 'em_analise';
     if(status !== 'encerrado') return false;
-    if(!_isAdmin && gpUsuario && f.gpsAtuacao && f.gpsAtuacao.length){
-      if(!f.gpsAtuacao.includes(gpUsuario)) return false;
+    if(!_isAdmin && _gpsDoMeuPelotao.length && f.gpsAtuacao && f.gpsAtuacao.length){
+      if(!f.gpsAtuacao.some(gp => _gpsDoMeuPelotao.includes(gp))) return false;
     }
     return true;
   }).length;
