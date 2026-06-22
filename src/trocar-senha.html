@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3ª Cia PM MAmb — Primeiro Acesso</title>
+  <link rel="stylesheet" href="styles/global.css">
+  <script>
+    /* Bloqueia acesso direto sem sessão ou sem primeiro_acesso */
+    (function(){
+      try {
+        const raw = sessionStorage.getItem('poe_sessao_v2');
+        if (!raw) { window.location.replace('index.html'); return; }
+        const s = JSON.parse(raw);
+        if (!s.primeiro_acesso) { window.location.replace('painel.html'); }
+      } catch(e) { window.location.replace('index.html'); }
+    })();
+  </script>
+  <script src="auth.js"></script>
+  <style>
+    body{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px;background:#1e1e1e;}
+    .card{background:#2d2d2d;border-radius:12px;width:100%;max-width:430px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.7);}
+    .banner img{width:100%;display:block;}
+    .body{padding:28px 36px 32px;}
+    .ttl{color:#fff;font-size:22px;font-weight:700;text-align:center;margin-bottom:4px;}
+    .sub{color:#999;font-size:13px;text-align:center;margin-bottom:8px;}
+    .aviso{background:rgba(245,179,1,.1);border:1px solid rgba(245,179,1,.35);border-radius:7px;padding:11px 14px;margin-bottom:22px;color:#f5b301;font-size:12px;text-align:center;line-height:1.6;}
+    .lbl{display:block;color:var(--gold);font-size:13px;font-weight:600;margin-bottom:7px;}
+    .fw{position:relative;margin-bottom:20px;}
+    .fw input{width:100%;background:#1a1a1a;border:1px solid #444;border-radius:7px;padding:11px 42px 11px 14px;color:#eee;font-size:14px;outline:none;transition:border-color .2s;}
+    .fw input::placeholder{color:#555;}
+    .fw input:focus{border-color:var(--gold);}
+    .eye{position:absolute;right:11px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:#666;display:flex;align-items:center;}
+    .eye:hover{color:var(--gold);}
+    .eye svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+    .btn-enter{width:100%;background:var(--gold);color:#1a1000;border:none;border-radius:7px;padding:13px;font-size:15px;font-weight:700;cursor:pointer;transition:background .2s;}
+    .btn-enter:hover{background:var(--gold-light);}
+    .btn-enter:disabled{opacity:.7;cursor:not-allowed;}
+    .err{background:rgba(239,83,80,.13);border:1px solid rgba(239,83,80,.35);border-radius:6px;color:#ef9a9a;font-size:13px;padding:10px 14px;margin-bottom:16px;text-align:center;display:none;}
+    .err.show{display:block;}
+    .ok{background:rgba(76,175,80,.13);border:1px solid rgba(76,175,80,.35);border-radius:6px;color:#a5d6a7;font-size:13px;padding:10px 14px;margin-bottom:16px;text-align:center;display:none;}
+    .ok.show{display:block;}
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="banner"><img src="assets/header-pmmg.png" alt="PMMG"></div>
+  <div class="body">
+    <h1 class="ttl">Primeiro Acesso</h1>
+    <p class="sub" id="sub-nome">Bem-vindo!</p>
+
+    <div class="aviso">
+      🔒 Por segurança, você precisa definir uma senha pessoal antes de continuar.
+    </div>
+
+    <div class="err" id="err"></div>
+    <div class="ok" id="ok-msg"></div>
+
+    <label class="lbl">Nova Senha</label>
+    <div class="fw">
+      <input type="password" id="nova" placeholder="Mínimo 6 caracteres" maxlength="100">
+      <button type="button" class="eye" onclick="togglePw('nova','eye-nova')">
+        <svg id="eye-nova" viewBox="0 0 24 24">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+    </div>
+
+    <label class="lbl">Confirmar Senha</label>
+    <div class="fw">
+      <input type="password" id="conf" placeholder="Repita a nova senha" maxlength="100"
+             onkeydown="if(event.key==='Enter')handleTrocar()">
+      <button type="button" class="eye" onclick="togglePw('conf','eye-conf')">
+        <svg id="eye-conf" viewBox="0 0 24 24">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+    </div>
+
+    <button class="btn-enter" id="btn-trocar" onclick="handleTrocar()">Definir Senha e Entrar</button>
+  </div>
+</div>
+
+<script>
+const EYE_OPEN  = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+const EYE_CLOSE = '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/>';
+
+function togglePw(inputId, iconId){
+  const i = document.getElementById(inputId);
+  const ic = document.getElementById(iconId);
+  if(i.type === 'password'){ i.type = 'text'; ic.innerHTML = EYE_CLOSE; }
+  else { i.type = 'password'; ic.innerHTML = EYE_OPEN; }
+}
+
+/* Exibe nome do usuário */
+const _s = SbAuth.sessaoLer();
+if(_s){
+  const nome = _s.guerra || _s.nome || _s.matricula;
+  document.getElementById('sub-nome').textContent = `Olá, ${nome}!`;
+}
+
+async function handleTrocar(){
+  const nova = document.getElementById('nova').value;
+  const conf = document.getElementById('conf').value;
+  const err  = document.getElementById('err');
+  const okEl = document.getElementById('ok-msg');
+  const btn  = document.getElementById('btn-trocar');
+
+  err.classList.remove('show');
+  okEl.classList.remove('show');
+
+  if(!nova || !conf){
+    err.textContent = 'Preencha os dois campos.';
+    err.classList.add('show');
+    return;
+  }
+  if(nova !== conf){
+    err.textContent = 'As senhas não coincidem.';
+    err.classList.add('show');
+    return;
+  }
+  if(nova === SbAuth.SENHA_PADRAO){
+    err.textContent = 'A nova senha não pode ser igual à senha padrão.';
+    err.classList.add('show');
+    return;
+  }
+
+  btn.textContent = '⏳ Salvando...';
+  btn.disabled = true;
+
+  const sessao = SbAuth.sessaoLer();
+  const r = await SbAuth.trocarSenha(sessao.id, nova);
+
+  btn.textContent = 'Definir Senha e Entrar';
+  btn.disabled = false;
+
+  if(!r.ok){
+    err.textContent = r.erro;
+    err.classList.add('show');
+    return;
+  }
+
+  okEl.textContent = '✔ Senha definida com sucesso! Redirecionando...';
+  okEl.classList.add('show');
+  setTimeout(() => { window.location.replace('painel.html'); }, 1500);
+}
+</script>
+</body>
+</html>
