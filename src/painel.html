@@ -20,6 +20,24 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
   <style>
     body{display:flex;flex-direction:column;min-height:100vh;}
+    /* Anel pulsante nos marcadores próximos */
+    @keyframes cu-pulso {
+      0%   { transform:scale(1);   opacity:.8; }
+      70%  { transform:scale(2.2); opacity:0;  }
+      100% { transform:scale(2.2); opacity:0;  }
+    }
+    .cu-ring-pulse {
+      width:36px; height:36px; border-radius:50%;
+      border:3px solid #ff9800;
+      animation: cu-pulso 1.6s ease-out infinite;
+      position:absolute; top:50%; left:50%;
+      transform:translate(-50%,-50%);
+      pointer-events:none;
+    }
+    .cu-pin-destaque {
+      position:relative; width:38px; height:38px;
+      display:flex; align-items:center; justify-content:center;
+    }
     /* Grupamento: select nativo no desktop, botão customizado no mobile */
     .cu-gp-btn-mobile{display:none !important;}
     .cu-gp-select-native{display:flex;}
@@ -6596,6 +6614,7 @@ function impGerExcluirSelecionados(){
 ════════════════════════════════════════════════════════════ */
 let _cuMapaLeaflet = null;
 let _cuMarcador = null;
+let _cuProximidadeLayer = null; /* layer dos marcadores de destaque de proximidade */
 let _cuUltimoDecimal = null;
 
 function consultaSelSub(sub){
@@ -7076,6 +7095,9 @@ function cuAtualizarPontosMapa(){
 function _cuAtualizarPontosMapaExec(){
   if(!_cuPropPontosLayer || !_cuPropPontosCarregados) return;
   _cuPropPontosLayer.clearLayers();
+
+  /* Limpa também os destaques de proximidade ao atualizar o mapa */
+  if(_cuProximidadeLayer){ _cuProximidadeLayer.clearLayers(); }
 
   const filtroTipo = document.getElementById('cu-filtro-tipo')?.value || '';
   const filtroAtencao = document.getElementById('cu-filtro-atencao')?.value || '';
@@ -8024,6 +8046,20 @@ async function _cuBuscarProximidade(lat, lng){
     .sort((a, b) => a.dist - b.dist);
 
   if(!pontosProximos.length){
+    /* Limpa marcadores de proximidade anteriores */
+    if(_cuProximidadeLayer) _cuProximidadeLayer.clearLayers();
+    /* Desenha só o círculo de raio vazio */
+    if(_cuMapaLeaflet){
+      if(!_cuProximidadeLayer){
+        _cuProximidadeLayer = L.layerGroup().addTo(_cuMapaLeaflet);
+      } else {
+        _cuProximidadeLayer.clearLayers();
+      }
+      L.circle([lat, lng], {
+        radius: raioM, color:'#42a5f5', weight:1.5,
+        opacity:0.4, fillColor:'#42a5f5', fillOpacity:0.04
+      }).addTo(_cuProximidadeLayer);
+    }
     el.style.display = 'block';
     el.innerHTML = `<div style="background:rgba(66,165,245,.08);border:1px solid rgba(66,165,245,.25);border-radius:7px;padding:10px 14px;font-size:12px;color:var(--text-muted);">
       🔍 Nenhuma fiscalização cadastrada no raio de <b style="color:#42a5f5;">${raioKm} km</b>.
@@ -8079,6 +8115,66 @@ async function _cuBuscarProximidade(lat, lng){
       </div>
       ${pontosProximos.length > 10 ? `<div style="font-size:10.5px;color:var(--text-muted);margin-top:6px;text-align:center;">+${pontosProximos.length-10} outros pontos no raio</div>` : ''}
     </div>`;
+
+  /* Destacar os pontos próximos no mapa com anel pulsante */
+  if(_cuMapaLeaflet){
+    /* Inicializa o layer de destaque se necessário */
+    if(!_cuProximidadeLayer){
+      _cuProximidadeLayer = L.layerGroup().addTo(_cuMapaLeaflet);
+    } else {
+      _cuProximidadeLayer.clearLayers();
+    }
+
+    /* Círculo de raio */
+    L.circle([lat, lng], {
+      radius: raioM,
+      color: '#ff9800',
+      weight: 1.5,
+      opacity: 0.5,
+      fillColor: '#ff9800',
+      fillOpacity: 0.05
+    }).addTo(_cuProximidadeLayer);
+
+    /* Marcador pulsante em cada ponto próximo */
+    pontosProximos.forEach(({ponto, prop, dist}) => {
+      const origemSync = _cuOrigemMaisRecenteSync(ponto.id);
+      const origemInfo = origemSync ? ORIGEM_DEMANDA_VISUAL[origemSync] : null;
+      const cor = origemInfo ? origemInfo.cor : (NIVEL_ATENCAO_COR[prop.nivel_atencao] || '#888');
+      const emoji = origemInfo ? origemInfo.icone : (prop.tipo_local === 'EMPREENDIMENTO' ? '🏭' : '🏡');
+      const distFmt = dist >= 1000 ? (dist/1000).toFixed(1)+' km' : Math.round(dist)+' m';
+
+      const iconHtml = `
+        <div class="cu-pin-destaque">
+          <div class="cu-ring-pulse" style="border-color:${cor};"></div>
+          <div style="width:36px;height:36px;border-radius:50%;background:${cor};border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;position:relative;z-index:1;">
+            <span style="font-size:19px;line-height:1;">${emoji}</span>
+          </div>
+        </div>`;
+
+      const icon = L.divIcon({
+        html: iconHtml,
+        className: 'cu-pin-icon',
+        iconSize: [38,38],
+        iconAnchor: [19,19],
+        popupAnchor: [0,-22]
+      });
+
+      const popupHtml = `<div style="font-size:12px;min-width:180px;">
+        <b style="color:#ff9800;">📍 ${prop.nome_local||'—'}</b><br>
+        <span style="color:#888;">${ponto.rotulo||'Ponto sem rótulo'}</span><br>
+        <span style="color:#aaa;font-size:11px;">📏 ${distFmt} do ponto consultado</span>
+        <div style="margin-top:6px;">
+          <button onclick="atendVerNoMapa2(${prop.id})" style="background:var(--gold,#9b8a5c);border:none;color:#1a1000;padding:4px 10px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;width:100%;">
+            📂 Ver detalhes
+          </button>
+        </div>
+      </div>`;
+
+      L.marker([ponto.lat, ponto.lng], { icon, zIndexOffset: 2000 })
+        .bindPopup(popupHtml, { maxWidth: 240, className: 'leaflet-dark-popup' })
+        .addTo(_cuProximidadeLayer);
+    });
+  }
 }
 
 function _distanciaMetros(lat1, lng1, lat2, lng2){
