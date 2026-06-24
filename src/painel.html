@@ -7662,10 +7662,14 @@ function _atendRenderCardPonto(ponto, fiscalizacoes){
     const bosHtml = (f.bos||[]).map(b => `<div style="font-size:10.5px;color:#ccc;">📄 BO: ${b.numero_bo||'—'}${b.observacoes ? '<br><span style="color:#999;margin-left:18px;">'+b.observacoes+'</span>' : ''}</div>`).join('');
     const ambFlags = f.ambiental ? AMB_CAMPOS.filter(([k]) => f.ambiental[k]).map(([,lbl]) => lbl) : [];
 
+    const podeFiscEditar = _atendPodeEditar(f);
     return `<div style="background:#1a1a1a;border-radius:6px;padding:10px;margin-top:8px;font-size:11px;">
       <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;align-items:center;">
         <b style="color:var(--gold);">🔍 Fiscalização</b>
-        <span>${SITUACAO_LABEL[f.situacao]||f.situacao||''}</span>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span>${SITUACAO_LABEL[f.situacao]||f.situacao||''}</span>
+          ${podeFiscEditar ? `<button onclick="atendFiscalizacaoEditar(${f.id})" style="background:rgba(100,80,30,.15);border:1px solid rgba(100,80,30,.4);color:var(--gold);font-size:10px;padding:3px 8px;border-radius:4px;cursor:pointer;">✏️ Editar</button>` : ''}
+        </div>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;color:#ccc;font-size:10.5px;">
         <span>📅 Data: ${f.data_fato ? (d => d[2]+'/'+d[1]+'/'+d[0])(f.data_fato.substring(0,10).split('-')) : '—'}</span>
@@ -7698,6 +7702,7 @@ function _atendRenderCardPonto(ponto, fiscalizacoes){
 
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
       <button onclick="atendFiscalizacaoAbrir(${ponto.id})" style="background:rgba(66,165,245,.12);border:1px solid rgba(66,165,245,.35);color:#42a5f5;font-size:10.5px;padding:5px 10px;border-radius:5px;cursor:pointer;">➕ Registrar Fiscalização</button>
+      <button onclick="atendNovoPontoNaPropriedade(${ponto.property_id})" style="background:rgba(46,160,67,.1);border:1px solid rgba(46,160,67,.35);color:#4ade80;font-size:10.5px;padding:5px 10px;border-radius:5px;cursor:pointer;">📍 Novo Ponto na Propriedade</button>
     </div>
 
     ${fiscalizacoes.length ? '<div style="font-size:10.5px;color:var(--text-muted);margin-top:10px;font-weight:700;">HISTÓRICO DE FISCALIZAÇÕES</div>'+fiscalizacoesHtml : ''}
@@ -8296,6 +8301,114 @@ async function atendPontoExcluir(pontoId){
    (mesma estrutura hierárquica do Passo 4 do wizard: Fiscalização
    com N Autos + N BOs + Constatação Ambiental aninhados.)
 ════════════════════════════════════════════════════════════ */
+/* ══ Abre modal de fiscalização em modo EDIÇÃO ══ */
+async function atendFiscalizacaoEditar(fiscId){
+  if(!_atendPodeEditar){ return; }
+  /* Busca dados completos da fiscalização no Supabase */
+  let fisc, autos = [], bos = [], ambiental = null;
+  try{
+    const res = await sbFetch('service_records', `id=eq.${fiscId}&select=*`);
+    if(!res || !res.length){ alert('Fiscalização não encontrada.'); return; }
+    fisc = res[0];
+    if(!_atendPodeEditar(fisc)){ alert('Você não tem permissão para editar esta fiscalização.'); return; }
+    [autos, bos, ambiental] = await Promise.all([
+      sbFetch('autos_infracao', `service_record_id=eq.${fiscId}&select=*`).catch(()=>[]),
+      sbFetch('bos_rats', `service_record_id=eq.${fiscId}&select=*`).catch(()=>[]),
+      sbFetch('environmental_history', `service_record_id=eq.${fiscId}&select=*`).then(r=>r[0]||null).catch(()=>null)
+    ]);
+  }catch(e){ alert('Erro ao carregar fiscalização: '+e.message); return; }
+
+  /* Preenche os campos do modal com os dados existentes */
+  document.getElementById('afisc-point-id').value = fisc.point_id;
+  /* Campo oculto para identificar que é edição */
+  let fiscIdInput = document.getElementById('afisc-fisc-id');
+  if(!fiscIdInput){
+    fiscIdInput = document.createElement('input');
+    fiscIdInput.type = 'hidden'; fiscIdInput.id = 'afisc-fisc-id';
+    document.getElementById('atend-fiscalizacao-modal').querySelector('div').appendChild(fiscIdInput);
+  }
+  fiscIdInput.value = fiscId;
+
+  document.getElementById('afisc-data').value = fisc.data_fato ? fisc.data_fato.substring(0,10) : '';
+  document.getElementById('afisc-orgao').value = fisc.orgao_responsavel || '';
+  document.getElementById('afisc-origem').value = fisc.origem_demanda || '';
+  document.getElementById('afisc-id-demanda').value = fisc.id_demanda || '';
+  document.getElementById('afisc-situacao').value = fisc.situacao || 'EM_ANDAMENTO';
+  document.getElementById('afisc-obs').value = fisc.observacoes || '';
+
+  /* Autos */
+  document.getElementById('afisc-chk-auto').checked = fisc.gerou_auto_infracao && autos.length > 0;
+  document.getElementById('afisc-bloco-auto').style.display = (fisc.gerou_auto_infracao && autos.length) ? '' : 'none';
+  document.getElementById('afisc-autos-lista').innerHTML = '';
+  autos.forEach(() => atendFiscAutoAdicionar());
+  document.querySelectorAll('.afisc-auto-item').forEach((div, i) => {
+    if(autos[i]){
+      div.querySelector('.auto-numero').value = autos[i].numero_auto_infracao || '';
+      if(div.querySelector('.auto-obs')) div.querySelector('.auto-obs').value = autos[i].observacoes || '';
+    }
+  });
+
+  /* BOs */
+  document.getElementById('afisc-chk-bo').checked = fisc.gerou_bo && bos.length > 0;
+  document.getElementById('afisc-bloco-bo').style.display = (fisc.gerou_bo && bos.length) ? '' : 'none';
+  document.getElementById('afisc-bos-lista').innerHTML = '';
+  bos.forEach(() => atendFiscBoAdicionar());
+  document.querySelectorAll('.afisc-bo-item').forEach((div, i) => {
+    if(bos[i]){
+      div.querySelector('.bo-numero').value = bos[i].numero_bo || '';
+      if(div.querySelector('.bo-natureza')) div.querySelector('.bo-natureza').value = bos[i].natureza_atividade || '';
+      if(div.querySelector('.bo-obs')) div.querySelector('.bo-obs').value = bos[i].observacoes || '';
+    }
+  });
+
+  /* Ambiental */
+  const temAmb = !!ambiental;
+  document.getElementById('afisc-chk-ambiental').checked = temAmb;
+  document.getElementById('afisc-bloco-ambiental').style.display = temAmb ? 'flex' : 'none';
+  if(temAmb){
+    ['app','embargo','poluidora','mineracao','desmatamento','barramento'].forEach(k => {
+      const el = document.getElementById('afisc-amb-'+k);
+      if(el) el.checked = !!(ambiental['possui_'+k] || ambiental['possui_'+k.replace('app','app_reserva_legal').replace('poluidora','atividade_poluidora').replace('barramento','barramento_acude')]);
+    });
+    document.getElementById('afisc-amb-obs').value = ambiental.observacoes || '';
+  }
+
+  document.getElementById('atend-fiscalizacao-erro').style.display = 'none';
+  document.getElementById('atend-fiscalizacao-modal').style.display = 'flex';
+}
+
+/* ══ Abre modal para adicionar novo ponto a uma propriedade já existente ══
+   Pede as coordenadas ao usuário via prompt e reutiliza o fluxo existente */
+function atendNovoPontoNaPropriedade(propertyId){
+  const prop = _propDados.find(p => p.id === propertyId);
+  if(!prop){ alert('Propriedade não encontrada.'); return; }
+
+  const entrada = prompt(
+    `📍 Novo Ponto — ${prop.nome_local}
+
+Informe as coordenadas do novo ponto:
+(Formato: -17.437393, -41.281238)`,
+    ''
+  );
+  if(!entrada) return;
+
+  const partes = entrada.split(',').map(s => parseFloat(s.trim()));
+  if(partes.length < 2 || isNaN(partes[0]) || isNaN(partes[1])){
+    alert('Coordenadas inválidas. Use o formato: -17.437393, -41.281238'); return;
+  }
+  const [lat, lng] = partes;
+  if(lat < -35 || lat > 5 || lng < -75 || lng > -30){
+    alert('Coordenadas fora do Brasil. Verifique os valores informados.'); return;
+  }
+
+  /* Determina se é área urbana ou rural usando a lógica já existente no sistema */
+  const ehUrbana = typeof _cuClassificarPonto === 'function'
+    ? _cuClassificarPonto(lat, lng)
+    : false; /* fallback: assume rural */
+
+  atendPontoAbrirNovo(propertyId, { lat, lng, ehUrbana });
+}
+
 function atendFiscalizacaoAbrir(pontoId){
   document.getElementById('afisc-point-id').value = pontoId;
   document.getElementById('afisc-data').value = '';
@@ -8382,6 +8495,7 @@ async function atendFiscalizacaoSalvar(){
   const meuId = _atendMeuId();
   const meuNome = sessaoPainel.nome || '';
   const agora = new Date().toISOString();
+  const fiscIdEdicao = document.getElementById('afisc-fisc-id')?.value || '';
 
   const fiscPayload = {
     point_id: pontoId,
@@ -8393,14 +8507,35 @@ async function atendFiscalizacaoSalvar(){
     observacoes: document.getElementById('afisc-obs').value.trim() || null,
     gerou_auto_infracao: document.getElementById('afisc-chk-auto').checked,
     gerou_bo: document.getElementById('afisc-chk-bo').checked,
-    criado_por: meuId, criado_por_nome: meuNome, criado_em: agora, atualizado_em: agora
+    atualizado_em: agora
   };
+  /* Só inclui criado_por/criado_em se for novo registro */
+  if(!fiscIdEdicao){
+    fiscPayload.criado_por = meuId;
+    fiscPayload.criado_por_nome = meuNome;
+    fiscPayload.criado_em = agora;
+  }
 
   const btn = document.getElementById('atend-fiscalizacao-btn-salvar');
   const txt = btn.textContent; btn.textContent = 'Salvando...'; btn.disabled = true;
   try{
-    const resFisc = await sbUpsert('service_records', [fiscPayload]);
-    const fiscId = resFisc[0].id;
+    let fiscId;
+    if(fiscIdEdicao){
+      /* Edição: atualiza apenas os campos editáveis, preserva criado_por original */
+      await sbPatchRow('service_records', `id=eq.${fiscIdEdicao}`, fiscPayload);
+      fiscId = parseInt(fiscIdEdicao);
+      /* Remove autos/BOs antigos para reescrever com os atuais */
+      await Promise.all([
+        sbDeleteRow('autos_infracao', `service_record_id=eq.${fiscId}`).catch(()=>{}),
+        sbDeleteRow('bos_rats', `service_record_id=eq.${fiscId}`).catch(()=>{}),
+        sbDeleteRow('environmental_history', `service_record_id=eq.${fiscId}`).catch(()=>{})
+      ]);
+      /* Limpa campo de edição para próxima abertura */
+      if(document.getElementById('afisc-fisc-id')) document.getElementById('afisc-fisc-id').value = '';
+    } else {
+      const resFisc = await sbUpsert('service_records', [fiscPayload]);
+      fiscId = resFisc[0].id;
+    }
 
     if(fiscPayload.gerou_auto_infracao){
       const autos = [...document.querySelectorAll('.afisc-auto-item')]
