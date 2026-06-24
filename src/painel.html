@@ -1003,6 +1003,19 @@
         </button>
       </div>
 
+      <!-- CAMPO DE RAIO -->
+      <div style="display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap;">
+        <label style="font-size:11px;color:var(--text-muted);font-weight:600;">🔍 Buscar fiscalizações no raio de:</label>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <input type="number" id="cu-raio-km" value="2" min="0.5" max="50" step="0.5"
+            style="width:70px;padding:5px 8px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:5px;color:#fff;font-size:12px;text-align:center;">
+          <span style="font-size:12px;color:var(--text-muted);">km</span>
+        </div>
+      </div>
+
+      <!-- RESULTADO PROXIMIDADE -->
+      <div id="cu-resultado-proximidade" style="display:none;margin-top:10px;"></div>
+
       <!-- RESULTADO -->
       <div id="cu-resultado" style="display:none;margin-top:16px;padding:14px 18px;border-radius:8px;align-items:center;gap:16px;flex-wrap:wrap;">
         <div id="cu-resultado-badge" style="font-size:14px;font-weight:800;padding:7px 16px;border-radius:6px;display:inline-flex;align-items:center;gap:8px;"></div>
@@ -7451,6 +7464,9 @@ function consultaUrbRurConsultar(){
   /* Rola a tela até o mapa, para o usuário ver o ponto marcado sem precisar rolar manualmente */
   const mapaContainer = document.getElementById('cu-mapa');
   if(mapaContainer) mapaContainer.scrollIntoView({ behavior:'smooth', block:'center' });
+
+  /* Busca pontos/fiscalizações próximos */
+  _cuBuscarProximidade(lat, lng);
 }
 
 let _cuUltimaRotaUrl = null;
@@ -7982,6 +7998,89 @@ function atendVerNoMapa(lat, lng){
 let _atendVincCoord = null; /* {lat, lng, ehUrbana} */
 
 /* Distância em metros entre duas coordenadas (fórmula de Haversine) */
+/* ── Busca pontos e fiscalizações próximos da coordenada consultada ── */
+async function _cuBuscarProximidade(lat, lng){
+  const el = document.getElementById('cu-resultado-proximidade');
+  if(!el) return;
+
+  const raioKm = parseFloat(document.getElementById('cu-raio-km')?.value) || 2;
+  const raioM  = raioKm * 1000;
+
+  /* Aguarda o carregamento dos dados se ainda não estiver pronto */
+  if(!_cuPropPontosCarregados){
+    el.style.display = 'none';
+    return;
+  }
+
+  /* Encontra pontos dentro do raio */
+  const pontosProximos = _cuPontosDadosCache
+    .filter(p => _distanciaMetros(lat, lng, p.lat, p.lng) <= raioM)
+    .map(p => ({
+      ponto: p,
+      prop: _cuPropDadosCache.find(pr => pr.id === p.property_id),
+      dist: _distanciaMetros(lat, lng, p.lat, p.lng)
+    }))
+    .filter(x => x.prop)
+    .sort((a, b) => a.dist - b.dist);
+
+  if(!pontosProximos.length){
+    el.style.display = 'block';
+    el.innerHTML = `<div style="background:rgba(66,165,245,.08);border:1px solid rgba(66,165,245,.25);border-radius:7px;padding:10px 14px;font-size:12px;color:var(--text-muted);">
+      🔍 Nenhuma fiscalização cadastrada no raio de <b style="color:#42a5f5;">${raioKm} km</b>.
+    </div>`;
+    return;
+  }
+
+  /* Para cada ponto próximo, busca a última fiscalização */
+  const itens = await Promise.all(pontosProximos.slice(0, 10).map(async ({ponto, prop, dist}) => {
+    let fiscHtml = '<span style="color:var(--text-muted);font-size:11px;">Sem fiscalizações registradas</span>';
+    try{
+      const regs = await sbFetch('service_records',
+        `point_id=eq.${ponto.id}&select=data_fato,orgao_responsavel,situacao,origem_demanda&order=data_fato.desc&limit=1`);
+      if(regs && regs.length){
+        const f = regs[0];
+        const dataFmt = f.data_fato ? (d => d[2]+'/'+d[1]+'/'+d[0])(f.data_fato.substring(0,10).split('-')) : '—';
+        const sit = {EM_ANDAMENTO:'🟡 Em andamento', ENCERRADO:'🟢 Encerrado', ARQUIVADO:'⚪ Arquivado'}[f.situacao] || f.situacao || '';
+        fiscHtml = `<span style="font-size:11px;color:#ccc;">📅 ${dataFmt}${f.orgao_responsavel?' · '+f.orgao_responsavel:''} ${sit}</span>`;
+      }
+    }catch(e){}
+
+    const distFmt = dist >= 1000 ? (dist/1000).toFixed(1)+' km' : Math.round(dist)+' m';
+    const corArea = ponto.area_classificacao === 'URBANA' ? '#A0784A' : '#2ea043';
+    const labelArea = ponto.area_classificacao === 'URBANA' ? '🏙️ Urbana' : '🌳 Rural';
+    const nivelCor = {NORMAL:'#4caf50', MONITORAR:'#ff9800', PRIORITARIO:'#ef5350'}[prop.nivel_atencao] || '#888';
+
+    return `<div onclick="atendVerNoMapa2(${prop.id})"
+      style="background:#1a1a1a;border:1px solid #333;border-left:3px solid ${corArea};border-radius:6px;padding:10px 14px;cursor:pointer;transition:background .15s;"
+      onmouseover="this.style.background='#222'" onmouseout="this.style.background='#1a1a1a'">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:#fff;">${prop.nome_local||'—'}</div>
+          <div style="font-size:10.5px;color:var(--text-muted);margin-top:2px;">
+            📍 ${ponto.rotulo||'Ponto sem rótulo'} &nbsp;·&nbsp;
+            <span style="color:${corArea}">${labelArea}</span> &nbsp;·&nbsp;
+            <span style="color:${nivelCor};font-weight:700;">${prop.nivel_atencao||'NORMAL'}</span>
+          </div>
+        </div>
+        <span style="background:rgba(155,138,92,.2);color:var(--gold);font-size:11px;font-weight:700;padding:3px 10px;border-radius:4px;white-space:nowrap;">📏 ${distFmt}</span>
+      </div>
+      <div style="margin-top:6px;">${fiscHtml}</div>
+    </div>`;
+  }));
+
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div style="background:rgba(255,152,0,.08);border:1px solid rgba(255,152,0,.3);border-radius:7px;padding:10px 14px;">
+      <div style="font-size:11px;font-weight:700;color:#ff9800;margin-bottom:8px;">
+        ⚠️ ${pontosProximos.length} ponto${pontosProximos.length>1?'s':''} cadastrado${pontosProximos.length>1?'s':''} no raio de ${raioKm} km — clique para ver detalhes
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        ${itens.join('')}
+      </div>
+      ${pontosProximos.length > 10 ? `<div style="font-size:10.5px;color:var(--text-muted);margin-top:6px;text-align:center;">+${pontosProximos.length-10} outros pontos no raio</div>` : ''}
+    </div>`;
+}
+
 function _distanciaMetros(lat1, lng1, lat2, lng2){
   const R = 6371000;
   const toRad = d => d * Math.PI / 180;
