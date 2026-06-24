@@ -1041,9 +1041,16 @@
           <option value="MONITORAR">🟡 Monitorar</option>
           <option value="PRIORITARIO">🔴 Prioritário</option>
         </select>
-        <select id="cu-filtro-gp" onchange="cuAtualizarPontosMapa()" style="padding:5px 8px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:4px;color:#fff;font-size:11px;flex:2;min-width:140px;">
+        <!-- Select oculto — mantido para compatibilidade com o JS existente -->
+        <select id="cu-filtro-gp" onchange="cuAtualizarPontosMapa()" style="display:none;">
           <option value="">Todos os Grupamentos</option>
         </select>
+        <!-- Botão customizado que abre o modal de seleção -->
+        <button id="cu-filtro-gp-btn" onclick="cuGpModalAbrir()"
+          style="padding:5px 10px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:4px;color:#fff;font-size:11px;flex:2;min-width:140px;text-align:left;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:6px;">
+          <span id="cu-filtro-gp-label">Todos os Grupamentos</span>
+          <span style="color:var(--text-muted);font-size:10px;">▼</span>
+        </button>
         <select id="cu-filtro-demanda" onchange="cuAtualizarPontosMapa()" style="padding:5px 8px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:4px;color:#fff;font-size:11px;flex:1;min-width:120px;">
           <option value="">Todas as Demandas</option>
           <option value="MC">MC — Monit. Contínuo</option>
@@ -6894,6 +6901,13 @@ function _cuPopularFiltrosGp(_tentativa){
     sel.innerHTML = '<option value="">Todos os Grupamentos</option>' + gps.map(g=>`<option value="${g}">${g}</option>`).join('');
     sel.value = valorAtual;
   });
+  /* Sincroniza o botão customizado com o valor atual */
+  const btnLabel = document.getElementById('cu-filtro-gp-label');
+  if(btnLabel){
+    const sel = document.getElementById('cu-filtro-gp');
+    const opt = sel ? Array.from(sel.options).find(o => o.value === sel.value) : null;
+    btnLabel.textContent = (opt && opt.value) ? opt.text : 'Todos os Grupamentos';
+  }
 }
 
 /* Busca, para um ponto, o último registro de fiscalização/BO/auto (mais recente por data_fato) */
@@ -6974,6 +6988,51 @@ async function _cuPreencherConteudoPopup(ponto, prop){
   if(!html) html = '<div style="color:#777;">Sem registros detalhados ainda.</div>';
   html += `<div style="margin-top:8px;"><button onclick="atendVerNoMapa2(${prop.id})" style="background:rgba(155,138,92,.18);border:1px solid var(--gold-border);color:var(--gold);font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:4px;cursor:pointer;width:100%;">📂 Expandir — Ver tudo</button></div>`;
   loadingEl.outerHTML = `<div style="margin-top:4px;color:#ccc;">${html}</div>`;
+}
+
+/* ── Modal customizado de Grupamento ── */
+let _cuGpOpcoes = []; /* cache das opções populadas */
+
+function cuGpModalAbrir(){
+  /* Sincroniza opções do select oculto */
+  const sel = document.getElementById('cu-filtro-gp');
+  _cuGpOpcoes = Array.from(sel.options).map(o => ({value: o.value, label: o.text}));
+  document.getElementById('cu-gp-busca').value = '';
+  cuGpModalFiltrar();
+  document.getElementById('cu-gp-modal').style.display = 'block';
+  setTimeout(() => document.getElementById('cu-gp-busca').focus(), 150);
+}
+
+function cuGpModalFechar(){
+  document.getElementById('cu-gp-modal').style.display = 'none';
+}
+
+function cuGpModalFiltrar(){
+  const busca = document.getElementById('cu-gp-busca').value.toLowerCase();
+  const lista = document.getElementById('cu-gp-lista');
+  const valorAtual = document.getElementById('cu-filtro-gp').value;
+  const filtradas = busca ? _cuGpOpcoes.filter(o => o.label.toLowerCase().includes(busca)) : _cuGpOpcoes;
+  lista.innerHTML = filtradas.map(o => `
+    <div onclick="cuGpSelecionar('${o.value.replace(/'/g,"\\'")}','${o.label.replace(/'/g,"\\'")}') "
+      style="padding:11px 18px;font-size:13px;cursor:pointer;color:${o.value===valorAtual?'var(--gold)':'#ccc'};
+             background:${o.value===valorAtual?'rgba(155,138,92,.12)':'transparent'};
+             border-left:3px solid ${o.value===valorAtual?'var(--gold)':'transparent'};
+             transition:background .1s;"
+      onmouseover="this.style.background='rgba(155,138,92,.08)'"
+      onmouseout="this.style.background='${o.value===valorAtual?'rgba(155,138,92,.12)':'transparent'}'">
+      ${o.label}
+    </div>`).join('');
+}
+
+function cuGpSelecionar(value, label){
+  /* Atualiza o select oculto */
+  const sel = document.getElementById('cu-filtro-gp');
+  sel.value = value;
+  /* Atualiza o botão visível */
+  document.getElementById('cu-filtro-gp-label').textContent = label || 'Todos os Grupamentos';
+  /* Fecha o modal e aplica filtro */
+  cuGpModalFechar();
+  cuAtualizarPontosMapa();
 }
 
 let _cuAtualizarTimer = null;
@@ -9385,6 +9444,22 @@ async function wizSalvarTudo(){
 }
 
 </script>
+
+<!-- MODAL GRUPAMENTO — lista customizada para celular e desktop -->
+<div id="cu-gp-modal" style="display:none;position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.6);" onclick="cuGpModalFechar()">
+  <div onclick="event.stopPropagation()" style="position:absolute;bottom:0;left:0;right:0;background:#1a1a1a;border-radius:16px 16px 0 0;border-top:1px solid var(--gold-border);max-height:70vh;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);flex-shrink:0;">
+      <span style="font-size:13px;font-weight:700;color:var(--gold);">📍 Filtrar por Grupamento</span>
+      <button onclick="cuGpModalFechar()" style="background:none;border:none;color:#888;font-size:20px;cursor:pointer;line-height:1;">×</button>
+    </div>
+    <div style="padding:8px 10px;border-bottom:1px solid var(--border);flex-shrink:0;">
+      <input id="cu-gp-busca" type="text" placeholder="Buscar grupamento..." oninput="cuGpModalFiltrar()"
+        style="width:100%;padding:8px 10px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:6px;color:#fff;font-size:13px;box-sizing:border-box;outline:none;">
+    </div>
+    <div id="cu-gp-lista" style="overflow-y:auto;flex:1;padding:6px 0;"></div>
+  </div>
+</div>
+
 </body>
 </html>
 <!-- placeholder -->
