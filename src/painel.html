@@ -1466,7 +1466,7 @@
 
       <div style="display:flex;gap:10px;justify-content:flex-end;border-top:1px solid var(--border);padding-top:14px;">
         <button onclick="npCoordFechar()" style="background:#333;border:1px solid #555;color:#ccc;padding:9px 18px;border-radius:6px;font-size:12px;cursor:pointer;">Cancelar</button>
-        <button onclick="npCoordConfirmar()" style="background:var(--gold);border:none;color:#1a1408;padding:9px 22px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">📍 Confirmar Coordenadas</button>
+        <button id="np-coord-confirmar-btn" onclick="npCoordConfirmar()" style="background:var(--gold);border:none;color:#1a1408;padding:9px 22px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">📍 Confirmar Coordenadas</button>
       </div>
     </div>
   </div>
@@ -8668,7 +8668,7 @@ function npSelFormato(fmt){
   });
 }
 
-function npCoordConfirmar(){
+async function npCoordConfirmar(){
   const erroEl = document.getElementById('np-coord-erro');
   erroEl.style.display = 'none';
   let lat, lng;
@@ -8709,10 +8709,54 @@ function npCoordConfirmar(){
   if(lat < -35 || lat > 5 || lng < -75 || lng > -30){ erroEl.textContent='Coordenadas fora do Brasil. Verifique os valores.'; erroEl.style.display='block'; return; }
 
   const ehUrbana = typeof _cuPontoEmAreaUrbana === 'function' ? _cuPontoEmAreaUrbana(lat, lng) : false;
-  /* Guarda propertyId antes de fechar — npCoordFechar() zera _npPropertyIdPendente */
   const propertyIdParaAbrir = _npPropertyIdPendente;
   npCoordFechar();
-  atendPontoAbrirNovo(propertyIdParaAbrir, { lat, lng, ehUrbana });
+  /* Salva o ponto silenciosamente e abre direto o modal de fiscalização */
+  await _npSalvarPontoEAbrirFisc(propertyIdParaAbrir, { lat, lng, ehUrbana });
+}
+
+async function _npSalvarPontoEAbrirFisc(propertyId, coord){
+  const erroEl = document.getElementById('np-coord-erro');
+  /* Mostra feedback visual */
+  const btnConfirmar = document.getElementById('np-coord-confirmar-btn');
+  if(btnConfirmar){ btnConfirmar.textContent = 'Salvando...'; btnConfirmar.disabled = true; }
+
+  try{
+    const { pelNum, gpLongo } = _getUserGP();
+    const agora = new Date().toISOString();
+    const payload = {
+      property_id: propertyId,
+      lat: coord.lat,
+      lng: coord.lng,
+      area_classificacao: coord.ehUrbana ? 'URBANA' : 'RURAL',
+      pelotao: pelNum || null,
+      grupamento: gpLongo || null,
+      criado_por: _atendMeuId(),
+      criado_por_nome: sessaoPainel.nome || '',
+      criado_em: agora,
+      atualizado_em: agora,
+      rotulo: null,
+      observacoes: null
+    };
+    const res = await sbUpsert('map_points', [payload]);
+    const novoPontoId = res[0].id;
+
+    /* Recarrega dados para o novo ponto aparecer */
+    _atendCarregado = false;
+    await atendCarregarDados();
+    _cuServiceRecordsCache = {}; cuCarregarPontosMapa();
+
+    /* Abre o detalhe da propriedade e em seguida o modal de fiscalização */
+    atendAbrirDetalhe(propertyId);
+    setTimeout(() => atendFiscalizacaoAbrir(novoPontoId, propertyId), 400);
+
+  } catch(e) {
+    /* Se falhou, volta ao modal de coordenadas com erro */
+    document.getElementById('np-coord-modal').style.display = 'flex';
+    if(erroEl){ erroEl.textContent = 'Erro ao salvar ponto: ' + e.message; erroEl.style.display = 'block'; }
+  } finally {
+    if(btnConfirmar){ btnConfirmar.textContent = '📍 Confirmar Coordenadas'; btnConfirmar.disabled = false; }
+  }
 }
 
 /* Reseta todos os campos do modal de fiscalização */
@@ -8745,10 +8789,11 @@ function atendFiscalizacaoAbrir(pontoId, propertyId){
   document.getElementById('afisc-point-id').value = pontoId;
   document.getElementById('afisc-property-id').value = propertyId || '';
 
-  /* Mostra o passo 0 "Novo local?" apenas quando temos a propriedade */
+  /* Passo 0 só aparece quando vem do botão normal (não do fluxo de novo ponto) */
   const blocoNovoLocal = document.getElementById('afisc-bloco-novo-local');
   const blocoCampos = document.getElementById('afisc-bloco-campos');
-  if(propertyId){
+  const veioDeFiscNormal = propertyId && !_atendNovoLocalParaFisc;
+  if(veioDeFiscNormal){
     blocoNovoLocal.style.display = 'block';
     blocoCampos.style.display = 'none';
   } else {
