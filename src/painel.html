@@ -1466,7 +1466,19 @@
     </div>
     <div style="padding:20px;display:flex;flex-direction:column;gap:14px;">
       <input type="hidden" id="afisc-point-id">
+      <input type="hidden" id="afisc-property-id">
 
+      <!-- PASSO 0: Novo local? (só aparece quando property_id está preenchido) -->
+      <div id="afisc-bloco-novo-local" style="display:none;background:#1f1f1f;border:1px solid rgba(46,160,67,.3);border-radius:8px;padding:12px 14px;">
+        <div style="font-size:11.5px;font-weight:700;color:#4ade80;margin-bottom:8px;">📍 Este ponto é um novo local na propriedade?</div>
+        <div style="font-size:11px;color:#aaa;margin-bottom:10px;">Se a fiscalização ocorreu em um local diferente dos já cadastrados, crie um novo ponto antes de registrar.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button type="button" onclick="atendFiscNovoLocal()" style="background:rgba(46,160,67,.15);border:1px solid rgba(46,160,67,.4);color:#4ade80;font-size:11px;font-weight:700;padding:6px 14px;border-radius:5px;cursor:pointer;">📍 Sim — Criar novo local</button>
+          <button type="button" onclick="atendFiscNovoLocalNao()" style="background:rgba(255,255,255,.05);border:1px solid var(--border);color:#ccc;font-size:11px;padding:6px 14px;border-radius:5px;cursor:pointer;">✓ Não — Continuar neste ponto</button>
+        </div>
+      </div>
+
+      <div id="afisc-bloco-campos">
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <div class="fg" style="flex:1;min-width:150px;">
           <label>Data da Fiscalização</label>
@@ -1555,6 +1567,8 @@
           </div>
         </div>
       </div>
+
+      </div><!-- /afisc-bloco-campos -->
 
       <div id="atend-fiscalizacao-erro" style="display:none;color:#ef5350;font-size:12px;"></div>
       <div style="display:flex;gap:10px;justify-content:flex-end;border-top:1px solid var(--border);padding-top:14px;">
@@ -7786,8 +7800,7 @@ function _atendRenderCardPonto(ponto, fiscalizacoes){
     </div>
 
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
-      <button onclick="atendFiscalizacaoAbrir(${ponto.id})" style="background:rgba(66,165,245,.12);border:1px solid rgba(66,165,245,.35);color:#42a5f5;font-size:10.5px;padding:5px 10px;border-radius:5px;cursor:pointer;">➕ Registrar Fiscalização</button>
-      <button onclick="atendNovoPontoNaPropriedade(${ponto.property_id})" style="background:rgba(46,160,67,.1);border:1px solid rgba(46,160,67,.35);color:#4ade80;font-size:10.5px;padding:5px 10px;border-radius:5px;cursor:pointer;">📍 Novo Ponto na Propriedade</button>
+      <button onclick="atendFiscalizacaoAbrir(${ponto.id}, ${ponto.property_id})" style="background:rgba(66,165,245,.12);border:1px solid rgba(66,165,245,.35);color:#42a5f5;font-size:10.5px;padding:5px 10px;border-radius:5px;cursor:pointer;">➕ Registrar Fiscalização</button>
     </div>
 
     ${fiscalizacoes.length ? '<div style="font-size:10.5px;color:var(--text-muted);margin-top:10px;font-weight:700;">HISTÓRICO DE FISCALIZAÇÕES</div>'+fiscalizacoesHtml : ''}
@@ -8266,6 +8279,7 @@ async function _atendRenderPessoasDetalhe(propertyId){
 ════════════════════════════════════════════════════════════ */
 let _atendPontoCoordNovo = null;
 let _atendPontoPropertyIdNovo = null;
+let _atendNovoLocalParaFisc = false; /* flag: salvar ponto → abrir fiscalização */
 
 function atendPontoAbrirNovo(propertyId, coord){
   const prop = _propDados.find(p => p.id === propertyId);
@@ -8353,7 +8367,17 @@ async function atendPontoSalvar(){
     _atendCarregado = false;
     await atendCarregarDados();
     _cuServiceRecordsCache = {}; cuCarregarPontosMapa();
-    atendAbrirDetalhe(propertyId);
+
+    /* Se veio do fluxo "Novo local para fiscalização", abre o modal de fiscalização
+       com o novo point_id em vez de apenas recarregar o detalhe da propriedade */
+    if(!idEdicao && _atendNovoLocalParaFisc){
+      _atendNovoLocalParaFisc = false;
+      atendAbrirDetalhe(propertyId);
+      /* Aguarda o detalhe renderizar antes de abrir o modal */
+      setTimeout(() => atendFiscalizacaoAbrir(parseInt(pontoId), propertyId), 400);
+    } else {
+      atendAbrirDetalhe(propertyId);
+    }
   }catch(e){
     erroEl.textContent = 'Erro ao salvar: '+e.message; erroEl.style.display = 'block';
   }finally{
@@ -8543,33 +8567,67 @@ function npCoordConfirmar(){
   atendPontoAbrirNovo(_npPropertyIdPendente, { lat, lng, ehUrbana });
 }
 
-function atendFiscalizacaoAbrir(pontoId){
-  document.getElementById('afisc-point-id').value = pontoId;
+/* Reseta todos os campos do modal de fiscalização */
+function _atendFiscResetarCampos(){
   document.getElementById('afisc-data').value = '';
   document.getElementById('afisc-orgao').value = '';
   document.getElementById('afisc-origem').value = '';
   document.getElementById('afisc-id-demanda').value = '';
   document.getElementById('afisc-situacao').value = 'EM_ANDAMENTO';
   document.getElementById('afisc-obs').value = '';
-
   document.getElementById('afisc-chk-auto').checked = false;
   document.getElementById('afisc-bloco-auto').style.display = 'none';
   document.getElementById('afisc-autos-lista').innerHTML = '';
-
   document.getElementById('afisc-chk-bo').checked = false;
   document.getElementById('afisc-bloco-bo').style.display = 'none';
   document.getElementById('afisc-bos-lista').innerHTML = '';
-
   document.getElementById('afisc-chk-ambiental').checked = false;
   document.getElementById('afisc-bloco-ambiental').style.display = 'none';
-  ['afisc-amb-app','afisc-amb-embargo','afisc-amb-poluidora','afisc-amb-mineracao','afisc-amb-desmatamento','afisc-amb-barramento'].forEach(id => {
+  ['afisc-amb-app','afisc-amb-embargo','afisc-amb-poluidora','afisc-amb-mineracao',
+   'afisc-amb-desmatamento','afisc-amb-barramento'].forEach(id => {
     document.getElementById(id).checked = false;
   });
   document.getElementById('afisc-amb-obs').value = '';
-
   document.getElementById('atend-fiscalizacao-erro').style.display = 'none';
+  if(document.getElementById('afisc-fisc-id')) document.getElementById('afisc-fisc-id').value = '';
+}
+
+function atendFiscalizacaoAbrir(pontoId, propertyId){
+  _atendFiscResetarCampos();
+  document.getElementById('afisc-point-id').value = pontoId;
+  document.getElementById('afisc-property-id').value = propertyId || '';
+
+  /* Mostra o passo 0 "Novo local?" apenas quando temos a propriedade */
+  const blocoNovoLocal = document.getElementById('afisc-bloco-novo-local');
+  const blocoCampos = document.getElementById('afisc-bloco-campos');
+  if(propertyId){
+    blocoNovoLocal.style.display = 'block';
+    blocoCampos.style.display = 'none';
+  } else {
+    blocoNovoLocal.style.display = 'none';
+    blocoCampos.style.display = 'block';
+  }
+
   document.getElementById('atend-fiscalizacao-modal').style.display = 'flex';
 }
+
+/* Usuário escolheu "Não — continuar neste ponto" */
+function atendFiscNovoLocalNao(){
+  document.getElementById('afisc-bloco-novo-local').style.display = 'none';
+  document.getElementById('afisc-bloco-campos').style.display = 'block';
+}
+
+/* Usuário escolheu "Sim — criar novo local":
+   fecha o modal de fiscalização, abre o seletor de coordenadas.
+   Quando o ponto for salvo, reabre o modal de fiscalização com o novo point_id. */
+function atendFiscNovoLocal(){
+  const propertyId = parseInt(document.getElementById('afisc-property-id').value);
+  atendFiscalizacaoFechar();
+  /* Sinaliza que, ao salvar o novo ponto, deve abrir fiscalização automaticamente */
+  _atendNovoLocalParaFisc = true;
+  atendNovoPontoNaPropriedade(propertyId);
+}
+
 function atendFiscalizacaoFechar(){ document.getElementById('atend-fiscalizacao-modal').style.display = 'none'; }
 
 function atendFiscToggleSub(tipo){
