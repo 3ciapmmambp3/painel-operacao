@@ -5970,19 +5970,29 @@ function renderCrimes(){
       const isUrb     = d._auditoriaPendente;
       /* Badge auditoria — mostra status completo */
       const auditSalvo  = d._auditoria;
+      const _auditTip = (prefixo) => {
+        const _p = [];
+        if(prefixo) _p.push(prefixo);
+        if(auditSalvo?.tipo)          _p.push('Tipo: ' + auditSalvo.tipo);
+        if(auditSalvo?.justificativa) _p.push('Justif.: ' + auditSalvo.justificativa.substring(0,120) + (auditSalvo.justificativa.length>120?'…':''));
+        if(auditSalvo?.obs)           _p.push('Parecer: ' + auditSalvo.obs.substring(0,120) + (auditSalvo.obs.length>120?'…':''));
+        return _p.join(' | ');
+      };
       const auditBadge  = auditSalvo && auditSalvo.status === 'aguardando'
-          ? `<span class="badge-nat badge-auditoria" title="Solicitação formal enviada — aguardando análise do admin">📋 Aguard. Análise</span>`
+          ? `<span class="badge-nat" style="background:rgba(255,152,0,.18);color:#ff9800;border-color:rgba(255,152,0,.5);font-weight:700;cursor:help;" title="${_auditTip('Aguardando análise do admin')}">⏳ Aguardando</span>`
           : auditSalvo && auditSalvo.status === 'em_analise'
-            ? `<span class="badge-nat" style="background:rgba(66,165,245,.12);color:var(--info);border-color:rgba(66,165,245,.3);" title="Em análise pelo administrador">🔍 Em Análise</span>`
-            : auditSalvo && (auditSalvo.status === 'validada' || auditSalvo.status === 'corrigida')
-              ? `<span class="badge-nat badge-ok" title="${auditSalvo.status==='corrigida'?'Auditoria corrigida na fonte':'Incoerência confirmada e validada'}">✔ ${auditSalvo.status==='corrigida'?'Corrigida':'Validada'}</span>`
-              : auditSalvo && auditSalvo.status === 'indeferida'
-                ? `<span class="badge-nat badge-ok" style="background:rgba(100,100,100,.15);color:#888;border-color:#555;" title="Solicitação indeferida — registro correto">✕ Indeferida</span>`
-                : auditSalvo
-                  ? `<span class="badge-nat badge-auditoria">📋 ${AUDIT_STATUS_LABEL_SHORT[auditSalvo.status]||auditSalvo.status}</span>`
-                  : isUrb
-                    ? `<span class="badge-nat badge-auditoria" title="Sistema detectou área urbana — preencha os campos para solicitar auditoria formal">⚠ Sugestão</span>`
-                    : `<span class="badge-nat badge-ok">✔ OK</span>`;
+            ? `<span class="badge-nat" style="background:rgba(66,165,245,.18);color:#42a5f5;border-color:rgba(66,165,245,.5);font-weight:700;cursor:help;" title="${_auditTip('Em análise pelo administrador')}">🔍 Em Análise</span>`
+            : auditSalvo && auditSalvo.status === 'validada'
+              ? `<span class="badge-nat" style="background:rgba(102,187,106,.18);color:#66bb6a;border-color:rgba(102,187,106,.5);font-weight:700;cursor:help;" title="${_auditTip('Incoerência confirmada e validada')}">✔ Validada</span>`
+              : auditSalvo && auditSalvo.status === 'corrigida'
+                ? `<span class="badge-nat" style="background:rgba(171,71,188,.18);color:#ce93d8;border-color:rgba(171,71,188,.5);font-weight:700;cursor:help;" title="${_auditTip('Auditoria corrigida na fonte')}">✔ Corrigida</span>`
+                : auditSalvo && auditSalvo.status === 'indeferida'
+                  ? `<span class="badge-nat" style="background:rgba(239,83,80,.18);color:#ef5350;border-color:rgba(239,83,80,.5);font-weight:700;cursor:help;" title="${_auditTip('Solicitação indeferida — registro correto')}">✕ Indeferida</span>`
+                  : auditSalvo
+                    ? `<span class="badge-nat badge-auditoria" title="${_auditTip('')}">📋 ${AUDIT_STATUS_LABEL_SHORT[auditSalvo.status]||auditSalvo.status}</span>`
+                    : isUrb
+                      ? `<span class="badge-nat badge-auditoria" title="Sistema detectou área urbana — preencha os campos para solicitar auditoria formal">⚠ Sugestão</span>`
+                      : `<span class="badge-nat badge-ok">✔ OK</span>`;
       const locBadge = d.localizacao.includes('RURAL')
         ? `<span class="badge-nat badge-rural">Rural</span>`
         : d.localizacao.includes('URBAN')
@@ -9924,8 +9934,6 @@ async function rcrRestaurar(bo, id) {
 ══════════════════════════════════ */
 /* Armazena base64 das imagens em memória */
 const _auditImgs = { img1: null, img2: null, img3: null, img4: null };
-/* Rastreia quais imagens foram explicitamente removidas (para não reutilizar URL salva) */
-const _auditImgsRemovidas = new Set();
 
 function previewAuditImg(input, prevId, chkId){
   const file = input.files[0];
@@ -9954,7 +9962,6 @@ function removerAuditImg(inputId, prevId, chkId, nomeId, rmId){
   document.getElementById(chkId).value   = '';
   const key = 'img'+chkId.replace('audit-chk','');
   _auditImgs[key] = null;
-  _auditImgsRemovidas.add(key); /* marca remoção explícita */
   const prevDiv = document.getElementById(prevId);
   prevDiv.querySelector('img').src = '';
   prevDiv.style.display = 'none';
@@ -9963,8 +9970,7 @@ function removerAuditImg(inputId, prevId, chkId, nomeId, rmId){
 }
 
 function limparImgsAuditoria(){
-  _auditImgsRemovidas.clear();
-  ['1','2','3','4'].forEach(n => {
+  ['1','2','3'].forEach(n => {
     _auditImgs['img'+n] = null;
     const inp = document.getElementById('audit-img'+n);
     if(inp) inp.value = '';
@@ -10124,8 +10130,6 @@ function abrirAuditoria(bo){
       const prevEl = document.getElementById('audit-prev'+n);
       const nomeEl = document.getElementById('audit-prev'+n+'-nome');
       const rmEl   = document.getElementById('audit-rm'+n);
-      /* Popula _auditImgs para que salvarAvaliacaoAdmin encontre a URL */
-      _auditImgs['img'+n] = imgUrl || null;
       if(imgUrl && prevEl){
         const img = prevEl.querySelector('img');
         if(img){ img.src = imgUrl; }
@@ -10176,8 +10180,6 @@ function abrirAuditoria(bo){
       const prevEl = document.getElementById('audit-prev'+n);
       const nomeEl = document.getElementById('audit-prev'+n+'-nome');
       const rmEl   = document.getElementById('audit-rm'+n);
-      /* Popula _auditImgs para que salvarSolicitacaoUsuario encontre a URL */
-      _auditImgs['img'+n] = imgUrl || null;
       if(imgUrl && prevEl){
         const img = prevEl.querySelector('img');
         if(img){ img.src = imgUrl; }
@@ -10246,10 +10248,10 @@ function salvarSolicitacaoUsuario(){
     divergencia_outro: divergenciaOutro,
     leg1, leg2, leg3, leg4,
     chk1: !!img1, chk2: !!img2, chk3: !!img3,
-    img1: img1 || (_auditImgsRemovidas.has('img1') ? null : saved.img1 || null),
-    img2: img2 || (_auditImgsRemovidas.has('img2') ? null : saved.img2 || null),
-    img3: img3 || (_auditImgsRemovidas.has('img3') ? null : saved.img3 || null),
-    img4: img4 || (_auditImgsRemovidas.has('img4') ? null : saved.img4 || null),
+    img1: img1 || saved.img1 || null,
+    img2: img2 || saved.img2 || null,
+    img3: img3 || saved.img3 || null,
+    img4: img4 || saved.img4 || null,
     data_solicitacao: saved.data_solicitacao || dataHora,
     obs:              saved.obs  || '',
     resp:             saved.resp || '',
@@ -10350,11 +10352,8 @@ function salvarAvaliacaoAdmin(){
     leg2: document.getElementById('audit-leg2')?.value||saved.leg2||'',
     leg3: document.getElementById('audit-leg3')?.value||saved.leg3||'',
     leg4: document.getElementById('audit-leg4')?.value||saved.leg4||'',
-    chk1: saved.chk1||!!_auditImgs.img1, chk2: saved.chk2||!!_auditImgs.img2, chk3: saved.chk3||!!_auditImgs.img3,
-    img1: _auditImgs.img1 || saved.img1||null,
-    img2: _auditImgs.img2 || saved.img2||null,
-    img3: _auditImgs.img3 || saved.img3||null,
-    img4: _auditImgs.img4 || saved.img4||null,
+    chk1: saved.chk1||false, chk2: saved.chk2||false, chk3: saved.chk3||false,
+    img1: saved.img1||null, img2: saved.img2||null, img3: saved.img3||null, img4: saved.img4||null,
     data_solicitacao:  saved.dataSolicitacao || saved.data_solicitacao || '',
     obs:               document.getElementById('audit-obs').value.trim(),
     resp:              document.getElementById('audit-resp').value.trim(),
@@ -10914,15 +10913,11 @@ async function _sbUpsertAuditoria(obj){
     const b64 = imgs[key];
     if(!b64 || b64.startsWith('http')) continue; /* já é URL ou vazio */
     try{
-      /* Preserva extensão real da imagem */
-      const mime = b64.split(';')[0].split(':')[1] || 'image/jpeg';
-      const ext  = mime.includes('png') ? 'png' : mime.includes('gif') ? 'gif' : mime.includes('webp') ? 'webp' : 'jpg';
-      const path = `auditorias/${obj.bo}/${key}.${ext}`;
-      imgUrls[key] = await _sbUpload(path, b64, mime);
+      const path = `auditorias/${obj.bo}/${key}.jpg`;
+      imgUrls[key] = await _sbUpload(path, b64, 'image/jpeg');
     }catch(e){
       console.warn('[auditorias] upload '+key+' falhou:', e.message);
-      /* Mantém URL existente (se houver) em vez de anular */
-      imgUrls[key] = imgs[key].startsWith('http') ? imgs[key] : null;
+      imgUrls[key] = null; /* remove base64 do payload */
     }
   }
 
@@ -10990,7 +10985,7 @@ async function _sbUpsertAuditoria(obj){
 
   /* Atualiza imagens em memória com URLs do Storage */
   const inMem = auditoriasMap[obj.bo];
-  if(inMem){ inMem.img1 = imgUrls.img1; inMem.img2 = imgUrls.img2; inMem.img3 = imgUrls.img3; inMem.img4 = imgUrls.img4; }
+  if(inMem){ inMem.img1 = imgUrls.img1; inMem.img2 = imgUrls.img2; inMem.img3 = imgUrls.img3; }
 
   return r.json();
 }
