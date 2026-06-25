@@ -1122,7 +1122,7 @@
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
             <span id="cu-hd-badge" class="cu-hd-badge"></span>
             <span id="cu-hd-coord" class="cu-hd-coord"></span>
-            <button class="cu-hd-btn" id="cu-hd-btn-print" onclick="_cuImprimirMapa()" style="display:none;">🖨️ Imprimir</button>
+            <button class="cu-hd-btn" id="cu-hd-btn-print" onclick="_cuImprimirMapa()" style="display:none;">⬇️ Salvar PDF</button>
           </div>
         </div>
         <div id="cu-mapa" style="height:520px;"></div>
@@ -7657,46 +7657,61 @@ function _cuImprimirMapa(){
     ctx.fill();
   };
 
-  /* Aguarda SVGs e então desenha pin por cima */
+  /* Aguarda SVGs renderizarem e então gera o PDF */
   setTimeout(() => {
     _desenharPin();
+
     const ehUrbana = (document.getElementById('cu-hd-badge')?.textContent || '').includes('URBANA');
     const coord    = document.getElementById('cu-hd-coord')?.textContent || '';
-    const badgeBg  = ehUrbana ? '#A0784A' : '#2ea043';
+    const badgeBg  = ehUrbana ? [160,120,74] : [46,160,67];
     const badgeTxt = ehUrbana ? '🏙️ ÁREA URBANA' : '🌳 ÁREA RURAL';
-    const imgData  = canvas.toDataURL('image/png');
+    const imgData  = canvas.toDataURL('image/jpeg', 0.92);
 
-    const win = window.open('', '_blank', 'width=1000,height=700');
-    win.document.write(`<!DOCTYPE html><html><head>
-      <meta charset="UTF-8">
-      <title>Consulta de Coordenadas — 3ª CIA PM MAmb</title>
-      <style>
-        *{margin:0;padding:0;box-sizing:border-box;}
-        html,body{height:100%;background:#fff;font-family:Arial,sans-serif;}
-        body{display:flex;flex-direction:column;height:100vh;}
-        .header{background:#1a1a1a;color:#fff;padding:10px 18px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;flex-shrink:0;}
-        .titulo{font-size:12px;font-weight:700;color:#c9a227;}
-        .badge{background:${badgeBg};color:#fff;font-size:13px;font-weight:800;padding:5px 14px;border-radius:6px;}
-        .coord{font-family:monospace;font-size:12px;color:#ccc;}
-        .mapa{flex:1;overflow:hidden;}
-        .mapa img{width:100%;height:100%;object-fit:cover;display:block;}
-        @media print{
-          @page{margin:0;size:landscape;}
-          body{-webkit-print-color-adjust:exact;print-color-adjust:exact;height:100vh;}
-        }
-      </style>
-    </head><body>
-      <div class="header">
-        <div class="titulo">📍 Consulta de Coordenadas — Área Urbana ou Rural (Malha IBGE 2022)<br><span style="font-size:10px;color:#888;font-weight:400;">3ª Companhia de Polícia Militar de Meio Ambiente — PMMG</span></div>
-        <div style="display:flex;align-items:center;gap:12px;">
-          <span class="badge">${badgeTxt}</span>
-          <span class="coord">${coord}</span>
-        </div>
-      </div>
-      <div class="mapa"><img src="${imgData}"></div>
-    </body></html>`);
-    win.document.close();
-    setTimeout(() => { win.focus(); win.print(); }, 800);
+    /* jsPDF — landscape A4 */
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
+    const PW = doc.internal.pageSize.getWidth();   /* 297mm */
+    const PH = doc.internal.pageSize.getHeight();  /* 210mm */
+    const HDR = 14; /* altura do cabeçalho em mm */
+
+    /* Cabeçalho escuro */
+    doc.setFillColor(26,26,26);
+    doc.rect(0, 0, PW, HDR, 'F');
+
+    /* Título dourado */
+    doc.setFontSize(8);
+    doc.setTextColor(201,162,39);
+    doc.setFont('helvetica','bold');
+    doc.text('Consulta de Coordenadas - Area Urbana ou Rural (Malha IBGE 2022)', 4, 5.5);
+
+    /* Subtítulo */
+    doc.setFontSize(6.5);
+    doc.setTextColor(150,150,150);
+    doc.setFont('helvetica','normal');
+    doc.text('3ª Companhia de Policia Militar de Meio Ambiente - PMMG', 4, 10);
+
+    /* Badge colorido */
+    const badgeX = PW - 90;
+    doc.setFillColor(...badgeBg);
+    doc.roundedRect(badgeX, 3, 38, 8, 2, 2, 'F');
+    doc.setFontSize(8);
+    doc.setTextColor(255,255,255);
+    doc.setFont('helvetica','bold');
+    const badgeLabel = ehUrbana ? 'AREA URBANA' : 'AREA RURAL';
+    doc.text(badgeLabel, badgeX + 19, 8.2, { align:'center' });
+
+    /* Coordenadas */
+    doc.setFontSize(8);
+    doc.setTextColor(200,200,200);
+    doc.setFont('helvetica','normal');
+    doc.text(coord, PW - 4, 8.2, { align:'right' });
+
+    /* Imagem do mapa — ocupa o restante da página */
+    doc.addImage(imgData, 'JPEG', 0, HDR, PW, PH - HDR);
+
+    /* Download direto */
+    const dataStr = new Date().toLocaleDateString('pt-BR').replace(/\//g,'-');
+    doc.save('Consulta_Coordenadas_' + dataStr + '.pdf');
   }, 600);
 }
 
