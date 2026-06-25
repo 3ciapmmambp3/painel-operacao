@@ -9940,6 +9940,7 @@ async function rcrRestaurar(bo, id) {
 ══════════════════════════════════ */
 /* Armazena base64 das imagens em memória */
 const _auditImgs = { img1: null, img2: null, img3: null, img4: null };
+const _auditImgsRemovidas = new Set();
 
 function previewAuditImg(input, prevId, chkId){
   const file = input.files[0];
@@ -9968,6 +9969,7 @@ function removerAuditImg(inputId, prevId, chkId, nomeId, rmId){
   document.getElementById(chkId).value   = '';
   const key = 'img'+chkId.replace('audit-chk','');
   _auditImgs[key] = null;
+  _auditImgsRemovidas.add(key);
   const prevDiv = document.getElementById(prevId);
   prevDiv.querySelector('img').src = '';
   prevDiv.style.display = 'none';
@@ -9976,7 +9978,8 @@ function removerAuditImg(inputId, prevId, chkId, nomeId, rmId){
 }
 
 function limparImgsAuditoria(){
-  ['1','2','3'].forEach(n => {
+  _auditImgsRemovidas.clear();
+  ['1','2','3','4'].forEach(n => {
     _auditImgs['img'+n] = null;
     const inp = document.getElementById('audit-img'+n);
     if(inp) inp.value = '';
@@ -10168,6 +10171,7 @@ function abrirAuditoria(bo){
       const prevEl = document.getElementById('audit-prev'+n);
       const nomeEl = document.getElementById('audit-prev'+n+'-nome');
       const rmEl   = document.getElementById('audit-rm'+n);
+      _auditImgs['img'+n] = imgUrl || null;
       if(imgUrl && prevEl){
         const img = prevEl.querySelector('img');
         if(img){ img.src = imgUrl; }
@@ -10218,6 +10222,7 @@ function abrirAuditoria(bo){
       const prevEl = document.getElementById('audit-prev'+n);
       const nomeEl = document.getElementById('audit-prev'+n+'-nome');
       const rmEl   = document.getElementById('audit-rm'+n);
+      _auditImgs['img'+n] = imgUrl || null;
       if(imgUrl && prevEl){
         const img = prevEl.querySelector('img');
         if(img){ img.src = imgUrl; }
@@ -10286,10 +10291,10 @@ function salvarSolicitacaoUsuario(){
     divergencia_outro: divergenciaOutro,
     leg1, leg2, leg3, leg4,
     chk1: !!img1, chk2: !!img2, chk3: !!img3,
-    img1: img1 || saved.img1 || null,
-    img2: img2 || saved.img2 || null,
-    img3: img3 || saved.img3 || null,
-    img4: img4 || saved.img4 || null,
+    img1: img1 || (_auditImgsRemovidas.has('img1') ? null : saved.img1||null),
+    img2: img2 || (_auditImgsRemovidas.has('img2') ? null : saved.img2||null),
+    img3: img3 || (_auditImgsRemovidas.has('img3') ? null : saved.img3||null),
+    img4: img4 || (_auditImgsRemovidas.has('img4') ? null : saved.img4||null),
     data_solicitacao: saved.data_solicitacao || dataHora,
     obs:              saved.obs  || '',
     resp:             saved.resp || '',
@@ -10390,8 +10395,11 @@ function salvarAvaliacaoAdmin(){
     leg2: document.getElementById('audit-leg2')?.value||saved.leg2||'',
     leg3: document.getElementById('audit-leg3')?.value||saved.leg3||'',
     leg4: document.getElementById('audit-leg4')?.value||saved.leg4||'',
-    chk1: saved.chk1||false, chk2: saved.chk2||false, chk3: saved.chk3||false,
-    img1: saved.img1||null, img2: saved.img2||null, img3: saved.img3||null, img4: saved.img4||null,
+    chk1: !!(_auditImgs.img1||saved.img1), chk2: !!(_auditImgs.img2||saved.img2), chk3: !!(_auditImgs.img3||saved.img3),
+    img1: _auditImgs.img1 || (_auditImgsRemovidas.has('img1') ? null : saved.img1||null),
+    img2: _auditImgs.img2 || (_auditImgsRemovidas.has('img2') ? null : saved.img2||null),
+    img3: _auditImgs.img3 || (_auditImgsRemovidas.has('img3') ? null : saved.img3||null),
+    img4: _auditImgs.img4 || (_auditImgsRemovidas.has('img4') ? null : saved.img4||null),
     data_solicitacao:  saved.dataSolicitacao || saved.data_solicitacao || '',
     obs:               document.getElementById('audit-obs').value.trim(),
     resp:              document.getElementById('audit-resp').value.trim(),
@@ -10951,11 +10959,13 @@ async function _sbUpsertAuditoria(obj){
     const b64 = imgs[key];
     if(!b64 || b64.startsWith('http')) continue; /* já é URL ou vazio */
     try{
-      const path = `auditorias/${obj.bo}/${key}.jpg`;
-      imgUrls[key] = await _sbUpload(path, b64, 'image/jpeg');
+      const _mime = b64.split(';')[0].split(':')[1] || 'image/jpeg';
+      const _ext  = _mime.includes('png')?'png':_mime.includes('gif')?'gif':_mime.includes('webp')?'webp':'jpg';
+      const path = `auditorias/${obj.bo}/${key}.${_ext}`;
+      imgUrls[key] = await _sbUpload(path, b64, _mime);
     }catch(e){
       console.warn('[auditorias] upload '+key+' falhou:', e.message);
-      imgUrls[key] = null; /* remove base64 do payload */
+      imgUrls[key] = imgs[key]?.startsWith('http') ? imgs[key] : null; /* preserva URL existente */
     }
   }
 
