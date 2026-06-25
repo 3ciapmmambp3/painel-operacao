@@ -17,6 +17,7 @@
   <script src="assets/kml_data.js"></script>
   <script src="assets/ibge_data.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
   <style>
     body{display:flex;flex-direction:column;min-height:100vh;}
@@ -7582,110 +7583,75 @@ function _cuImprimirMapa(){
   const mapaDiv = document.getElementById('cu-mapa');
   if(!mapaDiv || !_cuMarcador) return;
 
-  const W = mapaDiv.offsetWidth;
-  const H = mapaDiv.offsetHeight;
+  const ehUrbana   = (document.getElementById('cu-hd-badge')?.textContent||'').includes('URBANA');
+  const coord      = document.getElementById('cu-hd-coord')?.textContent||'';
+  const badgeBg    = ehUrbana ? [160,120,74] : [46,160,67];
+  const badgeLabel = ehUrbana ? 'AREA URBANA' : 'AREA RURAL';
 
-  /* Canvas tamanho exato do div do mapa */
-  const canvas = document.createElement('canvas');
-  canvas.width  = W;
-  canvas.height = H;
-  const ctx = canvas.getContext('2d');
-
-  /* Fundo */
-  ctx.fillStyle = '#f8f5f0';
-  ctx.fillRect(0, 0, W, H);
-
-  /* Pane principal do Leaflet — sua posição offset é a origem de tudo */
-  const mapPane = mapaDiv.querySelector('.leaflet-map-pane');
-  const paneOX  = mapPane ? mapPane.offsetLeft : 0;
-  const paneOY  = mapPane ? mapPane.offsetTop  : 0;
-
-  /* Tiles: usa offsetParent chain para posição relativa ao mapa */
-  const _offsetRelativo = (el) => {
-    let x = 0, y = 0, cur = el;
-    while(cur && cur !== mapaDiv){ x += cur.offsetLeft; y += cur.offsetTop; cur = cur.offsetParent; }
-    return {x, y};
+  /* Converte decimal para GMS para o nome do arquivo */
+  const _decParaGms = (val, isLat) => {
+    const hem  = isLat ? (val<0?'S':'N') : (val<0?'W':'E');
+    const abs  = Math.abs(val);
+    const grau = Math.floor(abs);
+    const minF = (abs - grau) * 60;
+    const min  = Math.floor(minF);
+    const seg  = ((minF - min) * 60).toFixed(1);
+    return grau + 'g' + String(min).padStart(2,'0') + 'm' + String(seg).padStart(4,'0') + 's' + hem;
   };
+  const partes   = coord.split(',').map(s=>parseFloat(s.trim()));
+  const nomeGms  = _decParaGms(partes[0],true) + '_' + _decParaGms(partes[1],false);
+  const dataStr  = new Date().toLocaleDateString('pt-BR').replace(/[/]/g,'-');
+  const nomeArq  = 'Consulta_' + nomeGms + '_' + dataStr + '.pdf';
 
-  /* Desenha tiles usando transform do tile-pane */
-  const tilePane = mapaDiv.querySelector('.leaflet-tile-pane');
-  if(tilePane){
-    const style = window.getComputedStyle(tilePane);
-    const mat   = new DOMMatrix(style.transform);
-    tilePane.querySelectorAll('canvas').forEach(c => {
-      try{
-        const off = _offsetRelativo(c);
-        ctx.drawImage(c, paneOX + mat.m41 + off.x, paneOY + mat.m42 + off.y, c.offsetWidth, c.offsetHeight);
-      }catch(e){}
-    });
-  }
-
-  /* SVG overlays via transform do overlay-pane */
-  const overlayPane = mapaDiv.querySelector('.leaflet-overlay-pane');
-  if(overlayPane){
-    const style = window.getComputedStyle(overlayPane);
-    const mat   = new DOMMatrix(style.transform);
-    overlayPane.querySelectorAll('svg').forEach(el => {
-      try{
-        const off = _offsetRelativo(el);
-        const svgClone = el.cloneNode(true);
-        svgClone.setAttribute('xmlns','http://www.w3.org/2000/svg');
-        const sw = el.offsetWidth  || parseFloat(el.getAttribute('width'))  || W;
-        const sh = el.offsetHeight || parseFloat(el.getAttribute('height')) || H;
-        const xml  = new XMLSerializer().serializeToString(svgClone);
-        const blob = new Blob([xml],{type:'image/svg+xml;charset=utf-8'});
-        const url  = URL.createObjectURL(blob);
-        const img  = new Image();
-        const dx   = paneOX + mat.m41 + off.x;
-        const dy   = paneOY + mat.m42 + off.y;
-        img.onload = () => { ctx.drawImage(img, dx, dy, sw, sh); URL.revokeObjectURL(url); };
-        img.src = url;
-      }catch(e){}
-    });
-  }
-
-  /* Pin: latLngToContainerPoint retorna px relativo ao container do mapa */
+  /* Desenha pin no mapa antes de capturar */
+  const W  = mapaDiv.offsetWidth;
+  const H  = mapaDiv.offsetHeight;
+  const pinCanvas = document.createElement('canvas');
+  pinCanvas.width  = W;
+  pinCanvas.height = H;
+  pinCanvas.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;z-index:999;';
+  const ctx = pinCanvas.getContext('2d');
   const markerPx = _cuMapaLeaflet.latLngToContainerPoint(_cuMarcador.getLatLng());
-  const px = markerPx.x;
-  const py = markerPx.y;
+  const px = markerPx.x, py = markerPx.y;
+  const s  = 20;
+  /* sombra oval */
+  ctx.beginPath();
+  ctx.ellipse(px, py+s*0.18, s*0.4, s*0.13, 0, 0, Math.PI*2);
+  ctx.fillStyle='rgba(0,0,0,0.22)'; ctx.fill();
+  /* ponta */
+  ctx.beginPath();
+  ctx.moveTo(px-s*0.52, py-s*0.28);
+  ctx.quadraticCurveTo(px, py+s*0.9, px, py+s*0.9);
+  ctx.quadraticCurveTo(px, py+s*0.9, px+s*0.52, py-s*0.28);
+  ctx.fillStyle='#c62828'; ctx.fill();
+  /* corpo */
+  ctx.save();
+  ctx.shadowColor='rgba(0,0,0,0.4)'; ctx.shadowBlur=7; ctx.shadowOffsetY=2;
+  ctx.beginPath(); ctx.arc(px, py-s, s, 0, Math.PI*2);
+  ctx.fillStyle='#e53935'; ctx.fill();
+  ctx.restore();
+  /* círculo branco */
+  ctx.beginPath(); ctx.arc(px, py-s, s*0.4, 0, Math.PI*2);
+  ctx.fillStyle='#fff'; ctx.fill();
 
-  const _desenharPin = () => {
-    const s = 18;
-    ctx.save();
-    ctx.beginPath();
-    ctx.ellipse(px, py + s * 0.18, s * 0.4, s * 0.13, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.22)';
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(px - s*0.52, py - s*0.28);
-    ctx.quadraticCurveTo(px, py + s*0.9, px, py + s*0.9);
-    ctx.quadraticCurveTo(px, py + s*0.9, px + s*0.52, py - s*0.28);
-    ctx.fillStyle = '#c62828';
-    ctx.fill();
-    ctx.shadowColor = 'rgba(0,0,0,0.4)';
-    ctx.shadowBlur = 7;
-    ctx.shadowOffsetY = 2;
-    ctx.beginPath();
-    ctx.arc(px, py - s, s, 0, Math.PI*2);
-    ctx.fillStyle = '#e53935';
-    ctx.fill();
-    ctx.restore();
-    ctx.beginPath();
-    ctx.arc(px, py - s, s*0.4, 0, Math.PI*2);
-    ctx.fillStyle = '#fff';
-    ctx.fill();
-  };
+  /* Injeta canvas do pin sobre o mapa temporariamente */
+  mapaDiv.style.position = 'relative';
+  mapaDiv.appendChild(pinCanvas);
 
-  /* Aguarda SVGs assíncronos e gera PDF */
-  setTimeout(() => {
-    _desenharPin();
+  /* html2canvas captura o mapa completo com tiles */
+  html2canvas(mapaDiv, {
+    useCORS: true,
+    allowTaint: true,
+    scale: 1,
+    width:  W,
+    height: H,
+    logging: false,
+  }).then(capturedCanvas => {
+    mapaDiv.removeChild(pinCanvas);
 
-    const ehUrbana   = (document.getElementById('cu-hd-badge')?.textContent||'').includes('URBANA');
-    const coord      = document.getElementById('cu-hd-coord')?.textContent||'';
-    const badgeBg    = ehUrbana ? [160,120,74] : [46,160,67];
-    const badgeLabel = ehUrbana ? 'AREA URBANA' : 'AREA RURAL';
-
-    const imgData = canvas.toDataURL('image/jpeg', 0.94);
+    const imgData = capturedCanvas.toDataURL('image/jpeg', 0.93);
+    const imgW    = capturedCanvas.width;
+    const imgH    = capturedCanvas.height;
 
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
@@ -7696,41 +7662,32 @@ function _cuImprimirMapa(){
     /* Cabeçalho */
     doc.setFillColor(26,26,26);
     doc.rect(0, 0, PW, HDR, 'F');
-    doc.setFontSize(8.5);
-    doc.setTextColor(201,162,39);
-    doc.setFont('helvetica','bold');
+    doc.setFontSize(8.5); doc.setTextColor(201,162,39); doc.setFont('helvetica','bold');
     doc.text('Consulta de Coordenadas - Area Urbana ou Rural (Malha IBGE 2022)', 4, 6);
-    doc.setFontSize(6.5);
-    doc.setTextColor(150,150,150);
-    doc.setFont('helvetica','normal');
+    doc.setFontSize(6.5); doc.setTextColor(150,150,150); doc.setFont('helvetica','normal');
     doc.text('3 Companhia de Policia Militar de Meio Ambiente - PMMG', 4, 11);
 
     /* Badge */
-    const bW = 36, bH = 8, bX = PW - 4 - bW;
+    const bW=36, bH=8, bX=PW-4-bW;
     doc.setFillColor(...badgeBg);
     doc.roundedRect(bX, 3.5, bW, bH, 2, 2, 'F');
-    doc.setFontSize(8);
-    doc.setTextColor(255,255,255);
-    doc.setFont('helvetica','bold');
-    doc.text(badgeLabel, bX + bW/2, 8.8, {align:'center'});
-    doc.setFontSize(8);
-    doc.setTextColor(200,200,200);
-    doc.setFont('helvetica','normal');
-    doc.text(coord, bX - 3, 8.8, {align:'right'});
+    doc.setFontSize(8); doc.setTextColor(255,255,255); doc.setFont('helvetica','bold');
+    doc.text(badgeLabel, bX+bW/2, 8.8, {align:'center'});
+    doc.setFontSize(8); doc.setTextColor(200,200,200); doc.setFont('helvetica','normal');
+    doc.text(coord, bX-3, 8.8, {align:'right'});
 
-    /* Imagem ocupa toda a área abaixo do cabeçalho, sem distorção */
-    const areaW = PW;
-    const areaH = PH - HDR;
-    const ratio = Math.min(areaW / W, areaH / H);
-    const iW = W * ratio;
-    const iH = H * ratio;
-    const iX = (areaW - iW) / 2;
-    const iY = HDR + (areaH - iH) / 2;
+    /* Imagem proporcional centralizada */
+    const areaW = PW, areaH = PH-HDR;
+    const ratio = Math.min(areaW/imgW, areaH/imgH);
+    const iW=imgW*ratio, iH=imgH*ratio;
+    const iX=(areaW-iW)/2, iY=HDR+(areaH-iH)/2;
     doc.addImage(imgData, 'JPEG', iX, iY, iW, iH);
 
-    const dataStr = new Date().toLocaleDateString('pt-BR').replace(/[/]/g,'-');
-    doc.save('Consulta_Coordenadas_' + coord.replace(/[, ]/g,'_').replace(/__/g,'_') + '_' + dataStr + '.pdf');
-  }, 700);
+    doc.save(nomeArq);
+  }).catch(e => {
+    mapaDiv.removeChild(pinCanvas);
+    alert('Erro ao capturar mapa: ' + e.message);
+  });
 }
 
 function consultaUrbRurLimpar(){
