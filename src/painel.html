@@ -7582,24 +7582,28 @@ function _cuImprimirMapa(){
   const mapaDiv = document.getElementById('cu-mapa');
   if(!mapaDiv || !_cuMarcador) return;
 
+  const dpr     = window.devicePixelRatio || 1;
   const mapRect = mapaDiv.getBoundingClientRect();
   const W = mapaDiv.offsetWidth;
   const H = mapaDiv.offsetHeight;
+
+  /* Canvas em resolução real (sem scale) — evita distorção de posição do pin */
   const canvas = document.createElement('canvas');
-  canvas.width  = W * window.devicePixelRatio;
-  canvas.height = H * window.devicePixelRatio;
+  canvas.width  = W;
+  canvas.height = H;
   const ctx = canvas.getContext('2d');
-  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
 
   /* Fundo */
   ctx.fillStyle = '#f8f5f0';
   ctx.fillRect(0, 0, W, H);
 
-  /* Tiles do Leaflet */
+  /* Tiles do Leaflet — corrige coordenadas pelo dpr */
   mapaDiv.querySelectorAll('.leaflet-tile-pane canvas, .leaflet-layer canvas').forEach(c => {
     try{
       const r = c.getBoundingClientRect();
-      ctx.drawImage(c, r.left - mapRect.left, r.top - mapRect.top, r.width, r.height);
+      ctx.drawImage(c,
+        r.left - mapRect.left, r.top - mapRect.top,
+        r.width, r.height);
     }catch(e){}
   });
 
@@ -7610,106 +7614,112 @@ function _cuImprimirMapa(){
       const svgClone = el.cloneNode(true);
       svgClone.setAttribute('xmlns','http://www.w3.org/2000/svg');
       const xml = new XMLSerializer().serializeToString(svgClone);
-      const svgBlob = new Blob([xml],{type:'image/svg+xml;charset=utf-8'});
-      const url = URL.createObjectURL(svgBlob);
-      const img = new Image();
-      img.onload = () => { ctx.drawImage(img, r.left-mapRect.left, r.top-mapRect.top, r.width, r.height); URL.revokeObjectURL(url); };
+      const blob = new Blob([xml],{type:'image/svg+xml;charset=utf-8'});
+      const url  = URL.createObjectURL(blob);
+      const img  = new Image();
+      img.onload = () => {
+        ctx.drawImage(img, r.left-mapRect.left, r.top-mapRect.top, r.width, r.height);
+        URL.revokeObjectURL(url);
+      };
       img.src = url;
     }catch(e){}
   });
 
-  /* Ponto do marcador no canvas — calcula pixel position via Leaflet */
-  const markerLatLng = _cuMarcador.getLatLng();
-  const markerPx = _cuMapaLeaflet.latLngToContainerPoint(markerLatLng);
+  /* Posição do pin — latLngToContainerPoint já retorna coordenadas CSS (independente do dpr) */
+  const markerPx = _cuMapaLeaflet.latLngToContainerPoint(_cuMarcador.getLatLng());
   const px = markerPx.x;
   const py = markerPx.y;
 
-  /* Desenha pin estilo Google Maps diretamente no canvas */
   const _desenharPin = () => {
-    const s = 22; /* raio do círculo do pin */
-    /* Sombra */
+    const s = 18;
     ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.45)';
-    ctx.shadowBlur = 8;
-    ctx.shadowOffsetY = 3;
-    /* Corpo do pin (vermelho) */
+    /* Sombra oval no chão */
+    ctx.beginPath();
+    ctx.ellipse(px, py + s * 0.15, s * 0.45, s * 0.15, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fill();
+    /* Ponta */
+    ctx.beginPath();
+    ctx.moveTo(px - s * 0.55, py - s * 0.3);
+    ctx.quadraticCurveTo(px, py + s * 0.85, px, py + s * 0.85);
+    ctx.quadraticCurveTo(px, py + s * 0.85, px + s * 0.55, py - s * 0.3);
+    ctx.fillStyle = '#c62828';
+    ctx.fill();
+    /* Corpo circular */
+    ctx.shadowColor = 'rgba(0,0,0,0.4)';
+    ctx.shadowBlur = 6;
+    ctx.shadowOffsetY = 2;
     ctx.beginPath();
     ctx.arc(px, py - s, s, 0, Math.PI * 2);
     ctx.fillStyle = '#e53935';
     ctx.fill();
-    /* Ponta do pin */
-    ctx.beginPath();
-    ctx.moveTo(px - s * 0.6, py - s * 0.4);
-    ctx.quadraticCurveTo(px, py + s * 0.8, px, py + s * 1.1);
-    ctx.quadraticCurveTo(px, py + s * 0.8, px + s * 0.6, py - s * 0.4);
-    ctx.fillStyle = '#c62828';
-    ctx.fill();
     ctx.restore();
     /* Círculo branco interno */
     ctx.beginPath();
-    ctx.arc(px, py - s, s * 0.42, 0, Math.PI * 2);
+    ctx.arc(px, py - s, s * 0.4, 0, Math.PI * 2);
     ctx.fillStyle = '#fff';
-    ctx.fill();
-    /* Sombra oval no chão */
-    ctx.beginPath();
-    ctx.ellipse(px, py + s * 1.15, s * 0.5, s * 0.18, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.2)';
     ctx.fill();
   };
 
-  /* Aguarda SVGs renderizarem e então gera o PDF */
   setTimeout(() => {
     _desenharPin();
 
     const ehUrbana = (document.getElementById('cu-hd-badge')?.textContent || '').includes('URBANA');
     const coord    = document.getElementById('cu-hd-coord')?.textContent || '';
     const badgeBg  = ehUrbana ? [160,120,74] : [46,160,67];
-    const badgeTxt = ehUrbana ? '🏙️ ÁREA URBANA' : '🌳 ÁREA RURAL';
-    const imgData  = canvas.toDataURL('image/jpeg', 0.92);
+    const badgeLabel = ehUrbana ? 'AREA URBANA' : 'AREA RURAL';
 
-    /* jsPDF — landscape A4 */
+    /* Converte para JPEG mantendo proporção real do canvas */
+    const imgData = canvas.toDataURL('image/jpeg', 0.93);
+    const imgW = canvas.width;
+    const imgH = canvas.height;
+
+    /* jsPDF A4 landscape */
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
-    const PW = doc.internal.pageSize.getWidth();   /* 297mm */
-    const PH = doc.internal.pageSize.getHeight();  /* 210mm */
-    const HDR = 14; /* altura do cabeçalho em mm */
+    const PW  = doc.internal.pageSize.getWidth();   /* 297 mm */
+    const PH  = doc.internal.pageSize.getHeight();  /* 210 mm */
+    const HDR = 15;
 
-    /* Cabeçalho escuro */
+    /* Cabeçalho */
     doc.setFillColor(26,26,26);
     doc.rect(0, 0, PW, HDR, 'F');
 
-    /* Título dourado */
-    doc.setFontSize(8);
+    doc.setFontSize(8.5);
     doc.setTextColor(201,162,39);
     doc.setFont('helvetica','bold');
-    doc.text('Consulta de Coordenadas - Area Urbana ou Rural (Malha IBGE 2022)', 4, 5.5);
+    doc.text('Consulta de Coordenadas - Area Urbana ou Rural (Malha IBGE 2022)', 4, 6);
 
-    /* Subtítulo */
     doc.setFontSize(6.5);
     doc.setTextColor(150,150,150);
     doc.setFont('helvetica','normal');
-    doc.text('3ª Companhia de Policia Militar de Meio Ambiente - PMMG', 4, 10);
+    doc.text('3 Companhia de Policia Militar de Meio Ambiente - PMMG', 4, 11);
 
-    /* Badge colorido */
-    const badgeX = PW - 90;
+    /* Badge */
+    const bW = 36, bH = 8, bX = PW - 4 - bW;
     doc.setFillColor(...badgeBg);
-    doc.roundedRect(badgeX, 3, 38, 8, 2, 2, 'F');
+    doc.roundedRect(bX, 3.5, bW, bH, 2, 2, 'F');
     doc.setFontSize(8);
     doc.setTextColor(255,255,255);
     doc.setFont('helvetica','bold');
-    const badgeLabel = ehUrbana ? 'AREA URBANA' : 'AREA RURAL';
-    doc.text(badgeLabel, badgeX + 19, 8.2, { align:'center' });
+    doc.text(badgeLabel, bX + bW/2, 8.8, { align:'center' });
 
-    /* Coordenadas */
+    /* Coordenadas à esquerda do badge */
     doc.setFontSize(8);
     doc.setTextColor(200,200,200);
     doc.setFont('helvetica','normal');
-    doc.text(coord, PW - 4, 8.2, { align:'right' });
+    doc.text(coord, bX - 3, 8.8, { align:'right' });
 
-    /* Imagem do mapa — ocupa o restante da página */
-    doc.addImage(imgData, 'JPEG', 0, HDR, PW, PH - HDR);
+    /* Imagem — centralizada, sem distorção, proporção original */
+    const areaW = PW;
+    const areaH = PH - HDR;
+    const ratio = Math.min(areaW / imgW, areaH / imgH);
+    const iW = imgW * ratio;
+    const iH = imgH * ratio;
+    const iX = (areaW - iW) / 2;
+    const iY = HDR + (areaH - iH) / 2;
+    doc.addImage(imgData, 'JPEG', iX, iY, iW, iH);
 
-    /* Download direto */
     const dataStr = new Date().toLocaleDateString('pt-BR').replace(/\//g,'-');
     doc.save('Consulta_Coordenadas_' + dataStr + '.pdf');
   }, 600);
