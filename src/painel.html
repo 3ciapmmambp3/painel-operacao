@@ -7582,12 +7582,10 @@ function _cuImprimirMapa(){
   const mapaDiv = document.getElementById('cu-mapa');
   if(!mapaDiv || !_cuMarcador) return;
 
-  const dpr     = window.devicePixelRatio || 1;
-  const mapRect = mapaDiv.getBoundingClientRect();
   const W = mapaDiv.offsetWidth;
   const H = mapaDiv.offsetHeight;
 
-  /* Canvas em resolução real (sem scale) — evita distorção de posição do pin */
+  /* Canvas tamanho exato do div do mapa */
   const canvas = document.createElement('canvas');
   canvas.width  = W;
   canvas.height = H;
@@ -7597,35 +7595,56 @@ function _cuImprimirMapa(){
   ctx.fillStyle = '#f8f5f0';
   ctx.fillRect(0, 0, W, H);
 
-  /* Tiles do Leaflet — corrige coordenadas pelo dpr */
-  mapaDiv.querySelectorAll('.leaflet-tile-pane canvas, .leaflet-layer canvas').forEach(c => {
-    try{
-      const r = c.getBoundingClientRect();
-      ctx.drawImage(c,
-        r.left - mapRect.left, r.top - mapRect.top,
-        r.width, r.height);
-    }catch(e){}
-  });
+  /* Pane principal do Leaflet — sua posição offset é a origem de tudo */
+  const mapPane = mapaDiv.querySelector('.leaflet-map-pane');
+  const paneOX  = mapPane ? mapPane.offsetLeft : 0;
+  const paneOY  = mapPane ? mapPane.offsetTop  : 0;
 
-  /* SVG overlays (polígonos IBGE, círculo de proximidade) */
-  mapaDiv.querySelectorAll('.leaflet-overlay-pane svg').forEach(el => {
-    try{
-      const r = el.getBoundingClientRect();
-      const svgClone = el.cloneNode(true);
-      svgClone.setAttribute('xmlns','http://www.w3.org/2000/svg');
-      const xml = new XMLSerializer().serializeToString(svgClone);
-      const blob = new Blob([xml],{type:'image/svg+xml;charset=utf-8'});
-      const url  = URL.createObjectURL(blob);
-      const img  = new Image();
-      img.onload = () => {
-        ctx.drawImage(img, r.left-mapRect.left, r.top-mapRect.top, r.width, r.height);
-        URL.revokeObjectURL(url);
-      };
-      img.src = url;
-    }catch(e){}
-  });
+  /* Tiles: usa offsetParent chain para posição relativa ao mapa */
+  const _offsetRelativo = (el) => {
+    let x = 0, y = 0, cur = el;
+    while(cur && cur !== mapaDiv){ x += cur.offsetLeft; y += cur.offsetTop; cur = cur.offsetParent; }
+    return {x, y};
+  };
 
-  /* Posição do pin — latLngToContainerPoint já retorna coordenadas CSS (independente do dpr) */
+  /* Desenha tiles usando transform do tile-pane */
+  const tilePane = mapaDiv.querySelector('.leaflet-tile-pane');
+  if(tilePane){
+    const style = window.getComputedStyle(tilePane);
+    const mat   = new DOMMatrix(style.transform);
+    tilePane.querySelectorAll('canvas').forEach(c => {
+      try{
+        const off = _offsetRelativo(c);
+        ctx.drawImage(c, paneOX + mat.m41 + off.x, paneOY + mat.m42 + off.y, c.offsetWidth, c.offsetHeight);
+      }catch(e){}
+    });
+  }
+
+  /* SVG overlays via transform do overlay-pane */
+  const overlayPane = mapaDiv.querySelector('.leaflet-overlay-pane');
+  if(overlayPane){
+    const style = window.getComputedStyle(overlayPane);
+    const mat   = new DOMMatrix(style.transform);
+    overlayPane.querySelectorAll('svg').forEach(el => {
+      try{
+        const off = _offsetRelativo(el);
+        const svgClone = el.cloneNode(true);
+        svgClone.setAttribute('xmlns','http://www.w3.org/2000/svg');
+        const sw = el.offsetWidth  || parseFloat(el.getAttribute('width'))  || W;
+        const sh = el.offsetHeight || parseFloat(el.getAttribute('height')) || H;
+        const xml  = new XMLSerializer().serializeToString(svgClone);
+        const blob = new Blob([xml],{type:'image/svg+xml;charset=utf-8'});
+        const url  = URL.createObjectURL(blob);
+        const img  = new Image();
+        const dx   = paneOX + mat.m41 + off.x;
+        const dy   = paneOY + mat.m42 + off.y;
+        img.onload = () => { ctx.drawImage(img, dx, dy, sw, sh); URL.revokeObjectURL(url); };
+        img.src = url;
+      }catch(e){}
+    });
+  }
+
+  /* Pin: latLngToContainerPoint retorna px relativo ao container do mapa */
   const markerPx = _cuMapaLeaflet.latLngToContainerPoint(_cuMarcador.getLatLng());
   const px = markerPx.x;
   const py = markerPx.y;
@@ -7633,63 +7652,54 @@ function _cuImprimirMapa(){
   const _desenharPin = () => {
     const s = 18;
     ctx.save();
-    /* Sombra oval no chão */
     ctx.beginPath();
-    ctx.ellipse(px, py + s * 0.15, s * 0.45, s * 0.15, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.ellipse(px, py + s * 0.18, s * 0.4, s * 0.13, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
     ctx.fill();
-    /* Ponta */
     ctx.beginPath();
-    ctx.moveTo(px - s * 0.55, py - s * 0.3);
-    ctx.quadraticCurveTo(px, py + s * 0.85, px, py + s * 0.85);
-    ctx.quadraticCurveTo(px, py + s * 0.85, px + s * 0.55, py - s * 0.3);
+    ctx.moveTo(px - s*0.52, py - s*0.28);
+    ctx.quadraticCurveTo(px, py + s*0.9, px, py + s*0.9);
+    ctx.quadraticCurveTo(px, py + s*0.9, px + s*0.52, py - s*0.28);
     ctx.fillStyle = '#c62828';
     ctx.fill();
-    /* Corpo circular */
     ctx.shadowColor = 'rgba(0,0,0,0.4)';
-    ctx.shadowBlur = 6;
+    ctx.shadowBlur = 7;
     ctx.shadowOffsetY = 2;
     ctx.beginPath();
-    ctx.arc(px, py - s, s, 0, Math.PI * 2);
+    ctx.arc(px, py - s, s, 0, Math.PI*2);
     ctx.fillStyle = '#e53935';
     ctx.fill();
     ctx.restore();
-    /* Círculo branco interno */
     ctx.beginPath();
-    ctx.arc(px, py - s, s * 0.4, 0, Math.PI * 2);
+    ctx.arc(px, py - s, s*0.4, 0, Math.PI*2);
     ctx.fillStyle = '#fff';
     ctx.fill();
   };
 
+  /* Aguarda SVGs assíncronos e gera PDF */
   setTimeout(() => {
     _desenharPin();
 
-    const ehUrbana = (document.getElementById('cu-hd-badge')?.textContent || '').includes('URBANA');
-    const coord    = document.getElementById('cu-hd-coord')?.textContent || '';
-    const badgeBg  = ehUrbana ? [160,120,74] : [46,160,67];
+    const ehUrbana   = (document.getElementById('cu-hd-badge')?.textContent||'').includes('URBANA');
+    const coord      = document.getElementById('cu-hd-coord')?.textContent||'';
+    const badgeBg    = ehUrbana ? [160,120,74] : [46,160,67];
     const badgeLabel = ehUrbana ? 'AREA URBANA' : 'AREA RURAL';
 
-    /* Converte para JPEG mantendo proporção real do canvas */
-    const imgData = canvas.toDataURL('image/jpeg', 0.93);
-    const imgW = canvas.width;
-    const imgH = canvas.height;
+    const imgData = canvas.toDataURL('image/jpeg', 0.94);
 
-    /* jsPDF A4 landscape */
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
-    const PW  = doc.internal.pageSize.getWidth();   /* 297 mm */
-    const PH  = doc.internal.pageSize.getHeight();  /* 210 mm */
+    const PW  = doc.internal.pageSize.getWidth();
+    const PH  = doc.internal.pageSize.getHeight();
     const HDR = 15;
 
     /* Cabeçalho */
     doc.setFillColor(26,26,26);
     doc.rect(0, 0, PW, HDR, 'F');
-
     doc.setFontSize(8.5);
     doc.setTextColor(201,162,39);
     doc.setFont('helvetica','bold');
     doc.text('Consulta de Coordenadas - Area Urbana ou Rural (Malha IBGE 2022)', 4, 6);
-
     doc.setFontSize(6.5);
     doc.setTextColor(150,150,150);
     doc.setFont('helvetica','normal');
@@ -7702,27 +7712,25 @@ function _cuImprimirMapa(){
     doc.setFontSize(8);
     doc.setTextColor(255,255,255);
     doc.setFont('helvetica','bold');
-    doc.text(badgeLabel, bX + bW/2, 8.8, { align:'center' });
-
-    /* Coordenadas à esquerda do badge */
+    doc.text(badgeLabel, bX + bW/2, 8.8, {align:'center'});
     doc.setFontSize(8);
     doc.setTextColor(200,200,200);
     doc.setFont('helvetica','normal');
-    doc.text(coord, bX - 3, 8.8, { align:'right' });
+    doc.text(coord, bX - 3, 8.8, {align:'right'});
 
-    /* Imagem — centralizada, sem distorção, proporção original */
+    /* Imagem ocupa toda a área abaixo do cabeçalho, sem distorção */
     const areaW = PW;
     const areaH = PH - HDR;
-    const ratio = Math.min(areaW / imgW, areaH / imgH);
-    const iW = imgW * ratio;
-    const iH = imgH * ratio;
+    const ratio = Math.min(areaW / W, areaH / H);
+    const iW = W * ratio;
+    const iH = H * ratio;
     const iX = (areaW - iW) / 2;
     const iY = HDR + (areaH - iH) / 2;
     doc.addImage(imgData, 'JPEG', iX, iY, iW, iH);
 
-    const dataStr = new Date().toLocaleDateString('pt-BR').replace(/\//g,'-');
-    doc.save('Consulta_Coordenadas_' + dataStr + '.pdf');
-  }, 600);
+    const dataStr = new Date().toLocaleDateString('pt-BR').replace(/[/]/g,'-');
+    doc.save('Consulta_Coordenadas_' + coord.replace(/[, ]/g,'_').replace(/__/g,'_') + '_' + dataStr + '.pdf');
+  }, 700);
 }
 
 function consultaUrbRurLimpar(){
