@@ -1122,7 +1122,7 @@
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
             <span id="cu-hd-badge" class="cu-hd-badge"></span>
             <span id="cu-hd-coord" class="cu-hd-coord"></span>
-            <button class="cu-hd-btn" onclick="_cuImprimirMapa()">🖨️ Imprimir</button>
+            <button class="cu-hd-btn" id="cu-hd-btn-print" onclick="_cuImprimirMapa()" style="display:none;">🖨️ Imprimir</button>
           </div>
         </div>
         <div id="cu-mapa" style="height:520px;"></div>
@@ -7535,6 +7535,8 @@ function consultaUrbRurConsultar(){
     _hdBadge.textContent = ehUrbana ? '🏙️ ÁREA URBANA' : '🌳 ÁREA RURAL';
     _hdBadge.style.background = ehUrbana ? '#A0784A' : '#2ea043';
     _hdCoord.textContent = _cuUltimoDecimal;
+    const _hdPrint = document.getElementById('cu-hd-btn-print');
+    if(_hdPrint) _hdPrint.style.display = sessaoPainel?.perfil === 'admin' ? '' : 'none';
     _hdEl.classList.add('visivel');
   }
 
@@ -7577,11 +7579,9 @@ function consultaUrbRurConsultar(){
 
 
 function _cuImprimirMapa(){
-  /* Captura os canvas dos tiles do Leaflet e compõe a imagem para impressão */
   const mapaDiv = document.getElementById('cu-mapa');
-  if(!mapaDiv) return;
+  if(!mapaDiv || !_cuMarcador) return;
 
-  /* Monta canvas unificado com todos os tiles visíveis */
   const mapRect = mapaDiv.getBoundingClientRect();
   const W = mapaDiv.offsetWidth;
   const H = mapaDiv.offsetHeight;
@@ -7591,16 +7591,11 @@ function _cuImprimirMapa(){
   const ctx = canvas.getContext('2d');
   ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
 
-  /* Fundo branco */
+  /* Fundo */
   ctx.fillStyle = '#f8f5f0';
   ctx.fillRect(0, 0, W, H);
 
-  /* Copia cada tile canvas do Leaflet */
-  const pane = mapaDiv.querySelector('.leaflet-map-pane');
-  const paneRect = pane ? pane.getBoundingClientRect() : mapRect;
-  const offX = paneRect.left - mapRect.left;
-  const offY = paneRect.top  - mapRect.top;
-
+  /* Tiles do Leaflet */
   mapaDiv.querySelectorAll('.leaflet-tile-pane canvas, .leaflet-layer canvas').forEach(c => {
     try{
       const r = c.getBoundingClientRect();
@@ -7608,24 +7603,63 @@ function _cuImprimirMapa(){
     }catch(e){}
   });
 
-  /* SVG overlays (polígonos IBGE, marcadores SVG) */
-  mapaDiv.querySelectorAll('.leaflet-overlay-pane svg, .leaflet-marker-pane').forEach(el => {
+  /* SVG overlays (polígonos IBGE, círculo de proximidade) */
+  mapaDiv.querySelectorAll('.leaflet-overlay-pane svg').forEach(el => {
     try{
       const r = el.getBoundingClientRect();
-      const xml = new XMLSerializer().serializeToString(el);
-      const svgBlob = new Blob([xml],{type:'image/svg+xml'});
+      const svgClone = el.cloneNode(true);
+      svgClone.setAttribute('xmlns','http://www.w3.org/2000/svg');
+      const xml = new XMLSerializer().serializeToString(svgClone);
+      const svgBlob = new Blob([xml],{type:'image/svg+xml;charset=utf-8'});
       const url = URL.createObjectURL(svgBlob);
       const img = new Image();
-      img.onload = () => {
-        ctx.drawImage(img, r.left-mapRect.left, r.top-mapRect.top, r.width, r.height);
-        URL.revokeObjectURL(url);
-      };
+      img.onload = () => { ctx.drawImage(img, r.left-mapRect.left, r.top-mapRect.top, r.width, r.height); URL.revokeObjectURL(url); };
       img.src = url;
     }catch(e){}
   });
 
-  /* Aguarda tiles e abre janela de print */
+  /* Ponto do marcador no canvas — calcula pixel position via Leaflet */
+  const markerLatLng = _cuMarcador.getLatLng();
+  const markerPx = _cuMapaLeaflet.latLngToContainerPoint(markerLatLng);
+  const px = markerPx.x;
+  const py = markerPx.y;
+
+  /* Desenha pin estilo Google Maps diretamente no canvas */
+  const _desenharPin = () => {
+    const s = 22; /* raio do círculo do pin */
+    /* Sombra */
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.45)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 3;
+    /* Corpo do pin (vermelho) */
+    ctx.beginPath();
+    ctx.arc(px, py - s, s, 0, Math.PI * 2);
+    ctx.fillStyle = '#e53935';
+    ctx.fill();
+    /* Ponta do pin */
+    ctx.beginPath();
+    ctx.moveTo(px - s * 0.6, py - s * 0.4);
+    ctx.quadraticCurveTo(px, py + s * 0.8, px, py + s * 1.1);
+    ctx.quadraticCurveTo(px, py + s * 0.8, px + s * 0.6, py - s * 0.4);
+    ctx.fillStyle = '#c62828';
+    ctx.fill();
+    ctx.restore();
+    /* Círculo branco interno */
+    ctx.beginPath();
+    ctx.arc(px, py - s, s * 0.42, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    /* Sombra oval no chão */
+    ctx.beginPath();
+    ctx.ellipse(px, py + s * 1.15, s * 0.5, s * 0.18, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.fill();
+  };
+
+  /* Aguarda SVGs e então desenha pin por cima */
   setTimeout(() => {
+    _desenharPin();
     const ehUrbana = (document.getElementById('cu-hd-badge')?.textContent || '').includes('URBANA');
     const coord    = document.getElementById('cu-hd-coord')?.textContent || '';
     const badgeBg  = ehUrbana ? '#A0784A' : '#2ea043';
@@ -7638,16 +7672,17 @@ function _cuImprimirMapa(){
       <title>Consulta de Coordenadas — 3ª CIA PM MAmb</title>
       <style>
         *{margin:0;padding:0;box-sizing:border-box;}
-        body{background:#fff;font-family:Arial,sans-serif;}
-        .header{background:#1a1a1a;color:#fff;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+        html,body{height:100%;background:#fff;font-family:Arial,sans-serif;}
+        body{display:flex;flex-direction:column;height:100vh;}
+        .header{background:#1a1a1a;color:#fff;padding:10px 18px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;flex-shrink:0;}
         .titulo{font-size:12px;font-weight:700;color:#c9a227;}
-        .badge{background:${badgeBg};color:#fff;font-size:14px;font-weight:800;padding:5px 16px;border-radius:6px;}
-        .coord{font-family:monospace;font-size:13px;color:#ccc;}
-        .mapa{width:100%;}
-        .mapa img{width:100%;display:block;}
+        .badge{background:${badgeBg};color:#fff;font-size:13px;font-weight:800;padding:5px 14px;border-radius:6px;}
+        .coord{font-family:monospace;font-size:12px;color:#ccc;}
+        .mapa{flex:1;overflow:hidden;}
+        .mapa img{width:100%;height:100%;object-fit:cover;display:block;}
         @media print{
           @page{margin:0;size:landscape;}
-          body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+          body{-webkit-print-color-adjust:exact;print-color-adjust:exact;height:100vh;}
         }
       </style>
     </head><body>
@@ -7662,7 +7697,7 @@ function _cuImprimirMapa(){
     </body></html>`);
     win.document.close();
     setTimeout(() => { win.focus(); win.print(); }, 800);
-  }, 400);
+  }, 600);
 }
 
 function consultaUrbRurLimpar(){
