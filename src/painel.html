@@ -1123,7 +1123,7 @@
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
             <span id="cu-hd-badge" class="cu-hd-badge"></span>
             <span id="cu-hd-coord" class="cu-hd-coord"></span>
-            <button class="cu-hd-btn" id="cu-hd-btn-print" onclick="_cuImprimirMapa()" style="display:none;">⬇️ Salvar PDF</button>
+            <button class="cu-hd-btn" id="cu-hd-btn-print" onclick="_cuImprimirMapa()" style="display:none;">📷 Salvar PNG</button>
           </div>
         </div>
         <div id="cu-mapa" style="height:520px;"></div>
@@ -7585,10 +7585,8 @@ function _cuImprimirMapa(){
 
   const ehUrbana   = (document.getElementById('cu-hd-badge')?.textContent||'').includes('URBANA');
   const coord      = document.getElementById('cu-hd-coord')?.textContent||'';
-  const badgeBg    = ehUrbana ? [160,120,74] : [46,160,67];
-  const badgeLabel = ehUrbana ? 'AREA URBANA' : 'AREA RURAL';
 
-  /* Converte decimal para GMS para o nome do arquivo */
+  /* Nome do arquivo com coordenadas em GMS com símbolos °'" */
   const _decParaGms = (val, isLat) => {
     const hem  = isLat ? (val<0?'S':'N') : (val<0?'W':'E');
     const abs  = Math.abs(val);
@@ -7596,16 +7594,17 @@ function _cuImprimirMapa(){
     const minF = (abs - grau) * 60;
     const min  = Math.floor(minF);
     const seg  = ((minF - min) * 60).toFixed(1);
-    return grau + 'g' + String(min).padStart(2,'0') + 'm' + String(seg).padStart(4,'0') + 's' + hem;
+    return grau + '\u00b0' + String(min).padStart(2,'0') + "'" + String(seg).padStart(4,'0') + '"' + hem;
   };
-  const partes   = coord.split(',').map(s=>parseFloat(s.trim()));
-  const nomeGms  = _decParaGms(partes[0],true) + '_' + _decParaGms(partes[1],false);
-  const dataStr  = new Date().toLocaleDateString('pt-BR').replace(/[/]/g,'-');
-  const nomeArq  = 'Consulta_' + nomeGms + '_' + dataStr + '.pdf';
+  const partes  = coord.split(',').map(s=>parseFloat(s.trim()));
+  const nomeGms = _decParaGms(partes[0],true) + '_' + _decParaGms(partes[1],false);
+  const dataStr = new Date().toLocaleDateString('pt-BR').replace(/[/]/g,'-');
+  const nomeArq = 'Consulta_' + nomeGms + '_' + dataStr + '.png';
 
-  /* Desenha pin no mapa antes de capturar */
-  const W  = mapaDiv.offsetWidth;
-  const H  = mapaDiv.offsetHeight;
+  const W = mapaDiv.offsetWidth;
+  const H = mapaDiv.offsetHeight;
+
+  /* Canvas do pin sobreposto temporariamente */
   const pinCanvas = document.createElement('canvas');
   pinCanvas.width  = W;
   pinCanvas.height = H;
@@ -7614,76 +7613,35 @@ function _cuImprimirMapa(){
   const markerPx = _cuMapaLeaflet.latLngToContainerPoint(_cuMarcador.getLatLng());
   const px = markerPx.x, py = markerPx.y;
   const s  = 20;
-  /* sombra oval */
   ctx.beginPath();
   ctx.ellipse(px, py+s*0.18, s*0.4, s*0.13, 0, 0, Math.PI*2);
   ctx.fillStyle='rgba(0,0,0,0.22)'; ctx.fill();
-  /* ponta */
   ctx.beginPath();
   ctx.moveTo(px-s*0.52, py-s*0.28);
   ctx.quadraticCurveTo(px, py+s*0.9, px, py+s*0.9);
   ctx.quadraticCurveTo(px, py+s*0.9, px+s*0.52, py-s*0.28);
   ctx.fillStyle='#c62828'; ctx.fill();
-  /* corpo */
   ctx.save();
   ctx.shadowColor='rgba(0,0,0,0.4)'; ctx.shadowBlur=7; ctx.shadowOffsetY=2;
   ctx.beginPath(); ctx.arc(px, py-s, s, 0, Math.PI*2);
   ctx.fillStyle='#e53935'; ctx.fill();
   ctx.restore();
-  /* círculo branco */
   ctx.beginPath(); ctx.arc(px, py-s, s*0.4, 0, Math.PI*2);
   ctx.fillStyle='#fff'; ctx.fill();
 
-  /* Injeta canvas do pin sobre o mapa temporariamente */
   mapaDiv.style.position = 'relative';
   mapaDiv.appendChild(pinCanvas);
 
-  /* html2canvas captura o mapa completo com tiles */
+  /* Captura o mapa completo com html2canvas e baixa como PNG */
   html2canvas(mapaDiv, {
-    useCORS: true,
-    allowTaint: true,
-    scale: 1,
-    width:  W,
-    height: H,
-    logging: false,
-  }).then(capturedCanvas => {
+    useCORS: true, allowTaint: true, scale: 1,
+    width: W, height: H, logging: false,
+  }).then(captured => {
     mapaDiv.removeChild(pinCanvas);
-
-    const imgData = capturedCanvas.toDataURL('image/jpeg', 0.93);
-    const imgW    = capturedCanvas.width;
-    const imgH    = capturedCanvas.height;
-
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
-    const PW  = doc.internal.pageSize.getWidth();
-    const PH  = doc.internal.pageSize.getHeight();
-    const HDR = 15;
-
-    /* Cabeçalho */
-    doc.setFillColor(26,26,26);
-    doc.rect(0, 0, PW, HDR, 'F');
-    doc.setFontSize(8.5); doc.setTextColor(201,162,39); doc.setFont('helvetica','bold');
-    doc.text('Consulta de Coordenadas - Area Urbana ou Rural (Malha IBGE 2022)', 4, 6);
-    doc.setFontSize(6.5); doc.setTextColor(150,150,150); doc.setFont('helvetica','normal');
-    doc.text('3 Companhia de Policia Militar de Meio Ambiente - PMMG', 4, 11);
-
-    /* Badge */
-    const bW=36, bH=8, bX=PW-4-bW;
-    doc.setFillColor(...badgeBg);
-    doc.roundedRect(bX, 3.5, bW, bH, 2, 2, 'F');
-    doc.setFontSize(8); doc.setTextColor(255,255,255); doc.setFont('helvetica','bold');
-    doc.text(badgeLabel, bX+bW/2, 8.8, {align:'center'});
-    doc.setFontSize(8); doc.setTextColor(200,200,200); doc.setFont('helvetica','normal');
-    doc.text(coord, bX-3, 8.8, {align:'right'});
-
-    /* Imagem proporcional centralizada */
-    const areaW = PW, areaH = PH-HDR;
-    const ratio = Math.min(areaW/imgW, areaH/imgH);
-    const iW=imgW*ratio, iH=imgH*ratio;
-    const iX=(areaW-iW)/2, iY=HDR+(areaH-iH)/2;
-    doc.addImage(imgData, 'JPEG', iX, iY, iW, iH);
-
-    doc.save(nomeArq);
+    const link = document.createElement('a');
+    link.download = nomeArq;
+    link.href = captured.toDataURL('image/png');
+    link.click();
   }).catch(e => {
     mapaDiv.removeChild(pinCanvas);
     alert('Erro ao capturar mapa: ' + e.message);
