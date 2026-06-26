@@ -7561,8 +7561,7 @@ function consultaUrbRurConsultar(){
     _hdCoord.textContent = _cuUltimoDecimal + '  |  ' + _gmsStr;
     const _hdPrint = document.getElementById('cu-hd-btn-print');
     if(_hdPrint) _hdPrint.style.display = '';
-    _hdEl.classList.add('visivel');
-  }
+    _hdEl.classList.add('visivel');  }
 
   /* Atualiza o botão "Como Chegar" com o link de rota até o ponto consultado */
   _cuUltimaRotaUrl = _gmapsRotaUrl(lat, lng);
@@ -7617,10 +7616,12 @@ function _cuSalvarMapbox(){
   const lng    = latlng.lng;
   const zoom   = Math.round(_cuMapaLeaflet.getZoom());
 
-  /* Dimensões do canvas = dimensões reais do div do mapa */
-  const mapaEl = document.getElementById('cu-mapa');
+  /* Captura o div pai que contém cabeçalho + mapa */
+  const mapaWrapper = document.getElementById('cu-mapa').parentElement;
+  const mapaEl      = document.getElementById('cu-mapa');
   const W = mapaEl.offsetWidth;
   const H = mapaEl.offsetHeight;
+  const headerH = mapaWrapper.offsetHeight - H; /* altura do cabeçalho */
 
   /* ── Funções de conversão geo ↔ tile/pixel ─────────────────────────── */
   const TILE = 256; /* tamanho padrão de tile OSM */
@@ -7651,11 +7652,50 @@ function _cuSalvarMapbox(){
   const tileX1 = Math.floor(tlTileX + W / TILE);
   const tileY1 = Math.floor(tlTileY + H / TILE);
 
-  /* Canvas */
+  /* Canvas = cabeçalho + mapa */
   const canvas = document.createElement('canvas');
   canvas.width  = W;
-  canvas.height = H;
+  canvas.height = H + headerH;
   const ctx = canvas.getContext('2d');
+
+  /* ── Desenha o cabeçalho ──────────────────────────────────────────── */
+  const badge    = document.getElementById('cu-hd-badge');
+  const coordEl  = document.getElementById('cu-hd-coord');
+  const ehUrb    = (badge?.textContent || '').includes('URBANA');
+  const badgeTxt = badge?.textContent || '';
+  const coordTxt = coordEl?.textContent || '';
+
+  /* Fundo do cabeçalho */
+  ctx.fillStyle = '#1a1f2e';
+  ctx.fillRect(0, 0, W, headerH);
+
+  /* Linha inferior do cabeçalho */
+  ctx.fillStyle = 'rgba(155,138,92,0.3)';
+  ctx.fillRect(0, headerH - 1, W, 1);
+
+  /* Título */
+  ctx.font = 'bold 11px monospace';
+  ctx.fillStyle = '#9B8A5C';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  ctx.fillText('📍 Consulta de Coordenadas — Área Urbana ou Rural (Malha IBGE 2022)', 14, headerH * 0.3);
+
+  /* Badge Área Urbana / Rural */
+  const badgeColor = ehUrb ? '#A0784A' : '#2ea043';
+  const badgeW = ctx.measureText(badgeTxt).width + 20;
+  ctx.fillStyle = badgeColor;
+  ctx.beginPath();
+  ctx.roundRect(14, headerH * 0.55, badgeW, headerH * 0.38, 4);
+  ctx.fill();
+  ctx.font = 'bold 12px monospace';
+  ctx.fillStyle = '#ffffff';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(badgeTxt, 14 + 10, headerH * 0.55 + headerH * 0.19);
+
+  /* Coordenadas no cabeçalho */
+  ctx.font = '11px monospace';
+  ctx.fillStyle = '#cccccc';
+  ctx.fillText(coordTxt, 14 + badgeW + 12, headerH * 0.55 + headerH * 0.19);
 
   /* Carrega tile via proxy local Vercel (sem CORS) */
   function loadTile(tx, ty, z) {
@@ -7677,31 +7717,29 @@ function _cuSalvarMapbox(){
   }
 
   Promise.all(promises).then(results => {
-    /* Fundo branco caso algum tile falhe */
+    /* Fundo bege caso algum tile falhe */
     ctx.fillStyle = '#f0ede8';
-    ctx.fillRect(0, 0, W, H);
+    ctx.fillRect(0, headerH, W, H);
 
     /* Desenha cada tile na posição correta */
     results.forEach(r => {
       if(!r) return;
       const { img, tx, ty } = r;
-      /* Posição em pixels dentro do canvas */
       const px = Math.round((tx - tlTileX) * TILE);
       const py = Math.round((ty - tlTileY) * TILE);
-      ctx.drawImage(img, px, py, TILE, TILE);
+      ctx.drawImage(img, px, headerH + py, TILE, TILE);
     });
 
     /* ── Desenha polígonos IBGE 2022 ─────────────────────────────────── */
     if(typeof IBGE_DATA !== 'undefined' && IBGE_DATA.length){
       const n  = Math.pow(2, zoom);
-      /* Converte lat/lng para pixel no canvas */
       function latlngToPx(la, ln){
         const tx = (ln + 180) / 360 * n;
         const rad = la * Math.PI / 180;
         const ty = (1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * n;
         return {
           x: Math.round((tx - tlTileX) * TILE),
-          y: Math.round((ty - tlTileY) * TILE)
+          y: headerH + Math.round((ty - tlTileY) * TILE)
         };
       }
       ctx.fillStyle   = 'rgba(160,120,74,0.25)';
@@ -7723,7 +7761,7 @@ function _cuSalvarMapbox(){
 
     /* ── Desenha o pin no centro ──────────────────────────────────────── */
     const pinX = cx;
-    const pinY = cy;
+    const pinY = headerH + cy;
     const R    = 16; /* raio da cabeça do pin */
 
     /* Sombra geral */
@@ -7766,29 +7804,28 @@ function _cuSalvarMapbox(){
     /* ── Rodapé informativo ───────────────────────────────────────────── */
     const rodapeH = 36;
     ctx.fillStyle = 'rgba(0,0,0,0.65)';
-    ctx.fillRect(0, H - rodapeH, W, rodapeH);
+    ctx.fillRect(0, headerH + H - rodapeH, W, rodapeH);
 
     const gmsLat = _cuDecParaGms(lat, true);
     const gmsLng = _cuDecParaGms(lng, false);
-    const ehUrb  = (document.getElementById('cu-hd-badge')?.textContent || '').includes('URBANA');
-    const tipo   = ehUrb ? 'ÁREA URBANA' : 'ÁREA RURAL';
+    const ehUrbRod  = (document.getElementById('cu-hd-badge')?.textContent || '').includes('URBANA');
+    const tipo   = ehUrbRod ? 'ÁREA URBANA' : 'ÁREA RURAL';
     const texto  = `${tipo}  |  ${lat.toFixed(6)}, ${lng.toFixed(6)}  |  ${gmsLat} / ${gmsLng}`;
 
     ctx.font      = 'bold 13px monospace';
     ctx.fillStyle = '#ffffff';
     ctx.textBaseline = 'middle';
-    ctx.fillText(texto, 12, H - rodapeH / 2);
+    ctx.textAlign = 'left';
+    ctx.fillText(texto, 12, headerH + H - rodapeH / 2);
 
-    /* Data no canto direito */
     const dataStr = new Date().toLocaleDateString('pt-BR');
     ctx.font      = '12px monospace';
     ctx.fillStyle = '#cccccc';
     ctx.textAlign = 'right';
-    ctx.fillText(dataStr, W - 12, H - rodapeH / 2);
+    ctx.fillText(dataStr, W - 12, headerH + H - rodapeH / 2);
 
     /* ── Download ─────────────────────────────────────────────────────── */
-    const nomeArq = `Consulta_${gmsLat}_${gmsLng}_${dataStr.replace(/\//g,'-')}.png`;
-    canvas.toBlob(blob => {
+    const nomeArq = `Consulta_${gmsLat}_${gmsLng}_${dataStr.replace(/\//g,'-')}.png`;    canvas.toBlob(blob => {
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
       link.download = nomeArq;
