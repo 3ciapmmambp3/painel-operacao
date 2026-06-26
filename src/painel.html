@@ -7657,45 +7657,6 @@ function _cuSalvarMapbox(){
   canvas.height = H + headerH;
   const ctx = canvas.getContext('2d');
 
-  /* ── Desenha o cabeçalho ──────────────────────────────────────────── */
-  const badge    = document.getElementById('cu-hd-badge');
-  const coordEl  = document.getElementById('cu-hd-coord');
-  const ehUrb    = (badge?.textContent || '').includes('URBANA');
-  const badgeTxt = ehUrb ? 'AREA URBANA' : 'AREA RURAL'; /* sem emoji */
-  const coordTxt = coordEl?.textContent || '';
-
-  /* Fundo do cabeçalho */
-  ctx.fillStyle = '#1a1f2e';
-  ctx.fillRect(0, 0, W, headerH);
-
-  /* Linha inferior do cabeçalho */
-  ctx.fillStyle = 'rgba(155,138,92,0.3)';
-  ctx.fillRect(0, headerH - 1, W, 1);
-
-  /* Título */
-  ctx.font = 'bold 11px monospace';
-  ctx.fillStyle = '#9B8A5C';
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = 'left';
-  ctx.fillText('Consulta de Coordenadas — Area Urbana ou Rural (Malha IBGE 2022)', 14, headerH * 0.3);
-
-  /* Badge Área Urbana / Rural */
-  const badgeColor = ehUrb ? '#A0784A' : '#2ea043';
-  const badgeW = ctx.measureText(badgeTxt).width + 20;
-  ctx.fillStyle = badgeColor;
-  ctx.beginPath();
-  ctx.roundRect(14, headerH * 0.55, badgeW, headerH * 0.38, 4);
-  ctx.fill();
-  ctx.font = 'bold 12px monospace';
-  ctx.fillStyle = '#ffffff';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(badgeTxt, 14 + 10, headerH * 0.55 + headerH * 0.19);
-
-  /* Coordenadas no cabeçalho */
-  ctx.font = '11px monospace';
-  ctx.fillStyle = '#cccccc';
-  ctx.fillText(coordTxt, 14 + badgeW + 12, headerH * 0.55 + headerH * 0.19);
-
   /* Carrega tile via proxy local Vercel (sem CORS) */
   function loadTile(tx, ty, z) {
     return new Promise((resolve) => {
@@ -7726,7 +7687,10 @@ function _cuSalvarMapbox(){
       const { img, tx, ty } = r;
       const px = Math.round((tx - tlTileX) * TILE);
       const py = Math.round((ty - tlTileY) * TILE);
-      ctx.drawImage(img, px, headerH + py, TILE, TILE);
+      /* Clipa para não invadir o cabeçalho */
+      if(headerH + py + TILE > headerH && headerH + py < headerH + H){
+        ctx.drawImage(img, px, headerH + py, TILE, TILE);
+      }
     });
 
     /* ── Desenha polígonos IBGE 2022 ─────────────────────────────────── */
@@ -7741,6 +7705,9 @@ function _cuSalvarMapbox(){
           y: headerH + Math.round((ty - tlTileY) * TILE)
         };
       }
+      ctx.save();
+      ctx.rect(0, headerH, W, H);
+      ctx.clip();
       ctx.fillStyle   = 'rgba(160,120,74,0.25)';
       ctx.strokeStyle = 'rgba(139,94,60,0.9)';
       ctx.lineWidth   = 0.8;
@@ -7756,27 +7723,25 @@ function _cuSalvarMapbox(){
         ctx.fill();
         ctx.stroke();
       });
+      ctx.restore();
     }
 
     /* ── Desenha o pin no centro ──────────────────────────────────────── */
     const pinX = cx;
     const pinY = headerH + cy;
-    const R    = 16; /* raio da cabeça do pin */
+    const R    = 16;
 
-    /* Sombra geral */
     ctx.save();
     ctx.shadowColor   = 'rgba(0,0,0,0.5)';
     ctx.shadowBlur    = 10;
     ctx.shadowOffsetX = 2;
     ctx.shadowOffsetY = 4;
 
-    /* Cabeça do pin — círculo preenchido */
     ctx.beginPath();
     ctx.arc(pinX, pinY - R, R, 0, Math.PI * 2);
     ctx.fillStyle = '#e53935';
     ctx.fill();
 
-    /* Ponta do pin — triângulo */
     ctx.beginPath();
     ctx.moveTo(pinX - R * 0.55, pinY - R * 0.3);
     ctx.lineTo(pinX + R * 0.55, pinY - R * 0.3);
@@ -7784,21 +7749,50 @@ function _cuSalvarMapbox(){
     ctx.closePath();
     ctx.fillStyle = '#e53935';
     ctx.fill();
-
     ctx.restore();
 
-    /* Borda branca na cabeça */
     ctx.beginPath();
     ctx.arc(pinX, pinY - R, R, 0, Math.PI * 2);
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 2.5;
     ctx.stroke();
 
-    /* Ponto branco interno */
     ctx.beginPath();
     ctx.arc(pinX, pinY - R, R * 0.32, 0, Math.PI * 2);
     ctx.fillStyle = '#ffffff';
     ctx.fill();
+
+    /* ── Cabeçalho — desenhado POR ÚLTIMO para não ser sobrescrito ────── */
+    const ehUrb    = (document.getElementById('cu-hd-badge')?.textContent || '').includes('URBANA');
+    const badgeTxt = ehUrb ? 'AREA URBANA' : 'AREA RURAL';
+    const coordTxt = document.getElementById('cu-hd-coord')?.textContent || '';
+
+    ctx.fillStyle = '#1a1f2e';
+    ctx.fillRect(0, 0, W, headerH);
+
+    ctx.fillStyle = 'rgba(155,138,92,0.5)';
+    ctx.fillRect(0, headerH - 2, W, 2);
+
+    ctx.font = 'bold 11px monospace';
+    ctx.fillStyle = '#9B8A5C';
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    ctx.fillText('Consulta de Coordenadas — Area Urbana ou Rural (Malha IBGE 2022)', 14, 14);
+
+    const badgeColor = ehUrb ? '#A0784A' : '#2ea043';
+    ctx.font = 'bold 12px monospace';
+    const badgeW = ctx.measureText(badgeTxt).width + 20;
+    ctx.fillStyle = badgeColor;
+    ctx.beginPath();
+    ctx.roundRect(14, 26, badgeW, 20, 4);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(badgeTxt, 24, 36);
+
+    ctx.font = '11px monospace';
+    ctx.fillStyle = '#cccccc';
+    ctx.fillText(coordTxt, 14 + badgeW + 12, 36);
 
     /* ── Rodapé informativo ───────────────────────────────────────────── */
     const rodapeH = 36;
@@ -7807,8 +7801,7 @@ function _cuSalvarMapbox(){
 
     const gmsLat = _cuDecParaGms(lat, true);
     const gmsLng = _cuDecParaGms(lng, false);
-    const ehUrbRod  = (document.getElementById('cu-hd-badge')?.textContent || '').includes('URBANA');
-    const tipo   = ehUrbRod ? 'ÁREA URBANA' : 'ÁREA RURAL';
+    const tipo   = ehUrb ? 'AREA URBANA' : 'AREA RURAL';
     const texto  = `${tipo}  |  ${lat.toFixed(6)}, ${lng.toFixed(6)}  |  ${gmsLat} / ${gmsLng}`;
 
     ctx.font      = 'bold 13px monospace';
@@ -7824,7 +7817,8 @@ function _cuSalvarMapbox(){
     ctx.fillText(dataStr, W - 12, headerH + H - rodapeH / 2);
 
     /* ── Download ─────────────────────────────────────────────────────── */
-    const nomeArq = `Consulta_${gmsLat}_${gmsLng}_${dataStr.replace(/\//g,'-')}.png`;    canvas.toBlob(blob => {
+    const nomeArq = `Consulta_${gmsLat}_${gmsLng}_${dataStr.replace(/\//g,'-')}.png`;
+    canvas.toBlob(blob => {
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
       link.download = nomeArq;
