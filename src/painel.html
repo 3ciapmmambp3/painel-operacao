@@ -1042,13 +1042,19 @@
       <!-- RESULTADO -->
       <div id="cu-resultado" style="display:none;margin-top:16px;padding:14px 18px;border-radius:8px;align-items:center;gap:16px;flex-wrap:wrap;">
         <div id="cu-resultado-badge" style="font-size:14px;font-weight:800;padding:7px 16px;border-radius:6px;display:inline-flex;align-items:center;gap:8px;"></div>
-        <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#ccc;">
-          <span style="color:var(--text-muted);">Decimal:</span>
-          <code id="cu-resultado-decimal" style="background:#1a1a1a;padding:4px 10px;border-radius:4px;color:#fff;"></code>
-          <button onclick="consultaCopiarDecimal()" id="cu-btn-copiar"
-            style="background:rgba(100,80,30,.15);border:1px solid rgba(100,80,30,.4);color:var(--gold);padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer;">
-            📋 Copiar
-          </button>
+        <div style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:#ccc;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="color:var(--text-muted);min-width:52px;">Decimal:</span>
+            <code id="cu-resultado-decimal" style="background:#1a1a1a;padding:4px 10px;border-radius:4px;color:#fff;"></code>
+            <button onclick="consultaCopiarDecimal()" id="cu-btn-copiar"
+              style="background:rgba(100,80,30,.15);border:1px solid rgba(100,80,30,.4);color:var(--gold);padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer;">
+              📋 Copiar
+            </button>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="color:var(--text-muted);min-width:52px;">GMS:</span>
+            <code id="cu-resultado-gms" style="background:#1a1a1a;padding:4px 10px;border-radius:4px;color:#a8d8a8;"></code>
+          </div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap;">
           <a id="cu-btn-gmaps" href="#" target="_blank" rel="noopener"
@@ -6665,6 +6671,17 @@ let _cuIconPinSrc = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAYAA
 let _cuProximidadeLayer = null; /* layer dos marcadores de destaque de proximidade */
 let _cuUltimoDecimal = null;
 
+/* Converte coordenada decimal para string GMS (ex: 17°51'36,2"S) */
+function _cuDecParaGms(val, isLat) {
+  const hem = isLat ? (val < 0 ? 'S' : 'N') : (val < 0 ? 'O' : 'L');
+  const abs = Math.abs(val);
+  const grau = Math.floor(abs);
+  const minF = (abs - grau) * 60;
+  const min  = Math.floor(minF);
+  const seg  = ((minF - min) * 60).toFixed(1).replace('.', ',');
+  return grau + '\u00b0' + String(min).padStart(2, '0') + "'" + String(seg).padStart(4, '0') + '"' + hem;
+}
+
 function consultaSelSub(sub){
   document.querySelectorAll('[id^="consulta-sub-btn-"]').forEach(b=>b.classList.remove('active'));
   document.getElementById('consulta-sub-btn-'+sub)?.classList.add('active');
@@ -7527,6 +7544,11 @@ function consultaUrbRurConsultar(){
   badgeEl.style.color = '#fff';
   badgeEl.innerHTML = ehUrbana ? '🏙️ ÁREA URBANA' : '🌳 ÁREA RURAL';
   document.getElementById('cu-resultado-decimal').textContent = _cuUltimoDecimal;
+  const _gmsLat = _cuDecParaGms(lat, true);
+  const _gmsLng = _cuDecParaGms(lng, false);
+  const _gmsStr = _gmsLat + '  /  ' + _gmsLng;
+  const _gmsEl = document.getElementById('cu-resultado-gms');
+  if(_gmsEl) _gmsEl.textContent = _gmsStr;
 
   /* Atualiza cabeçalho flutuante do mapa */
   const _hdEl = document.getElementById('cu-mapa-header');
@@ -7535,7 +7557,7 @@ function consultaUrbRurConsultar(){
   if(_hdEl && _hdBadge && _hdCoord){
     _hdBadge.textContent = ehUrbana ? '🏙️ ÁREA URBANA' : '🌳 ÁREA RURAL';
     _hdBadge.style.background = ehUrbana ? '#A0784A' : '#2ea043';
-    _hdCoord.textContent = _cuUltimoDecimal;
+    _hdCoord.textContent = _cuUltimoDecimal + '  |  ' + _gmsStr;
     const _hdPrint = document.getElementById('cu-hd-btn-print');
     if(_hdPrint) _hdPrint.style.display = sessaoPainel?.perfil === 'admin' ? '' : 'none';
     _hdEl.classList.add('visivel');
@@ -7568,7 +7590,7 @@ function consultaUrbRurConsultar(){
   }
 
   const statusEl = document.getElementById('cu-mapa-status');
-  if(statusEl) statusEl.textContent = 'Último ponto consultado: '+_cuUltimoDecimal;
+  if(statusEl) statusEl.textContent = 'Último ponto consultado: ' + _cuUltimoDecimal + '  |  ' + _gmsStr;
 
   /* Rola a tela até o mapa, para o usuário ver o ponto marcado sem precisar rolar manualmente */
   const mapaContainer = document.getElementById('cu-mapa');
