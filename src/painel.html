@@ -1129,7 +1129,8 @@
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
             <span id="cu-hd-badge" class="cu-hd-badge"></span>
             <span id="cu-hd-coord" class="cu-hd-coord"></span>
-            <button class="cu-hd-btn" id="cu-hd-btn-print" onclick="_cuImprimirMapa()" style="display:none;">📷 Salvar PNG</button>
+            <button class="cu-hd-btn" id="cu-hd-btn-print" onclick="_cuSalvarMapbox()" style="display:none;">📷 Salvar PNG</button>
+
           </div>
         </div>
         <div id="cu-mapa" style="height:520px;"></div>
@@ -7559,7 +7560,7 @@ function consultaUrbRurConsultar(){
     _hdBadge.style.background = ehUrbana ? '#A0784A' : '#2ea043';
     _hdCoord.textContent = _cuUltimoDecimal + '  |  ' + _gmsStr;
     const _hdPrint = document.getElementById('cu-hd-btn-print');
-    if(_hdPrint) _hdPrint.style.display = sessaoPainel?.perfil === 'admin' ? '' : 'none';
+    if(_hdPrint) _hdPrint.style.display = '';
     _hdEl.classList.add('visivel');
   }
 
@@ -7601,73 +7602,55 @@ function consultaUrbRurConsultar(){
 }
 
 
-function _cuImprimirMapa(){
-  const mapaDiv = document.getElementById('cu-mapa');
-  if(!mapaDiv || !_cuMarcador) return;
 
-  const ehUrbana   = (document.getElementById('cu-hd-badge')?.textContent||'').includes('URBANA');
-  const coord      = document.getElementById('cu-hd-coord')?.textContent||'';
+/* ── Salvar PNG via OpenStreetMap staticmap (gratuito, sem token) ─────────── */
+function _cuSalvarMapbox(){
+  if(!_cuMarcador) return;
 
-  /* Nome do arquivo com coordenadas em GMS com símbolos °'" */
-  const _decParaGms = (val, isLat) => {
-    const hem  = isLat ? (val<0?'S':'N') : (val<0?'W':'E');
-    const abs  = Math.abs(val);
-    const grau = Math.floor(abs);
-    const minF = (abs - grau) * 60;
-    const min  = Math.floor(minF);
-    const seg  = ((minF - min) * 60).toFixed(1);
-    return grau + '\u00b0' + String(min).padStart(2,'0') + "'" + String(seg).padStart(4,'0') + '"' + hem;
-  };
-  const partes  = coord.split(',').map(s=>parseFloat(s.trim()));
-  const nomeGms = _decParaGms(partes[0],true) + '_' + _decParaGms(partes[1],false);
-  const dataStr = new Date().toLocaleDateString('pt-BR').replace(/[/]/g,'-');
-  const nomeArq = 'Consulta_' + nomeGms + '_' + dataStr + '.png';
+  const latlng  = _cuMarcador.getLatLng();
+  const lat     = latlng.lat;
+  const lng     = latlng.lng;
+  const zoom    = Math.min(Math.round(_cuMapaLeaflet.getZoom()), 18);
+  const W       = Math.min(document.getElementById('cu-mapa').offsetWidth  || 1280, 1280);
+  const H       = Math.min(document.getElementById('cu-mapa').offsetHeight || 520,  1280);
 
-  const W = mapaDiv.offsetWidth;
-  const H = mapaDiv.offsetHeight;
+  /* OSM staticmap — sem autenticação, sem cartão */
+  const url = `https://staticmap.openstreetmap.de/staticmap.php`
+    + `?center=${lat},${lng}`
+    + `&zoom=${zoom}`
+    + `&size=${W}x${H}`
+    + `&markers=${lat},${lng},red-pushpin`;
 
-  /* Canvas do pin sobreposto temporariamente */
-  const pinCanvas = document.createElement('canvas');
-  pinCanvas.width  = W;
-  pinCanvas.height = H;
-  pinCanvas.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;z-index:999;';
-  const ctx = pinCanvas.getContext('2d');
-  const markerPx = _cuMapaLeaflet.latLngToContainerPoint(_cuMarcador.getLatLng());
-  const px = markerPx.x, py = markerPx.y;
-  const s  = 20;
-  ctx.beginPath();
-  ctx.ellipse(px, py+s*0.18, s*0.4, s*0.13, 0, 0, Math.PI*2);
-  ctx.fillStyle='rgba(0,0,0,0.22)'; ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(px-s*0.52, py-s*0.28);
-  ctx.quadraticCurveTo(px, py+s*0.9, px, py+s*0.9);
-  ctx.quadraticCurveTo(px, py+s*0.9, px+s*0.52, py-s*0.28);
-  ctx.fillStyle='#c62828'; ctx.fill();
-  ctx.save();
-  ctx.shadowColor='rgba(0,0,0,0.4)'; ctx.shadowBlur=7; ctx.shadowOffsetY=2;
-  ctx.beginPath(); ctx.arc(px, py-s, s, 0, Math.PI*2);
-  ctx.fillStyle='#e53935'; ctx.fill();
-  ctx.restore();
-  ctx.beginPath(); ctx.arc(px, py-s, s*0.4, 0, Math.PI*2);
-  ctx.fillStyle='#fff'; ctx.fill();
+  /* Nome do arquivo com coordenadas GMS */
+  const gmsLat  = _cuDecParaGms(lat, true);
+  const gmsLng  = _cuDecParaGms(lng, false);
+  const dataStr = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+  const nomeArq = `Consulta_${gmsLat}_${gmsLng}_${dataStr}.png`;
 
-  mapaDiv.style.position = 'relative';
-  mapaDiv.appendChild(pinCanvas);
+  const btn = document.getElementById('cu-hd-btn-print');
+  const orig = btn.textContent;
+  btn.textContent = '⏳ Baixando...';
+  btn.disabled = true;
 
-  /* Captura o mapa completo com html2canvas e baixa como PNG */
-  html2canvas(mapaDiv, {
-    useCORS: true, allowTaint: true, scale: 1,
-    width: W, height: H, logging: false,
-  }).then(captured => {
-    mapaDiv.removeChild(pinCanvas);
-    const link = document.createElement('a');
-    link.download = nomeArq;
-    link.href = captured.toDataURL('image/png');
-    link.click();
-  }).catch(e => {
-    mapaDiv.removeChild(pinCanvas);
-    alert('Erro ao capturar mapa: ' + e.message);
-  });
+  fetch(url)
+    .then(r => {
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      return r.blob();
+    })
+    .then(blob => {
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = nomeArq;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 5000);
+    })
+    .catch(e => {
+      alert('Erro ao gerar imagem: ' + e.message);
+    })
+    .finally(() => {
+      btn.textContent = orig;
+      btn.disabled = false;
+    });
 }
 
 function consultaUrbRurLimpar(){
