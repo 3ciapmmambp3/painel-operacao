@@ -11885,14 +11885,18 @@ async function gerarPDFAuditoriaBPM(){
     const lh = 5;
     if(y + lines.length*lh > 270){ doc.addPage(); y=20; }
     const x0 = ML+(indent||0);
+    const normalSpace = doc.getTextWidth(' ');
     lines.forEach((line, idx) => {
       const isLast = idx === lines.length - 1;
       const words = line.split(' ').filter(wd=>wd.length>0);
-      if(isLast || words.length <= 1){
+      const wordsWidth = words.reduce((sum,wd)=>sum+doc.getTextWidth(wd),0);
+      const spaceWidth = words.length>1 ? (w - wordsWidth) / (words.length - 1) : 0;
+      /* Só justifica se a linha já ocupa quase toda a largura E o espaço resultante
+         não fica muito maior que um espaço normal (evita "buracos" em linhas curtas) */
+      const shouldJustify = !isLast && words.length > 1 && wordsWidth/w > 0.82 && spaceWidth < normalSpace*2.2;
+      if(!shouldJustify){
         doc.text(line, x0, y);
       } else {
-        const wordsWidth = words.reduce((sum,wd)=>sum+doc.getTextWidth(wd),0);
-        const spaceWidth = (w - wordsWidth) / (words.length - 1);
         let cx = x0;
         words.forEach(wd=>{ doc.text(wd, cx, y); cx += doc.getTextWidth(wd) + spaceWidth; });
       }
