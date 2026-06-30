@@ -11870,11 +11870,16 @@ async function gerarPDFAuditoriaBPM(){
 
   const PW=210,ML=25,MR=25,TW=PW-ML-MR;
   let y=20;
+  /* Rawline foi exportada com unitsPerEm=2048 (padrão das fontes AFM internas do jsPDF é 1000).
+     O jsPDF não reescala automaticamente, então o texto renderiza ~2x maior que o tamanho pedido.
+     Compensamos multiplicando todo setFontSize por esse fator. */
+  const RAWLINE_SCALE = 1000/2048;
+  function rFontSize(pt){ return pt * RAWLINE_SCALE; }
 
-  function secBold(num,txt){ if(y>260){doc.addPage();y=20;} doc.setFont('Rawline','bold');doc.setFontSize(11);doc.setTextColor(0,0,0);doc.text(String(num),ML,y);doc.text(String(txt),ML+10,y);y+=6; }
+  function secBold(num,txt){ if(y>260){doc.addPage();y=20;} doc.setFont('Rawline','bold');doc.setFontSize(rFontSize(11));doc.setTextColor(0,0,0);doc.text(String(num),ML,y);doc.text(String(txt),ML+10,y);y+=6; }
   function corpo(txt,indent){
     if(!txt) return;
-    doc.setFont('Rawline','normal'); doc.setFontSize(10); doc.setTextColor(0,0,0);
+    doc.setFont('Rawline','normal'); doc.setFontSize(rFontSize(10)); doc.setTextColor(0,0,0);
     const w = TW-(indent||0);
     const lines = doc.splitTextToSize(String(txt), w);
     const lh = 5;
@@ -11884,7 +11889,7 @@ async function gerarPDFAuditoriaBPM(){
   }
   function campo(label,valor){
     if(y>268){doc.addPage();y=20;}
-    doc.setFont('Rawline','bold');doc.setFontSize(10);doc.setTextColor(0,0,0);
+    doc.setFont('Rawline','bold');doc.setFontSize(rFontSize(10));doc.setTextColor(0,0,0);
     const m=String(label).match(/^(\S+)\s+(.*)$/);
     const num=m?m[1]:'',titulo=m?m[2]:label;
     doc.text(num,ML,y);
@@ -11903,7 +11908,7 @@ async function gerarPDFAuditoriaBPM(){
     doc.addImage(BRASAO_PMMG_B64,'PNG',ML,y,BANNER_W,BANNER_H);
     y += BANNER_H + 8;
   }catch(e){ console.warn('Brasão PMMG não carregado:', e.message); }
-  doc.setFont('Rawline','bold');doc.setFontSize(12);doc.setTextColor(0,0,0);
+  doc.setFont('Rawline','bold');doc.setFontSize(rFontSize(12));doc.setTextColor(0,0,0);
   doc.text('SOLICITAÇÃO DE AUDITORIA PARA OS INDICADORES DE GDO',PW/2,y,{align:'center'});y+=8;
   doc.text('AUDITORIA – 3ª CIA PM MAmb',PW/2,y,{align:'center'});y+=12;
 
@@ -11952,7 +11957,7 @@ async function gerarPDFAuditoriaBPM(){
     const legText = `Figura ${i+1}: ${fig.leg||'(sem legenda)'}`;
 
     /* Legenda proporcional à largura da imagem */
-    doc.setFont('Rawline','bold'); doc.setFontSize(LEG_FS); doc.setTextColor(0,0,0);
+    doc.setFont('Rawline','bold'); doc.setFontSize(rFontSize(LEG_FS)); doc.setTextColor(0,0,0);
     const legLines = doc.splitTextToSize(legText, IMG_W);
     legLines.forEach(l => { doc.text(l, IMG_X + IMG_W/2, y, {align:'center'}); y += LEG_LH; });
     y += 2;
@@ -11965,7 +11970,7 @@ async function gerarPDFAuditoriaBPM(){
         const fmt = imgData.includes('data:image/png')?'PNG':imgData.includes('data:image/gif')?'GIF':'JPEG';
         doc.addImage(imgData, fmt, IMG_X, y, IMG_W, IMG_H, undefined, 'FAST');
       }catch(e){
-        doc.setFont('Rawline','normal');doc.setFontSize(9);doc.setTextColor(150,0,0);
+        doc.setFont('Rawline','normal');doc.setFontSize(rFontSize(9));doc.setTextColor(150,0,0);
         doc.text('Erro ao inserir imagem.',ML,y+10);
       }
     }
@@ -11975,7 +11980,7 @@ async function gerarPDFAuditoriaBPM(){
   /* Rodapé */
   const pc=doc.getNumberOfPages();
   for(let p=1;p<=pc;p++){
-    doc.setPage(p);doc.setFont('Rawline','normal');doc.setFontSize(7);doc.setTextColor(120,120,120);
+    doc.setPage(p);doc.setFont('Rawline','normal');doc.setFontSize(rFontSize(7));doc.setTextColor(120,120,120);
     doc.text(`Polícia Militar de Minas Gerais - 3a CIA PM MAmb - ${dd}/${mm2}/${yyyy}`,ML,288);
     doc.text(`${p}/${pc}`,PW-MR,288,{align:'right'});
   }
