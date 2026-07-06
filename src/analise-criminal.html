@@ -728,7 +728,7 @@
       <span id="user-nome">—</span>
       <span id="user-badge" style="font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;"></span>
     </div>
-    <button class="btn-gold" onclick="recarregarTudo()">↻ Atualizar</button>
+    <button class="btn-gold" onclick="recarregarTudo(true)">↻ Atualizar</button>
     <button class="btn-outline" onclick="window.location.href='painel.html'">← Voltar ao Painel</button>
     <button class="btn-outline" onclick="localStorage.removeItem('poe_sessao_v2');sessionStorage.removeItem('poe_sessao_v2');localStorage.removeItem('poe_sessao');window.location.href='index.html'">Sair</button>
   </div>
@@ -3035,14 +3035,14 @@ function setStatus(t, m){
   el.className = t==='ok'?'s-ok':t==='err'?'s-err':'s-load';
 }
 
-async function recarregarTudo(){
+async function recarregarTudo(forcar){
   setStatus('load','Carregando dados criminais...');
   try {
     /* 1. Carrega os dois grupos em paralelo (lookup município → grupamento) */
-    await Promise.all([carregarGruposCrimes(), carregarGrupos()]);
+    await Promise.all([carregarGruposCrimes(), carregarGrupos(forcar)]);
 
     /* 2. Carrega crimes — essencial para o dashboard */
-    await carregarCrimes();
+    await carregarCrimes(forcar);
 
     /* 3. Renderiza o dashboard imediatamente com os dados de crimes */
     popularFiltrosMunicipios();
@@ -3183,37 +3183,86 @@ async function carregarGruposCrimes(){
     } catch(e2){ console.warn('[carregarGruposCrimes] fallback falhou:', e2.message); }
   }
 }
-async function carregarCrimes(){
+/* ── Cache local para reduzir egress (ver cache_incremental_egress.js) ── */
+const _CACHE_MAX_IDADE_MS = 4 * 60 * 60 * 1000; /* 4 horas */
+
+function _cacheLer(chave){
+  try { const raw = localStorage.getItem(chave); return raw ? JSON.parse(raw) : null; }
+  catch(e){ return null; }
+}
+function _cacheSalvar(chave, dados, totalLinhas){
+  try { localStorage.setItem(chave, JSON.stringify({ dados, totalLinhas, salvoEm: Date.now() })); }
+  catch(e){ console.warn('[cache] não foi possível salvar:', e.message); }
+}
+async function _sbContarLinhas(tabela, filtroQuery){
+  try {
+    const qs = filtroQuery ? `?${filtroQuery}` : '';
+    const r = await fetch(`${SB_URL}/rest/v1/${tabela}${qs}`, {
+      method: 'HEAD',
+      headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, Prefer: 'count=exact' }
+    });
+    const range = r.headers.get('content-range');
+    if(!range) return null;
+    const total = parseInt(range.split('/')[1], 10);
+    return Number.isNaN(total) ? null : total;
+  } catch(e){ return null; }
+}
+async function _cacheDecidir(chaveCache, tabela, filtroContagem, forcar){
+  const totalAtual = await _sbContarLinhas(tabela, filtroContagem);
+  if(forcar) return { usarCache:false, totalAtual };
+  const cache = _cacheLer(chaveCache);
+  if(!cache) return { usarCache:false, totalAtual };
+  const idadeOk    = (Date.now() - cache.salvoEm) < _CACHE_MAX_IDADE_MS;
+  const contagemOk = totalAtual !== null && cache.totalLinhas === totalAtual;
+  return { usarCache: idadeOk && contagemOk, totalAtual };
+}
+
+async function carregarCrimes(forcar){
   dadosCrimes = [];
   if(!Object.keys(munParaGrupCrimes).length) await carregarGruposCrimes();
 
+  const CACHE_KEY_CRIMES = 'ac_cache_bd_crimes';
+  const { usarCache, totalAtual } = await _cacheDecidir(CACHE_KEY_CRIMES, 'bd_crimes', null, forcar);
+
   let rows = [];
-  try {
-    /* Paginação: Supabase Free limita 1000 por requisição */
-    const _crimesFields = `select=numero_reds,ano_fato,mes_descricao,data_fato,municipio,` +
-      `descricao_localizacao,latitude,longitude,unid_area_nivel_4,unid_registro_nivel_4,unid_registro_nivel_7,` +
-      `imv_total,icvpe_total,icvpa_total,ifzr,descr_natureza_principal,` +
-      `codigo_complemento_natureza,complemento_natureza,` +
-      `imv_b01121,imv_b01129,imv_b01148,imv_b02001,imv_c01157,imv_b01504,` +
-      `icvpe_b01121,icvpe_b01121_militar,icvpe_b02001,icvpe_b01148,icvpe_b01504,` +
-      `icvpa_c01157,icvpa_c01158,icvpa_c01159&order=data_fato`;
-    let _cOffset = 0, _cCont = true;
-    while(_cCont) {
-      const r = await fetch(
-        `${SB_URL}/rest/v1/bd_crimes?${_crimesFields}&limit=1000&offset=${_cOffset}`,
-        { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
-      );
-      if(!r.ok) throw new Error('bd_crimes HTTP ' + r.status);
-      const page = await r.json();
-      rows = rows.concat(page);
-      _cCont = page.length === 1000;
-      _cOffset += 1000;
+  if(usarCache){
+    rows = _cacheLer(CACHE_KEY_CRIMES).dados;
+    console.log('[carregarCrimes] usando cache local:', rows.length, 'registros — sem requisição de dados');
+  } else {
+    try {
+      /* Paginação: Supabase Free limita 1000 por requisição */
+      const _crimesFields = `select=numero_reds,ano_fato,mes_descricao,data_fato,municipio,` +
+        `descricao_localizacao,latitude,longitude,unid_area_nivel_4,unid_registro_nivel_4,unid_registro_nivel_7,` +
+        `imv_total,icvpe_total,icvpa_total,ifzr,descr_natureza_principal,` +
+        `codigo_complemento_natureza,complemento_natureza,` +
+        `imv_b01121,imv_b01129,imv_b01148,imv_b02001,imv_c01157,imv_b01504,` +
+        `icvpe_b01121,icvpe_b01121_militar,icvpe_b02001,icvpe_b01148,icvpe_b01504,` +
+        `icvpa_c01157,icvpa_c01158,icvpa_c01159&order=data_fato`;
+      let _cOffset = 0, _cCont = true;
+      while(_cCont) {
+        const r = await fetch(
+          `${SB_URL}/rest/v1/bd_crimes?${_crimesFields}&limit=1000&offset=${_cOffset}`,
+          { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
+        );
+        if(!r.ok) throw new Error('bd_crimes HTTP ' + r.status);
+        const page = await r.json();
+        rows = rows.concat(page);
+        _cCont = page.length === 1000;
+        _cOffset += 1000;
+      }
+      if(totalAtual !== null) _cacheSalvar(CACHE_KEY_CRIMES, rows, totalAtual);
+      console.log('[carregarCrimes] Supabase bd_crimes:', rows.length, 'registros baixados da API');
+    } catch(e){
+      console.error('[carregarCrimes] Erro Supabase:', e.message);
+      const cacheAntigo = _cacheLer(CACHE_KEY_CRIMES);
+      if(cacheAntigo){
+        rows = cacheAntigo.dados;
+        console.warn('[carregarCrimes] usando cache antigo como fallback após erro de rede');
+      } else {
+        ['IMV','CVPE','CVPA','IF'].forEach(ind => _setUpdatedBadge(ind, null));
+        return;
+      }
     }
-    console.log('[carregarCrimes] Supabase bd_crimes:', rows.length, 'registros');
-  } catch(e){
-    console.error('[carregarCrimes] Erro Supabase:', e.message);
-    ['IMV','CVPE','CVPA','IF'].forEach(ind => _setUpdatedBadge(ind, null));
-    return;
   }
 
   const IND_COL = { IMV:'imv_total', CVPE:'icvpe_total', CVPA:'icvpa_total', IF:'ifzr' };
@@ -3324,11 +3373,28 @@ async function carregarCrimes(){
     '| CVPA:', dadosCrimes.filter(d=>d.indicador==='CVPA').length,
     '| IF:', dadosCrimes.filter(d=>d.indicador==='IF').length);
 }
-async function carregarGrupos(){
+async function carregarGrupos(forcar){
   /* grupos: id, gp_responsavel, grupamento_bpm, grupamento_completo, pelotao, rpm, cia
      municipios_grupos: municipio, gp_responsavel
      Cruza os dois para montar dadosGrupos com municipio */
   dadosGrupos = [];
+
+  const CACHE_KEY_GRUPOS = 'ac_cache_grupos';
+  const totalGrupos = await _sbContarLinhas('grupos');
+  const totalMuns    = await _sbContarLinhas('municipios_grupos');
+  const totalCombinado = (totalGrupos ?? 0) + '_' + (totalMuns ?? 0);
+  const cacheG = _cacheLer(CACHE_KEY_GRUPOS);
+  const cacheGValido = !forcar && cacheG
+    && cacheG.totalLinhas === totalCombinado
+    && (Date.now() - cacheG.salvoEm) < _CACHE_MAX_IDADE_MS;
+
+  if(cacheGValido){
+    dadosGrupos = cacheG.dados;
+    console.log('[carregarGrupos] usando cache local:', dadosGrupos.length, 'entradas — sem requisição de dados');
+    popularFiltrosGPs();
+    return;
+  }
+
   try {
     const [rGrupos, rMuns] = await Promise.all([
       fetch(`${SB_URL}/rest/v1/grupos?select=gp_responsavel,grupamento_bpm,grupamento_completo,pelotao,rpm&limit=10000&order=gp_responsavel`,
@@ -3375,6 +3441,7 @@ async function carregarGrupos(){
     });
     console.log('[carregarGrupos] Supabase:', dadosGrupos.length, 'entradas,',
       [...new Set(dadosGrupos.map(r=>r.gpResp).filter(Boolean))].length, 'GPs unicos');
+    _cacheSalvar(CACHE_KEY_GRUPOS, dadosGrupos, totalCombinado);
     popularFiltrosGPs();
   } catch(e){
     console.warn('[carregarGrupos] Supabase falhou, Sheets fallback:', e.message);
@@ -11671,22 +11738,63 @@ function _removerAnexo(prefixo, fid){
 }
 
 /* ── Adiciona fotos/pdf/kml ── */
-function adicionarAnexosIntel(input, prefixo){
+/* ── Compressão de imagem via Canvas (reduz resolução e aplica JPEG) ── */
+async function _comprimirImagem(file){
+  if(!file.type.startsWith('image/')) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = e => resolve({ base64: e.target.result, nome: file.name, comprimido: false });
+      reader.readAsDataURL(file);
+    });
+  }
+  const MAX_DIMENSAO = 1600;
+  const QUALIDADE    = 0.75;
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      let { width, height } = img;
+      if(width > MAX_DIMENSAO || height > MAX_DIMENSAO){
+        const ratio = Math.min(MAX_DIMENSAO / width, MAX_DIMENSAO / height);
+        width  = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      URL.revokeObjectURL(url);
+      const base64 = canvas.toDataURL('image/jpeg', QUALIDADE);
+      resolve({ base64, nome: file.name.replace(/\.[^.]+$/, '.jpg'), comprimido: true });
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      const reader = new FileReader();
+      reader.onload = e => resolve({ base64: e.target.result, nome: file.name, comprimido: false });
+      reader.readAsDataURL(file);
+    };
+    img.src = url;
+  });
+}
+
+async function adicionarAnexosIntel(input, prefixo){
   const files = Array.from(input.files);
   if(!files.length) return;
-  files.forEach(file => {
-    const reader = new FileReader();
-    reader.onload = e => {
-      const anexo = { id:'a'+Date.now()+Math.random().toString(36).slice(2,6), base64:e.target.result, nome:file.name, tipo:file.type };
-      if(prefixo==='intel')          _intelFotosBuffer.push(anexo);
-      else if(prefixo==='comp')      _compAnexosBuffer.push(anexo);
-      else if(prefixo==='mc')        _mcAnexosBuffer.push(anexo);
-      else if(prefixo==='conclusao') _conclusaoAnexosBuffer.push(anexo);
-      else                           _missaoAnexosBuffer.push(anexo);
-      _renderAnexos(prefixo);
+  for(const file of files){
+    const resultado = await _comprimirImagem(file);
+    const anexo = {
+      id: 'a' + Date.now() + Math.random().toString(36).slice(2, 6),
+      base64: resultado.base64,
+      nome: resultado.nome,
+      tipo: resultado.comprimido ? 'image/jpeg' : file.type
     };
-    reader.readAsDataURL(file);
-  });
+    if(prefixo==='intel')          _intelFotosBuffer.push(anexo);
+    else if(prefixo==='comp')      _compAnexosBuffer.push(anexo);
+    else if(prefixo==='mc')        _mcAnexosBuffer.push(anexo);
+    else if(prefixo==='conclusao') _conclusaoAnexosBuffer.push(anexo);
+    else                           _missaoAnexosBuffer.push(anexo);
+    _renderAnexos(prefixo);
+  }
   input.value='';
 }
 
