@@ -838,7 +838,7 @@ const REPEATABLE_CONFIGS = {
     fields: [
       [
         { label: 'Efetivo IMA', type: 'text', narrow: true },
-        { label: 'Total de Militares', type: 'text', readonly: true, narrow: true, autoCalc: 'totalMilitares', extraNote: 'somado automaticamente: Comandante + Motorista + Patrulheiro(s) do bloco 1' },
+        { label: 'Total de Militares', type: 'text', narrow: true, numeric: true },
       ],
       [
         { label: 'VP Empregadas', type: 'text', readonly: true, narrow: true, autoCalc: 'totalViaturasGeral', extraNote: 'somado automaticamente: viaturas empregadas no turno' },
@@ -908,7 +908,7 @@ const REPEATABLE_CONFIGS = {
       ],
       [
         { label: 'Nº Ato de Fiscalização', type: 'text', mask: 'ato' },
-        { label: 'Data de Atendimento', type: 'date' },
+        { label: 'Data de Atendimento', type: 'date', required: true },
       ],
       { label: 'Observações', type: 'textarea' },
     ],
@@ -921,7 +921,7 @@ const REPEATABLE_CONFIGS = {
         { label: 'Natureza (Código)', type: 'text', required: true },
       ],
       [
-        { label: 'Quantidade', type: 'text', narrow: true, required: true },
+        { label: 'Quantidade de Materiais', type: 'text', narrow: true, required: true },
         { label: 'Nº Envelope/Lacre', type: 'text', narrow: true, required: true },
       ],
       { label: 'Material Apreendido (Descrição)', type: 'textarea', required: true },
@@ -932,6 +932,7 @@ const REPEATABLE_CONFIGS = {
         { label: 'Data da Audiência', type: 'date', allowFutureDate: true },
         { label: 'Hora da Audiência', type: 'time' },
       ],
+      { label: 'Observações', type: 'textarea' },
     ],
   },
   semad: {
@@ -1048,7 +1049,7 @@ function bindNumericOnlyIn(root){
 
 // ---------- Dados dinâmicos (Google Sheets via Apps Script) ----------
 // Cole aqui a URL do Web App do Apps Script quando estiver pronta (veja README).
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwNW-eYybWqTP3aYU5JvOxDtOH7gMNXVqM56AL0Lf-SEHnF_rhHvOcpo3b11R4pchY/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwkPmu6dvrQivOYthWOZNLnEm0uvSGMNA7Sw-j98icVaHz2yrMmw9vhv3Lda9aCpTQz/exec";
 
 const referenceCache = {}; // sourceKey -> lista de strings ou {value, fracao}
 let gruposList = [];       // [{ principal: '...', variacoes: ['...', ...] }]
@@ -1108,14 +1109,23 @@ function itemMatchesQuery_(texto, consulta){
 // Fração e a exclusão de itens já escolhidos em outra entrada da mesma
 // categoria (ex: não deixar lançar a mesma denúncia de NUDEN duas vezes).
 // Usada tanto pelos <select> comuns quanto pelo campo de busca.
+// Fontes em que o mesmo item nunca pode ser escolhido duas vezes em campos
+// diferentes, mesmo quando não há filtro por fração (ex: um militar só pode
+// estar em UMA equipe por vez; um alvo do FAPI só pode ser lançado uma vez).
+const FONTES_SEMPRE_SEM_DUPLICATA = ['MILITARES', 'FAPI_ALVO'];
+
 function getFilteredItems_(sourceKey, filterFracao, currentEl){
   const list = referenceCache[sourceKey];
   if (!list) return [];
   let items = list;
+
   if (filterFracao){
     const alvo = getFracaoAtualCanonica();
     items = alvo ? list.filter(it => resolveFracaoCanonica(it.fracao) === alvo) : [];
+  }
 
+  const semDuplicata = filterFracao || FONTES_SEMPRE_SEM_DUPLICATA.indexOf(sourceKey) !== -1;
+  if (semDuplicata){
     const currentValue = currentEl ? currentEl.value : '';
     const escolhidosAlhures = new Set();
     document.querySelectorAll(`[data-source="${sourceKey}"]`).forEach(other => {
@@ -1379,8 +1389,9 @@ function bindMiniLists(root){
           <button type="button" class="mini-remove" aria-label="Remover">&times;</button>
         `;
       } else {
+        const labelTexto = fieldDiv.querySelector('label') ? fieldDiv.querySelector('label').textContent : '';
         row.innerHTML = `
-          <input type="text" placeholder="${MASKS.reds.placeholder}" data-mask="reds">
+          <input type="text" placeholder="${MASKS.reds.placeholder}" data-mask="reds" data-required="1" data-label="${labelTexto}">
           <button type="button" class="mini-remove" aria-label="Remover">&times;</button>
         `;
       }
@@ -1543,7 +1554,7 @@ const POSTO_GRADUACAO_OPTIONS = ['CEL','TEN CEL','MAJ','CAP','1 TEN','2 TEN','AS
 const OWN_TOP_FIELDS = [
   [
     { label: 'Tipo da Equipe', type: 'select', options: EQUIPE_OPTIONS },
-    { label: 'Prefixo da Viatura de Apoio', type: 'text', key: 'apoioViatura', numeric: true },
+    { label: 'Prefixo da Viatura de Apoio', type: 'select', sourceKey: 'VIATURAS', key: 'apoioViatura' },
   ],
 ];
 const EXTERNAL_TOP_FIELDS = [
@@ -1614,6 +1625,7 @@ function bindApoioEntry(entry){
     bindUppercaseIn(topBox);
     bindNumericOnlyIn(topBox);
     populateSelectsIn(topBox);
+    searchifySelectsIn(topBox);
     bindMasksIn(fieldsBox);
     bindUppercaseIn(fieldsBox);
     bindNumericOnlyIn(fieldsBox);
@@ -1621,7 +1633,10 @@ function bindApoioEntry(entry){
     bindMiniLists(fieldsBox);
     searchifySelectsIn(fieldsBox);
     const viaturaInput = topBox.querySelector('[data-field="apoioViatura"]');
-    if (viaturaInput) viaturaInput.addEventListener('input', refreshViaturaTotalsFromApoio);
+    if (viaturaInput){
+      viaturaInput.addEventListener('input', refreshViaturaTotalsFromApoio);
+      viaturaInput.addEventListener('change', refreshViaturaTotalsFromApoio);
+    }
   }
 
   entry.querySelectorAll('.apoio-propria').forEach(radio => {
@@ -1700,7 +1715,7 @@ function fieldInputHTML(field, idx){
         <label>${field.label}</label>
         <div class="mini-list">
           <div class="mini-row">
-            <input type="text" placeholder="${MASKS.reds.placeholder}" data-mask="reds">
+            <input type="text" placeholder="${MASKS.reds.placeholder}" data-mask="reds" data-required="1" data-label="${field.label}">
           </div>
         </div>
         <button type="button" class="btn-add-mini">+ Adicionar Nº REDS</button>
@@ -1974,6 +1989,31 @@ function validarModalAtual(){
     const label = inp.dataset.label || 'Data';
     if (inp.value && inp.value > hoje){
       problemas.push(`"${label}" não pode ser uma data futura.`);
+    }
+  });
+
+  // Regras condicionais, verificadas dentro de cada entrada (não misturando
+  // uma entrada com a outra quando há mais de uma no mesmo card).
+  modalBody.querySelectorAll('[data-repeat-entry], .cemig-variant-fields').forEach(escopo => {
+    const campoPorLabel = (label) => Array.from(escopo.querySelectorAll('[data-label], select')).find(el => {
+      if (el.dataset && el.dataset.label === label) return true;
+      const fieldDiv = el.closest('.field');
+      const labelEl = fieldDiv && fieldDiv.querySelector('label');
+      return labelEl && labelEl.textContent.trim() === label;
+    });
+
+    // Se tem Auto de Infração preenchido, o Ato de Fiscalização passa a ser obrigatório.
+    const autoInfracao = campoPorLabel('Nº Auto de Infração');
+    const ato = campoPorLabel('Nº Ato de Fiscalização');
+    if (autoInfracao && autoInfracao.value.trim() && ato && !ato.value.trim()){
+      problemas.push('"Nº Ato de Fiscalização" é obrigatório quando "Nº Auto de Infração" foi preenchido.');
+    }
+
+    // CEMIG: se "Houve Ocorrências?" = Sim, a Descrição da Ocorrência é obrigatória.
+    const houveOcorrencias = campoPorLabel('Houve Ocorrências?');
+    const descricaoOcorrencia = campoPorLabel('Descrição da Ocorrência');
+    if (houveOcorrencias && houveOcorrencias.value === 'Sim' && descricaoOcorrencia && !descricaoOcorrencia.value.trim()){
+      problemas.push('"Descrição da Ocorrência" é obrigatória quando "Houve Ocorrências?" é Sim.');
     }
   });
 
@@ -2449,6 +2489,17 @@ function collectCategoryEntries(id){
   const node = panelCache[id];
   if (!node) return [];
 
+  // Produtividade não usa o padrão de "lista repetível" — é um conjunto fixo
+  // de contadores (vindos da aba CAMPOS_PRODUTIVIDADE), sempre 1 item só.
+  if (id === 'produtividade'){
+    const campos = {};
+    node.querySelectorAll('input[data-prod-field]').forEach(inp => {
+      campos[inp.dataset.prodField] = inp.value;
+    });
+    const algumPreenchido = Object.values(campos).some(v => v !== '' && v !== null && v !== undefined);
+    return algumPreenchido ? [campos] : [];
+  }
+
   // Campos "pré" (compartilhados por todos os itens da categoria — ex: ID e
   // Nome da Operação no PAF/FAPI) ficam FORA de cada entrada individual, então
   // são coletados uma vez só e replicados em cada item lançado.
@@ -2681,12 +2732,8 @@ hiddenIframeRelatorio.addEventListener('load', () => {
   const reviewConfirmBtn = document.getElementById('reviewConfirmBtn');
   reviewConfirmBtn.disabled = false;
   reviewConfirmBtn.textContent = 'Confirmar e Enviar';
-  if (modoEdicaoIdRelatorio){
-    alert('Relatório atualizado com sucesso!');
-    window.location.href = 'meus-relatorios.html';
-  } else {
-    alert('Relatório enviado com sucesso!');
-  }
+  alert(modoEdicaoIdRelatorio ? 'Relatório atualizado com sucesso!' : 'Relatório enviado com sucesso!');
+  window.location.href = 'meus-relatorios.html';
 });
 
 document.getElementById('relatorioForm').addEventListener('submit', (e) => {
