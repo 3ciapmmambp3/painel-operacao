@@ -107,7 +107,53 @@ if (sessao){
 /* A listagem em si (buscar relatórios onde essa matrícula aparece) depende de
    uma função nova no Apps Script que ainda vamos construir na próxima etapa.
    Por enquanto, o botão "+ Lançar relatório" já funciona normalmente. */
-document.getElementById('mr-status').textContent = 'A lista de relatórios será exibida aqui assim que a próxima etapa (busca no Apps Script) estiver pronta.';
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxCJCuasmX7dbfUOimcSbmtOokEjDtFcM7-f0glXWeUzImKy0t09WHg7YRfsNbhvn5g/exec";
+
+function formatarDataBR(iso){
+  if (!iso) return '—';
+  const [ano, mes, dia] = iso.split('-');
+  return `${dia}/${mes}/${ano}`;
+}
+
+async function carregarMeusRelatorios(){
+  const status = document.getElementById('mr-status');
+  const lista = document.getElementById('mr-lista');
+  if (!sessao || !sessao.matricula){
+    status.textContent = 'Não foi possível identificar sua matrícula na sessão.';
+    return;
+  }
+  try {
+    const res = await fetch(`${SCRIPT_URL}?action=meusRelatorios&matricula=${encodeURIComponent(sessao.matricula)}`);
+    const data = await res.json();
+    if (data.result !== 'success' || !data.relatorios || !data.relatorios.length){
+      status.textContent = 'Nenhum relatório encontrado ainda.';
+      return;
+    }
+
+    const linhas = data.relatorios.map(r => {
+      const btn = r.podeEditar
+        ? `<span class="mr-btn-editar" onclick="window.location.href='relatorio-servico.html?editar=${encodeURIComponent(r['ID Relatório'])}'">Editar</span>`
+        : `<span class="mr-btn-editar disabled">Editar<div class="mr-tip">Entrar em contato com a P3 caso seja necessário alterar algo, já expirou o prazo para editar.</div></span>`;
+      return `<tr>
+        <td>${formatarDataBR(r['Data'])}</td>
+        <td>${r['Fração de Atuação'] || '—'}</td>
+        <td>${r['Equipe'] || '—'}</td>
+        <td>${r['Tipo de Serviço'] || '—'}</td>
+        <td>${btn}</td>
+      </tr>`;
+    }).join('');
+
+    lista.innerHTML = `<table class="mr-table">
+      <thead><tr><th>DATA</th><th>FRAÇÃO DE ATUAÇÃO</th><th>EQUIPE</th><th>SERVIÇO</th><th>AÇÃO</th></tr></thead>
+      <tbody>${linhas}</tbody>
+    </table>`;
+  } catch(err){
+    console.error('Erro ao buscar Meus Relatórios:', err);
+    status.textContent = 'Erro ao carregar seus relatórios. Recarregue a página.';
+  }
+}
+
+if (sessao) carregarMeusRelatorios();
 </script>
 
 </body>
