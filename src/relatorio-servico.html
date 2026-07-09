@@ -1048,7 +1048,7 @@ function bindNumericOnlyIn(root){
 
 // ---------- Dados dinâmicos (Google Sheets via Apps Script) ----------
 // Cole aqui a URL do Web App do Apps Script quando estiver pronta (veja README).
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwZuht4Bht8pxde1E5-pvI17IdXByPGmyOZB1FiUa1qH8o7a9vvSwW22UKsVkcyz0jK/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwNW-eYybWqTP3aYU5JvOxDtOH7gMNXVqM56AL0Lf-SEHnF_rhHvOcpo3b11R4pchY/exec";
 
 const referenceCache = {}; // sourceKey -> lista de strings ou {value, fracao}
 let gruposList = [];       // [{ principal: '...', variacoes: ['...', ...] }]
@@ -2207,8 +2207,126 @@ function buildProdutividadePanel(){
   `;
 }
 
+// ---------- Modo edição: carrega e pré-preenche um relatório já existente ----------
+async function carregarRelatorioParaEdicao(id){
+  try {
+    const res = await fetch(`${SCRIPT_URL}?action=buscarRelatorioCompleto&id=${encodeURIComponent(id)}`);
+    const data = await res.json();
+    if (data.result !== 'success'){
+      alert('Não foi possível carregar esse relatório pra edição (ID: ' + id + ').');
+      return;
+    }
+    modoEdicaoIdRelatorio = id;
+    preencherBloco1(data.bloco1 || {});
+    (data.categorias || []).forEach(cat => preencherCategoria(cat.categoria, cat.itens || []));
+    renderGrid();
+
+    const aviso = document.createElement('div');
+    aviso.style.cssText = 'background:#3a2f00;color:#f0c419;padding:10px 20px;font-size:13px;text-align:center;';
+    aviso.textContent = `Você está editando o relatório ${id}. Ao confirmar o envio, ele será ATUALIZADO — não será criado um relatório novo.`;
+    document.querySelector('.topbar').after(aviso);
+  } catch(err){
+    console.error('Erro ao carregar relatório pra edição:', err);
+    alert('Erro ao carregar o relatório pra edição.');
+  }
+}
+
+function preencherBloco1(bloco1){
+  const mapaNomes = {
+    'Fração de Atuação': 'fracaoAtuacao',
+    'Data': 'data',
+    'Início do Turno': 'inicioTurno',
+    'Fim do Turno': 'fimTurno',
+    'Comandante': 'comandante',
+    'Motorista': 'motorista',
+    'Equipe': 'equipe',
+    'Tipo de Serviço': 'tipoServico',
+  };
+  Object.keys(mapaNomes).forEach(campo => {
+    const valor = bloco1[campo];
+    if (valor === undefined || valor === null || valor === '') return;
+    const el = document.querySelector(`[name="${mapaNomes[campo]}"]`);
+    if (!el) return;
+    el.value = valor;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+
+  if (bloco1['Patrulheiro(s)']){
+    const nomes = bloco1['Patrulheiro(s)'].split(';').map(s => s.trim()).filter(Boolean);
+    nomes.forEach((nome, idx) => {
+      let input = document.querySelectorAll('[name="patrulheiro[]"]')[idx];
+      if (!input){
+        document.getElementById('addPatrulheiro').click();
+        const lista = document.querySelectorAll('[name="patrulheiro[]"]');
+        input = lista[lista.length - 1];
+      }
+      if (input) input.value = nome;
+    });
+  }
+
+  if (bloco1['Houve Equipe de Apoio?'] === 'Sim'){
+    const radioSim = document.querySelector('input[name="houveApoio"][value="Sim"]');
+    if (radioSim){
+      radioSim.checked = true;
+      radioSim.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+
+  if (bloco1['Observações Gerais do Relatório']){
+    const obs = document.getElementById('reviewObsGerais');
+    if (obs) obs.value = bloco1['Observações Gerais do Relatório'];
+  }
+}
+
+// Preenche uma entrada (dentro de um card) casando pelo rótulo do campo
+// (data-label, ou o texto do <label> irmão como reserva).
+function preencherEntradaPorLabel_(escopo, itemData){
+  Object.keys(itemData).forEach(label => {
+    const valor = itemData[label];
+    if (valor === undefined || valor === null || valor === '') return;
+    const candidatos = Array.from(escopo.querySelectorAll('input, select, textarea'));
+    const el = candidatos.find(c => {
+      if (c.dataset && c.dataset.label === label) return true;
+      const fieldDiv = c.closest('.field');
+      const labelEl = fieldDiv && fieldDiv.querySelector('label');
+      return labelEl && labelEl.textContent.trim() === label;
+    });
+    if (!el) return;
+    el.value = valor;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+}
+
+function preencherCategoria(categoriaLabel, itens){
+  if (!itens.length) return;
+  const cat = CATEGORIES.find(c => c.label === categoriaLabel);
+  if (!cat || cat.ready === false) return;
+
+  const node = getOrCreatePanelNode(cat.id);
+
+  const preFieldsBox = node.querySelector('.pre-fields');
+  if (preFieldsBox) preencherEntradaPorLabel_(preFieldsBox, itens[0]);
+
+  const entries = () => Array.from(node.querySelectorAll('[data-repeat-entry]'));
+  itens.forEach((item, idx) => {
+    let entradas = entries();
+    while (entradas.length <= idx){
+      const addBtn = node.querySelector('[data-add-btn]');
+      if (!addBtn) break;
+      addBtn.click();
+      entradas = entries();
+    }
+    if (entradas[idx]) preencherEntradaPorLabel_(entradas[idx], item);
+  });
+}
+
 renderGrid();
-fetchReferenceData();
+fetchReferenceData().then(() => {
+  const idParaEditar = new URLSearchParams(window.location.search).get('editar');
+  if (idParaEditar) carregarRelatorioParaEdicao(idParaEditar);
+});
 (function(){
   const dataServico = document.getElementById('dataServico');
   if (dataServico) dataServico.setAttribute('max', hojeISO());
@@ -2452,6 +2570,8 @@ function collectBloco1(){
 }
 
 // ---------- Pacote completo pra envio ----------
+let modoEdicaoIdRelatorio = null;
+
 function collectAllData(){
   const categorias = [];
   CATEGORIES.forEach(cat => {
@@ -2464,7 +2584,12 @@ function collectAllData(){
   if (apoio.length){
     categorias.push({ categoria: 'Equipe de Apoio', itens: apoio });
   }
-  return { bloco1: collectBloco1(), categorias };
+  const payload = { bloco1: collectBloco1(), categorias };
+  if (modoEdicaoIdRelatorio){
+    payload.modo = 'atualizarRelatorio';
+    payload.idRelatorio = modoEdicaoIdRelatorio;
+  }
+  return payload;
 }
 
 function buildReviewHTML(){
@@ -2556,7 +2681,12 @@ hiddenIframeRelatorio.addEventListener('load', () => {
   const reviewConfirmBtn = document.getElementById('reviewConfirmBtn');
   reviewConfirmBtn.disabled = false;
   reviewConfirmBtn.textContent = 'Confirmar e Enviar';
-  alert('Relatório enviado com sucesso!');
+  if (modoEdicaoIdRelatorio){
+    alert('Relatório atualizado com sucesso!');
+    window.location.href = 'meus-relatorios.html';
+  } else {
+    alert('Relatório enviado com sucesso!');
+  }
 });
 
 document.getElementById('relatorioForm').addEventListener('submit', (e) => {
