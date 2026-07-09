@@ -37,7 +37,7 @@ const SB_TABLE    = 'militares';
 const SENHA_PADRAO = 'Mudar@123';
 
 /* Níveis de acesso em ordem crescente de permissão */
-const NIVEIS = ['operacional', 'admin_pelotao', 'admin', 'admin_geral'];
+const NIVEIS = ['operacional', 'admin_gp', 'admin_pelotao', 'admin', 'admin_geral'];
 
 /* Admin Gerais iniciais (nunca podem ser rebaixados abaixo de admin_geral
    a menos que haja outro admin_geral) */
@@ -382,6 +382,10 @@ function auth_podeVerGrupamento(sessao, grupamento_id) {
     const meuPel = _pelotaoNum(sessao.grupamento_id);
     if (meuPel === null) return sessao.grupamento_id === grupamento_id; // fallback
     return _pelotaoNum(grupamento_id) === meuPel;
+  }
+  if (nivel === 'admin_gp') {
+    // Escopo isolado: só o próprio grupamento (não o pelotão inteiro)
+    return sessao.grupamento_id === grupamento_id;
   }
   return false; // operacional não acessa painel admin
 }
