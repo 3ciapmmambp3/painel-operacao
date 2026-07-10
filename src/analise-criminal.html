@@ -1122,6 +1122,31 @@
         <label>Município</label>
         <select id="cr-mun" onchange="renderCrimes()"><option value="">Todos</option></select>
       </div>
+      <div class="fg" style="min-width:170px;max-width:220px;">
+        <label>Pelotão</label>
+        <div class="mes-dropdown-wrap" id="cr-pel-wrap">
+          <button type="button" class="mes-dropdown-btn" id="cr-pel-btn" onclick="togglePelDd('cr')">
+            <span id="cr-pel-lbl">Todos os Pelotões</span>
+            <span style="font-size:10px;margin-left:auto;">▼</span>
+          </button>
+          <div class="mes-dropdown" id="cr-pel-dd" style="display:none;">
+            <div class="mes-dd-header">
+              <span style="font-size:10px;font-weight:700;color:var(--text-muted);">SELECIONAR PELOTÕES</span>
+              <div style="display:flex;gap:6px;">
+                <span class="mes-dd-link" onclick="pelDdSelAll('cr')">Todos</span>
+                <span class="mes-dd-link" onclick="pelDdClrAll('cr')">Limpar</span>
+              </div>
+            </div>
+            <div class="mes-dd-list" id="cr-pel-list">
+              <label class="mes-chk"><input type="checkbox" value="1" onchange="onPelDdChange('cr')"> <span>1º Pelotão</span></label>
+              <label class="mes-chk"><input type="checkbox" value="2" onchange="onPelDdChange('cr')"> <span>2º Pelotão</span></label>
+              <label class="mes-chk"><input type="checkbox" value="3" onchange="onPelDdChange('cr')"> <span>3º Pelotão</span></label>
+              <label class="mes-chk"><input type="checkbox" value="4" onchange="onPelDdChange('cr')"> <span>4º Pelotão</span></label>
+              <label class="mes-chk"><input type="checkbox" value="5" onchange="onPelDdChange('cr')"> <span>5º Pelotão</span></label>
+            </div>
+          </div>
+        </div>
+      </div>
       <div class="fg">
         <label>Localização</label>
         <select id="cr-loc" onchange="renderCrimes()">
@@ -1831,6 +1856,28 @@
           <option value="em_operacao">🔴 Em Operação</option>
           <option value="encerrado">⚫ Encerradas</option>
         </select>
+        <div class="mes-dropdown-wrap" id="intel-pel-wrap">
+          <button type="button" class="fi-select" id="intel-pel-btn" onclick="togglePelDd('intel')" style="display:flex;align-items:center;gap:6px;white-space:nowrap;">
+            <span id="intel-pel-lbl">Pelotão</span>
+            <span style="font-size:9px;">▼</span>
+          </button>
+          <div class="mes-dropdown" id="intel-pel-dd" style="display:none;">
+            <div class="mes-dd-header">
+              <span style="font-size:10px;font-weight:700;color:var(--text-muted);">SELECIONAR PELOTÕES</span>
+              <div style="display:flex;gap:6px;">
+                <span class="mes-dd-link" onclick="pelDdSelAll('intel')">Todos</span>
+                <span class="mes-dd-link" onclick="pelDdClrAll('intel')">Limpar</span>
+              </div>
+            </div>
+            <div class="mes-dd-list" id="intel-pel-list">
+              <label class="mes-chk"><input type="checkbox" value="1" onchange="onPelDdChange('intel')"> <span>1º Pelotão</span></label>
+              <label class="mes-chk"><input type="checkbox" value="2" onchange="onPelDdChange('intel')"> <span>2º Pelotão</span></label>
+              <label class="mes-chk"><input type="checkbox" value="3" onchange="onPelDdChange('intel')"> <span>3º Pelotão</span></label>
+              <label class="mes-chk"><input type="checkbox" value="4" onchange="onPelDdChange('intel')"> <span>4º Pelotão</span></label>
+              <label class="mes-chk"><input type="checkbox" value="5" onchange="onPelDdChange('intel')"> <span>5º Pelotão</span></label>
+            </div>
+          </div>
+        </div>
         <select class="fi-select" id="intel-busca-gp" onchange="renderIntel()" id="intel-gp-fg" style="flex:2;min-width:0;overflow:hidden;text-overflow:ellipsis;"><option value="">Todos</option></select>
         <button class="fi-clear" onclick="limparFiltrosIntel()" title="Limpar filtros" style="flex-shrink:0;">✕</button>
       </div>
@@ -4246,6 +4293,67 @@ function mesDdClrAll(prefix){
   onMesDdChange(prefix);
 }
 
+/* ── Dropdown multi-seleção de Pelotão (mesmo padrão do dropdown de Mês) ── */
+function togglePelDd(prefix){
+  const dd  = document.getElementById(prefix+'-pel-dd');
+  const btn = document.getElementById(prefix+'-pel-btn');
+  if(!dd) return;
+  const open = dd.style.display === 'none' || dd.style.display === '';
+  /* Fecha todos os outros dropdowns abertos (mês e pelotão) */
+  document.querySelectorAll('.mes-dropdown').forEach(el => { el.style.display = 'none'; });
+  document.querySelectorAll('.mes-dropdown-btn.open').forEach(el => { el.classList.remove('open'); });
+  dd.style.display = open ? 'block' : 'none';
+  if(btn) btn.classList.toggle('open', open);
+  if(open){
+    setTimeout(() => {
+      const close = (e) => {
+        const wrap = document.getElementById(prefix+'-pel-wrap');
+        if(wrap && !wrap.contains(e.target) && !dd.contains(e.target)){
+          dd.style.display = 'none';
+          if(btn) btn.classList.remove('open');
+          document.removeEventListener('click', close);
+        }
+      };
+      document.addEventListener('click', close);
+    }, 10);
+  }
+}
+
+function getPelDd(prefix){
+  /* Retorna array de pelotões marcados (ex: ['1','3']); vazio = todos */
+  const cbs = document.querySelectorAll('#'+prefix+'-pel-list input[type=checkbox]');
+  const sel = [];
+  cbs.forEach(cb => { if(cb.checked) sel.push(cb.value); });
+  return sel;
+}
+
+function _pelDdUpdateLabel(prefix){
+  const sel = getPelDd(prefix);
+  const lbl = document.getElementById(prefix+'-pel-lbl');
+  if(!lbl) return;
+  const padrao = prefix === 'intel' ? 'Pelotão' : 'Todos os Pelotões';
+  if(!sel.length)     { lbl.textContent = padrao; return; }
+  if(sel.length === 5){ lbl.textContent = 'Todos os pelotões'; return; }
+  if(sel.length === 1){ lbl.textContent = sel[0]+'º Pelotão'; return; }
+  lbl.textContent = sel.length+' pelotões';
+}
+
+function onPelDdChange(prefix){
+  _pelDdUpdateLabel(prefix);
+  const renders = { cr: renderCrimes, intel: renderIntel };
+  if(renders[prefix]) renders[prefix]();
+}
+
+function pelDdSelAll(prefix){
+  document.querySelectorAll('#'+prefix+'-pel-list input').forEach(cb => cb.checked = true);
+  onPelDdChange(prefix);
+}
+
+function pelDdClrAll(prefix){
+  document.querySelectorAll('#'+prefix+'-pel-list input').forEach(cb => cb.checked = false);
+  onPelDdChange(prefix);
+}
+
 function getDadosFiltradosMultiMes(meses, indicadorId, munId, pelId, locId, auditId){
   /* Igual a getDadosFiltrados mas aceita array de meses */
   if(!meses || !meses.length) return getDadosFiltrados('', indicadorId, munId, pelId, locId, auditId);
@@ -4289,6 +4397,7 @@ function limparFiltrosDash(){
 }
 function limparFiltrosCrimes(){
   mesDdClrAll('cr');
+  pelDdClrAll('cr');
   ['cr-indicador','cr-mun','cr-loc','cr-audit'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   document.getElementById('cr-busca').value='';
   const cxB = document.getElementById('cx-busca'); if(cxB) cxB.value='';
@@ -4307,6 +4416,7 @@ function limparFiltrosIntel(){
   const prioEl = document.getElementById('intel-busca-prio'); if(prioEl) prioEl.value='';
   document.getElementById('intel-busca-mun').value='';
   document.getElementById('intel-busca-gp').value='';
+  pelDdClrAll('intel');
   const statusEl = document.getElementById('intel-busca-status');
   if(statusEl) statusEl.value='ativas';
   _initIntelFiltroGP(); /* re-aplica restrição de pelotão ao limpar */
@@ -6013,11 +6123,14 @@ function renderCrimes(){
   const loc   = document.getElementById('cr-loc').value;
   const audit = document.getElementById('cr-audit').value;
   const gpF   = document.getElementById('cr-gp')?.value || '';
+  const pelSel = getPelDd('cr');
   const busca = norm(document.getElementById('cr-busca').value);
 
   let dados = _mesCr.length>1 ? getDadosFiltradosMultiMes(_mesCr, ind, mun, '', loc, audit) : getDadosFiltrados(mes, ind, mun, '', loc, audit);
   /* Filtra por grupamento — compara gpResp (col I) */
   if(gpF)    dados = dados.filter(d => d.grupamento && gpDoColk(d.grupamento) === gpF);
+  /* Filtra por pelotão (multi-seleção) */
+  if(pelSel.length) dados = dados.filter(d => d.grupamento && pelSel.includes(String(pelDoColk(d.grupamento))));
   if(busca)  dados = dados.filter(d =>
     norm(d.bo||d.rat).includes(busca) || norm(d.municipio).includes(busca)
   );
@@ -12706,6 +12819,7 @@ function renderIntel(resetPage){
   const mun        = norm(document.getElementById('intel-busca-mun').value);
   const gpBusca    = document.getElementById('intel-busca-gp').value;
   const statusBusca= document.getElementById('intel-busca-status')?.value ?? 'ativas';
+  const pelSel     = getPelDd('intel');
 
   const _isAdmin = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
 
@@ -12713,6 +12827,11 @@ function renderIntel(resetPage){
   const _meuPelNum = !_isAdmin ? _pelotaoDoUsuario() : '';
   const _gpsDoMeuPelotao = _meuPelNum
     ? [...new Set(dadosGrupos.filter(r => String(r.pelNum) === String(_meuPelNum)).map(r => gpDoColk(r.grupamento)).filter(g => g && g !== '—'))]
+    : [];
+
+  /* Pelotões selecionados no filtro (multi-seleção) — GPs correspondentes */
+  const _gpsDosPelSelecionados = pelSel.length
+    ? [...new Set(dadosGrupos.filter(r => pelSel.includes(String(r.pelNum))).map(r => gpDoColk(r.grupamento)).filter(g => g && g !== '—'))]
     : [];
 
   let fichas = fichasIntel.filter(f => {
@@ -12727,6 +12846,11 @@ function renderIntel(resetPage){
       if(!muns.some(m => norm(m).includes(munNorm))) return false;
     }
     if(gpBusca && !(f.gpsAtuacao||[]).includes(gpBusca)) return false;
+    /* Filtro de Pelotão (multi-seleção) */
+    if(_gpsDosPelSelecionados.length){
+      if(!f.gpsAtuacao || !f.gpsAtuacao.length) return false;
+      if(!f.gpsAtuacao.some(gp => _gpsDosPelSelecionados.includes(gp))) return false;
+    }
     /* Restrição por pelotão: operacional e admin_pelotao veem apenas fichas do próprio pelotão */
     if(!_isAdmin && _gpsDoMeuPelotao.length && f.gpsAtuacao && f.gpsAtuacao.length){
       if(!f.gpsAtuacao.some(gp => _gpsDoMeuPelotao.includes(gp))) return false;
@@ -12737,6 +12861,10 @@ function renderIntel(resetPage){
   const totalEncerradas = fichasIntel.filter(f => {
     const status = f.statusFicha || 'em_analise';
     if(status !== 'encerrado') return false;
+    if(_gpsDosPelSelecionados.length){
+      if(!f.gpsAtuacao || !f.gpsAtuacao.length) return false;
+      if(!f.gpsAtuacao.some(gp => _gpsDosPelSelecionados.includes(gp))) return false;
+    }
     if(!_isAdmin && _gpsDoMeuPelotao.length && f.gpsAtuacao && f.gpsAtuacao.length){
       if(!f.gpsAtuacao.some(gp => _gpsDoMeuPelotao.includes(gp))) return false;
     }
