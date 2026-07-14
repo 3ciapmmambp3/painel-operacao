@@ -920,11 +920,8 @@ const REPEATABLE_CONFIGS = {
         { label: 'Nº REDS (BO/BOS/RAT)', type: 'text', mask: 'reds', required: true },
         { label: 'Natureza (Código)', type: 'text', required: true },
       ],
-      [
-        { label: 'Quantidade de Materiais', type: 'text', narrow: true, required: true },
-        { label: 'Nº Envelope/Lacre', type: 'text', narrow: true, required: true },
-      ],
-      { label: 'Material Apreendido (Descrição)', type: 'textarea', required: true },
+      { label: 'Nº Envelope/Lacre', type: 'text', narrow: true, required: true },
+      { label: 'Material Apreendido (Descrição)', type: 'materiais-list', required: true, quantidadeLabel: 'Quantidade de Materiais' },
       { label: 'Local de Acautelamento dos Materiais', type: 'text', required: true },
       { label: 'Comarca', type: 'text', required: true },
       { label: 'Nome do Autor/Envolvido', type: 'text', required: true },
@@ -943,7 +940,7 @@ const REPEATABLE_CONFIGS = {
         { label: 'Nº REDS (BO/BOS/RAT)', type: 'text', mask: 'reds', required: true },
       ],
       { label: 'Nº Auto de Infração', type: 'auto-infracao', required: true },
-      { label: 'Materiais Apreendidos para Destinar à SEMAD', type: 'textarea', required: true },
+      { label: 'Materiais Apreendidos para Destinar à SEMAD', type: 'materiais-list', required: true },
       { label: 'Observações', type: 'textarea' },
     ],
   },
@@ -1388,6 +1385,15 @@ function bindMiniLists(root){
           </div>
           <button type="button" class="mini-remove" aria-label="Remover">&times;</button>
         `;
+      } else if (kind === 'materiais'){
+        row.className = 'mini-row mini-row-multi';
+        row.innerHTML = `
+          <div class="mini-subgrid" style="grid-template-columns:70px 1fr;">
+            <input type="text" placeholder="Qtd" data-numeric="1" data-materiais-qtd="1">
+            <input type="text" placeholder="O que é (ex: Motosserra)" data-materiais-desc="1">
+          </div>
+          <button type="button" class="mini-remove" aria-label="Remover">&times;</button>
+        `;
       } else {
         const labelTexto = fieldDiv.querySelector('label') ? fieldDiv.querySelector('label').textContent : '';
         row.innerHTML = `
@@ -1707,6 +1713,22 @@ function fieldInputHTML(field, idx){
       <div class="field">
         <label>${field.label}</label>
         <textarea rows="3" placeholder="${field.label}"${requiredAttr}${labelAttr}></textarea>
+      </div>`;
+  }
+  if (field.type === 'materiais-list'){
+    const requiredAttr = field.required ? ' data-required="1"' : '';
+    return `
+      <div class="field" data-mini-field data-mini-kind="materiais" data-quantidade-label="${field.quantidadeLabel || ''}">
+        <label>${field.label}</label>
+        <div class="mini-list">
+          <div class="mini-row mini-row-multi">
+            <div class="mini-subgrid" style="grid-template-columns:70px 1fr;">
+              <input type="text" placeholder="Qtd" data-numeric="1" data-materiais-qtd="1"${requiredAttr} data-label="${field.label}">
+              <input type="text" placeholder="O que é (ex: Motosserra)" data-materiais-desc="1">
+            </div>
+          </div>
+        </div>
+        <button type="button" class="btn-add-mini">+ Adicionar material</button>
       </div>`;
   }
   if (field.type === 'auto-infracao'){
@@ -2545,15 +2567,44 @@ function collectCategoryEntries(id){
     return value;
   }
 
+  // Junta "1 Motosserra", "1 Gaiola" em "1 Motosserra e 1 Gaiola" (ou com
+  // vírgulas + "e" antes do último, se forem 3+ itens).
+  function juntarMateriais_(partes){
+    if (!partes.length) return '';
+    if (partes.length === 1) return partes[0];
+    return partes.slice(0, -1).join(', ') + ' e ' + partes[partes.length - 1];
+  }
+
+  // Aplica UM campo dentro do objeto `campos` — trata a lista de materiais à
+  // parte, porque ela pode gerar DOIS valores (a descrição juntada, e o total
+  // somado, se a categoria tiver uma coluna própria de quantidade).
+  function aplicarCampo_(f, campos){
+    const label = f.querySelector('label') ? f.querySelector('label').textContent : '';
+    if (!label) return;
+
+    if (f.dataset.miniKind === 'materiais'){
+      const linhas = Array.from(f.querySelectorAll('.mini-row')).map(row => ({
+        qtd: (row.querySelector('[data-materiais-qtd]') || {}).value || '',
+        desc: ((row.querySelector('[data-materiais-desc]') || {}).value || '').trim(),
+      })).filter(l => l.desc);
+      const partes = linhas.map(l => `${l.qtd || ''} ${l.desc}`.trim());
+      campos[label] = juntarMateriais_(partes);
+      const quantidadeLabel = f.dataset.quantidadeLabel;
+      if (quantidadeLabel){
+        const total = linhas.reduce((soma, l) => soma + (parseInt(l.qtd, 10) || 0), 0);
+        campos[quantidadeLabel] = total ? String(total) : '';
+      }
+      return;
+    }
+
+    campos[label] = lerValorDoCampo_(f); // guarda mesmo vazio, pra o resumo mostrar "não preenchido"
+  }
+
   // Campos "pré" (compartilhados por todos os itens da categoria — ex: ID e
   // Nome da Operação no PAF/FAPI) ficam FORA de cada entrada individual, então
   // são coletados uma vez só e replicados em cada item lançado.
   const preCampos = {};
-  node.querySelectorAll('.pre-fields .field').forEach(f => {
-    const label = f.querySelector('label') ? f.querySelector('label').textContent : '';
-    if (!label) return;
-    preCampos[label] = lerValorDoCampo_(f);
-  });
+  node.querySelectorAll('.pre-fields .field').forEach(f => aplicarCampo_(f, preCampos));
 
   const entries = node.querySelectorAll('[data-repeat-entry]');
   const result = [];
@@ -2561,11 +2612,7 @@ function collectCategoryEntries(id){
     if (!entryIsFilled(entry)) return;
     const campos = Object.assign({}, preCampos);
     Array.from(entry.querySelectorAll(':scope > .field, :scope .row2 .field, :scope .row3 .field, :scope .cemig-variant-fields .field'))
-      .forEach(f => {
-        const label = f.querySelector('label') ? f.querySelector('label').textContent : '';
-        if (!label) return;
-        campos[label] = lerValorDoCampo_(f); // guarda mesmo vazio, pra o resumo mostrar "não preenchido"
-      });
+      .forEach(f => aplicarCampo_(f, campos));
     if (Object.keys(campos).length) result.push(campos);
   });
   return result;
