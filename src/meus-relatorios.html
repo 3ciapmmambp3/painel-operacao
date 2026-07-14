@@ -27,6 +27,10 @@
     .mr-btn-editar.disabled{color:var(--text-muted);cursor:not-allowed;position:relative;}
     .mr-tip{display:none;position:absolute;bottom:26px;right:0;background:var(--bg-dark);color:var(--text-white);font-size:11px;line-height:1.4;padding:8px 10px;border-radius:6px;border:1px solid var(--border);width:220px;z-index:10;}
     .mr-btn-editar.disabled:hover .mr-tip{display:block;}
+    .mr-filtros{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
+    .mr-filtro-input{background:var(--bg-dark);color:var(--text-white);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;}
+    .mr-paginacao{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:16px;}
+    .mr-paginacao button:disabled{opacity:.4;cursor:not-allowed;}
   </style>
 </head>
 <body>
@@ -66,9 +70,17 @@
       <h2>Meus relatórios</h2>
       <button class="btn-gold" onclick="window.location.href='relatorio-servico.html'">+ Lançar relatório</button>
     </div>
+    <div class="mr-filtros" id="mr-filtros">
+      <select id="filtroFracao" class="mr-filtro-input"><option value="">Todas as Frações</option></select>
+      <input type="date" id="filtroDataInicio" class="mr-filtro-input" title="Data início">
+      <span style="color:var(--text-muted);font-size:12px;">até</span>
+      <input type="date" id="filtroDataFim" class="mr-filtro-input" title="Data final">
+      <button class="btn-outline" id="btnLimparFiltros">Limpar filtros</button>
+    </div>
     <div id="mr-lista">
       <div class="mr-empty" id="mr-status">Carregando seus relatórios...</div>
     </div>
+    <div class="mr-paginacao" id="mr-paginacao"></div>
   </div>
 </main>
 
@@ -107,7 +119,7 @@ if (sessao){
 /* A listagem em si (buscar relatórios onde essa matrícula aparece) depende de
    uma função nova no Apps Script que ainda vamos construir na próxima etapa.
    Por enquanto, o botão "+ Lançar relatório" já funciona normalmente. */
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbywHAWTbLCps3DoG14BdQLML9fwAWx91GbdHPcZfQ80vDRz7N8kUD0ucJpitw5Xf_0/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyqIDCde4Mcw1R5C6cKH9ukqK6R0lPLbeGvyqDAzP4MFFRQtEdrXEBr7_CrHt2Sq0ew/exec";
 
 function formatarDataBR(iso){
   if (!iso) return '—';
@@ -115,43 +127,121 @@ function formatarDataBR(iso){
   return `${dia}/${mes}/${ano}`;
 }
 
-async function carregarMeusRelatorios(){
+const ITENS_POR_PAGINA = 15;
+let todosOsRelatorios = [];
+let paginaAtual = 1;
+
+// Preenche o filtro de Fração de Atuação com as frações que de fato aparecem
+// nos relatórios carregados (não precisa de outra chamada ao backend).
+function popularFiltroFracao(relatorios){
+  const select = document.getElementById('filtroFracao');
+  const fracoes = Array.from(new Set(relatorios.map(r => r['Fração de Atuação']).filter(Boolean))).sort();
+  select.innerHTML = '<option value="">Todas as Frações</option>'
+    + fracoes.map(f => `<option value="${f}">${f}</option>`).join('');
+}
+
+function aplicarFiltros(relatorios){
+  const fracao = document.getElementById('filtroFracao').value;
+  const dataInicio = document.getElementById('filtroDataInicio').value; // yyyy-mm-dd
+  const dataFim = document.getElementById('filtroDataFim').value;
+  return relatorios.filter(r => {
+    if (fracao && r['Fração de Atuação'] !== fracao) return false;
+    if (dataInicio && (!r['Data'] || r['Data'] < dataInicio)) return false;
+    if (dataFim && (!r['Data'] || r['Data'] > dataFim)) return false;
+    return true;
+  });
+}
+
+function renderizarTabela(){
   const status = document.getElementById('mr-status');
   const lista = document.getElementById('mr-lista');
+  const paginacao = document.getElementById('mr-paginacao');
+  const filtrados = aplicarFiltros(todosOsRelatorios);
+
+  if (!filtrados.length){
+    lista.innerHTML = '';
+    lista.appendChild(status);
+    status.style.display = '';
+    status.textContent = todosOsRelatorios.length
+      ? 'Nenhum relatório encontrado com esses filtros.'
+      : 'Nenhum relatório encontrado ainda.';
+    paginacao.innerHTML = '';
+    return;
+  }
+
+  const totalPaginas = Math.max(1, Math.ceil(filtrados.length / ITENS_POR_PAGINA));
+  if (paginaAtual > totalPaginas) paginaAtual = totalPaginas;
+  const inicio = (paginaAtual - 1) * ITENS_POR_PAGINA;
+  const pagina = filtrados.slice(inicio, inicio + ITENS_POR_PAGINA);
+
+  const ehAdminGeral = sessao && sessao.nivel_acesso === 'admin_geral';
+
+  const linhas = pagina.map(r => {
+    const podeEditarEfetivo = r.podeEditar || ehAdminGeral;
+    const btn = podeEditarEfetivo
+      ? `<span class="mr-btn-editar" onclick="window.location.href='relatorio-servico.html?editar=${encodeURIComponent(r['ID Relatório'])}'">Editar</span>`
+      : `<span class="mr-btn-editar disabled">Editar<div class="mr-tip">Entrar em contato com a P3 caso seja necessário alterar algo, já expirou o prazo para editar.</div></span>`;
+    return `<tr>
+      <td>${formatarDataBR(r['Data'])}</td>
+      <td>${r['Fração de Atuação'] || '—'}</td>
+      <td>${r['Início do Turno'] || '—'}</td>
+      <td>${r['Fim do Turno'] || '—'}</td>
+      <td>${r['Equipe'] || '—'}</td>
+      <td>${r['Tipo de Serviço'] || '—'}</td>
+      <td>${btn}</td>
+    </tr>`;
+  }).join('');
+
+  lista.innerHTML = `<table class="mr-table">
+    <thead><tr><th>DATA</th><th>FRAÇÃO DE ATUAÇÃO</th><th>INÍCIO DO TURNO</th><th>FIM DO TURNO</th><th>EQUIPE</th><th>SERVIÇO</th><th>AÇÃO</th></tr></thead>
+    <tbody>${linhas}</tbody>
+  </table>`;
+
+  paginacao.innerHTML = `
+    <button class="btn-outline" id="btnPagAnterior" ${paginaAtual === 1 ? 'disabled' : ''}>‹ Anterior</button>
+    <span style="color:var(--text-muted);font-size:12px;">Página ${paginaAtual} de ${totalPaginas} (${filtrados.length} relatório${filtrados.length === 1 ? '' : 's'})</span>
+    <button class="btn-outline" id="btnPagProxima" ${paginaAtual === totalPaginas ? 'disabled' : ''}>Próxima ›</button>
+  `;
+  const btnAnt = document.getElementById('btnPagAnterior');
+  const btnProx = document.getElementById('btnPagProxima');
+  if (btnAnt) btnAnt.addEventListener('click', () => { paginaAtual--; renderizarTabela(); });
+  if (btnProx) btnProx.addEventListener('click', () => { paginaAtual++; renderizarTabela(); });
+}
+
+['filtroFracao', 'filtroDataInicio', 'filtroDataFim'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => { paginaAtual = 1; renderizarTabela(); });
+});
+document.getElementById('btnLimparFiltros').addEventListener('click', () => {
+  document.getElementById('filtroFracao').value = '';
+  document.getElementById('filtroDataInicio').value = '';
+  document.getElementById('filtroDataFim').value = '';
+  paginaAtual = 1;
+  renderizarTabela();
+});
+
+async function carregarMeusRelatorios(){
+  const status = document.getElementById('mr-status');
   if (!sessao || !sessao.matricula){
     status.textContent = 'Não foi possível identificar sua matrícula na sessão.';
     return;
   }
+  const ehAdminGeral = sessao.nivel_acesso === 'admin_geral';
   try {
-    const res = await fetch(`${SCRIPT_URL}?action=meusRelatorios&matricula=${encodeURIComponent(sessao.matricula)}`);
+    // Admin Geral vê TODOS os relatórios lançados, sem restrição de matrícula.
+    const url = ehAdminGeral
+      ? `${SCRIPT_URL}?action=meusRelatorios&matricula=${encodeURIComponent(sessao.matricula)}&todos=true`
+      : `${SCRIPT_URL}?action=meusRelatorios&matricula=${encodeURIComponent(sessao.matricula)}`;
+    const res = await fetch(url);
     const data = await res.json();
     if (data.result !== 'success' || !data.relatorios || !data.relatorios.length){
       status.textContent = 'Nenhum relatório encontrado ainda.';
       return;
     }
 
-    const ehAdminGeral = sessao && sessao.nivel_acesso === 'admin_geral';
-
-    const linhas = data.relatorios.map(r => {
-      const podeEditarEfetivo = r.podeEditar || ehAdminGeral;
-      const btn = podeEditarEfetivo
-        ? `<span class="mr-btn-editar" onclick="window.location.href='relatorio-servico.html?editar=${encodeURIComponent(r['ID Relatório'])}'">Editar</span>`
-        : `<span class="mr-btn-editar disabled">Editar<div class="mr-tip">Entrar em contato com a P3 caso seja necessário alterar algo, já expirou o prazo para editar.</div></span>`;
-      return `<tr>
-        <td>${formatarDataBR(r['Data'])}</td>
-        <td>${r['Fração de Atuação'] || '—'}</td>
-        <td>${r['Início do Turno'] || '—'}</td>
-        <td>${r['Fim do Turno'] || '—'}</td>
-        <td>${r['Equipe'] || '—'}</td>
-        <td>${r['Tipo de Serviço'] || '—'}</td>
-        <td>${btn}</td>
-      </tr>`;
-    }).join('');
-
-    lista.innerHTML = `<table class="mr-table">
-      <thead><tr><th>DATA</th><th>FRAÇÃO DE ATUAÇÃO</th><th>INÍCIO DO TURNO</th><th>FIM DO TURNO</th><th>EQUIPE</th><th>SERVIÇO</th><th>AÇÃO</th></tr></thead>
-      <tbody>${linhas}</tbody>
-    </table>`;
+    todosOsRelatorios = data.relatorios;
+    paginaAtual = 1;
+    popularFiltroFracao(todosOsRelatorios);
+    renderizarTabela();
   } catch(err){
     console.error('Erro ao buscar Meus Relatórios:', err);
     status.textContent = 'Erro ao carregar seus relatórios. Recarregue a página.';
