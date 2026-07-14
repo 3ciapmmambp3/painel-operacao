@@ -2391,6 +2391,32 @@ function preencherEntradaPorLabel_(escopo, itemData){
       return labelEl && labelEl.textContent.trim() === label;
     });
     if (!el) return;
+
+    // Caso especial: "Auto de Infração" é um campo COMPOSTO (dois inputs,
+    // Número + Ano, salvos juntos como "NUMERO/ANO"). Jogar a string inteira
+    // no input de Número — como o código fazia antes — faz a máscara
+    // numérica arrancar a barra e "colar" o número com o ano, corrompendo o
+    // dado a cada edição (o valor ia crescendo, mesmo sem editar esse campo).
+    // Aqui separamos certinho: Número vai pro 1º input, Ano pro 2º.
+    const fieldDiv = el.closest('.field');
+    if (fieldDiv && fieldDiv.dataset.autoInfracao === '1'){
+      const partes = valor.toString().split('/');
+      const numero = partes[0] || '';
+      const ano = partes.length > 1 ? partes[partes.length - 1] : '';
+      const inputs = fieldDiv.querySelectorAll('input');
+      if (inputs[0]){
+        inputs[0].value = numero;
+        inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
+        inputs[0].dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      if (inputs[1] && ano){
+        inputs[1].value = ano;
+        inputs[1].dispatchEvent(new Event('input', { bubbles: true }));
+        inputs[1].dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      return;
+    }
+
     el.value = valor;
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
