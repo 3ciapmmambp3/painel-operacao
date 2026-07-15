@@ -1285,6 +1285,40 @@ document.addEventListener('change', (e) => {
   if (!ehOutro) outroInput.value = '';
 });
 
+// CEMIG Subestações: quando o "Local" é escolhido, o texto já traz o tipo
+// embutido (ex: "GOVERNADOR VALADARES - Predial - ..."). Tenta reconhecer o
+// 2º pedaço do texto contra a lista de Tipos conhecidos e preenche sozinho —
+// só quando reconhece com confiança (bate exatamente, sem acento/maiúscula).
+// O campo "Tipo da Instalação" continua editável normalmente depois, pra
+// corrigir manualmente se o reconhecimento errar ou não encontrar nada.
+document.addEventListener('change', (e) => {
+  const el = e.target;
+  if (!(el.dataset && el.dataset.source === 'CEMIG_SUBESTACOES_LOCAIS')) return;
+  const valor = (el.value || '').trim();
+  if (!valor || valor.toLowerCase() === 'outro:') return;
+
+  const partes = valor.split(' - ').map(p => p.trim());
+  if (partes.length < 2) return;
+  const candidatoTipo = partes[1];
+
+  const tiposConhecidos = referenceCache['CEMIG_SUBESTACOES_TIPOS'] || [];
+  const match = tiposConhecidos.find(t => normalizeText(optionValueOf_(t)) === normalizeText(candidatoTipo));
+  if (!match) return; // não reconheceu com confiança — deixa pra escolha manual
+
+  const entry = el.closest('[data-cemig-entry]');
+  if (!entry) return;
+  const tipoField = Array.from(entry.querySelectorAll('.field')).find(f => {
+    const labelEl = f.querySelector('label');
+    return labelEl && labelEl.textContent.trim() === 'Tipo da Instalação';
+  });
+  if (!tipoField) return;
+  const tipoInput = tipoField.querySelector('select, input');
+  if (!tipoInput) return;
+  tipoInput.value = optionValueOf_(match);
+  tipoInput.dispatchEvent(new Event('input', { bubbles: true }));
+  tipoInput.dispatchEvent(new Event('change', { bubbles: true }));
+});
+
 // ---------- PAF: filtro por Pelotão da fração escolhida + vigência (Início/Final) ----------
 function getPelotaoAtual(){
   const sel = document.querySelector('select[name="fracaoAtuacao"]');
