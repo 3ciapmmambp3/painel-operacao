@@ -1054,7 +1054,7 @@ function bindNumericOnlyIn(root){
 
 // ---------- Dados dinâmicos (Google Sheets via Apps Script) ----------
 // Cole aqui a URL do Web App do Apps Script quando estiver pronta (veja README).
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzIAOzHRTKhlKuzGoFurUpo--IYuxCl03fh3DEN8OXZObqNWtdeH4KsZV6XGj393OSN/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzG14cA7g9BqufiXadx6tRR3kegCxgdQufmpdGSLbBME4rJooSm0Kmm_7Qcv-XOP_5n/exec";
 
 const referenceCache = {}; // sourceKey -> lista de strings ou {value, fracao}
 let gruposList = [];       // [{ principal: '...', variacoes: ['...', ...] }]
@@ -1126,7 +1126,9 @@ function getFilteredItems_(sourceKey, filterFracao, currentEl){
 
   if (filterFracao){
     const alvo = getFracaoAtualCanonica();
-    items = alvo ? list.filter(it => resolveFracaoCanonica(it.fracao) === alvo) : [];
+    // Itens SEM fração vinculada (ex: a opção "Outro:") são "coringa" —
+    // aparecem sempre, não importa qual Fração de Atuação esteja selecionada.
+    items = list.filter(it => !it.fracao || (alvo && resolveFracaoCanonica(it.fracao) === alvo));
   }
 
   const semDuplicata = filterFracao || FONTES_SEMPRE_SEM_DUPLICATA.indexOf(sourceKey) !== -1;
@@ -1134,10 +1136,15 @@ function getFilteredItems_(sourceKey, filterFracao, currentEl){
     const currentValue = currentEl ? currentEl.value : '';
     const escolhidosAlhures = new Set();
     document.querySelectorAll(`[data-source="${sourceKey}"]`).forEach(other => {
-      if (other !== currentEl && other.value) escolhidosAlhures.add(other.value);
+      const val = (other.value || '').trim();
+      // "Outro:" pode ser escolhido em várias entradas ao mesmo tempo (cada
+      // uma vira uma unidade diferente depois de digitada) — nunca some da
+      // lista das outras entradas por causa disso.
+      if (other !== currentEl && val && val.toLowerCase() !== 'outro:') escolhidosAlhures.add(val);
     });
     items = items.filter(it => {
       const val = optionValueOf_(it);
+      if (val.trim().toLowerCase() === 'outro:') return true;
       return val === currentValue || !escolhidosAlhures.has(val);
     });
   }
@@ -1166,6 +1173,7 @@ function attachSearchableBehavior(selectEl){
   if (selectEl.dataset.field) input.dataset.field = selectEl.dataset.field;
   input.dataset.source = sourceKey;
   if (filterFracao) input.dataset.fracaoScoped = '1';
+  if (selectEl.dataset.allowOutro === '1') input.dataset.allowOutro = '1';
   input.value = selectEl.value || '';
 
   const dropdown = document.createElement('div');
@@ -1255,6 +1263,19 @@ document.addEventListener('change', (e) => {
       populateSelectFromCache(sel, sourceKey, true);
     });
   }
+});
+
+// Campo com opção "Outro:" (texto livre) — mostra/esconde o input de texto
+// livre logo abaixo, conforme a opção "Outro:" estiver selecionada ou não.
+document.addEventListener('change', (e) => {
+  const el = e.target;
+  if (!(el.dataset && el.dataset.allowOutro === '1')) return;
+  const fieldDiv = el.closest('.field');
+  const outroInput = fieldDiv && fieldDiv.querySelector('.outro-livre-input');
+  if (!outroInput) return;
+  const ehOutro = (el.value || '').trim().toLowerCase() === 'outro:';
+  outroInput.style.display = ehOutro ? 'block' : 'none';
+  if (!ehOutro) outroInput.value = '';
 });
 
 // ---------- PAF: filtro por Pelotão da fração escolhida + vigência (Início/Final) ----------
@@ -1704,13 +1725,18 @@ function fieldInputHTML(field, idx){
     const scopedAttr = field.fracaoScoped ? ' data-fracao-scoped="1"' : '';
     const requiredAttr = field.required ? ' data-required="1"' : '';
     const labelAttr = ` data-label="${field.label}"`;
+    const outroAttr = field.allowOutroLivre ? ' data-allow-outro="1"' : '';
+    const outroInputHTML = field.allowOutroLivre
+      ? `<input type="text" class="outro-livre-input" placeholder="Digite o nome da unidade" style="display:none;margin-top:6px;">`
+      : '';
     return `
       <div class="field">
         <label>${field.label}</label>
-        <select${keyAttr}${sourceAttr}${scopedAttr}${requiredAttr}${labelAttr}>
+        <select${keyAttr}${sourceAttr}${scopedAttr}${requiredAttr}${labelAttr}${outroAttr}>
           <option value="">Selecione...${note}</option>
           ${opts}
         </select>
+        ${outroInputHTML}
         ${field.extraNote ? `<p class="field-note">${field.extraNote}</p>` : ''}
       </div>`;
   }
@@ -2098,7 +2124,7 @@ const CEMIG_VARIANTS = {
     label: 'Convênio 043/2022 - CPMAMB x CEMIG (UHE e PCH)',
     fields: [
       [
-        { label: 'Unidade CEMIG Visitada', type: 'text' },
+        { label: 'Unidade CEMIG Visitada', type: 'select', sourceKey: 'CEMIG_UHE_PCH_UNIDADES', fracaoScoped: true, allowOutroLivre: true },
         { label: 'Data da Visita', type: 'date' },
       ],
       [
@@ -2121,8 +2147,8 @@ const CEMIG_VARIANTS = {
     label: 'Acordo de Cooperação Técnica PMMG x CEMIG - MEM 04.23/P3/BPM MAMB (Subestações)',
     fields: [
       [
-        { label: 'Tipo da Instalação', type: 'text' },
-        { label: 'Local', type: 'text' },
+        { label: 'Tipo da Instalação', type: 'select', sourceKey: 'CEMIG_SUBESTACOES_TIPOS', fracaoScoped: true, allowOutroLivre: true },
+        { label: 'Local', type: 'select', sourceKey: 'CEMIG_SUBESTACOES_LOCAIS', fracaoScoped: true, allowOutroLivre: true },
       ],
       [
         { label: 'Hora de Início da Atividade', type: 'time' },
@@ -2417,6 +2443,28 @@ function preencherEntradaPorLabel_(escopo, itemData){
       return;
     }
 
+    // Caso especial: campo com opção "Outro:" (texto livre). Se o valor
+    // salvo não bater com nenhuma opção conhecida da lista de referência,
+    // foi lançado como "Outro" da vez passada — mostra "Outro:" selecionado
+    // e joga o texto real no campo livre (senão a validação de "só aceita
+    // opção da lista", que roda ao sair do campo, apagaria o valor achando
+    // que é inválido).
+    if (el.dataset && el.dataset.allowOutro === '1'){
+      const sourceKey = el.dataset.source;
+      const listaConhecida = (referenceCache[sourceKey] || []).map(optionValueOf_);
+      if (!listaConhecida.includes(valor.toString())){
+        el.value = 'Outro:';
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        const outroInput = fieldDiv && fieldDiv.querySelector('.outro-livre-input');
+        if (outroInput){
+          outroInput.style.display = 'block';
+          outroInput.value = valor;
+        }
+        return;
+      }
+    }
+
     el.value = valor;
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -2596,6 +2644,14 @@ function collectCategoryEntries(id){
     }
     const input = f.querySelector('input, select, textarea');
     let value = input ? input.value : '';
+
+    // Campo com opção "Outro:" — se a opção escolhida for "Outro:", usa o
+    // texto digitado no campo livre em vez de gravar literalmente "Outro:".
+    if (input && input.dataset && input.dataset.allowOutro === '1' && value.trim().toLowerCase() === 'outro:'){
+      const outroInput = f.querySelector('.outro-livre-input');
+      if (outroInput && outroInput.value.trim()) value = outroInput.value.trim();
+    }
+
     if (!value){
       const miniInputs = f.querySelectorAll('.mini-row input, .mini-row select');
       if (miniInputs.length){
