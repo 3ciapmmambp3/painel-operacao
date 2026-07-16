@@ -304,6 +304,23 @@
     #imp-preview-table tr.imp-row-dup td:first-child::before{content:"↻ ";color:#2ea043;font-weight:700;font-size:9px;}
     .imp-hist-item{display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #252525;font-size:11px;}
     .imp-hist-item:last-child{border-bottom:none;}
+
+    /* ---- Nova barra de navegação (topo, com dropdown) ---- */
+    .topnav{display:flex;align-items:center;gap:2px;background:var(--bg-dark);border-bottom:1px solid var(--border);padding:0 16px;position:relative;z-index:20;}
+    .topnav-item{position:relative;}
+    .topnav-link{display:flex;align-items:center;gap:5px;padding:13px 16px;color:var(--text-muted);font-size:12.5px;font-weight:700;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;text-decoration:none;}
+    .topnav-link:hover{color:var(--text-white);}
+    .topnav-link.active{color:var(--gold);border-bottom-color:var(--gold);}
+    .topnav-link .chev{font-size:9px;opacity:.7;}
+    .topnav-dropdown{display:none;position:absolute;top:100%;left:0;background:var(--bg-card);border:1px solid var(--border);border-radius:0 0 8px 8px;min-width:190px;box-shadow:0 12px 24px rgba(0,0,0,.4);padding:6px;}
+    .topnav-dropdown.open{display:block;}
+    .topnav-dropdown a, .topnav-dropdown div.tab{display:block;padding:9px 12px;color:var(--text-white);font-size:12.5px;border-radius:6px;text-decoration:none;cursor:pointer;background:none;border:none;}
+    .topnav-dropdown a:hover, .topnav-dropdown div.tab:hover{background:var(--bg-hover);color:var(--gold);}
+    .topnav-dropdown div.tab.active{color:var(--gold);font-weight:700;}
+    /* .tab que fica solto direto na topnav (não dentro de dropdown) ganha o visual do topnav-link */
+    .topnav > div.tab{display:flex;align-items:center;gap:5px;padding:13px 16px;color:var(--text-muted);font-size:12.5px;font-weight:700;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;background:none;border-left:none;border-right:none;border-top:none;}
+    .topnav > div.tab:hover{color:var(--text-white);}
+    .topnav > div.tab.active{color:var(--gold);border-bottom:2px solid var(--gold);background:none;}
   </style>
 </head>
 <body>
@@ -331,17 +348,59 @@
   </div>
 </header>
 
-<!-- TABS -->
-<nav class="tabs-bar">
-  <div class="tab active" onclick="switchTab(this,'operacoes')">🛡 OP POE</div>
-  <div class="tab" onclick="switchTab(this,'gdo-rural');renderGdoRural()">🌿 OP GDO RURAL</div>
-  <div class="tab" onclick="window.location.href='analise-criminal.html'" style="color:#ef5350;" onmouseover="this.style.color='#ff6b6b'" onmouseout="this.style.color='#ef5350'">🔴 ANÁLISE CRIMINAL</div>
-  <div class="tab" onclick="switchTab(this,'relatorios');initRelatorios()" id="tab-btn-relatorios">📋 RELATÓRIOS</div>
-  <div class="tab" onclick="switchTab(this,'consulta');initConsultaUrbanaRural()" id="tab-btn-consulta">📍 CONSULTA</div>
-  <div class="tab" id="tab-btn-importacao" style="display:none" onclick="switchTab(this,'importacao')">📥 IMPORTAÇÃO</div>
-  <div class="tab" onclick="window.location.href='meus-relatorios.html'">📄 MEUS RELATÓRIOS</div>
-  <div class="tab" onclick="window.location.href='materiais-tco-semad.html'">📁 TCO / SEMAD</div>
+<nav class="topnav" id="topnav">
+  <div class="topnav-item">
+    <div class="topnav-link" data-dropdown="ddOperacao">🛡 OPERAÇÃO <span class="chev">▾</span></div>
+    <div class="topnav-dropdown" id="ddOperacao">
+      <div class="tab active" id="tab-btn-operacoes" onclick="switchTab(this,'operacoes');fecharDropdownsTopnav();">🛡 OP POE</div>
+      <div class="tab" id="tab-btn-gdo-rural" onclick="switchTab(this,'gdo-rural');renderGdoRural();fecharDropdownsTopnav();">🌿 OP GDO Rural</div>
+    </div>
+  </div>
+  <div class="topnav-link" onclick="window.location.href='analise-criminal.html'" style="color:#ef5350;" onmouseover="this.style.color='#ff6b6b'" onmouseout="this.style.color='#ef5350'">🔴 ANÁLISE CRIMINAL</div>
+  <div class="topnav-item">
+    <div class="topnav-link" data-dropdown="ddAdm">⚙ ADM <span class="chev">▾</span></div>
+    <div class="topnav-dropdown" id="ddAdm">
+      <div class="tab" id="tab-btn-relatorios" onclick="switchTab(this,'relatorios');initRelatorios();fecharDropdownsTopnav();">📋 Relatórios</div>
+      <div class="tab" id="tab-btn-importacao" style="display:none" onclick="switchTab(this,'importacao');fecharDropdownsTopnav();">📥 Importação</div>
+      <a href="admin.html">⚙️ Administração</a>
+    </div>
+  </div>
+  <div class="topnav-link" onclick="window.location.href='meus-relatorios.html'">📄 RELATÓRIO DIÁRIO</div>
+  <div class="tab" id="tab-btn-consulta" onclick="switchTab(this,'consulta');initConsultaUrbanaRural();fecharDropdownsTopnav();">📍 CONSULTA</div>
 </nav>
+
+<script>
+// ---------- Dropdowns da nova barra do topo (OPERAÇÃO / ADM) ----------
+function fecharDropdownsTopnav(){
+  document.querySelectorAll('.topnav-dropdown.open').forEach(d => d.classList.remove('open'));
+}
+document.querySelectorAll('.topnav-link[data-dropdown]').forEach(link => {
+  link.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const dd = document.getElementById(link.dataset.dropdown);
+    const jaAberto = dd.classList.contains('open');
+    fecharDropdownsTopnav();
+    if (!jaAberto) dd.classList.add('open');
+  });
+});
+document.addEventListener('click', () => fecharDropdownsTopnav());
+
+// ---------- Chegando de outra página com ?tab=X, já abre na aba certa ----------
+// (equivalente a clicar manualmente no item correspondente da barra/dropdown)
+// Espera o DOM inteiro carregar, já que switchTab/renderGdoRural/etc. só são
+// definidas mais abaixo no arquivo — chamar isso cedo demais quebraria.
+window.addEventListener('load', function(){
+  const tabParam = new URLSearchParams(window.location.search).get('tab');
+  if (!tabParam) return;
+  const acoes = {
+    'gdo-rural': () => { switchTab(document.getElementById('tab-btn-gdo-rural'), 'gdo-rural'); renderGdoRural(); },
+    'relatorios': () => { switchTab(document.getElementById('tab-btn-relatorios'), 'relatorios'); initRelatorios(); },
+    'consulta': () => { switchTab(document.getElementById('tab-btn-consulta'), 'consulta'); initConsultaUrbanaRural(); },
+    'importacao': () => { switchTab(document.getElementById('tab-btn-importacao'), 'importacao'); },
+  };
+  if (acoes[tabParam]) acoes[tabParam]();
+});
+</script>
 
 <main class="content">
 
