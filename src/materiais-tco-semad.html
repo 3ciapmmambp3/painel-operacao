@@ -17,7 +17,56 @@
   <style>
     body{display:flex;flex-direction:column;min-height:100vh;}
     .mr-card{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:18px 20px;margin:20px;}
+    .mr-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;}
+    .mr-toolbar h2{font-size:14px;color:var(--text-white);}
     .mr-empty{color:var(--text-muted);font-size:13px;text-align:center;padding:40px 0;}
+    table.mr-table{width:100%;border-collapse:collapse;font-size:13px;}
+    table.mr-table th{text-align:left;color:var(--text-muted);font-size:11px;padding:8px 10px;border-bottom:1px solid var(--border);font-weight:700;}
+    table.mr-table td{padding:10px;border-bottom:1px solid var(--border);color:var(--text-white);}
+    table.mr-table tr.linha-clicavel{cursor:pointer;}
+    table.mr-table tr.linha-clicavel:hover{background:rgba(155,138,92,.08);}
+    .mr-filtros{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
+    .mr-filtro-input{background:var(--bg-dark);color:var(--text-white);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;}
+    .mr-paginacao{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:16px;}
+    .mr-paginacao button:disabled{opacity:.4;cursor:not-allowed;}
+
+    .sub-tabs{display:flex;gap:8px;margin-bottom:16px;}
+    .sub-tab{padding:8px 18px;border-radius:6px;border:1px solid var(--border);color:var(--text-muted);font-size:13px;font-weight:700;cursor:pointer;background:transparent;}
+    .sub-tab.active{color:#1a1000;background:var(--gold);border-color:var(--gold);}
+
+    .status-badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;white-space:nowrap;}
+
+    /* ---- Modal ---- */
+    .modal-overlay{position:fixed;inset:0;background:rgba(18,30,25,0.55);display:none;align-items:center;justify-content:center;padding:20px;z-index:100;}
+    .modal-overlay.open{display:flex;}
+    .modal-box{background:var(--bg-card);border-radius:8px;width:100%;max-width:720px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.6);}
+    .modal-head{display:flex;align-items:center;justify-content:space-between;background:#0f0f0f;color:var(--gold);padding:16px 22px;border-radius:8px 8px 0 0;flex-shrink:0;border-bottom:2px solid var(--gold);}
+    .modal-head h3{font-size:16px;font-weight:700;color:var(--gold);}
+    .modal-close{background:rgba(155,138,92,.18);border:none;color:var(--gold);width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:17px;}
+    .modal-close:hover{background:rgba(155,138,92,.32);}
+    .modal-body{padding:20px 22px;overflow-y:auto;flex:1;}
+    .modal-foot{padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;flex-wrap:wrap;gap:10px;}
+
+    .info-secao{margin-bottom:18px;}
+    .info-secao h4{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--gold);margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:6px;}
+    .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;}
+    .info-item label{display:block;font-size:10px;color:var(--text-muted);text-transform:uppercase;margin-bottom:2px;}
+    .info-item .valor{font-size:13px;color:var(--text-white);}
+    .info-item.full{grid-column:1/-1;}
+
+    .campo-edit{margin-bottom:14px;}
+    .campo-edit label{display:block;font-size:11px;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px;font-weight:700;}
+    .campo-edit select, .campo-edit input[type="text"], .campo-edit input[type="date"]{
+      width:100%;background:var(--bg-dark);color:var(--text-white);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:13px;
+    }
+    .anexo-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+    .anexo-row a{color:var(--gold);font-size:12px;}
+    .anexo-row input[type="file"]{font-size:11px;color:var(--text-muted);max-width:220px;}
+    .anexo-status{font-size:11px;color:var(--text-muted);}
+
+    .btn-danger{background:transparent;border:1px solid #ef5350;color:#ef5350;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;}
+    .btn-danger:hover{background:rgba(239,83,80,.12);}
+    .somente-leitura-aviso{background:rgba(66,165,245,.12);border:1px solid rgba(66,165,245,.35);color:#64b5f6;font-size:12px;padding:8px 12px;border-radius:6px;margin-bottom:14px;}
   </style>
 </head>
 <body>
@@ -53,11 +102,49 @@
 
 <main class="content">
   <div class="mr-card">
-    <div class="mr-empty">Acompanhamento de TCO/SEMAD — ainda em construção. Chega em uma próxima etapa.</div>
+    <div class="mr-toolbar">
+      <h2>Acompanhamento de Materiais</h2>
+    </div>
+
+    <div class="sub-tabs">
+      <button type="button" class="sub-tab active" id="subTabTco" onclick="trocarAba('TCO')">TCO</button>
+      <button type="button" class="sub-tab" id="subTabSemad" onclick="trocarAba('SEMAD')">SEMAD</button>
+    </div>
+
+    <div class="mr-filtros">
+      <select id="filtroSituacao" class="mr-filtro-input"><option value="">Todas as situações</option></select>
+      <input type="text" id="filtroBusca" class="mr-filtro-input" placeholder="Buscar por REDS ou nome..." style="min-width:220px;">
+      <button class="btn-outline" id="btnLimparFiltros">Limpar filtros</button>
+    </div>
+
+    <div id="mr-lista">
+      <div class="mr-empty" id="mr-status">Carregando...</div>
+    </div>
+    <div class="mr-paginacao" id="mr-paginacao"></div>
   </div>
 </main>
 
+<!-- Modal de Detalhe / Edição -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3 id="modalTitulo">Detalhe do Material</h3>
+      <button type="button" class="modal-close" id="modalCloseX">&times;</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-foot">
+      <button type="button" class="btn-danger" id="btnExcluir" style="display:none;">Excluir</button>
+      <div style="display:flex;gap:10px;margin-left:auto;">
+        <button type="button" class="btn-outline" id="btnFecharModal">Fechar</button>
+        <button type="button" class="btn-gold" id="btnSalvarModal" style="display:none;">Salvar alterações</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbybp53XdvNA1b0t6AKhwTxYa600IwHJE86G3C0Qrb2UnenuSe83_gWbBipDA7CdijtU/exec";
+
 const sessao = (function(){
   const raw = sessionStorage.getItem('poe_sessao_v2');
   if(!raw){ window.location.href='index.html'; return null; }
@@ -87,6 +174,435 @@ if (sessao){
     const btnImp = document.getElementById('tab-btn-importacao');
     if (btnImp) btnImp.style.display = '';
   }
+}
+
+// ---------- Configuração de status por aba (valor + cor) ----------
+const STATUS_POR_ABA = {
+  TCO: [
+    { value: 'PENDENTE', cor: '#ef5350' },
+    { value: 'ENCAMINHADO', cor: '#42a5f5' },
+    { value: 'AGUARDANDO AUTORIZAÇÃO JUDICIAL', cor: '#ffa726' },
+    { value: 'DESTRUÍDO', cor: '#9e9e9e' },
+    { value: 'RESTITUÍDO', cor: '#66bb6a' },
+  ],
+  SEMAD: [
+    { value: 'PENDENTE DE ENCAMINHAMENTO', cor: '#ef5350' },
+    { value: 'ENCAMINHADO', cor: '#66bb6a' },
+  ],
+};
+
+// Campos administrativos editáveis diretamente (texto/data) por aba — não
+// inclui os campos de anexo (PDF), que são tratados à parte.
+const CAMPOS_ADMIN_TEXTO = {
+  TCO: [
+    { campo: 'BOS/RAT/REDS DESTRUIÇÃO / RESTITUIÇÃO DO MATERIAL', label: 'BOS/RAT/REDS de Destruição/Restituição', tipo: 'text' },
+  ],
+  SEMAD: [
+    { campo: 'DATA ENCAMINHADO', label: 'Data Encaminhado', tipo: 'date' },
+  ],
+};
+
+// Campos de anexo (PDF) por aba.
+const CAMPOS_ANEXO = {
+  TCO: [
+    { campo: 'OFÍCIO DE ENCAMINHAMENTO DO "TCO"', label: 'Ofício de Encaminhamento do TCO' },
+    { campo: 'OFÍCIO SOLICITANDO DESTRUIÇÃO / RESTITUIÇÃO DOS MATERIAIS', label: 'Ofício Solicitando Destruição/Restituição' },
+    { campo: 'AUTORIZAÇÃO JUDICIAL PARA DESTRUIÇÃO / RESTITUIÇÃO', label: 'Autorização Judicial' },
+    { campo: 'OFÍCIO COMUNICANDO O "MP"', label: 'Ofício Comunicando o MP' },
+    { campo: 'OFÍCIO COMUNICANDO O "JUDICIÁRIO"', label: 'Ofício Comunicando o Judiciário' },
+  ],
+  SEMAD: [
+    { campo: 'OFÍCIO DE ENCAMINHAMENTO DOS MATERIAIS APREENDIDOS', label: 'Ofício de Encaminhamento' },
+  ],
+};
+
+// Campos "de origem" (lançados no relatório, somente leitura nesta tela) por aba.
+const CAMPOS_ORIGEM = {
+  TCO: [
+    ['REDS', 'Nº REDS (BO/BOS/RAT)'],
+    ['NATUREZA (CÓDIGO)', 'Natureza (Código)'],
+    ['QUANTIDADE', 'Quantidade de Materiais'],
+    ['Nº ENVELOPE/LACRE', 'Nº Envelope/Lacre'],
+    ['MATERIAIS APREENDIDOS', 'Material Apreendido (Descrição)', true],
+    ['LOCAL DE ACAUTELAMENTO DOS MATERIAIS', 'Local de Acautelamento', true],
+    ['COMARCA', 'Comarca'],
+    ['NOME DO AUTOR / ENVOLVIDO', 'Nome do Autor/Envolvido'],
+    ['DATA DA AUDIÊNCIA', 'Data da Audiência'],
+    ['HORA DA AUDIÊNCIA', 'Hora da Audiência'],
+    ['OBSERVAÇÕES', 'Observações', true],
+  ],
+  SEMAD: [
+    ['DATA', 'Data'],
+    ['REDS', 'Nº REDS (BO/BOS/RAT)'],
+    ['AUTO DE INFRAÇÃO SISEMA', 'Nº Auto de Infração'],
+    ['MATERIAIS APREENDIDOS', 'Materiais Apreendidos', true],
+    ['OBSERVAÇÕES', 'Observações', true],
+  ],
+};
+
+let abaAtual = 'TCO';
+let todosMateriais = [];
+let paginaAtual = 1;
+const ITENS_POR_PAGINA = 15;
+let itemEmEdicao = null; // material atualmente aberto no modal
+
+function statusInfo(aba, valor){
+  const lista = STATUS_POR_ABA[aba] || [];
+  return lista.find(s => s.value === valor) || null;
+}
+
+function badgeStatusHTML(aba, valor){
+  if (!valor) return '<span class="status-badge" style="background:rgba(255,255,255,.08);color:var(--text-muted);">—</span>';
+  const info = statusInfo(aba, valor);
+  const cor = info ? info.cor : '#78909c';
+  return `<span class="status-badge" style="background:${cor}22;color:${cor};border:1px solid ${cor}66;">${valor}</span>`;
+}
+
+function popularFiltroSituacao(){
+  const select = document.getElementById('filtroSituacao');
+  const lista = STATUS_POR_ABA[abaAtual] || [];
+  select.innerHTML = '<option value="">Todas as situações</option>'
+    + lista.map(s => `<option value="${s.value}">${s.value}</option>`).join('');
+}
+
+function trocarAba(aba){
+  abaAtual = aba;
+  document.getElementById('subTabTco').classList.toggle('active', aba === 'TCO');
+  document.getElementById('subTabSemad').classList.toggle('active', aba === 'SEMAD');
+  document.getElementById('filtroBusca').value = '';
+  paginaAtual = 1;
+  popularFiltroSituacao();
+  carregarMateriais();
+}
+
+function aplicarFiltros(lista){
+  const situacao = document.getElementById('filtroSituacao').value;
+  const busca = document.getElementById('filtroBusca').value.trim().toUpperCase();
+  return lista.filter(item => {
+    if (situacao && item['SITUAÇÃO DO MATERIAIS APREENDIDOS'] !== situacao) return false;
+    if (busca){
+      const alvo = `${item['REDS'] || ''} ${item['NOME DO AUTOR / ENVOLVIDO'] || ''}`.toUpperCase();
+      if (alvo.indexOf(busca) === -1) return false;
+    }
+    return true;
+  });
+}
+
+function renderizarTabela(){
+  const status = document.getElementById('mr-status');
+  const lista = document.getElementById('mr-lista');
+  const paginacao = document.getElementById('mr-paginacao');
+  const filtrados = aplicarFiltros(todosMateriais);
+
+  if (!filtrados.length){
+    lista.innerHTML = '';
+    lista.appendChild(status);
+    status.style.display = '';
+    status.textContent = todosMateriais.length
+      ? 'Nenhum material encontrado com esses filtros.'
+      : `Nenhum ${abaAtual} encontrado no seu escopo de visualização.`;
+    paginacao.innerHTML = '';
+    return;
+  }
+
+  const totalPaginas = Math.max(1, Math.ceil(filtrados.length / ITENS_POR_PAGINA));
+  if (paginaAtual > totalPaginas) paginaAtual = totalPaginas;
+  const inicio = (paginaAtual - 1) * ITENS_POR_PAGINA;
+  const pagina = filtrados.slice(inicio, inicio + ITENS_POR_PAGINA);
+
+  const colunaData = abaAtual === 'TCO' ? 'DATA REDS' : 'DATA';
+  const colunaResumo = 'MATERIAIS APREENDIDOS';
+
+  const linhas = pagina.map((item, idx) => {
+    const resumo = (item[colunaResumo] || '').toString();
+    const resumoCurto = resumo.length > 40 ? resumo.slice(0, 40) + '...' : resumo;
+    return `<tr class="linha-clicavel" data-idx="${inicio + idx}">
+      <td>${item['REDS'] || '—'}</td>
+      <td>${item[colunaData] || '—'}</td>
+      <td>${item['GRUPAMENTO'] || '—'}</td>
+      <td>${resumoCurto || '—'}</td>
+      <td>${badgeStatusHTML(abaAtual, item['SITUAÇÃO DO MATERIAIS APREENDIDOS'])}</td>
+    </tr>`;
+  }).join('');
+
+  lista.innerHTML = `<table class="mr-table">
+    <thead><tr><th>REDS</th><th>DATA</th><th>GRUPAMENTO</th><th>MATERIAL</th><th>SITUAÇÃO</th></tr></thead>
+    <tbody>${linhas}</tbody>
+  </table>`;
+
+  lista.querySelectorAll('tr[data-idx]').forEach(tr => {
+    tr.addEventListener('click', () => {
+      const idx = parseInt(tr.dataset.idx, 10);
+      abrirDetalhe(filtrados[idx]);
+    });
+  });
+
+  paginacao.innerHTML = `
+    <button class="btn-outline" id="btnPagAnterior" ${paginaAtual === 1 ? 'disabled' : ''}>‹ Anterior</button>
+    <span style="color:var(--text-muted);font-size:12px;">Página ${paginaAtual} de ${totalPaginas} (${filtrados.length} item${filtrados.length === 1 ? '' : 's'})</span>
+    <button class="btn-outline" id="btnPagProxima" ${paginaAtual === totalPaginas ? 'disabled' : ''}>Próxima ›</button>
+  `;
+  const btnAnt = document.getElementById('btnPagAnterior');
+  const btnProx = document.getElementById('btnPagProxima');
+  if (btnAnt) btnAnt.addEventListener('click', () => { paginaAtual--; renderizarTabela(); });
+  if (btnProx) btnProx.addEventListener('click', () => { paginaAtual++; renderizarTabela(); });
+}
+
+async function carregarMateriais(){
+  const status = document.getElementById('mr-status');
+  const lista = document.getElementById('mr-lista');
+  lista.innerHTML = '';
+  lista.appendChild(status);
+  status.style.display = '';
+  status.textContent = 'Carregando...';
+  document.getElementById('mr-paginacao').innerHTML = '';
+
+  try {
+    const res = await fetch(`${SCRIPT_URL}?action=listarMateriais&aba=${abaAtual}`);
+    const data = await res.json();
+    if (data.result !== 'success'){
+      status.textContent = 'Erro ao carregar materiais.';
+      return;
+    }
+    // Filtra pelo escopo de visualização do usuário logado (Admin Geral/Admin
+    // veem tudo; Admin Pelotão vê o pelotão; Admin GP só o próprio GP).
+    todosMateriais = (data.materiais || []).filter(item => auth_podeVerGrupamento(sessao, item['GRUPAMENTO']));
+    paginaAtual = 1;
+    renderizarTabela();
+  } catch(err){
+    console.error('Erro ao carregar materiais:', err);
+    status.textContent = 'Erro ao carregar materiais. Recarregue a página.';
+  }
+}
+
+['filtroSituacao', 'filtroBusca'].forEach(id => {
+  document.getElementById(id).addEventListener('input', () => { paginaAtual = 1; renderizarTabela(); });
+});
+document.getElementById('btnLimparFiltros').addEventListener('click', () => {
+  document.getElementById('filtroSituacao').value = '';
+  document.getElementById('filtroBusca').value = '';
+  paginaAtual = 1;
+  renderizarTabela();
+});
+
+// ---------- Modal de Detalhe / Edição ----------
+function podeEditar(item){
+  if (!auth_podeVerGrupamento(sessao, item['GRUPAMENTO'])) return false;
+  return sessao.nivel_acesso !== 'admin'; // Admin só visualiza
+}
+function podeExcluir(){
+  return sessao.nivel_acesso === 'admin_geral';
+}
+function editorAtual(){
+  return {
+    matricula: sessao.matricula || '',
+    nome: (sessao.nome || '').toUpperCase(),
+    pg: (sessao.pg || '').toUpperCase(),
+  };
+}
+
+function abrirDetalhe(item){
+  itemEmEdicao = item;
+  const editavel = podeEditar(item);
+  const excluivel = podeExcluir();
+
+  document.getElementById('modalTitulo').textContent = `${abaAtual} — REDS ${item['REDS'] || ''}`;
+  document.getElementById('btnExcluir').style.display = excluivel ? '' : 'none';
+  document.getElementById('btnSalvarModal').style.display = editavel ? '' : 'none';
+
+  const origem = CAMPOS_ORIGEM[abaAtual] || [];
+  const origemHTML = origem.map(([campo, label, full]) => `
+    <div class="info-item${full ? ' full' : ''}">
+      <label>${label}</label>
+      <div class="valor">${item[campo] || '—'}</div>
+    </div>`).join('');
+
+  const situacaoOpts = (STATUS_POR_ABA[abaAtual] || [])
+    .map(s => `<option value="${s.value}" ${item['SITUAÇÃO DO MATERIAIS APREENDIDOS'] === s.value ? 'selected' : ''}>${s.value}</option>`).join('');
+
+  const camposTexto = (CAMPOS_ADMIN_TEXTO[abaAtual] || []).map(c => `
+    <div class="campo-edit">
+      <label>${c.label}</label>
+      <input type="${c.tipo}" data-campo-admin="${c.campo}" value="${item[c.campo] || ''}" ${editavel ? '' : 'disabled'}>
+    </div>`).join('');
+
+  const anexosHTML = (CAMPOS_ANEXO[abaAtual] || []).map(c => {
+    const link = item[c.campo] || '';
+    return `
+    <div class="campo-edit">
+      <label>${c.label}</label>
+      <div class="anexo-row">
+        ${link ? `<a href="${link}" target="_blank" rel="noopener">📄 Ver anexo atual</a>` : '<span class="anexo-status">Nenhum anexo ainda</span>'}
+        ${editavel ? `<input type="file" accept="application/pdf" data-campo-anexo="${c.campo}">` : ''}
+        <span class="anexo-status" data-status-anexo="${c.campo}"></span>
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('modalBody').innerHTML = `
+    ${!editavel ? '<div class="somente-leitura-aviso">Você tem permissão apenas para visualizar este item.</div>' : ''}
+    <div class="info-secao">
+      <h4>Dados do Lançamento</h4>
+      <div class="info-grid">
+        <div class="info-item"><label>Grupamento</label><div class="valor">${item['GRUPAMENTO'] || '—'}</div></div>
+        <div class="info-item"><label>Nº de Ordem</label><div class="valor">${item['NR. DE ORDEM'] || '—'}</div></div>
+        ${origemHTML}
+      </div>
+    </div>
+    <div class="info-secao">
+      <h4>Acompanhamento Administrativo</h4>
+      <div class="campo-edit">
+        <label>Situação</label>
+        <select data-campo-admin="SITUAÇÃO DO MATERIAIS APREENDIDOS" ${editavel ? '' : 'disabled'}>${situacaoOpts}</select>
+      </div>
+      ${camposTexto}
+      ${anexosHTML}
+    </div>
+  `;
+
+  // Upload automático ao escolher o arquivo.
+  document.querySelectorAll('[data-campo-anexo]').forEach(input => {
+    input.addEventListener('change', () => uploadAnexo(input));
+  });
+
+  document.getElementById('modalOverlay').classList.add('open');
+}
+
+function fecharModal(){
+  document.getElementById('modalOverlay').classList.remove('open');
+  itemEmEdicao = null;
+}
+document.getElementById('modalCloseX').addEventListener('click', fecharModal);
+document.getElementById('btnFecharModal').addEventListener('click', fecharModal);
+
+async function uploadAnexo(inputEl){
+  const campo = inputEl.dataset.campoAnexo;
+  const arquivo = inputEl.files[0];
+  if (!arquivo || !itemEmEdicao) return;
+  const statusEl = document.querySelector(`[data-status-anexo="${campo}"]`);
+  if (statusEl) statusEl.textContent = 'Enviando...';
+  inputEl.disabled = true;
+
+  try {
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(arquivo);
+    });
+
+    const payload = {
+      modo: 'anexo',
+      aba: abaAtual,
+      reds: itemEmEdicao['REDS'],
+      campo: campo,
+      nomeArquivo: arquivo.name,
+      arquivoBase64: base64,
+      editadoPor: editorAtual(),
+    };
+
+    const res = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      body: new URLSearchParams({ payload: JSON.stringify(payload) }),
+    });
+    const data = await res.json();
+    if (data.result !== 'success'){
+      if (statusEl) statusEl.textContent = 'Erro no envio.';
+      alert('Erro ao enviar anexo: ' + (data.erro || 'desconhecido'));
+      return;
+    }
+    itemEmEdicao[campo] = data.link;
+    if (statusEl) statusEl.textContent = 'Enviado com sucesso!';
+    const alvo = todosMateriais.find(m => m['REDS'] === itemEmEdicao['REDS']);
+    if (alvo) alvo[campo] = data.link;
+    setTimeout(() => abrirDetalhe(itemEmEdicao), 600);
+  } catch(err){
+    console.error('Erro no upload:', err);
+    if (statusEl) statusEl.textContent = 'Erro no envio.';
+    alert('Erro ao enviar o anexo.');
+  } finally {
+    inputEl.disabled = false;
+  }
+}
+
+document.getElementById('btnSalvarModal').addEventListener('click', async () => {
+  if (!itemEmEdicao) return;
+  const btn = document.getElementById('btnSalvarModal');
+  const campos = {};
+  document.querySelectorAll('[data-campo-admin]').forEach(el => {
+    campos[el.dataset.campoAdmin] = el.value;
+  });
+
+  btn.disabled = true;
+  btn.textContent = 'Salvando...';
+  try {
+    const payload = {
+      modo: 'atualizarAdministrativo',
+      aba: abaAtual,
+      reds: itemEmEdicao['REDS'],
+      campos: campos,
+      editadoPor: editorAtual(),
+    };
+    const res = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      body: new URLSearchParams({ payload: JSON.stringify(payload) }),
+    });
+    const data = await res.json();
+    if (data.result !== 'success'){
+      alert('Erro ao salvar: ' + (data.erro || 'desconhecido'));
+      return;
+    }
+    Object.assign(itemEmEdicao, campos);
+    const alvo = todosMateriais.find(m => m['REDS'] === itemEmEdicao['REDS']);
+    if (alvo) Object.assign(alvo, campos);
+    fecharModal();
+    renderizarTabela();
+  } catch(err){
+    console.error('Erro ao salvar:', err);
+    alert('Erro ao salvar as alterações.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Salvar alterações';
+  }
+});
+
+document.getElementById('btnExcluir').addEventListener('click', async () => {
+  if (!itemEmEdicao) return;
+  const confirmar = confirm(`Tem certeza que deseja EXCLUIR o ${abaAtual} do REDS ${itemEmEdicao['REDS']}? Essa ação não pode ser desfeita.`);
+  if (!confirmar) return;
+
+  const btn = document.getElementById('btnExcluir');
+  btn.disabled = true;
+  try {
+    const payload = {
+      modo: 'excluirMaterial',
+      aba: abaAtual,
+      reds: itemEmEdicao['REDS'],
+      editadoPor: editorAtual(),
+    };
+    const res = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      body: new URLSearchParams({ payload: JSON.stringify(payload) }),
+    });
+    const data = await res.json();
+    if (data.result !== 'success'){
+      alert('Erro ao excluir: ' + (data.erro || 'desconhecido'));
+      return;
+    }
+    todosMateriais = todosMateriais.filter(m => m['REDS'] !== itemEmEdicao['REDS']);
+    fecharModal();
+    renderizarTabela();
+  } catch(err){
+    console.error('Erro ao excluir:', err);
+    alert('Erro ao excluir o item.');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+if (sessao){
+  popularFiltroSituacao();
+  carregarMateriais();
 }
 </script>
 
