@@ -349,10 +349,11 @@
 </header>
 
 <nav class="topnav" id="topnav">
+  <div class="tab active" id="tab-btn-inicio" onclick="switchTab(this,'inicio');initInicio();fecharDropdownsTopnav();">🏠 INÍCIO</div>
   <div class="topnav-item">
     <div class="topnav-link" data-dropdown="ddOperacao">🛡 OPERAÇÃO <span class="chev">▾</span></div>
     <div class="topnav-dropdown" id="ddOperacao">
-      <div class="tab active" id="tab-btn-operacoes" onclick="switchTab(this,'operacoes');fecharDropdownsTopnav();">🛡 OP POE</div>
+      <div class="tab" id="tab-btn-operacoes" onclick="switchTab(this,'operacoes');fecharDropdownsTopnav();">🛡 OP POE</div>
       <div class="tab" id="tab-btn-gdo-rural" onclick="switchTab(this,'gdo-rural');renderGdoRural();fecharDropdownsTopnav();">🌿 OP GDO Rural</div>
     </div>
   </div>
@@ -405,7 +406,43 @@ window.addEventListener('load', function(){
 <main class="content">
 
 <!-- ===== ABA OPERAÇÕES ===== -->
-<div class="tab-pane active" id="tab-operacoes">
+<div class="tab-pane active" id="tab-inicio">
+
+  <div style="margin-bottom:20px;">
+    <div id="inicio-saudacao" style="font-size:17px;font-weight:800;color:var(--text-white);">Olá</div>
+    <div id="inicio-data" style="font-size:12px;color:var(--text-muted);"></div>
+  </div>
+
+  <div id="inicio-bloco-poe">
+    <div class="empty-state">⏳ Dados ainda não carregados. Clique em Atualizar.</div>
+  </div>
+
+  <div id="inicio-bloco-crimes">
+    <div class="empty-state">⏳ Carregando dados de crimes...</div>
+  </div>
+
+  <div style="color:var(--text-muted);font-size:11px;text-transform:uppercase;font-weight:700;margin:22px 0 10px;">Acesso rápido</div>
+  <div class="top-cards" id="inicio-atalhos">
+    <div class="top-card gold" style="text-align:center;cursor:pointer;" onclick="window.location.href='relatorio-servico.html'">
+      <div style="font-size:20px;margin-bottom:5px;">➕</div><div class="tc-label" style="text-transform:none;font-size:12px;color:var(--text-white);font-weight:700;">Novo Relatório</div>
+    </div>
+    <div class="top-card gold" style="text-align:center;cursor:pointer;" onclick="window.location.href='meus-relatorios.html'">
+      <div style="font-size:20px;margin-bottom:5px;">📄</div><div class="tc-label" style="text-transform:none;font-size:12px;color:var(--text-white);font-weight:700;">Meus Relatórios</div>
+    </div>
+    <div class="top-card gold" style="text-align:center;cursor:pointer;" onclick="window.location.href='materiais-tco-semad.html?aba=TCO'">
+      <div style="font-size:20px;margin-bottom:5px;">📋</div><div class="tc-label" style="text-transform:none;font-size:12px;color:var(--text-white);font-weight:700;">TCO / SEMAD</div>
+    </div>
+    <div class="top-card gold" style="text-align:center;cursor:pointer;" onclick="window.location.href='produtividade.html'">
+      <div style="font-size:20px;margin-bottom:5px;">📊</div><div class="tc-label" style="text-transform:none;font-size:12px;color:var(--text-white);font-weight:700;">Produtividade</div>
+    </div>
+    <div class="top-card red" style="text-align:center;cursor:pointer;" onclick="window.location.href='analise-criminal.html'">
+      <div style="font-size:20px;margin-bottom:5px;">🔴</div><div class="tc-label" style="text-transform:none;font-size:12px;color:var(--text-white);font-weight:700;">Análise Criminal</div>
+    </div>
+  </div>
+
+</div><!-- /tab-inicio -->
+
+<div class="tab-pane" id="tab-operacoes">
 
   <div class="status-bar">
     <span class="s-load" id="status-msg">Carregando dados...</span>
@@ -2435,6 +2472,10 @@ window.addEventListener('DOMContentLoaded', () => {
   const _obs = new MutationObserver(ajustarLegenda);
   const _natSection = document.getElementById('nat-section');
   if (_natSection) _obs.observe(_natSection, { childList: true, subtree: true });
+
+  /* Início é a aba padrão — já monta ela (saudação, e os blocos ficam com
+     placeholder até "Atualizar" ser clicado, exatamente como as outras abas). */
+  try{ initInicio(); } catch(e){ console.warn('initInicio:', e); }
 });
 
 let dadosGrupos  = [];
@@ -2622,6 +2663,8 @@ async function recarregarTudo(){
     renderOperacoes();
     /* Renderiza GDO Rural — envolvido em try para não bloquear POE em caso de erro */
     try{ renderGdoRural(); } catch(e){ console.warn('renderGdoRural:', e); }
+    /* Atualiza a aba Início com os dados recém-carregados (se estiver com dados pendentes) */
+    try{ initInicio(); } catch(e){ console.warn('initInicio:', e); }
     /* Re-renderiza Relatórios para não-admin: agora dadosGrupos está carregado,
        então o grupamento do usuário pode ser resolvido corretamente */
     if(sessaoPainel?.perfil !== 'admin'){
@@ -5627,6 +5670,52 @@ function _relSecaoCriminal(mesNome, mesesSel, mesIdx, pelF, gpF){
   </div>`;
 }
 
+
+// ---------- Aba INÍCIO: reaproveita _relSecaoPOE / _relSecaoGDO / _relSecaoCriminal ----------
+// Não recalcula nada — só chama as mesmas funções que a aba "Relatórios" já
+// usa e testa, com o mês atual e o escopo (Pelotão/GP) do usuário logado.
+function initInicio(){
+  const hora = new Date().getHours();
+  const saud = hora < 12 ? 'Bom dia' : (hora < 18 ? 'Boa tarde' : 'Boa noite');
+  const nome = (sessaoPainel?.nome || '').trim().split(' ')[0] || '';
+  const elSaud = document.getElementById('inicio-saudacao');
+  if (elSaud) elSaud.textContent = nome ? `${saud}, ${nome}` : saud;
+  const elData = document.getElementById('inicio-data');
+  if (elData) elData.textContent = new Date().toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'long', year:'numeric' });
+
+  /* Mesmo critério de escopo usado em renderRelatorio(): Admin Geral/Admin
+     veem tudo; Admin Pelotão trava o pelotão; Operacional trava pelotão+GP. */
+  const isAdmin = sessaoPainel?.perfil === 'admin';
+  const isAdminPelotao = sessaoPainel?.nivel_acesso === 'admin_pelotao';
+  const userGP = _getUserGP();
+  let pelF = '', gpF = '';
+  if (isAdminPelotao){
+    pelF = userGP.pelNum || '';
+  } else if (!isAdmin){
+    pelF = userGP.pelNum || '';
+    gpF  = userGP.gpResp || '';
+  }
+
+  const mesIdx  = new Date().getMonth();
+  const mesNome = MESES[mesIdx];
+  const ano     = new Date().getFullYear();
+  const mesesSel = [mesNome];
+
+  const blocoPOE = document.getElementById('inicio-bloco-poe');
+  if (blocoPOE){
+    if (!dadosMetas || !dadosMetas.length){
+      blocoPOE.innerHTML = '<div class="empty-state">⏳ Dados ainda não carregados. Clique em Atualizar.</div>';
+    } else {
+      blocoPOE.innerHTML = _relSecaoPOE(mesNome, mesesSel, mesIdx, pelF, gpF, ano)
+        + _relSecaoGDO(mesNome, mesesSel, mesIdx, pelF, gpF);
+    }
+  }
+
+  const blocoCrimes = document.getElementById('inicio-bloco-crimes');
+  if (blocoCrimes){
+    blocoCrimes.innerHTML = _relSecaoCriminal(mesNome, mesesSel, mesIdx, pelF, gpF);
+  }
+}
 
 /* ── Exportar PDF ── */
 async function exportarRelPDF(){
