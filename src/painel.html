@@ -5578,6 +5578,11 @@ function _relSecaoGDO(mesNome, mesesSel, mesIdx, pelF, gpF){
     porMes[d.mes||'—']=(porMes[d.mes||'—']||0)+1;
   });
   const topMuns=Object.entries(porMun).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  /* Meta/Saldo — mesma fonte de meta anual já usada na aba OP GDO Rural
+     (gdoMetaMes), somada pelos grupamentos dentro do filtro atual. */
+  const gpsFiltGdo = _relFiltrarGPs(pelF, gpF);
+  const metaGdo    = gpsFiltGdo.reduce((s,gp) => s + gdoMetaMes(gp, [mesIdx]), 0);
+  const saldoGdo   = dados.length - metaGdo;
   return `<div style="margin-bottom:28px;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
       <span style="font-size:18px;">🌿</span>
@@ -5586,6 +5591,8 @@ function _relSecaoGDO(mesNome, mesesSel, mesIdx, pelF, gpF){
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:16px;">
       <div style="${_rCs('#4caf50')}"><div style="font-size:10px;color:var(--text-muted);">Total</div><div style="font-size:28px;font-weight:800;color:#4caf50;">${dados.length}</div></div>
+      <div style="${_rCs('var(--gold)')}"><div style="font-size:10px;color:var(--text-muted);">Meta Período</div><div style="font-size:24px;font-weight:800;color:var(--gold);">${metaGdo}</div></div>
+      <div style="${_rCs(_rSaldoCor(saldoGdo))}"><div style="font-size:10px;color:var(--text-muted);">Saldo Período</div><div style="font-size:24px;font-weight:800;color:${_rSaldoCor(saldoGdo)};">${_rSaldoStr(saldoGdo)}</div></div>
       ${gdoNatsRel.map(n=>`<div style="${_rCs(GDO_CORES[n])}">
         <div style="font-size:10px;color:var(--text-muted);">${GDO_LABELS[n]}</div>
         <div style="font-size:24px;font-weight:800;color:${GDO_CORES[n]};">${porNat[n]||0}</div>
@@ -5677,9 +5684,12 @@ function _relSecaoCriminal(mesNome, mesesSel, mesIdx, pelF, gpF){
 function initInicio(){
   const hora = new Date().getHours();
   const saud = hora < 12 ? 'Bom dia' : (hora < 18 ? 'Boa tarde' : 'Boa noite');
-  const nome = (sessaoPainel?.nome || '').trim().split(' ')[0] || '';
+  const pg     = (sessaoPainel?.pg || '').trim();
+  const guerra = (sessaoPainel?.guerra || '').trim();
+  const identificacao = [pg, guerra].filter(Boolean).join(' ')
+    || (sessaoPainel?.nome || '').trim().split(' ')[0] || ''; // fallback se faltar P/G ou Guerra
   const elSaud = document.getElementById('inicio-saudacao');
-  if (elSaud) elSaud.textContent = nome ? `${saud}, ${nome}` : saud;
+  if (elSaud) elSaud.textContent = identificacao ? `${saud}, ${identificacao}` : saud;
   const elData = document.getElementById('inicio-data');
   if (elData) elData.textContent = new Date().toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'long', year:'numeric' });
 
@@ -5714,6 +5724,13 @@ function initInicio(){
   const blocoCrimes = document.getElementById('inicio-bloco-crimes');
   if (blocoCrimes){
     blocoCrimes.innerHTML = _relSecaoCriminal(mesNome, mesesSel, mesIdx, pelF, gpF);
+    // A Início mostra só os números — a caixa "Análise Automatizada" (texto
+    // interpretativo) fica reservada pro Diagnóstico Operacional completo.
+    // Removida aqui via DOM, sem alterar _relSecaoCriminal (usada também
+    // pela aba Relatórios, que continua mostrando a caixa normalmente).
+    const labelAnalise = Array.from(blocoCrimes.querySelectorAll('div'))
+      .find(el => el.children.length === 0 && el.textContent.trim().startsWith('💡 Análise Automatizada'));
+    if (labelAnalise && labelAnalise.parentElement) labelAnalise.parentElement.remove();
   }
 }
 
