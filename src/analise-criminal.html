@@ -6217,6 +6217,8 @@ function renderCrimes(){
         <td style="white-space:nowrap;">
           ${isUrb ? `<button class="btn-danger" style="font-size:10px;padding:3px 7px;" onclick="abrirAuditoria('${boNum}')">📋 Auditar</button>` : `<button class="btn-outline" style="font-size:10px;padding:3px 7px;" onclick="abrirAuditoria('${boNum}')">📋 Auditar</button>`}
           <button class="btn-outline" style="font-size:10px;padding:3px 7px;margin-left:3px;" onclick="abrirIntelPorRat('${boNum}','${d.municipio}')">🕵 Inteligência</button>
+          ${sessao?.nivel_acesso==='admin_geral' ? `<button onclick="event.stopPropagation();_excluirOcorrencia('${boNum}')"
+            style="font-size:11px;padding:3px 7px;margin-left:3px;background:rgba(239,83,80,.15);border:1px solid rgba(239,83,80,.4);color:var(--danger);border-radius:4px;cursor:pointer;" title="Excluir ocorrência">🗑</button>` : ''}
         </td>
       </tr>`;
     }).join('');
@@ -10729,6 +10731,35 @@ async function _excluirAuditoriaLista(bo) {
   if(crime){ crime._auditoria = null; crime._auditoriaPendente = pontoEmAreaUrbanaIBGE(crime.lat, crime.lng); }
 
   renderAuditoriasLista();
+}
+
+// Exclui uma ocorrência (BO) inteira da base bd_crimes no Supabase — remove
+// TODAS as linhas associadas àquele número de BO (um BO pode ter mais de uma
+// linha, se tiver mais de um indicador/natureza registrado). Só Admin Geral,
+// com confirmação explícita, já que é uma exclusão permanente e sem volta.
+async function _excluirOcorrencia(bo) {
+  const isAdmin = sessao?.nivel_acesso === 'admin_geral';
+  if(!isAdmin) { alert('Apenas o Admin Geral pode excluir ocorrências.'); return; }
+
+  const linhasDoBo = dadosCrimes.filter(d => d.bo === bo);
+  const aviso = linhasDoBo.length > 1
+    ? `Excluir a ocorrência BO ${bo}?\n\nEssa BO tem ${linhasDoBo.length} linhas registradas (indicadores/naturezas diferentes) — TODAS serão excluídas.\n\nEsta ação não pode ser desfeita.`
+    : `Excluir a ocorrência BO ${bo}?\n\nEsta ação não pode ser desfeita.`;
+  if(!confirm(aviso)) return;
+
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/bd_crimes?numero_reds=eq.${encodeURIComponent(bo)}`, {
+      method: 'DELETE', headers: _acHeaders()
+    });
+    if(!r.ok){ const e = await r.text(); throw new Error(e); }
+  } catch(e){
+    alert('Erro ao excluir a ocorrência: ' + e.message);
+    return;
+  }
+
+  dadosCrimes = dadosCrimes.filter(d => d.bo !== bo);
+  renderCrimes();
+  if (typeof renderDashboard === 'function') renderDashboard();
 }
 
 async function gerarPDFAuditoria(){
