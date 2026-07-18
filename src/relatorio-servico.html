@@ -1138,7 +1138,7 @@ function bindNumericOnlyIn(root){
 
 // ---------- Dados dinâmicos (Google Sheets via Apps Script) ----------
 // Cole aqui a URL do Web App do Apps Script quando estiver pronta (veja README).
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx8wXobWUAdlx5Uz-a2ITtrnayvjIWymjJTZpE3pGTkOtCbsimf2KqpmhNzK_iA4zDU/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwqkjJ4Ld_N9HOzRalrKofnsZ_k7Cy9jmfviuPcQAc0RRIRYePhxJ0o7og35tKCJuXy/exec";
 
 const referenceCache = {}; // sourceKey -> lista de strings ou {value, fracao}
 let gruposList = [];       // [{ principal: '...', variacoes: ['...', ...] }]
@@ -2435,7 +2435,7 @@ function bindOperacaoEvents(panel){
 
 // ---------- Exemplo completo: PRODUTIVIDADE (dinâmico) ----------
 function buildProdutividadePanel(){
-  const camposReais = referenceCache.CAMPOS_PRODUTIVIDADE || [];
+  const camposReais = (referenceCache.CAMPOS_PRODUTIVIDADE || []).filter(c => c.status !== 'Inativo');
 
   if (!camposReais.length){
     return `<p class="placeholder-note">
@@ -2444,12 +2444,36 @@ function buildProdutividadePanel(){
     </p>`;
   }
 
-  const fields = camposReais.map(name => `
-    <div class="field productivity-item">
-      <label>${name}</label>
-      <input type="number" min="0" placeholder="0" data-prod-field="${name}">
-    </div>
-  `).join('');
+  const fields = camposReais.map(campo => {
+    const nome = campo.nome, tipo = campo.tipo || 'Inteiro';
+    if (tipo === 'Texto'){
+      return `
+        <div class="field productivity-item">
+          <label>${nome}</label>
+          <input type="text" placeholder="" data-prod-field="${nome}" data-prod-tipo="${tipo}">
+        </div>`;
+    }
+    if (tipo === 'Moeda'){
+      return `
+        <div class="field productivity-item">
+          <label>${nome} (R$)</label>
+          <input type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00" data-prod-field="${nome}" data-prod-tipo="${tipo}">
+        </div>`;
+    }
+    if (tipo === 'Decimal'){
+      return `
+        <div class="field productivity-item">
+          <label>${nome}</label>
+          <input type="number" min="0" step="0.01" inputmode="decimal" placeholder="0" data-prod-field="${nome}" data-prod-tipo="${tipo}">
+        </div>`;
+    }
+    // Inteiro (padrão)
+    return `
+      <div class="field productivity-item">
+        <label>${nome}</label>
+        <input type="number" min="0" step="1" inputmode="numeric" placeholder="0" data-prod-field="${nome}" data-prod-tipo="${tipo}">
+      </div>`;
+  }).join('');
 
   return `
     <div class="productivity-grid">${fields}</div>
@@ -2617,6 +2641,39 @@ function preencherCategoria(categoriaLabel, itens){
 
   const node = getOrCreatePanelNode(cat.id);
 
+  // Produtividade não usa o padrão de "lista repetível" (mesmo caso especial
+  // de collectCategoryEntries) — preenche direto pelos data-prod-field.
+  if (cat.id === 'produtividade'){
+    const campos = itens[0] || {};
+
+    // Se o relatório tinha valor num campo que hoje está Inativo (portanto
+    // não foi renderizado no painel), reinsere ele dinamicamente — senão o
+    // valor salvo seria perdido silenciosamente ao editar e salvar de novo.
+    const nomesRenderizados = new Set(Array.from(node.querySelectorAll('input[data-prod-field]')).map(i => i.dataset.prodField));
+    const grid = node.querySelector('.productivity-grid');
+    Object.keys(campos).forEach(nomeCampo => {
+      const valor = campos[nomeCampo];
+      if (nomesRenderizados.has(nomeCampo)) return;
+      if (valor === undefined || valor === null || valor === '') return;
+      if (!grid) return;
+      const div = document.createElement('div');
+      div.className = 'field productivity-item';
+      div.innerHTML = `<label>${nomeCampo}</label>
+        <input type="text" data-prod-field="${nomeCampo}">`;
+      grid.appendChild(div);
+    });
+
+    node.querySelectorAll('input[data-prod-field]').forEach(inp => {
+      const valor = campos[inp.dataset.prodField];
+      if (valor !== undefined && valor !== null && valor !== ''){
+        inp.value = valor;
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
+        inp.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
+    return;
+  }
+
   const preFieldsBox = node.querySelector('.pre-fields');
   if (preFieldsBox) preencherEntradaPorLabel_(preFieldsBox, itens[0]);
 
@@ -2765,7 +2822,13 @@ function collectCategoryEntries(id){
   if (id === 'produtividade'){
     const campos = {};
     node.querySelectorAll('input[data-prod-field]').forEach(inp => {
-      campos[inp.dataset.prodField] = inp.value;
+      let valor = (inp.value || '').toString().trim();
+      // Normaliza vírgula decimal pra ponto, só em campos numéricos (Inteiro/
+      // Decimal/Moeda). Sem isso, "5,9" vira "5" ao ser somado depois.
+      if (inp.dataset.prodTipo !== 'Texto' && valor.includes(',') && !valor.includes('.')){
+        valor = valor.replace(',', '.');
+      }
+      campos[inp.dataset.prodField] = valor;
     });
     const algumPreenchido = Object.values(campos).some(v => v !== '' && v !== null && v !== undefined);
     return algumPreenchido ? [campos] : [];
