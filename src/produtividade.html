@@ -197,7 +197,7 @@
 </div>
 
 <script>
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwqkjJ4Ld_N9HOzRalrKofnsZ_k7Cy9jmfviuPcQAc0RRIRYePhxJ0o7og35tKCJuXy/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyrbwwb6cjNnj6Fj91FIBcVxYCQ_aykQ40KC1ygPUHaGRXRSTOAMCUbwybKGMT93A-k/exec";
 
 const sessao = (function(){
   const raw = sessionStorage.getItem('poe_sessao_v2');
@@ -292,8 +292,32 @@ function parseNum_(v){
   if (s.includes(',') && !s.includes('.')) s = s.replace(',', '.');
   return parseFloat(s);
 }
+// Ícone + cor automáticos por palavra-chave do nome do indicador — assim,
+// indicadores novos que você adicionar na planilha já ganham visual
+// coerente sem eu precisar mexer no código de novo.
+const ICONE_REGRAS_ = [
+  { re: /pris(ã|a)o|apreens(ã|a)o de adolescente/i, icone: '🚔', cor: '#ef5350' },
+  { re: /droga/i, icone: '💊', cor: '#e57373' },
+  { re: /arma|muni(çã|ca)o/i, icone: '🔫', cor: '#c62828' },
+  { re: /ve(í|i)culo/i, icone: '🚗', cor: '#42a5f5' },
+  { re: /animal/i, icone: '🐾', cor: '#66bb6a' },
+  { re: /desmate|floresta|madeira|carv(ã|a)o/i, icone: '🌳', cor: '#43a047' },
+  { re: /rede|pesc|tarrafa|anz(ó|o)i|covo|espinh|jequi|garat(é|e)ia|pinda|fisga|carretilha/i, icone: '🎣', cor: '#26a69a' },
+  { re: /embarca(çã|ca)o|drag|balsa/i, icone: '🚤', cor: '#00acc1' },
+  { re: /visita/i, icone: '🤝', cor: '#ffca28' },
+  { re: /opera(çã|ca)o/i, icone: '🎯', cor: '#9b8a5c' },
+  { re: /autua(çã|ca)o|multa/i, icone: '📝', cor: '#ff9800' },
+  { re: /valor|r\$|moeda/i, icone: '💰', cor: '#ffa726' },
+  { re: /pessoa|abordad/i, icone: '👤', cor: '#78909c' },
+  { re: /local/i, icone: '📍', cor: '#8d6e63' },
+  { re: /total (bo|rat|bos|tco)\b/i, icone: '📄', cor: '#90a4ae' },
+];
+function iconeECor_(nome){
+  const regra = ICONE_REGRAS_.find(r => r.re.test(nome));
+  return regra ? regra : { icone: '📊', cor: '#9b8a5c' };
+}
 
-// Formata um valor já somado de acordo com o tipo do indicador (Moeda ganha
+
 // "R$", Decimal mostra até 2 casas, Inteiro é número redondo).
 function formatarValorPorTipo_(valor, nome){
   const tipo = tipoPorNome[nome] || 'Inteiro';
@@ -410,25 +434,28 @@ function renderizarTudo(){
       + topIndicadores.map(([k,v]) => `<b>${formatarNumero_(v)}</b> ${k.toLowerCase()}`).join(' · ') + '.'
     : `Nenhum indicador de Produtividade preenchido no período selecionado.`;
 
-  // ---- Ranking por Fração ----
+  // ---- Indicadores marcados pra aparecer no Ranking (coluna "Usar no Ranking") ----
+  const camposRanking = camposProdutividade.filter(c => c.usarRanking);
+
+  // ---- Ranking por Fração — uma coluna por indicador, sem somar tipos diferentes ----
   const porFracao = {};
   dados.forEach(r => {
     const f = r['Fração de Atuação'] || '—';
-    if (!porFracao[f]) porFracao[f] = { total: 0, turnos: new Set() };
+    if (!porFracao[f]) { porFracao[f] = { turnos: new Set(), valores: {} }; camposRanking.forEach(c => porFracao[f].valores[c.nome] = 0); }
     porFracao[f].turnos.add(r['ID Relatório']);
-    camposNumericos.forEach(c => { porFracao[f].total += (parseNum_(r[c.nome])||0); });
+    camposRanking.forEach(c => { porFracao[f].valores[c.nome] += (parseNum_(r[c.nome])||0); });
   });
-  const rankingFracao = Object.entries(porFracao).sort((a,b) => b[1].total - a[1].total).slice(0,10);
+  const rankingFracao = Object.entries(porFracao).sort((a,b) => b[1].turnos.size - a[1].turnos.size).slice(0,10);
 
-  // ---- Ranking por Equipe ----
+  // ---- Ranking por Equipe — mesma lógica ----
   const porEquipe = {};
   dados.forEach(r => {
     const eq = `${r['Fração de Atuação']||'—'} / Equipe ${r['Equipe']||'—'}`;
-    if (!porEquipe[eq]) porEquipe[eq] = { total: 0, turnos: new Set() };
+    if (!porEquipe[eq]) { porEquipe[eq] = { turnos: new Set(), valores: {} }; camposRanking.forEach(c => porEquipe[eq].valores[c.nome] = 0); }
     porEquipe[eq].turnos.add(r['ID Relatório']);
-    camposNumericos.forEach(c => { porEquipe[eq].total += (parseNum_(r[c.nome])||0); });
+    camposRanking.forEach(c => { porEquipe[eq].valores[c.nome] += (parseNum_(r[c.nome])||0); });
   });
-  const rankingEquipe = Object.entries(porEquipe).sort((a,b) => b[1].total - a[1].total).slice(0,10);
+  const rankingEquipe = Object.entries(porEquipe).sort((a,b) => b[1].turnos.size - a[1].turnos.size).slice(0,10);
 
   // ---- Produtividade por dia (linha do tempo) ----
   const porDia = {};
@@ -480,19 +507,25 @@ function renderizarTudo(){
     </div>
 
     <div class="secao-titulo">🏆 Ranking por Fração de Atuação</div>
-    <div class="chart-box">
+    <div class="chart-box" id="prod-ranking-fracao">
+      ${!camposRanking.length ? '<div class="mr-empty">Nenhum indicador marcado com "Usar no Ranking" na planilha CAMPOS_PRODUTIVIDADE.</div>' : `
+      <div style="overflow-x:auto;">
       <table class="prod-table">
-        <thead><tr><th>#</th><th>Fração</th><th>Turnos</th><th>Total (todos indicadores)</th></tr></thead>
-        <tbody>${rankingFracao.map(([f,v],i) => `<tr><td><span class="rank-pos">${i+1}</span></td><td>${f}</td><td>${v.turnos.size}</td><td>${formatarNumero_(v.total)}</td></tr>`).join('')}</tbody>
+        <thead><tr><th>#</th><th>Fração</th><th>Turnos</th>${camposRanking.map(c => `<th>${iconeECor_(c.nome).icone} ${c.nome}</th>`).join('')}</tr></thead>
+        <tbody>${rankingFracao.map(([f,v],i) => `<tr><td><span class="rank-pos">${i+1}</span></td><td>${f}</td><td>${v.turnos.size}</td>${camposRanking.map(c => `<td>${formatarValorPorTipo_(v.valores[c.nome], c.nome)}</td>`).join('')}</tr>`).join('')}</tbody>
       </table>
+      </div>`}
     </div>
 
     <div class="secao-titulo">🏆 Ranking por Equipe</div>
-    <div class="chart-box">
+    <div class="chart-box" id="prod-ranking-equipe">
+      ${!camposRanking.length ? '<div class="mr-empty">Nenhum indicador marcado com "Usar no Ranking" na planilha CAMPOS_PRODUTIVIDADE.</div>' : `
+      <div style="overflow-x:auto;">
       <table class="prod-table">
-        <thead><tr><th>#</th><th>Fração / Equipe</th><th>Turnos</th><th>Total (todos indicadores)</th></tr></thead>
-        <tbody>${rankingEquipe.map(([f,v],i) => `<tr><td><span class="rank-pos">${i+1}</span></td><td>${f}</td><td>${v.turnos.size}</td><td>${formatarNumero_(v.total)}</td></tr>`).join('')}</tbody>
+        <thead><tr><th>#</th><th>Fração / Equipe</th><th>Turnos</th>${camposRanking.map(c => `<th>${iconeECor_(c.nome).icone} ${c.nome}</th>`).join('')}</tr></thead>
+        <tbody>${rankingEquipe.map(([f,v],i) => `<tr><td><span class="rank-pos">${i+1}</span></td><td>${f}</td><td>${v.turnos.size}</td>${camposRanking.map(c => `<td>${formatarValorPorTipo_(v.valores[c.nome], c.nome)}</td>`).join('')}</tr>`).join('')}</tbody>
       </table>
+      </div>`}
     </div>
 
     <div class="secao-titulo">🎯 Indicadores de Desempenho</div>
@@ -519,13 +552,16 @@ function renderizarTudo(){
   const kpiGrid = document.getElementById('kpi-grid');
   const kpisComValor = Object.entries(totais).filter(([,v]) => v > 0);
   kpiGrid.innerHTML = kpisComValor.length
-    ? kpisComValor.map(([k,v]) => `<div class="kpi-card"><div class="kv">${formatarValorPorTipo_(v,k)}</div><div class="kl">${k}</div></div>`).join('')
+    ? kpisComValor.map(([k,v]) => {
+        const ic = iconeECor_(k);
+        return `<div class="kpi-card" style="border-top-color:${ic.cor};"><div class="kv">${ic.icone} ${formatarValorPorTipo_(v,k)}</div><div class="kl">${k}</div></div>`;
+      }).join('')
     : '<div class="mr-empty">Nenhum indicador com valor no período.</div>';
 
   desenharGraficos_(topIndicadores, diasOrdenados, porDia);
 
   // Guarda o estado atual pra exportação
-  window._prodEstadoAtual = { dados, totais, resumoTexto, periodoIni, periodoFim, rankingFracao, rankingEquipe, indicadoresCalc };
+  window._prodEstadoAtual = { dados, totais, resumoTexto, periodoIni, periodoFim, rankingFracao, rankingEquipe, indicadoresCalc, camposRanking };
 }
 
 function formatarNumero_(v){
@@ -586,7 +622,11 @@ document.getElementById('btnExportExcel').addEventListener('click', () => {
   });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhasDetalhe), 'Relatórios');
 
-  const linhasFracao = estado.rankingFracao.map(([f,v],i) => ({ Posição: i+1, Fração: f, Turnos: v.turnos.size, Total: v.total }));
+  const linhasFracao = estado.rankingFracao.map(([f,v],i) => {
+    const linha = { Posição: i+1, Fração: f, Turnos: v.turnos.size };
+    estado.camposRanking.forEach(c => { linha[c.nome] = v.valores[c.nome]; });
+    return linha;
+  });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhasFracao), 'Ranking Fração');
 
   XLSX.writeFile(wb, `produtividade_${new Date().toISOString().slice(0,10)}.xlsx`);
@@ -616,9 +656,9 @@ document.getElementById('btnExportPdf').addEventListener('click', async () => {
     let y = doc.lastAutoTable.finalY + 10;
     doc.setFontSize(11);
     doc.text('Ranking por Fração de Atuação', 14, y);
-    doc.autoTable({ startY: y+3, head: [['#','Fração','Turnos','Total']],
-      body: estado.rankingFracao.map(([f,v],i) => [i+1, f, v.turnos.size, formatarNumero_(v.total)]),
-      styles:{fontSize:8}, headStyles:{fillColor:[26,16,0]} });
+    doc.autoTable({ startY: y+3, head: [['#','Fração','Turnos', ...estado.camposRanking.map(c => c.nome)]],
+      body: estado.rankingFracao.map(([f,v],i) => [i+1, f, v.turnos.size, ...estado.camposRanking.map(c => formatarValorPorTipo_(v.valores[c.nome], c.nome))]),
+      styles:{fontSize:7}, headStyles:{fillColor:[26,16,0]} });
 
     y = doc.lastAutoTable.finalY + 10;
     if (y > 250){ doc.addPage(); y = 16; }
