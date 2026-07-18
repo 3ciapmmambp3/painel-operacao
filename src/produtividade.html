@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<script>
+(function(){
+  var saved;
+  try{ saved=localStorage.getItem('poe_theme'); }catch(e){}
+  if(!saved) saved=window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+})();
+</script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Produtividade — 3ª Cia PM MAmb</title>
+  <link rel="stylesheet" href="styles/global.css">
+  <script src="auth.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+  <style>
+    body{display:flex;flex-direction:column;min-height:100vh;}
+    .mr-card{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:18px 20px;margin:20px;}
+    .mr-empty{color:var(--text-muted);font-size:13px;text-align:center;padding:40px 0;}
+
+    /* ---- Nova barra de navegação (topo, com dropdown) ---- */
+    .topnav{display:flex;align-items:center;gap:2px;background:var(--bg-dark);border-bottom:1px solid var(--border);padding:0 16px;position:relative;z-index:100;flex-wrap:wrap;overflow:visible;}
+    .topnav-item{position:relative;}
+    .topnav-link{display:flex;align-items:center;gap:5px;padding:13px 16px;color:var(--text-muted);font-size:12.5px;font-weight:700;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;text-decoration:none;}
+    .topnav-link:hover{color:var(--text-white);}
+    .topnav-link.active{color:var(--gold);border-bottom-color:var(--gold);}
+    .topnav-link .chev{font-size:9px;opacity:.7;}
+    .topnav-dropdown{display:none;position:absolute;top:100%;left:0;background:var(--bg-card);border:1px solid var(--border);border-radius:0 0 8px 8px;min-width:190px;box-shadow:0 12px 24px rgba(0,0,0,.4);padding:6px;}
+    .topnav-dropdown.open{display:block;}
+    .topnav-dropdown a{display:block;padding:9px 12px;color:var(--text-white);font-size:12.5px;border-radius:6px;text-decoration:none;}
+    .topnav-dropdown a:hover{background:var(--bg-hover);color:var(--gold);}
+
+    /* ---- Layout com sidebar interna (área "Relatório Diário") ---- */
+    .page-layout{display:flex;flex:1;}
+    .rd-sidebar{width:198px;flex-shrink:0;background:var(--bg-dark);border-right:1px solid var(--border);padding:14px 10px;transition:width .18s;}
+    .rd-sidebar.colapsada{width:52px;}
+    .rd-sidebar.colapsada .lbl,.rd-sidebar.colapsada .rd-sidebar-titulo{display:none;}
+    .rd-sidebar.colapsada .rd-item{justify-content:center;padding:9px;}
+    .rd-sidebar-head{display:flex;align-items:center;justify-content:space-between;padding:0 4px 10px;border-bottom:1px solid var(--border);margin-bottom:8px;}
+    .rd-sidebar.colapsada .rd-sidebar-head{justify-content:center;}
+    .rd-sidebar-titulo{color:var(--gold);font-size:10.5px;font-weight:700;letter-spacing:.5px;white-space:nowrap;}
+    .rd-btn-colapsar{background:none;border:none;color:var(--text-muted);cursor:pointer;padding:3px;display:flex;}
+    .rd-item{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:6px;color:var(--text-muted);font-size:12.5px;cursor:pointer;white-space:nowrap;margin-bottom:1px;text-decoration:none;position:relative;}
+    .rd-item:hover{background:var(--bg-hover);}
+    .rd-item.ativo{background:var(--gold-bg);color:var(--gold-light);font-weight:700;}
+    .rd-item[data-tip]:hover::after{content:attr(data-tip);position:absolute;left:100%;top:50%;transform:translateY(-50%);margin-left:10px;background:#111;color:var(--text-white);padding:6px 12px;border-radius:6px;font-size:11.5px;font-weight:700;white-space:nowrap;z-index:200;box-shadow:0 6px 18px rgba(0,0,0,.5);border:1px solid var(--border);pointer-events:none;}
+    .rd-conteudo{flex:1;min-width:0;}
+
+    @media screen and (max-width: 768px){
+      .topnav-link{padding:11px 12px;font-size:11.5px;}
+      .page-layout{flex-direction:column;}
+      .rd-sidebar{width:100% !important;border-right:none;border-bottom:1px solid var(--border);display:flex;flex-wrap:nowrap;flex-direction:row;gap:4px;padding:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+      .rd-sidebar::-webkit-scrollbar{display:none;}
+      .rd-sidebar-head{display:none;}
+      .rd-btn-colapsar{display:none;}
+      .rd-sidebar .lbl{display:inline;}
+      .rd-item{flex:0 0 auto;justify-content:center;font-size:11px;padding:8px 10px;white-space:nowrap;}
+    }
+
+    /* ---- Filtros ---- */
+    .prod-filtros{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:18px;}
+    .prod-filtro-grupo{display:flex;flex-direction:column;gap:4px;}
+    .prod-filtro-grupo label{font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:700;}
+    .prod-filtro-input{background:var(--bg-dark);color:var(--text-white);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:12px;min-width:150px;}
+
+    /* ---- Resumo executivo ---- */
+    .resumo-exec{background:linear-gradient(135deg, rgba(155,138,92,.12), rgba(155,138,92,.03));border:1px solid var(--gold-border,rgba(155,138,92,.35));border-radius:8px;padding:16px 20px;margin-bottom:20px;font-size:13.5px;line-height:1.7;color:var(--text-white);}
+    .resumo-exec b{color:var(--gold);}
+
+    /* ---- KPIs ---- */
+    .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:22px;}
+    .kpi-card{background:var(--bg-dark);border-radius:8px;padding:12px 14px;border-top:3px solid var(--gold);}
+    .kpi-card .kv{font-size:22px;font-weight:800;color:var(--text-white);line-height:1;}
+    .kpi-card .kl{font-size:10.5px;color:var(--text-muted);text-transform:uppercase;margin-top:5px;}
+
+    .secao-titulo{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:800;color:var(--gold);margin:24px 0 12px;}
+
+    .duas-colunas{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+    @media (max-width:900px){ .duas-colunas{grid-template-columns:1fr;} }
+    .chart-box{background:var(--bg-dark);border-radius:8px;padding:14px;}
+    .chart-box h4{font-size:12px;color:var(--text-white);margin-bottom:10px;}
+
+    table.prod-table{width:100%;border-collapse:collapse;font-size:12.5px;}
+    table.prod-table th{text-align:left;color:var(--text-muted);font-size:10.5px;padding:8px 10px;border-bottom:1px solid var(--border);font-weight:700;text-transform:uppercase;}
+    table.prod-table td{padding:9px 10px;border-bottom:1px solid var(--border);color:var(--text-white);}
+    table.prod-table tr:hover{background:var(--bg-hover);}
+    .rank-pos{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--gold-bg);color:var(--gold);font-size:10.5px;font-weight:800;margin-right:8px;}
+
+    #prod-lista-tabela{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+    table.prod-table.detalhe{min-width:760px;}
+
+    .indicadores-calc{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;}
+    .indicador-calc{background:var(--bg-dark);border-radius:8px;padding:12px 14px;}
+    .indicador-calc .ic-val{font-size:18px;font-weight:800;color:var(--gold);}
+    .indicador-calc .ic-lbl{font-size:11px;color:var(--text-muted);margin-top:3px;}
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <div class="header-logo"><img src="assets/header-pmmg.png" alt="PMMG"></div>
+    <div class="header-title">
+      <h1>PAINEL DE CONTROLE DE OPERAÇÕES</h1>
+      <p>3ª Cia PM MAmb — Acompanhamento 2026</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <div id="user-info" style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);cursor:pointer;padding:5px 10px;border:1px solid var(--border);border-radius:5px;" onclick="window.location.href='perfil.html'" title="Meu Perfil">
+      <span id="user-avatar" style="width:22px;height:22px;border-radius:50%;background:var(--gold);color:#1a1000;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">?</span>
+      <span id="user-nome">—</span>
+      <span id="user-badge" style="font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;"></span>
+    </div>
+    <button class="btn-outline" onclick="localStorage.removeItem('poe_sessao_v2');sessionStorage.removeItem('poe_sessao_v2');localStorage.removeItem('poe_sessao');window.location.href='index.html'">Sair</button>
+  </div>
+</header>
+
+<nav class="topnav" id="topnav">
+  <a class="topnav-link" href="painel.html">🏠 INÍCIO</a>
+  <div class="topnav-item">
+    <div class="topnav-link" data-dropdown="ddOperacao">🛡 OPERAÇÃO <span class="chev">▾</span></div>
+    <div class="topnav-dropdown" id="ddOperacao">
+      <a href="painel.html">🛡 OP POE</a>
+      <a href="painel.html?tab=gdo-rural">🌿 OP GDO Rural</a>
+    </div>
+  </div>
+  <a class="topnav-link" href="analise-criminal.html" style="color:#ef5350;">🔴 ANÁLISE CRIMINAL</a>
+  <a class="topnav-link active" href="meus-relatorios.html">📄 RELATÓRIO DIÁRIO</a>
+  <a class="topnav-link" href="painel.html?tab=consulta">📍 CONSULTA</a>
+  <div class="topnav-item" id="admTopnavItem" style="display:none;">
+    <div class="topnav-link" data-dropdown="ddAdm">⚙ ADM <span class="chev">▾</span></div>
+    <div class="topnav-dropdown" id="ddAdm">
+      <a href="painel.html?tab=relatorios">📋 Relatórios</a>
+      <a href="painel.html?tab=importacao" id="admLinkImportacao" style="display:none;">📥 Importação</a>
+      <a href="admin.html" id="admLinkAdministracao" style="display:none;">⚙️ Administração</a>
+    </div>
+  </div>
+</nav>
+
+<div class="page-layout">
+  <aside class="rd-sidebar" id="rdSidebar">
+    <div class="rd-sidebar-head">
+      <span class="rd-sidebar-titulo">RELATÓRIO DIÁRIO</span>
+      <button class="rd-btn-colapsar" id="rdBtnColapsar" aria-label="Recolher menu">◂</button>
+    </div>
+    <a class="rd-item" href="meus-relatorios.html" data-tip="Lista de Relatórios"><span>📄</span><span class="lbl">Lista de Relatórios</span></a>
+    <a class="rd-item" href="relatorio-servico.html" data-tip="Novo Relatório"><span>➕</span><span class="lbl">Novo Relatório</span></a>
+    <a class="rd-item" href="materiais-tco-semad.html?aba=TCO" data-tip="TCO"><span>📋</span><span class="lbl">TCO</span></a>
+    <a class="rd-item" href="materiais-tco-semad.html?aba=SEMAD" data-tip="SEMAD"><span>♻️</span><span class="lbl">SEMAD</span></a>
+    <a class="rd-item ativo" href="produtividade.html" data-tip="Produtividade"><span>📊</span><span class="lbl">Produtividade</span></a>
+  </aside>
+  <div class="rd-conteudo">
+
+<main class="content">
+  <div class="mr-card">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
+      <h2 style="font-size:15px;">Produtividade</h2>
+      <div style="display:flex;gap:8px;" id="prod-export-botoes">
+        <button class="btn-outline" id="btnExportExcel">⬇ Excel</button>
+        <button class="btn-gold" id="btnExportPdf">🖨 PDF</button>
+      </div>
+    </div>
+
+    <div class="prod-filtros">
+      <div class="prod-filtro-grupo">
+        <label>Operação</label>
+        <select id="filtroOperacao" class="prod-filtro-input"><option value="">Todas</option></select>
+      </div>
+      <div class="prod-filtro-grupo">
+        <label>Data início</label>
+        <input type="date" id="filtroDataInicio" class="prod-filtro-input">
+      </div>
+      <div class="prod-filtro-grupo">
+        <label>Data final</label>
+        <input type="date" id="filtroDataFim" class="prod-filtro-input">
+      </div>
+      <div class="prod-filtro-grupo">
+        <label>Fração de Atuação</label>
+        <select id="filtroFracao" class="prod-filtro-input"><option value="">Todas</option></select>
+      </div>
+      <button class="btn-outline" id="btnLimparFiltrosProd">Limpar filtros</button>
+    </div>
+
+    <div id="prod-conteudo">
+      <div class="mr-empty" id="prod-status">Carregando...</div>
+    </div>
+  </div>
+</main>
+
+  </div>
+</div>
+
+<script>
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbybp53XdvNA1b0t6AKhwTxYa600IwHJE86G3C0Qrb2UnenuSe83_gWbBipDA7CdijtU/exec";
+
+const sessao = (function(){
+  const raw = sessionStorage.getItem('poe_sessao_v2');
+  if(!raw){ window.location.href='index.html'; return null; }
+  try{
+    const s = JSON.parse(raw);
+    if(!s || !s.id){ window.location.href='index.html'; return null; }
+    return s;
+  }catch(e){ window.location.href='index.html'; return null; }
+})();
+
+if (sessao){
+  document.getElementById('user-nome').textContent = sessao.nome || sessao.matricula;
+  const initials = (sessao.nome||'U').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+  document.getElementById('user-avatar').textContent = initials;
+  const badge = document.getElementById('user-badge');
+  const nivel = sessao.nivel_acesso;
+  const mapaBadge = {
+    admin_geral: ['ADMIN GERAL', 'rgba(155,138,92,.2)', 'var(--gold)', 'var(--gold-border)'],
+    admin: ['ADMIN', 'rgba(155,138,92,.2)', 'var(--gold)', 'var(--gold-border)'],
+    admin_pelotao: ['ADMIN PELOTÃO', 'rgba(255,152,0,.15)', '#ffa726', 'rgba(255,152,0,.4)'],
+    admin_gp: ['ADMIN GP', 'rgba(255,152,0,.15)', '#ffa726', 'rgba(255,152,0,.4)'],
+  };
+  const info = mapaBadge[nivel] || ['OPERACIONAL', 'rgba(66,165,245,.15)', 'var(--info)', 'rgba(66,165,245,.3)'];
+  badge.textContent = info[0];
+  badge.style.cssText = `font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;background:${info[1]};color:${info[2]};border:1px solid ${info[3]};`;
+  const admTopnavItem = document.getElementById('admTopnavItem');
+  const ehAdmin = ['admin_geral','admin','admin_pelotao','admin_gp'].includes(nivel);
+  if (admTopnavItem && ehAdmin) admTopnavItem.style.display = '';
+  if (nivel === 'admin_geral'){
+    const btnImp = document.getElementById('admLinkImportacao');
+    if (btnImp) btnImp.style.display = '';
+    const btnAdmin = document.getElementById('admLinkAdministracao');
+    if (btnAdmin) btnAdmin.style.display = '';
+  }
+  // Exportação (PDF/Excel) só pra quem tem algum nível administrativo.
+  if (!ehAdmin){
+    const botoes = document.getElementById('prod-export-botoes');
+    if (botoes) botoes.style.display = 'none';
+  }
+}
+
+// ---------- Dropdowns da barra do topo ----------
+document.querySelectorAll('.topnav-link[data-dropdown]').forEach(link => {
+  link.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const dd = document.getElementById(link.dataset.dropdown);
+    const jaAberto = dd.classList.contains('open');
+    document.querySelectorAll('.topnav-dropdown.open').forEach(d => d.classList.remove('open'));
+    if (!jaAberto) dd.classList.add('open');
+  });
+});
+document.addEventListener('click', () => {
+  document.querySelectorAll('.topnav-dropdown.open').forEach(d => d.classList.remove('open'));
+});
+
+// ---------- Sidebar: recolher/expandir ----------
+(function(){
+  const sidebar = document.getElementById('rdSidebar');
+  const btn = document.getElementById('rdBtnColapsar');
+  if (!sidebar || !btn) return;
+  const colapsada = localStorage.getItem('rd_sidebar_colapsada') === '1';
+  if (colapsada){ sidebar.classList.add('colapsada'); btn.textContent = '▸'; }
+  btn.addEventListener('click', () => {
+    sidebar.classList.toggle('colapsada');
+    const agora = sidebar.classList.contains('colapsada');
+    btn.textContent = agora ? '▸' : '◂';
+    localStorage.setItem('rd_sidebar_colapsada', agora ? '1' : '0');
+  });
+})();
+
+// =====================================================================
+// DADOS
+// =====================================================================
+let camposProdutividade = [];  // nomes dos indicadores (vêm de CAMPOS_PRODUTIVIDADE)
+let todosOsRegistros = [];     // cada linha = 1 relatório com Produtividade preenchida
+let graficoBarras = null;
+let graficoLinha = null;
+
+function normalizar_(s){
+  return (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim();
+}
+
+async function carregarTudo(){
+  const status = document.getElementById('prod-status');
+  try {
+    const [refRes, prodRes] = await Promise.all([
+      fetch(`${SCRIPT_URL}?action=referencias`).then(r => r.json()),
+      fetch(`${SCRIPT_URL}?action=listarProdutividade`).then(r => r.json()),
+    ]);
+
+    camposProdutividade = refRes.CAMPOS_PRODUTIVIDADE || [];
+    const operacoes = refRes.OPERACOES || [];
+
+    if (prodRes.result !== 'success'){
+      document.getElementById('prod-conteudo').innerHTML = '<div class="mr-empty">Erro ao carregar dados de produtividade.</div>';
+      return;
+    }
+
+    // Escopo de visualização por nível de acesso (mesma regra do resto do sistema).
+    todosOsRegistros = (prodRes.produtividade || []).filter(r => auth_podeVerGrupamento(sessao, r['Fração de Atuação']));
+
+    popularFiltroOperacao(operacoes);
+    popularFiltroFracao();
+    renderizarTudo();
+  } catch(err){
+    console.error('Erro ao carregar produtividade:', err);
+    document.getElementById('prod-conteudo').innerHTML = '<div class="mr-empty">Erro ao carregar. Recarregue a página.</div>';
+  }
+}
+
+function popularFiltroOperacao(operacoes){
+  const select = document.getElementById('filtroOperacao');
+  const nomes = Array.from(new Set(operacoes.map(o => o.value).filter(Boolean))).sort();
+  select.innerHTML = '<option value="">Todas</option>' + nomes.map(n => `<option value="${n}">${n}</option>`).join('');
+}
+
+function popularFiltroFracao(){
+  const select = document.getElementById('filtroFracao');
+  const fracoes = Array.from(new Set(todosOsRegistros.map(r => r['Fração de Atuação']).filter(Boolean))).sort();
+  select.innerHTML = '<option value="">Todas</option>' + fracoes.map(f => `<option value="${f}">${f}</option>`).join('');
+}
+
+function aplicarFiltros(){
+  const op = document.getElementById('filtroOperacao').value;
+  const dataIni = document.getElementById('filtroDataInicio').value;
+  const dataFim = document.getElementById('filtroDataFim').value;
+  const fracao = document.getElementById('filtroFracao').value;
+
+  return todosOsRegistros.filter(r => {
+    if (op && !(r['Operações']||[]).includes(op)) return false;
+    if (dataIni && (!r['Data'] || r['Data'] < dataIni)) return false;
+    if (dataFim && (!r['Data'] || r['Data'] > dataFim)) return false;
+    if (fracao && r['Fração de Atuação'] !== fracao) return false;
+    return true;
+  });
+}
+
+['filtroOperacao','filtroDataInicio','filtroDataFim','filtroFracao'].forEach(id => {
+  document.getElementById(id).addEventListener('change', renderizarTudo);
+});
+document.getElementById('btnLimparFiltrosProd').addEventListener('click', () => {
+  document.getElementById('filtroOperacao').value = '';
+  document.getElementById('filtroDataInicio').value = '';
+  document.getElementById('filtroDataFim').value = '';
+  document.getElementById('filtroFracao').value = '';
+  renderizarTudo();
+});
+
+// =====================================================================
+// RENDERIZAÇÃO
+// =====================================================================
+function renderizarTudo(){
+  const dados = aplicarFiltros();
+  const conteudo = document.getElementById('prod-conteudo');
+
+  if (!dados.length){
+    conteudo.innerHTML = `<div class="mr-empty">${todosOsRegistros.length ? 'Nenhum registro encontrado com esses filtros.' : 'Nenhum dado de Produtividade encontrado no seu escopo de visualização.'}</div>`;
+    return;
+  }
+
+  // ---- Totais por indicador ----
+  const totais = {};
+  camposProdutividade.forEach(c => totais[c] = 0);
+  dados.forEach(r => {
+    camposProdutividade.forEach(c => {
+      const v = parseFloat(r[c]);
+      if (!isNaN(v)) totais[c] += v;
+    });
+  });
+
+  // ---- Estatísticas gerais ----
+  const idsUnicos = new Set(dados.map(r => r['ID Relatório']));
+  const totalTurnos = idsUnicos.size;
+  const fracoesUnicas = new Set(dados.map(r => r['Fração de Atuação']).filter(Boolean));
+  const equipesUnicas = new Set(dados.map(r => r['Equipe']).filter(Boolean));
+  const totalMilitares = dados.reduce((s,r) => s + (parseFloat(r['Total de Militares (Geral)'])||0), 0);
+  const totalViaturas = dados.reduce((s,r) => s + (parseFloat(r['Total de Viaturas (Geral)'])||0), 0);
+  const datas = dados.map(r => r['Data']).filter(Boolean).sort();
+  const periodoIni = datas[0], periodoFim = datas[datas.length-1];
+
+  // ---- Resumo executivo ----
+  const topIndicadores = Object.entries(totais).filter(([,v]) => v>0).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const resumoTexto = topIndicadores.length
+    ? `Entre <b>${formatarDataBR_(periodoIni)}</b> e <b>${formatarDataBR_(periodoFim)}</b>, foram empregados <b>${totalTurnos}</b> turno${totalTurnos!==1?'s':''} em <b>${fracoesUnicas.size}</b> fração${fracoesUnicas.size!==1?'ões':''} de atuação, com <b>${equipesUnicas.size}</b> equipe${equipesUnicas.size!==1?'s':''} distintas, resultando em: `
+      + topIndicadores.map(([k,v]) => `<b>${formatarNumero_(v)}</b> ${k.toLowerCase()}`).join(' · ') + '.'
+    : `Nenhum indicador de Produtividade preenchido no período selecionado.`;
+
+  // ---- Ranking por Fração ----
+  const porFracao = {};
+  dados.forEach(r => {
+    const f = r['Fração de Atuação'] || '—';
+    if (!porFracao[f]) porFracao[f] = { total: 0, turnos: new Set() };
+    porFracao[f].turnos.add(r['ID Relatório']);
+    camposProdutividade.forEach(c => { porFracao[f].total += (parseFloat(r[c])||0); });
+  });
+  const rankingFracao = Object.entries(porFracao).sort((a,b) => b[1].total - a[1].total).slice(0,10);
+
+  // ---- Ranking por Equipe ----
+  const porEquipe = {};
+  dados.forEach(r => {
+    const eq = `${r['Fração de Atuação']||'—'} / Equipe ${r['Equipe']||'—'}`;
+    if (!porEquipe[eq]) porEquipe[eq] = { total: 0, turnos: new Set() };
+    porEquipe[eq].turnos.add(r['ID Relatório']);
+    camposProdutividade.forEach(c => { porEquipe[eq].total += (parseFloat(r[c])||0); });
+  });
+  const rankingEquipe = Object.entries(porEquipe).sort((a,b) => b[1].total - a[1].total).slice(0,10);
+
+  // ---- Produtividade por dia (linha do tempo) ----
+  const porDia = {};
+  dados.forEach(r => {
+    const d = r['Data'] || '—';
+    if (!porDia[d]) porDia[d] = 0;
+    camposProdutividade.forEach(c => { porDia[d] += (parseFloat(r[c])||0); });
+  });
+  const diasOrdenados = Object.keys(porDia).sort();
+
+  // ---- Indicadores de desempenho calculados ----
+  const totalAbordagens = totais['Pessoas Abordadas'] || 0;
+  const totalVeicFisc = totais['Veículos Fiscalizados'] || 0;
+  const totalPrisoes = (totais['Prisões (Pessoas maiores)']||0) + (totais['Apreensão de Adolescentes']||0);
+  const totalVeicApreendidos = totais['Veículos Apreendidos'] || 0;
+  const totalLocaisFisc = totais['Locais Fiscalizados'] || 0;
+  const totalLocaisDesmate = totais['Locais de Desmate Fiscalizados'] || 0;
+
+  const indicadoresCalc = [
+    { lbl: 'Média de abordagens por turno', val: totalTurnos ? (totalAbordagens/totalTurnos).toFixed(1) : '—' },
+    { lbl: 'Média de veículos fiscalizados por turno', val: totalTurnos ? (totalVeicFisc/totalTurnos).toFixed(1) : '—' },
+    { lbl: 'Prisões por 100 abordagens', val: totalAbordagens ? (totalPrisoes/totalAbordagens*100).toFixed(2) : '—' },
+    { lbl: 'Veículos apreendidos por 100 fiscalizados', val: totalVeicFisc ? (totalVeicApreendidos/totalVeicFisc*100).toFixed(2) : '—' },
+    { lbl: '% locais fiscalizados com desmate', val: totalLocaisFisc ? (totalLocaisDesmate/totalLocaisFisc*100).toFixed(1)+'%' : '—' },
+    { lbl: 'Média diária de produtividade (todos indicadores)', val: diasOrdenados.length ? (diasOrdenados.reduce((s,d)=>s+porDia[d],0)/diasOrdenados.length).toFixed(1) : '—' },
+  ];
+
+  // ==================== MONTAGEM DO HTML ====================
+  conteudo.innerHTML = `
+    <div class="resumo-exec">
+      <b>📌 Resumo do Período</b><br><br>${resumoTexto}
+    </div>
+
+    <div class="kpi-grid" id="kpi-grid"></div>
+
+    <div class="secao-titulo">📊 Estatísticas do Período</div>
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="kv">${totalTurnos}</div><div class="kl">Turnos com Produtividade</div></div>
+      <div class="kpi-card"><div class="kv">${fracoesUnicas.size}</div><div class="kl">Frações Atendidas</div></div>
+      <div class="kpi-card"><div class="kv">${equipesUnicas.size}</div><div class="kl">Equipes Distintas</div></div>
+      <div class="kpi-card"><div class="kv">${totalMilitares}</div><div class="kl">Militares Empregados (soma)</div></div>
+      <div class="kpi-card"><div class="kv">${totalViaturas}</div><div class="kl">Viaturas Empregadas (soma)</div></div>
+    </div>
+
+    <div class="secao-titulo">📈 Gráficos</div>
+    <div class="duas-colunas">
+      <div class="chart-box"><h4>Top 8 Indicadores (total do período)</h4><canvas id="chartBarras" height="220"></canvas></div>
+      <div class="chart-box"><h4>Produtividade por Dia</h4><canvas id="chartLinha" height="220"></canvas></div>
+    </div>
+
+    <div class="secao-titulo">🏆 Ranking por Fração de Atuação</div>
+    <div class="chart-box">
+      <table class="prod-table">
+        <thead><tr><th>#</th><th>Fração</th><th>Turnos</th><th>Total (todos indicadores)</th></tr></thead>
+        <tbody>${rankingFracao.map(([f,v],i) => `<tr><td><span class="rank-pos">${i+1}</span></td><td>${f}</td><td>${v.turnos.size}</td><td>${formatarNumero_(v.total)}</td></tr>`).join('')}</tbody>
+      </table>
+    </div>
+
+    <div class="secao-titulo">🏆 Ranking por Equipe</div>
+    <div class="chart-box">
+      <table class="prod-table">
+        <thead><tr><th>#</th><th>Fração / Equipe</th><th>Turnos</th><th>Total (todos indicadores)</th></tr></thead>
+        <tbody>${rankingEquipe.map(([f,v],i) => `<tr><td><span class="rank-pos">${i+1}</span></td><td>${f}</td><td>${v.turnos.size}</td><td>${formatarNumero_(v.total)}</td></tr>`).join('')}</tbody>
+      </table>
+    </div>
+
+    <div class="secao-titulo">🎯 Indicadores de Desempenho</div>
+    <div class="indicadores-calc">
+      ${indicadoresCalc.map(ic => `<div class="indicador-calc"><div class="ic-val">${ic.val}</div><div class="ic-lbl">${ic.lbl}</div></div>`).join('')}
+    </div>
+
+    <div class="secao-titulo">📋 Relatórios do Período</div>
+    <div id="prod-lista-tabela">
+      <table class="prod-table detalhe">
+        <thead><tr><th>Data</th><th>Fração</th><th>Equipe</th><th>Comandante</th><th>Operação</th></tr></thead>
+        <tbody>${dados.map(r => `<tr>
+          <td>${formatarDataBR_(r['Data'])}</td>
+          <td>${r['Fração de Atuação']||'—'}</td>
+          <td>${r['Equipe']||'—'}</td>
+          <td>${r['Comandante']||'—'}</td>
+          <td>${(r['Operações']||[]).join(', ')||'—'}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>
+  `;
+
+  // KPIs dinâmicos (um card por indicador que tiver valor > 0)
+  const kpiGrid = document.getElementById('kpi-grid');
+  const kpisComValor = Object.entries(totais).filter(([,v]) => v > 0);
+  kpiGrid.innerHTML = kpisComValor.length
+    ? kpisComValor.map(([k,v]) => `<div class="kpi-card"><div class="kv">${formatarNumero_(v)}</div><div class="kl">${k}</div></div>`).join('')
+    : '<div class="mr-empty">Nenhum indicador com valor no período.</div>';
+
+  desenharGraficos_(topIndicadores, diasOrdenados, porDia);
+
+  // Guarda o estado atual pra exportação
+  window._prodEstadoAtual = { dados, totais, resumoTexto, periodoIni, periodoFim, rankingFracao, rankingEquipe, indicadoresCalc };
+}
+
+function formatarNumero_(v){
+  return Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+}
+function formatarDataBR_(iso){
+  if (!iso) return '—';
+  const [a,m,d] = iso.split('-');
+  return `${d}/${m}/${a}`;
+}
+
+function desenharGraficos_(topIndicadores, diasOrdenados, porDia){
+  if (graficoBarras) graficoBarras.destroy();
+  if (graficoLinha) graficoLinha.destroy();
+
+  const ctxB = document.getElementById('chartBarras');
+  if (ctxB){
+    const top8 = topIndicadores.length ? topIndicadores : [];
+    graficoBarras = new Chart(ctxB, {
+      type: 'bar',
+      data: {
+        labels: top8.map(([k]) => k),
+        datasets: [{ data: top8.map(([,v]) => v), backgroundColor: '#9b8a5c' }],
+      },
+      options: { responsive:true, plugins:{legend:{display:false}}, scales:{ x:{ticks:{color:'#999',font:{size:9}}}, y:{ticks:{color:'#999'}} } },
+    });
+  }
+
+  const ctxL = document.getElementById('chartLinha');
+  if (ctxL){
+    graficoLinha = new Chart(ctxL, {
+      type: 'line',
+      data: {
+        labels: diasOrdenados.map(formatarDataBR_),
+        datasets: [{ data: diasOrdenados.map(d => porDia[d]), borderColor:'#9b8a5c', backgroundColor:'rgba(155,138,92,.15)', fill:true, tension:.3 }],
+      },
+      options: { responsive:true, plugins:{legend:{display:false}}, scales:{ x:{ticks:{color:'#999',font:{size:9}}}, y:{ticks:{color:'#999'}} } },
+    });
+  }
+}
+
+// =====================================================================
+// EXPORTAÇÃO — EXCEL
+// =====================================================================
+document.getElementById('btnExportExcel').addEventListener('click', () => {
+  const estado = window._prodEstadoAtual;
+  if (!estado) return;
+
+  const wb = XLSX.utils.book_new();
+
+  const linhasTotais = Object.entries(estado.totais).filter(([,v]) => v > 0).map(([k,v]) => ({ Indicador: k, Total: v }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhasTotais), 'Totais');
+
+  const linhasDetalhe = estado.dados.map(r => {
+    const obj = { Data: r['Data'], 'Fração de Atuação': r['Fração de Atuação'], Equipe: r['Equipe'], Comandante: r['Comandante'], Operação: (r['Operações']||[]).join(', ') };
+    camposProdutividade.forEach(c => { obj[c] = r[c] || 0; });
+    return obj;
+  });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhasDetalhe), 'Relatórios');
+
+  const linhasFracao = estado.rankingFracao.map(([f,v],i) => ({ Posição: i+1, Fração: f, Turnos: v.turnos.size, Total: v.total }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhasFracao), 'Ranking Fração');
+
+  XLSX.writeFile(wb, `produtividade_${new Date().toISOString().slice(0,10)}.xlsx`);
+});
+
+// =====================================================================
+// EXPORTAÇÃO — PDF
+// =====================================================================
+document.getElementById('btnExportPdf').addEventListener('click', async () => {
+  const estado = window._prodEstadoAtual;
+  if (!estado) return;
+  const btn = document.getElementById('btnExportPdf');
+  btn.disabled = true; btn.textContent = '⏳ Gerando...';
+
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+
+    doc.setFontSize(14);
+    doc.text('RELATÓRIO DE PRODUTIVIDADE — 3ª CIA PM MAmb', 14, 16);
+    doc.setFontSize(9);
+    doc.text(`Período: ${formatarDataBR_(estado.periodoIni)} a ${formatarDataBR_(estado.periodoFim)}  |  Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 22);
+
+    const totaisArr = Object.entries(estado.totais).filter(([,v]) => v > 0).map(([k,v]) => [k, formatarNumero_(v)]);
+    doc.autoTable({ startY: 28, head: [['Indicador', 'Total']], body: totaisArr, styles:{fontSize:8}, headStyles:{fillColor:[26,16,0]} });
+
+    let y = doc.lastAutoTable.finalY + 10;
+    doc.setFontSize(11);
+    doc.text('Ranking por Fração de Atuação', 14, y);
+    doc.autoTable({ startY: y+3, head: [['#','Fração','Turnos','Total']],
+      body: estado.rankingFracao.map(([f,v],i) => [i+1, f, v.turnos.size, formatarNumero_(v.total)]),
+      styles:{fontSize:8}, headStyles:{fillColor:[26,16,0]} });
+
+    y = doc.lastAutoTable.finalY + 10;
+    if (y > 250){ doc.addPage(); y = 16; }
+    doc.setFontSize(11);
+    doc.text('Relatórios do Período', 14, y);
+    doc.autoTable({ startY: y+3, head: [['Data','Fração','Equipe','Comandante']],
+      body: estado.dados.map(r => [formatarDataBR_(r['Data']), r['Fração de Atuação']||'—', r['Equipe']||'—', r['Comandante']||'—']),
+      styles:{fontSize:7}, headStyles:{fillColor:[26,16,0]} });
+
+    doc.save(`produtividade_${new Date().toISOString().slice(0,10)}.pdf`);
+  } catch(err){
+    console.error('Erro ao gerar PDF:', err);
+    alert('Erro ao gerar o PDF.');
+  } finally {
+    btn.disabled = false; btn.textContent = '🖨 PDF';
+  }
+});
+
+if (sessao) carregarTudo();
+</script>
+
+</body>
+</html>
