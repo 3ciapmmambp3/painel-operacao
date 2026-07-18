@@ -197,7 +197,7 @@
 </div>
 
 <script>
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx8wXobWUAdlx5Uz-a2ITtrnayvjIWymjJTZpE3pGTkOtCbsimf2KqpmhNzK_iA4zDU/exec";
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwqkjJ4Ld_N9HOzRalrKofnsZ_k7Cy9jmfviuPcQAc0RRIRYePhxJ0o7og35tKCJuXy/exec";
 
 const sessao = (function(){
   const raw = sessionStorage.getItem('poe_sessao_v2');
@@ -272,13 +272,34 @@ document.addEventListener('click', () => {
 // =====================================================================
 // DADOS
 // =====================================================================
-let camposProdutividade = [];  // nomes dos indicadores (vêm de CAMPOS_PRODUTIVIDADE)
+let camposProdutividade = [];  // [{nome, tipo}], vêm de CAMPOS_PRODUTIVIDADE
+let camposNumericos = [];      // mesma lista, sem os campos tipo "Texto" (não somam)
+let tipoPorNome = {};          // nome -> tipo, pra formatação
 let todosOsRegistros = [];     // cada linha = 1 relatório com Produtividade preenchida
 let graficoBarras = null;
 let graficoLinha = null;
 
 function normalizar_(s){
   return (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim();
+}
+
+// Converte pra número aceitando tanto "5.9" quanto "5,9" (alguns registros
+// antigos podem ter sido salvos com vírgula decimal).
+function parseNum_(v){
+  if (v === null || v === undefined || v === '') return NaN;
+  if (typeof v === 'number') return v;
+  let s = v.toString().trim();
+  if (s.includes(',') && !s.includes('.')) s = s.replace(',', '.');
+  return parseFloat(s);
+}
+
+// Formata um valor já somado de acordo com o tipo do indicador (Moeda ganha
+// "R$", Decimal mostra até 2 casas, Inteiro é número redondo).
+function formatarValorPorTipo_(valor, nome){
+  const tipo = tipoPorNome[nome] || 'Inteiro';
+  if (tipo === 'Moeda') return 'R$ ' + Number(valor).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (tipo === 'Decimal') return Number(valor).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+  return Number(valor).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
 }
 
 async function carregarTudo(){
@@ -290,6 +311,9 @@ async function carregarTudo(){
     ]);
 
     camposProdutividade = refRes.CAMPOS_PRODUTIVIDADE || [];
+    camposNumericos = camposProdutividade.filter(c => c.tipo !== 'Texto');
+    tipoPorNome = {};
+    camposProdutividade.forEach(c => { tipoPorNome[c.nome] = c.tipo; });
     const operacoes = refRes.OPERACOES || [];
 
     if (prodRes.result !== 'success'){
@@ -361,11 +385,11 @@ function renderizarTudo(){
 
   // ---- Totais por indicador ----
   const totais = {};
-  camposProdutividade.forEach(c => totais[c] = 0);
+  camposNumericos.forEach(c => totais[c.nome] = 0);
   dados.forEach(r => {
-    camposProdutividade.forEach(c => {
-      const v = parseFloat(r[c]);
-      if (!isNaN(v)) totais[c] += v;
+    camposNumericos.forEach(c => {
+      const v = parseNum_(r[c.nome]);
+      if (!isNaN(v)) totais[c.nome] += v;
     });
   });
 
@@ -374,8 +398,8 @@ function renderizarTudo(){
   const totalTurnos = idsUnicos.size;
   const fracoesUnicas = new Set(dados.map(r => r['Fração de Atuação']).filter(Boolean));
   const equipesUnicas = new Set(dados.map(r => r['Equipe']).filter(Boolean));
-  const totalMilitares = dados.reduce((s,r) => s + (parseFloat(r['Total de Militares (Geral)'])||0), 0);
-  const totalViaturas = dados.reduce((s,r) => s + (parseFloat(r['Total de Viaturas (Geral)'])||0), 0);
+  const totalMilitares = dados.reduce((s,r) => s + (parseNum_(r['Total de Militares (Geral)'])||0), 0);
+  const totalViaturas = dados.reduce((s,r) => s + (parseNum_(r['Total de Viaturas (Geral)'])||0), 0);
   const datas = dados.map(r => r['Data']).filter(Boolean).sort();
   const periodoIni = datas[0], periodoFim = datas[datas.length-1];
 
@@ -392,7 +416,7 @@ function renderizarTudo(){
     const f = r['Fração de Atuação'] || '—';
     if (!porFracao[f]) porFracao[f] = { total: 0, turnos: new Set() };
     porFracao[f].turnos.add(r['ID Relatório']);
-    camposProdutividade.forEach(c => { porFracao[f].total += (parseFloat(r[c])||0); });
+    camposNumericos.forEach(c => { porFracao[f].total += (parseNum_(r[c.nome])||0); });
   });
   const rankingFracao = Object.entries(porFracao).sort((a,b) => b[1].total - a[1].total).slice(0,10);
 
@@ -402,7 +426,7 @@ function renderizarTudo(){
     const eq = `${r['Fração de Atuação']||'—'} / Equipe ${r['Equipe']||'—'}`;
     if (!porEquipe[eq]) porEquipe[eq] = { total: 0, turnos: new Set() };
     porEquipe[eq].turnos.add(r['ID Relatório']);
-    camposProdutividade.forEach(c => { porEquipe[eq].total += (parseFloat(r[c])||0); });
+    camposNumericos.forEach(c => { porEquipe[eq].total += (parseNum_(r[c.nome])||0); });
   });
   const rankingEquipe = Object.entries(porEquipe).sort((a,b) => b[1].total - a[1].total).slice(0,10);
 
@@ -411,7 +435,7 @@ function renderizarTudo(){
   dados.forEach(r => {
     const d = r['Data'] || '—';
     if (!porDia[d]) porDia[d] = 0;
-    camposProdutividade.forEach(c => { porDia[d] += (parseFloat(r[c])||0); });
+    camposNumericos.forEach(c => { porDia[d] += (parseNum_(r[c.nome])||0); });
   });
   const diasOrdenados = Object.keys(porDia).sort();
 
@@ -495,7 +519,7 @@ function renderizarTudo(){
   const kpiGrid = document.getElementById('kpi-grid');
   const kpisComValor = Object.entries(totais).filter(([,v]) => v > 0);
   kpiGrid.innerHTML = kpisComValor.length
-    ? kpisComValor.map(([k,v]) => `<div class="kpi-card"><div class="kv">${formatarNumero_(v)}</div><div class="kl">${k}</div></div>`).join('')
+    ? kpisComValor.map(([k,v]) => `<div class="kpi-card"><div class="kv">${formatarValorPorTipo_(v,k)}</div><div class="kl">${k}</div></div>`).join('')
     : '<div class="mr-empty">Nenhum indicador com valor no período.</div>';
 
   desenharGraficos_(topIndicadores, diasOrdenados, porDia);
@@ -557,7 +581,7 @@ document.getElementById('btnExportExcel').addEventListener('click', () => {
 
   const linhasDetalhe = estado.dados.map(r => {
     const obj = { Data: r['Data'], 'Fração de Atuação': r['Fração de Atuação'], Equipe: r['Equipe'], Comandante: r['Comandante'], Operação: (r['Operações']||[]).join(', ') };
-    camposProdutividade.forEach(c => { obj[c] = r[c] || 0; });
+    camposProdutividade.forEach(c => { obj[c.nome] = r[c.nome] || 0; });
     return obj;
   });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhasDetalhe), 'Relatórios');
