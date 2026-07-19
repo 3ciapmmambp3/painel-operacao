@@ -489,6 +489,39 @@ async function auth_migrarDaPlanilha(rows) {
  * -- CREATE POLICY "allow_all" ON public.militares FOR ALL USING (true) WITH CHECK (true);
  */
 
+/* ─── CACHE DE REFERÊNCIAS (militares, frações, operações, etc.) ────
+   Evita buscar tudo de novo do Apps Script/Sheets toda vez que a pessoa
+   troca de página — guarda por 5 minutos no sessionStorage (some quando
+   fecha a aba). Se algo for cadastrado/alterado via Administração, chama
+   auth_limparCacheReferencias() pra forçar buscar de novo na hora. ────── */
+const AUTH_REFERENCIAS_CACHE_KEY = 'poe_referencias_cache_v1';
+const AUTH_REFERENCIAS_CACHE_MS = 5 * 60 * 1000; // 5 minutos
+
+async function auth_fetchReferencias(scriptUrl) {
+  try {
+    const bruto = sessionStorage.getItem(AUTH_REFERENCIAS_CACHE_KEY);
+    if (bruto) {
+      const cache = JSON.parse(bruto);
+      if (cache.scriptUrl === scriptUrl && (Date.now() - cache.buscadoEm) < AUTH_REFERENCIAS_CACHE_MS) {
+        return cache.dados;
+      }
+    }
+  } catch (e) { /* cache corrompido — ignora e busca de novo */ }
+
+  const res = await fetch(scriptUrl + '?action=referencias');
+  const dados = await res.json();
+  try {
+    sessionStorage.setItem(AUTH_REFERENCIAS_CACHE_KEY, JSON.stringify({
+      scriptUrl, dados, buscadoEm: Date.now(),
+    }));
+  } catch (e) { /* sessionStorage cheio/indisponível — segue sem cachear */ }
+  return dados;
+}
+
+function auth_limparCacheReferencias() {
+  try { sessionStorage.removeItem(AUTH_REFERENCIAS_CACHE_KEY); } catch (e) {}
+}
+
 /* ─── Exportações globais ────────────────────────────────────────── */
 window.SbAuth = {
   login:            auth_login,
@@ -503,6 +536,8 @@ window.SbAuth = {
   temPermissao:     auth_temPermissao,
   podeVerGrupamento: auth_podeVerGrupamento,
   migrarDaPlanilha: auth_migrarDaPlanilha,
+  fetchReferencias: auth_fetchReferencias,
+  limparCacheReferencias: auth_limparCacheReferencias,
   sessaoLer,
   sessaoSalvar,
   sessaoLimpar,
