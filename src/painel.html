@@ -16,6 +16,7 @@
   <script src="auth.js"></script>
   <script src="assets/kml_data.js"></script>
   <script src="assets/ibge_data.js"></script>
+  <script src="assets/uc_data.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
@@ -1025,6 +1026,7 @@ window.addEventListener('load', function(){
         Escolha o formato em que você tem a coordenada e digite apenas os números — sem símbolos de grau, minuto, segundo ou vírgula.
         Também é possível clicar diretamente no mapa para consultar um ponto.
         A classificação é feita com base na camada "Área Urbana IBGE 2022" já utilizada no restante do sistema.
+        O contorno <span style="color:#43a047;font-weight:700;">verde</span> no mapa mostra as Unidades de Conservação já cadastradas — ainda em fase de mapeamento (nem todas estão disponíveis).
       </div>
 
       <!-- Seletor de formato -->
@@ -1169,6 +1171,14 @@ window.addEventListener('load', function(){
             style="background:rgba(46,160,67,.18);border:1px solid rgba(46,160,67,.5);color:#4ade80;font-size:12px;font-weight:700;padding:8px 14px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:6px;">
             💾 Registrar Atendimento/Informação
           </button>
+        </div>
+      </div>
+
+      <div id="cu-resultado-uc" style="display:none;margin-top:10px;padding:12px 18px;border-radius:8px;align-items:flex-start;gap:12px;background:rgba(155,138,92,.15);border:1px solid var(--gold-border);">
+        <div id="cu-resultado-uc-badge" style="font-size:12px;font-weight:800;padding:5px 12px;border-radius:5px;white-space:nowrap;background:var(--gold);color:#1a1000;">🌿 DENTRO DE UC</div>
+        <div style="font-size:12px;color:#f0f0f0;line-height:1.6;">
+          <b id="cu-resultado-uc-nome" style="color:var(--gold);"></b><br>
+          <span id="cu-resultado-uc-detalhe" style="color:var(--text-muted);"></span>
         </div>
       </div>
     </div>
@@ -7014,6 +7024,11 @@ function _cuInitMapa(){
   _cuCamadaIbgeLayer = L.layerGroup().addTo(_cuMapaLeaflet);
   _desenharCamadaIbge(_cuCamadaIbgeLayer, 'claro');
 
+  /* Camada Unidades de Conservação — contorno verde, sempre visível junto
+     com a de Área Urbana. Só mostra as UCs já cadastradas em UC_DATA. */
+  _cuCamadaUcLayer = L.layerGroup().addTo(_cuMapaLeaflet);
+  _desenharCamadaUc(_cuCamadaUcLayer);
+
   _mapaAdicionarSeletorCamadas(_cuMapaLeaflet, camadasCu, 'claro', (key) => {
     _desenharCamadaIbge(_cuCamadaIbgeLayer, key);
   });
@@ -7190,9 +7205,33 @@ function _desenharCamadaIbge(layerGroup, camadaKey){
   console.log('[_desenharCamadaIbge] polígonos:', nOk, '| erros:', nErro, '| camada:', camadaKey);
 }
 
+// Desenha os contornos das Unidades de Conservação já cadastradas (UC_DATA)
+// num layerGroup próprio — mesmo princípio da camada de Área Urbana IBGE.
+function _desenharCamadaUc(layerGroup){
+  layerGroup.clearLayers();
+  if(typeof UC_DATA === 'undefined' || !UC_DATA.length) return;
+  const estilo = { color:'#2e7d32', weight:2, opacity:0.85, fillColor:'#43a047', fillOpacity:0.18 };
+  let nOk=0, nErro=0;
+  UC_DATA.forEach(uc => {
+    try{
+      if(!Array.isArray(uc.poly) || uc.poly.length < 3) return;
+      const latlngs = uc.poly
+        .map(p => [p[1], p[0]])
+        .filter(([lat,lng]) => Number.isFinite(lat) && Number.isFinite(lng));
+      if(latlngs.length < 3) return;
+      L.polygon(latlngs, estilo)
+        .bindTooltip(`🌿 ${uc.nome} (${uc.categoria})`, {sticky:true, className:'leaflet-tooltip-pel'})
+        .addTo(layerGroup);
+      nOk++;
+    }catch(err){ nErro++; }
+  });
+  console.log('[_desenharCamadaUc] polígonos:', nOk, '| erros:', nErro);
+}
+
 let _cuPropPontosLayer = null;
 let _cuCamadaPelGrupLayer = null;   /* mapa principal: camada de polígonos pelotão/grupamento */
 let _cuCamadaIbgeLayer = null;      /* mapa principal: camada Área Urbana IBGE (cor dinâmica) */
+let _cuCamadaUcLayer = null;        /* mapa principal: camada Unidades de Conservação */
 let _cuFsCamadaIbgeLayer = null;    /* tela cheia: idem */
 let _cuFsCamadaPelGrupLayer = null; /* tela cheia: idem */
 let _cuPropPontosCarregados = false;
@@ -7707,6 +7746,19 @@ function _cuPontoEmAreaUrbana(lat, lng){
   return false;
 }
 
+// Retorna a Unidade de Conservação (nome/categoria/municípios) cujo polígono
+// contém o ponto, ou null se não cair em nenhuma das UCs já cadastradas.
+// IMPORTANTE: hoje só uma parte das UCs da 3ª Cia PM MAmb está mapeada aqui
+// (cada uma precisa do respectivo arquivo KML/KMZ) — "não encontrou" pode
+// significar "está fora" OU "essa UC ainda não foi cadastrada".
+function _cuPontoEmUC(lat, lng){
+  if(typeof UC_DATA === 'undefined' || !UC_DATA.length) return null;
+  for(const uc of UC_DATA){
+    if(_cuPontoEmPoligono(lat, lng, uc.poly)) return uc;
+  }
+  return null;
+}
+
 function consultaUrbRurConsultar(){
   let lat, lng;
 
@@ -7757,6 +7809,7 @@ function consultaUrbRurConsultar(){
   }
 
   const ehUrbana = _cuPontoEmAreaUrbana(lat, lng);
+  const ucEncontrada = _cuPontoEmUC(lat, lng);
   _cuUltimoDecimal = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
 
   const resEl = document.getElementById('cu-resultado');
@@ -7773,6 +7826,28 @@ function consultaUrbRurConsultar(){
   const _gmsStr = _gmsLat + '  /  ' + _gmsLng;
   const _gmsEl = document.getElementById('cu-resultado-gms');
   if(_gmsEl) _gmsEl.textContent = _gmsStr;
+
+  /* Resultado da Unidade de Conservação */
+  const ucEl = document.getElementById('cu-resultado-uc');
+  const ucBadgeEl = document.getElementById('cu-resultado-uc-badge');
+  if(ucEl){
+    ucEl.style.display = 'flex';
+    if(ucEncontrada){
+      ucBadgeEl.style.background = 'var(--gold)';
+      ucBadgeEl.style.color = '#1a1000';
+      ucBadgeEl.textContent = '🌿 DENTRO DE UC';
+      document.getElementById('cu-resultado-uc-nome').textContent = ucEncontrada.nome;
+      document.getElementById('cu-resultado-uc-detalhe').textContent =
+        `Categoria: ${ucEncontrada.categoria} · Município(s): ${ucEncontrada.municipios}`;
+    } else {
+      ucBadgeEl.style.background = '#333';
+      ucBadgeEl.style.color = '#aaa';
+      ucBadgeEl.textContent = '— Fora das UC cadastradas';
+      document.getElementById('cu-resultado-uc-nome').textContent = '';
+      document.getElementById('cu-resultado-uc-detalhe').textContent =
+        `Não está dentro de nenhuma das Unidades de Conservação já mapeadas neste sistema (${UC_DATA.length} de ~95). Pode estar fora de UC, ou dentro de uma que ainda não foi cadastrada aqui.`;
+    }
+  }
 
   /* Atualiza cabeçalho flutuante do mapa */
   const _hdEl = document.getElementById('cu-mapa-header');
