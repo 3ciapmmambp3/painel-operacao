@@ -7029,6 +7029,11 @@ function _cuInitMapa(){
   _cuCamadaUcLayer = L.layerGroup().addTo(_cuMapaLeaflet);
   _desenharCamadaUc(_cuCamadaUcLayer);
 
+  /* Camada Zona de Amortecimento — contorno laranja tracejado, categoria
+     separada da UC em si (propositalmente, pra não confundir as duas). */
+  _cuCamadaUcAmortecimentoLayer = L.layerGroup().addTo(_cuMapaLeaflet);
+  _desenharCamadaUcAmortecimento(_cuCamadaUcAmortecimentoLayer);
+
   _mapaAdicionarSeletorCamadas(_cuMapaLeaflet, camadasCu, 'claro', (key) => {
     _desenharCamadaIbge(_cuCamadaIbgeLayer, key);
   });
@@ -7213,25 +7218,55 @@ function _desenharCamadaUc(layerGroup){
   const estilo = { color:'#2e7d32', weight:2, opacity:0.85, fillColor:'#43a047', fillOpacity:0.18 };
   let nOk=0, nErro=0;
   UC_DATA.forEach(uc => {
-    try{
-      if(!Array.isArray(uc.poly) || uc.poly.length < 3) return;
-      const latlngs = uc.poly
-        .map(p => [p[1], p[0]])
-        .filter(([lat,lng]) => Number.isFinite(lat) && Number.isFinite(lng));
-      if(latlngs.length < 3) return;
-      L.polygon(latlngs, estilo)
-        .bindTooltip(`🌿 ${uc.nome} (${uc.categoria})`, {sticky:true, className:'leaflet-tooltip-pel'})
-        .addTo(layerGroup);
-      nOk++;
-    }catch(err){ nErro++; }
+    const polys = uc.multiPoly ? uc.poly : [uc.poly];
+    polys.forEach(poly => {
+      try{
+        if(!Array.isArray(poly) || poly.length < 3) return;
+        const latlngs = poly
+          .map(p => [p[1], p[0]])
+          .filter(([lat,lng]) => Number.isFinite(lat) && Number.isFinite(lng));
+        if(latlngs.length < 3) return;
+        L.polygon(latlngs, estilo)
+          .bindTooltip(`🌿 ${uc.nome} (${uc.categoria})`, {sticky:true, className:'leaflet-tooltip-pel'})
+          .addTo(layerGroup);
+        nOk++;
+      }catch(err){ nErro++; }
+    });
   });
   console.log('[_desenharCamadaUc] polígonos:', nOk, '| erros:', nErro);
+}
+
+// Desenha a Zona de Amortecimento (entorno das UCs) — cor laranja, propositalmente
+// diferente do verde da UC, pra não confundir as duas coisas visualmente.
+function _desenharCamadaUcAmortecimento(layerGroup){
+  layerGroup.clearLayers();
+  if(typeof UC_AMORTECIMENTO_DATA === 'undefined' || !UC_AMORTECIMENTO_DATA.length) return;
+  const estilo = { color:'#ff9800', weight:2, opacity:0.7, fillColor:'#ff9800', fillOpacity:0.08, dashArray:'6,4' };
+  let nOk=0, nErro=0;
+  UC_AMORTECIMENTO_DATA.forEach(za => {
+    const polys = za.multiPoly ? za.poly : [za.poly];
+    polys.forEach(poly => {
+      try{
+        if(!Array.isArray(poly) || poly.length < 3) return;
+        const latlngs = poly
+          .map(p => [p[1], p[0]])
+          .filter(([lat,lng]) => Number.isFinite(lat) && Number.isFinite(lng));
+        if(latlngs.length < 3) return;
+        L.polygon(latlngs, estilo)
+          .bindTooltip(`⚠️ ${za.nome}`, {sticky:true, className:'leaflet-tooltip-pel'})
+          .addTo(layerGroup);
+        nOk++;
+      }catch(err){ nErro++; }
+    });
+  });
+  console.log('[_desenharCamadaUcAmortecimento] polígonos:', nOk, '| erros:', nErro);
 }
 
 let _cuPropPontosLayer = null;
 let _cuCamadaPelGrupLayer = null;   /* mapa principal: camada de polígonos pelotão/grupamento */
 let _cuCamadaIbgeLayer = null;      /* mapa principal: camada Área Urbana IBGE (cor dinâmica) */
 let _cuCamadaUcLayer = null;        /* mapa principal: camada Unidades de Conservação */
+let _cuCamadaUcAmortecimentoLayer = null; /* mapa principal: camada Zona de Amortecimento */
 let _cuFsCamadaIbgeLayer = null;    /* tela cheia: idem */
 let _cuFsCamadaPelGrupLayer = null; /* tela cheia: idem */
 let _cuPropPontosCarregados = false;
@@ -7748,13 +7783,34 @@ function _cuPontoEmAreaUrbana(lat, lng){
 
 // Retorna a Unidade de Conservação (nome/categoria/municípios) cujo polígono
 // contém o ponto, ou null se não cair em nenhuma das UCs já cadastradas.
+// Algumas UCs (uc.multiPoly === true) têm mais de um polígono (ex: divididas
+// em zonas de manejo) — nesse caso, basta cair em qualquer uma delas.
 // IMPORTANTE: hoje só uma parte das UCs da 3ª Cia PM MAmb está mapeada aqui
 // (cada uma precisa do respectivo arquivo KML/KMZ) — "não encontrou" pode
 // significar "está fora" OU "essa UC ainda não foi cadastrada".
 function _cuPontoEmUC(lat, lng){
   if(typeof UC_DATA === 'undefined' || !UC_DATA.length) return null;
   for(const uc of UC_DATA){
-    if(_cuPontoEmPoligono(lat, lng, uc.poly)) return uc;
+    if(uc.multiPoly){
+      if(uc.poly.some(p => _cuPontoEmPoligono(lat, lng, p))) return uc;
+    } else {
+      if(_cuPontoEmPoligono(lat, lng, uc.poly)) return uc;
+    }
+  }
+  return null;
+}
+
+// Mesma ideia, mas para a Zona de Amortecimento (entorno da UC) — é uma
+// categoria separada de propósito: estar na zona de amortecimento NÃO é a
+// mesma coisa que estar dentro da UC, e não deve ser confundido com isso.
+function _cuPontoEmZonaAmortecimento(lat, lng){
+  if(typeof UC_AMORTECIMENTO_DATA === 'undefined' || !UC_AMORTECIMENTO_DATA.length) return null;
+  for(const za of UC_AMORTECIMENTO_DATA){
+    if(za.multiPoly){
+      if(za.poly.some(p => _cuPontoEmPoligono(lat, lng, p))) return za;
+    } else {
+      if(_cuPontoEmPoligono(lat, lng, za.poly)) return za;
+    }
   }
   return null;
 }
@@ -7810,6 +7866,7 @@ function consultaUrbRurConsultar(){
 
   const ehUrbana = _cuPontoEmAreaUrbana(lat, lng);
   const ucEncontrada = _cuPontoEmUC(lat, lng);
+  const zaEncontrada = !ucEncontrada ? _cuPontoEmZonaAmortecimento(lat, lng) : null; // só checa amortecimento se não estiver dentro da própria UC
   _cuUltimoDecimal = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
 
   const resEl = document.getElementById('cu-resultado');
@@ -7827,19 +7884,32 @@ function consultaUrbRurConsultar(){
   const _gmsEl = document.getElementById('cu-resultado-gms');
   if(_gmsEl) _gmsEl.textContent = _gmsStr;
 
-  /* Resultado da Unidade de Conservação */
+  /* Resultado da Unidade de Conservação / Zona de Amortecimento */
   const ucEl = document.getElementById('cu-resultado-uc');
   const ucBadgeEl = document.getElementById('cu-resultado-uc-badge');
   if(ucEl){
     ucEl.style.display = 'flex';
     if(ucEncontrada){
+      ucEl.style.background = 'rgba(155,138,92,.15)';
+      ucEl.style.borderColor = 'var(--gold-border)';
       ucBadgeEl.style.background = 'var(--gold)';
       ucBadgeEl.style.color = '#1a1000';
       ucBadgeEl.textContent = '🌿 DENTRO DE UC';
       document.getElementById('cu-resultado-uc-nome').textContent = ucEncontrada.nome;
       document.getElementById('cu-resultado-uc-detalhe').textContent =
         `Categoria: ${ucEncontrada.categoria} · Município(s): ${ucEncontrada.municipios}`;
+    } else if(zaEncontrada){
+      ucEl.style.background = 'rgba(255,152,0,.15)';
+      ucEl.style.borderColor = 'rgba(255,152,0,.4)';
+      ucBadgeEl.style.background = '#ff9800';
+      ucBadgeEl.style.color = '#1a1000';
+      ucBadgeEl.textContent = '⚠️ ZONA DE AMORTECIMENTO';
+      document.getElementById('cu-resultado-uc-nome').textContent = zaEncontrada.nome;
+      document.getElementById('cu-resultado-uc-detalhe').textContent =
+        `Está no entorno de uma UC, mas NÃO dentro dela · Categoria: ${zaEncontrada.categoria} · Município(s): ${zaEncontrada.municipios}`;
     } else {
+      ucEl.style.background = 'rgba(255,255,255,.04)';
+      ucEl.style.borderColor = 'var(--border)';
       ucBadgeEl.style.background = '#333';
       ucBadgeEl.style.color = '#aaa';
       ucBadgeEl.textContent = '— Fora das UC cadastradas';
