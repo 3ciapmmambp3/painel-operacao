@@ -3090,6 +3090,7 @@ document.getElementById('reviewBody').addEventListener('click', (e) => {
 const relatorioForm = document.getElementById('relatorioForm');
 const hiddenIframeRelatorio = document.getElementById('hidden_iframe_relatorio');
 let enviandoRelatorio = false;
+let ultimoPayloadEnviado = null;   // usado para a baixa automática das demandas no Supabase
 
 relatorioForm.setAttribute('action', SCRIPT_URL);
 relatorioForm.setAttribute('method', 'POST');
@@ -3102,6 +3103,7 @@ document.getElementById('reviewConfirmBtn').addEventListener('click', () => {
     return;
   }
   const payload = collectAllData();
+  ultimoPayloadEnviado = payload;
   document.getElementById('payloadField').value = JSON.stringify(payload);
 
   const reviewConfirmBtn = document.getElementById('reviewConfirmBtn');
@@ -3111,16 +3113,71 @@ document.getElementById('reviewConfirmBtn').addEventListener('click', () => {
   relatorioForm.submit();
 });
 
-hiddenIframeRelatorio.addEventListener('load', () => {
+hiddenIframeRelatorio.addEventListener('load', async () => {
   if (!enviandoRelatorio) return;
   enviandoRelatorio = false;
   closeReview();
   const reviewConfirmBtn = document.getElementById('reviewConfirmBtn');
   reviewConfirmBtn.disabled = false;
   reviewConfirmBtn.textContent = 'Confirmar e Enviar';
+  // Baixa automática: marca no Supabase as denúncias/requisições atendidas neste relatório.
+  // Best-effort: se falhar, não impede o fluxo do relatório.
+  await marcarDemandasAtendidas(ultimoPayloadEnviado);
+  ultimoPayloadEnviado = null;
   alert(modoEdicaoIdRelatorio ? 'Relatório atualizado com sucesso!' : 'Relatório enviado com sucesso!');
   window.location.href = 'meus-relatorios.html';
 });
+
+/* ── Baixa automática das demandas (Denúncia de Balcão / Requisição) ──
+   Ao enviar o relatório, marca a ocorrência como Atendida (RESPONDIDA) na
+   tabela `denuncias` do Supabase, com REDS, Auto de Infração, Ato de
+   Fiscalização, data e observações — os mesmos dados lançados no relatório. */
+function _normalizarDataResp(v){
+  if (!v) return null;
+  v = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0,10);
+  const m = v.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
+}
+function _extrairNumeroOcorrencia(s){
+  const m = String(s||'').match(/(\d{1,4})\s*\/\s*(\d{4})/);
+  return m ? `${m[1].padStart(3,'0')}/${m[2]}` : null;
+}
+async function marcarDemandasAtendidas(payload){
+  try {
+    if (!payload || !Array.isArray(payload.categorias)) return;
+    if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
+    const H = { apikey: SB_AUTH_KEY, Authorization: `Bearer ${SB_AUTH_KEY}`, 'Content-Type': 'application/json' };
+    const sess = (typeof getSessaoAtual === 'function') ? (getSessaoAtual() || {}) : {};
+    const nome = `${sess.matricula||''} — ${sess.pg||''} ${sess.guerra||sess.nome||''}`.replace(/\s+/g,' ').trim();
+    const alvos = [
+      { cat: 'Denúncia de Balcão', tipo: 'denuncia',   campoNum: 'Denúncia de Balcão' },
+      { cat: 'Requisição',         tipo: 'requisicao', campoNum: 'Nº da Requisição' },
+    ];
+    for (const cfg of alvos){
+      const bloco = payload.categorias.find(c => c.categoria === cfg.cat);
+      if (!bloco || !Array.isArray(bloco.itens)) continue;
+      for (const item of bloco.itens){
+        const numero = _extrairNumeroOcorrencia(item[cfg.campoNum]);
+        if (!numero) continue;
+        const body = {
+          situacao: 'RESPONDIDA',
+          data_resposta: _normalizarDataResp(item['Data de Atendimento'] || item['Data da Fiscalização']),
+          numero_reds: item['Nº REDS (BO/BOS/RAT)'] || null,
+          numero_auto_infracao: item['Nº Auto de Infração'] || null,
+          numero_ato_fiscalizacao: item['Nº Ato de Fiscalização'] || null,
+          observacoes_resposta: item['Observações'] || null,
+          atendido_por_matricula: sess.matricula || null,
+          atendido_por_nome: nome
+        };
+        try {
+          await fetch(`${SB_AUTH_URL}/rest/v1/denuncias?numero=eq.${encodeURIComponent(numero)}&tipo=eq.${cfg.tipo}`,
+            { method: 'PATCH', headers: H, body: JSON.stringify(body) });
+        } catch(err){ console.warn('[baixa] falha em', numero, err); }
+      }
+    }
+  } catch(e){ console.warn('[baixa] marcarDemandasAtendidas', e); }
+}
 
 document.getElementById('relatorioForm').addEventListener('submit', (e) => {
   e.preventDefault();
