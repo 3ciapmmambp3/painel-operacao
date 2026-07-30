@@ -82,6 +82,13 @@ create table if not exists public.denuncias (
   atendido_por_matricula text,
   atendido_por_nome      text,
 
+  -- inativação (somente Admin Geral)
+  ativo         boolean not null default true,
+  inativado_por_matricula text,
+  inativado_por_nome      text,
+  motivo_inativacao       text,
+  inativado_em            timestamptz,
+
   -- auditoria
   registrado_por_matricula text not null,
   registrado_por_nome      text not null,
@@ -94,6 +101,12 @@ alter table public.denuncias add column if not exists grupamento_completo    tex
 alter table public.denuncias add column if not exists numero_auto_infracao    text;
 alter table public.denuncias add column if not exists numero_ato_fiscalizacao text;
 alter table public.denuncias add column if not exists observacoes_resposta    text;
+-- Inativação (somente Admin Geral): registro lançado errado, sem apagar (mantém histórico)
+alter table public.denuncias add column if not exists ativo boolean not null default true;
+alter table public.denuncias add column if not exists inativado_por_matricula text;
+alter table public.denuncias add column if not exists inativado_por_nome      text;
+alter table public.denuncias add column if not exists motivo_inativacao       text;
+alter table public.denuncias add column if not exists inativado_em            timestamptz;
 
 create unique index if not exists uq_denuncias_num_tipo_ano on public.denuncias (ano, tipo, numero_seq);
 create index if not exists idx_denuncias_gp        on public.denuncias (gp_responsavel);
