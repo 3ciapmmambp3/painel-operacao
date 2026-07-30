@@ -77,6 +77,8 @@
   .prazo{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
   .prazo.ok{color:var(--success)} .prazo.warn{color:#ffb74d} .prazo.late{color:var(--danger)} .prazo.none{color:var(--text-hint)}
   .muni{color:var(--text-white)} .tema{color:var(--text-muted)}
+  tr.inativa td{opacity:.5} tr.inativa .num{text-decoration:line-through}
+  .tag-inativa{display:inline-block;font-size:9px;font-weight:700;padding:2px 7px;border-radius:20px;background:var(--danger-bg);color:#ef9a9a;margin-left:6px;letter-spacing:.3px}
   .empty{padding:40px;text-align:center;color:var(--text-hint);font-size:13px}
   .colhide{}
   @media(max-width:900px){.kpis{grid-template-columns:repeat(2,1fr)}.colhide{display:none}}
@@ -162,7 +164,7 @@
         <span id="scope-txt">Carregando…</span>
       </div>
     </div>
-    <button class="btn-new" onclick="location.href='nova-denuncia.html'"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Nova ocorrência</button>
+    <button class="btn-new" onclick="location.href='nova-denuncia.html'"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Nova Demanda</button>
   </div>
 
   <div class="selbar" id="selbar" style="display:none">
@@ -187,6 +189,7 @@
     <button class="fbtn" data-f="balcao" onclick="setFiltro(this)">Denúncias de Balcão</button>
     <button class="fbtn" data-f="PENDENTE" onclick="setFiltro(this)">Pendentes</button>
     <button class="fbtn" data-f="atendidas" onclick="setFiltro(this)">Atendidas</button>
+    <button class="fbtn" data-f="inativadas" id="fbtn-inativas" onclick="setFiltro(this)" style="display:none">Inativadas</button>
   </div>
 
   <div class="tablewrap">
@@ -229,6 +232,7 @@ const pelNum = s => { const m=(s||'').match(/(\d+)\s*PEL/i); return m?+m[1]:null
 const nivel = S ? S.nivel_acesso : 'operacional';
 const isAdminTotal = nivel==='admin' || nivel==='admin_geral';
 const isAdminPel   = nivel==='admin_pelotao';
+const isAdminGeral = nivel==='admin_geral';
 
 let GRUPOS = [];       // [{gpr, comp, gp, pel}]
 let ALLOWED = [];      // grupos que este militar pode ver (escopo máximo)
@@ -251,6 +255,7 @@ let filtro = 'todas';
   }
 
   montarSeletor(meuPel);
+  if (isAdminGeral) document.getElementById('fbtn-inativas').style.display = '';
   await carregar();
 })();
 
@@ -340,6 +345,9 @@ function passa(d){
   if (ano!=='all' && String(d.ano)!==String(ano)) return false;
   const q=document.getElementById('busca').value.trim().toLowerCase();
   if (q){ const hay=`${d.numero} ${d.municipio} ${d.tema} ${d.origem} ${d.denunciante||''}`.toLowerCase(); if(!hay.includes(q)) return false; }
+  const inativa = d.ativo===false;
+  if (filtro==='inativadas') return inativa;   // só as inativadas (Admin Geral)
+  if (inativa) return false;                    // nos demais filtros, inativadas ficam ocultas
   if (filtro==='todas') return true;
   if (filtro==='requisicao') return d.tipo==='requisicao';
   if (filtro==='balcao') return d.tipo==='denuncia';
@@ -354,7 +362,9 @@ function render(){
   if(!rows.length){ tb.innerHTML='<tr><td colspan="9" class="empty">Nenhuma ocorrência neste filtro.</td></tr>'; return; }
   rows.forEach(d=>{
     const pr=prazoInfo(d);
+    const inativa=d.ativo===false;
     const tr=document.createElement('tr'); tr.onclick=()=>abrir(d);
+    if(inativa) tr.className='inativa';
     tr.innerHTML =
       `<td class="num">${d.numero}</td>`+
       `<td>${tipoCell(d)}</td>`+
@@ -363,13 +373,14 @@ function render(){
       `<td class="colhide tema">${d.tema||'—'}</td>`+
       `<td class="colhide tema">${d.grupamento_completo||'—'}</td>`+
       `<td><span class="prazo ${pr.cls}">${pr.txt}</span></td>`+
-      `<td><span class="pill ${sitCls(d.situacao)}">${SIT_LBL[d.situacao]||d.situacao}</span></td>`+
+      `<td><span class="pill ${sitCls(d.situacao)}">${SIT_LBL[d.situacao]||d.situacao}</span>${inativa?'<span class="tag-inativa">INATIVADA</span>':''}</td>`+
       `<td><button class="pdf-mini" title="Baixar Ficha (PDF)" onclick="event.stopPropagation();gerarPDF(byId('${d.id}'))"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>PDF</button></td>`;
     tb.appendChild(tr);
   });
 }
 function kpis(){
-  const c=(f)=>DADOS.filter(f).length;
+  const ATIVAS=DADOS.filter(d=>d.ativo!==false);
+  const c=(f)=>ATIVAS.filter(f).length;
   document.getElementById('k-pend').textContent=c(d=>d.situacao==='PENDENTE');
   document.getElementById('k-and').textContent =c(d=>d.situacao==='EM ANDAMENTO');
   document.getElementById('k-ok').textContent  =c(atendida);
@@ -410,7 +421,12 @@ function abrir(d){
   const bs=document.getElementById('d-sit'); bs.className='pill '+sitCls(d.situacao); bs.textContent=SIT_LBL[d.situacao]||d.situacao;
   const anexos=(d.anexos||[]);
   const di=(t,v,full)=>`<div class="di${full?' full':''}"><dt>${t}</dt><dd>${v||'—'}</dd></div>`;
-  document.getElementById('d-body').innerHTML =
+  const bannerInativa = d.ativo===false
+    ? `<div class="rs" style="background:var(--danger-bg);border-color:rgba(239,83,80,.4);color:#ef9a9a;margin-bottom:14px">
+         <b>DEMANDA INATIVADA</b>${d.inativado_por_nome?` — por ${d.inativado_por_nome}`:''}${d.inativado_em?` em ${fmtData(d.inativado_em)}`:''}
+         ${d.motivo_inativacao?`<br>Motivo: <b>${d.motivo_inativacao}</b>`:''}</div>`
+    : '';
+  document.getElementById('d-body').innerHTML = bannerInativa +
     `<div class="grpline"><svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
        <span><b>Grupamento responsável:</b> ${d.grupamento_completo||d.gp_responsavel}</span></div>`+
     `<dl class="dl">`+
@@ -441,9 +457,12 @@ function abrir(d){
   const act=document.getElementById('d-actions');
   act.innerHTML =
     `<button class="act pdf" onclick="gerarPDF()"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 15h6M9 18h6"/></svg> Baixar Ficha (PDF)</button>`+
-    (atendida(d) ? '' :
+    (d.ativo===false ? '' : atendida(d) ? '' :
       `<button class="act assume" onclick="mudarSituacao('EM ANDAMENTO')"${d.situacao!=='PENDENTE'?' disabled':''}><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Assumir</button>
-       <button class="act done" onclick="salvarAtendimento()"><svg viewBox="0 0 24 24"><path d="M22 4 12 14.01l-3-3"/></svg> Registrar atendimento</button>`);
+       <button class="act done" onclick="salvarAtendimento()"><svg viewBox="0 0 24 24"><path d="M22 4 12 14.01l-3-3"/></svg> Registrar atendimento</button>`)+
+    (isAdminGeral ? (d.ativo===false
+      ? `<button class="act" style="background:var(--bg-hover);border-color:var(--border-mid);color:var(--text-white)" onclick="reativar()"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-6.7 3M3 4v5h5"/></svg> Reativar</button>`
+      : `<button class="act" style="background:var(--danger-bg);border-color:rgba(239,83,80,.4);color:#ef9a9a" onclick="inativar()"><svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg> Inativar</button>`) : '');
   document.getElementById('ov').classList.add('show');
   document.body.style.overflow='hidden';
 }
@@ -461,6 +480,22 @@ async function patch(body){
 async function mudarSituacao(s){
   try{ await patch({ situacao:s, atendido_por_matricula:S.matricula, atendido_por_nome:MILITAR }); toast(`Situação: ${SIT_LBL[s]}`); }
   catch(e){ toast('Erro: '+e.message); }
+}
+async function inativar(){
+  const motivo = prompt('Motivo da inativação desta demanda (registro lançado errado, duplicidade, etc.):');
+  if (motivo===null) return;                 // cancelou
+  if (!motivo.trim()) return toast('Informe o motivo da inativação.');
+  try{
+    await patch({ ativo:false, motivo_inativacao:motivo.trim().toUpperCase(),
+      inativado_por_matricula:S.matricula, inativado_por_nome:MILITAR, inativado_em:new Date().toISOString() });
+    toast('Demanda inativada.');
+  }catch(e){ toast('Erro: '+e.message); }
+}
+async function reativar(){
+  try{
+    await patch({ ativo:true, motivo_inativacao:null, inativado_por_matricula:null, inativado_por_nome:null, inativado_em:null });
+    toast('Demanda reativada.');
+  }catch(e){ toast('Erro: '+e.message); }
 }
 async function salvarAtendimento(){
   const data=document.getElementById('at-data').value;
