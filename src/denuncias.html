@@ -6,6 +6,7 @@
 <title>Denúncias &amp; Requisições — 3ª Cia PM MAmb</title>
 <link rel="stylesheet" href="styles/global.css">
 <script src="auth.js"></script>
+<script src="assets/ficha-brasoes.js"></script>
 <style>
   body{padding-bottom:40px}
   .shell{display:flex;align-items:flex-start}
@@ -480,60 +481,50 @@ async function salvarAtendimento(){
   }catch(e){ toast('Erro: '+e.message); }
 }
 
-/* ── PDF: Ficha (modelo oficial, via impressão do navegador) ─────── */
+/* ── PDF: Ficha — réplica fiel do modelo DENUNCIA (MODELO).pdf ───── */
 function gerarPDF(d){
   d = d || atual;
   if(!d) return;
-  const anx=(d.anexos||[]).map(a=>a.nome).join(', ') || '—';
-  const titulo = d.tipo==='denuncia' ? 'FICHA DE DENÚNCIA' : 'FICHA DE REQUISIÇÃO';
-  const linha=(r,v)=>`<tr><td class="k">${r}</td><td class="v">${(v==null||v==='')?'—':String(v).replace(/</g,'&lt;')}</td></tr>`;
+  const U = v => (v==null||v==='') ? '' : String(v).toUpperCase().replace(/</g,'&lt;');
+  const anx = (d.anexos||[]).map(a=>a.nome).join(', ');
+  const denuncia = d.tipo==='denuncia';
+  const titulo = denuncia ? 'FICHA DE DENÚNCIA' : 'FICHA DE REQUISIÇÃO';
+  const nrTexto = (denuncia ? 'DENÚNCIA' : 'REQUISIÇÃO') + ' Nº ' + d.numero + ' - 3ª CIA PM MAmb';
+  const L = (lbl,val,cls) => `<tr><td class="${cls||''}"><b>${lbl}:</b> ${U(val)}</td></tr>`;
+  const corpo = denuncia
+    ? L('INFRAÇÃO', d.tema)+L('MUNICÍPIO', d.municipio)+L('ENDEREÇO', d.endereco)+
+      L('DENUNCIANTE', d.denunciante)+L('DENUNCIADO', d.denunciado)+
+      L('HISTÓRICO', d.descricao, 'hist')+L('ROTEIRO', d.referencia)+
+      L('PM QUE RECEBEU', d.registrado_por_nome)+L('DATA DE RECEBIMENTO', fmtData(d.created_at))+
+      L('ANEXO', anx)+L('OBSERVAÇÕES', d.observacoes)
+    : L('ORIGEM', d.origem)+L('Nº OFÍCIO/PROCESSO', d.numero_oficio)+L('INFRAÇÃO', d.tema)+
+      L('MUNICÍPIO', d.municipio)+L('ENDEREÇO', d.endereco)+L('OBJETO', d.objeto)+
+      L('HISTÓRICO', d.descricao, 'hist')+L('ROTEIRO', d.referencia)+
+      L('PM QUE RECEBEU', d.registrado_por_nome)+L('DATA DE RECEBIMENTO', fmtData(d.created_at))+
+      L('PRAZO', fmtData(d.prazo))+L('ANEXO', anx)+L('OBSERVAÇÕES', d.observacoes);
   const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>${d.numero} — ${titulo}</title>
   <style>
-    *{box-sizing:border-box} body{font-family:Arial,sans-serif;color:#000;margin:0;padding:28px 34px}
-    .hd{text-align:center;line-height:1.35;margin-bottom:6px}
-    .hd b{display:block;font-size:12px} .hd .c{font-size:12px;font-weight:700}
-    h1{text-align:center;font-size:15px;margin:14px 0 4px;letter-spacing:.5px}
-    .nr{text-align:center;font-size:14px;font-weight:800;margin-bottom:14px}
-    table{width:100%;border-collapse:collapse}
-    td{border:1px solid #000;padding:7px 9px;font-size:11.5px;vertical-align:top}
-    td.k{width:170px;font-weight:700;background:#f0f0f0;text-transform:uppercase;font-size:10.5px}
-    td.v{white-space:pre-wrap}
-    .ft{margin-top:18px;font-size:10px;color:#444;text-align:center}
-    @media print{@page{margin:14mm} body{padding:0}}
+    *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:24px 26px}
+    .cab{display:flex;align-items:center;gap:14px;margin-bottom:4px}
+    .cab img{height:92px;width:auto}
+    .cab .org{flex:1;text-align:center;font-weight:bold;font-size:14px;line-height:1.55}
+    h1{text-align:center;font-size:26px;font-weight:bold;margin:16px 0 18px}
+    table{width:100%;border-collapse:collapse;table-layout:fixed}
+    td{border:1px solid #000;padding:6px 9px;font-size:13px;line-height:1.45;vertical-align:top;word-wrap:break-word}
+    td.nr{font-weight:bold}
+    td.hist{height:340px}
+    @media print{@page{margin:12mm} body{padding:0}}
   </style></head><body>
-    <div class="hd">
-      <div class="c">COMANDO DE POLICIAMENTO ESPECIALIZADO</div>
-      <div class="c">BATALHÃO DE POLÍCIA MILITAR DE MEIO AMBIENTE</div>
-      <div class="c">3ª COMPANHIA DE POLÍCIA MILITAR DE MEIO AMBIENTE</div>
+    <div class="cab">
+      <img src="${typeof FICHA_BRASAO_ESQ!=='undefined'?FICHA_BRASAO_ESQ:'assets/header-pmmg.png'}" alt="">
+      <div class="org">COMANDO DE POLICIAMENTO ESPECIALIZADO<br>BATALHÃO DE POLÍCIA MILITAR DE MEIO AMBIENTE<br>3ª COMPANHIA DE POLÍCIA MILITAR DE MEIO AMBIENTE</div>
+      <img src="${typeof FICHA_BRASAO_DIR!=='undefined'?FICHA_BRASAO_DIR:''}" alt="">
     </div>
     <h1>${titulo}</h1>
-    <div class="nr">Nº ${d.numero}</div>
     <table>
-      ${linha('Grupamento', d.grupamento_completo)}
-      ${linha('Infração', d.tema)}
-      ${linha('Município', d.municipio)}
-      ${linha('Endereço', d.endereco)}
-      ${linha('Origem', d.origem + (d.numero_oficio?` — ${d.numero_oficio}`:''))}
-      ${d.tipo==='denuncia'?linha('Denunciante', d.denunciante):''}
-      ${d.tipo==='denuncia'?linha('Denunciado', d.denunciado):''}
-      ${linha('Histórico', d.descricao)}
-      ${linha('Objeto / ação', d.objeto)}
-      ${linha('Roteiro', d.referencia)}
-      ${linha('PM que recebeu', d.registrado_por_nome)}
-      ${linha('Data de recebimento', fmtData(d.created_at))}
-      ${linha('Prazo', fmtData(d.prazo))}
-      ${linha('Anexo', anx)}
-      ${linha('Observações', d.observacoes)}
-      ${atendida(d) ? `
-      ${linha('SITUAÇÃO', SIT_LBL[d.situacao])}
-      ${linha(dataLbl(d), fmtData(d.data_resposta))}
-      ${linha('Nº REDS (BO/BOS/RAT)', d.numero_reds)}
-      ${linha('Nº Auto de Infração', d.numero_auto_infracao)}
-      ${linha('Nº Ato de Fiscalização', d.numero_ato_fiscalizacao)}
-      ${d.observacoes_resposta ? linha('Obs. do atendimento', d.observacoes_resposta) : ''}
-      ${linha('Atendido por', d.atendido_por_nome)}` : ''}
+      <tr><td class="nr">${U(nrTexto)}</td></tr>
+      ${corpo}
     </table>
-    <div class="ft">Documento gerado pelo Painel de Operações — 3ª Cia PM MAmb · ${new Date().toLocaleString('pt-BR')}</div>
     <script>window.onload=function(){window.print();}<\/script>
   </body></html>`;
   const w=window.open('', '_blank');

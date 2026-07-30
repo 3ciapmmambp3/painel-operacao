@@ -38,6 +38,8 @@
   input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-bg)}
   select{appearance:none;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239b8a5c' stroke-width='3'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 13px center;padding-right:34px}
   textarea{resize:vertical;min-height:96px;line-height:1.55}
+  /* Padronização: informações em CAIXA ALTA */
+  #muni,#oficio,#origem-outro,#origem-mp,#denunciante,#denunciado,#objeto,#descricao,#endereco,#referencia,#observacoes{text-transform:uppercase}
   .readonly{background:#151515;color:var(--text-muted);cursor:not-allowed;border-style:dashed}
   .grpbox{background:var(--success-bg);border:1px solid rgba(102,187,106,.35);border-radius:7px;padding:11px 13px;font-size:13.5px;color:var(--text-white);display:flex;align-items:center;gap:10px;min-height:44px}
   .grpbox .pin{width:16px;height:16px;stroke:var(--success);fill:none;stroke-width:1.8;flex-shrink:0}
@@ -286,6 +288,7 @@ let anexos = [];   // {file_id,nome,tamanho,mime,web_view_link}
 /* ── Boot ────────────────────────────────────────────────────────── */
 document.getElementById('who').textContent = MILITAR_LINHA;
 document.getElementById('militar').value = MILITAR_LINHA;
+aplicarPrazoPadrao();   // denúncia já abre com prazo de 45 dias
 
 (async function carregarMunicipios(){
   try {
@@ -323,6 +326,20 @@ function setTipo(t){
     : 'Registro de requisição de órgão externo. O número oficial é gerado pelo sistema ao registrar.';
   if (d) { document.getElementById('wrap-outro').style.display = 'none'; checkMP(); }
   else { document.getElementById('wrap-mp').style.display = 'none'; checkOutroOrgao(); }
+  aplicarPrazoPadrao();
+}
+
+/* Prazo: denúncia = hoje + 45 dias (pré-preenchido); requisição = conforme o
+   ofício (o usuário informa; se não informar, cai no padrão de 45 dias no envio). */
+function addDias(baseISO, n){
+  const base = baseISO ? new Date(baseISO + 'T00:00:00') : new Date();
+  base.setDate(base.getDate() + n);
+  return base.toISOString().slice(0,10);
+}
+function aplicarPrazoPadrao(){
+  const el = document.getElementById('prazo');
+  if (document.body.dataset.tipo === 'denuncia') el.value = addDias(null, 45);
+  else el.value = '';   // requisição: conforme o ofício
 }
 
 function checkOutroOrgao(){
@@ -447,20 +464,27 @@ async function enviar(ev){
   else if (tipo === 'requisicao' && /Federal/.test(origem)) esfera = 'Federal';
   else if (tipo === 'requisicao' && /Trabalho/.test(origem)) esfera = 'Trabalho';
 
+  // Prazo: se não informado (requisição sem prazo do ofício) → data do fato + 45 dias (ou hoje + 45).
+  let prazo = document.getElementById('prazo').value;
+  if (!prazo) prazo = addDias(document.getElementById('data_fato').value || null, 45);
+
+  // Padronização: informações em CAIXA ALTA.
+  const up = s => (s || '').toString().trim().toUpperCase();
+
   const dados = {
-    tipo, origem, origem_esfera: esfera,
-    numero_oficio: document.getElementById('oficio').value.trim(),
-    denunciante: document.getElementById('denunciante').value.trim(),
-    denunciado: document.getElementById('denunciado').value.trim(),
+    tipo, origem: up(origem), origem_esfera: esfera,
+    numero_oficio: up(document.getElementById('oficio').value),
+    denunciante: up(document.getElementById('denunciante').value),
+    denunciado: up(document.getElementById('denunciado').value),
     data_fato: document.getElementById('data_fato').value,
-    municipio: muni,
-    tema: temaSel,
-    objeto: document.getElementById('objeto').value.trim(),
-    descricao: document.getElementById('descricao').value.trim(),
-    endereco: document.getElementById('endereco').value.trim(),
-    referencia: document.getElementById('referencia').value.trim(),
-    observacoes: document.getElementById('observacoes').value.trim(),
-    prazo: document.getElementById('prazo').value,
+    municipio: up(muni),
+    tema: up(temaSel),
+    objeto: up(document.getElementById('objeto').value),
+    descricao: up(document.getElementById('descricao').value),
+    endereco: up(document.getElementById('endereco').value),
+    referencia: up(document.getElementById('referencia').value),
+    observacoes: up(document.getElementById('observacoes').value),
+    prazo: prazo,
     anexos: anexos.filter(a => a.status === 'ok').map(a => ({ file_id:a.file_id, nome:a.nome, tamanho:a.tamanho, mime:a.mime, web_view_link:a.web_view_link })),
     registrado_por_matricula: S.matricula,
     registrado_por_nome: MILITAR_LINHA
