@@ -130,6 +130,7 @@
     </select>
     <span class="sp"></span>
     <button class="btn" onclick="exportarCSV()"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Exportar CSV</button>
+    <button class="btn" onclick="exportarJSON()"><svg viewBox="0 0 24 24"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5a2 2 0 0 0 2 2h1M16 3h1a2 2 0 0 1 2 2v5a2 2 0 0 0 2 2 2 2 0 0 0-2 2v5a2 2 0 0 1-2 2h-1"/></svg> Exportar JSON</button>
     <button class="btn gold" onclick="window.print()"><svg viewBox="0 0 24 24"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z"/></svg> Imprimir / Salvar PDF</button>
   </div>
 
@@ -192,7 +193,7 @@ const val = s => { s = (s==null?'':String(s)).trim(); return s || '—'; };
 const esc = s => String(s).replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
 
 let TODOS = [];       // todas as demandas ativas
-let ultimaTabela = {};// para o CSV
+let DADOS_REL = {};   // dados por dimensão: {origem:[{categoria,quantidade}], tema:[...], ...}
 
 /* ── Boot ────────────────────────────────────────────────────────── */
 (async function init(){
@@ -237,22 +238,25 @@ function contar(arr, chaveFn){
   return m;
 }
 
-function barras(elId, mapaObj, classe){
+// Converte um mapa {categoria:qtd} em array ordenado [{categoria,quantidade}] (desc).
+function ordenar(mapaObj){
+  return Object.entries(mapaObj).sort((a,b)=>b[1]-a[1]).map(([categoria,quantidade])=>({categoria,quantidade}));
+}
+
+function barras(elId, arr, classe){
   const el = document.getElementById(elId);
-  const entries = Object.entries(mapaObj).sort((a,b)=>b[1]-a[1]);
-  if (!entries.length){ el.innerHTML = '<div class="empty">Sem dados no período.</div>'; return; }
-  const total = entries.reduce((s,[,v])=>s+v,0);
-  const max = entries[0][1] || 1;
-  el.innerHTML = entries.map(([k,v]) => {
-    const pct = ((v/total)*100).toFixed(1);
-    const w = Math.max(3, (v/max)*100);
+  if (!arr || !arr.length){ el.innerHTML = '<div class="empty">Sem dados no período.</div>'; return; }
+  const total = arr.reduce((s,x)=>s+x.quantidade,0);
+  const max = arr[0].quantidade || 1;
+  el.innerHTML = arr.map(x => {
+    const pct = ((x.quantidade/total)*100).toFixed(1);
+    const w = Math.max(3, (x.quantidade/max)*100);
     return `<div class="bar ${classe||''}">
-      <span class="bl">${esc(k)}</span>
-      <span class="bn">${v} · ${pct}%</span>
+      <span class="bl">${esc(x.categoria)}</span>
+      <span class="bn">${x.quantidade} · ${pct}%</span>
       <div class="track"><div class="fill" style="width:${w}%"></div></div>
     </div>`;
   }).join('');
-  return entries;
 }
 
 function render(){
@@ -266,22 +270,20 @@ function render(){
   document.getElementById('k-pend').textContent = arr.filter(d=>d.situacao==='PENDENTE').length;
   document.getElementById('k-ok').textContent   = arr.filter(d=>atendida(d.situacao)).length;
 
-  // Breakdowns
-  const mOrigem = contar(arr, d => val(d.origem));
-  const mTema   = contar(arr, d => val(d.tema));
-  const mSit    = contar(arr, d => SIT_LBL[d.situacao] || val(d.situacao));
-  const mGrup   = contar(arr, d => val(d.grupamento_completo || d.gp_responsavel));
-  const mMuniAll= contar(arr, d => val(d.municipio));
-  // município: top 15
-  const mMuni = Object.fromEntries(Object.entries(mMuniAll).sort((a,b)=>b[1]-a[1]).slice(0,15));
+  // Dados por dimensão — cada uma TOTALMENTE separada (base p/ tela, CSV e JSON).
+  DADOS_REL = {
+    origem:     ordenar(contar(arr, d => val(d.origem))),
+    tema:       ordenar(contar(arr, d => val(d.tema))),
+    situacao:   ordenar(contar(arr, d => SIT_LBL[d.situacao] || val(d.situacao))),
+    grupamento: ordenar(contar(arr, d => val(d.grupamento_completo || d.gp_responsavel))),
+    municipio:  ordenar(contar(arr, d => val(d.municipio))),
+  };
 
-  barras('s-origem', mOrigem, tipoF==='requisicao' ? 'req' : '');
-  barras('s-tema', mTema);
-  barras('s-situacao', mSit);
-  barras('s-grupamento', mGrup);
-  barras('s-municipio', mMuni);
-
-  ultimaTabela = { 'Origem': mOrigem, 'Tema': mTema, 'Situação': mSit, 'Grupamento': mGrup, 'Município': mMuniAll };
+  barras('s-origem', DADOS_REL.origem, tipoF==='requisicao' ? 'req' : '');
+  barras('s-tema', DADOS_REL.tema);
+  barras('s-situacao', DADOS_REL.situacao);
+  barras('s-grupamento', DADOS_REL.grupamento);
+  barras('s-municipio', DADOS_REL.municipio.slice(0,15));   // tela: 15 maiores; export: todos
 
   // Legenda de período (topo + impressão)
   const ano = document.getElementById('f-ano').value;
@@ -291,23 +293,45 @@ function render(){
   document.getElementById('print-sub').textContent = periodo + ' — gerado em ' + new Date().toLocaleDateString('pt-BR');
 }
 
-/* ── Exportar CSV (uma linha por categoria de cada dimensão) ──────── */
-function csvEsc(v){ v = (v==null?'':String(v)); return /[",;\n]/.test(v) ? '"' + v.replace(/"/g,'""') + '"' : v; }
-function exportarCSV(){
+/* ── Exportações ─────────────────────────────────────────────────── */
+function nomeArq(ext){
   const ano  = document.getElementById('f-ano').value;
   const tipoF= document.getElementById('f-tipo').value;
-  const linhas = [['Dimensão','Categoria','Quantidade','%']];
-  Object.entries(ultimaTabela).forEach(([dim, mapa]) => {
-    const entries = Object.entries(mapa).sort((a,b)=>b[1]-a[1]);
-    const total = entries.reduce((s,[,v])=>s+v,0) || 1;
-    entries.forEach(([k,v]) => linhas.push([dim, k, v, ((v/total)*100).toFixed(1).replace('.',',')]));
-  });
-  const csv = '﻿' + linhas.map(l => l.map(csvEsc).join(';')).join('\r\n'); // BOM p/ Excel PT-BR
-  const nome = `quantitativos_${tipoF}_${ano}.csv`.replace(/all/g,'todos');
-  const blob = new Blob([csv], { type:'text/csv;charset=utf-8' });
+  return `quantitativos_${tipoF}_${ano}.${ext}`.replace(/all/g,'todos');
+}
+function baixar(conteudo, nome, mime){
+  const blob = new Blob([conteudo], { type:`${mime};charset=utf-8` });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = nome; a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+}
+
+// CSV: uma SEÇÃO/tabela por dimensão (não mistura dimensões). Abre no Excel.
+function csvEsc(v){ v = (v==null?'':String(v)); return /[",;\n]/.test(v) ? '"' + v.replace(/"/g,'""') + '"' : v; }
+const DIM_TITULOS = { origem:'ORIGEM', tema:'TEMA', situacao:'SITUAÇÃO', grupamento:'GRUPAMENTO', municipio:'MUNICÍPIO' };
+function exportarCSV(){
+  const tipoF = document.getElementById('f-tipo').value;
+  const tipoLbl = tipoF==='all' ? 'DENÚNCIAS E REQUISIÇÕES' : (tipoF==='requisicao' ? 'REQUISIÇÕES' : 'DENÚNCIAS DE BALCÃO');
+  const ano = document.getElementById('f-ano').value;
+  const linhas = [];
+  linhas.push(['3ª CIA PM MAMB — RELATÓRIO DE QUANTITATIVOS']);
+  linhas.push([`${tipoLbl} · ${ano==='all' ? 'TODOS OS ANOS' : 'ANO '+ano}`]);
+  Object.keys(DIM_TITULOS).forEach(dim => {
+    const arrDim = DADOS_REL[dim] || [];
+    const total = arrDim.reduce((s,x)=>s+x.quantidade,0) || 1;
+    linhas.push([]);                                  // linha em branco separando as seções
+    linhas.push([DIM_TITULOS[dim]]);                  // título da dimensão
+    linhas.push(['Categoria','Quantidade','%']);      // cabeçalho da tabela
+    arrDim.forEach(x => linhas.push([x.categoria, x.quantidade, Math.round((x.quantidade/total)*100)+'%']));
+    linhas.push(['TOTAL', total, '100%']);
+  });
+  const csv = '﻿' + linhas.map(l => l.map(csvEsc).join(';')).join('\r\n'); // BOM p/ Excel PT-BR
+  baixar(csv, nomeArq('csv'), 'text/csv');
+}
+
+// JSON estruturado por dimensão: {origem:[{categoria,quantidade}], tema:[...], ...}
+function exportarJSON(){
+  baixar(JSON.stringify(DADOS_REL, null, 2), nomeArq('json'), 'application/json');
 }
 </script>
 </body>
