@@ -7,6 +7,7 @@ Ordem de execução no **Supabase → SQL Editor**:
 | pré | (já feito por você) | tabelas `municipios_grupos` e `grupos` |
 | 1 | `00_grupamentos_view.sql` | view `vw_municipio_grupamento` (município → grupamento **completo**) |
 | 2 | `01_denuncias.sql` | contador atômico, tabela `denuncias`, função `criar_denuncia`, RLS |
+| 3 | `02_storage_anexos.sql` | bucket privado `anexos` + políticas (upload/leitura/remoção via anon) |
 
 ## Como funciona a numeração (sem duplicidade)
 O número **não** é gerado no navegador. Ao registrar, o front chama a função
@@ -35,10 +36,16 @@ from public.criar_denuncia('{
 - registra via `criar_denuncia` (reaproveita a chave anon do `auth.js`);
 - exige login (usa a sessão do `auth.js`; sem sessão, redireciona para `index.html`).
 
-## Anexos (Google Drive) — pendente de setup
-O upload chama a Edge Function `upload-anexo`. Enquanto ela não estiver publicada,
-o formulário **registra normalmente sem anexos** (o arquivo aparece como "falhou").
-Para ativar os anexos, siga `EDGE-FUNCTION-drive.md`.
+## Anexos (Supabase Storage)
+Os anexos vão para um **bucket privado `anexos`** no próprio Supabase — basta rodar
+`02_storage_anexos.sql` e criar o bucket (o SQL já cria; se preferir, dá pra criar
+pelo Dashboard → Storage → New bucket, **privado**). O upload é direto do navegador
+(sem Edge Function): imagens são comprimidas, sobe pro Storage e guarda uma **signed
+URL durável** em `denuncias.anexos[].link`. Se o bucket/políticas não existirem, o
+anexo aparece como "falhou" e o registro é salvo normalmente sem ele.
+
+> O caminho antigo por **Google Drive** (`EDGE-FUNCTION-drive.md`) foi **descontinuado**:
+> conta de serviço não tem cota de armazenamento em Gmail comum (erro 403).
 
 ## Ainda não incluído (por opção)
 - Seed dos 215 municípios: você já populou `municipios_grupos` (221 linhas), então não é necessário.

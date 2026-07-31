@@ -1,3 +1,13 @@
+> ⚠️ **DESCONTINUADO (2026-07-31).** Este caminho (anexos no Google Drive via
+> conta de serviço) **não funciona com Gmail comum**: contas de serviço não têm
+> cota de armazenamento própria → o upload falha com `403 storageQuotaExceeded`.
+> Resolver isso exigiria Google Workspace (Shared Drives) ou OAuth por usuário.
+> **O projeto passou a guardar anexos no Supabase Storage** — ver
+> `db/02_storage_anexos.sql` e `db/README.md`. Este arquivo fica só como
+> referência histórica.
+
+---
+
 # Edge Functions de anexos — `upload-anexo` e `get-anexo`
 
 Os arquivos ficam **privados** no Drive (conta de serviço). Ninguém abre o Drive
