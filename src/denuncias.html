@@ -129,6 +129,13 @@
   .af input,.af textarea{background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:12.5px;outline:none;font-family:inherit;width:100%}
   .af input:focus,.af textarea:focus{border-color:var(--gold)}
   .af textarea{min-height:52px;resize:vertical}
+  details.manual{margin-top:4px}
+  details.manual>summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--gold-light);padding:6px 2px;user-select:none}
+  details.manual>summary::-webkit-details-marker{display:none}
+  details.manual>summary::before{content:"▸";display:inline-block;transition:transform .15s}
+  details.manual[open]>summary::before{transform:rotate(90deg)}
+  details.manual .af{margin-top:10px}
+  details.manual .act.done{margin-top:12px;width:100%}
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:#111;border:1px solid var(--gold-border);color:var(--text-white);padding:12px 20px;border-radius:10px;font-size:13px;z-index:60;box-shadow:0 8px 30px rgba(0,0,0,.6);opacity:0;transition:.28s}
   .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
   .btn-voltar{background:var(--bg-hover);border:1px solid var(--border-mid);color:var(--text-white);padding:7px 13px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none;font-family:inherit}
@@ -424,14 +431,18 @@ function atendimentoResumo(d){
     `</dl>`;
 }
 function atendimentoForm(d){
-  return `<div class="rs" style="margin-bottom:12px">Preencha os dados do atendimento (os mesmos do relatório de serviço). Ao salvar, a ocorrência vira <b>Atendida</b>.</div>`+
-    `<div class="af">
-       <div class="r"><label>${dataLbl(d)} <span class="req">*</span></label><input type="date" id="at-data" value="${(d.data_resposta||'').slice(0,10)}"></div>
-       <div class="r"><label>Nº REDS (BO/BOS/RAT) <span class="req">*</span></label><input id="at-reds" value="${d.numero_reds||''}" placeholder="2026-000000000-000"></div>
-       <div class="r"><label>Nº Auto de Infração</label><input id="at-auto" value="${d.numero_auto_infracao||''}"></div>
-       <div class="r"><label>Nº Ato de Fiscalização</label><input id="at-ato" value="${d.numero_ato_fiscalizacao||''}"></div>
-       <div class="r full"><label>Observações</label><textarea id="at-obs" placeholder="Observações do atendimento (opcional)">${d.observacoes_resposta||''}</textarea></div>
-     </div>`;
+  return `<div class="rs" style="margin-bottom:12px">Ao lançar esta ocorrência no <b>relatório de serviço</b>, ela é baixada automaticamente aqui (Nº REDS, Auto de Infração, Ato de Fiscalização e data). Use a opção abaixo apenas para <b>baixar manualmente</b> — isso <b>não</b> gera um relatório de serviço.</div>`+
+    `<details class="manual">
+       <summary>Baixar manualmente</summary>
+       <div class="af">
+         <div class="r"><label>${dataLbl(d)} <span class="req">*</span></label><input type="date" id="at-data" value="${(d.data_resposta||'').slice(0,10)}"></div>
+         <div class="r"><label>Nº REDS (BO/BOS/RAT) <span class="req">*</span></label><input id="at-reds" value="${d.numero_reds||''}" placeholder="2026-000000000-000"></div>
+         <div class="r"><label>Nº Auto de Infração</label><input id="at-auto" value="${d.numero_auto_infracao||''}"></div>
+         <div class="r"><label>Nº Ato de Fiscalização</label><input id="at-ato" value="${d.numero_ato_fiscalizacao||''}"></div>
+         <div class="r full"><label>Observações</label><textarea id="at-obs" placeholder="Observações do atendimento (opcional)">${d.observacoes_resposta||''}</textarea></div>
+       </div>
+       <button class="act done" onclick="salvarAtendimento()"><svg viewBox="0 0 24 24"><path d="M22 4 12 14.01l-3-3"/></svg> Registrar atendimento manual</button>
+     </details>`;
 }
 
 function abrir(d){
@@ -478,8 +489,7 @@ function abrir(d){
   act.innerHTML =
     `<button class="act pdf" onclick="gerarPDF()"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 15h6M9 18h6"/></svg> Baixar Ficha (PDF)</button>`+
     (d.ativo===false ? '' : atendida(d) ? '' :
-      `<button class="act assume" onclick="mudarSituacao('EM ANDAMENTO')"${d.situacao!=='PENDENTE'?' disabled':''}><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Assumir</button>
-       <button class="act done" onclick="salvarAtendimento()"><svg viewBox="0 0 24 24"><path d="M22 4 12 14.01l-3-3"/></svg> Registrar atendimento</button>`)+
+      `<button class="act assume" onclick="mudarSituacao('EM ANDAMENTO')"${d.situacao!=='PENDENTE'?' disabled':''}><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Assumir</button>`)+
     (isAdminGeral ? (d.ativo===false
       ? `<button class="act" style="background:var(--bg-hover);border-color:var(--border-mid);color:var(--text-white)" onclick="reativar()"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-6.7 3M3 4v5h5"/></svg> Reativar</button>`
       : `<button class="act" style="background:var(--danger-bg);border-color:rgba(239,83,80,.4);color:#ef9a9a" onclick="inativar()"><svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg> Inativar</button>`) : '');
