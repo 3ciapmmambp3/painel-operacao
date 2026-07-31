@@ -419,6 +419,28 @@ let atual=null;
 const byId = id => DADOS.find(x=>String(x.id)===String(id));
 const dataLbl = d => d.tipo==='denuncia' ? 'Data da fiscalização' : 'Data de atendimento';
 
+/* Máscaras (mesmas do relatório de serviço) para o formulário de baixa manual. */
+const MASKS = {
+  reds: { seg:[4,9,3],     sep:['-','-'],          ph:'2026-030135292-001' },
+  ato:  { seg:[4,2,2,3,7], sep:['.','.','.','.'],  ph:'2026.07.01.362.0000466' },
+};
+function aplicarMascara(raw, key){
+  const c=MASKS[key], tot=c.seg.reduce((a,b)=>a+b,0);
+  const dg=(raw||'').replace(/\D/g,'').slice(0,tot);
+  let out='', pos=0;
+  c.seg.forEach((len,i)=>{ if(dg.length>pos){ out+=(i>0?c.sep[i-1]:'')+dg.slice(pos,pos+len); pos+=len; } });
+  return out;
+}
+function bindMascaras(root){
+  if(!root) return;
+  root.querySelectorAll('[data-mask]').forEach(inp=>{
+    if(inp.dataset.maskBound) return; inp.dataset.maskBound='1';
+    const k=inp.dataset.mask; inp.setAttribute('inputmode','numeric');
+    if(inp.value) inp.value=aplicarMascara(inp.value,k);
+    inp.addEventListener('input',()=>{ inp.value=aplicarMascara(inp.value,k); });
+  });
+}
+
 function atendimentoResumo(d){
   const li=(k,v)=> v?`<div><dt>${k}</dt><dd>${v}</dd></div>`:'';
   return `<div class="rs"><b>${SIT_LBL[d.situacao]}</b>${d.atendido_por_nome?` — por ${d.atendido_por_nome}`:''}</div>`+
@@ -439,9 +461,9 @@ function atendimentoForm(d){
        <div class="rs" style="margin:10px 0">Uso excepcional — <b>não</b> gera relatório de serviço.</div>
        <div class="af">
          <div class="r"><label>${dataLbl(d)} <span class="req">*</span></label><input type="date" id="at-data" value="${(d.data_resposta||'').slice(0,10)}"></div>
-         <div class="r"><label>Nº REDS (BO/BOS/RAT) <span class="req">*</span></label><input id="at-reds" value="${d.numero_reds||''}" placeholder="2026-000000000-000"></div>
-         <div class="r"><label>Nº Auto de Infração</label><input id="at-auto" value="${d.numero_auto_infracao||''}"></div>
-         <div class="r"><label>Nº Ato de Fiscalização</label><input id="at-ato" value="${d.numero_ato_fiscalizacao||''}"></div>
+         <div class="r"><label>Nº REDS (BO/BOS/RAT) <span class="req">*</span></label><input id="at-reds" data-mask="reds" value="${d.numero_reds||''}" placeholder="${MASKS.reds.ph}"></div>
+         <div class="r"><label>Nº Auto de Infração</label><input id="at-auto" value="${d.numero_auto_infracao||''}" placeholder="466/2026"></div>
+         <div class="r"><label>Nº Ato de Fiscalização</label><input id="at-ato" data-mask="ato" value="${d.numero_ato_fiscalizacao||''}" placeholder="${MASKS.ato.ph}"></div>
          <div class="r full"><label>Observações</label><textarea id="at-obs" placeholder="Observações do atendimento (opcional)">${d.observacoes_resposta||''}</textarea></div>
        </div>
        <button class="act done" onclick="salvarAtendimento()"><svg viewBox="0 0 24 24"><path d="M22 4 12 14.01l-3-3"/></svg> Registrar atendimento manual</button>
@@ -486,6 +508,7 @@ function abrir(d){
      : `<div class="rs">Nenhum anexo.</div>`)+
     `<div class="sec-t">Atendimento</div>`+
     (atendida(d) ? atendimentoResumo(d) : atendimentoForm(d));
+  bindMascaras(document.getElementById('d-body'));
 
   // ações
   const act=document.getElementById('d-actions');
