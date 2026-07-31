@@ -454,7 +454,7 @@ function abrir(d){
     (anexos.length ? `<div class="anx">`+anexos.map(a=>
        `<div class="anxitem"><svg class="ic" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
         <div class="m"><b>${a.nome}</b><small>Google Drive · privado</small></div>
-        <a class="anxbtn" href="${a.web_view_link||'#'}" target="_blank" rel="noopener">Abrir</a></div>`).join('')+`</div>`
+        <a class="anxbtn" href="${a.link||a.web_view_link||'#'}" target="_blank" rel="noopener">Abrir</a></div>`).join('')+`</div>`
      : `<div class="rs">Nenhum anexo.</div>`)+
     `<div class="sec-t">Atendimento</div>`+
     (atendida(d) ? atendimentoResumo(d) : atendimentoForm(d));
@@ -527,22 +527,34 @@ function gerarPDF(d){
   d = d || atual;
   if(!d) return;
   const U = v => (v==null||v==='') ? '' : String(v).toUpperCase().replace(/</g,'&lt;');
-  const anx = (d.anexos||[]).map(a=>a.nome).join(', ');
   const denuncia = d.tipo==='denuncia';
   const titulo = denuncia ? 'FICHA DE DENÚNCIA' : 'FICHA DE REQUISIÇÃO';
   const nrTexto = (denuncia ? 'DENÚNCIA' : 'REQUISIÇÃO') + ' Nº ' + d.numero + ' - 3ª CIA PM MAmb';
   const L = (lbl,val,cls) => `<tr><td class="${cls||''}"><b>${lbl}:</b> ${U(val)}</td></tr>`;
+  // Linha ANEXO com links clicáveis: o militar que recebe o PDF abre cada
+  // documento anexado direto pela ficha (o Chrome preserva os hiperlinks no PDF).
+  const anexosArr = (d.anexos||[]);
+  const anexoCell = anexosArr.length
+    ? anexosArr.map(a => {
+        const nome = U(a.nome||'ANEXO');
+        const href = a.link || a.web_view_link;
+        return href
+          ? `<a href="${String(href).replace(/"/g,'&quot;')}" target="_blank" rel="noopener">${nome}</a>`
+          : nome;
+      }).join('<br>')
+    : '';
+  const anexoRow = `<tr><td class="anx"><b>ANEXO:</b> ${anexoCell}</td></tr>`;
   const corpo = denuncia
     ? L('INFRAÇÃO', d.tema)+L('MUNICÍPIO', d.municipio)+L('ENDEREÇO', d.endereco)+
       L('DENUNCIANTE', d.denunciante)+L('DENUNCIADO', d.denunciado)+
       L('HISTÓRICO', d.descricao, 'hist')+L('ROTEIRO', d.referencia)+
       L('PM QUE RECEBEU', d.registrado_por_nome)+L('DATA DE RECEBIMENTO', fmtData(d.created_at))+
-      L('ANEXO', anx)+L('OBSERVAÇÕES', d.observacoes)
+      anexoRow+L('OBSERVAÇÕES', d.observacoes)
     : L('ORIGEM', d.origem)+L('Nº OFÍCIO/PROCESSO', d.numero_oficio)+L('INFRAÇÃO', d.tema)+
       L('MUNICÍPIO', d.municipio)+L('ENDEREÇO', d.endereco)+L('OBJETO', d.objeto)+
       L('HISTÓRICO', d.descricao, 'hist')+L('ROTEIRO', d.referencia)+
       L('PM QUE RECEBEU', d.registrado_por_nome)+L('DATA DE RECEBIMENTO', fmtData(d.created_at))+
-      L('PRAZO', fmtData(d.prazo))+L('ANEXO', anx)+L('OBSERVAÇÕES', d.observacoes);
+      L('PRAZO', fmtData(d.prazo))+anexoRow+L('OBSERVAÇÕES', d.observacoes);
   const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>${d.numero} — ${titulo}</title>
   <style>
     *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:24px 26px}
@@ -554,7 +566,8 @@ function gerarPDF(d){
     td{border:1px solid #000;padding:6px 9px;font-size:13px;line-height:1.45;vertical-align:top;word-wrap:break-word}
     td.nr{font-weight:bold}
     td.hist{height:340px}
-    @media print{@page{margin:12mm} body{padding:0}}
+    td.anx a{color:#0645ad;text-decoration:underline;word-break:break-all}
+    @media print{@page{margin:12mm} body{padding:0} td.anx a{color:#0645ad}}
   </style></head><body>
     <div class="cab">
       <img src="${typeof FICHA_BRASAO_ESQ!=='undefined'?FICHA_BRASAO_ESQ:'assets/header-pmmg.png'}" alt="">

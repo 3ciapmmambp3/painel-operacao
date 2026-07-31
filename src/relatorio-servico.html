@@ -1203,12 +1203,18 @@ function itemMatchesQuery_(texto, consulta){
 // estar em UMA equipe por vez; um alvo do FAPI só pode ser lançado uma vez).
 const FONTES_SEMPRE_SEM_DUPLICATA = ['MILITARES', 'FAPI_ALVO'];
 
+// Fontes cujos itens vêm da tabela `denuncias` do Supabase (pendentes) em vez da
+// planilha. Já chegam escopadas pelo perfil do militar (ver carregarDemandasSupabase),
+// então NÃO passam pelo filtro por Fração da planilha — mas continuam sem duplicata.
+const FONTES_SUPABASE = ['DEN_BALCAO', 'REQUISICAO'];
+
 function getFilteredItems_(sourceKey, filterFracao, currentEl){
   const list = referenceCache[sourceKey];
   if (!list) return [];
   let items = list;
 
-  if (filterFracao){
+  const supabaseBacked = FONTES_SUPABASE.indexOf(sourceKey) !== -1;
+  if (filterFracao && !supabaseBacked){
     const alvo = getFracaoAtualCanonica();
     // Só o item "Outro:" é coringa (aparece sempre, não importa a Fração).
     // Itens SEM fração vinculada que NÃO são "Outro:" representam locais de
@@ -1480,6 +1486,59 @@ function setPlaceholderText(texto){
   });
 }
 
+// ── Fonte da verdade das denúncias/requisições PENDENTES: tabela `denuncias`
+// do Supabase (fecha o loop com denuncias.html). Sobrescreve no referenceCache
+// as fontes DEN_BALCAO e REQUISICAO que antes vinham da planilha antiga, para
+// que só apareçam ocorrências reais e ainda em aberto — e a baixa automática
+// (marcarDemandasAtendidas) sempre encontre o registro correspondente.
+// Best-effort: se falhar, mantém o que a planilha trouxe (fallback gracioso).
+async function carregarDemandasSupabase(){
+  if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
+  const S = (typeof getSessaoAtual === 'function') ? getSessaoAtual() : null;
+  if (!S) return;
+  const H = { apikey: SB_AUTH_KEY, Authorization:`Bearer ${SB_AUTH_KEY}`, 'Content-Type':'application/json' };
+  const gpN  = s => { const m=(s||'').match(/(\d+)\s*GP/i);  return m?+m[1]:null; };
+  const pelN = s => { const m=(s||'').match(/(\d+)\s*PEL/i); return m?+m[1]:null; };
+
+  // Escopo do militar logado (mesmo critério de denuncias.html).
+  let GRUPOS = [];
+  const rg = await fetch(`${SB_AUTH_URL}/rest/v1/grupos?select=gp_responsavel,grupamento_completo`, { headers:H });
+  if (!rg.ok) throw new Error(`grupos ${rg.status}`);
+  GRUPOS = (await rg.json()).map(g => ({ gpr:g.gp_responsavel, gp:gpN(g.grupamento_completo), pel:pelN(g.grupamento_completo) }));
+
+  const nivel = S.nivel_acesso || 'operacional';
+  const meuGp = gpN(S.grupamento_id), meuPel = pelN(S.grupamento_id);
+  let ALLOWED;
+  if (nivel==='admin' || nivel==='admin_geral') ALLOWED = GRUPOS.slice();
+  else if (nivel==='admin_pelotao')             ALLOWED = GRUPOS.filter(g => g.pel===meuPel);
+  else {
+    ALLOWED = GRUPOS.filter(g => g.gp===meuGp && g.pel===meuPel);
+    if (!ALLOWED.length) ALLOWED = GRUPOS.filter(g => (S.grupamento_id||'').toUpperCase().includes((g.gpr||'').replace('GP ','')));
+  }
+  const gprs = [...new Set(ALLOWED.map(g=>g.gpr).filter(Boolean))];
+  if (!gprs.length) return;
+
+  const inList = '(' + gprs.map(v=>`"${String(v).replace(/"/g,'')}"`).join(',') + ')';
+  const sit    = 'in.(' + ['"PENDENTE"','"EM ANDAMENTO"'].join(',') + ')';
+  const cols   = 'numero,tipo,municipio,tema';
+  const url = `${SB_AUTH_URL}/rest/v1/denuncias?select=${cols}`
+            + `&gp_responsavel=in.${encodeURIComponent(inList)}`
+            + `&situacao=${encodeURIComponent(sit)}`
+            + `&ativo=eq.true`
+            + `&order=numero.desc&limit=3000`;
+  const rd = await fetch(url, { headers:H });
+  if (!rd.ok) throw new Error(`denuncias ${rd.status} ${await rd.text()}`);
+  const rows = await rd.json();
+
+  // Rótulo rico (Nº — MUNICÍPIO · TEMA); a baixa automática extrai o NNN/AAAA por regex.
+  const rotulo = d => {
+    const extras = [d.municipio, d.tema].filter(Boolean).join(' · ');
+    return extras ? `${d.numero} — ${extras}` : `${d.numero}`;
+  };
+  referenceCache['DEN_BALCAO'] = rows.filter(d=>d.tipo==='denuncia').map(rotulo);
+  referenceCache['REQUISICAO'] = rows.filter(d=>d.tipo==='requisicao').map(rotulo);
+}
+
 async function fetchReferenceData(){
   if (!SCRIPT_URL || SCRIPT_URL.indexOf('COLE_AQUI') !== -1) return; // ainda não configurado
   setPlaceholderText('Carregando dados...');
@@ -1487,6 +1546,8 @@ async function fetchReferenceData(){
     const data = await auth_fetchReferencias(SCRIPT_URL);
     gruposList = data.GRUPOS || [];
     Object.assign(referenceCache, data);
+    try { await carregarDemandasSupabase(); }
+    catch(e){ console.warn('[supademandas] mantendo fonte da planilha para DEN_BALCAO/REQUISICAO:', e); }
     dadosCarregados = true;
     setPlaceholderText('Selecione...');
     populateSelectsIn(document);
