@@ -141,7 +141,7 @@
 <header class="header">
   <div class="header-left">
     <div class="header-logo"><img src="assets/header-pmmg.png" alt="PMMG" onerror="this.style.display='none'"></div>
-    <div class="header-title"><h1>PAINEL DE OPERAÇÕES — 3ª CIA PM MAmb</h1><p>Denúncias &amp; Requisições</p></div>
+    <div class="header-title"><h1>PAINEL DE OPERAÇÕES — 3ª CIA PM MAmb</h1><p id="hdr-sub">Controle de Demandas</p></div>
   </div>
   <div class="header-right">
     <button class="btn-voltar" onclick="location.href='painel.html'"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Painel</button>
@@ -152,7 +152,8 @@
 <div class="shell">
 <aside class="sidebar">
   <div class="stt">Controle de Demandas</div>
-  <a class="mod on" href="denuncias.html"><span class="mi">📋</span> Denúncias &amp; Requisições</a>
+  <a class="mod" id="tab-balcao" href="denuncias.html?tipo=denuncia"><span class="mi">📋</span> Denúncias de Balcão</a>
+  <a class="mod" id="tab-requi" href="denuncias.html?tipo=requisicao"><span class="mi">📨</span> Requisições</a>
   <div class="mod disabled"><span class="mi">🌳</span> IEF / SISFIS <span class="soon">EM BREVE</span></div>
   <div class="mod disabled"><span class="mi">📦</span> Materiais Apreendidos <span class="soon">EM BREVE</span></div>
   <div class="mod disabled"><span class="mi">🏞️</span> Unid. Conservação <span class="soon">EM BREVE</span></div>
@@ -166,13 +167,13 @@
 <div class="wrap">
   <div class="pagehead">
     <div>
-      <h2>Denúncias &amp; Requisições</h2>
+      <h2 id="pagettl">Denúncias de Balcão</h2>
       <div class="scope">
         <svg class="pin" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
         <span id="scope-txt">Carregando…</span>
       </div>
     </div>
-    <button class="btn-new" onclick="location.href='nova-denuncia.html'"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Nova Demanda</button>
+    <button class="btn-new" id="btn-nova" onclick="location.href='nova-denuncia.html?tipo='+TIPO_ABA"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Nova Demanda</button>
   </div>
 
   <div class="selbar" id="selbar" style="display:none">
@@ -193,8 +194,6 @@
       <input id="busca" placeholder="Buscar por nº, município, tema, origem, denunciante…" oninput="render()"></div>
     <select id="ano" class="yearsel" onchange="render()"><option value="all">Todos os anos</option></select>
     <button class="fbtn on" data-f="todas" onclick="setFiltro(this)">Todas</button>
-    <button class="fbtn" data-f="requisicao" onclick="setFiltro(this)">Requisições</button>
-    <button class="fbtn" data-f="balcao" onclick="setFiltro(this)">Denúncias de Balcão</button>
     <button class="fbtn" data-f="PENDENTE" onclick="setFiltro(this)">Pendentes</button>
     <button class="fbtn" data-f="atendidas" onclick="setFiltro(this)">Atendidas</button>
     <button class="fbtn" data-f="inativadas" id="fbtn-inativas" onclick="setFiltro(this)" style="display:none">Inativadas</button>
@@ -234,6 +233,16 @@ const AKEY = (typeof SB_AUTH_KEY !== 'undefined') ? SB_AUTH_KEY : '';
 const H = { 'apikey': AKEY, 'Authorization': `Bearer ${AKEY}`, 'Content-Type': 'application/json' };
 const MILITAR = S ? `${S.matricula} — ${S.pg||''} ${S.guerra||S.nome||''}`.replace(/\s+/g,' ').trim() : '';
 document.getElementById('who').textContent = MILITAR;
+
+/* ── Aba (mesmo motor, filtrado por tipo via ?tipo=) ─────────────────
+   Sem parâmetro → Denúncias de Balcão (padrão do link do painel). */
+const TIPO_ABA = (new URLSearchParams(location.search).get('tipo') === 'requisicao') ? 'requisicao' : 'denuncia';
+const TIPO_LBL = TIPO_ABA==='requisicao' ? 'Requisições' : 'Denúncias de Balcão';
+document.title = `${TIPO_LBL} — 3ª Cia PM MAmb`;
+document.getElementById('pagettl').textContent = TIPO_LBL;
+document.getElementById('hdr-sub').textContent = TIPO_LBL;
+document.getElementById(TIPO_ABA==='requisicao' ? 'tab-requi' : 'tab-balcao').classList.add('on');
+(function(){ const b=document.getElementById('btn-nova'); if(b&&b.lastChild) b.lastChild.textContent = TIPO_ABA==='requisicao' ? ' Nova Requisição' : ' Nova Denúncia'; })();
 
 const gpNum  = s => { const m=(s||'').match(/(\d+)\s*GP/i);  return m?+m[1]:null; };
 const pelNum = s => { const m=(s||'').match(/(\d+)\s*PEL/i); return m?+m[1]:null; };
@@ -348,11 +357,12 @@ function prazoInfo(d){
 function setFiltro(btn){ document.querySelectorAll('.fbtn').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); filtro=btn.dataset.f; render(); }
 function popularAnos(){
   const sel=document.getElementById('ano'); const atualVal=sel.value;
-  const anos=[...new Set(DADOS.map(d=>d.ano).filter(Boolean))].sort((a,b)=>b-a);
+  const anos=[...new Set(DADOS.filter(d=>d.tipo===TIPO_ABA).map(d=>d.ano).filter(Boolean))].sort((a,b)=>b-a);
   sel.innerHTML='<option value="all">Todos os anos</option>'+anos.map(a=>`<option value="${a}">${a}</option>`).join('');
   if (anos.includes(+atualVal)) sel.value=atualVal;   // preserva seleção
 }
 function passa(d){
+  if (d.tipo !== TIPO_ABA) return false;        // a aba fixa o tipo (balcão ou requisição)
   const ano=document.getElementById('ano').value;
   if (ano!=='all' && String(d.ano)!==String(ano)) return false;
   const q=document.getElementById('busca').value.trim().toLowerCase();
@@ -361,8 +371,6 @@ function passa(d){
   if (filtro==='inativadas') return inativa;   // só as inativadas (Admin Geral)
   if (inativa) return false;                    // nos demais filtros, inativadas ficam ocultas
   if (filtro==='todas') return true;
-  if (filtro==='requisicao') return d.tipo==='requisicao';
-  if (filtro==='balcao') return d.tipo==='denuncia';
   if (filtro==='PENDENTE') return d.situacao==='PENDENTE';
   if (filtro==='atendidas') return atendida(d);
   return true;
@@ -391,7 +399,7 @@ function render(){
   });
 }
 function kpis(){
-  const ATIVAS=DADOS.filter(d=>d.ativo!==false);
+  const ATIVAS=DADOS.filter(d=>d.ativo!==false && d.tipo===TIPO_ABA);
   const c=(f)=>ATIVAS.filter(f).length;
   document.getElementById('k-pend').textContent=c(d=>d.situacao==='PENDENTE');
   document.getElementById('k-and').textContent =c(d=>d.situacao==='EM ANDAMENTO');

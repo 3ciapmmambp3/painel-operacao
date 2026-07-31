@@ -102,7 +102,7 @@
 </header>
 
 <div class="wrap">
-  <div class="crumbs"><a href="painel.html">Painel</a> <span>›</span> <a href="denuncias.html">Denúncias &amp; Requisições</a> <span>›</span> <b>Novo registro</b></div>
+  <div class="crumbs"><a href="painel.html">Painel</a> <span>›</span> <a id="crumb-lista" href="denuncias.html">Denúncias de Balcão</a> <span>›</span> <b>Novo registro</b></div>
 
   <div class="card">
     <div class="card-head">
@@ -260,7 +260,7 @@
       </div>
 
       <div class="actions">
-        <button type="button" class="btn-ghost" onclick="location.href='denuncias.html'">← Denúncias &amp; Requisições</button>
+        <button type="button" class="btn-ghost" id="btn-voltar-lista" onclick="location.href='denuncias.html'">← Denúncias de Balcão</button>
         <button type="submit" class="btn-primary" id="btn-salvar">Registrar</button>
       </div>
     </form>
@@ -296,7 +296,8 @@ let anexos = [];   // {path,nome,tamanho,mime,link}
 /* ── Boot ────────────────────────────────────────────────────────── */
 document.getElementById('who').textContent = MILITAR_LINHA;
 document.getElementById('militar').value = MILITAR_LINHA;
-aplicarPrazoPadrao();   // denúncia já abre com prazo de 45 dias
+// Abre já no tipo vindo da aba (?tipo=denuncia|requisicao); setTipo aplica o prazo padrão.
+setTipo(new URLSearchParams(location.search).get('tipo') === 'requisicao' ? 'requisicao' : 'denuncia');
 
 (async function carregarMunicipios(){
   try {
@@ -334,6 +335,12 @@ function setTipo(t){
     : 'Registro de requisição de órgão externo. O número oficial é gerado pelo sistema ao registrar.';
   if (d) { document.getElementById('wrap-outro').style.display = 'none'; checkMP(); }
   else { document.getElementById('wrap-mp').style.display = 'none'; checkOutroOrgao(); }
+  // Breadcrumb e botão "voltar" apontam para a aba do tipo atual.
+  const lbl = d ? 'Denúncias de Balcão' : 'Requisições';
+  const crumb = document.getElementById('crumb-lista');
+  if (crumb){ crumb.textContent = lbl; crumb.href = 'denuncias.html?tipo=' + t; }
+  const bv = document.getElementById('btn-voltar-lista');
+  if (bv){ bv.textContent = '← ' + lbl; bv.onclick = () => location.href = 'denuncias.html?tipo=' + t; }
   aplicarPrazoPadrao();
 }
 
@@ -550,7 +557,7 @@ async function enviar(ev){
     const row = await r.json();
     const numero = row.numero || (row[0] && row[0].numero);
     ok(`✓ Registrado como <b>${numero}</b> — direcionado ao ${dados.municipio ? MUNI2GRP[dados.municipio.toUpperCase()] : ''}. `
-       + `<a href="nova-denuncia.html">Novo registro</a> · <a href="denuncias.html">Ir para Denúncias &amp; Requisições</a> · <a href="painel.html">Painel</a>`);
+       + `<a href="nova-denuncia.html?tipo=${tipo}">Novo registro</a> · <a href="denuncias.html?tipo=${tipo}">Ir para ${tipo==='requisicao'?'Requisições':'Denúncias de Balcão'}</a> · <a href="painel.html">Painel</a>`);
     document.getElementById('frm').reset();
     checkOutroOrgao(); checkMP();
     anexos = []; temaSel = ''; renderAnexos();
