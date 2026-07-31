@@ -8,6 +8,7 @@ Ordem de execução no **Supabase → SQL Editor**:
 | 1 | `00_grupamentos_view.sql` | view `vw_municipio_grupamento` (município → grupamento **completo**) |
 | 2 | `01_denuncias.sql` | contador atômico, tabela `denuncias`, função `criar_denuncia`, RLS |
 | 3 | `02_storage_anexos.sql` | bucket privado `anexos` + políticas (upload/leitura/remoção via anon) |
+| virada | `03_seed_contadores.sql` | **no dia de ligar o sistema:** ajusta a numeração para continuar de onde a planilha parou |
 
 ## Como funciona a numeração (sem duplicidade)
 O número **não** é gerado no navegador. Ao registrar, o front chama a função
