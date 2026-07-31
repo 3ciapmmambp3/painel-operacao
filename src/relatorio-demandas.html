@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="styles/global.css">
 <script src="auth.js"></script>
 <script src="topnav.js" data-ativo="demandas"></script>
+<script src="assets/ficha-brasoes.js"></script>
 <style>
   body{padding-bottom:40px}
   .shell{display:flex;align-items:flex-start}
@@ -130,8 +131,7 @@
     </select>
     <span class="sp"></span>
     <button class="btn" onclick="exportarCSV()"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Exportar CSV</button>
-    <button class="btn" onclick="exportarJSON()"><svg viewBox="0 0 24 24"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5a2 2 0 0 0 2 2h1M16 3h1a2 2 0 0 1 2 2v5a2 2 0 0 0 2 2 2 2 0 0 0-2 2v5a2 2 0 0 1-2 2h-1"/></svg> Exportar JSON</button>
-    <button class="btn gold" onclick="window.print()"><svg viewBox="0 0 24 24"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z"/></svg> Imprimir / Salvar PDF</button>
+    <button class="btn gold" onclick="gerarRelatorio()"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 15h6M9 18h6"/></svg> Gerar Relatório (PDF)</button>
   </div>
 
   <div class="print-only print-head">
@@ -329,9 +329,97 @@ function exportarCSV(){
   baixar(csv, nomeArq('csv'), 'text/csv');
 }
 
-// JSON estruturado por dimensão: {origem:[{categoria,quantidade}], tema:[...], ...}
-function exportarJSON(){
-  baixar(JSON.stringify(DADOS_REL, null, 2), nomeArq('json'), 'application/json');
+/* ── Relatório oficial (documento A4 pronto p/ salvar em PDF) ─────── */
+function gerarRelatorio(){
+  const arr   = filtrados();
+  const tipoF = document.getElementById('f-tipo').value;
+  const ano   = document.getElementById('f-ano').value;
+  const tipoLbl = tipoF==='all' ? 'Denúncias e Requisições' : (tipoF==='requisicao' ? 'Requisições' : 'Denúncias de Balcão');
+  const periodo = `${tipoLbl} · ${ano==='all' ? 'Todos os anos' : 'Ano '+ano}`;
+
+  // Resumo executivo
+  const tot  = arr.length;
+  const den  = arr.filter(d=>d.tipo==='denuncia').length;
+  const req  = arr.filter(d=>d.tipo==='requisicao').length;
+  const pend = arr.filter(d=>d.situacao==='PENDENTE').length;
+  const andr = arr.filter(d=>d.situacao==='EM ANDAMENTO').length;
+  const ok   = arr.filter(d=>atendida(d.situacao)).length;
+  const taxa = tot ? Math.round((ok/tot)*100) : 0;
+  const rz = (lbl,v)=>`<div class="rz"><span>${lbl}</span><b>${v}</b></div>`;
+  const resumo = rz('Total',tot)+rz('Denúncias',den)+rz('Requisições',req)+
+                 rz('Pendentes',pend)+rz('Em andamento',andr)+rz('Atendidas',ok)+
+                 rz('Taxa de atendimento',taxa+'%');
+
+  // Uma tabela por dimensão
+  const secao = (titulo, arrDim) => {
+    const total = arrDim.reduce((s,x)=>s+x.quantidade,0);
+    if (!arrDim.length) return `<h2>${titulo}</h2><p class="vazio">Sem dados no período.</p>`;
+    const linhas = arrDim.map(x=>{
+      const pct = total ? Math.round(x.quantidade/total*100) : 0;
+      return `<tr><td>${esc(x.categoria)}</td><td class="n">${x.quantidade}</td><td class="n">${pct}%</td></tr>`;
+    }).join('');
+    return `<h2>${titulo}</h2>
+      <table class="dim">
+        <thead><tr><th>Categoria</th><th class="n">Qtd</th><th class="n">%</th></tr></thead>
+        <tbody>${linhas}</tbody>
+        <tfoot><tr><td>TOTAL</td><td class="n">${total}</td><td class="n">100%</td></tr></tfoot>
+      </table>`;
+  };
+  const corpo = secao('Origem', DADOS_REL.origem) +
+                secao('Tema / Infração', DADOS_REL.tema) +
+                secao('Situação', DADOS_REL.situacao) +
+                secao('Grupamento responsável', DADOS_REL.grupamento) +
+                secao('Município', DADOS_REL.municipio);
+
+  const brE = (typeof FICHA_BRASAO_ESQ!=='undefined') ? FICHA_BRASAO_ESQ : 'assets/header-pmmg.png';
+  const brD = (typeof FICHA_BRASAO_DIR!=='undefined') ? FICHA_BRASAO_DIR : '';
+  const agora = new Date().toLocaleString('pt-BR');
+
+  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
+  <title>Relatório de Quantitativos — ${periodo}</title>
+  <style>
+    *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;margin:0;padding:26px 30px;font-size:12px}
+    .cab{display:flex;align-items:center;gap:14px;border-bottom:2px solid #9b8a5c;padding-bottom:12px}
+    .cab img{height:78px;width:auto}
+    .cab .org{flex:1;text-align:center;font-weight:bold;font-size:13px;line-height:1.5}
+    h1{text-align:center;font-size:20px;font-weight:bold;margin:18px 0 3px;letter-spacing:.5px}
+    .sub{text-align:center;color:#555;font-size:12px;margin-bottom:18px}
+    .resumo{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:22px}
+    .rz{flex:1;min-width:96px;border:1px solid #ccc;border-radius:6px;padding:9px 11px;text-align:center}
+    .rz span{display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;color:#666;font-weight:bold}
+    .rz b{display:block;font-size:20px;margin-top:3px;color:#1a1a1a}
+    h2{font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:#7a6b43;margin:22px 0 8px;padding-bottom:4px;border-bottom:1px solid #9b8a5c}
+    table.dim{width:100%;border-collapse:collapse;margin-bottom:6px}
+    table.dim th,table.dim td{border:1px solid #d0d0d0;padding:6px 10px;font-size:11.5px}
+    table.dim thead th{background:#efece3;text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.3px}
+    table.dim td.n,table.dim th.n{text-align:right;white-space:nowrap;width:70px}
+    table.dim tbody tr:nth-child(even){background:#f7f6f2}
+    table.dim tfoot td{font-weight:bold;background:#efece3;border-top:2px solid #9b8a5c}
+    .vazio{color:#888;font-size:11.5px;margin:4px 0 10px}
+    .rodape{margin-top:26px;border-top:1px solid #ccc;padding-top:8px;font-size:10px;color:#666;display:flex;justify-content:space-between}
+    thead{display:table-header-group} tr{break-inside:avoid}
+    h2,table.dim{break-inside:avoid}
+    @media print{@page{margin:12mm} body{padding:0}}
+  </style></head><body>
+    <div class="cab">
+      <img src="${brE}" alt="">
+      <div class="org">COMANDO DE POLICIAMENTO ESPECIALIZADO<br>BATALHÃO DE POLÍCIA MILITAR DE MEIO AMBIENTE<br>3ª COMPANHIA DE POLÍCIA MILITAR DE MEIO AMBIENTE</div>
+      <img src="${brD}" alt="">
+    </div>
+    <h1>RELATÓRIO DE QUANTITATIVOS</h1>
+    <div class="sub">${esc(periodo)} · ${tot} ocorrência(s)</div>
+    <div class="resumo">${resumo}</div>
+    ${corpo}
+    <div class="rodape">
+      <span>Gerado em ${agora}${MILITAR?` por ${esc(MILITAR)}`:''}</span>
+      <span>Painel de Operações — 3ª Cia PM MAmb</span>
+    </div>
+    <script>window.onload=function(){window.print();}<\/script>
+  </body></html>`;
+
+  const w = window.open('', '_blank');
+  if(!w){ alert('Permita pop-ups para gerar o relatório.'); return; }
+  w.document.write(html); w.document.close();
 }
 </script>
 </body>
