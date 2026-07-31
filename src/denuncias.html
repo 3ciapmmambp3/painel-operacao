@@ -6,6 +6,7 @@
 <title>Denúncias &amp; Requisições — 3ª Cia PM MAmb</title>
 <link rel="stylesheet" href="styles/global.css">
 <script src="auth.js"></script>
+<script src="topnav.js" data-ativo="demandas"></script>
 <script src="assets/ficha-brasoes.js"></script>
 <style>
   body{padding-bottom:40px}
@@ -151,7 +152,6 @@
     <div class="header-title"><h1>PAINEL DE OPERAÇÕES — 3ª CIA PM MAmb</h1><p id="hdr-sub">Controle de Demandas</p></div>
   </div>
   <div class="header-right">
-    <button class="btn-voltar" onclick="location.href='painel.html'"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Painel</button>
     <span class="last-update" id="who"></span>
   </div>
 </header>
@@ -439,6 +439,11 @@ function bindMascaras(root){
     if(inp.value) inp.value=aplicarMascara(inp.value,k);
     inp.addEventListener('input',()=>{ inp.value=aplicarMascara(inp.value,k); });
   });
+  root.querySelectorAll('[data-numonly]').forEach(inp=>{
+    if(inp.dataset.numBound) return; inp.dataset.numBound='1';
+    inp.setAttribute('inputmode','numeric');
+    inp.addEventListener('input',()=>{ inp.value=inp.value.replace(/\D/g,''); });
+  });
 }
 
 function atendimentoResumo(d){
@@ -455,6 +460,9 @@ function atendimentoResumo(d){
 function atendimentoForm(d){
   const intro = `<div class="rs">A baixa é feita <b>automaticamente</b> ao lançar esta ocorrência no <b>relatório de serviço</b> (Nº REDS, Auto de Infração, Ato de Fiscalização e data).</div>`;
   if (!isAdminGeral) return intro;   // baixa manual restrita ao Admin Geral (preserva o controle pelo relatório)
+  const auto = (d.numero_auto_infracao||'').split('/');
+  const autoNum = auto[0] || '';
+  const autoAno = auto[1] || new Date().getFullYear();
   return intro +
     `<details class="manual">
        <summary>Baixar manualmente (Admin Geral)</summary>
@@ -462,7 +470,12 @@ function atendimentoForm(d){
        <div class="af">
          <div class="r"><label>${dataLbl(d)} <span class="req">*</span></label><input type="date" id="at-data" value="${(d.data_resposta||'').slice(0,10)}"></div>
          <div class="r"><label>Nº REDS (BO/BOS/RAT) <span class="req">*</span></label><input id="at-reds" data-mask="reds" value="${d.numero_reds||''}" placeholder="${MASKS.reds.ph}"></div>
-         <div class="r"><label>Nº Auto de Infração</label><input id="at-auto" value="${d.numero_auto_infracao||''}" placeholder="466/2026"></div>
+         <div class="r"><label>Nº Auto de Infração</label>
+           <div style="display:flex;gap:8px">
+             <input id="at-auto-num" data-numonly value="${autoNum}" placeholder="Número" style="flex:2;width:auto;min-width:0">
+             <input id="at-auto-ano" data-numonly maxlength="4" value="${autoAno}" placeholder="Ano" style="flex:1;width:auto;max-width:90px">
+           </div>
+         </div>
          <div class="r"><label>Nº Ato de Fiscalização</label><input id="at-ato" data-mask="ato" value="${d.numero_ato_fiscalizacao||''}" placeholder="${MASKS.ato.ph}"></div>
          <div class="r full"><label>Observações</label><textarea id="at-obs" placeholder="Observações do atendimento (opcional)">${d.observacoes_resposta||''}</textarea></div>
        </div>
@@ -564,7 +577,7 @@ async function salvarAtendimento(){
       situacao:'RESPONDIDA',
       data_resposta:data,
       numero_reds:reds,
-      numero_auto_infracao:document.getElementById('at-auto').value.trim()||null,
+      numero_auto_infracao:(()=>{ const n=document.getElementById('at-auto-num').value.trim(); const a=document.getElementById('at-auto-ano').value.trim(); return n?`${n}/${a}`:null; })(),
       numero_ato_fiscalizacao:document.getElementById('at-ato').value.trim()||null,
       observacoes_resposta:document.getElementById('at-obs').value.trim()||null,
       atendido_por_matricula:S.matricula, atendido_por_nome:MILITAR
