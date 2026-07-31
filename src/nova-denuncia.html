@@ -246,7 +246,7 @@
         <div class="drop" id="drop" onclick="document.getElementById('file').click()">
           <svg class="dic" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
           <b>Clique ou arraste arquivos</b>
-          <small>Ofícios, fotos, laudos · PDF, JPG, PNG · enviados para a pasta do Drive da unidade</small>
+          <small>Ofícios, fotos, laudos · PDF, JPG, PNG · privados; imagens são comprimidas automaticamente</small>
         </div>
         <input type="file" id="file" multiple style="display:none" accept=".pdf,.jpg,.jpeg,.png,.kml,.kmz,.doc,.docx,.xls,.xlsx">
         <div class="filelist" id="filelist"></div>
@@ -255,7 +255,7 @@
       <div class="flow">
         <span class="dot"></span> Ao salvar:
         <b>Supabase</b> (nº atômico) <span class="arw">→</span>
-        <b>Google Drive</b> (anexos) <span class="arw">→</span>
+        <b>Storage</b> (anexos privados) <span class="arw">→</span>
         <b>Planilha</b> (espelho)
       </div>
 
@@ -278,12 +278,20 @@ const API   = (typeof SB_AUTH_URL !== 'undefined') ? SB_AUTH_URL : '';
 const AKEY  = (typeof SB_AUTH_KEY !== 'undefined') ? SB_AUTH_KEY : '';
 const H = { 'apikey': AKEY, 'Authorization': `Bearer ${AKEY}`, 'Content-Type': 'application/json' };
 const VIEW_MUNICIPIOS = 'vw_municipio_grupamento';   // view que junta municipios_grupos + grupos
-const FN_UPLOAD = `${API}/functions/v1/upload-anexo`;  // Edge Function (ver db/EDGE-FUNCTION-drive.md)
+
+/* Anexos → Supabase Storage (bucket privado). Imagens são comprimidas no
+   navegador antes de subir; o link é uma signed URL durável (ver db/02_storage_anexos.sql). */
+const STORAGE     = `${API}/storage/v1`;
+const BUCKET      = 'anexos';
+const MAX_MB      = 15;          // limite por arquivo (após compressão)
+const IMG_MAX_DIM = 1600;        // maior lado da imagem (px)
+const IMG_QUALITY = 0.7;         // qualidade JPEG
+const LINK_TTL    = 315360000;   // validade da signed URL (~10 anos, em segundos)
 
 /* ── Estado ──────────────────────────────────────────────────────── */
 let MUNI2GRP = {};
 let temaSel = '';
-let anexos = [];   // {file_id,nome,tamanho,mime,web_view_link}
+let anexos = [];   // {path,nome,tamanho,mime,link}
 
 /* ── Boot ────────────────────────────────────────────────────────── */
 document.getElementById('who').textContent = MILITAR_LINHA;
@@ -381,19 +389,58 @@ document.getElementById('file').addEventListener('change', e => handleFiles(e.ta
 
 function fmtTam(b){ return b > 1048576 ? (b/1048576).toFixed(1)+' MB' : Math.max(1,Math.round(b/1024))+' KB'; }
 
+// Comprime imagens raster (JPG/PNG) no navegador: redimensiona pro maior lado
+// = IMG_MAX_DIM e reencoda em JPEG. Outros tipos (PDF, KML, DOC…) passam direto.
+async function comprimirImagem(file){
+  if (!/^image\//.test(file.type) || /gif|svg/i.test(file.type)) return file;
+  try {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, IMG_MAX_DIM / Math.max(bmp.width, bmp.height));
+    const w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    cv.getContext('2d').drawImage(bmp, 0, 0, w, h);
+    const blob = await new Promise(res => cv.toBlob(res, 'image/jpeg', IMG_QUALITY));
+    if (blob && blob.size < file.size)
+      return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+  } catch(e){ console.warn('compressão falhou, enviando original:', e); }
+  return file;
+}
+function sanitizeNome(n){
+  // NFD separa o acento da letra; remover os não-ASCII deixa só a base (a, e, c…).
+  return (n || 'arquivo').normalize('NFD').replace(/[^\x00-\x7F]/g,'')
+    .replace(/[^\w.\-]+/g,'_').replace(/_+/g,'_').slice(-80) || 'arquivo';
+}
+const encPath = p => p.split('/').map(encodeURIComponent).join('/');
+
 function handleFiles(files){
   [...files].forEach(async file => {
-    const item = { nome: file.name, tamanho: file.size, mime: file.type, status: 'up', file_id: null, web_view_link: null, link: null };
+    const item = { nome: file.name, tamanho: file.size, mime: file.type, status: 'up', path: null, link: null };
     anexos.push(item); renderAnexos();
     try {
-      const b64 = await toBase64(file);
-      const r = await fetch(FN_UPLOAD, {
-        method: 'POST', headers: H,
-        body: JSON.stringify({ nome: file.name, mime: file.type, conteudo_base64: b64 })
+      const f = await comprimirImagem(file);
+      if (f.size > MAX_MB * 1048576) throw new Error(`acima de ${MAX_MB} MB`);
+      item.nome = f.name; item.tamanho = f.size; item.mime = f.type;
+
+      const path = `${new Date().getFullYear()}/${crypto.randomUUID()}-${sanitizeNome(f.name)}`;
+      const enc  = encPath(path);
+      const AH   = { apikey: AKEY, Authorization: `Bearer ${AKEY}` };
+
+      const up = await fetch(`${STORAGE}/object/${BUCKET}/${enc}`, {
+        method: 'POST',
+        headers: { ...AH, 'Content-Type': f.type || 'application/octet-stream', 'x-upsert': 'true' },
+        body: f,
       });
-      if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-      const res = await r.json();
-      item.file_id = res.file_id; item.web_view_link = res.web_view_link; item.link = res.link || null; item.status = 'ok';
+      if (!up.ok) throw new Error(`${up.status} ${await up.text()}`);
+
+      const sg = await fetch(`${STORAGE}/object/sign/${BUCKET}/${enc}`, {
+        method: 'POST',
+        headers: { ...AH, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expiresIn: LINK_TTL }),
+      });
+      if (!sg.ok) throw new Error(`assinatura ${sg.status} ${await sg.text()}`);
+      const sj = await sg.json();
+      item.link = `${STORAGE}${sj.signedURL || sj.signedUrl}`;
+      item.path = path; item.status = 'ok';
     } catch (err) {
       console.error('upload:', err);
       item.status = 'err'; item.erro = err.message;
@@ -401,18 +448,20 @@ function handleFiles(files){
     renderAnexos();
   });
 }
-function toBase64(file){
-  return new Promise((resolve,reject) => {
-    const rd = new FileReader();
-    rd.onload = () => resolve(String(rd.result).split(',')[1]);
-    rd.onerror = reject; rd.readAsDataURL(file);
-  });
+async function removeAnexo(i){
+  const a = anexos[i];
+  anexos.splice(i,1); renderAnexos();
+  if (a && a.path) {   // remove do Storage (best-effort)
+    try {
+      await fetch(`${STORAGE}/object/${BUCKET}/${encPath(a.path)}`,
+        { method: 'DELETE', headers: { apikey: AKEY, Authorization: `Bearer ${AKEY}` } });
+    } catch(e){ console.warn('remoção do anexo:', e); }
+  }
 }
-function removeAnexo(i){ anexos.splice(i,1); renderAnexos(); }
 function renderAnexos(){
   const el = document.getElementById('filelist'); el.innerHTML = '';
   anexos.forEach((a,i) => {
-    const st = a.status === 'ok' ? '<span class="st ok">✓ Drive</span>'
+    const st = a.status === 'ok' ? '<span class="st ok">✓ Enviado</span>'
              : a.status === 'err' ? '<span class="st err">falhou</span>'
              : '<span class="st up">enviando…</span>';
     const div = document.createElement('div'); div.className = 'fileitem';
@@ -485,7 +534,7 @@ async function enviar(ev){
     referencia: up(document.getElementById('referencia').value),
     observacoes: up(document.getElementById('observacoes').value),
     prazo: prazo,
-    anexos: anexos.filter(a => a.status === 'ok').map(a => ({ file_id:a.file_id, nome:a.nome, tamanho:a.tamanho, mime:a.mime, web_view_link:a.web_view_link, link:a.link })),
+    anexos: anexos.filter(a => a.status === 'ok').map(a => ({ path:a.path, nome:a.nome, tamanho:a.tamanho, mime:a.mime, link:a.link })),
     registrado_por_matricula: S.matricula,
     registrado_por_nome: MILITAR_LINHA
   };
