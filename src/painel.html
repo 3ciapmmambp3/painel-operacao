@@ -4312,6 +4312,32 @@ function renderGdoTabela(dados, natF){
     }
   });
 
+  /* ── Y07014 fora da Zona Rural: NÃO conta, mas aparece como INVÁLIDA na tabela ──
+     (Y07001/Y07002 continuam descartadas silenciosamente quando não-rurais, como antes.
+      O mapa segue apenas rural: estas urbanas entram somente aqui, na tabela.) */
+  const _mostraY14 = natF ? (natF === 'Y07014') : gdoNats.includes('Y07014');
+  if(_mostraY14){
+    (window._dadosBrutos||[]).forEach(d => {
+      if(d.natureza !== 'Y07014') return;
+      if(!d.grupamento) return;
+      if((d.localizacao||'').toUpperCase().includes('RURAL')) return; /* só as NÃO-rurais */
+      if(!mesesSel.includes(d.mes)) return;
+      if(gpF2 && d.gpResp !== gpF2) return;
+      if(pelF){ const pn=pelDoColk(d.grupamento); if(pn===99 || pn!==parseInt(pelF.replace(/\D/g,''))) return; }
+      const gpKey  = d.gpResp || gpDoColk(d.grupamento);
+      const pelNum = pelDoColk(d.grupamento);
+      if(pelNum===99) return;
+      if(!pel_gp[pelNum]) pel_gp[pelNum] = {};
+      if(!pel_gp[pelNum][gpKey]) pel_gp[pelNum][gpKey] = { real:0, realAcum:0, ratsValidos:[], ratsInvalidos:[], porNat:{}, ratsValidosPorNat:{}, ratsInvalidosPorNat:{} };
+      pel_gp[pelNum][gpKey].porNat['Y07014'] = (pel_gp[pelNum][gpKey].porNat['Y07014']||0) + 1;
+      totalDescartados++;
+      const motivo = 'fora da Zona Rural';
+      pel_gp[pelNum][gpKey].ratsInvalidos.push({ rat:d.rat, data:d.data, motivo });
+      if(!pel_gp[pelNum][gpKey].ratsInvalidosPorNat['Y07014']) pel_gp[pelNum][gpKey].ratsInvalidosPorNat['Y07014']=[];
+      pel_gp[pelNum][gpKey].ratsInvalidosPorNat['Y07014'].push({ rat:d.rat, data:d.data, motivo });
+    });
+  }
+
   /* Real acumulado por GP (todos os meses até mesIdxAcum) */
   const todosValidos = (window._dadosBrutos||[]).filter(d => d.grupamento && gdoValidaOp(d) && MESES.indexOf(d.mes) < mesIdxAcum && (!d.localizacao||d.localizacao.toUpperCase().includes('RURAL')) && (!gpF2||d.gpResp===gpF2) && (!pelF||pelDoColk(d.grupamento)===parseInt(pelF.replace(/\D/g,''))));
   todosValidos.forEach(d => {
@@ -4516,7 +4542,7 @@ function renderGdoTabela(dados, natF){
   if(totalDescartados > 0){
     const aviso = document.createElement('div');
     aviso.style.cssText='margin-top:8px;padding:8px 12px;background:rgba(255,152,0,.1);border-left:3px solid #ff9800;border-radius:4px;font-size:11px;color:#ff9800;';
-    aviso.innerHTML=`⚠ <b>${totalDescartados} operação${totalDescartados>1?'ões':''}</b> não ${totalDescartados>1?'contabilizadas':'contabilizada'} por não atender os critérios de validação (duração ≥ 30min, ≥ 2 militares, ≥ 1 viatura${' e para Y07001/Y07002: ≥ 2 pessoas abordadas e ≥ 1 veículo fiscalizado'}).`;
+    aviso.innerHTML=`⚠ <b>${totalDescartados} operação${totalDescartados>1?'ões':''}</b> não ${totalDescartados>1?'contabilizadas':'contabilizada'} por não atender os critérios de validação (duração ≥ 30min, ≥ 2 militares, ≥ 1 viatura${' e para Y07001/Y07002: ≥ 2 pessoas abordadas e ≥ 1 veículo fiscalizado; e para Y07014: operação realizada em Zona Rural'}).`;
     document.getElementById('gdo-tabela-body').appendChild(aviso);
   }
 }
@@ -4594,7 +4620,9 @@ function _initMapaGdo(dados, gpFiltro, pelFiltro){
   gpFiltro  = gpFiltro  || '';
   pelFiltro = pelFiltro || '';
   const pelFiltroNum = pelFiltro ? parseInt(pelFiltro) : 0;
-  const dadosCoord=dados.filter(d=>d.lat&&d.lng);
+  /* Mapa plota SOMENTE operações válidas (Y07001, Y07002, Y07014) */
+  const dadosValidos=dados.filter(gdoValidaOp);
+  const dadosCoord=dadosValidos.filter(d=>d.lat&&d.lng);
   const el=document.getElementById('gdo-mapa-inner');
   if(_leafletMap){ _leafletMap.remove(); _leafletMap=null; _kmlLayers={}; }
 
@@ -4735,7 +4763,7 @@ function _initMapaGdo(dados, gpFiltro, pelFiltro){
   /* Legenda operações */
   document.getElementById('gdo-mapa-legenda').innerHTML=
     gdoNats.map(n=>`<span><span class="nat-dot" style="background:${GDO_NAT_COR[n]||'#9b8a5c'}"></span>${n}</span>`).join('')+
-    `<span style="margin-left:12px;color:var(--text-hint)">Pontos com coord.: ${dadosCoord.length} de ${dados.length}</span>`;
+    `<span style="margin-left:12px;color:var(--text-hint)">Válidas plotadas: ${dadosCoord.length} de ${dadosValidos.length}${dados.length>dadosValidos.length?` · ${dados.length-dadosValidos.length} inválida(s) ocultada(s)`:''}</span>`;
 }
 
 /* ── Tela Cheia GDO Rural ── */
@@ -4810,7 +4838,7 @@ function _renderGdoFsMap(el, dados, gpFiltro, pelFiltro){
     });
   }
 
-  const dadosCoord = dados.filter(d=>d.lat&&d.lng);
+  const dadosCoord = dados.filter(d=>d.lat&&d.lng&&gdoValidaOp(d)); /* só válidas */
   if(dadosCoord.length){
     dadosCoord.forEach(d => {
       const cor = GDO_NAT_COR[d.natureza]||'#9b8a5c';
