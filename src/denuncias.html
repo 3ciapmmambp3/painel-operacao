@@ -217,6 +217,7 @@
     <div class="p-actions" id="d-actions"></div>
   </div>
 </div>
+<datalist id="edit-municipios-dl"></datalist>
 
 <div class="toast" id="toast"></div>
 
@@ -234,6 +235,54 @@ async function rpc(fn, body){
   const r = await fetch(`${API}/rest/v1/rpc/${fn}`, { method:'POST', headers:H, body:JSON.stringify(body||{}) });
   if(!r.ok) throw new Error(`${r.status} ${await r.text()}`);
   return r.json();
+}
+
+/* ── Correção de município/grupamento (Admin Geral) ─────────────────
+   Reusa o mesmo padrão de nova-denuncia.html: datalist populado da view
+   vw_municipio_grupamento, com preview do grupamento ao digitar. */
+let MUNI2GRP_EDIT = null;
+async function garantirMunicipiosEdicao(){
+  if (MUNI2GRP_EDIT) return;
+  MUNI2GRP_EDIT = {};
+  try{
+    const r = await fetch(`${API}/rest/v1/vw_municipio_grupamento?select=municipio,grupamento_completo&order=municipio`, { headers:H });
+    const lista = await r.json();
+    const dl = document.getElementById('edit-municipios-dl');
+    dl.innerHTML = lista.map(x => `<option value="${x.municipio}">`).join('');
+    lista.forEach(x => { MUNI2GRP_EDIT[(x.municipio||'').trim().toUpperCase()] = x.grupamento_completo; });
+  }catch(e){ console.error('municipios edicao:', e); }
+}
+async function abrirEditarMunicipio(){
+  await garantirMunicipiosEdicao();
+  const box = document.getElementById('edit-muni-box');
+  if (!box) return;
+  box.style.display = 'block';
+  const inp = document.getElementById('edit-muni-input');
+  inp.value = atual.municipio || '';
+  inp.focus();
+  previewEdicaoMunicipio();
+}
+function fecharEdicaoMunicipio(){
+  const box = document.getElementById('edit-muni-box');
+  if (box) box.style.display = 'none';
+}
+function previewEdicaoMunicipio(){
+  const v = (document.getElementById('edit-muni-input').value||'').trim().toUpperCase();
+  const prev = document.getElementById('edit-muni-preview');
+  const g = MUNI2GRP_EDIT && MUNI2GRP_EDIT[v];
+  prev.textContent = v ? (g ? `Novo grupamento: ${g}` : 'Município não encontrado na tabela de grupamentos.') : '';
+  prev.style.color = g ? 'var(--gold)' : 'var(--danger)';
+}
+async function salvarEdicaoMunicipio(){
+  const v = (document.getElementById('edit-muni-input').value||'').trim();
+  if (!v) return toast('Informe o município.');
+  try{
+    const row = await rpc('denuncia_editar_municipio', { p_token:S.token, p_id:atual.id, p_municipio:v });
+    Object.assign(atual, row);
+    const i=DADOS.findIndex(x=>x.id===atual.id); if(i>=0) DADOS[i]=atual;
+    render(); kpis(); abrir(atual);
+    toast('Município/grupamento atualizado.');
+  }catch(e){ toast('Erro: '+e.message); }
 }
 const MILITAR = S ? `${S.matricula} — ${S.pg||''} ${S.guerra||S.nome||''}`.replace(/\s+/g,' ').trim() : '';
 document.getElementById('who').textContent = MILITAR;
@@ -490,9 +539,19 @@ function abrir(d){
          <b>DEMANDA INATIVADA</b>${d.inativado_por_nome?` — por ${d.inativado_por_nome}`:''}${d.inativado_em?` em ${fmtData(d.inativado_em)}`:''}
          ${d.motivo_inativacao?`<br>Motivo: <b>${d.motivo_inativacao}</b>`:''}</div>`
     : '';
+  const podeEditarMuni = isAdminGeral && d.ativo!==false;
   document.getElementById('d-body').innerHTML = bannerInativa +
     `<div class="grpline"><svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-       <span><b>Grupamento responsável:</b> ${d.grupamento_completo||d.gp_responsavel}</span></div>`+
+       <span style="flex:1"><b>Grupamento responsável:</b> ${d.grupamento_completo||d.gp_responsavel}</span>${podeEditarMuni?`<button class="act" style="padding:2px 9px;font-size:11px;flex:0 0 auto" onclick="abrirEditarMunicipio()" title="Corrigir município — recalcula o grupamento">✏️ Corrigir</button>`:''}</div>`+
+    (podeEditarMuni ? `<div id="edit-muni-box" class="rs" style="display:none;margin:0 0 14px">
+       <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-muted)">Corrigir município (recalcula o grupamento responsável)</label>
+       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+         <input list="edit-municipios-dl" id="edit-muni-input" placeholder="Digite para buscar…" autocomplete="off" oninput="previewEdicaoMunicipio()" style="flex:1;min-width:200px">
+         <button class="act done" onclick="salvarEdicaoMunicipio()">Salvar</button>
+         <button class="act" onclick="fecharEdicaoMunicipio()">Cancelar</button>
+       </div>
+       <div id="edit-muni-preview" style="margin-top:6px;font-size:12px"></div>
+     </div>` : '')+
     `<dl class="dl">`+
       di('Origem', d.origem + (d.numero_oficio?` · ${d.numero_oficio}`:''))+
       di('Município', d.municipio)+
@@ -524,6 +583,9 @@ function abrir(d){
     `<button class="act pdf" onclick="gerarPDF()"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 15h6M9 18h6"/></svg> Baixar Ficha (PDF)</button>`+
     (d.ativo===false ? '' : atendida(d) ? '' :
       `<button class="act assume" onclick="mudarSituacao('EM ANDAMENTO')"${d.situacao!=='PENDENTE'?' disabled':''}><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Assumir</button>`)+
+    (isAdminGeral && d.ativo!==false && d.situacao==='EM ANDAMENTO'
+      ? `<button class="act" style="background:var(--bg-hover);border-color:var(--border-mid);color:var(--text-white)" onclick="voltarPendente()"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-6.7 3M3 4v5h5"/></svg> Voltar para Pendente</button>`
+      : '')+
     (isAdminGeral ? (d.ativo===false
       ? `<button class="act" style="background:var(--bg-hover);border-color:var(--border-mid);color:var(--text-white)" onclick="reativar()"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-6.7 3M3 4v5h5"/></svg> Reativar</button>`
       : `<button class="act" style="background:var(--danger-bg);border-color:rgba(239,83,80,.4);color:#ef9a9a" onclick="inativar()"><svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg> Inativar</button>`) : '');
@@ -551,6 +613,15 @@ async function inativar(){
     const i=DADOS.findIndex(x=>x.id===atual.id); if(i>=0) DADOS[i]=atual;
     render(); kpis(); abrir(atual);
     toast('Demanda inativada.');
+  }catch(e){ toast('Erro: '+e.message); }
+}
+async function voltarPendente(){
+  try{
+    const row = await rpc('denuncia_voltar_pendente', { p_token:S.token, p_id:atual.id });
+    Object.assign(atual, row);
+    const i=DADOS.findIndex(x=>x.id===atual.id); if(i>=0) DADOS[i]=atual;
+    render(); kpis(); abrir(atual);
+    toast('Demanda voltou para Pendente.');
   }catch(e){ toast('Erro: '+e.message); }
 }
 async function reativar(){
