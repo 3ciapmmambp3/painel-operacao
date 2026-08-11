@@ -154,7 +154,7 @@ returns table (id uuid, matricula text, matricula_clean text, posto_graduacao te
 language plpgsql security definer set search_path = public as $$
 declare v_nivel text;
 begin
-  select nivel_acesso into v_nivel from public._sessao_militar(p_token);
+  select sm.nivel_acesso into v_nivel from public._sessao_militar(p_token) sm;
   if v_nivel is null or public._nivel_num(v_nivel) < public._nivel_num('admin_gp') then
     raise exception 'Permissão insuficiente.';
   end if;
