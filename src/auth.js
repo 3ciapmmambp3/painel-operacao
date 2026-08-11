@@ -22,11 +22,12 @@
  *    created_at      TIMESTAMPTZ DEFAULT now()
  *    updated_at      TIMESTAMPTZ DEFAULT now()
  *
- *  RLS (Row Level Security) recomendado:
- *    - SELECT: qualquer usuário autenticado (via JWT Supabase ou anon com validação no frontend)
- *    - INSERT/UPDATE/DELETE: somente admin_geral via service_role key no backend
- *    Obs: como o sistema usa chave anon no frontend, a validação de nível de acesso
- *    é feita aqui no JS. Para produção, implemente RLS no Supabase.
+ *  Segurança: a tabela militares tem RLS ativado SEM nenhuma policy —
+ *  a chave anon não lê nem escreve uma linha direto via REST. Login,
+ *  troca de senha e todo o CRUD de usuários passam por funções
+ *  "security definer" (db/04_sessoes_e_militares_seguranca.sql) que
+ *  resolvem quem está chamando a partir de um token de sessão opaco,
+ *  não do que o navegador informar. Ver _sbRpc() abaixo.
  * ══════════════════════════════════════════════════════════════════
  */
 
@@ -100,6 +101,18 @@ async function _sbDelete(filter) {
   return true;
 }
 
+/* Chama uma função do banco (security definer) via PostgREST /rpc/.
+   Login, troca de senha e todo o CRUD de militares passam por aqui —
+   a autorização é resolvida DENTRO do banco a partir do token de sessão,
+   não confiando em nada que o navegador informar (ver db/04_*.sql). */
+async function _sbRpc(fn, body) {
+  const res = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/${fn}`, {
+    method: 'POST', headers: _sbHeaders, body: JSON.stringify(body || {})
+  });
+  if (!res.ok) throw new Error(`[rpc:${fn}] ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
 /* ─── Helpers ────────────────────────────────────────────────────── */
 function _limparMatricula(m) {
   return String(m || '').replace(/\D/g, '').padStart(7, '0');
@@ -156,31 +169,10 @@ function sessaoLimpar() {
  */
 async function auth_login(matricula, senha) {
   try {
-    const clean = _limparMatricula(matricula);
-    const user = await _sbGetOne(`matricula_clean=eq.${clean}&ativo=eq.true`);
-
-    if (!user) return { ok: false, erro: 'Usuário não encontrado ou inativo.' };
-
-    const senhaHash = await hashSenha(senha);
-    if (user.senha_hash !== senhaHash) {
-      return { ok: false, erro: 'Senha incorreta.' };
-    }
-
-    const sessao = {
-      id:             user.id,
-      matricula:      user.matricula,
-      matricula_clean: user.matricula_clean,
-      nome:           user.nome_completo,
-      guerra:         user.nome_guerra,
-      pg:             user.posto_graduacao,
-      nivel_acesso:   user.nivel_acesso,
-      funcao:         user.funcao,
-      grupamento_id:  user.grupamento_id,
-      primeiro_acesso: user.primeiro_acesso,
-    };
-
-    sessaoSalvar(sessao);
-    return { ok: true, user: sessao, primeiroAcesso: user.primeiro_acesso };
+    const r = await _sbRpc('auth_login', { p_matricula: matricula, p_senha: senha });
+    if (!r.ok) return { ok: false, erro: r.erro || 'Falha no login.' };
+    sessaoSalvar(r.user);
+    return { ok: true, user: r.user, primeiroAcesso: r.primeiroAcesso };
   } catch (e) {
     console.error('auth_login:', e);
     return { ok: false, erro: `Erro ao conectar: ${e.message}` };
@@ -188,27 +180,17 @@ async function auth_login(matricula, senha) {
 }
 
 /**
- * Troca de senha (primeiro acesso ou reset voluntário).
- * Retorna { ok, erro }
+ * Troca a senha do usuário logado (primeiro acesso ou reset voluntário).
+ * Sempre a PRÓPRIA conta — resolvida pelo token da sessão atual, nunca
+ * por um id recebido como parâmetro. Retorna { ok, erro }
  */
-async function auth_trocarSenha(id, novaSenha) {
+async function auth_trocarSenha(novaSenha) {
   try {
-    if (!novaSenha || novaSenha.length < 6) {
-      return { ok: false, erro: 'A senha deve ter pelo menos 6 caracteres.' };
-    }
-    if (novaSenha === SENHA_PADRAO) {
-      return { ok: false, erro: 'A nova senha não pode ser igual à senha padrão.' };
-    }
-    const hash = await hashSenha(novaSenha);
-    await _sbPatch(`id=eq.${id}`, { senha_hash: hash, primeiro_acesso: false });
-
-    // Atualiza sessão atual se for o mesmo usuário
     const s = sessaoLer();
-    if (s && s.id === id) {
-      s.primeiro_acesso = false;
-      sessaoSalvar(s);
-    }
-    return { ok: true };
+    if (!s?.token) return { ok: false, erro: 'Sessão expirada. Faça login novamente.' };
+    const r = await _sbRpc('auth_trocar_senha', { p_token: s.token, p_nova_senha: novaSenha });
+    if (r.ok) { s.primeiro_acesso = false; sessaoSalvar(s); }
+    return r;
   } catch (e) {
     return { ok: false, erro: e.message };
   }
@@ -216,97 +198,50 @@ async function auth_trocarSenha(id, novaSenha) {
 
 /* ─── CRUD DE USUÁRIOS ───────────────────────────────────────────── */
 
-/** Lista todos os militares */
+/* A partir daqui, todo o CRUD passa pelas funções do banco criadas em
+   db/04_sessoes_e_militares_seguranca.sql: a autorização (quem pode criar,
+   editar, promover, resetar senha, excluir) é decidida DENTRO do Postgres
+   a partir do token da sessão atual — o parâmetro `sessao` continua sendo
+   aceito nas assinaturas abaixo só para não obrigar a mudar quem chama
+   (admin.html, primeiro-acesso.html), mas não tem mais peso nenhum na
+   decisão de permissão; isso fecha a brecha de qualquer um com a chave
+   anon conseguir escrever direto na tabela militares. */
+
+/** Lista todos os militares (sem senha_hash — nunca sai do banco) */
 async function auth_listarUsuarios() {
-  return _sbGet();
+  const s = sessaoLer();
+  if (!s?.token) throw new Error('Sessão expirada. Faça login novamente.');
+  return _sbRpc('auth_listar_usuarios', { p_token: s.token });
 }
 
 /** Cria novo militar */
-async function auth_criarUsuario({ matricula, posto_graduacao, nome_completo, nome_guerra, funcao, grupamento_id, nivel_acesso }, sessao) {
+async function auth_criarUsuario(dados, _sessao) {
   try {
-    if (_nivelNum(sessao?.nivel_acesso) < _nivelNum('admin')) {
-      return { ok: false, erro: 'Permissão insuficiente para criar usuários.' };
-    }
-    if (!matricula || !nome_completo) {
-      return { ok: false, erro: 'Matrícula e nome são obrigatórios.' };
-    }
-    const clean = _limparMatricula(matricula);
-    const existe = await _sbGetOne(`matricula_clean=eq.${clean}`);
-    if (existe) return { ok: false, erro: 'Matrícula já cadastrada.', dup: true };
-
-    const hash = await hashSenha(SENHA_PADRAO);
-    const novo = await _sbInsert({
-      matricula:       _formatarMatricula(clean),
-      matricula_clean: clean,
-      posto_graduacao: posto_graduacao || null,
-      nome_completo,
-      nome_guerra:     nome_guerra || null,
-      funcao:          funcao || null,
-      grupamento_id:   grupamento_id || null,
-      nivel_acesso:    nivel_acesso || 'operacional',
-      senha_hash:      hash,
-      primeiro_acesso: true,
-      ativo:           true,
-    });
-    return { ok: true, user: novo };
+    const s = sessaoLer();
+    if (!s?.token) return { ok: false, erro: 'Sessão expirada. Faça login novamente.' };
+    return await _sbRpc('auth_criar_usuario', { p_token: s.token, p_dados: dados });
   } catch (e) {
     return { ok: false, erro: e.message };
   }
 }
 
 /** Atualiza dados do militar */
-async function auth_atualizarUsuario(id, dados, sessao) {
+async function auth_atualizarUsuario(id, dados, _sessao) {
   try {
-    const alvo = await _sbGetOne(`id=eq.${id}`);
-    if (!alvo) return { ok: false, erro: 'Usuário não encontrado.' };
-
-    // Restrição: não pode rebaixar admin_geral se for o único
-    if (dados.nivel_acesso && dados.nivel_acesso !== 'admin_geral' && alvo.nivel_acesso === 'admin_geral') {
-      const outrosAG = (await _sbGet(`nivel_acesso=eq.admin_geral&id=neq.${id}&ativo=eq.true`)).length;
-      if (outrosAG === 0) return { ok: false, erro: 'Não é possível rebaixar o único Admin Geral ativo.' };
-    }
-
-    // Somente admin_geral pode promover a admin_geral
-    if (dados.nivel_acesso === 'admin_geral' && _nivelNum(sessao?.nivel_acesso) < _nivelNum('admin_geral')) {
-      return { ok: false, erro: 'Apenas Admin Geral pode promover outros Admin Gerais.' };
-    }
-
-    // Não pode editar usuário de nível superior (exceto admin_geral pode editar outros admin_geral)
-    const meuNivelNum = _nivelNum(sessao?.nivel_acesso);
-    const alvNivelNum = _nivelNum(alvo.nivel_acesso);
-    const ambosAdminGeral = sessao?.nivel_acesso === 'admin_geral' && alvo.nivel_acesso === 'admin_geral';
-    if (sessao?.id !== id && !ambosAdminGeral && alvNivelNum >= meuNivelNum) {
-      return { ok: false, erro: 'Você não pode editar um usuário de nível igual ou superior ao seu.' };
-    }
-
-    const update = {};
-    if (dados.posto_graduacao !== undefined) update.posto_graduacao = dados.posto_graduacao;
-    if (dados.nome_completo   !== undefined) update.nome_completo   = dados.nome_completo;
-    if (dados.nome_guerra     !== undefined) update.nome_guerra     = dados.nome_guerra;
-    if (dados.funcao          !== undefined) update.funcao          = dados.funcao;
-    if (dados.grupamento_id   !== undefined) update.grupamento_id   = dados.grupamento_id;
-    if (dados.nivel_acesso    !== undefined) update.nivel_acesso    = dados.nivel_acesso;
-    if (dados.ativo           !== undefined) update.ativo           = dados.ativo;
-
-    const updated = await _sbPatch(`id=eq.${id}`, update);
-    return { ok: true, user: updated };
+    const s = sessaoLer();
+    if (!s?.token) return { ok: false, erro: 'Sessão expirada. Faça login novamente.' };
+    return await _sbRpc('auth_atualizar_usuario', { p_token: s.token, p_id: id, p_dados: dados });
   } catch (e) {
     return { ok: false, erro: e.message };
   }
 }
 
 /** Reset de senha para padrão */
-async function auth_resetarSenha(id, sessao) {
+async function auth_resetarSenha(id, _sessao) {
   try {
-    const alvo = await _sbGetOne(`id=eq.${id}`);
-    if (!alvo) return { ok: false, erro: 'Usuário não encontrado.' };
-    const ambosAG = sessao?.nivel_acesso === 'admin_geral' && alvo.nivel_acesso === 'admin_geral';
-    if (sessao?.id !== id && !ambosAG && _nivelNum(sessao?.nivel_acesso) <= _nivelNum(alvo.nivel_acesso)) {
-      return { ok: false, erro: 'Permissão insuficiente para resetar esta senha.' };
-    }
-    const hash = await hashSenha(SENHA_PADRAO);
-    await _sbPatch(`id=eq.${id}`, { senha_hash: hash, primeiro_acesso: true });
-    return { ok: true };
+    const s = sessaoLer();
+    if (!s?.token) return { ok: false, erro: 'Sessão expirada. Faça login novamente.' };
+    return await _sbRpc('auth_resetar_senha', { p_token: s.token, p_id: id });
   } catch (e) {
     return { ok: false, erro: e.message };
   }
@@ -319,41 +254,15 @@ async function auth_alterarNivel(id, novoNivel, sessao) {
 
 /** Ativa ou desativa usuário */
 async function auth_alterarAtivo(id, ativo, sessao) {
-  try {
-    const alvo = await _sbGetOne(`id=eq.${id}`);
-    if (!alvo) return { ok: false, erro: 'Usuário não encontrado.' };
-
-    if (!ativo && alvo.nivel_acesso === 'admin_geral') {
-      const outrosAG = (await _sbGet(`nivel_acesso=eq.admin_geral&id=neq.${id}&ativo=eq.true`)).length;
-      if (outrosAG === 0) return { ok: false, erro: 'Não é possível desativar o único Admin Geral ativo.' };
-    }
-
-    await _sbPatch(`id=eq.${id}`, { ativo });
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, erro: e.message };
-  }
+  return auth_atualizarUsuario(id, { ativo }, sessao);
 }
 
 /** Exclui usuário permanentemente */
-async function auth_excluirUsuario(id, sessao) {
+async function auth_excluirUsuario(id, _sessao) {
   try {
-    const alvo = await _sbGetOne(`id=eq.${id}`);
-    if (!alvo) return { ok: false, erro: 'Usuário não encontrado.' };
-    if (sessao?.id === id) return { ok: false, erro: 'Você não pode excluir sua própria conta.' };
-
-    if (alvo.nivel_acesso === 'admin_geral') {
-      const outrosAG = (await _sbGet(`nivel_acesso=eq.admin_geral&id=neq.${id}&ativo=eq.true`)).length;
-      if (outrosAG === 0) return { ok: false, erro: 'Não é possível excluir o único Admin Geral.' };
-    }
-
-    const ambosAGExcl = sessao?.nivel_acesso === 'admin_geral' && alvo.nivel_acesso === 'admin_geral';
-    if (!ambosAGExcl && _nivelNum(alvo.nivel_acesso) >= _nivelNum(sessao?.nivel_acesso)) {
-      return { ok: false, erro: 'Você não pode excluir um usuário de nível igual ou superior.' };
-    }
-
-    await _sbDelete(`id=eq.${id}`);
-    return { ok: true };
+    const s = sessaoLer();
+    if (!s?.token) return { ok: false, erro: 'Sessão expirada. Faça login novamente.' };
+    return await _sbRpc('auth_excluir_usuario', { p_token: s.token, p_id: id });
   } catch (e) {
     return { ok: false, erro: e.message };
   }
@@ -475,18 +384,11 @@ async function auth_migrarDaPlanilha(rows) {
  *   BEFORE UPDATE ON public.militares
  *   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
  *
- * -- RLS (recomendado para produção)
- * ALTER TABLE public.militares ENABLE ROW LEVEL SECURITY;
- * -- Permitir leitura para anon (necessário para login via frontend)
- * CREATE POLICY "militares_select" ON public.militares FOR SELECT USING (true);
- * -- Escrita somente via service_role (backend seguro)
- * CREATE POLICY "militares_insert" ON public.militares FOR INSERT WITH CHECK (false);
- * CREATE POLICY "militares_update" ON public.militares FOR UPDATE USING (false);
- * CREATE POLICY "militares_delete" ON public.militares FOR DELETE USING (false);
- *
- * -- Para permitir escrita pelo frontend (dev/staging sem backend):
- * -- Substitua as políticas acima por:
- * -- CREATE POLICY "allow_all" ON public.militares FOR ALL USING (true) WITH CHECK (true);
+ * -- RLS e todo o CRUD (login, criar/editar/excluir usuário, resetar
+ * -- senha) foram movidos para db/04_sessoes_e_militares_seguranca.sql —
+ * -- rode aquele arquivo depois de criar esta tabela. Ele deixa a tabela
+ * -- sem NENHUMA policy de acesso direto (só via funções security definer
+ * -- com token de sessão), então não crie policies "allow_all" aqui.
  */
 
 /* ─── CACHE DE REFERÊNCIAS (militares, frações, operações, etc.) ────

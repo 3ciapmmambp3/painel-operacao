@@ -1600,6 +1600,19 @@ function _labelNivel(nivel) {
   return map[nivel] || nivel;
 }
 
+/* Escapa texto para uso seguro como conteúdo/atributo HTML (evita XSS via
+   nome_completo, nome_guerra, funcao, grupamento_id cadastrados por um Admin). */
+function _escHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+/* Escapa texto para uso dentro de onclick="fn('...')" — primeiro como string
+   JS (aspas simples/barra invertida), depois como atributo HTML (aspas duplas). */
+function _escJsAttr(s) {
+  return _escHtml(String(s ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
+}
+
 /* Badge colorido por nível */
 function _badgeNivel(nivel) {
   const map = {
@@ -1737,6 +1750,8 @@ function renderTabela() {
       ? '<span class="badge badge-pending">⚠ Pendente</span>'
       : (u.ativo ? '<span class="badge badge-active">✔ Ativo</span>' : '<span class="badge badge-danger">✗ Inativo</span>');
 
+    const nomeAttr = _escJsAttr(u.nome_completo || '');
+
     /* Botão promover/rebaixar */
     let btnNivel = '';
     if (podeAlt) {
@@ -1749,18 +1764,18 @@ function renderTabela() {
         btnNivel += `<button class="btn-outline btn-sm" onclick="alterarNivel('${u.id}','${SbAuth.NIVEIS[downIdx]}')" title="Rebaixar">↓ Rebaixar</button>`;
       }
     }
-    const btnReset = podeAlt ? `<button class="btn-outline btn-sm" onclick="resetarSenha('${u.id}','${(u.nome_completo||'').replace(/'/g,'')}')" title="Resetar senha">🔑</button>` : '';
+    const btnReset = podeAlt ? `<button class="btn-outline btn-sm" onclick="resetarSenha('${u.id}','${nomeAttr}')" title="Resetar senha">🔑</button>` : '';
     const btnEdit  = (self || podeAlt || sessao?.nivel_acesso === 'admin_geral')
       ? `<button class="btn-outline btn-sm" onclick="abrirModal('${u.id}')" title="Editar">✏️</button>` : '';
-    const btnDel   = podeAlt ? `<button class="btn-danger btn-sm" onclick="excluirUsuario('${u.id}','${(u.nome_completo||'').replace(/'/g,'')}')" title="Excluir">✕</button>` : '';
+    const btnDel   = podeAlt ? `<button class="btn-danger btn-sm" onclick="excluirUsuario('${u.id}','${nomeAttr}')" title="Excluir">✕</button>` : '';
 
     return `<tr>
-      <td style="font-family:monospace;font-size:11px;">${u.matricula||'—'}${self?' <span style="color:var(--gold);font-size:10px;">(você)</span>':''}</td>
-      <td style="font-size:11px;">${u.posto_graduacao||'—'}</td>
-      <td style="font-weight:600;color:var(--text-white);">${u.nome_completo||'—'}</td>
-      <td style="font-size:11px;">${u.nome_guerra||'—'}</td>
-      <td style="font-size:11px;">${u.funcao||'—'}</td>
-      <td style="font-size:11px;">${u.grupamento_id||'—'}</td>
+      <td style="font-family:monospace;font-size:11px;">${_escHtml(u.matricula)||'—'}${self?' <span style="color:var(--gold);font-size:10px;">(você)</span>':''}</td>
+      <td style="font-size:11px;">${_escHtml(u.posto_graduacao)||'—'}</td>
+      <td style="font-weight:600;color:var(--text-white);">${_escHtml(u.nome_completo)||'—'}</td>
+      <td style="font-size:11px;">${_escHtml(u.nome_guerra)||'—'}</td>
+      <td style="font-size:11px;">${_escHtml(u.funcao)||'—'}</td>
+      <td style="font-size:11px;">${_escHtml(u.grupamento_id)||'—'}</td>
       <td>${_badgeNivel(u.nivel_acesso)}</td>
       <td>${bStatus}</td>
       <td><div class="acoes">${btnEdit}${btnNivel}${btnReset}${btnDel}</div></td>

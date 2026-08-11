@@ -3209,7 +3209,7 @@ async function marcarDemandasAtendidas(payload){
     if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
     const H = { apikey: SB_AUTH_KEY, Authorization: `Bearer ${SB_AUTH_KEY}`, 'Content-Type': 'application/json' };
     const sess = (typeof getSessaoAtual === 'function') ? (getSessaoAtual() || {}) : {};
-    const nome = `${sess.matricula||''} — ${sess.pg||''} ${sess.guerra||sess.nome||''}`.replace(/\s+/g,' ').trim();
+    if (!sess.token) return; // sem sessão válida: mesmo comportamento de hoje (best-effort, não impede o relatório)
     const alvos = [
       { cat: 'Denúncia de Balcão', tipo: 'denuncia',   campoNum: 'Denúncia de Balcão' },
       { cat: 'Requisição',         tipo: 'requisicao', campoNum: 'Nº da Requisição' },
@@ -3221,18 +3221,16 @@ async function marcarDemandasAtendidas(payload){
         const numero = _extrairNumeroOcorrencia(item[cfg.campoNum]);
         if (!numero) continue;
         const body = {
-          situacao: 'RESPONDIDA',
-          data_resposta: _normalizarDataResp(item['Data de Atendimento'] || item['Data da Fiscalização']),
-          numero_reds: item['Nº REDS (BO/BOS/RAT)'] || null,
-          numero_auto_infracao: item['Nº Auto de Infração'] || null,
-          numero_ato_fiscalizacao: item['Nº Ato de Fiscalização'] || null,
-          observacoes_resposta: item['Observações'] || null,
-          atendido_por_matricula: sess.matricula || null,
-          atendido_por_nome: nome
+          p_token: sess.token, p_numero: numero, p_tipo: cfg.tipo,
+          p_data: _normalizarDataResp(item['Data de Atendimento'] || item['Data da Fiscalização']),
+          p_reds: item['Nº REDS (BO/BOS/RAT)'] || null,
+          p_auto_infracao: item['Nº Auto de Infração'] || null,
+          p_ato_fiscalizacao: item['Nº Ato de Fiscalização'] || null,
+          p_obs: item['Observações'] || null
         };
         try {
-          await fetch(`${SB_AUTH_URL}/rest/v1/denuncias?numero=eq.${encodeURIComponent(numero)}&tipo=eq.${cfg.tipo}`,
-            { method: 'PATCH', headers: H, body: JSON.stringify(body) });
+          await fetch(`${SB_AUTH_URL}/rest/v1/rpc/denuncia_baixa_automatica`,
+            { method: 'POST', headers: H, body: JSON.stringify(body) });
         } catch(err){ console.warn('[baixa] falha em', numero, err); }
       }
     }

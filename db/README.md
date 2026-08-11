@@ -4,11 +4,13 @@ Ordem de execução no **Supabase → SQL Editor**:
 
 | Ordem | Arquivo | O que faz |
 |------|---------|-----------|
-| pré | (já feito por você) | tabelas `municipios_grupos` e `grupos` |
+| pré | (já feito por você) | tabelas `municipios_grupos`, `grupos` e `militares` |
 | 1 | `00_grupamentos_view.sql` | view `vw_municipio_grupamento` (município → grupamento **completo**) |
 | 2 | `01_denuncias.sql` | contador atômico, tabela `denuncias`, função `criar_denuncia`, RLS |
 | 3 | `02_storage_anexos.sql` | bucket privado `anexos` + políticas (upload/leitura/remoção via anon) |
 | virada | `03_seed_contadores.sql` | **no dia de ligar o sistema:** ajusta a numeração para continuar de onde a planilha parou |
+| 4 | `04_sessoes_e_militares_seguranca.sql` | login/senha movidos para dentro do banco (token de sessão, bcrypt), fecha escrita direta em `militares` — **rodar fora do horário de uso: derruba as sessões abertas** |
+| 5 | `05_denuncias_seguranca.sql` | fecha a policy de UPDATE aberta em `denuncias`; assumir/inativar/reativar/atender passam a exigir sessão válida |
 
 ## Como funciona a numeração (sem duplicidade)
 O número **não** é gerado no navegador. Ao registrar, o front chama a função

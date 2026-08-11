@@ -227,6 +227,14 @@ if (!S) location.href = 'index.html';
 const API  = (typeof SB_AUTH_URL !== 'undefined') ? SB_AUTH_URL : '';
 const AKEY = (typeof SB_AUTH_KEY !== 'undefined') ? SB_AUTH_KEY : '';
 const H = { 'apikey': AKEY, 'Authorization': `Bearer ${AKEY}`, 'Content-Type': 'application/json' };
+/* Assumir/inativar/reativar/registrar atendimento passam por funções do
+   banco (db/05_denuncias_seguranca.sql) — a permissão é decidida lá a
+   partir do token da sessão, não pela chave anon sozinha. */
+async function rpc(fn, body){
+  const r = await fetch(`${API}/rest/v1/rpc/${fn}`, { method:'POST', headers:H, body:JSON.stringify(body||{}) });
+  if(!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  return r.json();
+}
 const MILITAR = S ? `${S.matricula} — ${S.pg||''} ${S.guerra||S.nome||''}`.replace(/\s+/g,' ').trim() : '';
 document.getElementById('who').textContent = MILITAR;
 
@@ -524,32 +532,33 @@ function abrir(d){
 }
 function fechar(){ document.getElementById('ov').classList.remove('show'); document.body.style.overflow=''; }
 
-async function patch(body){
-  const r = await fetch(`${API}/rest/v1/denuncias?id=eq.${atual.id}`, {
-    method:'PATCH', headers:{...H,'Prefer':'return=representation'}, body:JSON.stringify(body) });
-  if(!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-  const row=(await r.json())[0];
-  Object.assign(atual,row);
-  const i=DADOS.findIndex(x=>x.id===atual.id); if(i>=0) DADOS[i]=atual;
-  render(); kpis(); abrir(atual);
-}
 async function mudarSituacao(s){
-  try{ await patch({ situacao:s, atendido_por_matricula:S.matricula, atendido_por_nome:MILITAR }); toast(`Situação: ${SIT_LBL[s]}`); }
-  catch(e){ toast('Erro: '+e.message); }
+  try{
+    const row = await rpc('denuncia_assumir', { p_token:S.token, p_id:atual.id });
+    Object.assign(atual, row);
+    const i=DADOS.findIndex(x=>x.id===atual.id); if(i>=0) DADOS[i]=atual;
+    render(); kpis(); abrir(atual);
+    toast(`Situação: ${SIT_LBL[s]}`);
+  }catch(e){ toast('Erro: '+e.message); }
 }
 async function inativar(){
   const motivo = prompt('Motivo da inativação desta demanda (registro lançado errado, duplicidade, etc.):');
   if (motivo===null) return;                 // cancelou
   if (!motivo.trim()) return toast('Informe o motivo da inativação.');
   try{
-    await patch({ ativo:false, motivo_inativacao:motivo.trim().toUpperCase(),
-      inativado_por_matricula:S.matricula, inativado_por_nome:MILITAR, inativado_em:new Date().toISOString() });
+    const row = await rpc('denuncia_inativar', { p_token:S.token, p_id:atual.id, p_motivo:motivo.trim() });
+    Object.assign(atual, row);
+    const i=DADOS.findIndex(x=>x.id===atual.id); if(i>=0) DADOS[i]=atual;
+    render(); kpis(); abrir(atual);
     toast('Demanda inativada.');
   }catch(e){ toast('Erro: '+e.message); }
 }
 async function reativar(){
   try{
-    await patch({ ativo:true, motivo_inativacao:null, inativado_por_matricula:null, inativado_por_nome:null, inativado_em:null });
+    const row = await rpc('denuncia_reativar', { p_token:S.token, p_id:atual.id });
+    Object.assign(atual, row);
+    const i=DADOS.findIndex(x=>x.id===atual.id); if(i>=0) DADOS[i]=atual;
+    render(); kpis(); abrir(atual);
     toast('Demanda reativada.');
   }catch(e){ toast('Erro: '+e.message); }
 }
@@ -560,15 +569,16 @@ async function salvarAtendimento(){
   if(!data) return toast('Informe a data do atendimento.');
   if(!reds) return toast('Informe o Nº REDS.');
   try{
-    await patch({
-      situacao:'RESPONDIDA',
-      data_resposta:data,
-      numero_reds:reds,
-      numero_auto_infracao:(()=>{ const n=document.getElementById('at-auto-num').value.trim(); const a=document.getElementById('at-auto-ano').value.trim(); return n?`${n}/${a}`:null; })(),
-      numero_ato_fiscalizacao:document.getElementById('at-ato').value.trim()||null,
-      observacoes_resposta:document.getElementById('at-obs').value.trim()||null,
-      atendido_por_matricula:S.matricula, atendido_por_nome:MILITAR
+    const autoInfracao = (()=>{ const n=document.getElementById('at-auto-num').value.trim(); const a=document.getElementById('at-auto-ano').value.trim(); return (n&&a)?`${n}/${a}`:null; })();
+    const row = await rpc('denuncia_registrar_atendimento', {
+      p_token:S.token, p_id:atual.id, p_data:data, p_reds:reds,
+      p_auto_infracao:autoInfracao,
+      p_ato_fiscalizacao:document.getElementById('at-ato').value.trim()||null,
+      p_obs:document.getElementById('at-obs').value.trim()||null
     });
+    Object.assign(atual, row);
+    const i=DADOS.findIndex(x=>x.id===atual.id); if(i>=0) DADOS[i]=atual;
+    render(); kpis(); abrir(atual);
     toast('Atendimento registrado.');
   }catch(e){ toast('Erro: '+e.message); }
 }
