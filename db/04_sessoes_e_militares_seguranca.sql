@@ -24,6 +24,10 @@
 --  sessão muda). Rode fora do horário de uso.
 -- ══════════════════════════════════════════════════════════════════════
 
+-- No Supabase o pgcrypto costuma instalar no schema "extensions", não em
+-- "public" — por isso as funções abaixo que usam crypt/gen_salt/digest
+-- declaram search_path = public, extensions (sem isso dá o erro
+-- "function digest(text, unknown) does not exist").
 create extension if not exists pgcrypto;
 
 /* ─── 1) SESSÕES ────────────────────────────────────────────────────── */
@@ -74,7 +78,7 @@ $$;
    usuário. Hash já em bcrypt (prefixo $2) usa comparação bcrypt normal. */
 create or replace function public.auth_login(p_matricula text, p_senha text)
 returns jsonb
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, extensions as $$
 declare
   v_clean text := regexp_replace(coalesce(p_matricula,''), '\D', '', 'g');
   v_row   public.militares;
@@ -121,7 +125,7 @@ $$;
    se era o dono da sessão; aqui isso deixa de ser possível.) */
 create or replace function public.auth_trocar_senha(p_token uuid, p_nova_senha text)
 returns jsonb
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, extensions as $$
 declare v_id uuid;
 begin
   if p_nova_senha is null or length(p_nova_senha) < 6 then
@@ -164,7 +168,7 @@ $$;
 
 create or replace function public.auth_criar_usuario(p_token uuid, p_dados jsonb)
 returns jsonb
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, extensions as $$
 declare
   v_nivel text;
   v_clean text;
@@ -263,7 +267,7 @@ $$;
 
 create or replace function public.auth_resetar_senha(p_token uuid, p_id uuid)
 returns jsonb
-language plpgsql security definer set search_path = public as $$
+language plpgsql security definer set search_path = public, extensions as $$
 declare v_me_id uuid; v_me_nivel text; v_alvo public.militares;
 begin
   select id, nivel_acesso into v_me_id, v_me_nivel from public._sessao_militar(p_token);
