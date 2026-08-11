@@ -190,6 +190,7 @@
       <button class="rd-btn-colapsar" id="rdBtnColapsar" aria-label="Recolher menu">◂</button>
     </div>
     <a class="rd-item ativo" href="tta.html" data-tip="TTA (Pré-turno)"><span>🎯</span><span class="lbl">TTA (Pré-turno)</span></a>
+    <a class="rd-item" href="tta-gestao.html" id="linkGestaoTTA" data-tip="Gestão do TTA" style="display:none"><span>⚙️</span><span class="lbl">Gestão do TTA</span></a>
     <a class="rd-item" href="meus-relatorios.html" data-tip="Lista de Relatórios"><span>📄</span><span class="lbl">Lista de Relatórios</span></a>
     <a class="rd-item" href="relatorio-servico.html" data-tip="Novo Relatório"><span>➕</span><span class="lbl">Novo Relatório</span></a>
     <a class="rd-item" href="produtividade.html" data-tip="Produtividade"><span>📊</span><span class="lbl">Produtividade</span></a>
@@ -272,63 +273,6 @@
           </div>
         </div>
         <button class="btn-primary" id="btnRegistrar" onclick="registrarChamada()">✔ Registrar chamada</button>
-      </div>
-
-      <div class="card adm-card" id="painelAdmin" style="display:none">
-        <h3>⚙️ Gestão mensal do TTA <span class="adm-badge">Aux P1 · ADM ou Admin Geral</span></h3>
-        <p class="hint" style="margin-bottom:14px">Cadastre os temas do mês (Assunto + Referência por dia) e suba os arquivos — todo mundo passa a ver isso automaticamente na tela acima.</p>
-
-        <div class="mes-row">
-          <select id="admMes"></select>
-          <select id="admAno"></select>
-          <button class="btn-outline btn-sm" onclick="abrirNovoTema()" style="margin-left:auto">+ Novo tema</button>
-        </div>
-
-        <div id="formTemaBox" class="card" style="display:none;background:var(--bg-input);margin-bottom:14px">
-          <div class="grid2">
-            <div class="f full">
-              <label>Dias do mês (separados por vírgula) <span class="req">*</span></label>
-              <input type="text" id="temaDias" placeholder="Ex: 11, 12">
-            </div>
-            <div class="f full">
-              <label>Assunto <span class="req">*</span></label>
-              <input type="text" id="temaAssunto" placeholder="Ex: Memorando nº 30.130.2/22 – EMPM — Atualização das naturezas de infrações...">
-            </div>
-            <div class="f full">
-              <label>Referência <span class="req">*</span></label>
-              <input type="text" id="temaReferencia" placeholder="Ex: M 31.444 a M 31.506">
-            </div>
-          </div>
-          <button class="btn-primary btn-sm" onclick="salvarTema()">Salvar tema</button>
-          <button class="btn-outline btn-sm" onclick="fecharFormTema()">Cancelar</button>
-        </div>
-
-        <table class="temas">
-          <thead><tr><th style="width:90px">Dias</th><th>Assunto</th><th>Referência</th><th style="width:70px"></th></tr></thead>
-          <tbody id="corpoTemas"></tbody>
-        </table>
-
-        <h3 style="margin-top:22px">📎 Arquivos do mês <span class="hint" style="text-transform:none;font-weight:400;letter-spacing:0">— ficam guardados pra consulta, nada é substituído</span></h3>
-        <div id="listaArquivosAdmin"></div>
-        <div class="upload-slot" style="margin-top:10px" onclick="document.getElementById('inputArquivo').click()">
-          <span class="ic">⬆️</span>
-          <b>+ Adicionar arquivo a este mês</b>
-          <small>PDF, imagem etc. — pode subir quantos documentos precisar</small>
-        </div>
-        <input type="file" id="inputArquivo" style="display:none" onchange="uploadArquivo(this.files[0])">
-
-        <h3 style="margin-top:22px">📊 Lançamentos do mês <span class="hint" style="text-transform:none;font-weight:400;letter-spacing:0" id="contadorChamadas"></span>
-          <button class="btn-outline btn-sm" style="margin-left:auto" onclick="exportarCsvChamadas()">⬇ Exportar CSV</button>
-        </h3>
-        <div style="overflow-x:auto">
-          <table class="temas" style="min-width:900px">
-            <thead><tr>
-              <th>Grupamento</th><th>Comandante</th><th>Data/hora</th><th>Presentes</th>
-              <th>Referência</th><th>Turno</th><th>Viatura</th><th>Patrulha</th><th>Município(s)</th>
-            </tr></thead>
-            <tbody id="corpoChamadas"></tbody>
-          </table>
-        </div>
       </div>
     </div>
   </div>
@@ -607,196 +551,22 @@ async function registrarChamada(){
   }
 }
 
-/* ── Painel Aux P1 (ADM) / Admin Geral ────────────────────────────── */
+/* ── link "⚙️ Gestão do TTA" na sidebar — só aparece pra quem gerencia ── */
 const podeGerenciarTTA = !!sessao && (
   sessao.nivel_acesso === 'admin_geral' ||
   ((sessao.funcao||'').toLowerCase() === 'aux p1' && (sessao.grupamento_id||'').toUpperCase() === 'ADM')
 );
-let admAno = ANO_ATUAL, admMes = MES_ATUAL;
-let editandoTemaId = null;
-
-function initPainelAdmin(){
-  if (!podeGerenciarTTA) return;
-  document.getElementById('painelAdmin').style.display = 'block';
-  const selMes = document.getElementById('admMes');
-  selMes.innerHTML = MESES_LBL.map((l,i) => `<option value="${i+1}" ${i+1===admMes?'selected':''}>${l}</option>`).join('');
-  const selAno = document.getElementById('admAno');
-  selAno.innerHTML = [ANO_ATUAL-1, ANO_ATUAL, ANO_ATUAL+1].map(a => `<option value="${a}" ${a===admAno?'selected':''}>${a}</option>`).join('');
-  selMes.addEventListener('change', () => { admMes = +selMes.value; carregarAdmin(); });
-  selAno.addEventListener('change', () => { admAno = +selAno.value; carregarAdmin(); });
-  carregarAdmin();
-}
-async function carregarAdmin(){
-  await Promise.allSettled([carregarTemasAdmin(), carregarMateriaisAdmin(), carregarChamadasAdmin()]);
-}
-
-let CHAMADAS_MES = [];
-async function carregarChamadasAdmin(){
-  const corpo = document.getElementById('corpoChamadas');
-  corpo.innerHTML = '<tr><td colspan="9" class="hint">Carregando…</td></tr>';
-  try{
-    CHAMADAS_MES = await rpc('tta_listar_chamadas', { p_token: sessao.token, p_ano: admAno, p_mes: admMes }) || [];
-    document.getElementById('contadorChamadas').textContent = `— ${CHAMADAS_MES.length} lançamento(s)`;
-    corpo.innerHTML = CHAMADAS_MES.map(c => `
-      <tr>
-        <td class="desc">${c.grupamento_completo||'—'}</td>
-        <td class="desc">${c.militar_resp_nome||'—'}</td>
-        <td class="desc">${fmtDataHoraCompleta(c.data_hora_chamada)}</td>
-        <td class="desc">${(c.militares_presentes||[]).length}</td>
-        <td class="desc">${c.tema_referencia||'—'}</td>
-        <td class="desc">${(c.inicio_turno||'—').slice(0,5)}–${(c.final_turno||'—').slice(0,5)}</td>
-        <td class="desc">${c.prefixo_viatura||'—'}</td>
-        <td class="desc">${c.tipo_patrulha||'—'}</td>
-        <td class="desc">${(c.municipios_atuacao||[]).join(', ')||'—'}</td>
-      </tr>`).join('') || '<tr><td colspan="9" class="hint">Nenhuma chamada registrada neste mês.</td></tr>';
-  }catch(e){
-    corpo.innerHTML = '<tr><td colspan="9" class="hint">Erro ao carregar lançamentos.</td></tr>';
-    document.getElementById('contadorChamadas').textContent = '';
-  }
-}
-function fmtDataHoraCompleta(iso){
-  if(!iso) return '—';
-  return new Date(iso).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
-}
-function csvCampo(v){
-  const s = String(v==null?'':v).replace(/"/g,'""');
-  return `"${s}"`;
-}
-function exportarCsvChamadas(){
-  if (!CHAMADAS_MES.length) return toast('Nada pra exportar neste mês.');
-  const cab = ['Grupamento de Atuação','Comandante','Matrícula Comandante','Data/Hora da Chamada',
-    'Militares Presentes','Assunto','Referência','Início Turno','Fim Turno','Prefixo Viatura',
-    'Tipo de Patrulha','Município(s)','Observações','Registrado em'];
-  const linhas = CHAMADAS_MES.map(c => [
-    c.grupamento_completo, c.militar_resp_nome, c.militar_resp_matricula, fmtDataHoraCompleta(c.data_hora_chamada),
-    (c.militares_presentes||[]).map(m=>m.nome).join('; '), c.tema_assunto, c.tema_referencia,
-    (c.inicio_turno||'').slice(0,5), (c.final_turno||'').slice(0,5), c.prefixo_viatura,
-    c.tipo_patrulha, (c.municipios_atuacao||[]).join('; '), c.observacoes, fmtDataHoraCompleta(c.created_at)
-  ].map(csvCampo).join(';'));
-  const csv = '﻿' + [cab.map(csvCampo).join(';')].concat(linhas).join('\r\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `TTA_${MESES_LBL[admMes-1]}_${admAno}.csv`;
-  document.body.appendChild(a); a.click(); a.remove();
-}
-async function carregarTemasAdmin(){
-  const corpo = document.getElementById('corpoTemas');
-  corpo.innerHTML = '<tr><td colspan="4" class="hint">Carregando…</td></tr>';
-  try{
-    const temas = await rpc('tta_listar_temas', { p_token: sessao.token, p_ano: admAno, p_mes: admMes });
-    corpo.innerHTML = (temas||[]).map(t => `
-      <tr class="${(t.dias||[]).includes(DIA_ATUAL) && admAno===ANO_ATUAL && admMes===MES_ATUAL ? 'hoje':''}">
-        <td class="tit">${(t.dias||[]).join(', ')}</td>
-        <td class="desc">${t.assunto}</td>
-        <td class="desc">${t.referencia}</td>
-        <td class="acoes">
-          <button title="Editar" onclick='editarTema(${JSON.stringify(t)})'>✏️</button>
-          <button title="Excluir" onclick="excluirTema('${t.id}')">🗑</button>
-        </td>
-      </tr>`).join('') || '<tr><td colspan="4" class="hint">Nenhum tema cadastrado para este mês.</td></tr>';
-  }catch(e){ corpo.innerHTML = '<tr><td colspan="4" class="hint">Erro ao carregar temas.</td></tr>'; }
-}
-function abrirNovoTema(){
-  editandoTemaId = null;
-  document.getElementById('temaDias').value = '';
-  document.getElementById('temaAssunto').value = '';
-  document.getElementById('temaReferencia').value = '';
-  document.getElementById('formTemaBox').style.display = 'block';
-}
-function editarTema(t){
-  editandoTemaId = t.id;
-  document.getElementById('temaDias').value = (t.dias||[]).join(', ');
-  document.getElementById('temaAssunto').value = t.assunto;
-  document.getElementById('temaReferencia').value = t.referencia;
-  document.getElementById('formTemaBox').style.display = 'block';
-}
-function fecharFormTema(){ document.getElementById('formTemaBox').style.display = 'none'; }
-async function salvarTema(){
-  const dias = document.getElementById('temaDias').value.split(',').map(s=>parseInt(s.trim(),10)).filter(n=>!isNaN(n));
-  const assunto = document.getElementById('temaAssunto').value.trim();
-  const referencia = document.getElementById('temaReferencia').value.trim();
-  if (!dias.length) return toast('Informe ao menos um dia válido.');
-  if (!assunto || !referencia) return toast('Preencha Assunto e Referência.');
-  try{
-    await rpc('tta_salvar_tema', { p_token: sessao.token, p_id: editandoTemaId, p_dados: {
-      ano: admAno, mes: admMes, dias, assunto, referencia
-    }});
-    fecharFormTema();
-    toast('Tema salvo.');
-    carregarTemasAdmin();
-    if (admAno===ANO_ATUAL && admMes===MES_ATUAL) carregarTemaHoje();
-  }catch(e){ toast('Erro: '+e.message); }
-}
-async function excluirTema(id){
-  try{ await rpc('tta_excluir_tema', { p_token: sessao.token, p_id: id }); toast('Tema excluído.'); carregarTemasAdmin(); }
-  catch(e){ toast('Erro: '+e.message); }
-}
-
-async function carregarMateriaisAdmin(){
-  const box = document.getElementById('listaArquivosAdmin');
-  box.innerHTML = '<div class="hint">Carregando…</div>';
-  try{
-    const lista = await rpc('tta_listar_materiais', { p_token: sessao.token, p_ano: admAno, p_mes: admMes });
-    box.innerHTML = (lista||[]).map(a => `
-      <div class="arq-row"><div class="ic">PDF</div>
-        <div class="m"><b>${a.nome}</b><small>${fmtTam(a.tamanho)} · enviado por ${a.enviado_por_nome||'—'} em ${fmtDataHora(a.created_at)}</small></div>
-        <a href="${a.link}" target="_blank" rel="noopener">Abrir</a>
-        <button class="del" title="Remover" onclick="excluirMaterial('${a.id}')">🗑</button>
-      </div>`).join('') || '<div class="hint">Nenhum arquivo ainda — use o botão abaixo pra adicionar.</div>';
-    if (admAno===ANO_ATUAL && admMes===MES_ATUAL) carregarMaterialAtual();
-  }catch(e){ box.innerHTML = '<div class="hint">Erro ao carregar arquivos.</div>'; }
-}
-async function excluirMaterial(id){
-  try{ await rpc('tta_excluir_material', { p_token: sessao.token, p_id: id }); toast('Arquivo removido.'); carregarMateriaisAdmin(); }
-  catch(e){ toast('Erro: '+e.message); }
-}
-
-const STORAGE = `${API}/storage/v1`;
-const BUCKET  = 'tta-materiais';
-const LINK_TTL = 315360000; // ~10 anos, mesmo padrão de anexos
-const MAX_MB = 15;
-function sanitizeNome(n){
-  return (n || 'arquivo').normalize('NFD').replace(/[^\x00-\x7F]/g,'')
-    .replace(/[^\w.\-]+/g,'_').replace(/_+/g,'_').slice(-80) || 'arquivo';
-}
-const encPath = p => p.split('/').map(encodeURIComponent).join('/');
-async function uploadArquivo(file){
-  if (!file) return;
-  if (file.size > MAX_MB*1048576) return toast(`Arquivo acima de ${MAX_MB} MB.`);
-  toast('Enviando arquivo...');
-  try{
-    const path = `${admAno}/${admMes}/${crypto.randomUUID()}-${sanitizeNome(file.name)}`;
-    const enc = encPath(path);
-    const AH = { apikey: AKEY, Authorization: `Bearer ${AKEY}` };
-    const up = await fetch(`${STORAGE}/object/${BUCKET}/${enc}`, {
-      method:'POST', headers:{...AH,'Content-Type':file.type||'application/octet-stream','x-upsert':'true'}, body:file
-    });
-    if (!up.ok) throw new Error(`${up.status} ${await up.text()}`);
-    const sg = await fetch(`${STORAGE}/object/sign/${BUCKET}/${enc}`, {
-      method:'POST', headers:{...AH,'Content-Type':'application/json'}, body:JSON.stringify({expiresIn:LINK_TTL})
-    });
-    if (!sg.ok) throw new Error(`assinatura ${sg.status} ${await sg.text()}`);
-    const sj = await sg.json();
-    const link = `${STORAGE}${sj.signedURL||sj.signedUrl}`;
-    await rpc('tta_registrar_material', { p_token: sessao.token, p_dados: {
-      ano: admAno, mes: admMes, nome: file.name, path, tamanho: file.size, link
-    }});
-    toast('✔ Arquivo enviado.');
-    document.getElementById('inputArquivo').value = '';
-    carregarMateriaisAdmin();
-    renderPastas();
-  }catch(e){ toast('Erro no envio: '+e.message); }
+if (podeGerenciarTTA){
+  const linkGestao = document.getElementById('linkGestaoTTA');
+  if (linkGestao) linkGestao.style.display = '';
 }
 
 /* ── boot ──────────────────────────────────────────────────────────── */
 (async function init(){
   // allSettled de propósito: uma falha aqui (ex.: rede) nunca pode impedir
-  // o resto da página de carregar — em especial o painel do Admin Geral,
-  // que tem que aparecer sempre, independente do que mais falhar.
+  // o resto da página de carregar.
   await Promise.allSettled([carregarGrupos(), carregarRoster(), carregarTemaHoje(), carregarMaterialAtual(), renderPastas()]);
   onGrupamentoChange();
-  initPainelAdmin();
 })();
 </script>
 </body>
