@@ -85,6 +85,17 @@
     table.temas td.acoes button{background:none;border:none;color:var(--text-hint);cursor:pointer;font-size:13px;padding:2px 5px;}
     table.temas td.acoes button:hover{color:var(--gold);}
 
+    .pager{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border);flex-wrap:wrap;}
+    .pager .info{font-size:12px;color:var(--text-muted);}
+    .pager .pages{display:flex;align-items:center;gap:4px;}
+    .pgbtn{min-width:30px;height:30px;display:flex;align-items:center;justify-content:center;background:var(--bg-input);border:1px solid var(--border-mid);color:var(--text-muted);font-size:12px;font-weight:700;border-radius:6px;cursor:pointer;padding:0 8px;font-family:inherit;}
+    .pgbtn:hover{border-color:var(--gold);color:var(--gold-light);}
+    .pgbtn.active{background:var(--gold-bg);border-color:var(--gold-border);color:var(--gold-light);cursor:default;}
+    .pgbtn[disabled]{opacity:.35;cursor:not-allowed;}
+    .pgbtn.dots{border:none;background:none;cursor:default;}
+    .pgbtn.dots:hover{color:var(--text-muted);}
+    .porpagina{width:auto;background:var(--bg-input);border:1px solid var(--border);color:var(--text-white);border-radius:7px;padding:6px 9px;font-size:12px;font-family:inherit;}
+
     .upload-slot{border:1.5px dashed var(--border-mid);border-radius:9px;padding:16px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;}
     .upload-slot:hover{border-color:var(--gold);background:var(--gold-bg);}
     .upload-slot .ic{font-size:20px;}
@@ -228,7 +239,15 @@
 
         <div class="card">
           <h3>📊 Lançamentos do mês <span class="hint" style="text-transform:none;font-weight:400;letter-spacing:0" id="contadorChamadas"></span>
-            <button class="btn-outline btn-sm" style="margin-left:auto" onclick="exportarCsvChamadas()">⬇ Exportar CSV</button>
+            <span style="margin-left:auto;display:flex;align-items:center;gap:10px">
+              <span class="hint" style="text-transform:none;letter-spacing:0">Por página:</span>
+              <select id="selPorPagina" class="porpagina" onchange="mudarPorPagina()">
+                <option value="10">10</option>
+                <option value="15" selected>15</option>
+                <option value="25">25</option>
+              </select>
+              <button class="btn-outline btn-sm" onclick="exportarCsvChamadas()">⬇ Exportar CSV</button>
+            </span>
           </h3>
           <div style="overflow-x:auto">
             <table class="temas" style="min-width:900px">
@@ -239,6 +258,7 @@
               <tbody id="corpoChamadas"></tbody>
             </table>
           </div>
+          <div class="pager" id="pagerChamadas" style="display:none"></div>
         </div>
       </div>
     </div>
@@ -582,28 +602,83 @@ async function uploadArquivo(file){
 
 /* ── Lançamentos do mês + exportar CSV ────────────────────────────── */
 let CHAMADAS_MES = [];
+let porPaginaChamadas = 15;
+let paginaChamadas = 1;
+
 async function carregarChamadasAdmin(){
   const corpo = document.getElementById('corpoChamadas');
   corpo.innerHTML = '<tr><td colspan="9" class="hint">Carregando…</td></tr>';
   try{
     CHAMADAS_MES = await rpc('tta_listar_chamadas', { p_token: sessao.token, p_ano: admAno, p_mes: admMes }) || [];
-    document.getElementById('contadorChamadas').textContent = `— ${CHAMADAS_MES.length} lançamento(s)`;
-    corpo.innerHTML = CHAMADAS_MES.map(c => `
-      <tr>
-        <td class="desc">${c.grupamento_completo||'—'}</td>
-        <td class="desc">${c.militar_resp_nome||'—'}</td>
-        <td class="desc">${fmtDataHoraCompleta(c.data_hora_chamada)}</td>
-        <td class="desc">${(c.militares_presentes||[]).length}</td>
-        <td class="desc">${c.tema_referencia||'—'}</td>
-        <td class="desc">${(c.inicio_turno||'—').slice(0,5)}–${(c.final_turno||'—').slice(0,5)}</td>
-        <td class="desc">${c.prefixo_viatura||'—'}</td>
-        <td class="desc">${c.tipo_patrulha||'—'}</td>
-        <td class="desc">${(c.municipios_atuacao||[]).join(', ')||'—'}</td>
-      </tr>`).join('') || '<tr><td colspan="9" class="hint">Nenhuma chamada registrada neste mês.</td></tr>';
+    paginaChamadas = 1;
+    renderChamadasPage();
   }catch(e){
     corpo.innerHTML = '<tr><td colspan="9" class="hint">Erro ao carregar lançamentos.</td></tr>';
     document.getElementById('contadorChamadas').textContent = '';
+    document.getElementById('pagerChamadas').style.display = 'none';
   }
+}
+
+function mudarPorPagina(){
+  porPaginaChamadas = +document.getElementById('selPorPagina').value;
+  paginaChamadas = 1;
+  renderChamadasPage();
+}
+
+function irParaPaginaChamadas(p){
+  paginaChamadas = p;
+  renderChamadasPage();
+}
+
+function renderChamadasPage(){
+  const corpo = document.getElementById('corpoChamadas');
+  const pager = document.getElementById('pagerChamadas');
+  const total = CHAMADAS_MES.length;
+  document.getElementById('contadorChamadas').textContent = `— ${total} lançamento(s)`;
+
+  if (!total){
+    corpo.innerHTML = '<tr><td colspan="9" class="hint">Nenhuma chamada registrada neste mês.</td></tr>';
+    pager.style.display = 'none';
+    return;
+  }
+
+  const totalPaginas = Math.max(1, Math.ceil(total / porPaginaChamadas));
+  if (paginaChamadas > totalPaginas) paginaChamadas = totalPaginas;
+  const inicio = (paginaChamadas - 1) * porPaginaChamadas;
+  const pagina = CHAMADAS_MES.slice(inicio, inicio + porPaginaChamadas);
+
+  corpo.innerHTML = pagina.map(c => `
+    <tr>
+      <td class="desc">${c.grupamento_completo||'—'}</td>
+      <td class="desc">${c.militar_resp_nome||'—'}</td>
+      <td class="desc">${fmtDataHoraCompleta(c.data_hora_chamada)}</td>
+      <td class="desc">${(c.militares_presentes||[]).length}</td>
+      <td class="desc">${c.tema_referencia||'—'}</td>
+      <td class="desc">${(c.inicio_turno||'—').slice(0,5)}–${(c.final_turno||'—').slice(0,5)}</td>
+      <td class="desc">${c.prefixo_viatura||'—'}</td>
+      <td class="desc">${c.tipo_patrulha||'—'}</td>
+      <td class="desc">${(c.municipios_atuacao||[]).join(', ')||'—'}</td>
+    </tr>`).join('');
+
+  if (totalPaginas <= 1){
+    pager.style.display = 'none';
+    return;
+  }
+
+  pager.style.display = 'flex';
+  const fim = Math.min(inicio + porPaginaChamadas, total);
+  let botoes = `<button class="pgbtn" ${paginaChamadas===1?'disabled':''} onclick="irParaPaginaChamadas(${paginaChamadas-1})">‹ Anterior</button>`;
+  const janela = 1;
+  for (let p = 1; p <= totalPaginas; p++){
+    if (p === 1 || p === totalPaginas || Math.abs(p - paginaChamadas) <= janela){
+      botoes += `<button class="pgbtn ${p===paginaChamadas?'active':''}" onclick="irParaPaginaChamadas(${p})">${p}</button>`;
+    } else if (Math.abs(p - paginaChamadas) === janela + 1){
+      botoes += `<button class="pgbtn dots">…</button>`;
+    }
+  }
+  botoes += `<button class="pgbtn" ${paginaChamadas===totalPaginas?'disabled':''} onclick="irParaPaginaChamadas(${paginaChamadas+1})">Próxima ›</button>`;
+
+  pager.innerHTML = `<span class="info">Mostrando <b>${inicio+1}–${fim}</b> de <b>${total}</b></span><div class="pages">${botoes}</div>`;
 }
 function csvCampo(v){
   const s = String(v==null?'':v).replace(/"/g,'""');
