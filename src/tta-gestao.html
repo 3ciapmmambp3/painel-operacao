@@ -75,6 +75,15 @@
     .mes-row{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
     .mes-row select{width:auto;background:var(--bg-input);border:1px solid var(--border);color:var(--text-white);border-radius:7px;padding:8px 11px;font-size:13px;font-family:inherit;}
 
+    .abas-gestao{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:18px;flex-wrap:wrap;}
+    .aba-gestao{display:flex;align-items:center;gap:7px;padding:11px 16px;font-size:13px;font-weight:700;color:var(--text-muted);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;background:none;border-left:none;border-right:none;border-top:none;font-family:inherit;}
+    .aba-gestao:hover{color:var(--text-white);}
+    .aba-gestao.active{color:var(--gold-light);border-bottom-color:var(--gold);}
+    .aba-gestao .badge{background:var(--bg-hover);color:var(--text-hint);font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:20px;}
+    .aba-gestao.active .badge{background:var(--gold-bg);color:var(--gold-light);}
+    .painel-gestao{display:none;}
+    .painel-gestao.active{display:block;}
+
     table.temas{width:100%;border-collapse:collapse;font-size:12.5px;}
     table.temas th{text-align:left;color:var(--text-muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;padding:7px 8px;border-bottom:1px solid var(--border);}
     table.temas td{padding:9px 8px;border-bottom:1px solid var(--border);vertical-align:top;}
@@ -191,6 +200,13 @@
           <select id="admAno"></select>
         </div>
 
+        <div class="abas-gestao">
+          <button class="aba-gestao active" onclick="mudarAbaGestao('temas', this)">📝 Temas <span class="badge" id="badgeTemas">0</span></button>
+          <button class="aba-gestao" onclick="mudarAbaGestao('arquivos', this)">📎 Arquivos <span class="badge" id="badgeArquivos">0</span></button>
+          <button class="aba-gestao" onclick="mudarAbaGestao('lancamentos', this)">📊 Lançamentos <span class="badge" id="badgeLancamentos">0</span></button>
+        </div>
+
+        <div class="painel-gestao active" id="painelTemas">
         <div class="card">
           <h3>📝 Temas do mês <span class="hint" style="text-transform:none;font-weight:400;letter-spacing:0">— extraia direto do PDF ou cole manualmente</span></h3>
 
@@ -225,7 +241,9 @@
             <tbody id="corpoTemas"></tbody>
           </table>
         </div>
+        </div>
 
+        <div class="painel-gestao" id="painelArquivos">
         <div class="card">
           <h3>📎 Arquivos do mês <span class="hint" style="text-transform:none;font-weight:400;letter-spacing:0">— ficam guardados pra consulta, nada é substituído</span></h3>
           <div id="listaArquivosAdmin"></div>
@@ -236,7 +254,9 @@
           </div>
           <input type="file" id="inputArquivo" style="display:none" onchange="uploadArquivo(this.files[0])">
         </div>
+        </div>
 
+        <div class="painel-gestao" id="painelLancamentos">
         <div class="card">
           <h3>📊 Lançamentos do mês <span class="hint" style="text-transform:none;font-weight:400;letter-spacing:0" id="contadorChamadas"></span>
             <span style="margin-left:auto;display:flex;align-items:center;gap:10px">
@@ -259,6 +279,7 @@
             </table>
           </div>
           <div class="pager" id="pagerChamadas" style="display:none"></div>
+        </div>
         </div>
       </div>
     </div>
@@ -382,6 +403,14 @@ if (podeGerenciarTTA){
 }
 async function carregarTudo(){
   await Promise.allSettled([carregarTemasAdmin(), carregarMateriaisAdmin(), carregarChamadasAdmin()]);
+}
+
+function mudarAbaGestao(aba, el){
+  document.querySelectorAll('.aba-gestao').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.painel-gestao').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  const mapa = { temas: 'painelTemas', arquivos: 'painelArquivos', lancamentos: 'painelLancamentos' };
+  document.getElementById(mapa[aba]).classList.add('active');
 }
 
 /* ── Extração automática do PDF do cronograma ─────────────────────────
@@ -531,6 +560,7 @@ async function carregarTemasAdmin(){
   corpo.innerHTML = '<tr><td colspan="4" class="hint">Carregando…</td></tr>';
   try{
     const temas = await rpc('tta_listar_temas', { p_token: sessao.token, p_ano: admAno, p_mes: admMes });
+    document.getElementById('badgeTemas').textContent = (temas||[]).length;
     corpo.innerHTML = (temas||[]).map(t => `
       <tr class="${(t.dias||[]).includes(DIA_ATUAL) && admAno===ANO_ATUAL && admMes===MES_ATUAL ? 'hoje':''}">
         <td class="tit">${(t.dias||[]).join(', ')}</td>
@@ -551,6 +581,7 @@ async function carregarMateriaisAdmin(){
   box.innerHTML = '<div class="hint">Carregando…</div>';
   try{
     const lista = await rpc('tta_listar_materiais', { p_token: sessao.token, p_ano: admAno, p_mes: admMes });
+    document.getElementById('badgeArquivos').textContent = (lista||[]).length;
     box.innerHTML = (lista||[]).map(a => `
       <div class="arq-row"><div class="ic">PDF</div>
         <div class="m"><b>${a.nome}</b><small>${fmtTam(a.tamanho)} · enviado por ${a.enviado_por_nome||'—'} em ${fmtDataHora(a.created_at)}</small></div>
@@ -635,6 +666,7 @@ function renderChamadasPage(){
   const pager = document.getElementById('pagerChamadas');
   const total = CHAMADAS_MES.length;
   document.getElementById('contadorChamadas').textContent = `— ${total} lançamento(s)`;
+  document.getElementById('badgeLancamentos').textContent = total;
 
   if (!total){
     corpo.innerHTML = '<tr><td colspan="9" class="hint">Nenhuma chamada registrada neste mês.</td></tr>';
