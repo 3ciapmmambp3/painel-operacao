@@ -316,6 +316,19 @@
           <small>PDF, imagem etc. — pode subir quantos documentos precisar</small>
         </div>
         <input type="file" id="inputArquivo" style="display:none" onchange="uploadArquivo(this.files[0])">
+
+        <h3 style="margin-top:22px">📊 Lançamentos do mês <span class="hint" style="text-transform:none;font-weight:400;letter-spacing:0" id="contadorChamadas"></span>
+          <button class="btn-outline btn-sm" style="margin-left:auto" onclick="exportarCsvChamadas()">⬇ Exportar CSV</button>
+        </h3>
+        <div style="overflow-x:auto">
+          <table class="temas" style="min-width:900px">
+            <thead><tr>
+              <th>Grupamento</th><th>Comandante</th><th>Data/hora</th><th>Presentes</th>
+              <th>Referência</th><th>Turno</th><th>Viatura</th><th>Patrulha</th><th>Município(s)</th>
+            </tr></thead>
+            <tbody id="corpoChamadas"></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
@@ -420,11 +433,14 @@ document.getElementById('dataHoraAuto').textContent =
 
 /* ── Grupamento de Atuação ────────────────────────────────────────── */
 async function carregarGrupos(){
-  const r = await fetch(`${API}/rest/v1/grupos?select=gp_responsavel,grupamento_completo&order=grupamento_completo`, { headers:H });
-  GRUPOS = await r.json();
   const sel = document.getElementById('selGrupamento');
-  sel.innerHTML = '<option value="">Selecione…</option>' +
-    GRUPOS.map(g => `<option value="${g.gp_responsavel}">${g.grupamento_completo}</option>`).join('');
+  try{
+    const r = await fetch(`${API}/rest/v1/grupos?select=gp_responsavel,grupamento_completo&order=grupamento_completo`, { headers:H });
+    if (!r.ok) throw new Error(`${r.status}`);
+    GRUPOS = await r.json();
+    sel.innerHTML = '<option value="">Selecione…</option>' +
+      GRUPOS.map(g => `<option value="${g.gp_responsavel}">${g.grupamento_completo}</option>`).join('');
+  }catch(e){ sel.innerHTML = '<option value="">Erro ao carregar — recarregue a página</option>'; console.error('grupos:', e); }
 }
 async function onGrupamentoChange(){
   const gpr = document.getElementById('selGrupamento').value;
@@ -442,13 +458,19 @@ async function onGrupamentoChange(){
 
 /* ── Militares presentes ──────────────────────────────────────────── */
 async function carregarRoster(){
-  ROSTER = await rpc('tta_listar_militares', { p_token: sessao.token });
-  document.getElementById('checklistMilitares').innerHTML = ROSTER.map(m => `
-    <label data-busca="${normBusca(m.matricula+' '+m.nome_completo)}" data-mat="${m.matricula}">
-      <input type="checkbox" onchange="atualizarContador()">
-      ${fmtMilitar(m)}
-    </label>`).join('');
-  atualizarContador();
+  const box = document.getElementById('checklistMilitares');
+  try{
+    ROSTER = await rpc('tta_listar_militares', { p_token: sessao.token });
+    box.innerHTML = ROSTER.map(m => `
+      <label data-busca="${normBusca(m.matricula+' '+m.nome_completo)}" data-mat="${m.matricula}">
+        <input type="checkbox" onchange="atualizarContador()">
+        ${fmtMilitar(m)}
+      </label>`).join('');
+    atualizarContador();
+  }catch(e){
+    box.innerHTML = '<div class="hint" style="padding:8px">Erro ao carregar militares — recarregue a página.</div>';
+    console.error('roster:', e);
+  }
 }
 function formatarMatriculaLive(v){
   const d = v.replace(/\D/g,'').slice(0,7);
@@ -605,7 +627,58 @@ function initPainelAdmin(){
   carregarAdmin();
 }
 async function carregarAdmin(){
-  await Promise.all([carregarTemasAdmin(), carregarMateriaisAdmin()]);
+  await Promise.allSettled([carregarTemasAdmin(), carregarMateriaisAdmin(), carregarChamadasAdmin()]);
+}
+
+let CHAMADAS_MES = [];
+async function carregarChamadasAdmin(){
+  const corpo = document.getElementById('corpoChamadas');
+  corpo.innerHTML = '<tr><td colspan="9" class="hint">Carregando…</td></tr>';
+  try{
+    CHAMADAS_MES = await rpc('tta_listar_chamadas', { p_token: sessao.token, p_ano: admAno, p_mes: admMes }) || [];
+    document.getElementById('contadorChamadas').textContent = `— ${CHAMADAS_MES.length} lançamento(s)`;
+    corpo.innerHTML = CHAMADAS_MES.map(c => `
+      <tr>
+        <td class="desc">${c.grupamento_completo||'—'}</td>
+        <td class="desc">${c.militar_resp_nome||'—'}</td>
+        <td class="desc">${fmtDataHoraCompleta(c.data_hora_chamada)}</td>
+        <td class="desc">${(c.militares_presentes||[]).length}</td>
+        <td class="desc">${c.tema_referencia||'—'}</td>
+        <td class="desc">${(c.inicio_turno||'—').slice(0,5)}–${(c.final_turno||'—').slice(0,5)}</td>
+        <td class="desc">${c.prefixo_viatura||'—'}</td>
+        <td class="desc">${c.tipo_patrulha||'—'}</td>
+        <td class="desc">${(c.municipios_atuacao||[]).join(', ')||'—'}</td>
+      </tr>`).join('') || '<tr><td colspan="9" class="hint">Nenhuma chamada registrada neste mês.</td></tr>';
+  }catch(e){
+    corpo.innerHTML = '<tr><td colspan="9" class="hint">Erro ao carregar lançamentos.</td></tr>';
+    document.getElementById('contadorChamadas').textContent = '';
+  }
+}
+function fmtDataHoraCompleta(iso){
+  if(!iso) return '—';
+  return new Date(iso).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+function csvCampo(v){
+  const s = String(v==null?'':v).replace(/"/g,'""');
+  return `"${s}"`;
+}
+function exportarCsvChamadas(){
+  if (!CHAMADAS_MES.length) return toast('Nada pra exportar neste mês.');
+  const cab = ['Grupamento de Atuação','Comandante','Matrícula Comandante','Data/Hora da Chamada',
+    'Militares Presentes','Assunto','Referência','Início Turno','Fim Turno','Prefixo Viatura',
+    'Tipo de Patrulha','Município(s)','Observações','Registrado em'];
+  const linhas = CHAMADAS_MES.map(c => [
+    c.grupamento_completo, c.militar_resp_nome, c.militar_resp_matricula, fmtDataHoraCompleta(c.data_hora_chamada),
+    (c.militares_presentes||[]).map(m=>m.nome).join('; '), c.tema_assunto, c.tema_referencia,
+    (c.inicio_turno||'').slice(0,5), (c.final_turno||'').slice(0,5), c.prefixo_viatura,
+    c.tipo_patrulha, (c.municipios_atuacao||[]).join('; '), c.observacoes, fmtDataHoraCompleta(c.created_at)
+  ].map(csvCampo).join(';'));
+  const csv = '﻿' + [cab.map(csvCampo).join(';')].concat(linhas).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `TTA_${MESES_LBL[admMes-1]}_${admAno}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
 }
 async function carregarTemasAdmin(){
   const corpo = document.getElementById('corpoTemas');
@@ -718,7 +791,10 @@ async function uploadArquivo(file){
 
 /* ── boot ──────────────────────────────────────────────────────────── */
 (async function init(){
-  await Promise.all([carregarGrupos(), carregarRoster(), carregarTemaHoje(), carregarMaterialAtual(), renderPastas()]);
+  // allSettled de propósito: uma falha aqui (ex.: rede) nunca pode impedir
+  // o resto da página de carregar — em especial o painel do Admin Geral,
+  // que tem que aparecer sempre, independente do que mais falhar.
+  await Promise.allSettled([carregarGrupos(), carregarRoster(), carregarTemaHoje(), carregarMaterialAtual(), renderPastas()]);
   onGrupamentoChange();
   initPainelAdmin();
 })();

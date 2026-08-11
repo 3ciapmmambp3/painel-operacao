@@ -181,6 +181,27 @@ begin
 end;
 $$;
 
+/* Relatório mensal de chamadas — restrito a Aux P1 (ADM) ou Admin Geral,
+   mesmo controle que já existe pra gerir temas/materiais. Base pro
+   "extração/consulta" que substitui a planilha do Google. */
+create or replace function public.tta_listar_chamadas(p_token uuid, p_ano int, p_mes int)
+returns setof public.tta_chamadas
+language plpgsql security definer set search_path = public as $$
+declare v_me record;
+begin
+  select * into v_me from public._sessao_militar(p_token);
+  if v_me.id is null then raise exception 'Sessão expirada. Faça login novamente.'; end if;
+  if not public._pode_gerenciar_tta(v_me.nivel_acesso, v_me.funcao, v_me.grupamento_id) then
+    raise exception 'Consulta de lançamentos restrita ao Aux P1 (ADM) ou Admin Geral.';
+  end if;
+  return query
+    select * from public.tta_chamadas
+    where extract(year  from data_hora_chamada at time zone 'America/Sao_Paulo')::int = p_ano
+      and extract(month from data_hora_chamada at time zone 'America/Sao_Paulo')::int = p_mes
+    order by data_hora_chamada desc;
+end;
+$$;
+
 /* ─── 5) TEMAS: listar (todo mundo logado) e gerenciar (Aux P1/ADM ou AG) */
 create or replace function public.tta_listar_temas(p_token uuid, p_ano int, p_mes int)
 returns setof public.tta_temas
@@ -326,6 +347,7 @@ create policy "tta_materiais_anon_delete" on storage.objects
 grant execute on function public.tta_listar_militares(uuid) to anon;
 grant execute on function public.tta_criar_chamada(uuid, jsonb) to anon;
 grant execute on function public.tta_chamada_hoje(uuid) to anon;
+grant execute on function public.tta_listar_chamadas(uuid, int, int) to anon;
 grant execute on function public.tta_listar_temas(uuid, int, int) to anon;
 grant execute on function public.tta_salvar_tema(uuid, uuid, jsonb) to anon;
 grant execute on function public.tta_excluir_tema(uuid, uuid) to anon;
@@ -343,6 +365,7 @@ grant execute on function public.tta_excluir_material(uuid, uuid) to anon;
 -- ─── DESFAZER ───────────────────────────────────────────────────────────
 -- drop function if exists public.tta_criar_chamada(uuid,jsonb);
 -- drop function if exists public.tta_chamada_hoje(uuid);
+-- drop function if exists public.tta_listar_chamadas(uuid,int,int);
 -- drop function if exists public.tta_listar_temas(uuid,int,int);
 -- drop function if exists public.tta_salvar_tema(uuid,uuid,jsonb);
 -- drop function if exists public.tta_excluir_tema(uuid,uuid);
