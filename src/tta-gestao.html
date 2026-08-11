@@ -379,7 +379,9 @@ function extrairTabelaDaPagina(items){
     const x = it.transform[4], y = Math.round(it.transform[5]);
     let linha = linhasRaw.find(l => Math.abs(l.y - y) <= 3);
     if (!linha){ linha = { y, itens: [] }; linhasRaw.push(linha); }
-    linha.itens.push({ x, texto: it.str });
+    // largura do trecho, pra saber se o próximo trecho é colado (mesma
+    // palavra, PDF às vezes manda letra por letra) ou tem espaço real
+    linha.itens.push({ x, w: it.width || (it.str.length * 4), texto: it.str });
   });
   linhasRaw.sort((a,b) => b.y - a.y); // PDF cresce pra cima: topo primeiro
   linhasRaw.forEach(l => l.itens.sort((a,b) => a.x - b.x));
@@ -401,7 +403,15 @@ function extrairTabelaDaPagina(items){
   const assuntoPartes = [];
   for (let i = headerIdx+1; i < linhasRaw.length; i++){
     const cols = { dias:'', assunto:'', referencia:'' };
-    linhasRaw[i].itens.forEach(it => { const c = coluna(it.x); cols[c] += (cols[c]?' ':'') + it.texto; });
+    const fimAnterior = { dias:null, assunto:null, referencia:null };
+    linhasRaw[i].itens.forEach(it => {
+      const c = coluna(it.x);
+      // só põe espaço se sobrou um vão real entre o trecho anterior e este
+      // (senão junta direto — é a mesma palavra quebrada letra por letra)
+      const precisaEspaco = fimAnterior[c] !== null && (it.x - fimAnterior[c]) > 1.2;
+      cols[c] += (precisaEspaco ? ' ' : '') + it.texto;
+      fimAnterior[c] = it.x + it.w;
+    });
     if (cols.assunto.trim()) assuntoPartes.push(cols.assunto.trim());
     const diasNums = (cols.dias.match(/\d+/g) || []).join(', ');
     if (diasNums && cols.referencia.trim()) linhas.push({ dias: diasNums, referencia: cols.referencia.trim() });
