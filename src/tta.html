@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<script>
+(function(){
+  var saved;
+  try{ saved=localStorage.getItem('poe_theme'); }catch(e){}
+  if(!saved) saved=window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+})();
+</script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Treinamento Tático - TTA — 3ª Cia PM MAmb</title>
+  <link rel="stylesheet" href="styles/global.css">
+  <script src="auth.js"></script>
+  <style>
+    body{display:flex;flex-direction:column;min-height:100vh;}
+
+    /* ---- Nova barra de navegação (topo, com dropdown) ---- */
+    .topnav{display:flex;align-items:center;gap:2px;background:var(--bg-dark);border-bottom:1px solid var(--border);padding:0 16px;position:relative;z-index:20;}
+    .topnav-item{position:relative;}
+    .topnav-link{display:flex;align-items:center;gap:5px;padding:13px 16px;color:var(--text-muted);font-size:12.5px;font-weight:700;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;}
+    .topnav-link:hover{color:var(--text-white);}
+    .topnav-link.active{color:var(--gold);border-bottom-color:var(--gold);}
+    .topnav-link .chev{font-size:9px;opacity:.7;}
+    .topnav-dropdown{display:none;position:absolute;top:100%;left:0;background:var(--bg-card);border:1px solid var(--border);border-radius:0 0 8px 8px;min-width:190px;box-shadow:0 12px 24px rgba(0,0,0,.4);padding:6px;}
+    .topnav-dropdown.open{display:block;}
+    .topnav-dropdown a{display:block;padding:9px 12px;color:var(--text-white);font-size:12.5px;border-radius:6px;}
+    .topnav-dropdown a:hover{background:var(--bg-hover);color:var(--gold);}
+
+    /* ---- Layout com sidebar interna (área "Relatório Diário") ---- */
+    .page-layout{display:flex;flex:1;}
+    .rd-sidebar{width:198px;flex-shrink:0;background:var(--bg-dark);border-right:1px solid var(--border);padding:14px 10px;transition:width .18s;}
+    .rd-sidebar.colapsada{width:52px;}
+    .rd-sidebar.colapsada .lbl,.rd-sidebar.colapsada .rd-sidebar-titulo{display:none;}
+    .rd-sidebar.colapsada .rd-item{justify-content:center;padding:9px;}
+    .rd-sidebar-head{display:flex;align-items:center;justify-content:space-between;padding:0 4px 10px;border-bottom:1px solid var(--border);margin-bottom:8px;}
+    .rd-sidebar.colapsada .rd-sidebar-head{justify-content:center;}
+    .rd-sidebar-titulo{color:var(--gold);font-size:10.5px;font-weight:700;letter-spacing:.5px;white-space:nowrap;}
+    .rd-btn-colapsar{background:none;border:none;color:var(--text-muted);cursor:pointer;padding:3px;display:flex;}
+    .rd-item{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:6px;color:var(--text-muted);font-size:12.5px;cursor:pointer;white-space:nowrap;margin-bottom:1px;position:relative;}
+    .rd-item[data-tip]:hover::after{content:attr(data-tip);position:absolute;left:100%;top:50%;transform:translateY(-50%);margin-left:10px;background:#111;color:var(--text-white);padding:6px 12px;border-radius:6px;font-size:11.5px;font-weight:700;white-space:nowrap;z-index:200;box-shadow:0 6px 18px rgba(0,0,0,.5);border:1px solid var(--border);pointer-events:none;}
+    .rd-item:hover{background:var(--bg-hover);}
+    .rd-item.ativo{background:var(--gold-bg);color:var(--gold-light);font-weight:700;}
+    .rd-conteudo{flex:1;min-width:0;}
+    @media(max-width:860px){
+      .rd-sidebar{position:fixed;left:0;top:0;bottom:0;z-index:50;transform:translateX(-100%);transition:transform .2s;}
+      .rd-sidebar.mobile-open{transform:translateX(0);box-shadow:0 0 40px rgba(0,0,0,.6);}
+    }
+
+    .wrap{max-width:940px;margin:22px auto 60px;padding:0 22px;}
+    .pagehead{margin-bottom:16px;}
+    .pagehead h2{font-size:19px;font-weight:700;color:var(--text-white);display:flex;align-items:center;gap:9px;}
+    .pagehead p{font-size:12.5px;color:var(--text-muted);margin-top:5px;max-width:70ch;line-height:1.5;}
+
+    .card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:18px 20px;margin-bottom:18px;}
+    .card h3{font-size:12.5px;color:var(--gold);text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+    .card h3 .req{color:var(--text-hint);font-weight:400;text-transform:none;letter-spacing:0;margin-left:auto;font-size:11px;}
+
+    .obrig-banner{background:var(--danger-bg);border:1px solid rgba(239,83,80,.35);color:#ef9a9a;border-radius:8px;padding:12px 14px;font-size:12.5px;line-height:1.55;margin-bottom:18px;}
+    .obrig-banner b{color:var(--text-white);}
+
+    .materiais-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+    .mat-chip{display:flex;align-items:center;gap:10px;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;padding:11px 13px;}
+    .mat-chip .ic{width:30px;height:30px;flex-shrink:0;border-radius:6px;background:var(--danger-bg);color:var(--danger);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;}
+    .mat-chip .m{min-width:0;flex:1;}
+    .mat-chip .m b{display:block;font-size:12.5px;color:var(--text-white);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .mat-chip .m small{color:var(--text-hint);font-size:10.5px;}
+    .mat-chip a{font-size:11px;font-weight:700;color:var(--gold);border:1px solid var(--gold-border);padding:5px 10px;border-radius:6px;white-space:nowrap;}
+    .mat-chip a:hover{background:var(--gold-bg);}
+
+    .tema-atual{background:var(--gold-bg);border:1px solid var(--gold-border);border-radius:8px;padding:12px 14px;font-size:12.5px;line-height:1.55;color:var(--text-white);margin-top:12px;}
+    .tema-atual b{color:var(--gold-light);}
+
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+    .f{display:flex;flex-direction:column;gap:6px;margin-bottom:14px;}
+    .f.full{grid-column:1/-1;}
+    .f label{font-size:11.5px;color:var(--text-muted);font-weight:600;display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
+    .f label .req{color:var(--danger);}
+    .f select,.f input[type=text],.f input[type=date],.f input[type=time],.f textarea{
+      background:var(--bg-input);border:1px solid var(--border);color:var(--text-white);border-radius:7px;padding:9px 11px;font-size:13px;font-family:inherit;width:100%;}
+    .f select:focus,.f input:focus,.f textarea:focus{outline:none;border-color:var(--gold);}
+    .f textarea{min-height:64px;resize:vertical;}
+    .f .readonly{background:var(--bg-input);border:1px solid var(--border);border-radius:7px;padding:9px 11px;font-size:13px;color:var(--text-white);}
+    .hint{font-size:11px;color:var(--text-hint);}
+
+    .checklist{border:1px solid var(--border);border-radius:8px;background:var(--bg-input);max-height:220px;overflow-y:auto;padding:6px;}
+    .checklist label{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:6px;font-size:12.5px;cursor:pointer;}
+    .checklist label:hover{background:var(--bg-hover);}
+    .checklist input{accent-color:var(--gold);width:15px;height:15px;flex-shrink:0;}
+
+    .btn-primary{background:var(--gold);color:#161310;font-weight:700;font-size:13px;border:none;border-radius:8px;padding:12px 22px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:8px;}
+    .btn-primary:hover{background:var(--gold-light);}
+    .btn-primary:disabled{opacity:.5;cursor:not-allowed;}
+    .btn-outline{background:transparent;border:1px solid var(--border-mid);color:var(--text-white);font-weight:600;font-size:12.5px;border-radius:7px;padding:9px 16px;cursor:pointer;font-family:inherit;}
+    .btn-outline:hover{border-color:var(--gold);color:var(--gold-light);}
+    .btn-sm{font-size:11px;padding:5px 10px;border-radius:6px;}
+
+    .adm-card{border:1px solid var(--gold-border);background:linear-gradient(180deg,rgba(155,138,92,.07),transparent);}
+    .adm-badge{display:inline-flex;align-items:center;gap:6px;background:var(--gold-bg);color:var(--gold-light);font-size:10px;font-weight:700;letter-spacing:.3px;padding:3px 9px;border-radius:20px;text-transform:uppercase;}
+    .mes-row{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
+    .mes-row select{width:auto;}
+
+    table.temas{width:100%;border-collapse:collapse;font-size:12.5px;}
+    table.temas th{text-align:left;color:var(--text-muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;padding:7px 8px;border-bottom:1px solid var(--border);}
+    table.temas td{padding:9px 8px;border-bottom:1px solid var(--border);vertical-align:top;}
+    table.temas tr.hoje{background:var(--gold-bg);}
+    table.temas td.tit{color:var(--gold-light);font-weight:700;white-space:nowrap;}
+    table.temas td.desc{color:var(--text-white);line-height:1.45;}
+    table.temas td.acoes{white-space:nowrap;text-align:right;}
+    table.temas td.acoes button{background:none;border:none;color:var(--text-hint);cursor:pointer;font-size:13px;padding:2px 5px;}
+    table.temas td.acoes button:hover{color:var(--gold);}
+
+    .upload-slot{border:1.5px dashed var(--border-mid);border-radius:9px;padding:16px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;}
+    .upload-slot:hover{border-color:var(--gold);background:var(--gold-bg);}
+    .upload-slot .ic{font-size:20px;}
+    .upload-slot b{font-size:12px;color:var(--text-white);}
+    .upload-slot small{font-size:10.5px;color:var(--text-hint);}
+
+    .arq-row{display:flex;align-items:center;gap:10px;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;padding:9px 12px;margin-bottom:8px;}
+    .arq-row .ic{width:26px;height:26px;flex-shrink:0;border-radius:6px;background:var(--danger-bg);color:var(--danger);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;}
+    .arq-row .m{min-width:0;flex:1;}
+    .arq-row .m b{display:block;font-size:12.5px;color:var(--text-white);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .arq-row .m small{color:var(--text-hint);font-size:10.5px;}
+    .arq-row a{font-size:11px;font-weight:700;color:var(--gold);white-space:nowrap;}
+    .arq-row .del{background:none;border:none;color:var(--text-hint);cursor:pointer;font-size:13px;padding:2px 6px;flex-shrink:0;}
+    .arq-row .del:hover{color:var(--danger);}
+
+    .pastas-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;}
+    .pasta{background:var(--bg-input);border:1px solid var(--border);border-radius:9px;padding:14px 10px;text-align:center;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;}
+    .pasta:hover{border-color:var(--gold);background:var(--gold-bg);}
+    .pasta .ic{font-size:24px;}
+    .pasta b{font-size:12px;color:var(--text-white);}
+    .pasta small{font-size:10px;color:var(--text-hint);}
+
+    .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:#111;border:1px solid var(--gold-border);color:var(--text-white);padding:12px 20px;border-radius:10px;font-size:13px;z-index:60;box-shadow:0 8px 30px rgba(0,0,0,.6);opacity:0;transition:.28s;}
+    .toast.show{transform:translateX(-50%) translateY(0);opacity:1;}
+
+    @media(max-width:780px){ .grid2,.materiais-row{grid-template-columns:1fr;} }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <div class="header-logo"><img src="assets/header-pmmg.png" alt="PMMG"></div>
+    <div class="header-title">
+      <h1>PAINEL DE CONTROLE DE OPERAÇÕES</h1>
+      <p>3ª Cia PM MAmb — Acompanhamento 2026</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <div id="user-info" style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);cursor:pointer;padding:5px 10px;border:1px solid var(--border);border-radius:5px;" onclick="window.location.href='perfil.html'" title="Meu Perfil">
+      <span id="user-avatar" style="width:22px;height:22px;border-radius:50%;background:var(--gold);color:#1a1000;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">?</span>
+      <span id="user-nome">—</span>
+      <span id="user-badge" style="font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;"></span>
+    </div>
+    <button class="btn-outline" onclick="localStorage.removeItem('poe_sessao_v2');sessionStorage.removeItem('poe_sessao_v2');localStorage.removeItem('poe_sessao');window.location.href='index.html'">Sair</button>
+  </div>
+</header>
+
+<nav class="topnav" id="topnav">
+  <a class="topnav-link" href="painel.html">🏠 INÍCIO</a>
+  <div class="topnav-item">
+    <div class="topnav-link" data-dropdown="ddOperacao">🛡 OPERAÇÃO <span class="chev">▾</span></div>
+    <div class="topnav-dropdown" id="ddOperacao">
+      <a href="painel.html?tab=operacoes">🛡 OP POE</a>
+      <a href="painel.html?tab=gdo-rural">🌿 OP GDO Rural</a>
+    </div>
+  </div>
+  <a class="topnav-link" href="analise-criminal.html" style="color:#ef5350;">🔴 ANÁLISE CRIMINAL</a>
+  <a class="topnav-link active" href="meus-relatorios.html">📄 RELATÓRIO DIÁRIO</a>
+  <a class="topnav-link" href="denuncias.html">📋 CONTROLE DE DEMANDAS</a>
+  <a class="topnav-link" href="painel.html?tab=consulta">📍 CONSULTA</a>
+  <div class="topnav-item" id="admTopnavItem" style="display:none;">
+    <div class="topnav-link" data-dropdown="ddAdm">⚙ ADM <span class="chev">▾</span></div>
+    <div class="topnav-dropdown" id="ddAdm">
+      <a href="painel.html?tab=relatorios">📋 Relatórios</a>
+      <a href="painel.html?tab=importacao" id="admLinkImportacao" style="display:none;">📥 Importação</a>
+      <a href="admin.html" id="admLinkAdministracao" style="display:none;">⚙️ Administração</a>
+    </div>
+  </div>
+</nav>
+
+<div class="page-layout">
+  <aside class="rd-sidebar" id="rdSidebar">
+    <div class="rd-sidebar-head">
+      <span class="rd-sidebar-titulo">RELATÓRIO DIÁRIO</span>
+      <button class="rd-btn-colapsar" id="rdBtnColapsar" aria-label="Recolher menu">◂</button>
+    </div>
+    <a class="rd-item ativo" href="tta.html" data-tip="TTA (Pré-turno)"><span>🎯</span><span class="lbl">TTA (Pré-turno)</span></a>
+    <a class="rd-item" href="meus-relatorios.html" data-tip="Lista de Relatórios"><span>📄</span><span class="lbl">Lista de Relatórios</span></a>
+    <a class="rd-item" href="relatorio-servico.html" data-tip="Novo Relatório"><span>➕</span><span class="lbl">Novo Relatório</span></a>
+    <a class="rd-item" href="produtividade.html" data-tip="Produtividade"><span>📊</span><span class="lbl">Produtividade</span></a>
+  </aside>
+
+  <div class="rd-conteudo">
+    <div class="wrap">
+      <div class="pagehead">
+        <h2>🎯 Treinamento Tático — TTA (Pré-turno)</h2>
+        <p>Preenchimento <b style="color:#ef9a9a">obrigatório</b> pelo comandante da equipe, no início de cada turno — substitui o Livro TTA em papel. Leia o material do mês antes de fazer a chamada.</p>
+      </div>
+
+      <div class="obrig-banner">
+        Atente-se à leitura da <b>DIAO</b>, dos artigos correspondentes na <b>Lei 9.605/98</b>, das deliberações normativas e das sanções administrativas previstas no <b>Decreto 47.383/18</b>.
+      </div>
+
+      <div class="card">
+        <h3 id="tituloMaterialAtual">📎 Material de instrução</h3>
+        <div class="materiais-row" id="materiaisVisiveis"></div>
+      </div>
+
+      <div class="card">
+        <h3 id="tituloPastas">📁 Consultar meses anteriores</h3>
+        <div id="gradePastas" class="pastas-grid"></div>
+        <div id="conteudoPasta" style="display:none">
+          <button class="btn-outline btn-sm" onclick="voltarPastas()" style="margin-bottom:12px">← Voltar às pastas</button>
+          <div id="arquivosPasta"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Dados da chamada <span class="req">* obrigatório</span></h3>
+        <div class="grid2">
+          <div class="f">
+            <label>Comandante responsável</label>
+            <div class="readonly" id="comandanteAtual">—</div>
+          </div>
+          <div class="f">
+            <label>Grupamento de Atuação <span class="req">*</span> <span class="hint">— onde vai atuar hoje, pode ser diferente da lotação</span></label>
+            <select id="selGrupamento" onchange="onGrupamentoChange()">
+              <option value="">Selecione…</option>
+            </select>
+          </div>
+          <div class="f">
+            <label>Data e hora da chamada</label>
+            <div class="readonly" id="dataHoraAuto">—</div>
+          </div>
+          <div class="f">
+            <label>Dia do cronograma</label>
+            <div class="readonly" id="diaCronograma">—</div>
+          </div>
+        </div>
+        <div class="tema-atual" id="temaPreview"></div>
+
+        <div class="f full" style="margin-top:16px">
+          <label>Militares presentes na chamada <span class="req">*</span></label>
+          <input type="text" id="buscaMilitar" placeholder="🔎 Buscar por nome ou nº de PM…" oninput="filtrarChecklist()" style="margin-bottom:8px">
+          <div class="checklist" id="checklistMilitares"></div>
+          <div class="hint" id="contadorPresentes" style="margin-top:6px"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Turno e patrulhamento</h3>
+        <div class="grid2">
+          <div class="f"><label>Início do turno <span class="req">*</span></label><input type="time" id="inicioTurno"></div>
+          <div class="f"><label>Final do turno <span class="req">*</span></label><input type="time" id="fimTurno"></div>
+          <div class="f"><label>Prefixo da viatura <span class="req">*</span></label><input type="text" id="prefixoViatura" placeholder="Ex: M-1234"></div>
+          <div class="f">
+            <label>Tipo de patrulha <span class="req">*</span></label>
+            <select id="tipoPatrulha"><option value="">Selecione…</option><option>PTR AMBIENTAL</option><option>GEPAM</option><option>PROGEA</option></select>
+          </div>
+          <div class="f full">
+            <label>Município(s) de atuação <span class="req">*</span> <span class="hint">— lista muda conforme o Grupamento de Atuação escolhido acima</span></label>
+            <div class="checklist" id="checklistMunicipios" style="max-height:130px"></div>
+          </div>
+          <div class="f full">
+            <label>Observações e alterações verificadas na chamada</label>
+            <textarea id="observacoes" placeholder="Opcional — ex: militar de folga médica, viatura em manutenção, etc."></textarea>
+          </div>
+        </div>
+        <button class="btn-primary" id="btnRegistrar" onclick="registrarChamada()">✔ Registrar chamada</button>
+      </div>
+
+      <div class="card adm-card" id="painelAdmin" style="display:none">
+        <h3>⚙️ Gestão mensal do TTA <span class="adm-badge">Aux P1 · ADM ou Admin Geral</span></h3>
+        <p class="hint" style="margin-bottom:14px">Cadastre os temas do mês (Assunto + Referência por dia) e suba os arquivos — todo mundo passa a ver isso automaticamente na tela acima.</p>
+
+        <div class="mes-row">
+          <select id="admMes"></select>
+          <select id="admAno"></select>
+          <button class="btn-outline btn-sm" onclick="abrirNovoTema()" style="margin-left:auto">+ Novo tema</button>
+        </div>
+
+        <div id="formTemaBox" class="card" style="display:none;background:var(--bg-input);margin-bottom:14px">
+          <div class="grid2">
+            <div class="f full">
+              <label>Dias do mês (separados por vírgula) <span class="req">*</span></label>
+              <input type="text" id="temaDias" placeholder="Ex: 11, 12">
+            </div>
+            <div class="f full">
+              <label>Assunto <span class="req">*</span></label>
+              <input type="text" id="temaAssunto" placeholder="Ex: Memorando nº 30.130.2/22 – EMPM — Atualização das naturezas de infrações...">
+            </div>
+            <div class="f full">
+              <label>Referência <span class="req">*</span></label>
+              <input type="text" id="temaReferencia" placeholder="Ex: M 31.444 a M 31.506">
+            </div>
+          </div>
+          <button class="btn-primary btn-sm" onclick="salvarTema()">Salvar tema</button>
+          <button class="btn-outline btn-sm" onclick="fecharFormTema()">Cancelar</button>
+        </div>
+
+        <table class="temas">
+          <thead><tr><th style="width:90px">Dias</th><th>Assunto</th><th>Referência</th><th style="width:70px"></th></tr></thead>
+          <tbody id="corpoTemas"></tbody>
+        </table>
+
+        <h3 style="margin-top:22px">📎 Arquivos do mês <span class="hint" style="text-transform:none;font-weight:400;letter-spacing:0">— ficam guardados pra consulta, nada é substituído</span></h3>
+        <div id="listaArquivosAdmin"></div>
+        <div class="upload-slot" style="margin-top:10px" onclick="document.getElementById('inputArquivo').click()">
+          <span class="ic">⬆️</span>
+          <b>+ Adicionar arquivo a este mês</b>
+          <small>PDF, imagem etc. — pode subir quantos documentos precisar</small>
+        </div>
+        <input type="file" id="inputArquivo" style="display:none" onchange="uploadArquivo(this.files[0])">
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const sessao = (function(){
+  const raw = sessionStorage.getItem('poe_sessao_v2');
+  if(!raw){ window.location.href='index.html'; return null; }
+  try{
+    const s = JSON.parse(raw);
+    if(!s || !s.id){ window.location.href='index.html'; return null; }
+    return s;
+  }catch(e){ window.location.href='index.html'; return null; }
+})();
+
+if (sessao){
+  document.getElementById('user-nome').textContent = sessao.nome || sessao.matricula;
+  const initials = (sessao.nome||'U').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+  document.getElementById('user-avatar').textContent = initials;
+  const badge = document.getElementById('user-badge');
+  const nivel = sessao.nivel_acesso;
+  const mapaBadge = {
+    admin_geral: ['ADMIN GERAL', 'rgba(155,138,92,.2)', 'var(--gold)', 'var(--gold-border)'],
+    admin: ['ADMIN', 'rgba(155,138,92,.2)', 'var(--gold)', 'var(--gold-border)'],
+    admin_pelotao: ['ADMIN PELOTÃO', 'rgba(255,152,0,.15)', '#ffa726', 'rgba(255,152,0,.4)'],
+    admin_gp: ['ADMIN GP', 'rgba(255,152,0,.15)', '#ffa726', 'rgba(255,152,0,.4)'],
+  };
+  const info = mapaBadge[nivel] || ['OPERACIONAL', 'rgba(66,165,245,.15)', 'var(--info)', 'rgba(66,165,245,.3)'];
+  badge.textContent = info[0];
+  badge.style.cssText = `font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;background:${info[1]};color:${info[2]};border:1px solid ${info[3]};`;
+  const admTopnavItem = document.getElementById('admTopnavItem');
+  if (admTopnavItem && ['admin_geral','admin','admin_pelotao','admin_gp'].includes(nivel)) admTopnavItem.style.display = '';
+  if (nivel === 'admin_geral'){
+    const btnImp = document.getElementById('admLinkImportacao'); if (btnImp) btnImp.style.display = '';
+    const btnAdmin = document.getElementById('admLinkAdministracao'); if (btnAdmin) btnAdmin.style.display = '';
+  }
+}
+
+document.querySelectorAll('.topnav-link[data-dropdown]').forEach(link => {
+  link.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const dd = document.getElementById(link.dataset.dropdown);
+    const aberto = dd.classList.contains('open');
+    document.querySelectorAll('.topnav-dropdown.open').forEach(d => d.classList.remove('open'));
+    if (!aberto) dd.classList.add('open');
+  });
+});
+document.addEventListener('click', () => document.querySelectorAll('.topnav-dropdown.open').forEach(d => d.classList.remove('open')));
+
+(function(){
+  const sidebar = document.getElementById('rdSidebar');
+  const btn = document.getElementById('rdBtnColapsar');
+  if (!sidebar || !btn) return;
+  const colapsada = localStorage.getItem('rd_sidebar_colapsada') === '1';
+  if (colapsada){ sidebar.classList.add('colapsada'); btn.textContent = '▸'; }
+  btn.addEventListener('click', () => {
+    sidebar.classList.toggle('colapsada');
+    const agora = sidebar.classList.contains('colapsada');
+    btn.textContent = agora ? '▸' : '◂';
+    localStorage.setItem('rd_sidebar_colapsada', agora ? '1' : '0');
+  });
+})();
+
+/* ── config Supabase / RPC ─────────────────────────────────────────── */
+const API  = SB_AUTH_URL;
+const AKEY = SB_AUTH_KEY;
+const H = { 'apikey': AKEY, 'Authorization': `Bearer ${AKEY}`, 'Content-Type': 'application/json' };
+async function rpc(fn, body){
+  const r = await fetch(`${API}/rest/v1/rpc/${fn}`, { method:'POST', headers:H, body:JSON.stringify(body||{}) });
+  if(!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  const txt = await r.text();
+  return txt ? JSON.parse(txt) : null;
+}
+let toastTimer;
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove('show'), 3200);
+}
+
+const MESES_LBL = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
+const AGORA = new Date();
+const ANO_ATUAL = AGORA.getFullYear(), MES_ATUAL = AGORA.getMonth()+1, DIA_ATUAL = AGORA.getDate();
+
+let GRUPOS = [];       // [{gpr, comp}]
+let ROSTER = [];       // militares (tta_listar_militares)
+let TEMA_HOJE = null;  // tema do mês atual cujo dias[] inclui DIA_ATUAL
+
+const normBusca = s => (s||'').toUpperCase().replace(/[.\-]/g, '');
+const fmtMilitar = m => `${m.matricula} - ${(m.posto_graduacao||'').toUpperCase()} - ${m.nome_completo}`;
+
+/* ── Comandante / data-hora (sempre o logado / sempre agora) ─────────── */
+document.getElementById('comandanteAtual').textContent = sessao ? fmtMilitar({
+  matricula: sessao.matricula, posto_graduacao: sessao.pg, nome_completo: sessao.nome
+}) : '—';
+document.getElementById('dataHoraAuto').textContent =
+  AGORA.toLocaleString('pt-BR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+
+/* ── Grupamento de Atuação ────────────────────────────────────────── */
+async function carregarGrupos(){
+  const r = await fetch(`${API}/rest/v1/grupos?select=gp_responsavel,grupamento_completo&order=grupamento_completo`, { headers:H });
+  GRUPOS = await r.json();
+  const sel = document.getElementById('selGrupamento');
+  sel.innerHTML = '<option value="">Selecione…</option>' +
+    GRUPOS.map(g => `<option value="${g.gp_responsavel}">${g.grupamento_completo}</option>`).join('');
+}
+async function onGrupamentoChange(){
+  const gpr = document.getElementById('selGrupamento').value;
+  const box = document.getElementById('checklistMunicipios');
+  if (!gpr){ box.innerHTML = '<div class="hint" style="padding:8px">Selecione o Grupamento de Atuação para ver os municípios.</div>'; return; }
+  box.innerHTML = '<div class="hint" style="padding:8px">Carregando…</div>';
+  try{
+    const r = await fetch(`${API}/rest/v1/vw_municipio_grupamento?select=municipio&gp_responsavel=eq.${encodeURIComponent(gpr)}&order=municipio`, { headers:H });
+    const lista = await r.json();
+    box.innerHTML = lista.length
+      ? lista.map(x => `<label><input type="checkbox"> ${x.municipio}</label>`).join('')
+      : '<div class="hint" style="padding:8px">Nenhum município cadastrado para este grupamento.</div>';
+  }catch(e){ box.innerHTML = '<div class="hint" style="padding:8px">Erro ao carregar municípios.</div>'; }
+}
+
+/* ── Militares presentes ──────────────────────────────────────────── */
+async function carregarRoster(){
+  ROSTER = await rpc('tta_listar_militares', { p_token: sessao.token });
+  document.getElementById('checklistMilitares').innerHTML = ROSTER.map(m => `
+    <label data-busca="${normBusca(m.matricula+' '+m.nome_completo)}" data-mat="${m.matricula}">
+      <input type="checkbox" onchange="atualizarContador()">
+      ${fmtMilitar(m)}
+    </label>`).join('');
+  atualizarContador();
+}
+function formatarMatriculaLive(v){
+  const d = v.replace(/\D/g,'').slice(0,7);
+  if (d.length <= 3) return d;
+  if (d.length <= 6) return d.slice(0,3)+'.'+d.slice(3);
+  return d.slice(0,3)+'.'+d.slice(3,6)+'-'+d.slice(6);
+}
+function filtrarChecklist(){
+  const inp = document.getElementById('buscaMilitar');
+  if (/^[\d.\-]+$/.test(inp.value)){
+    const mascarado = formatarMatriculaLive(inp.value);
+    if (mascarado !== inp.value) inp.value = mascarado;
+  }
+  const q = normBusca(inp.value.trim());
+  document.querySelectorAll('#checklistMilitares label').forEach(l => {
+    l.style.display = l.dataset.busca.includes(q) ? 'flex' : 'none';
+  });
+}
+function atualizarContador(){
+  const total = document.querySelectorAll('#checklistMilitares input').length;
+  const marcados = document.querySelectorAll('#checklistMilitares input:checked').length;
+  document.getElementById('contadorPresentes').textContent = `${marcados} de ${total} marcados como presentes`;
+}
+function presentesSelecionados(){
+  return [...document.querySelectorAll('#checklistMilitares label')]
+    .filter(l => l.querySelector('input').checked)
+    .map(l => ROSTER.find(m => m.matricula === l.dataset.mat))
+    .filter(Boolean)
+    .map(m => ({ matricula: m.matricula, pg: m.posto_graduacao, nome: m.nome_completo }));
+}
+
+/* ── Tema do dia (só leitura — o servidor recalcula na hora de gravar) ── */
+async function carregarTemaHoje(){
+  try{
+    const temas = await rpc('tta_listar_temas', { p_token: sessao.token, p_ano: ANO_ATUAL, p_mes: MES_ATUAL });
+    TEMA_HOJE = (temas||[]).find(t => (t.dias||[]).includes(DIA_ATUAL)) || null;
+    if (TEMA_HOJE){
+      document.getElementById('diaCronograma').textContent = TEMA_HOJE.dias.join(', ');
+      document.getElementById('temaPreview').innerHTML = `<b>Assunto:</b> ${TEMA_HOJE.assunto}<br><b>Referência:</b> ${TEMA_HOJE.referencia}`;
+    } else {
+      document.getElementById('diaCronograma').textContent = '—';
+      document.getElementById('temaPreview').innerHTML = '<span class="hint">Nenhum tema cadastrado para hoje neste mês — avise o Aux P1.</span>';
+    }
+  }catch(e){ console.error('tema hoje:', e); }
+}
+
+/* ── Material do mês atual + pastas de meses anteriores ──────────────── */
+document.getElementById('tituloMaterialAtual').innerHTML = `📎 Material de instrução — ${MESES_LBL[MES_ATUAL-1]}/${ANO_ATUAL}`;
+async function carregarMaterialAtual(){
+  try{
+    const lista = await rpc('tta_listar_materiais', { p_token: sessao.token, p_ano: ANO_ATUAL, p_mes: MES_ATUAL });
+    const chip = a => `<div class="mat-chip"><div class="ic">PDF</div>
+      <div class="m"><b>${a.nome}</b><small>${fmtTam(a.tamanho)} · enviado por ${a.enviado_por_nome||'—'} em ${fmtDataHora(a.created_at)}</small></div>
+      <a href="${a.link}" target="_blank" rel="noopener">Abrir</a></div>`;
+    document.getElementById('materiaisVisiveis').innerHTML = (lista||[]).map(chip).join('')
+      || '<div class="hint">Nenhum material enviado ainda para este mês.</div>';
+  }catch(e){ document.getElementById('materiaisVisiveis').innerHTML = '<div class="hint">Erro ao carregar materiais.</div>'; }
+}
+function fmtTam(b){ if(!b) return '—'; return b > 1048576 ? (b/1048576).toFixed(1)+' MB' : Math.max(1,Math.round(b/1024))+' KB'; }
+function fmtDataHora(iso){ if(!iso) return '—'; const d = new Date(iso); return d.toLocaleDateString('pt-BR'); }
+
+async function renderPastas(){
+  const grade = document.getElementById('gradePastas');
+  try{
+    const r = await fetch(`${API}/rest/v1/tta_materiais?select=ano,mes&order=ano.desc,mes.desc`, { headers:H });
+    const rows = await r.json();
+    const vistos = new Set();
+    const chaves = [];
+    rows.forEach(x => {
+      const chave = `${x.ano}-${x.mes}`;
+      if (chave === `${ANO_ATUAL}-${MES_ATUAL}`) return; // já mostrado acima
+      if (!vistos.has(chave)){ vistos.add(chave); chaves.push({ano:x.ano, mes:x.mes}); }
+    });
+    grade.innerHTML = chaves.length ? chaves.map(c => `
+      <div class="pasta" onclick="abrirPasta(${c.ano},${c.mes})">
+        <span class="ic">📁</span><b>${MESES_LBL[c.mes-1]}</b><small>${c.ano}</small>
+      </div>`).join('') : '<div class="hint">Nenhum mês anterior com material ainda.</div>';
+  }catch(e){ grade.innerHTML = '<div class="hint">Erro ao carregar pastas.</div>'; }
+}
+async function abrirPasta(ano, mes){
+  document.getElementById('tituloPastas').style.display = 'none';
+  document.getElementById('gradePastas').style.display = 'none';
+  document.getElementById('conteudoPasta').style.display = 'block';
+  const box = document.getElementById('arquivosPasta');
+  box.innerHTML = `<div class="hint" style="margin-bottom:10px">📁 ${MESES_LBL[mes-1]}/${ano}</div>`;
+  try{
+    const lista = await rpc('tta_listar_materiais', { p_token: sessao.token, p_ano: ano, p_mes: mes });
+    box.innerHTML += (lista||[]).map(a => `
+      <div class="arq-row"><div class="ic">PDF</div>
+        <div class="m"><b>${a.nome}</b><small>${fmtTam(a.tamanho)} · enviado por ${a.enviado_por_nome||'—'} em ${fmtDataHora(a.created_at)}</small></div>
+        <a href="${a.link}" target="_blank" rel="noopener">Abrir</a></div>`).join('') || '<div class="hint">Nenhum arquivo neste mês.</div>';
+  }catch(e){ box.innerHTML += '<div class="hint">Erro ao carregar arquivos.</div>'; }
+}
+function voltarPastas(){
+  document.getElementById('tituloPastas').style.display = '';
+  document.getElementById('gradePastas').style.display = 'grid';
+  document.getElementById('conteudoPasta').style.display = 'none';
+}
+
+/* ── Registrar chamada ────────────────────────────────────────────── */
+async function registrarChamada(){
+  const gpr = document.getElementById('selGrupamento').value;
+  const g = GRUPOS.find(x => x.gp_responsavel === gpr);
+  const presentes = presentesSelecionados();
+  const municipios = [...document.querySelectorAll('#checklistMunicipios input:checked')].map(c => c.parentElement.textContent.trim());
+  const inicio = document.getElementById('inicioTurno').value;
+  const fim = document.getElementById('fimTurno').value;
+  const viatura = document.getElementById('prefixoViatura').value.trim();
+  const patrulha = document.getElementById('tipoPatrulha').value;
+
+  if (!gpr) return toast('Selecione o Grupamento de Atuação.');
+  if (!presentes.length) return toast('Marque ao menos um militar presente.');
+  if (!inicio || !fim) return toast('Informe início e fim do turno.');
+  if (!viatura) return toast('Informe o prefixo da viatura.');
+  if (!patrulha) return toast('Selecione o tipo de patrulha.');
+  if (!municipios.length) return toast('Marque ao menos um município de atuação.');
+
+  const btn = document.getElementById('btnRegistrar');
+  btn.disabled = true; btn.textContent = '⏳ Registrando...';
+  try{
+    await rpc('tta_criar_chamada', { p_token: sessao.token, p_dados: {
+      gp_responsavel: g.gp_responsavel, grupamento_completo: g.grupamento_completo,
+      militares_presentes: presentes,
+      inicio_turno: inicio, final_turno: fim,
+      prefixo_viatura: viatura, tipo_patrulha: patrulha,
+      municipios_atuacao: municipios,
+      observacoes: document.getElementById('observacoes').value.trim()
+    }});
+    toast('✔ Chamada registrada com sucesso.');
+    btn.textContent = '✔ Chamada registrada';
+  }catch(e){
+    toast('Erro: '+e.message);
+    btn.disabled = false; btn.textContent = '✔ Registrar chamada';
+  }
+}
+
+/* ── Painel Aux P1 (ADM) / Admin Geral ────────────────────────────── */
+const podeGerenciarTTA = !!sessao && (
+  sessao.nivel_acesso === 'admin_geral' ||
+  ((sessao.funcao||'').toLowerCase() === 'aux p1' && (sessao.grupamento_id||'').toUpperCase() === 'ADM')
+);
+let admAno = ANO_ATUAL, admMes = MES_ATUAL;
+let editandoTemaId = null;
+
+function initPainelAdmin(){
+  if (!podeGerenciarTTA) return;
+  document.getElementById('painelAdmin').style.display = 'block';
+  const selMes = document.getElementById('admMes');
+  selMes.innerHTML = MESES_LBL.map((l,i) => `<option value="${i+1}" ${i+1===admMes?'selected':''}>${l}</option>`).join('');
+  const selAno = document.getElementById('admAno');
+  selAno.innerHTML = [ANO_ATUAL-1, ANO_ATUAL, ANO_ATUAL+1].map(a => `<option value="${a}" ${a===admAno?'selected':''}>${a}</option>`).join('');
+  selMes.addEventListener('change', () => { admMes = +selMes.value; carregarAdmin(); });
+  selAno.addEventListener('change', () => { admAno = +selAno.value; carregarAdmin(); });
+  carregarAdmin();
+}
+async function carregarAdmin(){
+  await Promise.all([carregarTemasAdmin(), carregarMateriaisAdmin()]);
+}
+async function carregarTemasAdmin(){
+  const corpo = document.getElementById('corpoTemas');
+  corpo.innerHTML = '<tr><td colspan="4" class="hint">Carregando…</td></tr>';
+  try{
+    const temas = await rpc('tta_listar_temas', { p_token: sessao.token, p_ano: admAno, p_mes: admMes });
+    corpo.innerHTML = (temas||[]).map(t => `
+      <tr class="${(t.dias||[]).includes(DIA_ATUAL) && admAno===ANO_ATUAL && admMes===MES_ATUAL ? 'hoje':''}">
+        <td class="tit">${(t.dias||[]).join(', ')}</td>
+        <td class="desc">${t.assunto}</td>
+        <td class="desc">${t.referencia}</td>
+        <td class="acoes">
+          <button title="Editar" onclick='editarTema(${JSON.stringify(t)})'>✏️</button>
+          <button title="Excluir" onclick="excluirTema('${t.id}')">🗑</button>
+        </td>
+      </tr>`).join('') || '<tr><td colspan="4" class="hint">Nenhum tema cadastrado para este mês.</td></tr>';
+  }catch(e){ corpo.innerHTML = '<tr><td colspan="4" class="hint">Erro ao carregar temas.</td></tr>'; }
+}
+function abrirNovoTema(){
+  editandoTemaId = null;
+  document.getElementById('temaDias').value = '';
+  document.getElementById('temaAssunto').value = '';
+  document.getElementById('temaReferencia').value = '';
+  document.getElementById('formTemaBox').style.display = 'block';
+}
+function editarTema(t){
+  editandoTemaId = t.id;
+  document.getElementById('temaDias').value = (t.dias||[]).join(', ');
+  document.getElementById('temaAssunto').value = t.assunto;
+  document.getElementById('temaReferencia').value = t.referencia;
+  document.getElementById('formTemaBox').style.display = 'block';
+}
+function fecharFormTema(){ document.getElementById('formTemaBox').style.display = 'none'; }
+async function salvarTema(){
+  const dias = document.getElementById('temaDias').value.split(',').map(s=>parseInt(s.trim(),10)).filter(n=>!isNaN(n));
+  const assunto = document.getElementById('temaAssunto').value.trim();
+  const referencia = document.getElementById('temaReferencia').value.trim();
+  if (!dias.length) return toast('Informe ao menos um dia válido.');
+  if (!assunto || !referencia) return toast('Preencha Assunto e Referência.');
+  try{
+    await rpc('tta_salvar_tema', { p_token: sessao.token, p_id: editandoTemaId, p_dados: {
+      ano: admAno, mes: admMes, dias, assunto, referencia
+    }});
+    fecharFormTema();
+    toast('Tema salvo.');
+    carregarTemasAdmin();
+    if (admAno===ANO_ATUAL && admMes===MES_ATUAL) carregarTemaHoje();
+  }catch(e){ toast('Erro: '+e.message); }
+}
+async function excluirTema(id){
+  try{ await rpc('tta_excluir_tema', { p_token: sessao.token, p_id: id }); toast('Tema excluído.'); carregarTemasAdmin(); }
+  catch(e){ toast('Erro: '+e.message); }
+}
+
+async function carregarMateriaisAdmin(){
+  const box = document.getElementById('listaArquivosAdmin');
+  box.innerHTML = '<div class="hint">Carregando…</div>';
+  try{
+    const lista = await rpc('tta_listar_materiais', { p_token: sessao.token, p_ano: admAno, p_mes: admMes });
+    box.innerHTML = (lista||[]).map(a => `
+      <div class="arq-row"><div class="ic">PDF</div>
+        <div class="m"><b>${a.nome}</b><small>${fmtTam(a.tamanho)} · enviado por ${a.enviado_por_nome||'—'} em ${fmtDataHora(a.created_at)}</small></div>
+        <a href="${a.link}" target="_blank" rel="noopener">Abrir</a>
+        <button class="del" title="Remover" onclick="excluirMaterial('${a.id}')">🗑</button>
+      </div>`).join('') || '<div class="hint">Nenhum arquivo ainda — use o botão abaixo pra adicionar.</div>';
+    if (admAno===ANO_ATUAL && admMes===MES_ATUAL) carregarMaterialAtual();
+  }catch(e){ box.innerHTML = '<div class="hint">Erro ao carregar arquivos.</div>'; }
+}
+async function excluirMaterial(id){
+  try{ await rpc('tta_excluir_material', { p_token: sessao.token, p_id: id }); toast('Arquivo removido.'); carregarMateriaisAdmin(); }
+  catch(e){ toast('Erro: '+e.message); }
+}
+
+const STORAGE = `${API}/storage/v1`;
+const BUCKET  = 'tta-materiais';
+const LINK_TTL = 315360000; // ~10 anos, mesmo padrão de anexos
+const MAX_MB = 15;
+function sanitizeNome(n){
+  return (n || 'arquivo').normalize('NFD').replace(/[^\x00-\x7F]/g,'')
+    .replace(/[^\w.\-]+/g,'_').replace(/_+/g,'_').slice(-80) || 'arquivo';
+}
+const encPath = p => p.split('/').map(encodeURIComponent).join('/');
+async function uploadArquivo(file){
+  if (!file) return;
+  if (file.size > MAX_MB*1048576) return toast(`Arquivo acima de ${MAX_MB} MB.`);
+  toast('Enviando arquivo...');
+  try{
+    const path = `${admAno}/${admMes}/${crypto.randomUUID()}-${sanitizeNome(file.name)}`;
+    const enc = encPath(path);
+    const AH = { apikey: AKEY, Authorization: `Bearer ${AKEY}` };
+    const up = await fetch(`${STORAGE}/object/${BUCKET}/${enc}`, {
+      method:'POST', headers:{...AH,'Content-Type':file.type||'application/octet-stream','x-upsert':'true'}, body:file
+    });
+    if (!up.ok) throw new Error(`${up.status} ${await up.text()}`);
+    const sg = await fetch(`${STORAGE}/object/sign/${BUCKET}/${enc}`, {
+      method:'POST', headers:{...AH,'Content-Type':'application/json'}, body:JSON.stringify({expiresIn:LINK_TTL})
+    });
+    if (!sg.ok) throw new Error(`assinatura ${sg.status} ${await sg.text()}`);
+    const sj = await sg.json();
+    const link = `${STORAGE}${sj.signedURL||sj.signedUrl}`;
+    await rpc('tta_registrar_material', { p_token: sessao.token, p_dados: {
+      ano: admAno, mes: admMes, nome: file.name, path, tamanho: file.size, link
+    }});
+    toast('✔ Arquivo enviado.');
+    document.getElementById('inputArquivo').value = '';
+    carregarMateriaisAdmin();
+    renderPastas();
+  }catch(e){ toast('Erro no envio: '+e.message); }
+}
+
+/* ── boot ──────────────────────────────────────────────────────────── */
+(async function init(){
+  await Promise.all([carregarGrupos(), carregarRoster(), carregarTemaHoje(), carregarMaterialAtual(), renderPastas()]);
+  onGrupamentoChange();
+  initPainelAdmin();
+})();
+</script>
+</body>
+</html>

@@ -655,6 +655,7 @@
       <span class="rd-sidebar-titulo">RELATÓRIO DIÁRIO</span>
       <button class="rd-btn-colapsar" id="rdBtnColapsar" aria-label="Recolher menu">◂</button>
     </div>
+    <a class="rd-item" href="tta.html" data-tip="TTA (Pré-turno)"><span>🎯</span><span class="lbl">TTA (Pré-turno)</span></a>
     <a class="rd-item" href="meus-relatorios.html" data-tip="Lista de Relatórios"><span>📄</span><span class="lbl">Lista de Relatórios</span></a>
     <a class="rd-item ativo" href="relatorio-servico.html" data-tip="Novo Relatório"><span>➕</span><span class="lbl">Novo Relatório</span></a>
     <a class="rd-item" href="produtividade.html" data-tip="Produtividade"><span>📊</span><span class="lbl">Produtividade</span></a>
@@ -1553,10 +1554,67 @@ async function fetchReferenceData(){
     Object.values(panelCache).forEach(node => populateSelectsIn(node));
     searchifySelectsIn(document);
     Object.values(panelCache).forEach(node => searchifySelectsIn(node));
+    preencherEquipeDoTTA();
   }catch(err){
     console.error('Erro ao buscar dados de referência da planilha:', err);
     setPlaceholderText('Erro ao carregar — recarregue a página');
   }
+}
+
+// ---------- Pré-preenchimento da equipe a partir da chamada TTA de hoje ----------
+// Não muda o layout: só define o .value dos MESMOS campos (comandante,
+// motorista, patrulheiro[]) que já existem no formulário, usando a mesma
+// string "matricula - posto - nome" da lista de referência MILITARES (senão
+// o valor não bate com nenhuma opção). Best-effort — se não achar a chamada
+// de hoje, ou não achar alguém na lista de referência, não faz nada; o
+// comandante preenche manualmente como sempre.
+async function preencherEquipeDoTTA(){
+  try{
+    const S = (typeof getSessaoAtual === 'function') ? getSessaoAtual() : null;
+    if (!S || !S.token || typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
+    const H = { apikey: SB_AUTH_KEY, Authorization: `Bearer ${SB_AUTH_KEY}`, 'Content-Type': 'application/json' };
+    const r = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/tta_chamada_hoje`, {
+      method: 'POST', headers: H, body: JSON.stringify({ p_token: S.token })
+    });
+    if (!r.ok) return;
+    const chamada = await r.json();
+    if (!chamada || !chamada.id) return;
+
+    const lista = referenceCache['MILITARES'] || [];
+    if (!lista.length) return;
+    const soDigitos = s => (s||'').replace(/\D/g,'');
+    const acharRef = matricula => lista.find(it => soDigitos(it).includes(soDigitos(matricula)));
+    const postoDaRef = ref => (ref||'').split(' - ')[1] || '';
+
+    const RANK_ORDER = ['CEL','TEN-CEL','MAJ','CAP','1º TEN','2º TEN','ASP OF','SUBTEN','1º SGT','2º SGT','3º SGT','CB','SD'];
+    const rankIdx = posto => {
+      const p = (posto||'').toUpperCase();
+      const i = RANK_ORDER.findIndex(rk => p.startsWith(rk));
+      return i === -1 ? RANK_ORDER.length : i;
+    };
+
+    const comandanteInput = document.querySelector('[name="comandante"]');
+    const comandanteRef = acharRef(chamada.militar_resp_matricula);
+    if (comandanteRef && comandanteInput && !comandanteInput.value) comandanteInput.value = comandanteRef;
+
+    const presentes = (chamada.militares_presentes || []).filter(m => m.matricula !== chamada.militar_resp_matricula);
+    if (!presentes.length) return;
+
+    const comRef = presentes.map(m => ({ m, ref: acharRef(m.matricula) })).filter(x => x.ref);
+    if (!comRef.length) return;
+    comRef.sort((a,b) => rankIdx(postoDaRef(b.ref)) - rankIdx(postoDaRef(a.ref))); // mais moderno primeiro
+
+    const motoristaEntry = comRef[0];
+    const motoristaInput = document.querySelector('[name="motorista"]');
+    if (motoristaInput && !motoristaInput.value) motoristaInput.value = motoristaEntry.ref;
+
+    const restantes = comRef.filter(x => x !== motoristaEntry);
+    restantes.forEach((x, i) => {
+      let campo = document.querySelectorAll('[name="patrulheiro[]"]')[i];
+      if (!campo){ addPatrulheiroRow(true); campo = document.querySelectorAll('[name="patrulheiro[]"]')[i]; }
+      if (campo && !campo.value) campo.value = x.ref;
+    });
+  }catch(e){ console.warn('[TTA] pré-preenchimento não aplicado:', e); }
 }
 
 document.addEventListener('change', (e) => {
