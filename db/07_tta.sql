@@ -44,7 +44,7 @@ returns table (id uuid, matricula text, posto_graduacao text, nome_completo text
                nome_guerra text, grupamento_id text)
 language plpgsql security definer set search_path = public as $$
 begin
-  if (select id from public._sessao_militar(p_token)) is null then
+  if (select sm.id from public._sessao_militar(p_token) sm) is null then
     raise exception 'Sessão expirada. Faça login novamente.';
   end if;
   return query
