@@ -281,16 +281,22 @@ function _pelotaoNum(gid) {
   return m ? parseInt(m[1]) : null;
 }
 
+/** Extrai o número do GP (grupamento maior, contém vários pelotões) de uma string de grupamento_id */
+function _gpNum(gid) {
+  const m = (gid || '').match(/(\d+)\s*GP/i);
+  return m ? parseInt(m[1]) : null;
+}
+
 /** Verifica se pode ver dados de um determinado grupamento */
 function auth_podeVerGrupamento(sessao, grupamento_id) {
   if (!sessao) return false;
   const nivel = sessao.nivel_acesso;
   if (nivel === 'admin_geral' || nivel === 'admin') return true;
   if (nivel === 'admin_pelotao') {
-    // Compara pelo número do pelotão, não pelo grupamento exato
-    const meuPel = _pelotaoNum(sessao.grupamento_id);
-    if (meuPel === null) return sessao.grupamento_id === grupamento_id; // fallback
-    return _pelotaoNum(grupamento_id) === meuPel;
+    // admin_pelotao enxerga todos os pelotões do próprio GP (não só o mesmo número de pelotão em qualquer GP)
+    const meuGp = _gpNum(sessao.grupamento_id);
+    if (meuGp === null) return sessao.grupamento_id === grupamento_id; // fallback
+    return _gpNum(grupamento_id) === meuGp;
   }
   if (nivel === 'admin_gp') {
     // Escopo isolado: só o próprio grupamento (não o pelotão inteiro)
