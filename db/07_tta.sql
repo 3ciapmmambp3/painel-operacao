@@ -49,7 +49,13 @@ begin
   end if;
   return query
     select m.id, m.matricula, m.posto_graduacao, m.nome_completo, m.nome_guerra, m.grupamento_id
-    from public.militares m where m.ativo = true order by m.nome_completo;
+    from public.militares m
+    where m.ativo = true
+      -- contas de teste (0000001-0000004): continuam existindo/logando
+      -- normalmente, só não aparecem pra marcar presença no TTA. Tirar
+      -- essa linha quando não precisar mais escondê-las daqui.
+      and m.matricula_clean not in ('0000001','0000002','0000003','0000004')
+    order by m.nome_completo;
 end;
 $$;
 
