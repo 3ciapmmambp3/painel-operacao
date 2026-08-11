@@ -14,6 +14,7 @@
   <title>Gestão do TTA — 3ª Cia PM MAmb</title>
   <link rel="stylesheet" href="styles/global.css">
   <script src="auth.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
   <style>
     body{display:flex;flex-direction:column;min-height:100vh;}
 
@@ -180,7 +181,16 @@
         </div>
 
         <div class="card">
-          <h3>📝 Temas do mês <span class="hint" style="text-transform:none;font-weight:400;letter-spacing:0">— cole várias linhas de uma vez, direto do cronograma que você já recebe todo mês</span></h3>
+          <h3>📝 Temas do mês <span class="hint" style="text-transform:none;font-weight:400;letter-spacing:0">— extraia direto do PDF ou cole manualmente</span></h3>
+
+          <div class="upload-slot" onclick="document.getElementById('inputCronograma').click()" style="margin-bottom:16px">
+            <span class="ic">📄</span>
+            <b>Selecionar o PDF do cronograma do mês</b>
+            <small>O sistema lê a tabela sozinho e preenche os campos abaixo pra você conferir — o arquivo também fica salvo em Arquivos do mês</small>
+          </div>
+          <input type="file" id="inputCronograma" accept="application/pdf" style="display:none" onchange="extrairDoPdf(this.files[0])">
+          <div id="extracaoStatus" class="hint" style="margin-bottom:10px"></div>
+
           <div class="f">
             <label>Assunto <span class="req">*</span> <span class="hint">— geralmente é o mesmo texto pro mês inteiro</span></label>
             <textarea id="loteAssunto" placeholder="Ex: Memorando nº 30.130.2/22 – EMPM — Atualização das naturezas de infrações e crimes ambientais. diao.sids.mg.gov.br/home"></textarea>
@@ -352,6 +362,85 @@ if (podeGerenciarTTA){
 }
 async function carregarTudo(){
   await Promise.allSettled([carregarTemasAdmin(), carregarMateriaisAdmin(), carregarChamadasAdmin()]);
+}
+
+/* ── Extração automática do PDF do cronograma ─────────────────────────
+   Lê o texto do PDF com as posições (x,y) de cada trecho, reconstrói a
+   tabela DATA | ASSUNTO | REFERÊNCIA pela posição das colunas (usa a
+   própria linha de cabeçalho como referência de onde cada coluna começa)
+   e só PREENCHE as caixas de texto abaixo — nada é salvo sozinho, o Aux
+   P1 sempre confere antes de clicar em "Processar e salvar temas". */
+if (typeof pdfjsLib !== 'undefined'){
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+}
+function extrairTabelaDaPagina(items){
+  const linhasRaw = [];
+  items.forEach(it => {
+    const x = it.transform[4], y = Math.round(it.transform[5]);
+    let linha = linhasRaw.find(l => Math.abs(l.y - y) <= 3);
+    if (!linha){ linha = { y, itens: [] }; linhasRaw.push(linha); }
+    linha.itens.push({ x, texto: it.str });
+  });
+  linhasRaw.sort((a,b) => b.y - a.y); // PDF cresce pra cima: topo primeiro
+  linhasRaw.forEach(l => l.itens.sort((a,b) => a.x - b.x));
+
+  const normaliza = s => s.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+  let headerIdx = -1, xDias=0, xAssunto=0, xReferencia=0;
+  linhasRaw.forEach((l, idx) => {
+    if (headerIdx !== -1) return;
+    const dataIt = l.itens.find(i => normaliza(i.texto) === 'DATA');
+    const assIt  = l.itens.find(i => normaliza(i.texto) === 'ASSUNTO');
+    const refIt  = l.itens.find(i => normaliza(i.texto).startsWith('REFER'));
+    if (dataIt && assIt && refIt){ headerIdx = idx; xDias=dataIt.x; xAssunto=assIt.x; xReferencia=refIt.x; }
+  });
+  if (headerIdx === -1) return { linhas: [], assunto: '' };
+
+  const coluna = x => x < (xDias+xAssunto)/2 ? 'dias' : (x < (xAssunto+xReferencia)/2 ? 'assunto' : 'referencia');
+
+  const linhas = [];
+  const assuntoPartes = [];
+  for (let i = headerIdx+1; i < linhasRaw.length; i++){
+    const cols = { dias:'', assunto:'', referencia:'' };
+    linhasRaw[i].itens.forEach(it => { const c = coluna(it.x); cols[c] += (cols[c]?' ':'') + it.texto; });
+    if (cols.assunto.trim()) assuntoPartes.push(cols.assunto.trim());
+    const diasNums = (cols.dias.match(/\d+/g) || []).join(', ');
+    if (diasNums && cols.referencia.trim()) linhas.push({ dias: diasNums, referencia: cols.referencia.trim() });
+  }
+  return { linhas, assunto: assuntoPartes.join(' ').replace(/\s+/g,' ').trim() };
+}
+async function extrairDoPdf(file){
+  if (!file) return;
+  const status = document.getElementById('extracaoStatus');
+  if (typeof pdfjsLib === 'undefined'){
+    status.textContent = 'Biblioteca de leitura de PDF não carregou — cole os dados manualmente abaixo.';
+  } else {
+    status.textContent = 'Lendo o PDF…';
+    try{
+      const buf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+      let todasLinhas = [], assuntoDetectado = '';
+      for (let p = 1; p <= pdf.numPages; p++){
+        const page = await pdf.getPage(p);
+        const content = await page.getTextContent();
+        const { linhas, assunto } = extrairTabelaDaPagina(content.items);
+        todasLinhas = todasLinhas.concat(linhas);
+        if (assunto && !assuntoDetectado) assuntoDetectado = assunto;
+      }
+      if (!todasLinhas.length){
+        status.innerHTML = '<span style="color:var(--danger)">Não consegui reconhecer a tabela neste PDF — cole os dados manualmente abaixo.</span>';
+      } else {
+        document.getElementById('loteAssunto').value = assuntoDetectado;
+        document.getElementById('loteLinhas').value = todasLinhas.map(l => `${l.dias} - ${l.referencia}`).join('\n');
+        status.innerHTML = `<span style="color:var(--success)">✔ ${todasLinhas.length} linha(s) extraída(s) — confira os campos abaixo antes de clicar em "Processar e salvar temas".</span>`;
+      }
+    }catch(e){
+      console.error('extração pdf:', e);
+      status.innerHTML = '<span style="color:var(--danger)">Não consegui ler esse PDF automaticamente — cole os dados manualmente abaixo.</span>';
+    }
+  }
+  // independente da extração ter funcionado, o PDF em si já fica salvo
+  // como material do mês — é o mesmo arquivo que os comandantes vão ver.
+  uploadArquivo(file);
 }
 
 /* ── Temas: lançamento em lote (colar várias linhas de uma vez) ──────── */
