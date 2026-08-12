@@ -1322,6 +1322,21 @@ document.addEventListener('click', () => {
 ════════════════════════════════ -->
 <div class="tab-pane" id="tab-cruzamento">
 
+  <!-- Sub-abas internas: Análise (padrão) × Registros (RAT) -->
+  <div style="display:flex;gap:8px;margin-bottom:14px;">
+    <button type="button" id="cx-subtab-btn-analise" onclick="cxSwitchSubtab('analise')"
+      style="padding:8px 16px;border-radius:6px;border:1px solid var(--gold-border);background:rgba(155,138,92,.15);color:var(--gold);font-size:12px;font-weight:700;cursor:pointer;">
+      📊 Análise
+    </button>
+    <button type="button" id="cx-subtab-btn-registros" onclick="cxSwitchSubtab('registros')"
+      style="padding:8px 16px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--text-muted);font-size:12px;font-weight:700;cursor:pointer;">
+      📋 Registros (RAT)
+    </button>
+  </div>
+
+  <!-- ════ SUB-ABA: ANÁLISE (conteúdo existente, padrão) ════ -->
+  <div id="cx-subtab-analise">
+
   <div class="filter-box">
     <div class="filter-box-title">🔗 Correlação entre Operações GDO Rural e Ocorrências Criminais</div>
     <div class="filter-row">
@@ -1397,7 +1412,7 @@ document.addEventListener('click', () => {
         </select>
       </div>
       <div class="fg" style="min-width:200px;">
-        <label>Buscar (Nº BO / município)</label>
+        <label>Buscar (Nº BO / RAT / BOS / município)</label>
         <input type="text" id="cx-busca" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this);renderCruzamento()" maxlength="18">
       </div>
     </div>
@@ -1430,6 +1445,38 @@ document.addEventListener('click', () => {
   <div id="cruzamento-body">
     <div class="empty-state">Configure os filtros e clique em Analisar.</div>
   </div>
+
+  </div><!-- /cx-subtab-analise -->
+
+  <!-- ════ SUB-ABA: REGISTROS (RAT) ════ -->
+  <div id="cx-subtab-registros" style="display:none;">
+    <div style="background:var(--bg-card);border-radius:8px;overflow:hidden;border:1px solid var(--border);">
+      <div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:13px;font-weight:700;color:var(--gold);">Registros de Operações (GDO Rural)</span>
+        <span id="cx-reg-count-label" style="font-size:11px;color:var(--text-muted);"></span>
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+          <thead>
+            <tr style="background:#1e1e1e;">
+              <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Nº RAT</th>
+              <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Data</th>
+              <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Município</th>
+              <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Natureza</th>
+              <th style="padding:7px 10px;text-align:center;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Pelotão</th>
+              <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Grupamento</th>
+              <th style="padding:7px 10px;text-align:center;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Validade GDO</th>
+              <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Crime Vinculado</th>
+              <th style="padding:7px 10px;text-align:center;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="cx-reg-tbody">
+            <tr><td colspan="9" style="padding:20px;text-align:center;color:var(--text-muted);">Configure os filtros na aba Análise para visualizar.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div><!-- /cx-subtab-registros -->
 
 </div><!-- /tab-cruzamento -->
 
@@ -1520,7 +1567,7 @@ document.addEventListener('click', () => {
         <select id="vt-gp" onchange="renderVisitas()" style="font-size:11px;"><option value="">Todos</option></select>
       </div>
       <div class="fg" style="min-width:200px;">
-        <label>Buscar (Nº BO / município)</label>
+        <label>Buscar (Nº BO / BOS / município)</label>
         <input type="text" id="vt-busca" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this);renderVisitas()" maxlength="18">
       </div>
     </div>
@@ -6926,6 +6973,226 @@ async function _salvarRatRef(rat, ratRefs) {
 }
 
 /* ══════════════════════════════════
+   VÍNCULO DIRETO CRIME ↔ RAT OPERAÇÃO (sentido inverso — a partir da
+   Operação, em Registros (RAT)). Usa a mesma coluna rat_referencia
+   (via _salvarRatRef) já usada em "Vincular RAT" — apenas a UI de
+   busca parte do crime em vez da operação. */
+function _abrirModalVinculoCrime(rat) {
+  const prev = document.getElementById('_modal-vinculo-crime');
+  if(prev) prev.remove();
+
+  const modal = document.createElement('div');
+  modal.id = '_modal-vinculo-crime';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:10000;display:flex;align-items:center;justify-content:center;';
+
+  const op = dadosGdoRural.find(o => o.rat === rat);
+  const crimesVinc = (op && op.ratRefs) || [];
+
+  modal.innerHTML = `
+    <div style="background:#1e1e1e;border:1px solid rgba(155,138,92,.4);border-radius:10px;padding:20px 24px;width:680px;max-width:92vw;min-height:420px;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.8);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div style="font-size:13px;font-weight:700;color:var(--gold);">🔗 Vincular Crime (BO) à Operação</div>
+        <button onclick="document.getElementById('_modal-vinculo-crime').remove()" style="background:none;border:none;color:var(--text-muted);font-size:18px;cursor:pointer;line-height:1;">✕</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:14px;">
+        RAT da Operação: <span style="font-family:monospace;color:#fff;font-weight:700;">${rat}</span>
+      </div>
+
+      <!-- Crimes já vinculados -->
+      <div id="_vrc-lista" style="margin-bottom:14px;"></div>
+
+      <!-- Campo de busca -->
+      <div style="margin-bottom:10px;position:relative;">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Buscar crime por Nº BO ou município para vincular:</div>
+        <input id="_vrc-input" type="text" placeholder="Ex: 2026-012345678-001 ou nome do município"
+          autocomplete="off"
+          style="width:100%;box-sizing:border-box;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:8px 10px;border-radius:5px;font-size:12px;font-family:monospace;"
+          oninput="_vrcBuscar(this.value,'${rat}')">
+        <div id="_vrc-autocomplete" style="position:absolute;left:0;right:0;background:#252525;border:1px solid rgba(155,138,92,.3);border-top:none;border-radius:0 0 6px 6px;z-index:10001;display:none;max-height:350px;overflow-y:auto;"></div>
+      </div>
+
+      <!-- Observação obrigatória -->
+      <div style="margin-bottom:14px;">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Observação <span style="color:var(--danger);">*</span> <span style="color:var(--text-hint);">(obrigatório — justifique o vínculo)</span></div>
+        <textarea id="_vrc-obs" rows="3" placeholder="Descreva o motivo do vínculo deste crime à operação..."
+          style="width:100%;box-sizing:border-box;background:#2a2a2a;border:1px solid var(--border);color:#fff;padding:8px 10px;border-radius:5px;font-size:12px;resize:vertical;font-family:inherit;"></textarea>
+      </div>
+
+      <div style="margin-bottom:8px;">
+        <button id="_vrc-btn-confirmar"
+          style="display:none;align-items:center;gap:6px;background:rgba(102,187,106,.15);border:1px solid rgba(102,187,106,.5);color:var(--success);padding:8px 20px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;"
+          onmouseover="this.style.background='rgba(102,187,106,.25)'" onmouseout="this.style.background='rgba(102,187,106,.15)'">
+          ✔ Vincular Crime à Operação
+        </button>
+      </div>
+
+      <div id="_vrc-msg" style="font-size:11px;margin-top:8px;"></div>
+    </div>`;
+
+  document.body.appendChild(modal);
+  _vrcRenderLista(rat, crimesVinc);
+  modal.addEventListener('click', e => { if(e.target === modal) modal.remove(); });
+  setTimeout(() => document.getElementById('_vrc-input')?.focus(), 100);
+}
+
+function _vrcRenderLista(rat, boRefs) {
+  const el = document.getElementById('_vrc-lista');
+  if(!el) return;
+  if(!boRefs.length) {
+    el.innerHTML = '<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Nenhum crime vinculado diretamente ainda.</div>';
+    return;
+  }
+  el.innerHTML = `
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">Crimes vinculados a esta operação:</div>
+    <div style="display:flex;flex-direction:column;gap:4px;">
+      ${boRefs.map(bo => {
+        const c = dadosCrimes.find(x => x.bo === bo);
+        return `
+        <div style="display:flex;justify-content:space-between;align-items:center;background:#1a2010;border:1px solid rgba(155,138,92,.3);border-radius:4px;padding:6px 10px;gap:8px;">
+          <div style="display:flex;flex-direction:column;gap:2px;">
+            <span style="font-family:monospace;font-size:11px;color:var(--gold);font-weight:700;">${bo}</span>
+            <span style="font-size:10px;color:var(--text-muted);">${c ? (c.data||'—') + ' · ' + (c.municipio||'—') + ' · ' + (c.indicador||'—') : '—'}</span>
+          </div>
+          <button onclick="_vrcRemover('${bo}','${rat}')"
+            style="background:none;border:1px solid rgba(239,83,80,.4);color:var(--danger);font-size:11px;cursor:pointer;padding:2px 7px;border-radius:3px;white-space:nowrap;">✕ Remover</button>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+function _vrcBuscar(termo, rat) {
+  const ac = document.getElementById('_vrc-autocomplete');
+  if(!ac) return;
+  const t = (termo||'').trim();
+  if(t.length < 3) { ac.style.display = 'none'; ac.innerHTML = ''; return; }
+  const tLow = t.toLowerCase();
+
+  /* Um crime pode aparecer múltiplas vezes em dadosCrimes (uma por indicador) — agrupa por BO */
+  const porBo = new Map();
+  dadosCrimes.forEach(c => {
+    if(!c.bo) return;
+    if(!c.bo.toLowerCase().includes(tLow) && !(c.municipio||'').toLowerCase().includes(tLow)) return;
+    if(!porBo.has(c.bo)) porBo.set(c.bo, { bo: c.bo, data: c.data, municipio: c.municipio, indicadores: [c.indicador] });
+    else porBo.get(c.bo).indicadores.push(c.indicador);
+  });
+  const encontrados = [...porBo.values()].slice(0, 10);
+
+  const op = dadosGdoRural.find(o => o.rat === rat);
+
+  if(!encontrados.length) {
+    ac.innerHTML = '<div style="padding:8px 12px;font-size:11px;color:var(--danger);">✗ Nenhum crime encontrado.</div>';
+    ac.style.display = 'block';
+    return;
+  }
+
+  ac.innerHTML = encontrados.map((c, _i) => {
+    const jaVinc = op && op.ratRefs && op.ratRefs.includes(c.bo);
+    const hId = '_vrcc_' + _i;
+    return '<div id="' + hId + '"'
+      + ' data-bo="' + c.bo.replace(/"/g,'&quot;') + '"'
+      + ' style="padding:8px 12px;cursor:' + (jaVinc?'default':'pointer') + ';border-bottom:1px solid #2a2a2a;' + (jaVinc?'opacity:.5;':'') + 'transition:background .15s;">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;">'
+      + '<div>'
+      + '<span style="font-family:monospace;font-size:11px;color:var(--gold);font-weight:700;">' + c.bo + '</span>'
+      + '<span style="font-size:10px;color:var(--text-muted);margin-left:8px;">' + (c.data||'—') + ' · ' + (c.municipio||'—') + '</span>'
+      + '<span style="margin-left:6px;font-size:10px;color:var(--text-muted);">' + c.indicadores.join('/') + '</span>'
+      + '</div>'
+      + (jaVinc ? '<span style="font-size:10px;color:#42a5f5;">\u{1F517} já vinculado</span>' : '')
+      + '</div>'
+      + '</div>';
+  }).join('');
+  ac.style.display = 'block';
+
+  /* Click e hover via addEventListener para evitar conflito de aspas */
+  encontrados.forEach((c, _i) => {
+    const el2 = document.getElementById('_vrcc_' + _i);
+    if(!el2) return;
+    el2.addEventListener('mouseenter', () => { el2.style.background = '#2a2a2a'; });
+    el2.addEventListener('mouseleave', () => { el2.style.background = ''; });
+    el2.addEventListener('click', () => {
+      const bo = el2.dataset.bo;
+      if(bo) _vrcSelecionar(bo, rat);
+    });
+  });
+}
+
+/* Seleção do crime no autocomplete — preenche input e mostra botão confirmar */
+function _vrcSelecionar(bo, rat) {
+  const ac  = document.getElementById('_vrc-autocomplete');
+  const inp = document.getElementById('_vrc-input');
+  const msg = document.getElementById('_vrc-msg');
+  if(ac)  { ac.style.display='none'; ac.innerHTML=''; }
+  if(inp) inp.value = bo;
+
+  const op = dadosGdoRural.find(o => o.rat === rat);
+  if(!op) { if(msg) msg.innerHTML = '<span style="color:var(--danger);">✗ Operação não encontrada.</span>'; return; }
+  if(op.ratRefs && op.ratRefs.includes(bo)) {
+    if(msg) msg.innerHTML = '<span style="color:#42a5f5;">Este crime já está vinculado a esta operação.</span>';
+    return;
+  }
+
+  /* Mostra botão confirmar e foca observação */
+  const btnConfirm = document.getElementById('_vrc-btn-confirmar');
+  if(btnConfirm) {
+    btnConfirm.style.display = 'inline-flex';
+    btnConfirm.onclick = () => _vrcConfirmar(bo, rat);
+  }
+  const obsEl = document.getElementById('_vrc-obs');
+  if(obsEl) { obsEl.style.borderColor = 'var(--border)'; obsEl.focus(); }
+  if(msg) msg.innerHTML = '<span style="color:var(--text-muted);">Crime selecionado — preencha a observação e clique em Vincular.</span>';
+}
+
+/* Confirmação do vínculo após preenchimento da observação — reaproveita _salvarRatRef,
+   a mesma coluna rat_referencia usada em "Vincular RAT" */
+async function _vrcConfirmar(bo, rat) {
+  const msg = document.getElementById('_vrc-msg');
+  const obs = (document.getElementById('_vrc-obs')?.value||'').trim();
+  if(!obs) {
+    const obsEl = document.getElementById('_vrc-obs');
+    if(obsEl) { obsEl.style.borderColor='var(--danger)'; obsEl.focus(); }
+    if(msg) msg.innerHTML = '<span style="color:var(--danger);">⚠ Observação obrigatória — justifique o vínculo antes de confirmar.</span>';
+    return;
+  }
+
+  const op = dadosGdoRural.find(o => o.rat === rat);
+  if(!op) return;
+
+  const novosRefs = [...new Set([...(op.ratRefs||[]), bo])];
+  if(msg) msg.innerHTML = '<span style="color:var(--text-muted);">Salvando...</span>';
+  const ok = await _salvarRatRef(rat, novosRefs);
+  if(ok) {
+    op.ratRefs = novosRefs;
+    const inp = document.getElementById('_vrc-input');
+    if(inp) inp.value = '';
+    if(document.getElementById('_vrc-obs')) document.getElementById('_vrc-obs').value = '';
+    const btnConfirm = document.getElementById('_vrc-btn-confirmar');
+    if(btnConfirm) btnConfirm.style.display = 'none';
+    _vrcRenderLista(rat, op.ratRefs);
+    if(msg) msg.innerHTML = '<span style="color:var(--success);">✔ Crime vinculado com sucesso.</span>';
+    renderCruzamento();
+  } else {
+    if(msg) msg.innerHTML = '<span style="color:var(--danger);">✗ Erro ao salvar. Tente novamente.</span>';
+  }
+}
+
+async function _vrcRemover(bo, rat) {
+  const op = dadosGdoRural.find(o => o.rat === rat);
+  if(!op) return;
+  const novosRefs = (op.ratRefs||[]).filter(b => b !== bo);
+  const msg = document.getElementById('_vrc-msg');
+  if(msg) msg.innerHTML = '<span style="color:var(--text-muted);">Removendo...</span>';
+  const ok = await _salvarRatRef(rat, novosRefs);
+  if(ok) {
+    op.ratRefs = novosRefs;
+    _vrcRenderLista(rat, op.ratRefs);
+    if(msg) msg.innerHTML = '<span style="color:var(--success);">✔ Vínculo removido.</span>';
+    renderCruzamento();
+  } else {
+    if(msg) msg.innerHTML = '<span style="color:var(--danger);">✗ Erro ao remover.</span>';
+  }
+}
+
+/* ══════════════════════════════════
    VISITAS POG
 ══════════════════════════════════ */
 
@@ -7356,6 +7623,36 @@ function _gdoMotivoInvalido(op) {
   return motivos;
 }
 
+/* Visitas tranquilizadoras vinculadas a um crime — vínculo direto (boRefs) ou
+   por raio fixo 200m + natureza compatível + período. Usada tanto na renderização
+   (tooltip/resumo) quanto na busca por Nº BOS na aba Correlação OP x Crime. */
+function _crzVisitasVinculadas(crime, dias){
+  if(!crime.lat || !crime.lng) return [];
+  const RAIO_VISITA_CRZ = 0.2;
+  const dataCrimeVt = parseDataDDMMAAAA(crime.data||'');
+  return dadosVisitas.filter(v => {
+    if(!v.visitaValida) return false;
+    /* Vínculo direto (inclui POG) — ignora natCode e raio */
+    if(v.boRefs && (v.boRefs.includes(crime.bo||'') || v.boRefs.includes(crime.rat||''))) return true;
+    /* Visita POG sem vínculo direto — não conta por raio */
+    if(v.isPOG) return false;
+    if(!v.lat || !v.lng) return false;
+    /* Natureza compatível com indicador do crime */
+    const natEsperada = crime.indicador === 'IF' ? 'A20028' : 'A20001';
+    if(v.natCode !== natEsperada) return false;
+    /* Raio fixo 200m */
+    if(distanciaKm(crime.lat, crime.lng, v.lat, v.lng) > RAIO_VISITA_CRZ) return false;
+    /* Período: visita deve ocorrer APÓS o crime (até dias*2 dias depois) */
+    if(dataCrimeVt){
+      const dataVt = parseDataDDMMAAAA(v.data||'');
+      if(dataVt){
+        const diff = (dataVt - dataCrimeVt) / (1000*60*60*24);
+        if(diff < 0 || diff > dias*2) return false;
+      }
+    }
+    return true;
+  });
+}
 function renderCruzamento(){
   const _mesCx = getMesDd('cx');
   const mes   = _mesCx.length===1?_mesCx[0]:'';
@@ -7365,6 +7662,16 @@ function renderCruzamento(){
 
   const cxPel = document.getElementById('cx-pel')?.value || '';
   const cxGp  = document.getElementById('cx-gp')?.value  || '';
+  const cxBusca = norm(document.getElementById('cx-busca')?.value || '');
+
+  /* Registros (RAT) — lista bruta de operações GDO Rural, independente da correlação com crimes */
+  let opsRegistros = dadosGdoRural.slice();
+  if(_mesCx.length) opsRegistros = opsRegistros.filter(op => _mesCx.includes(op.mes));
+  if(cxPel) opsRegistros = opsRegistros.filter(op => pelDoColk(op.grupamento) === parseInt(cxPel));
+  if(cxGp)  opsRegistros = opsRegistros.filter(op => gpDoColk(op.grupamento) === cxGp);
+  if(cxBusca) opsRegistros = opsRegistros.filter(op => norm(op.rat||'').includes(cxBusca) || norm(op.municipio||'').includes(cxBusca));
+  _renderCxRegistros(opsRegistros);
+
   let crimes = _mesCx.length>1 ? getDadosFiltradosMultiMes(_mesCx, ind, '', cxPel, '', '') : getDadosFiltrados(mes, ind, '', cxPel, '', '');
   if(cxGp) crimes = crimes.filter(d => d.grupamento && gpDoColk(d.grupamento) === cxGp);
   crimes = crimes.filter(d=>d.lat&&d.lng);
@@ -7458,10 +7765,12 @@ function renderCruzamento(){
   /* Renderiza lista */
   let html = '';
   const cxStatus = document.getElementById('cx-status')?.value || '';
-  const cxBusca  = norm(document.getElementById('cx-busca')?.value || '');
   let resultadosFiltrados = cxStatus ? resultados.filter(r => r.status === cxStatus) : resultados;
   if(cxBusca) resultadosFiltrados = resultadosFiltrados.filter(r =>
-    norm(r.crime.bo||r.crime.rat||'').includes(cxBusca) || norm(r.crime.municipio||'').includes(cxBusca)
+    norm(r.crime.bo||r.crime.rat||'').includes(cxBusca) ||
+    norm(r.crime.municipio||'').includes(cxBusca) ||
+    [...r.opsProximas, ...r.opsInvalidas].some(op => norm(op.rat||'').includes(cxBusca)) ||
+    _crzVisitasVinculadas(r.crime, dias).some(v => norm(v.bo||'').includes(cxBusca))
   );
 
   if(munsSemOp.length){
@@ -7489,32 +7798,7 @@ function renderCruzamento(){
           : `<span style="background:rgba(255,152,0,.12);color:#ff9800;border:1px solid rgba(255,152,0,.3);padding:2px 7px;border-radius:3px;font-size:10px;font-weight:700;">OP. PRÓXIMA</span>`;
 
     /* Visitas próximas ao crime — raio fixo 200m (independente do raio de operações) */
-    const _RAIO_VISITA_CRZ = 0.2;
-    const dataCrimeVt = parseDataDDMMAAAA(r.crime.data||'');
-    const visitasVinc = r.crime.lat && r.crime.lng
-      ? dadosVisitas.filter(v => {
-          if(!v.visitaValida) return false;
-          /* Vínculo direto (inclui POG) — ignora natCode e raio */
-          if(v.boRefs && (v.boRefs.includes(r.crime.bo||'') || v.boRefs.includes(r.crime.rat||''))) return true;
-          /* Visita POG sem vínculo direto — não conta por raio */
-          if(v.isPOG) return false;
-          if(!v.lat || !v.lng) return false;
-          /* Natureza compatível com indicador do crime */
-          const natEsperada = r.crime.indicador === 'IF' ? 'A20028' : 'A20001';
-          if(v.natCode !== natEsperada) return false;
-          /* Raio fixo 200m */
-          if(distanciaKm(r.crime.lat, r.crime.lng, v.lat, v.lng) > _RAIO_VISITA_CRZ) return false;
-          /* Período: visita deve ocorrer APÓS o crime (até dias*2 dias depois) */
-          if(dataCrimeVt){
-            const dataVt = parseDataDDMMAAAA(v.data||'');
-            if(dataVt){
-              const diff = (dataVt - dataCrimeVt) / (1000*60*60*24);
-              if(diff < 0 || diff > dias*2) return false;
-            }
-          }
-          return true;
-        })
-      : [];
+    const visitasVinc = _crzVisitasVinculadas(r.crime, dias);
 
     /* Guarda dados das ops + visitas para o tooltip */
     window._crzTooltipData[idx] = {
@@ -7885,7 +8169,7 @@ function renderVisitas(){
   const NATS_VT = {'A20028':true, 'A20001':true};
 
   /* Visitas válidas filtradas por tipo/mês/pelotão/grupamento */
-  const visitasFiltradas = dadosVisitas.filter(v => {
+  let visitasFiltradas = dadosVisitas.filter(v => {
     if(!v.visitaValida) return false;
     if(!NATS_VT[v.natCode]) return false;
     /* Visita POG com vínculo direto: dispensa apenas o filtro de tipo/natureza,
@@ -7901,6 +8185,9 @@ function renderVisitas(){
     }
     return true;
   });
+  if(vtBusca) visitasFiltradas = visitasFiltradas.filter(v =>
+    norm(v.bo||'').includes(vtBusca) || norm(v.municipio||'').includes(vtBusca)
+  );
   document.getElementById('vt-total-validas').textContent = visitasFiltradas.length;
   _renderVtRegistros(visitasFiltradas);
 
@@ -7918,9 +8205,6 @@ function renderVisitas(){
     return true;
   });
 
-  if(vtBusca)     crimes = crimes.filter(c =>
-    norm(c.bo||c.rat||'').includes(vtBusca) || norm(c.municipio||'').includes(vtBusca)
-  );
   if(vtIndicador) crimes = crimes.filter(c => c.indicador === vtIndicador);
   /* Restrição automática: só crimes com complemento de natureza válido para visita */
   crimes = crimes.filter(c => c.codComplemento !== null && COMP_VALIDOS.includes(c.codComplemento));
@@ -7965,6 +8249,20 @@ function renderVisitas(){
 
     return { crime, validas, temVisita: validas.length > 0 };
   });
+
+  /* Busca por Nº BO/RAT do crime, Nº BOS da visita vinculada, ou município */
+  if(vtBusca) _vtResultados = _vtResultados.filter(r =>
+    norm(r.crime.bo||r.crime.rat||'').includes(vtBusca) ||
+    norm(r.crime.municipio||'').includes(vtBusca) ||
+    r.validas.some(v => norm(v.bo||'').includes(vtBusca))
+  );
+
+  if(!_vtResultados.length){
+    document.getElementById('visitas-body').innerHTML = '<div class="empty-state">Nenhum crime encontrado para os filtros selecionados.</div>';
+    document.getElementById('vt-crimes-atendidos').textContent = '—';
+    document.getElementById('vt-crimes-sem-visita').textContent = '—';
+    return;
+  }
 
   const comVisita = _vtResultados.filter(r => r.temVisita).length;
   const semVisitaTodos = _vtResultados.filter(r => !r.temVisita);
@@ -8089,6 +8387,76 @@ function vtSwitchSubtab(qual){
     if(btnAnalise)   btnAnalise.style.cssText   = ativo;
     if(btnRegistros) btnRegistros.style.cssText = inativo;
   }
+}
+
+/* ── Sub-abas internas de Correlação Op × Crime ── */
+function cxSwitchSubtab(qual){
+  const elAnalise   = document.getElementById('cx-subtab-analise');
+  const elRegistros = document.getElementById('cx-subtab-registros');
+  const btnAnalise   = document.getElementById('cx-subtab-btn-analise');
+  const btnRegistros = document.getElementById('cx-subtab-btn-registros');
+  const ativo   = 'padding:8px 16px;border-radius:6px;border:1px solid var(--gold-border);background:rgba(155,138,92,.15);color:var(--gold);font-size:12px;font-weight:700;cursor:pointer;';
+  const inativo = 'padding:8px 16px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--text-muted);font-size:12px;font-weight:700;cursor:pointer;';
+  if(qual === 'registros'){
+    if(elAnalise)   elAnalise.style.display   = 'none';
+    if(elRegistros) elRegistros.style.display = '';
+    if(btnAnalise)   btnAnalise.style.cssText   = inativo;
+    if(btnRegistros) btnRegistros.style.cssText = ativo;
+  } else {
+    if(elAnalise)   elAnalise.style.display   = '';
+    if(elRegistros) elRegistros.style.display = 'none';
+    if(btnAnalise)   btnAnalise.style.cssText   = ativo;
+    if(btnRegistros) btnRegistros.style.cssText = inativo;
+  }
+}
+
+/** Renderiza a tabela "Registros de Operações (GDO Rural)" — lista cada RAT
+ *  contado em opsFiltradas, no mesmo padrão visual da tabela de Registros (BOS). */
+function _renderCxRegistros(opsFiltradas){
+  const countLabel = document.getElementById('cx-reg-count-label');
+  const tbody = document.getElementById('cx-reg-tbody');
+  if(!tbody) return;
+
+  if(countLabel) countLabel.textContent = opsFiltradas.length + ' registro(s)';
+
+  if(!opsFiltradas.length){
+    tbody.innerHTML = '<tr><td colspan="9" style="padding:20px;text-align:center;color:var(--text-muted);">Nenhum registro encontrado para os filtros selecionados.</td></tr>';
+    return;
+  }
+
+  /* Ordena por data, mais recente primeiro */
+  const ordenadas = [...opsFiltradas].sort((a,b) => {
+    const da = parseDataDDMMAAAA(a.data||'');
+    const db = parseDataDDMMAAAA(b.data||'');
+    if(da && db) return db - da;
+    return 0;
+  });
+
+  tbody.innerHTML = ordenadas.map(op => {
+    const pel = pelDoColk(op.grupamento);
+    const valida = _gdoValidaOp(op);
+    const motivos = valida ? [] : _gdoMotivoInvalido(op);
+    const crimeVinculado = (op.ratRefs && op.ratRefs.length) ? op.ratRefs.join(', ') : null;
+    return `<tr style="border-bottom:1px solid #1e1e1e;">
+      <td style="font-family:monospace;font-size:10px;color:#888;padding:7px 10px;">${op.rat||'—'}</td>
+      <td style="padding:7px 10px;">${op.data||'—'}</td>
+      <td style="padding:7px 10px;">${op.municipio||'—'}</td>
+      <td style="padding:7px 10px;"><span style="color:${COR_NAT_OPS_CRZ[op.natureza]||'#4caf50'};font-size:10px;font-weight:600;">${op.natureza||'—'}</span><span style="color:var(--text-muted);font-size:10px;margin-left:4px;">${LABEL_NAT_OPS_CRZ[op.natureza]||''}</span></td>
+      <td style="padding:7px 10px;text-align:center;color:var(--text-muted);">${pel && pel !== 99 ? pel+'º' : '—'}</td>
+      <td style="padding:7px 10px;font-size:10px;color:var(--text-muted);">${gpDoColk(op.grupamento)||'—'}</td>
+      <td style="padding:7px 10px;text-align:center;">${valida
+        ? '<span style="color:var(--success);font-size:10px;font-weight:700;">✔ Válida</span>'
+        : `<span style="color:#ff9800;font-size:10px;font-weight:700;cursor:default;" title="${motivos.join(' | ')}">⚠ Inválida</span>`}</td>
+      <td style="padding:7px 10px;font-family:monospace;font-size:10px;">${crimeVinculado
+        ? `<span style="color:#42a5f5;">${crimeVinculado}</span>`
+        : '<span style="color:var(--text-hint);">— nenhum</span>'}</td>
+      <td style="padding:7px 10px;text-align:center;white-space:nowrap;">
+        <button onclick="_abrirModalVinculoCrime('${op.rat.replace(/'/g,"\\'")}')"
+          style="background:none;border:1px solid rgba(155,138,92,.4);color:var(--gold);padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;"
+          title="Vincular BO de crime a esta operação">🔗 Vincular Crime</button>
+      </td>
+    </tr>`;
+  }).join('');
 }
 
 /** Permite ao Admin Geral corrigir/atribuir o(s) BO(s) de crime vinculados
