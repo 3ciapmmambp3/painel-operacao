@@ -110,7 +110,9 @@ create table if not exists public.tta_chamadas (
   tema_referencia           text,
   inicio_turno              time,
   final_turno                time,
-  prefixo_viatura            text,
+  prefixo_viatura            text,                                 -- 1ª viatura (compat.)
+  viaturas                   jsonb not null default '[]'::jsonb,   -- [{prefixo, motorista_matricula, motorista_nome}]
+  equipes                    jsonb not null default '[]'::jsonb,   -- [{ordem,comandante,motorista,prefixo_viatura,vinculo,tipo_patrulha,patrulheiros[],municipios[]}]
   tipo_patrulha               text,
   municipios_atuacao         jsonb not null default '[]'::jsonb,  -- ["MUNICIPIO A", ...]
   observacoes                 text,
@@ -118,6 +120,8 @@ create table if not exists public.tta_chamadas (
   registrado_por_nome         text not null,
   created_at   timestamptz not null default now()
 );
+alter table public.tta_chamadas add column if not exists viaturas jsonb not null default '[]'::jsonb;
+alter table public.tta_chamadas add column if not exists equipes  jsonb not null default '[]'::jsonb;
 create index if not exists idx_tta_chamadas_gp   on public.tta_chamadas(gp_responsavel);
 create index if not exists idx_tta_chamadas_resp on public.tta_chamadas(militar_resp_matricula, data_hora_chamada desc);
 create index if not exists idx_tta_chamadas_data on public.tta_chamadas(data_hora_chamada desc);
@@ -150,7 +154,7 @@ begin
     militar_resp_matricula, militar_resp_nome,
     militares_presentes, data_hora_chamada,
     tema_id, tema_assunto, tema_referencia,
-    inicio_turno, final_turno, prefixo_viatura, tipo_patrulha,
+    inicio_turno, final_turno, prefixo_viatura, viaturas, equipes, tipo_patrulha,
     municipios_atuacao, observacoes,
     registrado_por_matricula, registrado_por_nome
   ) values (
@@ -159,7 +163,7 @@ begin
     coalesce(p_dados->'militares_presentes', '[]'::jsonb), now(),
     v_tema.id, v_tema.assunto, v_tema.referencia,
     nullif(p_dados->>'inicio_turno','')::time, nullif(p_dados->>'final_turno','')::time,
-    nullif(p_dados->>'prefixo_viatura',''), nullif(p_dados->>'tipo_patrulha',''),
+    nullif(p_dados->>'prefixo_viatura',''), coalesce(p_dados->'viaturas','[]'::jsonb), coalesce(p_dados->'equipes','[]'::jsonb), nullif(p_dados->>'tipo_patrulha',''),
     coalesce(p_dados->'municipios_atuacao', '[]'::jsonb), nullif(p_dados->>'observacoes',''),
     v_me.matricula, v_me.nome_completo
   ) returning * into v_row;

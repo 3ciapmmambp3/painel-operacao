@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Movimentação de Viaturas — 3ª Cia PM MAmb</title>
+<link rel="stylesheet" href="styles/global.css">
+<script src="auth.js"></script>
+<script src="topnav.js" data-ativo="relatorio"></script>
+<style>
+  body{padding-bottom:60px}
+  /* sidebar do Relatório Diário (mesmo padrão das outras telas) */
+  .rd-shell{display:flex;align-items:flex-start}
+  .rd-sidebar{width:210px;flex-shrink:0;background:var(--bg-dark);border-right:1px solid var(--border);padding:14px 10px;min-height:calc(100vh - 122px)}
+  .rd-sidebar-titulo{color:var(--gold);font-size:10.5px;font-weight:700;letter-spacing:.5px;padding:0 4px 10px;border-bottom:1px solid var(--border);margin-bottom:8px;display:block}
+  .rd-item{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:6px;color:var(--text-muted);font-size:12.5px;text-decoration:none;margin-bottom:1px}
+  .rd-item:hover{background:var(--bg-hover);color:var(--text-white)}
+  .rd-item.ativo{background:var(--gold-bg);color:var(--gold-light);font-weight:700}
+  .rd-conteudo{flex:1;min-width:0}
+  @media(max-width:760px){.rd-sidebar{width:100%;border-right:none;border-bottom:1px solid var(--border);display:flex;flex-wrap:nowrap;overflow-x:auto;min-height:0}.rd-sidebar-titulo{display:none}.rd-item{flex:0 0 auto;white-space:nowrap}}
+
+  .wrap{max-width:960px;margin:20px auto 0;padding:0 20px}
+  .pagehead h1{font-size:20px;font-weight:800}
+  .pagehead p{font-size:12.5px;color:var(--text-muted);margin-top:5px;line-height:1.5}
+
+  .card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-top:16px}
+  .card>h2{font-size:13px;font-weight:800;color:var(--gold-light);letter-spacing:.4px;text-transform:uppercase;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+  .sec-base{border-left:3px solid var(--gold)}
+  .sec-req{border-left:3px solid var(--info)}
+  .req{font-size:9px;font-weight:800;letter-spacing:.4px;padding:2px 8px;border-radius:20px;background:var(--info-bg);color:#90caf9;border:1px solid rgba(66,165,245,.4);margin-left:auto}
+  .reqnote{font-size:11.5px;color:var(--text-hint);margin:-6px 0 12px;display:flex;align-items:center;gap:6px}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:13px}
+  .grid.three{grid-template-columns:repeat(3,1fr)}
+  .f{display:flex;flex-direction:column;gap:5px}
+  .f.col2{grid-column:span 2}
+  label{font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.3px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  input,select,textarea{background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;outline:none;width:100%;font-family:inherit}
+  input:focus,select:focus,textarea:focus{border-color:var(--gold)}
+  input[readonly]{color:var(--gold-light);border-style:dashed}
+  .hint{font-size:10.5px;color:var(--text-hint)}
+  .chip-auto{display:inline-flex;align-items:center;gap:4px;font-size:9px;font-weight:800;letter-spacing:.3px;padding:2px 7px;border-radius:20px;background:var(--gold-bg);color:var(--gold-light);border:1px solid var(--gold-border)}
+  .chip-calc{font-size:10.5px;font-weight:700}
+  .linkbtn{background:none;border:none;color:var(--gold);font-size:10.5px;cursor:pointer;text-decoration:underline;padding:0}
+
+  .vtr-status{margin-top:12px;border-radius:9px;padding:11px 14px;font-size:12.5px;display:none;align-items:center;gap:9px}
+  .vtr-status.warn{display:flex;background:var(--danger-bg);border:1px solid rgba(239,83,80,.4);color:#ef9a9a}
+  .vtr-status.ok{display:flex;background:var(--success-bg);border:1px solid rgba(102,187,106,.35);color:var(--success)}
+  .pend{background:rgba(255,183,77,.13);border:1px solid rgba(255,183,77,.45);border-radius:10px;padding:12px 15px;margin-bottom:16px;display:none}
+  .pend.show{display:block}
+  .pend h4{font-size:12px;color:#ffcc80;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px}
+  .pend .pitem{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:12.5px;padding:7px 0;border-top:1px solid rgba(255,183,77,.2)}
+  .pend .pitem:first-of-type{border-top:none}
+  .pend .pbtn{background:#ffb74d;color:#241a00;border:none;border-radius:6px;padding:6px 12px;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap}
+
+  .opts{margin-top:18px}
+  .opts .lead{font-size:12px;color:var(--text-muted);margin-bottom:10px}
+  .optgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+  .opt{display:flex;align-items:center;gap:11px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;cursor:pointer;transition:.15s}
+  .opt:hover{border-color:var(--border-hover)}
+  .opt.active{border-color:var(--gold);background:var(--gold-bg)}
+  .opt .ic{font-size:18px}.opt .tx{flex:1}.opt .tx b{font-size:13px;display:block}.opt .tx span{font-size:11px;color:var(--text-hint)}
+  .sw{width:38px;height:22px;border-radius:20px;background:var(--border-mid);position:relative;flex-shrink:0;transition:.2s}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#ccc;transition:.2s}
+  .opt.active .sw{background:var(--gold)}.opt.active .sw::after{left:18px;background:#1a1000}
+  .opt.req-opt{border-color:var(--gold-border)}
+  .reqmini{font-size:8px;font-weight:800;letter-spacing:.3px;padding:1px 6px;border-radius:20px;background:var(--info-bg);color:#90caf9;border:1px solid rgba(66,165,245,.4);margin-left:6px;vertical-align:middle}
+
+  .sec{display:none}.sec.show{display:block}
+  .subsec{background:var(--bg-input);border:1px solid var(--border);border-radius:9px;padding:14px;margin-top:12px}
+  .subsec h3{font-size:11px;font-weight:800;color:var(--text-white);text-transform:uppercase;letter-spacing:.3px;margin-bottom:11px}
+  .pillcheck{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--text-white);background:var(--bg-card);border:1px solid var(--border-mid);padding:7px 12px;border-radius:20px;cursor:pointer}
+  .pillcheck input{width:auto}
+  .rowchecks{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:4px}
+
+  .foot{position:sticky;bottom:0;margin-top:22px;background:linear-gradient(0deg,var(--bg-page) 72%,transparent);padding:16px 0 6px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .btn{border:none;border-radius:8px;padding:12px 22px;font-size:13px;font-weight:800;cursor:pointer}
+  .btn.gold{background:var(--gold);color:#1a1000}.btn.gold:disabled{opacity:.5;cursor:not-allowed}
+  .btn.out{background:transparent;border:1px solid var(--border-hover);color:var(--text-muted)}
+  .syncnote{font-size:11px;color:var(--text-hint);display:flex;align-items:center;gap:6px}.syncnote b{color:var(--success)}
+
+  .ok-screen{display:none;text-align:center;padding:60px 20px}
+  .ok-screen.show{display:block}
+  .ok-screen .big{font-size:52px}.ok-screen h2{font-size:22px;margin:12px 0 6px}
+  .ok-screen p{color:var(--text-muted);font-size:13px}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111;border:1px solid var(--border);color:var(--text-white);padding:12px 20px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:300}
+  .toast.show{opacity:1}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header">
+  <div class="header-left">
+    <div class="header-shields"><img src="assets/escudo-pmmg.png" alt="PMMG" onerror="this.style.display='none'"><img src="assets/escudo-cpe.png" alt="CPE" onerror="this.style.display='none'"><img src="assets/brasao-bpmmamb.png" alt="BPM MAMB" onerror="this.style.display='none'"></div><div class="header-div"></div>
+    <div class="header-title">
+      <div class="header-kicker">CPE · BPM MAmb · 3ª Cia PM MAmb</div>
+      <h1>PAINEL DE GESTÃO OPERACIONAL</h1>
+      <p>Movimentação de Viaturas</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <div id="user-info" style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);cursor:pointer;padding:5px 10px;border:1px solid var(--border);border-radius:5px" onclick="location.href='perfil.html'" title="Meu Perfil">
+      <span id="user-avatar" style="width:22px;height:22px;border-radius:50%;background:var(--gold);color:#1a1000;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center">?</span>
+      <span id="user-nome">—</span>
+    </div>
+    <button class="btn-outline" onclick="sessaoLimpar&&sessaoLimpar();localStorage.removeItem('poe_sessao_v2');sessionStorage.removeItem('poe_sessao_v2');location.href='index.html'">Sair</button>
+  </div>
+</header>
+
+<div class="rd-shell">
+  <aside class="rd-sidebar">
+    <span class="rd-sidebar-titulo">RELATÓRIO DIÁRIO</span>
+    <a class="rd-item" href="tta.html"><span>🎯</span><span class="lbl">TTA (Pré-turno)</span></a>
+    <a class="rd-item" href="meus-relatorios.html"><span>📄</span><span class="lbl">Lista de Relatórios</span></a>
+    <a class="rd-item" href="relatorio-servico.html"><span>➕</span><span class="lbl">Novo Relatório</span></a>
+    <a class="rd-item" href="produtividade.html"><span>📊</span><span class="lbl">Produtividade</span></a>
+    <a class="rd-item ativo" href="movimentacao-viaturas.html"><span>🚔</span><span class="lbl">Movimentação de Viaturas</span></a>
+    <a class="rd-item" id="linkGestaoVtr" href="viaturas-gestao.html" style="display:none"><span>⚙️</span><span class="lbl">Gestão de Viaturas</span></a>
+  </aside>
+
+  <div class="rd-conteudo">
+  <div class="wrap" id="form-wrap">
+    <div class="pend" id="pend-banner"></div>
+    <div class="pagehead">
+      <h1>Ficha de Movimentação de Viaturas</h1>
+      <p>Preencha os dados da utilização. As seções abaixo do bloco principal só aparecem se você marcar (abastecimento, acidente, manutenção, embarcação/TAQ…). Ao salvar, grava no sistema <b>e sincroniza com a planilha do Google</b>.</p>
+    </div>
+
+    <!-- BASE -->
+    <div class="card sec-base" id="base">
+      <h2>🚔 Dados da utilização</h2>
+      <div class="grid">
+        <div class="f">
+          <label>Motorista <span class="chip-auto">● auto: escalado</span></label>
+          <input data-k="motorista_nome" id="mot-nome">
+          <input type="hidden" data-k="motorista_matricula" id="mot-mat">
+          <span class="hint">Pré-preenchido pelo seu login. Pode alterar se o motorista for outro.</span>
+        </div>
+        <div class="f">
+          <label>Prefixo da viatura</label>
+          <select data-k="prefixo" id="sel-prefixo" onchange="onVtr()"><option value="">Selecione…</option></select>
+        </div>
+        <div class="f">
+          <label>Placa <span class="chip-auto">● auto do prefixo</span></label>
+          <input data-k="placa" id="placa" readonly>
+        </div>
+        <div class="f">
+          <label>Tipo de empenho</label>
+          <select data-k="tipo_empenho"><option>Ordinária</option><option>Operação</option><option>Apoio</option><option>Administrativa</option></select>
+        </div>
+        <div class="f col2">
+          <label>Onde a viatura será utilizada</label>
+          <input data-k="local_utilizacao" placeholder="Município / área de emprego">
+        </div>
+        <div class="f col2">
+          <label>Lotação do motorista</label>
+          <input data-k="lotacao_motorista" id="lotacao">
+        </div>
+        <div class="f col2">
+          <label>Comandante da equipe (supervisão)</label>
+          <input data-k="comandante_equipe" placeholder="Quem supervisiona a equipe">
+        </div>
+        <div class="f">
+          <label>Km inicial <span class="chip-auto">● auto: última devolução</span></label>
+          <input data-k="km_inicial" id="kmi" type="number" oninput="calc()" readonly>
+          <span class="hint" id="kmi-hint">Selecione a viatura para carregar o Km.</span>
+        </div>
+        <div class="f">
+          <label>Km final <span id="kmcalc" class="chip-calc"></span></label>
+          <input data-k="km_final" id="kmf" type="number" placeholder="Km ao devolver" oninput="calc()">
+        </div>
+        <div class="f"><label>Início (armar a VTR)</label><input data-k="inicio" id="inicio" type="datetime-local"></div>
+        <div class="f"><label>Término (devolver)</label><input data-k="termino" type="datetime-local"></div>
+        <div class="f"><label>Combustível ao ARMAR</label>
+          <select data-k="comb_armar"><option>Cheio</option><option>3/4</option><option>1/2</option><option>1/4</option><option>Reserva</option></select></div>
+        <div class="f"><label>Combustível ao DEVOLVER</label>
+          <select data-k="comb_devolver"><option>Cheio</option><option>3/4</option><option>1/2</option><option>1/4</option><option>Reserva</option></select></div>
+      </div>
+      <div class="vtr-status" id="vtr-status"></div>
+    </div>
+
+    <!-- OPTIONAL TOGGLES -->
+    <div class="opts">
+      <div class="lead">Preencha as seções abaixo. <b>Abastecimento</b> e <b>Limpeza</b> são <b>obrigatórios</b>; os demais, só se ocorreram.</div>
+      <div class="optgrid">
+        <div class="opt req-opt" data-flag="tem_abastecimento" onclick="tog(this,'s-abast')"><div class="ic">⛽</div><div class="tx"><b>Abastecimento <span class="reqmini">obrigatório</span></b><span>houve? POC · PRIME · Convênio</span></div><div class="sw"></div></div>
+        <div class="opt req-opt" data-flag="tem_limpeza" onclick="tog(this,'s-limp')"><div class="ic">🧽</div><div class="tx"><b>Limpeza / higienização <span class="reqmini">obrigatório</span></b><span>ao receber e devolver</span></div><div class="sw"></div></div>
+        <div class="opt" data-flag="tem_acidente" onclick="tog(this,'s-acid')"><div class="ic">💥</div><div class="tx"><b>Acidente de viatura</b><span>REDS, perícia, vítimas…</span></div><div class="sw"></div></div>
+        <div class="opt" data-flag="tem_manutencao" onclick="tog(this,'s-manut')"><div class="ic">🔧</div><div class="tx"><b>Manutenção / defeito</b><span>reportar problema, oficina</span></div><div class="sw"></div></div>
+        <div class="opt" data-flag="tem_avaria" onclick="tog(this,'s-avaria')"><div class="ic">🩹</div><div class="tx"><b>Avarias de uso</b><span>danos detectados</span></div><div class="sw"></div></div>
+        <div class="opt" data-flag="tem_taq" onclick="tog(this,'s-taq')"><div class="ic">🚤</div><div class="tx"><b>Embarcação / Motor / TAQ</b><span>barco, motor de popa, carretinha</span></div><div class="sw"></div></div>
+        <div class="opt" data-flag="tem_aeronave" onclick="tog(this,'s-aero')"><div class="ic">✈️</div><div class="tx"><b>Aeronave / Drone</b><span>piloto(s), SISANT, SARPAS, horas</span></div><div class="sw"></div></div>
+      </div>
+    </div>
+
+    <!-- ABASTECIMENTO (obrigatório) -->
+    <div class="card sec" id="s-abast" data-sec="abastecimento">
+      <h2>⛽ Abastecimento <span class="req">obrigatório</span></h2>
+      <p class="reqnote">🔔 Orientação: devolver a viatura <b>abastecida</b> para o próximo serviço.</p>
+      <div class="grid">
+        <div class="f col2"><label>Houve abastecimento nesta utilização?</label>
+          <select data-k="houve" id="ab-houve" onchange="abHouve()"><option value="">Selecione…</option><option>Sim</option><option>Não</option></select></div>
+      </div>
+      <div class="sec" id="ab-sim">
+        <div class="rowchecks" style="margin-top:12px">
+          <label class="pillcheck"><input type="checkbox" data-k="usou_poc" onchange="tShow('ab-poc',this)"> POC</label>
+          <label class="pillcheck"><input type="checkbox" data-k="usou_prime" onchange="tShow('ab-prime',this)"> Cartão PRIME</label>
+          <label class="pillcheck"><input type="checkbox" data-k="usou_convenio" onchange="tShow('ab-conv',this)"> Convênio</label>
+        </div>
+        <div class="subsec sec" id="ab-poc"><h3>POC</h3>
+          <div class="grid"><div class="f"><label>Litros no POC</label><input type="number" data-k="poc_litros"></div>
+            <div class="f"><label>Respeitou o limite?</label><select data-k="poc_limite"><option>Sim</option><option>Não</option></select></div>
+            <div class="f col2"><label>Detalhes da autorização (se ultrapassou)</label><input data-k="poc_autorizacao"></div></div></div>
+        <div class="subsec sec" id="ab-prime"><h3>Cartão PRIME</h3>
+          <div class="grid three"><div class="f"><label>Litros</label><input type="number" data-k="prime_litros"></div>
+            <div class="f"><label>Valor do litro</label><input data-k="prime_valor_litro"></div><div class="f"><label>Valor total</label><input data-k="prime_valor_total"></div></div>
+          <div class="grid" style="margin-top:11px"><div class="f"><label>Comprovante (foto)</label><input type="file" accept="image/*"></div>
+            <div class="f"><label>Respeitou o limite?</label><select data-k="prime_limite"><option>Sim</option><option>Não</option></select></div></div></div>
+        <div class="subsec sec" id="ab-conv"><h3>Convênio</h3>
+          <div class="grid three"><div class="f"><label>Data/hora</label><input type="datetime-local" data-k="conv_dh"></div>
+            <div class="f"><label>Odômetro</label><input type="number" data-k="conv_odometro"></div><div class="f"><label>Combustível</label><input data-k="conv_combustivel"></div>
+            <div class="f"><label>Litros</label><input type="number" data-k="conv_litros"></div><div class="f"><label>Valor unit.</label><input data-k="conv_valor_unit"></div>
+            <div class="f"><label>Valor total</label><input data-k="conv_valor_total"></div><div class="f"><label>Convênio</label><input data-k="conv_convenio"></div>
+            <div class="f"><label>Cidade</label><input data-k="conv_cidade"></div><div class="f"><label>Cód. origem</label><input data-k="conv_cod_origem"></div></div>
+          <div class="grid" style="margin-top:11px"><div class="f col2"><label>Observações</label><input data-k="conv_obs"></div>
+            <div class="f"><label>Nota fiscal (foto)</label><input type="file" accept="image/*"></div></div></div>
+        <div style="margin-top:12px"><label class="pillcheck"><input type="checkbox" data-k="teve_segundo" onchange="tShow('ab-2',this)"> Houve um 2º abastecimento no mesmo turno</label></div>
+        <div class="subsec sec" id="ab-2"><h3>2º abastecimento (adicional)</h3>
+          <div class="grid three"><div class="f"><label>Litros POC</label><input type="number" data-k="ad_poc_litros"></div>
+            <div class="f"><label>Litros PRIME</label><input type="number" data-k="ad_prime_litros"></div>
+            <div class="f"><label>Litros Convênio</label><input type="number" data-k="ad_conv_litros"></div>
+            <div class="f col2"><label>Observações do 2º abastecimento</label><input data-k="ad_obs"></div></div></div>
+      </div>
+      <div class="sec" id="ab-nao">
+        <div class="f" style="margin-top:12px"><label>Justificativa — por que não abasteceu?</label>
+          <textarea data-k="justificativa_nao" id="ab-just" rows="2" placeholder="Ex.: tanque ainda cheio / POC fechado / etc."></textarea></div>
+      </div>
+    </div>
+
+    <!-- LIMPEZA (obrigatório) -->
+    <div class="card sec" id="s-limp" data-sec="limpeza">
+      <h2>🧽 Limpeza / higienização <span class="req">obrigatório</span></h2>
+      <p class="reqnote">🔔 Orientação: devolver a viatura <b>limpa/higienizada</b> para o próximo serviço.</p>
+      <div class="grid">
+        <div class="f"><label>Ao RECEBER estava limpa?</label>
+          <select data-k="recebeu_limpa"><option value="">—</option><option>Sim</option><option>Não</option></select></div>
+        <div class="f"><label>Ao DEVOLVER foi higienizada?</label>
+          <select data-k="devolveu_limpa" id="limp-dev" onchange="limpDev()"><option value="">Selecione…</option><option>Sim</option><option>Não</option></select></div>
+        <div class="f col2"><label>Detalhes (se necessário)</label><input data-k="detalhes"></div>
+      </div>
+      <div class="sec" id="limp-nao">
+        <div class="f"><label>Justificativa — por que não higienizou?</label>
+          <textarea data-k="justificativa_nao" id="limp-just" rows="2" placeholder="Ex.: sem ponto de lavagem disponível / próxima equipe assumiu imediatamente / etc."></textarea></div>
+      </div>
+    </div>
+
+    <!-- ACIDENTE -->
+    <div class="card sec" id="s-acid" data-sec="acidente">
+      <h2>💥 Acidente de viatura</h2>
+      <div class="grid three">
+        <div class="f"><label>Nº REDS</label><input data-k="reds" placeholder="2026-000000000-001"></div>
+        <div class="f"><label>Odômetro no acidente</label><input type="number" data-k="odometro"></div>
+        <div class="f"><label>Data/hora</label><input type="datetime-local" data-k="data_hora"></div>
+        <div class="f"><label>Motorista é o que armou?</label><select data-k="mesmo_motorista"><option>Sim</option><option>Não</option></select></div>
+        <div class="f"><label>Perícia acionada?</label><select data-k="pericia"><option>Sim</option><option>Não</option></select></div>
+        <div class="f"><label>CPU compareceu?</label><select data-k="cpu"><option>Sim</option><option>Não</option></select></div>
+        <div class="f"><label>Houve vítimas?</label><select data-k="vitimas"><option>Não</option><option>Sim</option></select></div>
+        <div class="f"><label>Responsável definido?</label><select data-k="responsavel"><option>Sim</option><option>Não</option></select></div>
+        <div class="f"><label>Bafômetro realizado?</label><select data-k="bafometro"><option>Sim</option><option>Não</option></select></div>
+        <div class="f"><label>Necessitou guincho?</label><select data-k="guincho"><option>Não</option><option>Sim</option></select></div>
+        <div class="f col2"><label>Fotos dos veículos</label><input type="file" accept="image/*" multiple></div>
+      </div>
+      <div class="f" style="margin-top:12px"><label>Observações do acidente</label><textarea rows="2" data-k="obs"></textarea></div>
+    </div>
+
+    <!-- MANUTENÇÃO -->
+    <div class="card sec" id="s-manut" data-sec="manutencao">
+      <h2>🔧 Manutenção / defeito reportado</h2>
+      <p style="font-size:11.5px;color:var(--text-hint);margin:-6px 0 12px">Aqui você <b>reporta</b> o defeito. A decisão de baixar a viatura para manutenção é feita pelo setor responsável (Aux P4).</p>
+      <div class="grid three">
+        <div class="f"><label>Tipo</label><select data-k="tipo"><option>Corretiva</option><option>Preventiva</option></select></div>
+        <div class="f"><label>Urgência</label><select data-k="urgencia"><option>Baixa</option><option>Média</option><option>Alta</option></select></div>
+        <div class="f"><label>Odômetro</label><input type="number" data-k="odometro"></div>
+        <div class="f col2"><label>Defeito reclamado</label><input data-k="defeito"></div>
+        <div class="f"><label>Impede o uso da viatura?</label><select data-k="impede_uso"><option>Não</option><option>Sim</option></select></div>
+        <div class="f col2"><label>Observações</label><input data-k="obs"></div>
+      </div>
+    </div>
+
+    <!-- AVARIAS -->
+    <div class="card sec" id="s-avaria" data-sec="avaria">
+      <h2>🩹 Avarias de uso</h2>
+      <div class="grid"><div class="f col2"><label>Qual avaria foi detectada?</label><input data-k="descricao"></div>
+        <div class="f col2"><label>Fotos das avarias</label><input type="file" accept="image/*" multiple></div></div>
+    </div>
+
+    <!-- TAQ -->
+    <div class="card sec" id="s-taq" data-sec="taq">
+      <h2>🚤 Embarcação / Motor / TAQ</h2>
+      <div class="subsec">
+        <h3>Embarcações <button type="button" class="linkbtn" style="margin-left:8px" onclick="addEmbarc()">+ adicionar embarcação</button></h3>
+        <div id="embarcs"></div>
+      </div>
+      <div class="grid three" style="margin-top:12px">
+        <div class="f"><label>Carretinha (prefixo/placa)</label><input data-k="carretinha"></div>
+      </div>
+      <div style="margin-top:12px"><label class="pillcheck"><input type="checkbox" data-k="abasteceu_taq" onchange="tShow('taq-ab',this)"> Houve abastecimento do TAQ</label></div>
+      <div class="subsec sec" id="taq-ab"><h3>Abastecimento do TAQ</h3>
+        <div class="grid three"><div class="f"><label>Havia gasolina antes?</label><select data-k="taq_gasolina_antes"><option>Sim</option><option>Não</option></select></div>
+          <div class="f"><label>Misturada com 2T?</label><select data-k="taq_misturada"><option>Sim</option><option>Não</option></select></div>
+          <div class="f"><label>Litros</label><input type="number" data-k="taq_litros"></div>
+          <div class="f"><label>Valor unit.</label><input data-k="taq_valor_unit"></div>
+          <div class="f"><label>Valor total</label><input data-k="taq_valor_total"></div>
+          <div class="f"><label>Convênio / cartão</label><input data-k="taq_fonte"></div></div></div>
+    </div>
+
+    <!-- AERONAVE / DRONE -->
+    <div class="card sec" id="s-aero" data-sec="aeronave">
+      <h2>✈️ Aeronave / Drone</h2>
+      <div class="grid three">
+        <div class="f"><label>Aeronave / Drone (modelo)</label><input data-k="aeronave" placeholder="Ex.: DJI Mavic 3 / Matrice"></div>
+        <div class="f"><label>SISANT da aeronave</label><input data-k="sisant" placeholder="Cadastro SISANT"></div>
+        <div class="f"><label>Protocolo SARPAS do voo</label><input data-k="protocolo_sarpas" placeholder="Protocolo aprovado p/ o voo"></div>
+        <div class="f"><label>Data do último voo autorizado (DECEA)</label><input type="date" data-k="data_decea"></div>
+      </div>
+      <div class="subsec" style="margin-top:12px">
+        <h3>Piloto(s) <button type="button" class="linkbtn" style="margin-left:8px" onclick="addPiloto()">+ adicionar piloto</button></h3>
+        <div id="pilotos"></div>
+      </div>
+    </div>
+
+    <!-- OBS -->
+    <div class="card">
+      <h2>📝 Observações sobre a viatura</h2>
+      <textarea rows="3" id="obs-geral" placeholder="Qualquer observação geral…"></textarea>
+    </div>
+
+    <div class="foot">
+      <button class="btn gold" id="btn-salvar" onclick="salvar()">✔ Salvar ficha</button>
+      <button class="btn out" onclick="location.href='meus-relatorios.html'">Cancelar</button>
+      <span class="syncnote">🔄 Ao salvar, grava no sistema e <b>sincroniza com a planilha do Google</b> (envio a órgãos externos).</span>
+    </div>
+  </div>
+
+  <div class="wrap ok-screen" id="ok-screen">
+    <div class="big">✅</div>
+    <h2>Movimentação registrada!</h2>
+    <p id="ok-msg"></p>
+    <div style="margin-top:20px;display:flex;gap:12px;justify-content:center">
+      <button class="btn gold" onclick="location.reload()">Lançar outra</button>
+      <button class="btn out" onclick="location.href='meus-relatorios.html'">Ir para Relatórios</button>
+    </div>
+  </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ── sessão / API ────────────────────────────────────────────────── */
+const S = (typeof sessaoLer === 'function') ? sessaoLer() : null;
+if (!S) location.href = 'index.html';
+const API  = (typeof SB_AUTH_URL !== 'undefined') ? SB_AUTH_URL : '';
+const AKEY = (typeof SB_AUTH_KEY !== 'undefined') ? SB_AUTH_KEY : '';
+const H = { apikey:AKEY, Authorization:'Bearer '+AKEY, 'Content-Type':'application/json' };
+async function rpc(fn, body){
+  const r = await fetch(`${API}/rest/v1/rpc/${fn}`, { method:'POST', headers:H, body:JSON.stringify(body||{}) });
+  const t = await r.text(); let j; try{ j = t?JSON.parse(t):null; }catch{ j = t; }
+  if (!r.ok) throw new Error((j&&j.message)||('HTTP '+r.status));
+  return j;
+}
+function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+function foco(id,msg){ toast(msg); const el=document.getElementById(id); if(el){ el.scrollIntoView({behavior:'smooth',block:'center'}); setTimeout(()=>{try{el.focus()}catch(e){}},250); } }
+
+let VIATURAS = [];   // cadastro
+let VMAP = {};       // prefixo -> viatura
+
+/* ── boot ────────────────────────────────────────────────────────── */
+(async function init(){
+  // usuário / motorista default
+  const nome = S.nome_guerra ? (S.posto_graduacao? S.posto_graduacao+' '+S.nome_guerra : S.nome_guerra) : (S.nome_completo||S.nome||'');
+  document.getElementById('user-nome').textContent = nome || '—';
+  document.getElementById('user-avatar').textContent = (nome||'?').trim().charAt(0).toUpperCase();
+  document.getElementById('mot-nome').value = nome;
+  document.getElementById('mot-mat').value  = S.matricula || '';
+  document.getElementById('lotacao').value  = S.grupamento_id || '';
+  // início default = agora
+  const now=new Date(); now.setMinutes(now.getMinutes()-now.getTimezoneOffset());
+  document.getElementById('inicio').value = now.toISOString().slice(0,16);
+  // Gestão de Viaturas visível só p/ Aux P4 / Admin Geral
+  const funcao=(S.funcao||'').toLowerCase();
+  if (S.nivel_acesso==='admin_geral' || funcao.includes('aux p4')) document.getElementById('linkGestaoVtr').style.display='';
+
+  try {
+    const r = await fetch(`${API}/rest/v1/viaturas?select=prefixo,placa,marca_modelo,pel,gp,municipio,situacao_viatura,situacao_operacional,ativo&order=prefixo`, { headers:H });
+    VIATURAS = await r.json();
+    if (!Array.isArray(VIATURAS)) VIATURAS = [];
+  } catch(e){ console.error('viaturas', e); VIATURAS=[]; }
+
+  const sel=document.getElementById('sel-prefixo');
+  VIATURAS.forEach(v=>{ VMAP[v.prefixo]=v; const o=document.createElement('option'); o.value=v.prefixo; o.textContent=`${v.prefixo} — ${v.marca_modelo||''}`.trim(); sel.appendChild(o); });
+  if (!VIATURAS.length){ sel.innerHTML='<option value="">(cadastro de viaturas vazio — rode o SQL/sync)</option>'; }
+  carregarPendencias();
+})();
+
+// Pendências de ficha atribuídas a este motorista (criadas pelo Relatório de Serviço).
+async function carregarPendencias(){
+  try{
+    const mat=(S.matricula||'').replace(/\D/g,'');
+    if(!mat) return;
+    const r=await fetch(`${API}/rest/v1/mov_pendencias?select=prefixo,motorista_nome,solicitado_por_nome&atendida=eq.false&motorista_matricula=eq.${mat}&order=criado_em.desc`,{headers:H});
+    if(!r.ok) return;
+    const lista=await r.json(); if(!Array.isArray(lista)||!lista.length) return;
+    const box=document.getElementById('pend-banner');
+    box.innerHTML='<h4>⚠️ Você tem '+lista.length+' ficha(s) pendente(s)</h4>'+
+      lista.map(p=>`<div class="pitem"><span>VTR <b>${p.prefixo}</b>${p.solicitado_por_nome?` · solicitada por ${p.solicitado_por_nome}`:''}</span>`+
+        `<button class="pbtn" onclick="preencherPendencia('${p.prefixo}')">Preencher</button></div>`).join('');
+    box.classList.add('show');
+  }catch(e){ /* silencioso */ }
+}
+function preencherPendencia(prefixo){
+  const sel=document.getElementById('sel-prefixo'); sel.value=prefixo;
+  if(sel.value!==prefixo){ // prefixo não está na lista carregada
+    const o=document.createElement('option'); o.value=prefixo; o.textContent=prefixo; sel.appendChild(o); sel.value=prefixo;
+  }
+  onVtr();
+  document.getElementById('base').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+async function onVtr(){
+  const p=document.getElementById('sel-prefixo').value; const v=VMAP[p];
+  const placa=document.getElementById('placa'); const kmi=document.getElementById('kmi'); const hint=document.getElementById('kmi-hint');
+  const st=document.getElementById('vtr-status'); const btn=document.getElementById('btn-salvar');
+  st.className='vtr-status'; btn.disabled=false;
+  if (!v){ placa.value=''; kmi.value=''; return; }
+  placa.value = v.placa||'';
+  // status operacional (baixada / manutenção)
+  const so=(v.situacao_operacional||'DISPONIVEL').toUpperCase();
+  if (so!=='DISPONIVEL' && so!==''){
+    st.className='vtr-status warn';
+    st.innerHTML = `⚠️ Viatura <b>${so.replace('_',' ')}</b> — indisponível para nova movimentação. Fale com o setor responsável (Aux P4).`;
+    btn.disabled=true;
+  }
+  // km inicial = último km final
+  kmi.value=''; hint.textContent='Buscando último Km…';
+  try{
+    const ult = await rpc('mov_viatura_ultimo_km', { p_prefixo:p });
+    if (ult!=null){ kmi.value=ult; kmi.readOnly=true; hint.innerHTML=`Última devolução: <b>${(+ult).toLocaleString('pt-BR')} km</b>. <button class="linkbtn" onclick="document.getElementById('kmi').readOnly=false;this.remove()">corrigir</button>`; }
+    else { kmi.readOnly=false; hint.textContent='Sem registro anterior — informe o Km inicial.'; }
+  }catch(e){ kmi.readOnly=false; hint.textContent='Não foi possível buscar o Km. Informe manualmente.'; }
+  calc();
+}
+
+function calc(){ const i=+document.getElementById('kmi').value, f=+document.getElementById('kmf').value; const el=document.getElementById('kmcalc');
+  if(f&&i&&f>=i){el.textContent='rodou '+(f-i).toLocaleString('pt-BR')+' km';el.style.color='var(--success)';}
+  else if(f&&i&&f<i){el.textContent='menor que o inicial!';el.style.color='var(--danger)';} else el.textContent=''; }
+
+function tog(el,id){ el.classList.toggle('active'); const sec=document.getElementById(id); const on=sec.classList.toggle('show');
+  if(on && id==='s-aero'  && !document.querySelectorAll('#pilotos .pil-row').length) addPiloto();
+  if(on && id==='s-taq'   && !document.querySelectorAll('#embarcs .emb-row').length) addEmbarc();
+}
+function tShow(id,cb){ document.getElementById(id).classList.toggle('show', cb.checked); }
+function linhaRemover(){ return '<button type="button" class="linkbtn" style="color:var(--danger);padding-bottom:9px" onclick="this.parentNode.remove()">remover</button>'; }
+function addPiloto(){
+  const div=document.createElement('div'); div.className='pil-row';
+  div.style.cssText='display:grid;grid-template-columns:1.5fr 1fr .8fr auto;gap:9px;margin-bottom:9px;align-items:end';
+  div.innerHTML='<div class="f"><label>Piloto</label><input class="pil-nome" placeholder="Nome / nº polícia"></div>'
+    +'<div class="f"><label>Código SARPAS do piloto</label><input class="pil-sarpas"></div>'
+    +'<div class="f"><label>Horas de voo</label><input class="pil-horas" type="number" step="0.1"></div>'+linhaRemover();
+  document.getElementById('pilotos').appendChild(div);
+}
+function addEmbarc(){
+  const div=document.createElement('div'); div.className='emb-row';
+  div.style.cssText='display:grid;grid-template-columns:1fr 1fr 1fr .7fr auto;gap:9px;margin-bottom:9px;align-items:end';
+  div.innerHTML='<div class="f"><label>Prefixo da embarcação</label><input class="emb-prefixo"></div>'
+    +'<div class="f"><label>Prefixo/série do motor</label><input class="emb-motor"></div>'
+    +'<div class="f"><label>Marca do motor</label><input class="emb-marca"></div>'
+    +'<div class="f"><label>Horas TAQ</label><input class="emb-horas" type="number" step="0.1"></div>'+linhaRemover();
+  document.getElementById('embarcs').appendChild(div);
+}
+function abHouve(){ const v=document.getElementById('ab-houve').value;
+  document.getElementById('ab-sim').classList.toggle('show', v==='Sim');
+  document.getElementById('ab-nao').classList.toggle('show', v==='Não'); }
+function limpDev(){ const v=document.getElementById('limp-dev').value;
+  document.getElementById('limp-nao').classList.toggle('show', v==='Não'); }
+
+/* coleta genérica: todos os [data-k] dentro de root viram {k:valor} */
+function collect(root){
+  const o={};
+  root.querySelectorAll('[data-k]').forEach(el=>{
+    let val;
+    if (el.type==='checkbox') val=el.checked; else val=el.value;
+    if (val==='' || val==null) return;
+    o[el.dataset.k]=val;
+  });
+  return o;
+}
+
+async function salvar(){
+  const btn=document.getElementById('btn-salvar');
+  if (btn.disabled) return;
+  const base = collect(document.getElementById('base'));
+  if (!base.prefixo) return foco('sel-prefixo','Selecione a viatura.');
+  if (!base.km_final) return foco('kmf','Informe o Km final.');
+  if (base.km_inicial && +base.km_final < +base.km_inicial) return foco('kmf','Km final não pode ser menor que o inicial.');
+
+  const dados={};
+  const flags={};
+  const abre = (flag,secId)=>{ const o=document.querySelector('.opt[data-flag="'+flag+'"]'); if(o&&!o.classList.contains('active')) tog(o,secId); };
+
+  // ── Abastecimento (obrigatório) ──
+  abre('tem_abastecimento','s-abast');
+  const houve = document.getElementById('ab-houve').value;
+  if (!houve) return foco('ab-houve','Abastecimento é obrigatório: informe se houve.');
+  const dAbast = collect(document.getElementById('s-abast'));
+  if (houve==='Sim' && !(dAbast.usou_poc||dAbast.usou_prime||dAbast.usou_convenio))
+    return foco('ab-houve','Marque a fonte do abastecimento (POC, PRIME ou Convênio).');
+  if (houve==='Não' && !document.getElementById('ab-just').value.trim())
+    return foco('ab-just','Justifique por que a viatura não foi abastecida.');
+
+  // ── Limpeza / higienização (obrigatório) ──
+  abre('tem_limpeza','s-limp');
+  const devLimpa = document.getElementById('limp-dev').value;
+  if (!devLimpa) return foco('limp-dev','Limpeza é obrigatória: informe se higienizou ao devolver.');
+  if (devLimpa==='Não' && !document.getElementById('limp-just').value.trim())
+    return foco('limp-just','Justifique por que a viatura não foi higienizada.');
+
+  // ── Coleta de TODAS as seções ativas (inclui as obrigatórias já abertas) ──
+  document.querySelectorAll('.opt').forEach(opt=>{
+    const on=opt.classList.contains('active'); flags[opt.dataset.flag]=on;
+    if (on){ const secId=opt.getAttribute('onclick').match(/'([^']+)'/)[1]; const sec=document.getElementById(secId); dados[sec.dataset.sec]=collect(sec); }
+  });
+  flags.tem_abastecimento = (houve==='Sim');   // reflete "houve", não só "seção aberta"
+  flags.tem_limpeza = true;
+
+  // pilotos (aeronave) — lista, coletada à parte
+  if (flags.tem_aeronave){
+    const pilotos=[...document.querySelectorAll('#pilotos .pil-row')].map(r=>({
+      nome:(r.querySelector('.pil-nome').value||'').trim(),
+      sarpas:(r.querySelector('.pil-sarpas').value||'').trim(),
+      horas:(r.querySelector('.pil-horas').value||'').trim()
+    })).filter(p=>p.nome||p.sarpas||p.horas);
+    dados.aeronave = Object.assign(dados.aeronave||{}, { pilotos });
+  }
+
+  // embarcações (lista)
+  if (flags.tem_taq){
+    const embarcacoes=[...document.querySelectorAll('#embarcs .emb-row')].map(r=>({
+      prefixo:(r.querySelector('.emb-prefixo').value||'').trim(),
+      motor_serie:(r.querySelector('.emb-motor').value||'').trim(),
+      motor_marca:(r.querySelector('.emb-marca').value||'').trim(),
+      horas:(r.querySelector('.emb-horas').value||'').trim()
+    })).filter(e=>e.prefixo||e.motor_serie||e.motor_marca||e.horas);
+    dados.taq = Object.assign(dados.taq||{}, { embarcacoes });
+  }
+
+
+  const payload = Object.assign({}, base, flags, {
+    dados,
+    anexos: [],  // Fase 3: upload no Storage
+    observacoes: document.getElementById('obs-geral').value || '',
+    gp_responsavel: (VMAP[base.prefixo]||{}).gp || '',
+    grupamento_completo: S.grupamento_id || ''
+  });
+
+  btn.disabled=true; btn.textContent='Salvando…';
+  try{
+    const row = await rpc('mov_viatura_criar', { p_token:S.token, p_dados:payload });
+    document.getElementById('form-wrap').style.display='none';
+    const km = row && row.km_rodados!=null ? ` · ${(+row.km_rodados).toLocaleString('pt-BR')} km rodados` : '';
+    document.getElementById('ok-msg').textContent = `Viatura ${base.prefixo}${km}. Sincronizando com a planilha do Google.`;
+    document.getElementById('ok-screen').classList.add('show');
+    window.scrollTo(0,0);
+  }catch(e){ toast('Erro ao salvar: '+e.message); btn.disabled=false; btn.textContent='✔ Salvar ficha'; }
+}
+</script>
+</body>
+</html>

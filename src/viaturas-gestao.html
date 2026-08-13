@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gestão de Viaturas — 3ª Cia PM MAmb</title>
+<link rel="stylesheet" href="styles/global.css">
+<script src="auth.js"></script>
+<script src="topnav.js" data-ativo="relatorio"></script>
+<style>
+  body{padding-bottom:60px}
+  .rd-shell{display:flex;align-items:flex-start}
+  .rd-sidebar{width:210px;flex-shrink:0;background:var(--bg-dark);border-right:1px solid var(--border);padding:14px 10px;min-height:calc(100vh - 122px)}
+  .rd-sidebar-titulo{color:var(--gold);font-size:10.5px;font-weight:700;letter-spacing:.5px;padding:0 4px 10px;border-bottom:1px solid var(--border);margin-bottom:8px;display:block}
+  .rd-item{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:6px;color:var(--text-muted);font-size:12.5px;text-decoration:none;margin-bottom:1px}
+  .rd-item:hover{background:var(--bg-hover);color:var(--text-white)}
+  .rd-item.ativo{background:var(--gold-bg);color:var(--gold-light);font-weight:700}
+  .rd-conteudo{flex:1;min-width:0}
+  @media(max-width:760px){.rd-sidebar{width:100%;border-right:none;border-bottom:1px solid var(--border);display:flex;overflow-x:auto;min-height:0}.rd-sidebar-titulo{display:none}.rd-item{flex:0 0 auto;white-space:nowrap}}
+
+  .wrap{max-width:1080px;margin:20px auto 0;padding:0 20px}
+  .pagehead{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+  .pagehead h1{font-size:20px;font-weight:800}
+  .pagehead p{font-size:12px;color:var(--text-muted);margin-top:5px}
+  .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
+  .kpi{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:13px 15px}
+  .kpi .lbl{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.3px}
+  .kpi .val{font-size:24px;font-weight:800;margin-top:5px;line-height:1}
+  .kpi.disp .val{color:var(--success)} .kpi.baix .val{color:#ffb74d} .kpi.man .val{color:var(--danger)}
+
+  .toolbar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  .search{flex:1;min-width:200px;position:relative}
+  .search input{width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:8px;padding:10px 12px;color:var(--text-white);font-size:13px;outline:none}
+  .search input:focus{border-color:var(--gold)}
+  select.fsel{background:var(--bg-input);border:1px solid var(--border-mid);border-radius:8px;padding:10px 12px;color:var(--text-white);font-size:12.5px;outline:none}
+
+  .tablewrap{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  table{width:100%;border-collapse:collapse}
+  thead th{background:var(--bg-dark);text-align:left;font-size:10.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);font-weight:700;padding:11px 14px;border-bottom:1px solid var(--border)}
+  tbody tr{cursor:pointer;border-bottom:1px solid var(--border)}tbody tr:last-child{border-bottom:none}
+  tbody tr:nth-child(even){background:var(--bg-stripe)}tbody tr:hover{background:var(--bg-hover)}
+  tbody td{padding:11px 14px;font-size:12.5px}
+  .pfx{font-weight:700;color:var(--gold)}
+  .st{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap}
+  .st::before{content:"";width:6px;height:6px;border-radius:50%}
+  .st.DISPONIVEL{background:var(--success-bg);color:var(--success)}.st.DISPONIVEL::before{background:var(--success)}
+  .st.BAIXADA{background:rgba(255,183,77,.13);color:#ffb74d}.st.BAIXADA::before{background:#ffb74d}
+  .st.EM_MANUTENCAO{background:var(--danger-bg);color:#ef9a9a}.st.EM_MANUTENCAO::before{background:var(--danger)}
+  .empty{padding:40px;text-align:center;color:var(--text-hint)}
+
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;justify-content:flex-end;z-index:100}
+  .overlay.show{display:flex}
+  .panel{width:460px;max-width:100%;background:var(--bg-page);height:100%;overflow-y:auto;border-left:1px solid var(--border);animation:slide .2s}
+  @keyframes slide{from{transform:translateX(30px)}to{transform:translateX(0)}}
+  .p-head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg-page)}
+  .p-head b{font-size:16px}.pclose{background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer}
+  .p-body{padding:18px 20px}
+  .info{font-size:13px;color:var(--text-muted);margin-bottom:14px;line-height:1.7}
+  .info b{color:var(--text-white)}
+  .banner{border-radius:9px;padding:12px 14px;font-size:12.5px;margin-bottom:16px}
+  .banner.warn{background:rgba(255,183,77,.13);border:1px solid rgba(255,183,77,.4);color:#ffcc80}
+  .banner.man{background:var(--danger-bg);border:1px solid rgba(239,83,80,.4);color:#ef9a9a}
+  .fld{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
+  .fld label{font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.3px}
+  .fld input,.fld select,.fld textarea{background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;outline:none;font-family:inherit}
+  .fld input:focus,.fld select:focus,.fld textarea:focus{border-color:var(--gold)}
+  .btn{border:none;border-radius:8px;padding:11px 18px;font-size:13px;font-weight:800;cursor:pointer;width:100%}
+  .btn.warn{background:#ffb74d;color:#241a00}.btn.ok{background:var(--success);color:#052e0a}
+  .hist{margin-top:18px;border-top:1px solid var(--border);padding-top:14px}
+  .hist h3{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-hint);margin-bottom:10px}
+  .hrow{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;font-size:12px}
+  .hrow .t{font-weight:700;color:var(--gold-light)}
+  .hrow .d{color:var(--text-muted);margin-top:3px}
+  .noperm{padding:60px 20px;text-align:center;color:var(--text-muted)}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111;border:1px solid var(--border);color:var(--text-white);padding:12px 20px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:300}
+  .toast.show{opacity:1}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <div class="header-shields"><img src="assets/escudo-pmmg.png" alt="PMMG" onerror="this.style.display='none'"><img src="assets/escudo-cpe.png" alt="CPE" onerror="this.style.display='none'"><img src="assets/brasao-bpmmamb.png" alt="BPM MAMB" onerror="this.style.display='none'"></div><div class="header-div"></div>
+    <div class="header-title">
+      <div class="header-kicker">CPE · BPM MAmb · 3ª Cia PM MAmb</div>
+      <h1>PAINEL DE GESTÃO OPERACIONAL</h1>
+      <p>Gestão de Viaturas</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <div id="user-info" style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);padding:5px 10px;border:1px solid var(--border);border-radius:5px">
+      <span id="user-nome">—</span></div>
+    <button class="btn-outline" onclick="localStorage.removeItem('poe_sessao_v2');sessionStorage.removeItem('poe_sessao_v2');location.href='index.html'">Sair</button>
+  </div>
+</header>
+
+<div class="rd-shell">
+  <aside class="rd-sidebar">
+    <span class="rd-sidebar-titulo">RELATÓRIO DIÁRIO</span>
+    <a class="rd-item" href="tta.html"><span>🎯</span><span class="lbl">TTA (Pré-turno)</span></a>
+    <a class="rd-item" href="meus-relatorios.html"><span>📄</span><span class="lbl">Lista de Relatórios</span></a>
+    <a class="rd-item" href="relatorio-servico.html"><span>➕</span><span class="lbl">Novo Relatório</span></a>
+    <a class="rd-item" href="produtividade.html"><span>📊</span><span class="lbl">Produtividade</span></a>
+    <a class="rd-item" href="movimentacao-viaturas.html"><span>🚔</span><span class="lbl">Movimentação de Viaturas</span></a>
+    <a class="rd-item ativo" href="viaturas-gestao.html"><span>⚙️</span><span class="lbl">Gestão de Viaturas</span></a>
+  </aside>
+
+  <div class="rd-conteudo">
+  <div class="wrap" id="wrap">
+    <div class="pagehead">
+      <div>
+        <h1>Gestão de Viaturas</h1>
+        <p>Controle de baixa e manutenção. A baixa é decisão do setor responsável (Aux P4) — só é necessária quando o defeito impede o uso.</p>
+      </div>
+    </div>
+
+    <div class="kpis">
+      <div class="kpi disp"><div class="lbl">Disponíveis</div><div class="val" id="k-disp">—</div></div>
+      <div class="kpi baix"><div class="lbl">Baixadas</div><div class="val" id="k-baix">—</div></div>
+      <div class="kpi man"><div class="lbl">Em manutenção</div><div class="val" id="k-man">—</div></div>
+    </div>
+
+    <div class="toolbar">
+      <div class="search"><input id="busca" placeholder="Buscar por prefixo, placa, modelo, município…" oninput="render()"></div>
+      <select class="fsel" id="fstatus" onchange="render()">
+        <option value="">Todos os status</option>
+        <option value="DISPONIVEL">Disponíveis</option>
+        <option value="BAIXADA">Baixadas</option>
+        <option value="EM_MANUTENCAO">Em manutenção</option>
+      </select>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Prefixo</th><th>Placa</th><th>Modelo</th><th>GP</th><th>Município</th><th>Status</th></tr></thead>
+        <tbody id="tb"><tr><td colspan="6" class="empty">Carregando…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="noperm" id="noperm" style="display:none">Acesso restrito ao setor responsável (Aux P4) e ao Admin Geral.</div>
+  </div>
+</div>
+
+<div class="overlay" id="ov" onclick="if(event.target===this)fechar()">
+  <div class="panel">
+    <div class="p-head"><b id="d-titulo"></b><button class="pclose" onclick="fechar()">✕</button></div>
+    <div class="p-body" id="d-body"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const S = (typeof sessaoLer==='function') ? sessaoLer() : null;
+if (!S) location.href='index.html';
+const API = (typeof SB_AUTH_URL!=='undefined')?SB_AUTH_URL:'';
+const AKEY= (typeof SB_AUTH_KEY!=='undefined')?SB_AUTH_KEY:'';
+const H = { apikey:AKEY, Authorization:'Bearer '+AKEY, 'Content-Type':'application/json' };
+async function rpc(fn,body){ const r=await fetch(`${API}/rest/v1/rpc/${fn}`,{method:'POST',headers:H,body:JSON.stringify(body||{})}); const t=await r.text(); let j; try{j=t?JSON.parse(t):null}catch{j=t} if(!r.ok) throw new Error((j&&j.message)||('HTTP '+r.status)); return j; }
+function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+const ST_LBL={DISPONIVEL:'Disponível',BAIXADA:'Baixada',EM_MANUTENCAO:'Em manutenção'};
+const podeGerir = (S && (S.nivel_acesso==='admin_geral' || (S.funcao||'').toLowerCase().startsWith('aux p4')));
+
+let VIA=[], atual=null;
+
+(async function init(){
+  document.getElementById('user-nome').textContent = S.nome_guerra || S.nome_completo || '—';
+  if (!podeGerir){ document.getElementById('wrap').style.display='none'; document.getElementById('noperm').style.display='block'; return; }
+  try{
+    const r=await fetch(`${API}/rest/v1/viaturas?select=prefixo,placa,marca_modelo,pel,gp,municipio,situacao_operacional&order=prefixo`,{headers:H});
+    VIA=await r.json(); if(!Array.isArray(VIA)) VIA=[];
+  }catch(e){ console.error(e); VIA=[]; }
+  kpis(); render();
+})();
+
+function kpis(){
+  const c={DISPONIVEL:0,BAIXADA:0,EM_MANUTENCAO:0};
+  VIA.forEach(v=>{ const s=(v.situacao_operacional||'DISPONIVEL'); c[s]=(c[s]||0)+1; });
+  document.getElementById('k-disp').textContent=c.DISPONIVEL||0;
+  document.getElementById('k-baix').textContent=c.BAIXADA||0;
+  document.getElementById('k-man').textContent=c.EM_MANUTENCAO||0;
+}
+function render(){
+  const q=(document.getElementById('busca').value||'').toLowerCase();
+  const fs=document.getElementById('fstatus').value;
+  const rows=VIA.filter(v=>{
+    const s=(v.situacao_operacional||'DISPONIVEL');
+    if(fs && s!==fs) return false;
+    if(q){ const blob=`${v.prefixo} ${v.placa||''} ${v.marca_modelo||''} ${v.municipio||''} ${v.gp||''}`.toLowerCase(); if(!blob.includes(q)) return false; }
+    return true;
+  });
+  const tb=document.getElementById('tb');
+  if(!rows.length){ tb.innerHTML='<tr><td colspan="6" class="empty">Nenhuma viatura.</td></tr>'; return; }
+  tb.innerHTML=rows.map(v=>{ const s=(v.situacao_operacional||'DISPONIVEL');
+    return `<tr onclick='abrir(${JSON.stringify(v).replace(/'/g,"&#39;")})'>
+      <td class="pfx">${v.prefixo}</td><td>${v.placa||'—'}</td><td>${v.marca_modelo||'—'}</td>
+      <td>${v.gp||'—'}</td><td>${v.municipio||'—'}</td>
+      <td><span class="st ${s}">${ST_LBL[s]||s}</span></td></tr>`; }).join('');
+}
+
+async function abrir(v){
+  atual=v; document.getElementById('ov').classList.add('show');
+  document.getElementById('d-titulo').textContent=`VTR ${v.prefixo} — ${v.placa||''}`;
+  const s=(v.situacao_operacional||'DISPONIVEL');
+  const body=document.getElementById('d-body');
+  let html=`<div class="info"><b>${v.marca_modelo||''}</b><br>${v.gp||''} · ${v.municipio||''}</div>`;
+
+  if (s==='DISPONIVEL'){
+    html+=`<div class="fld"><label>Ação</label>
+      <select id="b-tipo"><option value="BAIXADA">Baixar (aguardando oficina)</option><option value="EM_MANUTENCAO">Enviar para manutenção (na oficina)</option></select></div>
+      <div class="fld"><label>Motivo / defeito</label><textarea id="b-motivo" rows="2" placeholder="Descreva o defeito que motiva a baixa"></textarea></div>
+      <div class="fld"><label>Km (odômetro) na baixa</label><input id="b-km" type="number" placeholder="ex.: 45298"></div>
+      <button class="btn warn" onclick="baixar()">⬇ Registrar baixa</button>`;
+  } else {
+    const cls = s==='EM_MANUTENCAO'?'man':'warn';
+    html+=`<div class="banner ${cls}">Viatura <b>${ST_LBL[s]}</b> — indisponível para movimentação.</div>
+      <div class="fld"><label>Km (odômetro) no retorno</label><input id="r-km" type="number" placeholder="Km ao retornar (pode ter rodado em teste)"></div>
+      <div class="fld"><label>Observações do retorno</label><textarea id="r-obs" rows="2" placeholder="serviço realizado / condição"></textarea></div>
+      <button class="btn ok" onclick="retornar()">✔ Registrar retorno (disponível)</button>`;
+  }
+  html+=`<div class="hist" id="hist"><h3>Histórico de baixas</h3><div id="hist-list">Carregando…</div></div>`;
+  body.innerHTML=html;
+  carregarHist(v.prefixo);
+}
+function fechar(){ document.getElementById('ov').classList.remove('show'); atual=null; }
+
+async function carregarHist(prefixo){
+  try{
+    const r=await fetch(`${API}/rest/v1/viaturas_baixas?prefixo=eq.${encodeURIComponent(prefixo)}&order=data_baixa.desc`,{headers:H});
+    const list=await r.json(); const el=document.getElementById('hist-list');
+    if(!Array.isArray(list)||!list.length){ el.innerHTML='<div style="color:var(--text-hint);font-size:12px">Sem baixas registradas.</div>'; return; }
+    el.innerHTML=list.map(b=>{
+      const fim = b.data_retorno ? `retorno ${fmt(b.data_retorno)}${b.km_retorno!=null?` · ${(+b.km_retorno).toLocaleString('pt-BR')} km`:''}` : '<b style="color:#ffb74d">em aberto</b>';
+      return `<div class="hrow"><div class="t">${ST_LBL[b.tipo]||b.tipo}</div>
+        <div class="d">Baixa ${fmt(b.data_baixa)}${b.km_baixa!=null?` · ${(+b.km_baixa).toLocaleString('pt-BR')} km`:''} — por ${b.baixado_por_nome||'—'}</div>
+        <div class="d">${b.motivo||''}</div><div class="d">${fim}</div></div>`;
+    }).join('');
+  }catch(e){ document.getElementById('hist-list').innerHTML='<div style="color:var(--danger)">Erro ao carregar histórico.</div>'; }
+}
+function fmt(iso){ if(!iso) return ''; const d=new Date(iso); return d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
+
+async function baixar(){
+  const tipo=document.getElementById('b-tipo').value;
+  const motivo=document.getElementById('b-motivo').value.trim();
+  const km=document.getElementById('b-km').value;
+  if(!motivo) return toast('Informe o motivo/defeito da baixa.');
+  try{
+    await rpc('viatura_baixar',{p_token:S.token,p_prefixo:atual.prefixo,p_tipo:tipo,p_motivo:motivo,p_km_baixa:km?+km:null});
+    const v=VIA.find(x=>x.prefixo===atual.prefixo); if(v) v.situacao_operacional=tipo;
+    kpis(); render(); toast('Baixa registrada.'); abrir(v);
+  }catch(e){ toast('Erro: '+e.message); }
+}
+async function retornar(){
+  const km=document.getElementById('r-km').value; const obs=document.getElementById('r-obs').value.trim();
+  try{
+    await rpc('viatura_retornar',{p_token:S.token,p_prefixo:atual.prefixo,p_km_retorno:km?+km:null,p_obs:obs});
+    const v=VIA.find(x=>x.prefixo===atual.prefixo); if(v) v.situacao_operacional='DISPONIVEL';
+    kpis(); render(); toast('Viatura retornou (disponível).'); abrir(v);
+  }catch(e){ toast('Erro: '+e.message); }
+}
+</script>
+</body>
+</html>

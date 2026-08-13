@@ -3305,7 +3305,7 @@ async function marcarDemandasAtendidas(payload){
   } catch(e){ console.warn('[baixa] marcarDemandasAtendidas', e); }
 }
 
-document.getElementById('relatorioForm').addEventListener('submit', (e) => {
+document.getElementById('relatorioForm').addEventListener('submit', async (e) => {
   e.preventDefault();
 
   const errors = validateRequiredFields();
@@ -3315,15 +3315,99 @@ document.getElementById('relatorioForm').addEventListener('submit', (e) => {
   }
   showFormError([]);
 
-  if (!getViaturaPrincipal()){
+  const viaturas = getTodasViaturasInformadas();
+
+  // Sem viatura informada = equipe trabalhou A PÉ / SEM VIATURA.
+  if (!viaturas.length){
     showConfirm(
-      'Nenhuma viatura foi informada em Recursos Empregados. Isso não é comum, mas pode acontecer. Deseja continuar assim mesmo?',
+      'Nenhuma viatura foi informada em Recursos Empregados. Confirma que a equipe trabalhou A PÉ / SEM VIATURA neste serviço?',
       openReview
     );
-  } else {
-    openReview();
+    return;
   }
+
+  // Cada viatura utilizada (principal + apoio) precisa da Ficha de Movimentação de hoje.
+  const faltando = [];
+  for (const p of viaturas){
+    const tem = await viaturaTemMovimentacaoHoje(p);
+    if (tem === false) faltando.push(p);   // null (não verificável) não bloqueia
+  }
+  if (faltando.length){
+    await criarPendenciasMovimentacao(faltando);   // avisa o motorista de cada viatura (aparece na conta dele)
+    showConfirm(
+      `Falta a Ficha de Movimentação de hoje da(s) viatura(s): ${faltando.join(', ')}. ` +
+      `Cada viatura utilizada precisa da sua ficha e o relatório não fecha sem elas — ` +
+      `o motorista de cada viatura pode lançar na própria conta. Abrir a Ficha de Movimentação agora (nova aba)? ` +
+      `(Se trabalhou a pé, remova a viatura de Recursos Empregados / Equipe de Apoio.)`,
+      () => window.open('movimentacao-viaturas.html', '_blank')
+    );
+    return;
+  }
+
+  // Todas com ficha — ou não foi possível verificar (fallback antes do módulo ir ao ar): segue.
+  openReview();
 });
+
+// Cria pendência de ficha para o motorista informado de cada viatura faltante
+// (principal + apoio). Aparece na conta do motorista em Movimentação de Viaturas.
+async function criarPendenciasMovimentacao(faltando){
+  try{
+    if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
+    const sess = (typeof getSessaoAtual === 'function') ? (getSessaoAtual() || {}) : {};
+    if (!sess.token) return;
+    const H = { apikey: SB_AUTH_KEY, Authorization:`Bearer ${SB_AUTH_KEY}`, 'Content-Type':'application/json' };
+    const matDe = v => ((v||'').split(' - ')[0] || '').trim();   // "matricula - posto - nome"
+    const call = (prefixo, motValue) => fetch(`${SB_AUTH_URL}/rest/v1/rpc/mov_pendencia_criar`, {
+      method:'POST', headers:H,
+      body: JSON.stringify({ p_token: sess.token, p_prefixo: prefixo, p_mot_mat: matDe(motValue), p_mot_nome: motValue || '' })
+    }).catch(()=>{});
+    const jobs = [];
+    const principal = getViaturaPrincipal();
+    if (principal && faltando.includes(principal)){
+      const mot = (document.querySelector('[name="motorista"]') || {}).value || '';
+      jobs.push(call(principal, mot));
+    }
+    document.querySelectorAll('#apoioList [data-apoio-entry]').forEach(entry => {
+      const v = ((entry.querySelector('[data-field="apoioViatura"]') || {}).value || '').trim();
+      if (v && faltando.includes(v)){
+        const mot = (entry.querySelector('[data-field="apoioMotorista"]') || {}).value || '';
+        jobs.push(call(v, mot));
+      }
+    });
+    await Promise.all(jobs);
+  }catch(e){ /* best-effort */ }
+}
+
+// Todas as viaturas informadas no relatório: principal (Recursos Empregados) + apoio (Bloco 1).
+function getTodasViaturasInformadas(){
+  const set = new Set();
+  const p = getViaturaPrincipal();
+  if (p) set.add(p);
+  document.querySelectorAll('#apoioList [data-field="apoioViatura"]').forEach(inp => {
+    const v = (inp.value || '').trim();
+    if (v) set.add(v);
+  });
+  return [...set];
+}
+
+// Verifica no Supabase se a viatura tem Ficha de Movimentação lançada hoje.
+// Retorna true/false, ou null se não deu p/ verificar (fallback: não bloqueia).
+async function viaturaTemMovimentacaoHoje(prefixo){
+  try{
+    if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return null;
+    if (!prefixo) return null;
+    const H = { apikey: SB_AUTH_KEY, Authorization: `Bearer ${SB_AUTH_KEY}` };
+    const d = new Date();
+    const dia = new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+    const url = `${SB_AUTH_URL}/rest/v1/mov_viaturas?select=id&ativo=eq.true`
+      + `&prefixo=eq.${encodeURIComponent(prefixo)}`
+      + `&criado_em=gte.${dia}T00:00:00&limit=1`;
+    const r = await fetch(url, { headers: H });
+    if (!r.ok) return null;                 // tabela ausente/erro → fallback (não bloqueia)
+    const rows = await r.json();
+    return Array.isArray(rows) && rows.length > 0;
+  }catch(e){ return null; }
+}
 
 </script>
 
