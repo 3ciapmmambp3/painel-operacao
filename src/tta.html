@@ -194,6 +194,8 @@
     <a class="rd-item" href="meus-relatorios.html" data-tip="Lista de Relatórios"><span>📄</span><span class="lbl">Lista de Relatórios</span></a>
     <a class="rd-item" href="relatorio-servico.html" data-tip="Novo Relatório"><span>➕</span><span class="lbl">Novo Relatório</span></a>
     <a class="rd-item" href="produtividade.html" data-tip="Produtividade"><span>📊</span><span class="lbl">Produtividade</span></a>
+    <a class="rd-item" href="movimentacao-viaturas.html" data-tip="Movimentação de Viaturas"><span>🚔</span><span class="lbl">Movimentação de Viaturas</span></a>
+    <a class="rd-item" href="viaturas-gestao.html" data-tip="Gestão de Viaturas"><span>⚙️</span><span class="lbl">Gestão de Viaturas</span></a>
   </aside>
 
   <div class="rd-conteudo">
@@ -232,6 +234,9 @@
         .eq-pend{font-size:10.5px;color:#ffcc80;margin-top:8px}
         .presentes-auto{background:var(--gold-bg,rgba(155,138,92,.13));border:1px solid var(--gold-border,rgba(155,138,92,.32));border-radius:9px;padding:11px 14px;font-size:12.5px;color:var(--gold-light,#b3a06e);margin-top:6px}
         .presentes-auto b{color:#fff}
+        .equipe input:not([type=checkbox]), .equipe select{background:var(--bg-input,#1a1a1a);border:1px solid var(--border-mid,#4a4a4a);color:var(--text-white,#f0f0f0);border-radius:7px;padding:9px 11px;font-size:13px;width:100%;font-family:inherit}
+        .equipe input:focus, .equipe select:focus{border-color:var(--gold,#9b8a5c);outline:none}
+        .equipe .eq-munis label{color:var(--text-white,#f0f0f0)}
         @media(max-width:720px){.eq-g3{grid-template-columns:1fr}}
       </style>
 
@@ -263,6 +268,7 @@
         <button class="btn-primary" id="btnRegistrar" onclick="registrarChamada()" style="margin-top:6px">✔ Registrar chamada</button>
       </div>
       <datalist id="viaturas-dl"></datalist>
+      <datalist id="militares-dl"></datalist>
     </div>
   </div>
 </div>
@@ -399,6 +405,7 @@ async function carregarRoster(){
   try{
     ROSTER = await rpc('tta_listar_militares', { p_token: sessao.token });
   }catch(e){ ROSTER = []; console.error('roster:', e); }
+  loadMilitaresDatalist();
   loadViaturasDatalist();
   if (!document.querySelectorAll('#equipesTTA .equipe').length) addEquipe();
 }
@@ -472,9 +479,11 @@ function voltarPastas(){
 
 /* ── Registrar chamada ────────────────────────────────────────────── */
 /* ── Viaturas do turno (prefixo + motorista) — geram a obrigação da ficha ── */
-function militarOptions(){
-  return '<option value="">Selecione…</option>' + ROSTER.map(m =>
-    `<option value="${m.matricula}">${(m.posto_graduacao||'')} ${(m.nome_guerra||m.nome_completo||'')}</option>`).join('');
+function fmtMil(m){ return `${m.matricula} - ${(m.posto_graduacao||'').toUpperCase()} - ${(m.nome_completo||'').toUpperCase()}`; }
+function militarByInput(val){ const mat = ((val||'').split(' - ')[0]||'').trim(); return ROSTER.find(x => x.matricula === mat); }
+function loadMilitaresDatalist(){
+  const dl = document.getElementById('militares-dl');
+  if (dl) dl.innerHTML = ROSTER.map(m => `<option value="${fmtMil(m)}">`).join('');
 }
 async function loadViaturasDatalist(){
   try{
@@ -498,9 +507,9 @@ function addEquipe(){
     '<div class="eqhead"><div class="eqtag"><span class="n"></span> Equipe</div>'+
       '<button type="button" class="eq-rm" onclick="removeEquipe(this)">remover</button></div>'+
     '<div class="eq-g3">'+
-      '<div class="f"><label>Comandante da equipe <span class="req">*</span></label><select class="eq-com" onchange="atualizarPresentesAuto()">'+militarOptions()+'</select></div>'+
+      '<div class="f"><label>Comandante da equipe <span class="req">*</span></label><input class="eq-com" list="militares-dl" placeholder="nº ou nome…" oninput="atualizarPresentesAuto()"></div>'+
       '<div class="f"><label>Viatura (prefixo) <span class="req">*</span></label><input class="eq-vtr" list="viaturas-dl" placeholder="ex: 36685" oninput="atualizarPend()"></div>'+
-      '<div class="f"><label>Motorista <span class="req">*</span></label><select class="eq-mot" onchange="atualizarPend();atualizarPresentesAuto()">'+militarOptions()+'</select></div>'+
+      '<div class="f"><label>Motorista <span class="req">*</span></label><input class="eq-mot" list="militares-dl" placeholder="nº ou nome…" oninput="atualizarPend();atualizarPresentesAuto()"></div>'+
     '</div>'+
     '<div class="grid2" style="margin-top:10px">'+
       '<div class="f"><label>Vínculo desta equipe</label><select class="eq-vinc"></select></div>'+
@@ -520,7 +529,7 @@ function removeEquipe(btn){ btn.closest('.equipe').remove(); refreshEquipes(); a
 function addPatrulheiro(btn){
   const box = btn.closest('.equipe').querySelector('.eq-patrs');
   const row = document.createElement('div'); row.className = 'prow';
-  row.innerHTML = '<select class="eq-pat" onchange="atualizarPresentesAuto()" style="flex:1">'+militarOptions()+'</select>'+
+  row.innerHTML = '<input class="eq-pat" list="militares-dl" placeholder="nº ou nome…" oninput="atualizarPresentesAuto()" style="flex:1">'+
     '<button type="button" onclick="this.parentNode.remove();atualizarPresentesAuto()" style="background:none;border:none;color:#ef5350;cursor:pointer;font-size:11px">remover</button>';
   box.appendChild(row);
 }
@@ -540,7 +549,7 @@ function refreshEquipes(){
 function atualizarPend(){
   document.querySelectorAll('#equipesTTA .equipe').forEach(eq=>{
     const pref=(eq.querySelector('.eq-vtr').value||'').trim();
-    const mat=eq.querySelector('.eq-mot').value; const m=ROSTER.find(x=>x.matricula===mat);
+    const m=militarByInput(eq.querySelector('.eq-mot').value);
     const nome=m?(m.nome_guerra||m.nome_completo):'';
     eq.querySelector('.eq-pend').innerHTML = (pref&&nome) ? `🔔 Gera a obrigação da Ficha de Movimentação de hoje para <b>${nome}</b> (VTR ${pref}).` : '';
   });
@@ -549,7 +558,7 @@ function atualizarPresentesAuto(){
   const set = new Set();
   document.querySelectorAll('#equipesTTA .equipe').forEach(eq=>{
     [eq.querySelector('.eq-com'), eq.querySelector('.eq-mot'), ...eq.querySelectorAll('.eq-pat')]
-      .forEach(sel=>{ if(sel && sel.value) set.add(sel.value); });
+      .forEach(inp=>{ const m=inp&&militarByInput(inp.value); if(m) set.add(m.matricula); });
   });
   document.getElementById('presentesAuto').innerHTML =
     `👮 Militares presentes (automático): <b>${set.size}</b> — somados das equipes (comandantes + motoristas + patrulheiros).`;
@@ -557,9 +566,9 @@ function atualizarPresentesAuto(){
 }
 function coletarEquipes(){
   return [...document.querySelectorAll('#equipesTTA .equipe')].map((eq,i)=>{
-    const com = ROSTER.find(x=>x.matricula===eq.querySelector('.eq-com').value);
-    const mot = ROSTER.find(x=>x.matricula===eq.querySelector('.eq-mot').value);
-    const pats = [...eq.querySelectorAll('.eq-pat')].map(s=>ROSTER.find(x=>x.matricula===s.value)).filter(Boolean)
+    const com = militarByInput(eq.querySelector('.eq-com').value);
+    const mot = militarByInput(eq.querySelector('.eq-mot').value);
+    const pats = [...eq.querySelectorAll('.eq-pat')].map(s=>militarByInput(s.value)).filter(Boolean)
       .map(m=>({matricula:m.matricula,pg:m.posto_graduacao,nome:m.nome_completo}));
     const munis = [...eq.querySelectorAll('.eq-munis input:checked')].map(c=>c.parentElement.textContent.trim());
     return {
