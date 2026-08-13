@@ -149,6 +149,9 @@
   </div>
 </div>
 <div class="toast" id="toast"></div>
+<datalist id="pel-dl"></datalist>
+<datalist id="gp-dl"></datalist>
+<datalist id="muni-dl"></datalist>
 
 <script>
 const S = (typeof sessaoLer==='function') ? sessaoLer() : null;
@@ -170,8 +173,18 @@ let VIA=[], atual=null;
     const r=await fetch(`${API}/rest/v1/viaturas?select=prefixo,placa,marca_modelo,ano,tracao,tipo_bem,pel,gp,municipio,situacao_viatura,situacao_operacional&ativo=eq.true&order=prefixo`,{headers:H});
     VIA=await r.json(); if(!Array.isArray(VIA)) VIA=[];
   }catch(e){ console.error(e); VIA=[]; }
-  kpis(); render();
+  kpis(); render(); popularListasFrota();
 })();
+
+// Preenche os datalists (Pelotão/Grupamento/Município) com os valores JÁ existentes
+// na frota — evita variações de grafia; datalist ainda permite digitar um novo.
+function popularListasFrota(){
+  const uniq = key => [...new Set(VIA.map(v=>(v[key]||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt'));
+  const fill = (id, arr) => { const el=document.getElementById(id); if(el) el.innerHTML = arr.map(x=>`<option value="${av(x)}">`).join(''); };
+  fill('pel-dl', uniq('pel'));
+  fill('gp-dl', uniq('gp'));
+  fill('muni-dl', uniq('municipio'));
+}
 
 function kpis(){
   const c={DISPONIVEL:0,BAIXADA:0,EM_MANUTENCAO:0};
@@ -212,10 +225,10 @@ function formEditHTML(v, isNew){
     </div>
     <div class="fld"><label>Tipo de bem</label><select id="ve-tipo"><option value="">—</option>${['PRÓPRIA','LOCADA','COMODATO'].map(t=>`<option ${tb===t?'selected':''}>${t}</option>`).join('')}</select></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div class="fld"><label>Pelotão</label><input id="ve-pel" value="${av(v.pel)}" placeholder="ex.: 4º Pel PM MAmb"></div>
-      <div class="fld"><label>Grupamento (GP)</label><input id="ve-gp" value="${av(v.gp)}" placeholder="ex.: 1º Gp PM MAmb"></div>
+      <div class="fld"><label>Pelotão</label><input id="ve-pel" list="pel-dl" value="${av(v.pel)}" placeholder="selecione ou digite"></div>
+      <div class="fld"><label>Grupamento (GP)</label><input id="ve-gp" list="gp-dl" value="${av(v.gp)}" placeholder="selecione ou digite"></div>
     </div>
-    <div class="fld"><label>Município</label><input id="ve-muni" value="${av(v.municipio)}"></div>
+    <div class="fld"><label>Município</label><input id="ve-muni" list="muni-dl" value="${av(v.municipio)}" placeholder="selecione ou digite"></div>
     <button class="btn ok" onclick="salvarViatura(${isNew?'true':'false'})">${isNew?'＋ Incluir viatura':'✔ Salvar alterações'}</button>
     ${isNew?'':'<button class="btn" style="background:var(--danger-bg);color:#ef9a9a;border:1px solid rgba(239,83,80,.4);margin-top:8px" onclick="removerViatura()">🗑 Remover da frota (transferência/saída)</button>'}
   `;
@@ -234,7 +247,7 @@ async function salvarViatura(isNew){
     const row=await rpc('viatura_salvar',{p_token:S.token,p_dados:dados});
     const i=VIA.findIndex(x=>x.prefixo===row.prefixo);
     if(i>=0) VIA[i]=row; else VIA.push(row);
-    kpis(); render(); fechar(); toast(isNew?'Viatura incluída.':'Viatura atualizada.');
+    kpis(); render(); popularListasFrota(); fechar(); toast(isNew?'Viatura incluída.':'Viatura atualizada.');
   }catch(e){ toast('Erro: '+e.message); }
 }
 async function removerViatura(){
