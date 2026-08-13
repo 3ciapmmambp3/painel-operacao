@@ -1,5 +1,12 @@
 # Importar o cadastro de VIATURAS (planilha → Supabase)
 
+> ⚠️ **DECISÃO (2026-08-13): a frota é gerenciada PELO PAINEL** (Gestão de Viaturas:
+> incluir/editar/transferir/remover). **NÃO use este Apps Script de sincronização**
+> automática — ele sobrescreveria as edições feitas no painel. A carga inicial já
+> foi feita pelo `09_seed_viaturas.sql`. Mantido aqui só como referência histórica /
+> caso um dia queira voltar a sincronizar pela planilha.
+
+
 A planilha de viaturas (`1B4a5t7m2FFDNo3bG0KRMNkOCNZqVAhVrR45YFzs-Ylg`) é a **fonte** —
 ela é atualizada com frequência. Este Apps Script lê a planilha e faz **upsert**
 na tabela `public.viaturas` do Supabase (por `prefixo`). Só escreve as colunas do

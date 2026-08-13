@@ -1,6 +1,8 @@
 -- 09_seed_viaturas.sql — cadastro inicial de viaturas (gerado da planilha)
--- Upsert por prefixo. NÃO toca situacao_operacional (gerida pelo Aux P4).
--- Rode DEPOIS do 08_mov_viaturas.sql. Pode rodar de novo sem duplicar.
+-- A FROTA É GERENCIADA PELO PAINEL (Gestão de Viaturas). Este seed é só a carga
+-- INICIAL: usa "on conflict do nothing" — se rodar de novo, só INSERE o que
+-- faltar e NÃO sobrescreve o que você editou no painel.
+-- Rode DEPOIS do 08_mov_viaturas.sql.
 insert into public.viaturas
   (prefixo, placa, marca_modelo, ano, tracao, tipo_bem, pel, gp, municipio, situacao_viatura, observacao)
 values
@@ -99,8 +101,4 @@ values
   ('36638', 'TEI9J17', 'Toyota / Hilux', null, null, null, '2º Pel PM MAmb', '2º Gp PM MAmb', 'MARLIÉRIA', null, null),
   ('35919', 'SYZ0H02', 'Toyota / Hilux', null, null, null, '4º Pel PM MAmb', '4º Gp PM MAmb', 'JOÃO MONLEVADE', null, null),
   ('28140', 'QMV1326', 'Toyota / Hilux', null, null, null, '4º Pel PM MAmb', '2º Gp PM MAmb', 'ÁGUAS FORMOSAS', null, null)
-on conflict (prefixo) do update set
-  placa=excluded.placa, marca_modelo=excluded.marca_modelo, ano=excluded.ano,
-  tracao=excluded.tracao, tipo_bem=excluded.tipo_bem, pel=excluded.pel, gp=excluded.gp,
-  municipio=excluded.municipio, situacao_viatura=excluded.situacao_viatura,
-  observacao=excluded.observacao, atualizado_em=now();
+on conflict (prefixo) do nothing;  -- frota gerida pelo painel: não sobrescreve edições
