@@ -133,7 +133,7 @@ create or replace function public.mov_viatura_criar(p_token uuid, p_dados jsonb)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
-  v_me   public._sessao_militar%rowtype;
+  v_me   record;
   v_row  public.mov_viaturas%rowtype;
   v_ini  timestamptz;
 begin
@@ -237,7 +237,7 @@ create or replace function public.viatura_baixar(
   p_token uuid, p_prefixo text, p_tipo text, p_motivo text, p_km_baixa int)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
-declare v_me public._sessao_militar%rowtype; v_row public.viaturas_baixas%rowtype;
+declare v_me record; v_row public.viaturas_baixas%rowtype;
 begin
   select * into v_me from public._sessao_militar(p_token);
   if v_me.id is null then raise exception 'Sessão inválida ou expirada.'; end if;
@@ -265,7 +265,7 @@ create or replace function public.viatura_retornar(
   p_token uuid, p_prefixo text, p_km_retorno int, p_obs text)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
-declare v_me public._sessao_militar%rowtype; v_row public.viaturas_baixas%rowtype;
+declare v_me record; v_row public.viaturas_baixas%rowtype;
 begin
   select * into v_me from public._sessao_militar(p_token);
   if v_me.id is null then raise exception 'Sessão inválida ou expirada.'; end if;
@@ -295,7 +295,7 @@ create or replace function public.mov_pendencia_criar(
   p_token uuid, p_prefixo text, p_mot_mat text, p_mot_nome text)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
-declare v_me public._sessao_militar%rowtype; v_row public.mov_pendencias%rowtype;
+declare v_me record; v_row public.mov_pendencias%rowtype;
 begin
   select * into v_me from public._sessao_militar(p_token);
   if v_me.id is null then raise exception 'Sessão inválida ou expirada.'; end if;
