@@ -1585,7 +1585,7 @@ async function preencherEquipeDoTTA(){
     const S = (typeof getSessaoAtual === 'function') ? getSessaoAtual() : null;
     if (!S || !S.token || typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
     const H = { apikey: SB_AUTH_KEY, Authorization: `Bearer ${SB_AUTH_KEY}`, 'Content-Type': 'application/json' };
-    const r = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/tta_chamada_hoje`, {
+    const r = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/tta_chamada_do_militar_hoje`, {
       method: 'POST', headers: H, body: JSON.stringify({ p_token: S.token })
     });
     if (!r.ok) return;
@@ -1596,37 +1596,70 @@ async function preencherEquipeDoTTA(){
     if (!lista.length) return;
     const soDigitos = s => (s||'').replace(/\D/g,'');
     const acharRef = matricula => lista.find(it => soDigitos(it).includes(soDigitos(matricula)));
-    const postoDaRef = ref => (ref||'').split(' - ')[1] || '';
+    const setIf = (inp, ref) => { if (inp && ref && !inp.value) inp.value = ref; };
 
-    const RANK_ORDER = ['CEL','TEN-CEL','MAJ','CAP','1º TEN','2º TEN','ASP OF','SUBTEN','1º SGT','2º SGT','3º SGT','CB','SD'];
-    const rankIdx = posto => {
-      const p = (posto||'').toUpperCase();
-      const i = RANK_ORDER.findIndex(rk => p.startsWith(rk));
-      return i === -1 ? RANK_ORDER.length : i;
-    };
+    const equipes = Array.isArray(chamada.equipes) ? chamada.equipes : [];
 
-    const comandanteInput = document.querySelector('[name="comandante"]');
-    const comandanteRef = acharRef(chamada.militar_resp_matricula);
-    if (comandanteRef && comandanteInput && !comandanteInput.value) comandanteInput.value = comandanteRef;
+    // ── TTA NOVO (por equipes) ──
+    if (equipes.length){
+      const meu = soDigitos(S.matricula || '');
+      const naEquipe = eq => [eq.comandante&&eq.comandante.matricula, eq.motorista&&eq.motorista.matricula]
+        .concat((eq.patrulheiros||[]).map(p=>p.matricula)).filter(Boolean).map(soDigitos).includes(meu);
+      const minha = equipes.find(naEquipe) || equipes.find(eq=>eq.vinculo==='principal') || equipes[0];
+      if (!minha) return;
 
+      setIf(document.querySelector('[name="comandante"]'), acharRef(minha.comandante && minha.comandante.matricula));
+      setIf(document.querySelector('[name="motorista"]'),  acharRef(minha.motorista  && minha.motorista.matricula));
+      (minha.patrulheiros||[]).forEach((p, i) => {
+        let campo = document.querySelectorAll('[name="patrulheiro[]"]')[i];
+        if (!campo){ addPatrulheiroRow(true); campo = document.querySelectorAll('[name="patrulheiro[]"]')[i]; }
+        const ref = acharRef(p.matricula);
+        if (campo && ref && !campo.value) campo.value = ref;
+      });
+
+      // Viatura principal (só se o card Recursos Empregados já estiver na tela)
+      const vp = document.querySelector('[data-field="viaturaPrincipal"]');
+      if (vp && !vp.value && minha.prefixo_viatura) vp.value = minha.prefixo_viatura;
+
+      // Equipes que APOIAM a minha → Equipe de Apoio do relatório
+      equipes.filter(eq => eq.vinculo === ('apoio:' + minha.ordem)).forEach(eq => {
+        if (typeof addApoioEntry !== 'function') return;
+        addApoioEntry();
+        const entries = document.querySelectorAll('#apoioList [data-apoio-entry]');
+        const entry = entries[entries.length - 1]; if (!entry) return;
+        const setF = (field, val) => { const el = entry.querySelector('[data-field="'+field+'"]'); if (el && val && !el.value) el.value = val; };
+        setF('apoioComandante', acharRef(eq.comandante && eq.comandante.matricula));
+        setF('apoioMotorista',  acharRef(eq.motorista  && eq.motorista.matricula));
+        setF('apoioViatura', eq.prefixo_viatura || '');
+      });
+
+      const ops = [...new Set(equipes.filter(naEquipe).map(e=>e.operacao).filter(Boolean))];
+      const lembr = [];
+      if (!vp && minha.prefixo_viatura) lembr.push('Viatura <b>'+minha.prefixo_viatura+'</b> (adicione "Recursos Empregados" para vincular)');
+      if (ops.length) lembr.push('Operação <b>'+ops.join(', ')+'</b> (adicione o card "OP POE" se o serviço foi nela)');
+      mostrarAvisoTTA('Equipe preenchida a partir do TTA de hoje.' + (lembr.length ? ' Lembre: ' + lembr.join('; ') + '.' : ' Confira e complete.'));
+      return;
+    }
+
+    // ── FALLBACK: TTA antigo (militares_presentes) ──
+    setIf(document.querySelector('[name="comandante"]'), acharRef(chamada.militar_resp_matricula));
     const presentes = (chamada.militares_presentes || []).filter(m => m.matricula !== chamada.militar_resp_matricula);
-    if (!presentes.length) return;
-
-    const comRef = presentes.map(m => ({ m, ref: acharRef(m.matricula) })).filter(x => x.ref);
-    if (!comRef.length) return;
-    comRef.sort((a,b) => rankIdx(postoDaRef(b.ref)) - rankIdx(postoDaRef(a.ref))); // mais moderno primeiro
-
-    const motoristaEntry = comRef[0];
-    const motoristaInput = document.querySelector('[name="motorista"]');
-    if (motoristaInput && !motoristaInput.value) motoristaInput.value = motoristaEntry.ref;
-
-    const restantes = comRef.filter(x => x !== motoristaEntry);
-    restantes.forEach((x, i) => {
-      let campo = document.querySelectorAll('[name="patrulheiro[]"]')[i];
-      if (!campo){ addPatrulheiroRow(true); campo = document.querySelectorAll('[name="patrulheiro[]"]')[i]; }
-      if (campo && !campo.value) campo.value = x.ref;
-    });
+    const refs = presentes.map(m => acharRef(m.matricula)).filter(Boolean);
+    if (refs.length){
+      setIf(document.querySelector('[name="motorista"]'), refs[0]);
+      refs.slice(1).forEach((ref,i)=>{ let campo=document.querySelectorAll('[name="patrulheiro[]"]')[i]; if(!campo){addPatrulheiroRow(true);campo=document.querySelectorAll('[name="patrulheiro[]"]')[i];} if(campo&&!campo.value)campo.value=ref; });
+    }
   }catch(e){ console.warn('[TTA] pré-preenchimento não aplicado:', e); }
+}
+function mostrarAvisoTTA(html){
+  let b = document.getElementById('tta-aviso');
+  if (!b){
+    b = document.createElement('div'); b.id='tta-aviso';
+    b.style.cssText='background:rgba(155,138,92,.13);border:1px solid rgba(155,138,92,.4);color:var(--gold-text,#b3a06e);border-radius:8px;padding:11px 14px;margin:0 0 14px;font-size:12.5px;line-height:1.5';
+    const form=document.getElementById('relatorioForm');
+    if (form && form.parentNode) form.parentNode.insertBefore(b, form);
+  }
+  b.innerHTML='🎯 '+html;
 }
 
 document.addEventListener('change', (e) => {
