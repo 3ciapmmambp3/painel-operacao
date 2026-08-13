@@ -110,8 +110,9 @@
     <div class="pagehead">
       <div>
         <h1>Gestão de Viaturas</h1>
-        <p>Controle de baixa e manutenção. A baixa é decisão do setor responsável (Aux P4) — só é necessária quando o defeito impede o uso.</p>
+        <p>Controle da frota: incluir, editar (ex.: transferir de grupamento), remover, e baixa/manutenção. Restrito ao setor responsável (Aux P4) e Admin Geral.</p>
       </div>
+      <button class="btn ok" style="width:auto;padding:11px 18px" onclick="novaViatura()">＋ Nova viatura</button>
     </div>
 
     <div class="kpis">
@@ -166,7 +167,7 @@ let VIA=[], atual=null;
   document.getElementById('user-nome').textContent = S.nome_guerra || S.nome_completo || '—';
   if (!podeGerir){ document.getElementById('wrap').style.display='none'; document.getElementById('noperm').style.display='block'; return; }
   try{
-    const r=await fetch(`${API}/rest/v1/viaturas?select=prefixo,placa,marca_modelo,pel,gp,municipio,situacao_operacional&order=prefixo`,{headers:H});
+    const r=await fetch(`${API}/rest/v1/viaturas?select=prefixo,placa,marca_modelo,ano,tracao,tipo_bem,pel,gp,municipio,situacao_viatura,situacao_operacional&ativo=eq.true&order=prefixo`,{headers:H});
     VIA=await r.json(); if(!Array.isArray(VIA)) VIA=[];
   }catch(e){ console.error(e); VIA=[]; }
   kpis(); render();
@@ -197,12 +198,64 @@ function render(){
       <td><span class="st ${s}">${ST_LBL[s]||s}</span></td></tr>`; }).join('');
 }
 
+const av=s=>String(s==null?'':s).replace(/"/g,'&quot;');
+function formEditHTML(v, isNew){
+  v=v||{}; const tb=(v.tipo_bem||'').toUpperCase();
+  return `
+    <div class="fld"><label>Prefixo ${isNew?'<span style="color:#ef5350">*</span>':''}</label>
+      <input id="ve-prefixo" ${isNew?'':'readonly'} value="${av(v.prefixo)}" placeholder="ex.: 36685"></div>
+    <div class="fld"><label>Placa</label><input id="ve-placa" value="${av(v.placa)}"></div>
+    <div class="fld"><label>Marca / Modelo</label><input id="ve-modelo" value="${av(v.marca_modelo)}" placeholder="ex.: Toyota / Hilux"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="fld"><label>Ano</label><input id="ve-ano" type="number" value="${av(v.ano)}"></div>
+      <div class="fld"><label>Tração</label><select id="ve-tracao"><option value="">—</option><option ${v.tracao==='4x4'?'selected':''}>4x4</option><option ${v.tracao==='4x2'?'selected':''}>4x2</option></select></div>
+    </div>
+    <div class="fld"><label>Tipo de bem</label><select id="ve-tipo"><option value="">—</option>${['PRÓPRIA','LOCADA','COMODATO'].map(t=>`<option ${tb===t?'selected':''}>${t}</option>`).join('')}</select></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="fld"><label>Pelotão</label><input id="ve-pel" value="${av(v.pel)}" placeholder="ex.: 4º Pel PM MAmb"></div>
+      <div class="fld"><label>Grupamento (GP)</label><input id="ve-gp" value="${av(v.gp)}" placeholder="ex.: 1º Gp PM MAmb"></div>
+    </div>
+    <div class="fld"><label>Município</label><input id="ve-muni" value="${av(v.municipio)}"></div>
+    <button class="btn ok" onclick="salvarViatura(${isNew?'true':'false'})">${isNew?'＋ Incluir viatura':'✔ Salvar alterações'}</button>
+    ${isNew?'':'<button class="btn" style="background:var(--danger-bg);color:#ef9a9a;border:1px solid rgba(239,83,80,.4);margin-top:8px" onclick="removerViatura()">🗑 Remover da frota (transferência/saída)</button>'}
+  `;
+}
+function novaViatura(){
+  atual=null; document.getElementById('ov').classList.add('show');
+  document.getElementById('d-titulo').textContent='Nova viatura';
+  document.getElementById('d-body').innerHTML = '<div class="info">Preencha os dados da nova viatura.</div>' + formEditHTML({}, true);
+}
+async function salvarViatura(isNew){
+  const g=id=>(document.getElementById(id).value||'').trim();
+  const dados={prefixo:g('ve-prefixo'),placa:g('ve-placa'),marca_modelo:g('ve-modelo'),ano:g('ve-ano'),
+    tracao:g('ve-tracao'),tipo_bem:g('ve-tipo'),pel:g('ve-pel'),gp:g('ve-gp'),municipio:g('ve-muni')};
+  if(!dados.prefixo) return toast('Informe o prefixo.');
+  try{
+    const row=await rpc('viatura_salvar',{p_token:S.token,p_dados:dados});
+    const i=VIA.findIndex(x=>x.prefixo===row.prefixo);
+    if(i>=0) VIA[i]=row; else VIA.push(row);
+    kpis(); render(); fechar(); toast(isNew?'Viatura incluída.':'Viatura atualizada.');
+  }catch(e){ toast('Erro: '+e.message); }
+}
+async function removerViatura(){
+  if(!atual) return;
+  if(!confirm(`Remover a viatura ${atual.prefixo} da frota? Ela sai do painel; o histórico de movimentação é preservado.`)) return;
+  try{
+    await rpc('viatura_remover',{p_token:S.token,p_prefixo:atual.prefixo,p_hard:false});
+    VIA=VIA.filter(x=>x.prefixo!==atual.prefixo);
+    kpis(); render(); fechar(); toast('Viatura removida da frota.');
+  }catch(e){ toast('Erro: '+e.message); }
+}
+
 async function abrir(v){
   atual=v; document.getElementById('ov').classList.add('show');
   document.getElementById('d-titulo').textContent=`VTR ${v.prefixo} — ${v.placa||''}`;
   const s=(v.situacao_operacional||'DISPONIVEL');
   const body=document.getElementById('d-body');
   let html=`<div class="info"><b>${v.marca_modelo||''}</b><br>${v.gp||''} · ${v.municipio||''}</div>`;
+  html+=`<details style="margin-bottom:14px;border:1px solid var(--border);border-radius:9px;padding:10px 12px">
+    <summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--gold-light)">✏️ Editar dados / transferir / remover</summary>
+    <div style="margin-top:12px">${formEditHTML(v,false)}</div></details>`;
 
   if (s==='DISPONIVEL'){
     html+=`<div class="fld"><label>Ação</label>
