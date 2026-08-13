@@ -204,6 +204,7 @@
       <tbody id="tb"><tr><td colspan="9" class="empty">Carregando…</td></tr></tbody>
     </table>
   </div>
+  <div id="pager" style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:12px;font-size:12.5px;color:var(--text-muted);flex-wrap:wrap"></div>
 </div>
 </div>
 
@@ -427,11 +428,22 @@ function passa(d){
   return true;
 }
 
+let PAGE=1; const PAGE_SIZE=15; let _sig='';
+function irPagina(p){ PAGE=p; render(); }
 function render(){
   const tb=document.getElementById('tb'); tb.innerHTML='';
+  const pager=document.getElementById('pager');
   const rows=DADOS.filter(passa);
-  if(!rows.length){ tb.innerHTML='<tr><td colspan="9" class="empty">Nenhuma ocorrência neste filtro.</td></tr>'; return; }
-  rows.forEach(d=>{
+  // volta pra 1ª página quando muda filtro/busca/ano/escopo
+  const gel=id=>document.getElementById(id)||{};
+  const sig=[filtro, gel('busca').value, gel('ano').value, gel('sel-pel').value, gel('sel-grp').value].join('|');
+  if(sig!==_sig){ PAGE=1; _sig=sig; }
+  if(!rows.length){ tb.innerHTML='<tr><td colspan="9" class="empty">Nenhuma ocorrência neste filtro.</td></tr>'; if(pager)pager.innerHTML=''; return; }
+  const totalPag=Math.ceil(rows.length/PAGE_SIZE);
+  if(PAGE>totalPag)PAGE=totalPag; if(PAGE<1)PAGE=1;
+  const ini=(PAGE-1)*PAGE_SIZE;
+  const pageRows=rows.slice(ini, ini+PAGE_SIZE);
+  pageRows.forEach(d=>{
     const pr=prazoInfo(d);
     const inativa=d.ativo===false;
     const tr=document.createElement('tr'); tr.onclick=()=>abrir(d);
@@ -448,6 +460,14 @@ function render(){
       `<td><button class="pdf-mini" title="Baixar Ficha (PDF)" onclick="event.stopPropagation();gerarPDF(byId('${d.id}'))"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>PDF</button></td>`;
     tb.appendChild(tr);
   });
+  if(pager){
+    if(totalPag<=1){ pager.innerHTML=`<span>${rows.length} ocorrência(s)</span>`; }
+    else{
+      const btn=(lbl,p,dis)=>`<button onclick="irPagina(${p})" ${dis?'disabled':''} style="background:var(--bg-input);border:1px solid var(--border-mid);color:var(--text-white);border-radius:6px;padding:6px 12px;font-size:12px;cursor:${dis?'not-allowed':'pointer'};opacity:${dis?'.5':'1'}">${lbl}</button>`;
+      pager.innerHTML=`<span>${rows.length} ocorrência(s) · mostrando ${ini+1}–${Math.min(ini+PAGE_SIZE,rows.length)}</span>`+
+        `<span style="display:flex;gap:8px;align-items:center">${btn('‹ Anterior',PAGE-1,PAGE===1)}<b style="color:var(--gold-light)">Página ${PAGE} de ${totalPag}</b>${btn('Próxima ›',PAGE+1,PAGE===totalPag)}</span>`;
+    }
+  }
 }
 function kpis(){
   const ATIVAS=DADOS.filter(d=>d.ativo!==false && d.tipo===TIPO_ABA);

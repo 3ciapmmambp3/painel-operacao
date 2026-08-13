@@ -137,6 +137,7 @@
         <tbody id="tb"><tr><td colspan="6" class="empty">Carregando…</td></tr></tbody>
       </table>
     </div>
+    <div id="pager" style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:12px;font-size:12.5px;color:var(--text-muted);flex-wrap:wrap"></div>
   </div>
   <div class="noperm" id="noperm" style="display:none">Acesso restrito ao setor responsável (Aux P4) e ao Admin Geral.</div>
   </div>
@@ -193,6 +194,8 @@ function kpis(){
   document.getElementById('k-baix').textContent=c.BAIXADA||0;
   document.getElementById('k-man').textContent=c.EM_MANUTENCAO||0;
 }
+let PAGE=1; const PAGE_SIZE=15; let _sig='';
+function irPagina(p){ PAGE=p; render(); }
 function render(){
   const q=(document.getElementById('busca').value||'').toLowerCase();
   const fs=document.getElementById('fstatus').value;
@@ -202,13 +205,23 @@ function render(){
     if(q){ const blob=`${v.prefixo} ${v.placa||''} ${v.marca_modelo||''} ${v.municipio||''} ${v.gp||''}`.toLowerCase(); if(!blob.includes(q)) return false; }
     return true;
   });
-  const tb=document.getElementById('tb');
-  if(!rows.length){ tb.innerHTML='<tr><td colspan="6" class="empty">Nenhuma viatura.</td></tr>'; return; }
-  tb.innerHTML=rows.map(v=>{ const s=(v.situacao_operacional||'DISPONIVEL');
+  const sig=q+'|'+fs; if(sig!==_sig){ PAGE=1; _sig=sig; }  // filtro mudou → volta pra 1ª página
+  const tb=document.getElementById('tb'); const pager=document.getElementById('pager');
+  if(!rows.length){ tb.innerHTML='<tr><td colspan="6" class="empty">Nenhuma viatura.</td></tr>'; pager.innerHTML=''; return; }
+  const totalPag=Math.ceil(rows.length/PAGE_SIZE);
+  if(PAGE>totalPag) PAGE=totalPag; if(PAGE<1) PAGE=1;
+  const ini=(PAGE-1)*PAGE_SIZE;
+  const pageRows=rows.slice(ini, ini+PAGE_SIZE);
+  tb.innerHTML=pageRows.map(v=>{ const s=(v.situacao_operacional||'DISPONIVEL');
     return `<tr onclick='abrir(${JSON.stringify(v).replace(/'/g,"&#39;")})'>
       <td class="pfx">${v.prefixo}</td><td>${v.placa||'—'}</td><td>${v.marca_modelo||'—'}</td>
       <td>${v.gp||'—'}</td><td>${v.municipio||'—'}</td>
       <td><span class="st ${s}">${ST_LBL[s]||s}</span></td></tr>`; }).join('');
+  // paginador
+  if(totalPag<=1){ pager.innerHTML=`<span>${rows.length} viatura(s)</span>`; return; }
+  const btn=(lbl,p,dis)=>`<button onclick="irPagina(${p})" ${dis?'disabled':''} style="background:var(--bg-input);border:1px solid var(--border-mid);color:var(--text-white);border-radius:6px;padding:6px 12px;font-size:12px;cursor:${dis?'not-allowed':'pointer'};opacity:${dis?'.5':'1'}">${lbl}</button>`;
+  pager.innerHTML=`<span>${rows.length} viatura(s) · mostrando ${ini+1}–${Math.min(ini+PAGE_SIZE,rows.length)}</span>`+
+    `<span style="display:flex;gap:8px;align-items:center">${btn('‹ Anterior',PAGE-1,PAGE===1)}<b style="color:var(--gold-light)">Página ${PAGE} de ${totalPag}</b>${btn('Próxima ›',PAGE+1,PAGE===totalPag)}</span>`;
 }
 
 const av=s=>String(s==null?'':s).replace(/"/g,'&quot;');
