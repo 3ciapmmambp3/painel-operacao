@@ -225,6 +225,21 @@ function render(){
 }
 
 const av=s=>String(s==null?'':s).replace(/"/g,'&quot;');
+function distinctFrota(key){ return [...new Set(VIA.map(v=>(v[key]||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt')); }
+function optsFrom(key, cur, withOutro){
+  cur=(cur||'').trim(); let vals=distinctFrota(key);
+  if(cur && !vals.includes(cur)) vals=[cur,...vals];
+  let o='<option value="">—</option>'+vals.map(x=>`<option ${x===cur?'selected':''} value="${av(x)}">${av(x)}</option>`).join('');
+  if(withOutro) o+='<option value="__outro__">＋ Outro (digitar novo)…</option>';
+  return o;
+}
+function muniOutro(sel){
+  if(sel.value!=='__outro__') return;
+  const novo=(prompt('Novo município:')||'').trim().toUpperCase();
+  if(!novo){ sel.value=''; return; }
+  const o=document.createElement('option'); o.value=novo; o.textContent=novo;
+  sel.insertBefore(o, sel.lastElementChild); sel.value=novo;
+}
 function formEditHTML(v, isNew){
   v=v||{}; const tb=(v.tipo_bem||'').toUpperCase();
   return `
@@ -238,10 +253,10 @@ function formEditHTML(v, isNew){
     </div>
     <div class="fld"><label>Tipo de bem</label><select id="ve-tipo"><option value="">—</option>${['PRÓPRIA','LOCADA','COMODATO'].map(t=>`<option ${tb===t?'selected':''}>${t}</option>`).join('')}</select></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div class="fld"><label>Pelotão</label><input id="ve-pel" list="pel-dl" value="${av(v.pel)}" placeholder="selecione ou digite"></div>
-      <div class="fld"><label>Grupamento (GP)</label><input id="ve-gp" list="gp-dl" value="${av(v.gp)}" placeholder="selecione ou digite"></div>
+      <div class="fld"><label>Pelotão</label><select id="ve-pel">${optsFrom('pel', v.pel, false)}</select></div>
+      <div class="fld"><label>Grupamento (GP)</label><select id="ve-gp">${optsFrom('gp', v.gp, false)}</select></div>
     </div>
-    <div class="fld"><label>Município</label><input id="ve-muni" list="muni-dl" value="${av(v.municipio)}" placeholder="selecione ou digite"></div>
+    <div class="fld"><label>Município</label><select id="ve-muni" onchange="muniOutro(this)">${optsFrom('municipio', v.municipio, true)}</select></div>
     <button class="btn ok" onclick="salvarViatura(${isNew?'true':'false'})">${isNew?'＋ Incluir viatura':'✔ Salvar alterações'}</button>
     ${isNew?'':'<button class="btn" style="background:var(--danger-bg);color:#ef9a9a;border:1px solid rgba(239,83,80,.4);margin-top:8px" onclick="removerViatura()">🗑 Remover da frota (transferência/saída)</button>'}
   `;
