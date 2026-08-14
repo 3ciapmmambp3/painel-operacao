@@ -169,9 +169,9 @@
           <input data-k="comandante_equipe" placeholder="Quem supervisiona a equipe">
         </div>
         <div class="f">
-          <label>Km inicial <span class="chip-auto">● auto: última devolução</span></label>
-          <input data-k="km_inicial" id="kmi" type="number" oninput="calc()" readonly>
-          <span class="hint" id="kmi-hint">Selecione a viatura para carregar o Km.</span>
+          <label>Km inicial <span class="hint" id="kmi-chip"></span></label>
+          <input data-k="km_inicial" id="kmi" type="number" oninput="kmiCheck()" onblur="kmiBlur()" placeholder="Digite o Km atual do hodômetro">
+          <span class="hint" id="kmi-hint">Selecione a viatura para ver a última devolução.</span>
         </div>
         <div class="f">
           <label>Km final <span id="kmcalc" class="chip-calc"></span></label>
@@ -560,17 +560,53 @@ async function onVtr(){
     st.innerHTML = `⚠️ Viatura <b>${so.replace('_',' ')}</b> — indisponível para nova movimentação. Fale com o setor responsável (Aux P4).`;
     btn.disabled=true;
   }
-  // km inicial: pré-preenche com a última devolução (SUGESTÃO), mas o militar digita/confere
-  ultimoKmFinal=null; kmi.value=''; kmi.readOnly=false; hint.textContent='Buscando último Km…';
+  // km inicial: o militar SEMPRE digita (conferindo no hodômetro). Só buscamos a
+  // última devolução como referência p/ validar (nunca pré-preenche o campo).
+  ultimoKmFinal=null; kmiConfirmadoMaior=false; kmi.value=''; kmi.style.borderColor='';
+  const chip=document.getElementById('kmi-chip'); if(chip){ chip.textContent=''; chip.style.color=''; }
+  hint.textContent='Buscando último Km…';
   try{
     const ult = await rpc('mov_viatura_ultimo_km', { p_prefixo:p });
-    if (ult!=null){ ultimoKmFinal=+ult; kmi.value=ult;
-      hint.innerHTML=`Confira/digite o Km inicial. Última devolução: <b>${(+ult).toLocaleString('pt-BR')} km</b> (não pode ser menor).`; }
+    if (ult!=null){ ultimoKmFinal=+ult;
+      hint.innerHTML=`Digite o Km inicial conferindo no hodômetro. Última devolução: <b>${(+ult).toLocaleString('pt-BR')} km</b>.`; }
     else { hint.textContent='Sem registro anterior — informe o Km inicial.'; }
   }catch(e){ hint.textContent='Não foi possível buscar o Km anterior. Informe manualmente.'; }
   calc();
 }
-let ultimoKmFinal=null;
+let ultimoKmFinal=null, kmiConfirmadoMaior=false;
+
+// Confere o Km inicial digitado contra a última devolução (visual imediato).
+function kmiCheck(){
+  calc();
+  const inp=document.getElementById('kmi'), hint=document.getElementById('kmi-hint'), chip=document.getElementById('kmi-chip');
+  kmiConfirmadoMaior=false;
+  inp.style.borderColor=''; chip.textContent=''; chip.style.color='';
+  const v=(inp.value||'').trim();
+  if(v===''){ hint.innerHTML = ultimoKmFinal!=null ? `Última devolução: <b>${ultimoKmFinal.toLocaleString('pt-BR')} km</b>.` : 'Informe o Km inicial.'; return; }
+  const n=+v;
+  if(ultimoKmFinal==null){ hint.textContent='Sem registro anterior — informe o Km inicial.'; return; }
+  if(n===ultimoKmFinal){
+    inp.style.borderColor='var(--success)'; chip.textContent='✓ confere'; chip.style.color='var(--success)';
+    hint.innerHTML=`Confere com a última devolução (${ultimoKmFinal.toLocaleString('pt-BR')} km).`;
+  } else if(n<ultimoKmFinal){
+    inp.style.borderColor='var(--danger)'; chip.textContent='menor que o anterior'; chip.style.color='var(--danger)';
+    hint.innerHTML=`<span style="color:var(--danger)">Hodômetro menor que o final anterior (${ultimoKmFinal.toLocaleString('pt-BR')} km).</span>`;
+  } else {
+    inp.style.borderColor='#ffb74d'; chip.textContent='maior que o anterior'; chip.style.color='#ffb74d';
+    hint.innerHTML=`Maior que a última devolução (${ultimoKmFinal.toLocaleString('pt-BR')} km) — será pedida confirmação.`;
+  }
+}
+// Ao sair do campo, se for MAIOR que o anterior, pede confirmação.
+function kmiBlur(){
+  const inp=document.getElementById('kmi'); const v=(inp.value||'').trim(); if(v==='' || ultimoKmFinal==null) return;
+  const n=+v;
+  if(n>ultimoKmFinal && !kmiConfirmadoMaior){
+    if(confirm(`Tem certeza que é o hodômetro correto?\n\nO Km inicial (${n.toLocaleString('pt-BR')}) está maior que o hodômetro anterior (${ultimoKmFinal.toLocaleString('pt-BR')} km).`)){
+      kmiConfirmadoMaior=true; inp.style.borderColor='var(--info)';
+      const chip=document.getElementById('kmi-chip'); chip.textContent='✓ confirmado'; chip.style.color='var(--info)';
+    } else { setTimeout(()=>{try{inp.focus()}catch(e){}},50); }
+  }
+}
 
 function calc(){ const i=+document.getElementById('kmi').value, f=+document.getElementById('kmf').value; const el=document.getElementById('kmcalc');
   if(f&&i&&f>=i){el.textContent='rodou '+(f-i).toLocaleString('pt-BR')+' km';el.style.color='var(--success)';}
@@ -777,10 +813,12 @@ async function salvar(){
   if (!base.km_final)   return foco('kmf','Informe o Km final.');
   const kmI=+base.km_inicial, kmF=+base.km_final;
   if (ultimoKmFinal!=null && kmI < ultimoKmFinal)
-    return foco('kmi',`Km inicial (${kmI.toLocaleString('pt-BR')}) não pode ser menor que a última devolução da viatura (${ultimoKmFinal.toLocaleString('pt-BR')}).`);
+    return foco('kmi',`Hodômetro menor que o final anterior (${ultimoKmFinal.toLocaleString('pt-BR')} km).`);
   if (kmF < kmI) return foco('kmf','Km final não pode ser menor que o inicial.');
-  if (ultimoKmFinal!=null && Math.abs(kmI - ultimoKmFinal) > 3){
-    if(!confirm(`O Km inicial (${kmI.toLocaleString('pt-BR')}) difere da última devolução (${ultimoKmFinal.toLocaleString('pt-BR')}) em mais de 3 km — pode estar errado. Deseja continuar assim?`)) return foco('kmi','Confira o Km inicial.');
+  if (ultimoKmFinal!=null && kmI > ultimoKmFinal && !kmiConfirmadoMaior){
+    if(!confirm(`Tem certeza que é o hodômetro correto?\n\nO Km inicial (${kmI.toLocaleString('pt-BR')}) está maior que o hodômetro anterior (${ultimoKmFinal.toLocaleString('pt-BR')} km).`))
+      return foco('kmi','Confira o Km inicial.');
+    kmiConfirmadoMaior=true;
   }
 
   // ── Início / Término ──
