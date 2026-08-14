@@ -121,6 +121,35 @@
       <div class="kpi man"><div class="lbl">Em manutenção</div><div class="val" id="k-man">—</div></div>
     </div>
 
+    <details id="cfg-card" style="margin-bottom:14px;border:1px solid var(--border);border-radius:10px;padding:12px 14px;background:var(--bg-card)">
+      <summary style="cursor:pointer;font-size:13px;font-weight:700;color:var(--gold-light)">⛽ Controle de limite de abastecimento (POC / PRIME)</summary>
+      <p style="font-size:12px;color:var(--text-muted);margin:10px 0 4px">Enquanto o limite estiver <b>desligado</b>, a ficha não pergunta litros para a fonte. Ao <b>ligar</b> e definir o limite (litros por abastecimento), a ficha passa a pedir os litros; se o abastecimento passar do limite, exige <b>quem autorizou</b> e <b>o motivo</b>.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:10px" id="cfg-grid">
+        <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+          <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;cursor:pointer">
+            <input type="checkbox" id="cfg-poc-ativo" onchange="cfgToggle('poc')"> Limite POC ativo
+          </label>
+          <div class="fld" id="cfg-poc-wrap" style="margin-top:8px;display:none">
+            <label>Limite por abastecimento (litros)</label>
+            <input id="cfg-poc-limite" type="number" step="0.001" placeholder="ex.: 40">
+          </div>
+        </div>
+        <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+          <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;cursor:pointer">
+            <input type="checkbox" id="cfg-prime-ativo" onchange="cfgToggle('prime')"> Limite PRIME ativo
+          </label>
+          <div class="fld" id="cfg-prime-wrap" style="margin-top:8px;display:none">
+            <label>Limite por abastecimento (litros)</label>
+            <input id="cfg-prime-limite" type="number" step="0.001" placeholder="ex.: 40">
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap">
+        <button class="btn ok" style="width:auto;padding:9px 18px" onclick="salvarCfgLimites()">Salvar limites</button>
+        <span id="cfg-info" style="font-size:11.5px;color:var(--text-hint)"></span>
+      </div>
+    </details>
+
     <div class="toolbar">
       <div class="search"><input id="busca" placeholder="Buscar por prefixo, placa, modelo, município…" oninput="render()"></div>
       <select class="fsel" id="fstatus" onchange="render()">
@@ -174,8 +203,41 @@ let VIA=[], atual=null;
     const r=await fetch(`${API}/rest/v1/viaturas?select=prefixo,placa,marca_modelo,ano,tracao,tipo_bem,pel,gp,municipio,situacao_viatura,situacao_operacional&ativo=eq.true&order=prefixo`,{headers:H});
     VIA=await r.json(); if(!Array.isArray(VIA)) VIA=[];
   }catch(e){ console.error(e); VIA=[]; }
-  kpis(); render(); popularListasFrota();
+  kpis(); render(); popularListasFrota(); carregarCfgLimites();
 })();
+
+// ── Controle de limite de abastecimento (POC/PRIME) ────────────────────────
+function cfgToggle(fonte){
+  const on=document.getElementById(`cfg-${fonte}-ativo`).checked;
+  document.getElementById(`cfg-${fonte}-wrap`).style.display = on?'block':'none';
+}
+async function carregarCfgLimites(){
+  try{
+    const c=await rpc('abastecimento_config_get',{});
+    const cfg=Array.isArray(c)?c[0]:c; if(!cfg) return;
+    document.getElementById('cfg-poc-ativo').checked = !!cfg.poc_ativo;
+    document.getElementById('cfg-poc-limite').value = cfg.poc_limite!=null?cfg.poc_limite:'';
+    document.getElementById('cfg-prime-ativo').checked = !!cfg.prime_ativo;
+    document.getElementById('cfg-prime-limite').value = cfg.prime_limite!=null?cfg.prime_limite:'';
+    cfgToggle('poc'); cfgToggle('prime');
+    if(cfg.atualizado_por) document.getElementById('cfg-info').textContent =
+      `Última alteração: ${cfg.atualizado_por}${cfg.atualizado_em?' · '+fmt(cfg.atualizado_em):''}`;
+  }catch(e){ console.error(e); }
+}
+async function salvarCfgLimites(){
+  const pocAtivo=document.getElementById('cfg-poc-ativo').checked;
+  const primeAtivo=document.getElementById('cfg-prime-ativo').checked;
+  const pocLim=document.getElementById('cfg-poc-limite').value;
+  const primeLim=document.getElementById('cfg-prime-limite').value;
+  if(pocAtivo && !(+pocLim>0)) return toast('Informe o limite (litros) do POC.');
+  if(primeAtivo && !(+primeLim>0)) return toast('Informe o limite (litros) do PRIME.');
+  try{
+    const dados={ poc_ativo:pocAtivo, poc_limite:pocAtivo?pocLim:'',
+      prime_ativo:primeAtivo, prime_limite:primeAtivo?primeLim:'' };
+    await rpc('abastecimento_config_salvar',{p_token:S.token,p_dados:dados});
+    toast('Limites salvos.'); carregarCfgLimites();
+  }catch(e){ toast('Erro: '+e.message); }
+}
 
 // Preenche os datalists (Pelotão/Grupamento/Município) com os valores JÁ existentes
 // na frota — evita variações de grafia; datalist ainda permite digitar um novo.
@@ -324,7 +386,10 @@ async function carregarHist(prefixo){
     if(!Array.isArray(list)||!list.length){ el.innerHTML='<div style="color:var(--text-hint);font-size:12px">Sem baixas registradas.</div>'; return; }
     el.innerHTML=list.map(b=>{
       const fim = b.data_retorno ? `retorno ${fmt(b.data_retorno)}${b.km_retorno!=null?` · ${(+b.km_retorno).toLocaleString('pt-BR')} km`:''}` : '<b style="color:#ffb74d">em aberto</b>';
-      return `<div class="hrow"><div class="t">${ST_LBL[b.tipo]||b.tipo}</div>
+      return `<div class="hrow"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+          <div class="t">${ST_LBL[b.tipo]||b.tipo}</div>
+          <button class="pclose" title="Excluir esta baixa (registrada por engano)" style="font-size:12px" onclick="excluirBaixa('${b.id}', ${b.aberta===true})">🗑 Excluir</button>
+        </div>
         <div class="d">Baixa ${fmt(b.data_baixa)}${b.km_baixa!=null?` · ${(+b.km_baixa).toLocaleString('pt-BR')} km`:''} — por ${b.baixado_por_nome||'—'}</div>
         <div class="d">${b.motivo||''}</div><div class="d">${fim}</div></div>`;
     }).join('');
@@ -341,6 +406,18 @@ async function baixar(){
     await rpc('viatura_baixar',{p_token:S.token,p_prefixo:atual.prefixo,p_tipo:tipo,p_motivo:motivo,p_km_baixa:km?+km:null});
     const v=VIA.find(x=>x.prefixo===atual.prefixo); if(v) v.situacao_operacional=tipo;
     kpis(); render(); toast('Baixa registrada.'); abrir(v);
+  }catch(e){ toast('Erro: '+e.message); }
+}
+async function excluirBaixa(id, aberta){
+  const msg = aberta
+    ? 'Excluir esta baixa EM ABERTO? A viatura voltará a ficar disponível.'
+    : 'Excluir esta baixa do histórico? Esta ação não pode ser desfeita.';
+  if(!confirm(msg)) return;
+  try{
+    const r=await rpc('viatura_baixa_excluir',{p_token:S.token,p_baixa_id:id});
+    const nova=(r&&(Array.isArray(r)?r[0]:r).situacao_operacional)||'DISPONIVEL';
+    const v=VIA.find(x=>x.prefixo===atual.prefixo); if(v) v.situacao_operacional=nova;
+    kpis(); render(); toast('Baixa excluída.'); if(v) abrir(v);
   }catch(e){ toast('Erro: '+e.message); }
 }
 async function retornar(){

@@ -383,6 +383,7 @@ function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.
 function foco(id,msg){ toast(msg); const el=document.getElementById(id); if(el){ el.scrollIntoView({behavior:'smooth',block:'center'}); setTimeout(()=>{try{el.focus()}catch(e){}},250); } }
 
 let VIATURAS = [];   // cadastro
+let ABAST_CFG = {poc_ativo:false, poc_limite:null, prime_ativo:false, prime_limite:null};
 let VMAP = {};       // prefixo -> viatura
 
 /* ── boot ────────────────────────────────────────────────────────── */
@@ -412,7 +413,34 @@ let VMAP = {};       // prefixo -> viatura
   if (!VIATURAS.length){ sel.innerHTML='<option value="">(cadastro de viaturas vazio — rode o SQL/sync)</option>'; }
   carregarPendencias();
   carregarMilitares();
+  carregarCfgAbast();
 })();
+
+// Limites de abastecimento (POC/PRIME) configurados pelo Aux P4 / Admin Geral.
+async function carregarCfgAbast(){
+  try{
+    const c=await rpc('abastecimento_config_get',{});
+    const cfg=Array.isArray(c)?c[0]:c;
+    if(cfg) ABAST_CFG={ poc_ativo:!!cfg.poc_ativo, poc_limite:cfg.poc_limite!=null?+cfg.poc_limite:null,
+      prime_ativo:!!cfg.prime_ativo, prime_limite:cfg.prime_limite!=null?+cfg.prime_limite:null };
+  }catch(e){ console.error('cfg abast', e); }
+}
+function abLimiteAtivo(kind){ return kind==='poc' ? (ABAST_CFG.poc_ativo && ABAST_CFG.poc_limite>0)
+                                                  : (ABAST_CFG.prime_ativo && ABAST_CFG.prime_limite>0); }
+function abLimiteVal(kind){ return kind==='poc'?ABAST_CFG.poc_limite:ABAST_CFG.prime_limite; }
+function abLimiteHint(kind){ return abLimiteAtivo(kind) ? ` <span class="hint">(limite: ${abLimiteVal(kind)} L)</span>` : ''; }
+function abOverBlock(){
+  return '<div class="ab-over" style="display:none;margin-top:10px;border-left:3px solid var(--danger);padding-left:10px">'
+    +'<p class="hint" style="color:var(--danger);margin:0 0 6px">Abastecimento acima do limite — informe a autorização.</p>'
+    +'<div class="grid"><div class="f"><label>Quem autorizou?</label><input class="ab-autorizador"></div>'
+    +'<div class="f"><label>Por quê ficou acima do limite?</label><input class="ab-motivo-lim"></div></div></div>';
+}
+function abCheckLimite(inp, kind){
+  const blk=inp.closest('.ab-fields') && inp.closest('.ab-fields').querySelector('.ab-over');
+  if(!blk) return;
+  const over = abLimiteAtivo(kind) && (+inp.value>0) && (+inp.value > abLimiteVal(kind));
+  blk.style.display = over?'block':'none';
+}
 
 // Lista de militares (para o(s) piloto(s) da aeronave) — buscável por nº ou nome.
 let ROSTER = [];
@@ -575,9 +603,10 @@ function abHouve(){ const v=document.getElementById('ab-houve').value;
 const COMBUSTIVEIS=['Gasolina comum','Gasolina aditivada','Etanol','Diesel S10','Diesel S500','GNV'];
 const CONVENIOS=['Vale','Samarco','Vallourec','SEE / Progea','Emenda parlamentar','Outro'];
 function optList(arr){ return '<option value=""></option>'+arr.map(x=>`<option>${x}</option>`).join(''); }
-function camposPrimeComuns(){
+function camposPrimeComuns(kind){
+  kind = kind || 'prime';
   return '<div class="grid three">'
-    +'<div class="f"><label>Litros</label><input class="ab-litros" type="number" step="0.001"></div>'
+    +'<div class="f"><label>Litros'+abLimiteHint(kind)+'</label><input class="ab-litros" type="number" step="0.001" oninput="abCheckLimite(this,\''+kind+'\')"></div>'
     +'<div class="f"><label>Valor p/ litro</label><input class="ab-vunit" type="number" step="0.001"></div>'
     +'<div class="f"><label>Valor total</label><input class="ab-vtotal" type="number" step="0.01"></div>'
     +'<div class="f"><label>Combustível</label><select class="ab-comb">'+optList(COMBUSTIVEIS)+'</select></div>'
@@ -586,9 +615,17 @@ function camposPrimeComuns(){
 function abFonte(sel){
   const box=sel.closest('.abast-row').querySelector('.ab-fields'); const f=sel.value;
   if(f==='POC'){
-    box.innerHTML='<p class="hint" style="padding:8px 0">POC: sem controle de limite configurado — não é necessário informar litros. (o ADM poderá ativar o controle de limite depois; aí passa a pedir litros e, se acima do limite, quem autorizou e por quê.)</p>';
+    if(abLimiteAtivo('poc')){
+      box.innerHTML='<div class="grid three">'
+        +'<div class="f"><label>Litros abastecidos'+abLimiteHint('poc')+'</label><input class="ab-litros" type="number" step="0.001" oninput="abCheckLimite(this,\'poc\')"></div>'
+        +'<div class="f"><label>Combustível</label><select class="ab-comb">'+optList(COMBUSTIVEIS)+'</select></div>'
+        +'<div class="f"><label>Comprovante <span class="hint">(opcional)</span></label><input class="ab-foto" type="file" accept="image/*"></div></div>'
+        +abOverBlock();
+    } else {
+      box.innerHTML='<p class="hint" style="padding:8px 0">POC: sem controle de limite configurado — não é necessário informar litros. (o Aux P4 / Admin Geral pode ativar o limite na Gestão de Viaturas; aí passa a pedir litros e, se acima do limite, quem autorizou e por quê.)</p>';
+    }
   } else if(f==='Cartão PRIME'){
-    box.innerHTML=camposPrimeComuns();
+    box.innerHTML=camposPrimeComuns('prime')+abOverBlock();
   } else { // Convênio ou Doação
     box.innerHTML=
       '<div class="grid"><div class="f"><label>Tipo</label><select class="ab-tipo" onchange="abTipo(this)"><option>Convênio</option><option>Doação esporádica</option></select></div>'
@@ -722,6 +759,16 @@ async function salvar(){
         if(justEl){ justEl.scrollIntoView({behavior:'smooth',block:'center'}); setTimeout(()=>{try{justEl.focus()}catch(e){}},250); }
         return toast('Odômetro de um abastecimento está fora do intervalo de Km da utilização — justifique.');
       }
+      // abastecimento acima do limite (POC/PRIME) precisa de autorização + motivo
+      const over=r.querySelector('.ab-over');
+      if (over && over.style.display!=='none'){
+        const aut=r.querySelector('.ab-autorizador'), mot=r.querySelector('.ab-motivo-lim');
+        if(!aut || !(aut.value||'').trim() || !mot || !(mot.value||'').trim()){
+          const alvo=(aut && !(aut.value||'').trim())?aut:mot;
+          if(alvo){ alvo.scrollIntoView({behavior:'smooth',block:'center'}); setTimeout(()=>{try{alvo.focus()}catch(e){}},250); }
+          return toast('Abastecimento acima do limite: informe quem autorizou e o motivo.');
+        }
+      }
     }
   }
 
@@ -746,7 +793,8 @@ async function salvar(){
       const g=sel=>{const el=r.querySelector(sel); return el?(el.value||'').trim():'';};
       const it={ fonte:g('.ab-fonte'), combustivel:g('.ab-comb'), litros:g('.ab-litros'),
         valor_unit:g('.ab-vunit'), valor_total:g('.ab-vtotal'), odometro:g('.ab-odometro'),
-        data_hora:g('.ab-dh'), cidade:g('.ab-cidade'), obs:g('.ab-obs') };
+        data_hora:g('.ab-dh'), cidade:g('.ab-cidade'), obs:g('.ab-obs'),
+        autorizado_por:g('.ab-autorizador'), motivo_acima_limite:g('.ab-motivo-lim') };
       const tipo=g('.ab-tipo');
       if(tipo){ it.tipo=tipo; it.odometro_justificativa=g('.ab-odo-just');
         if(tipo==='Convênio') it.convenio=g('.ab-convenio');
