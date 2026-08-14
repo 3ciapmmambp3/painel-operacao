@@ -647,10 +647,26 @@ if (podeGerenciarTTA){
 }
 
 /* ── boot ──────────────────────────────────────────────────────────── */
+// Operações ATIVAS hoje (mesma fonte do Relatório de Serviço) → datalist do campo
+// "Operação" de cada equipe. Assim o comandante escolhe da lista e o relatório
+// puxa a operação certa. Falha silenciosa: o campo continua livre.
+const SCRIPT_URL_TTA = "https://script.google.com/macros/s/AKfycbxzCS7XHPkn1EvVV5ym_QiAtub3uKVrkXPuwtUNoUhwTIGxUiNm5RZc2i18qEGRqOvJ/exec";
+async function carregarOperacoesTTA(){
+  try{
+    if (typeof auth_fetchReferencias !== 'function') return;
+    const data = await auth_fetchReferencias(SCRIPT_URL_TTA);
+    const d = new Date();
+    const hoje = new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+    const ops = ((data && data.OPERACOES) || []).filter(it => it.inicio && it.final && hoje >= it.inicio && hoje <= it.final);
+    const dl = document.getElementById('operacoes-dl');
+    if (dl) dl.innerHTML = ops.map(o => '<option value="'+o.value+'"></option>').join('');
+  }catch(e){ /* silencioso: campo continua livre */ }
+}
+
 (async function init(){
   // allSettled de propósito: uma falha aqui (ex.: rede) nunca pode impedir
   // o resto da página de carregar.
-  await Promise.allSettled([carregarGrupos(), carregarRoster(), carregarTemaHoje(), carregarMaterialAtual(), renderPastas()]);
+  await Promise.allSettled([carregarGrupos(), carregarRoster(), carregarTemaHoje(), carregarMaterialAtual(), renderPastas(), carregarOperacoesTTA()]);
   onGrupamentoChange();
 })();
 </script>

@@ -1620,7 +1620,7 @@ async function preencherEquipeDoTTA(){
 
       // Viatura principal (só se o card Recursos Empregados já estiver na tela)
       const vp = document.querySelector('[data-field="viaturaPrincipal"]');
-      if (vp && !vp.value && minha.prefixo_viatura) vp.value = minha.prefixo_viatura;
+      if (vp && !vp.value && minha.prefixo_viatura){ vp.value = minha.prefixo_viatura; vp.dispatchEvent(new Event('change')); }
 
       // Equipes que APOIAM a minha → Equipe de Apoio do relatório
       equipes.filter(eq => eq.vinculo === ('apoio:' + minha.ordem)).forEach(eq => {
@@ -1637,7 +1637,7 @@ async function preencherEquipeDoTTA(){
       const ops = [...new Set(equipes.filter(naEquipe).map(e=>e.operacao).filter(Boolean))];
       const lembr = [];
       if (!vp && minha.prefixo_viatura) lembr.push('Viatura <b>'+minha.prefixo_viatura+'</b> (adicione "Recursos Empregados" para vincular)');
-      if (ops.length) lembr.push('Operação <b>'+ops.join(', ')+'</b> (adicione o card "OP POE" se o serviço foi nela)');
+      if (ops.length){ preencherOperacoesDoTTA(ops); lembr.push('Operação <b>'+ops.join(', ')+'</b> já lançada no card "Operação" (confira)'); }
       mostrarAvisoTTA('Equipe preenchida a partir do TTA de hoje.' + (lembr.length ? ' Lembre: ' + lembr.join('; ') + '.' : ' Confira e complete.'));
       return;
     }
@@ -1850,6 +1850,37 @@ function bindKmRodado(entry){
   };
   hodInicial.addEventListener('input', update);
   hodFinal.addEventListener('input', update);
+}
+
+// Puxa Hodômetro Inicial/Final da Ficha de Movimentação do dia da viatura selecionada
+// (fluxo "movimentação primeiro, relatório puxa"). Se houver ficha, trava os campos
+// (só-leitura) e informa a origem; se não houver, libera p/ digitação manual.
+function bindHodometroFromMov(entry){
+  const principal = entry.querySelector('[data-field="viaturaPrincipal"]');
+  const hodIni = entry.querySelector('input[data-label="Hodômetro Inicial"]');
+  const hodFim = entry.querySelector('input[data-label="Hodômetro Final"]');
+  const kmField = entry.querySelector('[data-field="kmRodado"]');
+  if (!principal || !hodIni || !hodFim) return;
+  const nota = kmField ? (kmField.closest('.field') || entry).querySelector('.field-note') : null;
+  const notaDefault = nota ? nota.textContent : '';
+  const trava = (ro) => { [hodIni, hodFim].forEach(el => { el.readOnly = ro; el.classList.toggle('input-readonly', ro); }); };
+  const puxar = async () => {
+    const pref = (principal.value || '').trim();
+    if (!pref){ trava(false); if (nota) nota.textContent = notaDefault; return; }
+    const mov = await buscarMovimentacaoHoje(pref);
+    if (mov && mov.km_inicial != null && mov.km_final != null){
+      hodIni.value = mov.km_inicial;
+      hodFim.value = mov.km_final;
+      if (kmField) kmField.value = (mov.km_final >= mov.km_inicial) ? (mov.km_final - mov.km_inicial) : '';
+      trava(true);
+      if (nota) nota.textContent = '✓ puxado da Ficha de Movimentação de hoje (VTR ' + pref + ')';
+    } else {
+      trava(false);
+      if (nota) nota.textContent = 'Sem Ficha de Movimentação hoje p/ esta VTR — informe o hodômetro manualmente.';
+    }
+  };
+  principal.addEventListener('change', puxar);
+  if (principal.value) puxar();   // caso a viatura já venha preenchida (ex.: do TTA)
 }
 
 function getViaturaPrincipal(){
@@ -2189,6 +2220,7 @@ function bindRepeatablePanel(panel, categoryId){
     if (categoryId === 'recursos'){
       bindViaturaAutoCalc(entry);
       bindKmRodado(entry);
+      bindHodometroFromMov(entry);
     }
     if (categoryId === 'ima') bindImaDuracao(entry);
   }
@@ -2594,6 +2626,35 @@ function bindOperacaoEvents(panel){
     bindUppercaseIn(div);
     div.querySelector('.entry-remove').addEventListener('click', () => div.remove());
   });
+}
+
+// Pré-preenche o card "Operação" a partir das operações vindas do TTA de hoje.
+// Se o nome bate com uma operação ativa, seleciona; senão marca "OUTRA" e escreve o nome.
+function preencherOperacoesDoTTA(ops){
+  if (!ops || !ops.length) return;
+  const node = getOrCreatePanelNode('operacao');
+  const entradas = () => node.querySelectorAll('[data-op-entry]');
+  const addBtn = node.querySelector('#addOperacao');
+  ops.forEach((nome, i) => {
+    let entry = entradas()[i];
+    if (!entry && addBtn){ addBtn.click(); entry = entradas()[i]; }
+    if (!entry) return;
+    const sel = entry.querySelector('.op-select');
+    const outraField = entry.querySelector('.op-outra');
+    const outraInp = entry.querySelector('.op-nome-outra');
+    if (!sel) return;
+    populateOperacaoSelect(sel);
+    const casa = Array.from(sel.options).some(o => o.value === nome);
+    if (casa){
+      sel.value = nome;
+      if (outraField) outraField.style.display = 'none';
+    } else {
+      sel.value = 'OUTRA OPERAÇÃO NÃO DESCRITA ACIMA';
+      if (outraField) outraField.style.display = 'block';
+      if (outraInp) outraInp.value = nome;
+    }
+  });
+  renderGrid(); // atualiza a contagem no card "Operação"
 }
 
 // ---------- Exemplo completo: PRODUTIVIDADE (dinâmico) ----------
@@ -3442,6 +3503,25 @@ async function viaturaTemMovimentacaoHoje(prefixo){
     if (!r.ok) return null;                 // tabela ausente/erro → fallback (não bloqueia)
     const rows = await r.json();
     return Array.isArray(rows) && rows.length > 0;
+  }catch(e){ return null; }
+}
+
+// Busca a Ficha de Movimentação lançada HOJE para a viatura (fluxo "movimentação
+// primeiro, relatório puxa"). Retorna {km_inicial,km_final,motorista_*} ou null.
+async function buscarMovimentacaoHoje(prefixo){
+  try{
+    if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return null;
+    if (!prefixo) return null;
+    const H = { apikey: SB_AUTH_KEY, Authorization: `Bearer ${SB_AUTH_KEY}` };
+    const d = new Date();
+    const dia = new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+    const url = `${SB_AUTH_URL}/rest/v1/mov_viaturas?select=km_inicial,km_final,motorista_nome,motorista_matricula`
+      + `&ativo=eq.true&prefixo=eq.${encodeURIComponent(prefixo)}`
+      + `&criado_em=gte.${dia}T00:00:00&order=criado_em.desc&limit=1`;
+    const r = await fetch(url, { headers: H });
+    if (!r.ok) return null;
+    const rows = await r.json();
+    return (Array.isArray(rows) && rows.length) ? rows[0] : null;
   }catch(e){ return null; }
 }
 
