@@ -177,8 +177,8 @@
           <label>Km final <span id="kmcalc" class="chip-calc"></span></label>
           <input data-k="km_final" id="kmf" type="number" placeholder="Km ao devolver" oninput="calc()">
         </div>
-        <div class="f"><label>Início (armar a VTR)</label><input data-k="inicio" id="inicio" type="datetime-local"></div>
-        <div class="f"><label>Término (devolver)</label><input data-k="termino" type="datetime-local"></div>
+        <div class="f"><label>Início (armar a VTR)</label><input data-k="inicio" id="inicio" type="datetime-local" oninput="syncDatas()"></div>
+        <div class="f"><label>Término (devolver)</label><input data-k="termino" id="termino" type="datetime-local" oninput="syncDatas()"><span class="hint" id="termino-hint" style="display:none;color:#ef9a9a">O término não pode ser antes do início.</span></div>
         <div class="f"><label>Combustível ao ARMAR</label>
           <select data-k="comb_armar"><option>Cheio</option><option>3/4</option><option>1/2</option><option>1/4</option><option>Reserva</option></select></div>
         <div class="f"><label>Combustível ao DEVOLVER</label>
@@ -382,6 +382,17 @@ async function rpc(fn, body){
 function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 function foco(id,msg){ toast(msg); const el=document.getElementById(id); if(el){ el.scrollIntoView({behavior:'smooth',block:'center'}); setTimeout(()=>{try{el.focus()}catch(e){}},250); } }
 
+// Amarra o término ao início: impede escolher/manter data-hora anterior à do início.
+function syncDatas(){
+  const ini=document.getElementById('inicio'), fim=document.getElementById('termino'), hint=document.getElementById('termino-hint');
+  if(!ini||!fim) return;
+  // limite inferior do seletor de término = valor do início
+  fim.min = ini.value || '';
+  const invalido = ini.value && fim.value && fim.value < ini.value;
+  if(hint) hint.style.display = invalido ? 'block' : 'none';
+  fim.style.borderColor = invalido ? '#ef5350' : '';
+}
+
 /* ── Anexos → Supabase Storage (bucket 'anexos', mesmo padrão das denúncias).
    Imagens comprimidas no navegador; link = signed URL durável. Ao salvar, todos
    os <input type=file> preenchidos sobem e vão em dados.anexos rotulados. ── */
@@ -448,6 +459,7 @@ let VMAP = {};       // prefixo -> viatura
   // início default = agora
   const now=new Date(); now.setMinutes(now.getMinutes()-now.getTimezoneOffset());
   document.getElementById('inicio').value = now.toISOString().slice(0,16);
+  syncDatas();
   // Gestão de Viaturas visível só p/ Aux P4 / Admin Geral
   const funcao=(S.funcao||'').toLowerCase();
   if (S.nivel_acesso==='admin_geral' || funcao.includes('aux p4')) document.getElementById('linkGestaoVtr').style.display='';
