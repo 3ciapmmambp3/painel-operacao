@@ -253,7 +253,7 @@
         <div class="f"><label>Responsável definido?</label><select data-k="responsavel"><option>Sim</option><option>Não</option></select></div>
         <div class="f"><label>Bafômetro realizado?</label><select data-k="bafometro"><option>Sim</option><option>Não</option></select></div>
         <div class="f"><label>Necessitou guincho?</label><select data-k="guincho"><option>Não</option><option>Sim</option></select></div>
-        <div class="f col2"><label>Fotos dos veículos</label><input type="file" accept="image/*" multiple></div>
+        <div class="f col2"><label>Fotos dos veículos</label><input type="file" data-anexo="acidente-fotos" accept="image/*" multiple></div>
       </div>
       <div class="f" style="margin-top:12px"><label>Observações do acidente</label><textarea rows="2" data-k="obs"></textarea></div>
     </div>
@@ -276,7 +276,7 @@
     <div class="card sec" id="s-avaria" data-sec="avaria">
       <h2>🩹 Avarias de uso</h2>
       <div class="grid"><div class="f col2"><label>Qual avaria foi detectada?</label><input data-k="descricao"></div>
-        <div class="f col2"><label>Fotos das avarias</label><input type="file" accept="image/*" multiple></div></div>
+        <div class="f col2"><label>Fotos das avarias</label><input type="file" data-anexo="avarias-fotos" accept="image/*" multiple></div></div>
     </div>
 
     <!-- TAQ -->
@@ -381,6 +381,56 @@ async function rpc(fn, body){
 }
 function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 function foco(id,msg){ toast(msg); const el=document.getElementById(id); if(el){ el.scrollIntoView({behavior:'smooth',block:'center'}); setTimeout(()=>{try{el.focus()}catch(e){}},250); } }
+
+/* ── Anexos → Supabase Storage (bucket 'anexos', mesmo padrão das denúncias).
+   Imagens comprimidas no navegador; link = signed URL durável. Ao salvar, todos
+   os <input type=file> preenchidos sobem e vão em dados.anexos rotulados. ── */
+const STORAGE=`${API}/storage/v1`, BUCKET='anexos';
+const MAX_MB=15, IMG_MAX_DIM=1600, IMG_QUALITY=0.7, LINK_TTL=315360000;
+const sanitizeNome=n=>(n||'arquivo').normalize('NFD').replace(/[^\x00-\x7F]/g,'').replace(/[^\w.\-]+/g,'_').replace(/_+/g,'_').slice(-80)||'arquivo';
+const encPath=p=>p.split('/').map(encodeURIComponent).join('/');
+async function comprimirImagem(file){
+  if(!/^image\//.test(file.type)||/gif|svg/i.test(file.type)) return file;
+  try{
+    const bmp=await createImageBitmap(file);
+    const scale=Math.min(1, IMG_MAX_DIM/Math.max(bmp.width,bmp.height));
+    const w=Math.round(bmp.width*scale), h=Math.round(bmp.height*scale);
+    const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+    cv.getContext('2d').drawImage(bmp,0,0,w,h);
+    const blob=await new Promise(res=>cv.toBlob(res,'image/jpeg',IMG_QUALITY));
+    if(blob&&blob.size<file.size) return new File([blob], file.name.replace(/\.[^.]+$/,'')+'.jpg', {type:'image/jpeg'});
+  }catch(e){ console.warn('compressão falhou:', e); }
+  return file;
+}
+async function subirArquivo(file){
+  const f=await comprimirImagem(file);
+  if(f.size>MAX_MB*1048576) throw new Error(`${f.name}: acima de ${MAX_MB} MB`);
+  const path=`viaturas/${new Date().getFullYear()}/${crypto.randomUUID()}-${sanitizeNome(f.name)}`;
+  const enc=encPath(path), AH={apikey:AKEY,Authorization:'Bearer '+AKEY};
+  const up=await fetch(`${STORAGE}/object/${BUCKET}/${enc}`,{method:'POST',headers:{...AH,'Content-Type':f.type||'application/octet-stream','x-upsert':'true'},body:f});
+  if(!up.ok) throw new Error(`${up.status} ${await up.text()}`);
+  const sg=await fetch(`${STORAGE}/object/sign/${BUCKET}/${enc}`,{method:'POST',headers:{...AH,'Content-Type':'application/json'},body:JSON.stringify({expiresIn:LINK_TTL})});
+  if(!sg.ok) throw new Error(`assinatura ${sg.status}`);
+  const sj=await sg.json();
+  return { nome:f.name, tamanho:f.size, mime:f.type, path, link:`${STORAGE}${sj.signedURL||sj.signedUrl}` };
+}
+// Sobe todos os arquivos escolhidos; devolve [{categoria,contexto,nome,path,link,mime,tamanho}].
+async function coletarAnexos(){
+  const inputs=[...document.querySelectorAll('#form-wrap input[type=file]')].filter(i=>i.files&&i.files.length);
+  const total=inputs.reduce((n,i)=>n+i.files.length,0);
+  if(!total) return [];
+  const out=[]; let feito=0;
+  for(const inp of inputs){
+    const categoria=inp.dataset.anexo||'anexo';
+    const row=inp.closest('.abast-row'); const contexto=row?((row.querySelector('.ab-fonte')||{}).value||''):'';
+    for(const file of inp.files){
+      toast(`Enviando anexos… ${++feito}/${total}`);
+      try{ const ref=await subirArquivo(file); ref.categoria=categoria; if(contexto) ref.contexto=contexto; out.push(ref); }
+      catch(e){ console.error('anexo',categoria,e); throw new Error(`anexo (${categoria}): ${e.message}`); }
+    }
+  }
+  return out;
+}
 
 let VIATURAS = [];   // cadastro
 let ABAST_CFG = {poc_ativo:false, poc_limite:null, prime_ativo:false, prime_limite:null};
@@ -545,7 +595,7 @@ function taqAbFonte(sel){
       +'<div class="f"><label>Combustível</label>'+comb+'</div>'
       +'<div class="f"><label>Nº do cartão utilizado</label><input class="tab-cartao"></div>'
       +'<div class="f"><label>Horímetro/odômetro no abastecimento</label><input class="tab-horimetro" type="number"></div>'
-      +'<div class="f col2"><label>Comprovante</label><input class="tab-foto" type="file" accept="image/*"></div></div>'
+      +'<div class="f col2"><label>Comprovante</label><input class="tab-foto" data-anexo="taq-comprovante" type="file" accept="image/*"></div></div>'
       +'<div class="grid" style="margin-top:10px"><div class="f"><label>O cartão foi devolvido ou ficou na viatura?</label>'
       +'<select class="tab-devolvido" onchange="taqCartaoDev(this)"><option>Devolvido</option><option>Ficou na viatura</option></select></div>'
       +'<div class="f tab-recebeu-wrap"><label>Militar que recebeu o cartão</label><input class="tab-recebeu" list="militares-dl" placeholder="nº ou nome…"></div></div>';
@@ -558,7 +608,7 @@ function taqAbFonte(sel){
       +'<div class="f"><label>Litros</label><input class="tab-litros" type="number" step="0.001"></div>'
       +'<div class="f"><label>Valor p/ litro</label><input class="tab-vunit" type="number" step="0.001"></div>'
       +'<div class="f"><label>Valor total</label><input class="tab-vtotal" type="number" step="0.01"></div>'
-      +'<div class="f"><label>Comprovante</label><input class="tab-foto" type="file" accept="image/*"></div></div>'
+      +'<div class="f"><label>Comprovante</label><input class="tab-foto" data-anexo="taq-comprovante" type="file" accept="image/*"></div></div>'
       +'<div class="tab-tipo-fields" style="margin-top:10px"></div>'
       +'<div class="grid" style="margin-top:10px"><div class="f"><label>Cidade</label><input class="tab-cidade"></div><div class="f"><label>Observações</label><input class="tab-obs"></div></div>';
     taqAbTipo(box.querySelector('.tab-tipo'));
@@ -576,7 +626,7 @@ function taqAbTipo(sel){
 }
 function taqAbTermo(sel){ const box=sel.closest('.tab-tipo-fields').querySelector('.tab-termo-fields');
   box.innerHTML = sel.value==='Sim'
-    ? '<div class="f"><label>Upload do termo de doação (assinado)</label><input class="tab-termo-file" type="file" accept="image/*,application/pdf"></div>'
+    ? '<div class="f"><label>Upload do termo de doação (assinado)</label><input class="tab-termo-file" data-anexo="taq-termo-doacao" type="file" accept="image/*,application/pdf"></div>'
     : '<div class="f"><label>Justificativa — por que não fez o termo?</label><input class="tab-termo-just"></div>'; }
 function addPiloto(){
   const div=document.createElement('div'); div.className='pil-row';
@@ -610,7 +660,7 @@ function camposPrimeComuns(kind){
     +'<div class="f"><label>Valor p/ litro</label><input class="ab-vunit" type="number" step="0.001"></div>'
     +'<div class="f"><label>Valor total</label><input class="ab-vtotal" type="number" step="0.01"></div>'
     +'<div class="f"><label>Combustível</label><select class="ab-comb">'+optList(COMBUSTIVEIS)+'</select></div>'
-    +'<div class="f col2"><label>Comprovante</label><input class="ab-foto" type="file" accept="image/*"></div></div>';
+    +'<div class="f col2"><label>Comprovante</label><input class="ab-foto" data-anexo="abastecimento-comprovante" type="file" accept="image/*"></div></div>';
 }
 function abFonte(sel){
   const box=sel.closest('.abast-row').querySelector('.ab-fields'); const f=sel.value;
@@ -619,7 +669,7 @@ function abFonte(sel){
       box.innerHTML='<div class="grid three">'
         +'<div class="f"><label>Litros abastecidos'+abLimiteHint('poc')+'</label><input class="ab-litros" type="number" step="0.001" oninput="abCheckLimite(this,\'poc\')"></div>'
         +'<div class="f"><label>Combustível</label><select class="ab-comb">'+optList(COMBUSTIVEIS)+'</select></div>'
-        +'<div class="f"><label>Comprovante <span class="hint">(opcional)</span></label><input class="ab-foto" type="file" accept="image/*"></div></div>'
+        +'<div class="f"><label>Comprovante <span class="hint">(opcional)</span></label><input class="ab-foto" data-anexo="abastecimento-comprovante" type="file" accept="image/*"></div></div>'
         +abOverBlock();
     } else {
       box.innerHTML='<p class="hint" style="padding:8px 0">POC: sem controle de limite configurado — não é necessário informar litros. (o Aux P4 / Admin Geral pode ativar o limite na Gestão de Viaturas; aí passa a pedir litros e, se acima do limite, quem autorizou e por quê.)</p>';
@@ -636,7 +686,7 @@ function abFonte(sel){
       +'<div class="f"><label>Litros</label><input class="ab-litros" type="number" step="0.001"></div>'
       +'<div class="f"><label>Valor p/ litro</label><input class="ab-vunit" type="number" step="0.001"></div>'
       +'<div class="f"><label>Valor total</label><input class="ab-vtotal" type="number" step="0.01"></div>'
-      +'<div class="f"><label>Comprovante</label><input class="ab-foto" type="file" accept="image/*"></div></div>'
+      +'<div class="f"><label>Comprovante</label><input class="ab-foto" data-anexo="abastecimento-comprovante" type="file" accept="image/*"></div></div>'
       +'<div class="ab-tipo-fields" style="margin-top:10px"></div>'
       +'<div class="f" style="margin-top:8px"><label>Justificativa do odômetro <span class="hint">(obrigatória se ficar fora do Km inicial/final)</span></label><input class="ab-odo-just" placeholder="só se o odômetro estiver fora do intervalo da utilização"></div>'
       +'<div class="grid" style="margin-top:10px"><div class="f"><label>Cidade do abastecimento</label><input class="ab-cidade"></div>'
@@ -660,7 +710,7 @@ function abTipo(sel){
 function abTermo(sel){
   const box=sel.closest('.ab-tipo-fields').querySelector('.ab-termo-fields');
   box.innerHTML = sel.value==='Sim'
-    ? '<div class="f"><label>Upload do termo de doação (assinado)</label><input class="ab-termo-file" type="file" accept="image/*,application/pdf"></div>'
+    ? '<div class="f"><label>Upload do termo de doação (assinado)</label><input class="ab-termo-file" data-anexo="abastecimento-termo-doacao" type="file" accept="image/*,application/pdf"></div>'
     : '<div class="f"><label>Justificativa — por que não fez o termo de doação?</label><input class="ab-termo-just"></div>';
 }
 function gerarTermoDoacao(btn){
@@ -842,15 +892,19 @@ async function salvar(){
   }
 
 
+  btn.disabled=true; btn.textContent='Salvando…';
+  let anexos;
+  try{ anexos = await coletarAnexos(); }
+  catch(e){ toast('Falha ao enviar '+e.message); btn.disabled=false; btn.textContent='✔ Salvar ficha'; return; }
+
   const payload = Object.assign({}, base, flags, {
     dados,
-    anexos: [],  // Fase 3: upload no Storage
+    anexos,
     observacoes: document.getElementById('obs-geral').value || '',
     gp_responsavel: (VMAP[base.prefixo]||{}).gp || '',
     grupamento_completo: S.grupamento_id || ''
   });
 
-  btn.disabled=true; btn.textContent='Salvando…';
   try{
     const row = await rpc('mov_viatura_criar', { p_token:S.token, p_dados:payload });
     document.getElementById('form-wrap').style.display='none';
