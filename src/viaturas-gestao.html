@@ -150,6 +150,29 @@
       </div>
     </details>
 
+    <details id="lst-card" style="margin-bottom:14px;border:1px solid var(--border);border-radius:10px;padding:12px 14px;background:var(--bg-card)">
+      <summary style="cursor:pointer;font-size:13px;font-weight:700;color:var(--gold-light)">🛢️ Listas de combustível e convênios</summary>
+      <p style="font-size:12px;color:var(--text-muted);margin:10px 0 4px">Estas opções aparecem nos selects da Ficha de Movimentação (abastecimento). Edite conforme a realidade da Cia.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:10px" id="lst-grid">
+        <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+          <div style="font-size:12.5px;font-weight:700;margin-bottom:8px">Combustíveis</div>
+          <div id="chips-combustiveis" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
+          <div style="display:flex;gap:6px"><input id="add-combustiveis" placeholder="novo combustível" style="flex:1;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:8px 10px;color:var(--text-white);font-size:12.5px;outline:none" onkeydown="if(event.key==='Enter'){event.preventDefault();addItemLista('combustiveis')}">
+            <button class="btn ok" style="width:auto;padding:8px 14px" onclick="addItemLista('combustiveis')">＋</button></div>
+        </div>
+        <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+          <div style="font-size:12.5px;font-weight:700;margin-bottom:8px">Convênios / Doações</div>
+          <div id="chips-convenios" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
+          <div style="display:flex;gap:6px"><input id="add-convenios" placeholder="novo convênio" style="flex:1;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:8px 10px;color:var(--text-white);font-size:12.5px;outline:none" onkeydown="if(event.key==='Enter'){event.preventDefault();addItemLista('convenios')}">
+            <button class="btn ok" style="width:auto;padding:8px 14px" onclick="addItemLista('convenios')">＋</button></div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap">
+        <button class="btn ok" style="width:auto;padding:9px 18px" onclick="salvarListas()">Salvar listas</button>
+        <span id="lst-info" style="font-size:11.5px;color:var(--text-hint)"></span>
+      </div>
+    </details>
+
     <div class="toolbar">
       <div class="search"><input id="busca" placeholder="Buscar por prefixo, placa, modelo, município…" oninput="render()"></div>
       <select class="fsel" id="fstatus" onchange="render()">
@@ -203,8 +226,42 @@ let VIA=[], atual=null;
     const r=await fetch(`${API}/rest/v1/viaturas?select=prefixo,placa,marca_modelo,ano,tracao,tipo_bem,pel,gp,municipio,situacao_viatura,situacao_operacional&ativo=eq.true&order=prefixo`,{headers:H});
     VIA=await r.json(); if(!Array.isArray(VIA)) VIA=[];
   }catch(e){ console.error(e); VIA=[]; }
-  kpis(); render(); popularListasFrota(); carregarCfgLimites();
+  kpis(); render(); popularListasFrota(); carregarCfgLimites(); carregarListas();
 })();
+
+// ── Listas editáveis (combustíveis / convênios) ────────────────────────────
+let LISTAS={combustiveis:[], convenios:[]};
+async function carregarListas(){
+  try{
+    const rows=await rpc('listas_config_get',{});
+    (Array.isArray(rows)?rows:[]).forEach(r=>{ if(r&&r.chave) LISTAS[r.chave]=Array.isArray(r.itens)?r.itens:[]; });
+    renderChips('combustiveis'); renderChips('convenios');
+  }catch(e){ console.error(e); }
+}
+function renderChips(chave){
+  const box=document.getElementById('chips-'+chave); if(!box) return;
+  const arr=LISTAS[chave]||[];
+  box.innerHTML = arr.length ? arr.map((x,i)=>
+    `<span style="display:inline-flex;align-items:center;gap:6px;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:20px;padding:4px 6px 4px 12px;font-size:12px">${x}`
+    +`<button onclick="removeItemLista('${chave}',${i})" title="remover" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px;line-height:1;padding:0 2px">✕</button></span>`
+  ).join('') : '<span style="font-size:12px;color:var(--text-hint)">Nenhum item.</span>';
+}
+function addItemLista(chave){
+  const inp=document.getElementById('add-'+chave); const v=(inp.value||'').trim();
+  if(!v) return;
+  const arr=LISTAS[chave]||(LISTAS[chave]=[]);
+  if(arr.some(x=>x.toLowerCase()===v.toLowerCase())) return toast('Item já existe na lista.');
+  arr.push(v); inp.value=''; renderChips(chave); inp.focus();
+}
+function removeItemLista(chave,idx){ (LISTAS[chave]||[]).splice(idx,1); renderChips(chave); }
+async function salvarListas(){
+  try{
+    await rpc('listas_config_salvar',{p_token:S.token,p_chave:'combustiveis',p_itens:LISTAS.combustiveis||[]});
+    await rpc('listas_config_salvar',{p_token:S.token,p_chave:'convenios',p_itens:LISTAS.convenios||[]});
+    document.getElementById('lst-info').textContent='Listas salvas.';
+    toast('Listas salvas.');
+  }catch(e){ toast('Erro: '+e.message); }
+}
 
 // ── Controle de limite de abastecimento (POC/PRIME) ────────────────────────
 function cfgToggle(fonte){
