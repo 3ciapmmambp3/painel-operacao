@@ -1552,6 +1552,23 @@ async function carregarDemandasSupabase(){
   referenceCache['REQUISICAO'] = rows.filter(d=>d.tipo==='requisicao').map(rotulo);
 }
 
+// OPERAÇÕES agora vêm do painel (Supabase), não mais da aba da planilha.
+// Sobrescreve referenceCache['OPERACOES'] no MESMO formato {value,inicio,final}
+// que o card "Operação" já consome (populateOperacaoSelect / operacaoItemValido).
+async function carregarOperacoesSupabase(){
+  if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
+  const H = { apikey: SB_AUTH_KEY, Authorization: `Bearer ${SB_AUTH_KEY}`, 'Content-Type':'application/json' };
+  const r = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/operacoes_listar`, { method:'POST', headers:H, body:'{}' });
+  if (!r.ok) throw new Error('HTTP '+r.status);
+  const rows = await r.json();
+  if (!Array.isArray(rows)) return;
+  referenceCache['OPERACOES'] = rows.map(o => ({
+    value: o.nome,
+    inicio: o.inicio ? String(o.inicio).slice(0,10) : '',
+    final:  o.final  ? String(o.final ).slice(0,10) : '',
+  }));
+}
+
 async function fetchReferenceData(){
   if (!SCRIPT_URL || SCRIPT_URL.indexOf('COLE_AQUI') !== -1) return; // ainda não configurado
   setPlaceholderText('Carregando dados...');
@@ -1559,6 +1576,9 @@ async function fetchReferenceData(){
     const data = await auth_fetchReferencias(SCRIPT_URL);
     gruposList = data.GRUPOS || [];
     Object.assign(referenceCache, data);
+    // OPERAÇÕES migraram para o painel (Supabase) — sobrescreve o que veio da planilha.
+    try { await carregarOperacoesSupabase(); }
+    catch(e){ console.warn('[operacoes] mantendo fonte da planilha:', e); }
     try { await carregarDemandasSupabase(); }
     catch(e){ console.warn('[supademandas] mantendo fonte da planilha para DEN_BALCAO/REQUISICAO:', e); }
     dadosCarregados = true;
