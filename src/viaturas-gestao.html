@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="styles/global.css">
 <script src="auth.js"></script>
 <script src="topnav.js" data-ativo="relatorio"></script>
+<script src="assets/qrcode.min.js"></script>
 <style>
   body{padding-bottom:60px}
   .rd-shell{display:flex;align-items:flex-start}
@@ -228,7 +229,7 @@ let VIA=[], atual=null;
   document.getElementById('user-nome').textContent = S.nome_guerra || S.nome_completo || '—';
   if (!podeGerir){ document.getElementById('wrap').style.display='none'; document.getElementById('noperm').style.display='block'; return; }
   try{
-    const r=await fetch(`${API}/rest/v1/viaturas?select=prefixo,placa,marca_modelo,ano,tracao,tipo_bem,pel,gp,municipio,situacao_viatura,situacao_operacional&ativo=eq.true&order=prefixo`,{headers:H});
+    const r=await fetch(`${API}/rest/v1/viaturas?select=prefixo,placa,marca_modelo,ano,tracao,tipo_bem,pel,gp,municipio,situacao_viatura,situacao_operacional,qr_token&ativo=eq.true&order=prefixo`,{headers:H});
     VIA=await r.json(); if(!Array.isArray(VIA)) VIA=[];
   }catch(e){ console.error(e); VIA=[]; }
   kpis(); render(); popularListasFrota(); carregarCfgLimites(); carregarListas();
@@ -422,6 +423,11 @@ async function abrir(v){
     <summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--gold-light)">✏️ Editar dados / transferir / remover</summary>
     <div style="margin-top:12px">${formEditHTML(v,false)}</div></details>`;
 
+  // QR público (condutor externo sem login)
+  html+=`<details style="margin-bottom:14px;border:1px solid var(--gold-border);border-radius:9px;padding:10px 12px" ontoggle="if(this.open)renderQR()">
+    <summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--gold-light)">📱 QR público (condutor externo)</summary>
+    <div id="qr-box" style="margin-top:12px;text-align:center"></div></details>`;
+
   if (s==='DISPONIVEL'){
     html+=`<div class="fld"><label>Ação</label>
       <select id="b-tipo"><option value="BAIXADA">Baixar (aguardando oficina)</option><option value="EM_MANUTENCAO">Enviar para manutenção (na oficina)</option></select></div>
@@ -488,6 +494,86 @@ async function retornar(){
     await rpc('viatura_retornar',{p_token:S.token,p_prefixo:atual.prefixo,p_km_retorno:km?+km:null,p_obs:obs});
     const v=VIA.find(x=>x.prefixo===atual.prefixo); if(v) v.situacao_operacional='DISPONIVEL';
     kpis(); render(); toast('Viatura retornou (disponível).'); abrir(v);
+  }catch(e){ toast('Erro: '+e.message); }
+}
+
+/* ── QR público por viatura ─────────────────────────────────────────── */
+function urlPublica(v){
+  const base=location.href.replace(/[^/]*(\?.*)?$/,'');   // diretório atual (sem o arquivo)
+  return base+'movimentacao-publica.html?v='+encodeURIComponent(v.prefixo)+'&k='+encodeURIComponent(v.qr_token||'');
+}
+function qrCanvas(url, scale, margin){
+  const q=qrcode(0,'M'); q.addData(url); q.make();
+  const n=q.getModuleCount(), m=(margin==null?4:margin), s=(scale||8), size=(n+2*m)*s;
+  const cv=document.createElement('canvas'); cv.width=size; cv.height=size;
+  const ctx=cv.getContext('2d');
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,size,size);
+  ctx.fillStyle='#000';
+  for(let r=0;r<n;r++) for(let c=0;c<n;c++) if(q.isDark(r,c)) ctx.fillRect((c+m)*s,(r+m)*s,s,s);
+  return cv;
+}
+function renderQR(){
+  const box=document.getElementById('qr-box'); if(!box||!atual) return;
+  if(!atual.qr_token){
+    box.innerHTML='<div style="color:var(--text-hint);font-size:12px;margin-bottom:10px">Esta viatura ainda não tem QR gerado.</div>'
+      +'<button class="btn ok" onclick="rotacionarQR()">Gerar QR</button>';
+    return;
+  }
+  const url=urlPublica(atual);
+  let png; try{ png=qrCanvas(url,5,4).toDataURL('image/png'); }
+  catch(e){ box.innerHTML='<div style="color:var(--danger);font-size:12px">Não foi possível gerar o QR: '+e.message+'</div>'; return; }
+  box.innerHTML=
+    `<img src="${png}" alt="QR ${atual.prefixo}" style="width:190px;height:190px;background:#fff;border-radius:8px;padding:6px">`
+    +`<div style="font-size:11px;color:var(--text-hint);margin:8px 0;word-break:break-all">${url}</div>`
+    +`<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
+        <button class="btn ok" onclick="imprimirQR()">🖨 Imprimir</button>
+        <button class="btn" style="background:var(--gold);color:#1a1000" onclick="baixarQR()">⬇ Baixar PNG</button>
+        <button class="btn" style="background:transparent;border:1px solid var(--border-hover);color:var(--text-muted)" onclick="copiarLinkQR()">🔗 Copiar link</button>
+      </div>
+      <div style="margin-top:10px"><button class="linkbtn" style="color:var(--danger)" onclick="rotacionarQR()">↻ Rotacionar token (invalida o QR antigo)</button></div>`;
+}
+function baixarQR(){
+  if(!atual||!atual.qr_token) return;
+  const png=qrCanvas(urlPublica(atual),10,4).toDataURL('image/png');
+  const a=document.createElement('a'); a.href=png; a.download=`QR-VTR-${atual.prefixo}.png`;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function copiarLinkQR(){
+  if(!atual) return;
+  const url=urlPublica(atual);
+  (navigator.clipboard?navigator.clipboard.writeText(url):Promise.reject())
+    .then(()=>toast('Link copiado.')).catch(()=>toast(url));
+}
+function imprimirQR(){
+  if(!atual||!atual.qr_token) return;
+  const png=qrCanvas(urlPublica(atual),10,4).toDataURL('image/png');
+  const w=window.open('','_blank');
+  if(!w){ toast('Habilite pop-ups para imprimir.'); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>QR VTR ${atual.prefixo}</title>
+    <style>body{font-family:Arial,Helvetica,sans-serif;text-align:center;margin:0;padding:34px}
+    h1{font-size:20px;margin:0 0 2px}h2{font-size:15px;color:#444;margin:0 0 4px;font-weight:600}
+    p{font-size:12px;color:#555;margin:6px 0 18px}img{width:340px;height:340px}
+    .cap{font-size:12px;color:#333;margin-top:14px;line-height:1.5}</style></head>
+    <body>
+      <h1>3ª Cia PM MAmb — Ficha de Movimentação</h1>
+      <h2>VTR ${atual.prefixo}${atual.placa?' · '+atual.placa:''}</h2>
+      <p>${atual.marca_modelo||''}${atual.gp?' · '+atual.gp:''}</p>
+      <img src="${png}" alt="QR">
+      <div class="cap"><b>Condutor externo:</b> escaneie o QR para registrar a movimentação desta viatura.<br>
+      Militares cadastrados devem usar o login do painel.</div>
+    </body></html>`);
+  w.document.close();
+  setTimeout(()=>{ try{ w.focus(); w.print(); }catch(e){} }, 350);
+}
+async function rotacionarQR(){
+  if(!atual) return;
+  if(atual.qr_token && !confirm('Gerar um novo token invalida o QR já impresso desta viatura. Continuar?')) return;
+  try{
+    const r=await rpc('viatura_qr_rotacionar',{p_token:S.token,p_prefixo:atual.prefixo});
+    const novo=(r&&(Array.isArray(r)?r[0]:r).qr_token)||null;
+    atual.qr_token=novo;
+    const v=VIA.find(x=>x.prefixo===atual.prefixo); if(v) v.qr_token=novo;
+    toast('QR atualizado.'); renderQR();
   }catch(e){ toast('Erro: '+e.message); }
 }
 </script>

@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ficha de Movimentação (pública) — 3ª Cia PM MAmb</title>
+<link rel="stylesheet" href="styles/global.css">
+<!-- auth.js só p/ obter SB_AUTH_URL/KEY e helpers (esta página NÃO exige login) -->
+<script src="auth.js"></script>
+<style>
+  body{padding-bottom:60px;background:var(--bg-page)}
+  .wrap{max-width:760px;margin:14px auto 0;padding:0 16px}
+  .pagehead h1{font-size:19px;font-weight:800}
+  .pagehead p{font-size:12.5px;color:var(--text-muted);margin-top:5px;line-height:1.5}
+
+  .card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-top:16px}
+  .card>h2{font-size:13px;font-weight:800;color:var(--gold-light);letter-spacing:.4px;text-transform:uppercase;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+  .sec-base{border-left:3px solid var(--gold)}
+  .sec-id{border-left:3px solid var(--info)}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:13px}
+  .grid.three{grid-template-columns:repeat(3,1fr)}
+  .f{display:flex;flex-direction:column;gap:5px}
+  .f.col2{grid-column:span 2}
+  label{font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.3px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  input,select,textarea{background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;outline:none;width:100%;font-family:inherit}
+  input:focus,select:focus,textarea:focus{border-color:var(--gold)}
+  input[readonly]{color:var(--gold-light);border-style:dashed}
+  input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  input[type=number]{-moz-appearance:textfield}
+  .hint{font-size:10.5px;color:var(--text-hint)}
+  .chip-calc{font-size:10.5px;font-weight:700}
+  .linkbtn{background:none;border:none;color:var(--gold);font-size:11px;cursor:pointer;text-decoration:underline;padding:0}
+
+  /* cabeçalho da viatura (público) */
+  .vtrhead{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .vtrhead .pfx{font-size:26px;font-weight:900;color:var(--gold-light);letter-spacing:1px}
+  .vtrhead .meta{font-size:12.5px;color:var(--text-muted);line-height:1.6}
+  .vtrhead .meta b{color:var(--text-white)}
+  .kmref{margin-top:12px;background:var(--gold-bg);border:1px solid var(--gold-border);border-radius:9px;padding:10px 14px;font-size:12.5px;color:var(--gold-light)}
+  .vtr-status{margin-top:12px;border-radius:9px;padding:11px 14px;font-size:12.5px;display:none;align-items:center;gap:9px}
+  .vtr-status.warn{display:flex;background:var(--danger-bg);border:1px solid rgba(239,83,80,.4);color:#ef9a9a}
+
+  .opts{margin-top:18px}
+  .opts .lead{font-size:12px;color:var(--text-muted);margin-bottom:10px}
+  .optgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .opt{display:flex;align-items:center;gap:11px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:12px 14px;cursor:pointer;transition:.15s}
+  .opt:hover{border-color:var(--border-hover)}
+  .opt.active{border-color:var(--gold);background:var(--gold-bg)}
+  .opt .ic{font-size:18px}.opt .tx{flex:1}.opt .tx b{font-size:13px;display:block}.opt .tx span{font-size:11px;color:var(--text-hint)}
+  .sw{width:38px;height:22px;border-radius:20px;background:var(--border-mid);position:relative;flex-shrink:0;transition:.2s}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#ccc;transition:.2s}
+  .opt.active .sw{background:var(--gold)}.opt.active .sw::after{left:18px;background:#1a1000}
+
+  .sec{display:none}.sec.show{display:block}
+  .subsec{background:var(--bg-input);border:1px solid var(--border);border-radius:9px;padding:14px;margin-top:12px}
+
+  .foot{position:sticky;bottom:0;margin-top:22px;background:linear-gradient(0deg,var(--bg-page) 72%,transparent);padding:16px 0 6px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .btn{border:none;border-radius:8px;padding:12px 22px;font-size:13px;font-weight:800;cursor:pointer}
+  .btn.gold{background:var(--gold);color:#1a1000}.btn.gold:disabled{opacity:.5;cursor:not-allowed}
+
+  .ok-screen,.err-screen{display:none;text-align:center;padding:56px 20px}
+  .ok-screen.show,.err-screen.show{display:block}
+  .ok-screen .big,.err-screen .big{font-size:52px}
+  .ok-screen h2,.err-screen h2{font-size:22px;margin:12px 0 6px}
+  .ok-screen p,.err-screen p{color:var(--text-muted);font-size:13px;line-height:1.6}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111;border:1px solid var(--border);color:var(--text-white);padding:12px 20px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:300}
+  .toast.show{opacity:1}
+
+  /* overlay p/ militar já cadastrado */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);display:none;align-items:center;justify-content:center;z-index:400;padding:20px}
+  .overlay.show{display:flex}
+  .overlay .box{background:var(--bg-card);border:1px solid var(--gold-border);border-radius:14px;padding:26px 24px;max-width:420px;text-align:center}
+  .overlay .box .big{font-size:44px}
+  .overlay .box h3{font-size:18px;margin:10px 0 8px}
+  .overlay .box p{font-size:13px;color:var(--text-muted);line-height:1.6;margin-bottom:18px}
+
+  @media(max-width:760px){ .grid,.grid.three,.optgrid{grid-template-columns:1fr !important} }
+</style>
+</head>
+<body>
+
+<!-- HEADER simples (sem navegação) -->
+<header class="header">
+  <div class="header-left">
+    <div class="header-shields"><img src="assets/escudo-pmmg.png" alt="PMMG" onerror="this.style.display='none'"><img src="assets/escudo-cpe.png" alt="CPE" onerror="this.style.display='none'"><img src="assets/brasao-bpmmamb.png" alt="BPM MAMB" onerror="this.style.display='none'"></div><div class="header-div"></div>
+    <div class="header-title">
+      <div class="header-kicker">CPE · BPM MAmb · 3ª Cia PM MAmb</div>
+      <h1>PAINEL DE GESTÃO OPERACIONAL</h1>
+      <p>Ficha de Movimentação — acesso público (condutor externo)</p>
+    </div>
+  </div>
+</header>
+
+<!-- CARREGANDO / ERRO DE QR -->
+<div class="wrap err-screen" id="load-screen" style="display:block;text-align:center;padding:56px 20px">
+  <div class="big">⏳</div><h2>Carregando…</h2><p>Validando o QR da viatura.</p>
+</div>
+<div class="wrap err-screen" id="err-screen">
+  <div class="big">🚫</div><h2 id="err-title">QR inválido</h2>
+  <p id="err-msg">Este QR não corresponde a nenhuma viatura ativa. Solicite um QR atualizado ao setor responsável (Aux P4).</p>
+</div>
+
+<!-- FORMULÁRIO -->
+<div class="wrap" id="form-wrap" style="display:none">
+  <div class="pagehead">
+    <h1>Ficha de Movimentação de Viaturas</h1>
+    <p>Você está registrando a utilização de uma viatura da 3ª Cia PM MAmb como <b>condutor externo</b>. Preencha sua identificação e os dados da utilização. Militares já cadastrados no painel devem usar o <b>login</b>.</p>
+  </div>
+
+  <!-- VIATURA (do QR) -->
+  <div class="card sec-base" id="vtr-card">
+    <h2>🚔 Viatura</h2>
+    <div class="vtrhead">
+      <div class="pfx" id="v-pfx">—</div>
+      <div class="meta" id="v-meta"></div>
+    </div>
+    <div class="kmref" id="v-kmref"></div>
+    <div class="vtr-status" id="vtr-status"></div>
+  </div>
+
+  <!-- IDENTIFICAÇÃO DO CONDUTOR -->
+  <div class="card sec-id" id="id-card">
+    <h2>🪪 Identificação do condutor</h2>
+    <div class="grid">
+      <div class="f col2"><label>Nome completo *</label><input id="c-nome" placeholder="Nome completo do condutor"></div>
+      <div class="f"><label>Posto / Graduação *</label>
+        <select id="c-posto">
+          <option value="">Selecione…</option>
+          <option>Soldado</option><option>Cabo</option>
+          <option>3º Sargento</option><option>2º Sargento</option><option>1º Sargento</option>
+          <option>Subtenente</option><option>Aspirante a Oficial</option>
+          <option>2º Tenente</option><option>1º Tenente</option><option>Capitão</option>
+          <option>Major</option><option>Tenente-Coronel</option><option>Coronel</option>
+          <option>Outro</option>
+        </select></div>
+      <div class="f"><label>Nº PM (matrícula) *</label>
+        <input id="c-mat" inputmode="numeric" placeholder="Ex.: 1234567" oninput="matSanitize()" onblur="checarCadastrado()">
+        <span class="hint" id="c-mat-hint"></span></div>
+      <div class="f col2"><label>Unidade de origem (OPM) *</label>
+        <input id="c-unid" placeholder="Ex.: 46º BPM / 2ª Cia / etc."></div>
+    </div>
+  </div>
+
+  <!-- DADOS DA UTILIZAÇÃO -->
+  <div class="card sec-base" id="base">
+    <h2>🧭 Dados da utilização</h2>
+    <div class="grid">
+      <div class="f col2"><label>Onde a viatura será utilizada</label>
+        <input id="local" placeholder="Município / área de emprego"></div>
+      <div class="f"><label>Tipo de empenho</label>
+        <select id="empenho"><option>Ordinária</option><option>Operação</option><option>Apoio</option><option>Administrativa</option></select></div>
+      <div class="f"><label>Km inicial * <span class="hint" id="kmi-chip"></span></label>
+        <input id="kmi" type="number" oninput="kmiCheck()" onblur="kmiBlur()" placeholder="Km atual do hodômetro">
+        <span class="hint" id="kmi-hint"></span></div>
+      <div class="f"><label>Km final <span id="kmcalc" class="chip-calc"></span></label>
+        <input id="kmf" type="number" placeholder="Km ao devolver" oninput="calc()"></div>
+      <div class="f"><label>Início (armar a VTR) *</label><input id="inicio" type="datetime-local" oninput="syncDatas()"></div>
+      <div class="f"><label>Término (devolver)</label><input id="termino" type="datetime-local" oninput="syncDatas()"><span class="hint" id="termino-hint" style="display:none;color:#ef9a9a">O término não pode ser antes do início.</span></div>
+      <div class="f"><label>Combustível ao ARMAR</label>
+        <select id="comb-a"><option>Cheio</option><option>3/4</option><option>1/2</option><option>1/4</option><option>Reserva</option></select></div>
+      <div class="f"><label>Combustível ao DEVOLVER</label>
+        <select id="comb-d"><option>Cheio</option><option>3/4</option><option>1/2</option><option>1/4</option><option>Reserva</option></select></div>
+    </div>
+  </div>
+
+  <!-- SEÇÕES OPCIONAIS -->
+  <div class="opts">
+    <div class="lead">Marque abaixo <b>somente</b> se ocorreu durante a sua utilização:</div>
+    <div class="optgrid">
+      <div class="opt" id="opt-abast" onclick="tog(this,'s-abast')"><div class="ic">⛽</div><div class="tx"><b>Abastecimento</b><span>houve? registre</span></div><div class="sw"></div></div>
+      <div class="opt" id="opt-avaria" onclick="tog(this,'s-avaria')"><div class="ic">🩹</div><div class="tx"><b>Avarias de uso</b><span>danos detectados</span></div><div class="sw"></div></div>
+      <div class="opt" id="opt-acid" onclick="tog(this,'s-acid')"><div class="ic">💥</div><div class="tx"><b>Acidente</b><span>REDS, perícia…</span></div><div class="sw"></div></div>
+    </div>
+  </div>
+
+  <!-- ABASTECIMENTO -->
+  <div class="card sec" id="s-abast">
+    <h2>⛽ Abastecimento</h2>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+      <span class="hint">Adicione um bloco por abastecimento realizado.</span>
+      <button type="button" class="linkbtn" onclick="addAbast()">+ adicionar abastecimento</button>
+    </div>
+    <div id="abast-rows"></div>
+  </div>
+
+  <!-- AVARIAS -->
+  <div class="card sec" id="s-avaria">
+    <h2>🩹 Avarias de uso</h2>
+    <div class="grid">
+      <div class="f col2"><label>Qual avaria foi detectada?</label><input id="av-desc"></div>
+      <div class="f col2"><label>Fotos das avarias</label><input type="file" id="av-fotos" data-anexo="avarias-fotos" accept="image/*" multiple></div>
+    </div>
+  </div>
+
+  <!-- ACIDENTE -->
+  <div class="card sec" id="s-acid">
+    <h2>💥 Acidente de viatura</h2>
+    <div class="grid three">
+      <div class="f"><label>Nº REDS</label><input id="ac-reds" placeholder="2026-000000000-001"></div>
+      <div class="f"><label>Odômetro no acidente</label><input type="number" id="ac-odo"></div>
+      <div class="f"><label>Data/hora</label><input type="datetime-local" id="ac-dh"></div>
+      <div class="f"><label>Perícia acionada?</label><select id="ac-per"><option>Sim</option><option>Não</option></select></div>
+      <div class="f"><label>Houve vítimas?</label><select id="ac-vit"><option>Não</option><option>Sim</option></select></div>
+      <div class="f"><label>Necessitou guincho?</label><select id="ac-gui"><option>Não</option><option>Sim</option></select></div>
+      <div class="f col2"><label>Fotos dos veículos</label><input type="file" id="ac-fotos" data-anexo="acidente-fotos" accept="image/*" multiple></div>
+    </div>
+    <div class="f" style="margin-top:12px"><label>Observações do acidente</label><textarea id="ac-obs" rows="2"></textarea></div>
+  </div>
+
+  <!-- OBS -->
+  <div class="card">
+    <h2>📝 Observações</h2>
+    <textarea id="obs-geral" rows="3" placeholder="Qualquer observação geral sobre a utilização…"></textarea>
+  </div>
+
+  <div class="foot">
+    <button class="btn gold" id="btn-salvar" onclick="salvar()">✔ Registrar movimentação</button>
+    <span class="hint">O registro é enviado diretamente ao sistema da 3ª Cia PM MAmb.</span>
+  </div>
+</div>
+
+<!-- SUCESSO -->
+<div class="wrap ok-screen" id="ok-screen">
+  <div class="big">✅</div>
+  <h2>Movimentação registrada!</h2>
+  <p id="ok-msg"></p>
+  <div style="margin-top:20px"><button class="btn gold" onclick="location.reload()">Registrar outra utilização</button></div>
+</div>
+
+<!-- OVERLAY: militar já cadastrado -->
+<div class="overlay" id="ov-cadastrado">
+  <div class="box">
+    <div class="big">👮</div>
+    <h3>Você já é cadastrado no painel</h3>
+    <p>Este nº PM pertence a um militar cadastrado. O registro pelo QR público é apenas para condutores <b>sem acesso</b> ao painel. Faça login para lançar sua ficha de movimentação.</p>
+    <button class="btn gold" onclick="location.href='index.html'">Ir para o login</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ── API (anon) — SB_AUTH_URL/KEY vêm de auth.js; sem sessão ────────── */
+const API  = (typeof SB_AUTH_URL !== 'undefined') ? SB_AUTH_URL : '';
+const AKEY = (typeof SB_AUTH_KEY !== 'undefined') ? SB_AUTH_KEY : '';
+const H = { apikey:AKEY, Authorization:'Bearer '+AKEY, 'Content-Type':'application/json' };
+async function rpc(fn, body){
+  const r = await fetch(`${API}/rest/v1/rpc/${fn}`, { method:'POST', headers:H, body:JSON.stringify(body||{}) });
+  const t = await r.text(); let j; try{ j = t?JSON.parse(t):null; }catch{ j = t; }
+  if (!r.ok) throw new Error((j&&j.message)||('HTTP '+r.status));
+  return j;
+}
+function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+function foco(id,msg){ toast(msg); const el=document.getElementById(id); if(el){ el.scrollIntoView({behavior:'smooth',block:'center'}); setTimeout(()=>{try{el.focus()}catch(e){}},250); } }
+const $=id=>document.getElementById(id);
+
+/* ── parâmetros do QR ── */
+const params = new URLSearchParams(location.search);
+const PREFIXO = (params.get('v')||'').trim();
+const QRTOKEN = (params.get('k')||'').trim();
+let VINFO = null;            // {viatura, ultimo_km, disponivel}
+let ultimoKmFinal = null, kmiConfirmadoMaior = false;
+
+/* ── Anexos → Supabase Storage (bucket 'anexos', chave anon) ── */
+const STORAGE=`${API}/storage/v1`, BUCKET='anexos';
+const MAX_MB=15, IMG_MAX_DIM=1600, IMG_QUALITY=0.7, LINK_TTL=315360000;
+const sanitizeNome=n=>(n||'arquivo').normalize('NFD').replace(/[^\x00-\x7F]/g,'').replace(/[^\w.\-]+/g,'_').replace(/_+/g,'_').slice(-80)||'arquivo';
+const encPath=p=>p.split('/').map(encodeURIComponent).join('/');
+async function comprimirImagem(file){
+  if(!/^image\//.test(file.type)||/gif|svg/i.test(file.type)) return file;
+  try{
+    const bmp=await createImageBitmap(file);
+    const scale=Math.min(1, IMG_MAX_DIM/Math.max(bmp.width,bmp.height));
+    const w=Math.round(bmp.width*scale), h=Math.round(bmp.height*scale);
+    const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+    cv.getContext('2d').drawImage(bmp,0,0,w,h);
+    const blob=await new Promise(res=>cv.toBlob(res,'image/jpeg',IMG_QUALITY));
+    if(blob&&blob.size<file.size) return new File([blob], file.name.replace(/\.[^.]+$/,'')+'.jpg', {type:'image/jpeg'});
+  }catch(e){ console.warn('compressão falhou:', e); }
+  return file;
+}
+async function subirArquivo(file){
+  const f=await comprimirImagem(file);
+  if(f.size>MAX_MB*1048576) throw new Error(`${f.name}: acima de ${MAX_MB} MB`);
+  const path=`viaturas/publica/${new Date().getFullYear()}/${crypto.randomUUID()}-${sanitizeNome(f.name)}`;
+  const enc=encPath(path), AH={apikey:AKEY,Authorization:'Bearer '+AKEY};
+  const up=await fetch(`${STORAGE}/object/${BUCKET}/${enc}`,{method:'POST',headers:{...AH,'Content-Type':f.type||'application/octet-stream','x-upsert':'true'},body:f});
+  if(!up.ok) throw new Error(`${up.status} ${await up.text()}`);
+  const sg=await fetch(`${STORAGE}/object/sign/${BUCKET}/${enc}`,{method:'POST',headers:{...AH,'Content-Type':'application/json'},body:JSON.stringify({expiresIn:LINK_TTL})});
+  if(!sg.ok) throw new Error(`assinatura ${sg.status}`);
+  const sj=await sg.json();
+  return { nome:f.name, tamanho:f.size, mime:f.type, path, link:`${STORAGE}${sj.signedURL||sj.signedUrl}` };
+}
+async function coletarAnexos(){
+  const inputs=[...document.querySelectorAll('#form-wrap input[type=file]')].filter(i=>i.files&&i.files.length);
+  const total=inputs.reduce((n,i)=>n+i.files.length,0);
+  if(!total) return [];
+  const out=[]; let feito=0;
+  for(const inp of inputs){
+    const categoria=inp.dataset.anexo||'anexo';
+    const row=inp.closest('.abast-row'); const contexto=row?((row.querySelector('.ab-fonte')||{}).value||''):'';
+    for(const file of inp.files){
+      toast(`Enviando anexos… ${++feito}/${total}`);
+      try{ const ref=await subirArquivo(file); ref.categoria=categoria; if(contexto) ref.contexto=contexto; out.push(ref); }
+      catch(e){ console.error('anexo',categoria,e); throw new Error(`anexo (${categoria}): ${e.message}`); }
+    }
+  }
+  return out;
+}
+
+/* ── boot: valida o QR e monta o cabeçalho da viatura ── */
+(async function init(){
+  if(!PREFIXO || !QRTOKEN){ return mostrarErro('QR incompleto', 'O endereço não contém a viatura ou o código de acesso. Escaneie novamente o QR da viatura.'); }
+  try{
+    VINFO = await rpc('mov_viatura_publica_info', { p_prefixo:PREFIXO, p_qr_token:QRTOKEN });
+  }catch(e){ return mostrarErro('Falha ao validar', 'Não foi possível validar o QR agora. Verifique a conexão e tente novamente.'); }
+  if(!VINFO || !VINFO.ok){ return mostrarErro('QR inválido', 'Este QR não corresponde a nenhuma viatura ativa. Solicite um QR atualizado ao setor responsável (Aux P4).'); }
+
+  const v=VINFO.viatura||{};
+  $('v-pfx').textContent = v.prefixo||PREFIXO;
+  $('v-meta').innerHTML = [
+    v.marca_modelo?`<b>${v.marca_modelo}</b>`:'', v.placa?`Placa <b>${v.placa}</b>`:'',
+    v.pel||'', v.gp||'', v.municipio||''
+  ].filter(Boolean).join(' · ');
+  ultimoKmFinal = (VINFO.ultimo_km!=null) ? +VINFO.ultimo_km : null;
+  $('v-kmref').innerHTML = (ultimoKmFinal!=null)
+    ? `⏱️ Último odômetro registrado desta viatura: <b>${ultimoKmFinal.toLocaleString('pt-BR')} km</b> — confira no hodômetro ao informar o Km inicial.`
+    : `⏱️ Sem registro anterior de odômetro para esta viatura — informe o Km inicial conferindo no hodômetro.`;
+
+  // viatura indisponível (baixada/manutenção)
+  if(!VINFO.disponivel){
+    const st=$('vtr-status'); st.className='vtr-status warn';
+    st.innerHTML = `⚠️ Viatura <b>indisponível</b> (baixada/em manutenção) — não é possível registrar movimentação. Fale com o setor responsável (Aux P4).`;
+    $('btn-salvar').disabled = true;
+  }
+
+  // início default = agora
+  const now=new Date(); now.setMinutes(now.getMinutes()-now.getTimezoneOffset());
+  $('inicio').value = now.toISOString().slice(0,16);
+  $('kmi-hint').innerHTML = (ultimoKmFinal!=null)
+    ? `Última devolução: <b>${ultimoKmFinal.toLocaleString('pt-BR')} km</b>.` : 'Informe o Km inicial.';
+
+  $('load-screen').style.display='none';
+  $('form-wrap').style.display='';
+  addAbast(); // já deixa um bloco pronto (fica oculto até marcar a seção)
+})();
+
+function mostrarErro(titulo, msg){
+  $('load-screen').style.display='none';
+  $('err-title').textContent=titulo; $('err-msg').textContent=msg;
+  $('err-screen').classList.add('show');
+}
+
+/* ── nº PM: só dígitos + checagem de militar cadastrado ── */
+function matSanitize(){ const el=$('c-mat'); el.value=(el.value||'').replace(/\D/g,''); }
+let matBloqueado=false;
+async function checarCadastrado(){
+  const mat=($('c-mat').value||'').replace(/\D/g,''); const hint=$('c-mat-hint');
+  matBloqueado=false; hint.textContent=''; hint.style.color='';
+  if(mat.length<5){ return; }
+  try{
+    const cad = await rpc('mov_militar_e_cadastrado', { p_matricula: mat });
+    if(cad===true){
+      matBloqueado=true;
+      hint.textContent='Militar já cadastrado — use o login do painel.'; hint.style.color='var(--danger)';
+      $('ov-cadastrado').classList.add('show');
+    } else {
+      hint.textContent='Não cadastrado — pode registrar por aqui.'; hint.style.color='var(--success)';
+    }
+  }catch(e){ /* silencioso: valida de novo no servidor ao salvar */ }
+}
+
+/* ── Km inicial: conferência imediata vs. última devolução ── */
+function kmiCheck(){
+  calc();
+  const inp=$('kmi'), hint=$('kmi-hint'), chip=$('kmi-chip');
+  kmiConfirmadoMaior=false; inp.style.borderColor=''; chip.textContent=''; chip.style.color='';
+  const v=(inp.value||'').trim();
+  if(v===''){ hint.innerHTML = ultimoKmFinal!=null ? `Última devolução: <b>${ultimoKmFinal.toLocaleString('pt-BR')} km</b>.` : 'Informe o Km inicial.'; return; }
+  const n=+v;
+  if(ultimoKmFinal==null){ hint.textContent='Sem registro anterior — informe o Km inicial.'; return; }
+  if(n===ultimoKmFinal){ inp.style.borderColor='var(--success)'; chip.textContent='✓ confere'; chip.style.color='var(--success)';
+    hint.innerHTML=`Confere com a última devolução (${ultimoKmFinal.toLocaleString('pt-BR')} km).`; }
+  else if(n<ultimoKmFinal){ inp.style.borderColor='var(--danger)'; chip.textContent='menor que o anterior'; chip.style.color='var(--danger)';
+    hint.innerHTML=`<span style="color:var(--danger)">Hodômetro menor que o final anterior (${ultimoKmFinal.toLocaleString('pt-BR')} km).</span>`; }
+  else { inp.style.borderColor='#ffb74d'; chip.textContent='maior que o anterior'; chip.style.color='#ffb74d';
+    hint.innerHTML=`Maior que a última devolução (${ultimoKmFinal.toLocaleString('pt-BR')} km) — será pedida confirmação.`; }
+}
+function kmiBlur(){
+  const inp=$('kmi'); const v=(inp.value||'').trim(); if(v==='' || ultimoKmFinal==null) return;
+  const n=+v;
+  if(n>ultimoKmFinal && !kmiConfirmadoMaior){
+    if(confirm(`Tem certeza que é o hodômetro correto?\n\nO Km inicial (${n.toLocaleString('pt-BR')}) está maior que o hodômetro anterior (${ultimoKmFinal.toLocaleString('pt-BR')} km).`)){
+      kmiConfirmadoMaior=true; inp.style.borderColor='var(--info)';
+      const chip=$('kmi-chip'); chip.textContent='✓ confirmado'; chip.style.color='var(--info)';
+    } else { setTimeout(()=>{try{inp.focus()}catch(e){}},50); }
+  }
+}
+function calc(){ const i=+$('kmi').value, f=+$('kmf').value; const el=$('kmcalc');
+  if(f&&i&&f>=i){el.textContent='rodou '+(f-i).toLocaleString('pt-BR')+' km';el.style.color='var(--success)';}
+  else if(f&&i&&f<i){el.textContent='menor que o inicial!';el.style.color='var(--danger)';} else el.textContent=''; }
+function syncDatas(){
+  const ini=$('inicio'), fim=$('termino'), hint=$('termino-hint');
+  fim.min = ini.value || '';
+  const invalido = ini.value && fim.value && fim.value < ini.value;
+  hint.style.display = invalido ? 'block' : 'none';
+  fim.style.borderColor = invalido ? '#ef5350' : '';
+}
+
+/* ── seções opcionais ── */
+function tog(el,id){ el.classList.toggle('active'); const sec=$(id); const on=sec.classList.toggle('show');
+  if(on && id==='s-abast' && !document.querySelectorAll('#abast-rows .abast-row').length) addAbast(); }
+
+/* ── Abastecimento (bloco repetível, simplificado p/ condutor externo) ── */
+const COMBUSTIVEIS=['Gasolina comum','Gasolina aditivada','Etanol','Diesel','Diesel S10','GNV'];
+const FONTES=['POC','Cartão de Abastecimento (PRIME)','Convênio ou Doação','Posto comum (recibo)'];
+function optList(a){ return a.map(x=>`<option>${x}</option>`).join(''); }
+function addAbast(){
+  const div=document.createElement('div'); div.className='abast-row subsec';
+  div.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'
+    +'<b style="font-size:11px;color:var(--text-white);text-transform:uppercase;letter-spacing:.3px">Abastecimento</b>'
+    +'<button type="button" class="linkbtn" style="color:var(--danger)" onclick="this.closest(\'.abast-row\').remove()">remover</button></div>'
+    +'<div class="grid three">'
+    +'<div class="f"><label>Fonte</label><select class="ab-fonte">'+optList(FONTES)+'</select></div>'
+    +'<div class="f"><label>Combustível</label><select class="ab-comb">'+optList(COMBUSTIVEIS)+'</select></div>'
+    +'<div class="f"><label>Litros</label><input type="number" step="0.001" class="ab-litros" placeholder="0,000"></div>'
+    +'<div class="f"><label>Valor total (R$)</label><input type="number" step="0.01" class="ab-valor" placeholder="0,00"></div>'
+    +'<div class="f"><label>Odômetro no abastecimento</label><input type="number" class="ab-odo"></div>'
+    +'<div class="f"><label>Data/hora</label><input type="datetime-local" class="ab-dh"></div>'
+    +'<div class="f col2"><label>Comprovante (foto)</label><input type="file" class="ab-comp" data-anexo="abastecimento-comprovante" accept="image/*"></div>'
+    +'</div>';
+  document.getElementById('abast-rows').appendChild(div);
+}
+function coletarAbast(){
+  return [...document.querySelectorAll('#abast-rows .abast-row')].map(r=>({
+    fonte:(r.querySelector('.ab-fonte')||{}).value||'',
+    combustivel:(r.querySelector('.ab-comb')||{}).value||'',
+    litros:(r.querySelector('.ab-litros')||{}).value||'',
+    valor:(r.querySelector('.ab-valor')||{}).value||'',
+    odometro:(r.querySelector('.ab-odo')||{}).value||'',
+    data_hora:(r.querySelector('.ab-dh')||{}).value||''
+  })).filter(x=>x.litros||x.valor||x.odometro||x.data_hora);
+}
+
+/* ── salvar ── */
+async function salvar(){
+  if(!VINFO || !VINFO.ok || !VINFO.disponivel){ return; }
+  if(matBloqueado){ $('ov-cadastrado').classList.add('show'); return; }
+
+  const nome=$('c-nome').value.trim(), posto=$('c-posto').value, mat=($('c-mat').value||'').replace(/\D/g,''), unid=$('c-unid').value.trim();
+  if(!nome)  return foco('c-nome','Informe o nome completo do condutor.');
+  if(!posto) return foco('c-posto','Informe o posto/graduação.');
+  if(!mat)   return foco('c-mat','Informe o nº PM (matrícula).');
+  if(!unid)  return foco('c-unid','Informe a unidade de origem.');
+
+  const kmi=$('kmi').value.trim();
+  if(kmi==='') return foco('kmi','Informe o Km inicial.');
+  if(ultimoKmFinal!=null && +kmi<ultimoKmFinal) return foco('kmi',`Km inicial menor que a última devolução (${ultimoKmFinal.toLocaleString('pt-BR')} km).`);
+  if(ultimoKmFinal!=null && +kmi>ultimoKmFinal && !kmiConfirmadoMaior){ kmiBlur(); if(!kmiConfirmadoMaior) return; }
+  const kmf=$('kmf').value.trim();
+  if(kmf!=='' && +kmf < +kmi) return foco('kmf','Km final não pode ser menor que o inicial.');
+  if(!$('inicio').value) return foco('inicio','Informe o início (armar a VTR).');
+
+  const btn=$('btn-salvar'); btn.disabled=true; const txt=btn.textContent; btn.textContent='Salvando…';
+  try{
+    let anexos=[]; try{ anexos=await coletarAnexos(); }catch(e){ toast(e.message); btn.disabled=false; btn.textContent=txt; return; }
+
+    const temAbast=$('opt-abast').classList.contains('active');
+    const temAvaria=$('opt-avaria').classList.contains('active');
+    const temAcid=$('opt-acid').classList.contains('active');
+
+    const dados={};
+    if(temAbast) dados.abastecimento={ houve:'Sim', itens:coletarAbast() };
+    if(temAvaria) dados.avaria={ descricao:$('av-desc').value.trim() };
+    if(temAcid) dados.acidente={ reds:$('ac-reds').value.trim(), odometro:$('ac-odo').value, data_hora:$('ac-dh').value,
+      pericia:$('ac-per').value, vitimas:$('ac-vit').value, guincho:$('ac-gui').value, obs:$('ac-obs').value.trim() };
+
+    const payload={
+      // viatura (o servidor reconfirma pelo token)
+      prefixo:PREFIXO, placa:(VINFO.viatura||{}).placa||'',
+      // condutor externo
+      condutor_nome:nome, condutor_posto:posto, condutor_matricula:mat, condutor_unidade:unid,
+      // utilização
+      local_utilizacao:$('local').value.trim(), tipo_empenho:$('empenho').value,
+      km_inicial:kmi, km_final:(kmf||null), inicio:$('inicio').value, termino:($('termino').value||null),
+      comb_armar:$('comb-a').value, comb_devolver:$('comb-d').value,
+      tem_abastecimento:temAbast, tem_avaria:temAvaria, tem_acidente:temAcid,
+      dados, anexos, observacoes:$('obs-geral').value.trim()
+    };
+
+    const res = await rpc('mov_viatura_criar_publico', { p_prefixo:PREFIXO, p_qr_token:QRTOKEN, p_dados:payload });
+    // sucesso
+    $('form-wrap').style.display='none';
+    $('ok-msg').innerHTML = `VTR <b>${(res&&res.prefixo)||PREFIXO}</b>`
+      + (res&&res.km_rodados!=null?` · rodou <b>${(+res.km_rodados).toLocaleString('pt-BR')} km</b>`:'')
+      + `.<br>Obrigado, ${posto} ${nome}.`;
+    $('ok-screen').classList.add('show');
+    window.scrollTo(0,0);
+  }catch(e){
+    const m=(e.message||'').toString();
+    if(m.includes('MILITAR_CADASTRADO')){ $('ov-cadastrado').classList.add('show'); }
+    else if(m.includes('QR_INVALIDO')){ mostrarErro('QR inválido','O código da viatura não confere. Solicite um QR atualizado ao setor responsável (Aux P4).'); }
+    else { toast('Erro ao salvar: '+m); }
+    btn.disabled=false; btn.textContent=txt;
+  }
+}
+</script>
+</body>
+</html>
