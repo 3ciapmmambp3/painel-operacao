@@ -1569,6 +1569,72 @@ async function carregarOperacoesSupabase(){
   }));
 }
 
+// ── Quesitos por Operação (catálogo do Supabase) ─────────────────────────
+// Ao escolher a operação no card "Operação", exibe os quesitos dela: os comuns
+// (escopo 'todas') SOMADOS aos específicos daquela operação. São injetados como
+// .field padrão da entrada, então a coleta/envio p/ a planilha e a validação de
+// obrigatórios (data-required/data-label) reaproveitam o mecanismo existente.
+let QUESITOS_OPERACAO = [];
+async function carregarQuesitosOperacao(){
+  if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
+  const H = { apikey: SB_AUTH_KEY, Authorization: `Bearer ${SB_AUTH_KEY}`, 'Content-Type':'application/json' };
+  const r = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/operacao_quesitos_get`, { method:'POST', headers:H, body:'{}' });
+  if (!r.ok) throw new Error('HTTP '+r.status);
+  const arr = await r.json();
+  QUESITOS_OPERACAO = Array.isArray(arr) ? arr : [];
+}
+function _escQ(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function quesitosEfetivos(opNome){
+  if (!opNome) return [];
+  const comuns = QUESITOS_OPERACAO.filter(q => q.escopo !== 'especificas');
+  const espec  = QUESITOS_OPERACAO.filter(q => q.escopo === 'especificas' && Array.isArray(q.operacoes) && q.operacoes.includes(opNome));
+  return comuns.concat(espec);
+}
+function _quesitoCtrlHTML(q){
+  const a = `${q.obrigatorio ? ' data-required="1"' : ''} data-label="${_escQ(q.label)}"`;
+  switch(q.tipo){
+    case 'texto_longo': return `<textarea rows="2"${a}></textarea>`;
+    case 'numero':      return `<input type="number"${a}>`;
+    case 'data':        return `<input type="date"${a}>`;
+    case 'sim_nao':     return `<select${a}><option value="">Selecione...</option><option>Sim</option><option>Não</option></select>`;
+    case 'opcoes':      return `<select${a}><option value="">Selecione...</option>${(q.opcoes||[]).map(o=>`<option>${_escQ(o)}</option>`).join('')}</select>`;
+    default:            return `<input type="text"${a}>`;
+  }
+}
+function renderQuesitosNaEntrada(entry){
+  if (!entry) return;
+  entry.querySelectorAll('.op-ques-node').forEach(n => n.remove());
+  const sel = entry.querySelector('.op-select');
+  const op = sel ? sel.value : '';
+  if (!op || op === 'OUTRA OPERAÇÃO NÃO DESCRITA ACIMA'){
+    // "OUTRA" ainda recebe os quesitos comuns (valem para todas as operações)
+  }
+  const lista = quesitosEfetivos(op);
+  if (!lista.length) return;
+  const header = document.createElement('div');
+  header.className = 'op-ques-node op-ques-header';
+  header.textContent = '📋 Quesitos da operação';
+  entry.appendChild(header);
+  lista.forEach(q => {
+    const div = document.createElement('div');
+    div.className = 'field op-ques-node' + (q.obrigatorio ? ' op-ques-req' : '');
+    const tag = q.escopo === 'especificas' ? '<span class="q-tag esp">só nesta</span>' : '<span class="q-tag todas">todas</span>';
+    div.innerHTML = `<label>${_escQ(q.label)}</label>${tag}${_quesitoCtrlHTML(q)}`;
+    entry.appendChild(div);
+  });
+}
+(function ensureQuesitoCss(){
+  if (document.getElementById('op-ques-css')) return;
+  const st = document.createElement('style'); st.id = 'op-ques-css';
+  st.textContent = ''
+    + '.op-ques-header{margin-top:12px;padding-top:10px;border-top:1px dashed var(--border-mid,#4a4a4a);font-size:11px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:#42a5f5}'
+    + '.op-ques-req > label::after{content:" *";color:#ef5350}'
+    + '.q-tag{display:inline-block;font-size:8.5px;font-weight:800;letter-spacing:.3px;padding:1px 6px;border-radius:20px;margin-left:8px;vertical-align:middle}'
+    + '.q-tag.todas{background:rgba(155,138,92,.13);color:#b3a06e;border:1px solid rgba(155,138,92,.32)}'
+    + '.q-tag.esp{background:rgba(66,165,245,.12);color:#90caf9;border:1px solid rgba(66,165,245,.4)}';
+  document.head.appendChild(st);
+})();
+
 async function fetchReferenceData(){
   if (!SCRIPT_URL || SCRIPT_URL.indexOf('COLE_AQUI') !== -1) return; // ainda não configurado
   setPlaceholderText('Carregando dados...');
@@ -1579,6 +1645,8 @@ async function fetchReferenceData(){
     // OPERAÇÕES migraram para o painel (Supabase) — sobrescreve o que veio da planilha.
     try { await carregarOperacoesSupabase(); }
     catch(e){ console.warn('[operacoes] mantendo fonte da planilha:', e); }
+    try { await carregarQuesitosOperacao(); }
+    catch(e){ console.warn('[quesitos] catálogo indisponível:', e); }
     try { await carregarDemandasSupabase(); }
     catch(e){ console.warn('[supademandas] mantendo fonte da planilha para DEN_BALCAO/REQUISICAO:', e); }
     dadosCarregados = true;
@@ -2611,8 +2679,10 @@ function bindOperacaoEvents(panel){
     const select = entry.querySelector('.op-select');
     const outraField = entry.querySelector('.op-outra');
     populateOperacaoSelect(select);
+    renderQuesitosNaEntrada(entry);
     select.addEventListener('change', () => {
       outraField.style.display = select.value === 'OUTRA OPERAÇÃO NÃO DESCRITA ACIMA' ? 'block' : 'none';
+      renderQuesitosNaEntrada(entry);
     });
     // Reaplica o filtro se a Data (bloco 1) mudar depois.
     const dataInput = document.getElementById('dataServico');
@@ -2673,6 +2743,7 @@ function preencherOperacoesDoTTA(ops){
       if (outraField) outraField.style.display = 'block';
       if (outraInp) outraInp.value = nome;
     }
+    renderQuesitosNaEntrada(entry);
   });
   renderGrid(); // atualiza a contagem no card "Operação"
 }
