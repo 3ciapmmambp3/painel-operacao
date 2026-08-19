@@ -1573,6 +1573,23 @@ async function carregarOperacoesSupabase(){
   }));
 }
 
+// MILITARES agora vêm do painel (tabela `militares` do Supabase), unificando
+// com o TTA e a Movimentação de Viaturas — não mais da aba "DADOS PESSOAIS" da
+// planilha. Sobrescreve referenceCache['MILITARES'] no formato
+// "matrícula - POSTO - NOME" que os selects (data-source=MILITARES) já esperam.
+async function carregarMilitaresSupabase(){
+  if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
+  const S = getSessaoAtual();
+  if (!S || !S.token) return;
+  const H = { apikey: SB_AUTH_KEY, Authorization: `Bearer ${SB_AUTH_KEY}`, 'Content-Type':'application/json' };
+  const r = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/tta_listar_militares`, { method:'POST', headers:H, body: JSON.stringify({ p_token: S.token }) });
+  if (!r.ok) throw new Error('HTTP '+r.status);
+  const rows = await r.json();
+  if (!Array.isArray(rows)) return;
+  referenceCache['MILITARES'] = rows.map(m =>
+    `${m.matricula} - ${(m.posto_graduacao||'').toUpperCase()} - ${(m.nome_completo||'').toUpperCase()}`);
+}
+
 // ── Quesitos por Operação (catálogo do Supabase) ─────────────────────────
 // Ao escolher a operação no card "Operação", exibe os quesitos dela: os comuns
 // (escopo 'todas') SOMADOS aos específicos daquela operação. São injetados como
@@ -1674,6 +1691,9 @@ async function fetchReferenceData(){
     // OPERAÇÕES migraram para o painel (Supabase) — sobrescreve o que veio da planilha.
     try { await carregarOperacoesSupabase(); }
     catch(e){ console.warn('[operacoes] mantendo fonte da planilha:', e); }
+    // MILITARES: fonte = tabela `militares` do Supabase (unifica com TTA/Viaturas).
+    try { await carregarMilitaresSupabase(); }
+    catch(e){ console.warn('[militares] mantendo fonte da planilha:', e); }
     try { await carregarQuesitosOperacao(); }
     catch(e){ console.warn('[quesitos] catálogo indisponível:', e); }
     try { await carregarDemandasSupabase(); }
