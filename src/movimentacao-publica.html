@@ -131,10 +131,9 @@
           <option>Subtenente</option><option>Aspirante a Oficial</option>
           <option>2º Tenente</option><option>1º Tenente</option><option>Capitão</option>
           <option>Major</option><option>Tenente-Coronel</option><option>Coronel</option>
-          <option>Outro</option>
         </select></div>
       <div class="f"><label>Nº PM (matrícula) *</label>
-        <input id="c-mat" inputmode="numeric" placeholder="Ex.: 1234567" oninput="matSanitize()" onblur="checarCadastrado()">
+        <input id="c-mat" inputmode="numeric" placeholder="000.000-0" maxlength="9" oninput="fmtPM(this)" onblur="checarCadastrado()">
         <span class="hint" id="c-mat-hint"></span></div>
       <div class="f col2"><label>Unidade de origem (OPM) *</label>
         <input id="c-unid" placeholder="Ex.: 46º BPM / 2ª Cia / etc."></div>
@@ -351,23 +350,34 @@ function mostrarErro(titulo, msg){
   $('err-screen').classList.add('show');
 }
 
-/* ── nº PM: só dígitos + checagem de militar cadastrado ── */
-function matSanitize(){ const el=$('c-mat'); el.value=(el.value||'').replace(/\D/g,''); }
+/* ── nº PM: máscara 000.000-0 + checagem de militar cadastrado (3ª Cia) ── */
+function fmtPM(el){
+  let v=(el.value||'').replace(/[^0-9]/g,'');
+  if(v.length>7) v=v.slice(0,7);
+  if(v.length>6)      v=v.slice(0,3)+'.'+v.slice(3,6)+'-'+v.slice(6);
+  else if(v.length>3) v=v.slice(0,3)+'.'+v.slice(3);
+  el.value=v;
+  // checa enquanto digita (com debounce) assim que houver 7 dígitos
+  const dig=v.replace(/\D/g,'');
+  clearTimeout(fmtPM._t);
+  if(dig.length>=7) fmtPM._t=setTimeout(checarCadastrado,250);
+  else { matBloqueado=false; const h=$('c-mat-hint'); h.textContent=''; h.style.color=''; }
+}
 let matBloqueado=false;
 async function checarCadastrado(){
   const mat=($('c-mat').value||'').replace(/\D/g,''); const hint=$('c-mat-hint');
   matBloqueado=false; hint.textContent=''; hint.style.color='';
-  if(mat.length<5){ return; }
+  if(mat.length<7){ return; }
   try{
     const cad = await rpc('mov_militar_e_cadastrado', { p_matricula: mat });
     if(cad===true){
       matBloqueado=true;
-      hint.textContent='Militar já cadastrado — use o login do painel.'; hint.style.color='var(--danger)';
+      hint.textContent='Militar já cadastrado na 3ª Cia — use o login do painel.'; hint.style.color='var(--danger)';
       $('ov-cadastrado').classList.add('show');
     } else {
       hint.textContent='Não cadastrado — pode registrar por aqui.'; hint.style.color='var(--success)';
     }
-  }catch(e){ /* silencioso: valida de novo no servidor ao salvar */ }
+  }catch(e){ /* silencioso: o servidor revalida ao salvar */ }
 }
 
 /* ── Km inicial: conferência imediata vs. última devolução ── */
@@ -452,14 +462,26 @@ async function salvar(){
   if(!nome)  return foco('c-nome','Informe o nome completo do condutor.');
   if(!posto) return foco('c-posto','Informe o posto/graduação.');
   if(!mat)   return foco('c-mat','Informe o nº PM (matrícula).');
+  if(mat.length<7) return foco('c-mat','Informe o nº PM completo (000.000-0).');
   if(!unid)  return foco('c-unid','Informe a unidade de origem.');
+
+  // trava final: se o nº PM já for de militar cadastrado (3ª Cia), não salva — deve logar
+  try{
+    if(await rpc('mov_militar_e_cadastrado',{p_matricula:mat})===true){
+      matBloqueado=true; $('ov-cadastrado').classList.add('show'); return;
+    }
+  }catch(e){ /* o servidor revalida ao inserir */ }
 
   const kmi=$('kmi').value.trim();
   if(kmi==='') return foco('kmi','Informe o Km inicial.');
-  if(ultimoKmFinal!=null && +kmi<ultimoKmFinal) return foco('kmi',`Km inicial menor que a última devolução (${ultimoKmFinal.toLocaleString('pt-BR')} km).`);
-  if(ultimoKmFinal!=null && +kmi>ultimoKmFinal && !kmiConfirmadoMaior){ kmiBlur(); if(!kmiConfirmadoMaior) return; }
+  if(ultimoKmFinal!=null && +kmi<ultimoKmFinal) return foco('kmi',`Hodômetro menor que o final anterior (${ultimoKmFinal.toLocaleString('pt-BR')} km).`);
   const kmf=$('kmf').value.trim();
   if(kmf!=='' && +kmf < +kmi) return foco('kmf','Km final não pode ser menor que o inicial.');
+  if(ultimoKmFinal!=null && +kmi>ultimoKmFinal && !kmiConfirmadoMaior){
+    if(!confirm(`Tem certeza que é o hodômetro correto?\n\nO Km inicial (${(+kmi).toLocaleString('pt-BR')}) está maior que o hodômetro anterior (${ultimoKmFinal.toLocaleString('pt-BR')} km).`))
+      return foco('kmi','Confira o Km inicial.');
+    kmiConfirmadoMaior=true;
+  }
   if(!$('inicio').value) return foco('inicio','Informe o início (armar a VTR).');
 
   const btn=$('btn-salvar'); btn.disabled=true; const txt=btn.textContent; btn.textContent='Salvando…';
