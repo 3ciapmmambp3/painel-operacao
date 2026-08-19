@@ -1599,23 +1599,27 @@ function _prodCatalogFieldsHTML(){
     const req = q.obrigatorio ? ' data-required="1"' : '';
     const lab = ` data-label="${_escQ(q.label)}"`;
     const pf  = ` data-prod-field="${_escQ(q.label)}"`;
-    let ctrl;
+    let ctrl, labelTxt = _escQ(q.label);
     switch(q.tipo){
       case 'numero':      ctrl = `<input type="number" step="1" inputmode="numeric" placeholder="0"${pf} data-prod-tipo="Inteiro"${req}${lab}>`; break;
+      case 'decimal':     ctrl = `<input type="number" step="0.01" inputmode="decimal" placeholder="0"${pf} data-prod-tipo="Decimal"${req}${lab}>`; break;
+      case 'moeda':       ctrl = `<input type="number" step="0.01" inputmode="decimal" placeholder="0,00"${pf} data-prod-tipo="Moeda"${req}${lab}>`; labelTxt += ' (R$)'; break;
       case 'data':        ctrl = `<input type="date"${pf} data-prod-tipo="Texto"${req}${lab}>`; break;
       case 'texto_longo': ctrl = `<textarea rows="2"${pf} data-prod-tipo="Texto"${req}${lab}></textarea>`; break;
       case 'sim_nao':     ctrl = `<select${pf} data-prod-tipo="Texto"${req}${lab}><option value="">Selecione...</option><option>Sim</option><option>Não</option></select>`; break;
       case 'opcoes':      ctrl = `<select${pf} data-prod-tipo="Texto"${req}${lab}><option value="">Selecione...</option>${(q.opcoes||[]).map(o=>`<option>${_escQ(o)}</option>`).join('')}</select>`; break;
       default:            ctrl = `<input type="text"${pf} data-prod-tipo="Texto"${req}${lab}>`;
     }
-    return `<div class="field productivity-item"><label>${_escQ(q.label)}</label>${ctrl}</div>`;
+    return `<div class="field productivity-item"><label>${labelTxt}</label>${ctrl}</div>`;
   }).join('');
 }
 function _quesitoCtrlHTML(q){
   const a = `${q.obrigatorio ? ' data-required="1"' : ''} data-label="${_escQ(q.label)}"`;
   switch(q.tipo){
     case 'texto_longo': return `<textarea rows="2"${a}></textarea>`;
-    case 'numero':      return `<input type="number"${a}>`;
+    case 'numero':      return `<input type="number" step="1" inputmode="numeric"${a}>`;
+    case 'decimal':     return `<input type="number" step="0.01" inputmode="decimal"${a}>`;
+    case 'moeda':       return `<input type="number" step="0.01" inputmode="decimal" placeholder="0,00"${a}>`;
     case 'data':        return `<input type="date"${a}>`;
     case 'sim_nao':     return `<select${a}><option value="">Selecione...</option><option>Sim</option><option>Não</option></select>`;
     case 'opcoes':      return `<select${a}><option value="">Selecione...</option>${(q.opcoes||[]).map(o=>`<option>${_escQ(o)}</option>`).join('')}</select>`;
@@ -2771,8 +2775,10 @@ function preencherOperacoesDoTTA(ops){
 
 // ---------- Exemplo completo: PRODUTIVIDADE (dinâmico) ----------
 function buildProdutividadePanel(){
-  const camposReais = (referenceCache.CAMPOS_PRODUTIVIDADE || []).filter(c => c.status !== 'Inativo');
   const catalogFields = _prodCatalogFieldsHTML();   // campos escopo 'produtividade' (painel)
+  // O PAINEL é a fonte quando há campos de produtividade no catálogo; enquanto
+  // não houver (antes de rodar o seed), usa a planilha como fallback.
+  const camposReais = catalogFields ? [] : (referenceCache.CAMPOS_PRODUTIVIDADE || []).filter(c => c.status !== 'Inativo');
 
   if (!camposReais.length && !catalogFields){
     return `<p class="placeholder-note">
