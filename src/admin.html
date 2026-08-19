@@ -161,6 +161,11 @@
     .table-wrap{overflow-x:auto;}
     /* Campos de nome no cadastro/edição de militar: sempre em CAIXA ALTA */
     #new-nome,#new-guerra,#edit-nome,#edit-guerra{text-transform:uppercase;}
+    /* Toggle Quadro (Ativo / QPR / QOR) para reconvocados */
+    .quadro-tog{display:inline-flex;border:1px solid var(--border-mid);border-radius:7px;overflow:hidden;height:38px;}
+    .quadro-tog .qbtn{background:var(--bg-input);border:none;color:var(--text-muted);padding:0 12px;font-size:12px;cursor:pointer;font-family:inherit;}
+    .quadro-tog .qbtn+.qbtn{border-left:1px solid var(--border-mid);}
+    .quadro-tog .qbtn.active{background:var(--gold);color:#1a1000;font-weight:800;}
     table.tbl{width:100%;border-collapse:collapse;font-size:12px;}
     table.tbl thead th{background:#1a1a1a;padding:8px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:10;}
     table.tbl tbody td{padding:8px 12px;border-bottom:1px solid #2a2a2a;color:#ccc;vertical-align:middle;}
@@ -299,6 +304,14 @@ document.addEventListener('click', () => {
               <option>SUBTEN PM</option><option>1 SGT PM</option><option>2 SGT PM</option>
               <option>3 SGT PM</option><option>CB PM</option><option>SD PM</option><option>ASP</option>
             </select>
+          </div>
+          <div class="mfg">
+            <label>Quadro <span style="color:var(--text-hint);font-weight:400">(reconvocado)</span></label>
+            <div class="quadro-tog" id="new-quadro-tog">
+              <button type="button" class="qbtn active" data-q="" onclick="selQuadro(this)">Ativo</button>
+              <button type="button" class="qbtn" data-q="QPR" onclick="selQuadro(this)">QPR</button>
+              <button type="button" class="qbtn" data-q="QOR" onclick="selQuadro(this)">QOR</button>
+            </div>
           </div>
           <div class="mfg" style="grid-column:span 2;">
             <label>Nome Completo *</label>
@@ -833,6 +846,14 @@ document.addEventListener('click', () => {
             <option>SUBTEN PM</option><option>1 SGT PM</option><option>2 SGT PM</option>
             <option>3 SGT PM</option><option>CB PM</option><option>SD PM</option><option>ASP</option>
           </select>
+        </div>
+        <div class="mfg">
+          <label>Quadro <span style="color:var(--text-hint);font-weight:400">(reconvocado)</span></label>
+          <div class="quadro-tog" id="edit-quadro-tog">
+            <button type="button" class="qbtn active" data-q="" onclick="selQuadro(this)">Ativo</button>
+            <button type="button" class="qbtn" data-q="QPR" onclick="selQuadro(this)">QPR</button>
+            <button type="button" class="qbtn" data-q="QOR" onclick="selQuadro(this)">QOR</button>
+          </div>
         </div>
         <div class="mfg" style="grid-column:1/-1;">
           <label>Nome Completo *</label>
@@ -2072,6 +2093,22 @@ function renderTabela() {
 }
 
 /* ══ ADICIONAR ══ */
+// Toggle Quadro (reconvocado): Ativo / QPR / QOR. Marca o botão clicado.
+function selQuadro(btn){
+  Array.from(btn.parentNode.children).forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+function getQuadro(togId){ const a = document.querySelector('#' + togId + ' .qbtn.active'); return a ? (a.dataset.q || '') : ''; }
+function setQuadro(togId, q){
+  const tog = document.getElementById(togId); if(!tog) return;
+  Array.from(tog.children).forEach(b => b.classList.toggle('active', (b.dataset.q || '') === (q || '')));
+}
+// Junta P/G + quadro (QPR/QOR) num posto só: "1 SGT PM" + "QPR" -> "1 SGT PM QPR".
+function montarPostoComQuadro(pgBase, quadro){
+  const base = normNomeMil(pgBase);
+  return quadro ? (base + ' ' + quadro).trim() : base;
+}
+
 // Normaliza nome de militar: MAIÚSCULAS + SEM acentos (padrão da tabela militares).
 function normNomeMil(s){
   return (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -2081,7 +2118,7 @@ function normNomeMil(s){
 
 async function adicionarUsuario() {
   const npm    = document.getElementById('new-npm').value.trim();
-  const pg     = normNomeMil(document.getElementById('new-pg').value);
+  const pg     = montarPostoComQuadro(document.getElementById('new-pg').value, getQuadro('new-quadro-tog'));
   const nome   = normNomeMil(document.getElementById('new-nome').value);
   const guerra = normNomeMil(document.getElementById('new-guerra').value);
   const funcao = normNomeMil(document.getElementById('new-funcao').value);
@@ -2109,6 +2146,7 @@ async function adicionarUsuario() {
 
   showMsg('msg-add','ok',`✔ ${nome} cadastrado. Senha padrão: Mudar@123`);
   ['new-npm','new-nome','new-guerra'].forEach(id => { const el = document.getElementById(id); if(el) el.value=''; });
+  setQuadro('new-quadro-tog','');
   await carregarUsuarios();
 }
 
@@ -2154,7 +2192,13 @@ function abrirModal(id) {
   if (!u) return;
   document.getElementById('edit-id').value      = id;
   document.getElementById('edit-npm').value     = u.matricula || '';
-  document.getElementById('edit-pg').value      = u.posto_graduacao || '';
+  // Separa o quadro (QPR/QOR) do posto pra preencher o toggle + o select base.
+  const postoRaw = (u.posto_graduacao || '').trim();
+  const mQuadro = postoRaw.match(/\s(QPR|QOR)$/);
+  const quadroEd = mQuadro ? mQuadro[1] : '';
+  const pgBase = quadroEd ? postoRaw.replace(/\s(QPR|QOR)$/, '').trim() : postoRaw;
+  document.getElementById('edit-pg').value      = pgBase;
+  setQuadro('edit-quadro-tog', quadroEd);
   document.getElementById('edit-nome').value    = u.nome_completo || '';
   document.getElementById('edit-guerra').value  = u.nome_guerra || '';
   document.getElementById('edit-funcao').value  = u.funcao || '';
@@ -2176,7 +2220,7 @@ function fecharModal() {
 async function salvarEdicao() {
   const id      = document.getElementById('edit-id').value;
   const nome    = normNomeMil(document.getElementById('edit-nome').value);
-  const pg      = normNomeMil(document.getElementById('edit-pg').value);
+  const pg      = montarPostoComQuadro(document.getElementById('edit-pg').value, getQuadro('edit-quadro-tog'));
   const guerra  = normNomeMil(document.getElementById('edit-guerra').value);
   const funcao  = normNomeMil(document.getElementById('edit-funcao').value);
   const lotacao = normNomeMil(document.getElementById('edit-lotacao').value);
