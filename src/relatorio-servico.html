@@ -3468,6 +3468,9 @@ hiddenIframeRelatorio.addEventListener('load', async () => {
   const reviewConfirmBtn = document.getElementById('reviewConfirmBtn');
   reviewConfirmBtn.disabled = false;
   reviewConfirmBtn.textContent = 'Confirmar e Enviar';
+  // FASE 1 (migração p/ Supabase): escrita dupla — grava o relatório também no
+  // Supabase (fonte futura), depois que ele já foi p/ a planilha. Best-effort.
+  await gravarRelatorioSupabase(ultimoPayloadEnviado);
   // Baixa automática: marca no Supabase as denúncias/requisições atendidas neste relatório.
   // Best-effort: se falhar, não impede o fluxo do relatório.
   await marcarDemandasAtendidas(ultimoPayloadEnviado);
@@ -3475,6 +3478,29 @@ hiddenIframeRelatorio.addEventListener('load', async () => {
   alert(modoEdicaoIdRelatorio ? 'Relatório atualizado com sucesso!' : 'Relatório enviado com sucesso!');
   window.location.href = 'meus-relatorios.html';
 });
+
+/* ── FASE 1: escrita dupla do relatório no Supabase ──────────────────────
+   A planilha (via Apps Script) continua sendo alimentada normalmente; aqui
+   gravamos o MESMO relatório no Supabase, que passará a ser a fonte nas
+   próximas fases. Best-effort: qualquer erro é só logado, nunca atrapalha o
+   envio. Nesta fase espelhamos só a CRIAÇÃO — a edição volta na Fase 2, quando
+   o "Meus Relatórios" fornecer o id do Supabase para atualizar a linha certa. */
+async function gravarRelatorioSupabase(payload){
+  try{
+    if (!payload) return;
+    if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
+    if (payload.modo === 'atualizarRelatorio') return;   // edição: Fase 2
+    const S = getSessaoAtual();
+    if (!S || !S.token) return;
+    const p_dados = { modo: 'criar', bloco1: payload.bloco1 || {}, categorias: payload.categorias || [] };
+    const H = { apikey: SB_AUTH_KEY, Authorization: `Bearer ${SB_AUTH_KEY}`, 'Content-Type': 'application/json' };
+    const r = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/relatorio_salvar`, {
+      method: 'POST', headers: H, body: JSON.stringify({ p_token: S.token, p_dados })
+    });
+    if (!r.ok) console.warn('[relatorio→supabase] HTTP ' + r.status + ': ' + (await r.text()));
+    else console.log('[relatorio→supabase] gravado.');
+  }catch(e){ console.warn('[relatorio→supabase] falhou (best-effort):', e); }
+}
 
 /* ── Baixa automática das demandas (Denúncia de Balcão / Requisição) ──
    Ao enviar o relatório, marca a ocorrência como Atendida (RESPONDIDA) na
