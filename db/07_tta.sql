@@ -55,7 +55,7 @@ begin
       -- normalmente, só não aparecem pra marcar presença no TTA. Tirar
       -- essa linha quando não precisar mais escondê-las daqui.
       and m.matricula_clean not in ('0000001','0000002','0000003','0000004')
-    order by m.nome_completo;
+    order by m.matricula_clean;   -- ordem por número PM (não por nome)
 end;
 $$;
 

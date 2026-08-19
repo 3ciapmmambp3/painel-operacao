@@ -1904,6 +1904,13 @@ async function carregarUsuarios() {
   _atualizarBarraSync('andamento','⏳ Carregando do Supabase...','');
   try {
     _cachedUsers = await SbAuth.listarUsuarios();
+    // Ordena por número PM (matrícula), não por nome. matricula_clean é
+    // zero-preenchido em 7 dígitos, então a ordem de texto já é a numérica.
+    _cachedUsers.sort((a, b) => {
+      const ma = (a.matricula_clean || (a.matricula || '').replace(/\D/g, '').padStart(7, '0'));
+      const mb = (b.matricula_clean || (b.matricula || '').replace(/\D/g, '').padStart(7, '0'));
+      return ma.localeCompare(mb);
+    });
     const agora = new Date().toLocaleTimeString('pt-BR');
     _atualizarBarraSync('ok', `✔ Carregado às ${agora}`, `${_cachedUsers.length} militares`);
     renderStats();
@@ -2041,6 +2048,11 @@ function renderTabela() {
     const btnReset = podeAlt ? `<button class="btn-outline btn-sm" onclick="resetarSenha('${u.id}','${nomeAttr}')" title="Resetar senha">🔑</button>` : '';
     const btnEdit  = (self || podeAlt || sessao?.nivel_acesso === 'admin_geral')
       ? `<button class="btn-outline btn-sm" onclick="abrirModal('${u.id}')" title="Editar">✏️</button>` : '';
+    const btnAtivo = podeAlt
+      ? (u.ativo
+          ? `<button class="btn-outline btn-sm" onclick="toggleAtivo('${u.id}',false,'${nomeAttr}')" title="Inativar (saída/transferência) — sai das listas, mantém histórico">⏸ Inativar</button>`
+          : `<button class="btn-gold btn-sm" onclick="toggleAtivo('${u.id}',true,'${nomeAttr}')" title="Reativar">▶ Ativar</button>`)
+      : '';
     const btnDel   = podeAlt ? `<button class="btn-danger btn-sm" onclick="excluirUsuario('${u.id}','${nomeAttr}')" title="Excluir">✕</button>` : '';
 
     return `<tr>
@@ -2052,7 +2064,7 @@ function renderTabela() {
       <td style="font-size:11px;">${_escHtml(u.grupamento_id)||'—'}</td>
       <td>${_badgeNivel(u.nivel_acesso)}</td>
       <td>${bStatus}</td>
-      <td><div class="acoes">${btnEdit}${btnNivel}${btnReset}${btnDel}</div></td>
+      <td><div class="acoes">${btnEdit}${btnNivel}${btnReset}${btnAtivo}${btnDel}</div></td>
     </tr>`;
   }).join('');
 }
@@ -2110,6 +2122,20 @@ async function excluirUsuario(id, nome) {
   if (!confirm(`Excluir o usuário "${nome}"? Esta ação não pode ser desfeita.`)) return;
   const r = await SbAuth.excluirUsuario(id, sessao);
   if (!r.ok) { alert(r.erro); return; }
+  await carregarUsuarios();
+}
+
+/* Inativar (saída/transferência) ou reativar um militar. Inativo some das
+   listas (Relatório/TTA/Movimentação) mas o histórico é preservado — melhor
+   que excluir. Usa auth_atualizar_usuario (que já tem a trava do único Admin
+   Geral ativo). */
+async function toggleAtivo(id, novoAtivo, nome) {
+  const msg = novoAtivo
+    ? `Reativar "${nome}"? Volta a aparecer nas listas.`
+    : `Inativar "${nome}"?\n\nEle sai das listas (Relatório de Serviço, TTA e Movimentação), mas o histórico é preservado. Dá pra reativar depois.`;
+  if (!confirm(msg)) return;
+  const r = await SbAuth.atualizarUsuario(id, { ativo: novoAtivo }, sessao);
+  if (!r || !r.ok) { alert((r && r.erro) || 'Não foi possível alterar.'); return; }
   await carregarUsuarios();
 }
 
