@@ -1586,9 +1586,30 @@ async function carregarQuesitosOperacao(){
 function _escQ(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function quesitosEfetivos(opNome){
   if (!opNome) return [];
-  const comuns = QUESITOS_OPERACAO.filter(q => q.escopo !== 'especificas');
+  // Só 'todas' (comuns a toda operação) — 'produtividade' NÃO entra no card Operação.
+  const comuns = QUESITOS_OPERACAO.filter(q => q.escopo === 'todas');
   const espec  = QUESITOS_OPERACAO.filter(q => q.escopo === 'especificas' && Array.isArray(q.operacoes) && q.operacoes.includes(opNome));
   return comuns.concat(espec);
+}
+// Campos de escopo 'produtividade' (sem operação) — vão no card "Produtividade".
+// Renderizados com data-prod-field p/ o coletor de produtividade capturá-los.
+function _prodCatalogFieldsHTML(){
+  const items = (QUESITOS_OPERACAO || []).filter(q => q.escopo === 'produtividade');
+  return items.map(q => {
+    const req = q.obrigatorio ? ' data-required="1"' : '';
+    const lab = ` data-label="${_escQ(q.label)}"`;
+    const pf  = ` data-prod-field="${_escQ(q.label)}"`;
+    let ctrl;
+    switch(q.tipo){
+      case 'numero':      ctrl = `<input type="number" step="1" inputmode="numeric" placeholder="0"${pf} data-prod-tipo="Inteiro"${req}${lab}>`; break;
+      case 'data':        ctrl = `<input type="date"${pf} data-prod-tipo="Texto"${req}${lab}>`; break;
+      case 'texto_longo': ctrl = `<textarea rows="2"${pf} data-prod-tipo="Texto"${req}${lab}></textarea>`; break;
+      case 'sim_nao':     ctrl = `<select${pf} data-prod-tipo="Texto"${req}${lab}><option value="">Selecione...</option><option>Sim</option><option>Não</option></select>`; break;
+      case 'opcoes':      ctrl = `<select${pf} data-prod-tipo="Texto"${req}${lab}><option value="">Selecione...</option>${(q.opcoes||[]).map(o=>`<option>${_escQ(o)}</option>`).join('')}</select>`; break;
+      default:            ctrl = `<input type="text"${pf} data-prod-tipo="Texto"${req}${lab}>`;
+    }
+    return `<div class="field productivity-item"><label>${_escQ(q.label)}</label>${ctrl}</div>`;
+  }).join('');
 }
 function _quesitoCtrlHTML(q){
   const a = `${q.obrigatorio ? ' data-required="1"' : ''} data-label="${_escQ(q.label)}"`;
@@ -2751,8 +2772,9 @@ function preencherOperacoesDoTTA(ops){
 // ---------- Exemplo completo: PRODUTIVIDADE (dinâmico) ----------
 function buildProdutividadePanel(){
   const camposReais = (referenceCache.CAMPOS_PRODUTIVIDADE || []).filter(c => c.status !== 'Inativo');
+  const catalogFields = _prodCatalogFieldsHTML();   // campos escopo 'produtividade' (painel)
 
-  if (!camposReais.length){
+  if (!camposReais.length && !catalogFields){
     return `<p class="placeholder-note">
       Não foi possível carregar os indicadores da aba CAMPOS_PRODUTIVIDADE.
       Recarregue a página e tente novamente.
@@ -2791,7 +2813,7 @@ function buildProdutividadePanel(){
   }).join('');
 
   return `
-    <div class="productivity-grid">${fields}</div>
+    <div class="productivity-grid">${fields}${catalogFields}</div>
   `;
 }
 
@@ -3136,7 +3158,7 @@ function collectCategoryEntries(id){
   // de contadores (vindos da aba CAMPOS_PRODUTIVIDADE), sempre 1 item só.
   if (id === 'produtividade'){
     const campos = {};
-    node.querySelectorAll('input[data-prod-field]').forEach(inp => {
+    node.querySelectorAll('[data-prod-field]').forEach(inp => {
       let valor = (inp.value || '').toString().trim();
       // Normaliza vírgula decimal pra ponto, só em campos numéricos (Inteiro/
       // Decimal/Moeda). Sem isso, "5,9" vira "5" ao ser somado depois.

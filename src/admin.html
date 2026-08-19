@@ -248,7 +248,7 @@ document.addEventListener('click', () => {
   <div class="tab" data-tip="Grupamentos" onclick="switchTab(this,'grupamentos');renderGruposAdmin()">📍 Grupamentos</div>
   <div class="tab" data-tip="Metas" onclick="switchTab(this,'metas');metasInit()">📊 Metas</div>
   <div class="tab" data-tip="Operações" onclick="switchTab(this,'operacoes');operacoesInit()">🎯 Operações</div>
-  <div class="tab" data-tip="Quesitos de Operação" onclick="switchTab(this,'quesitos');quesitosInit()">📋 Quesitos de Operação</div>
+  <div class="tab" data-tip="Campos & Quesitos" onclick="switchTab(this,'quesitos');quesitosInit()">📋 Campos & Quesitos</div>
 </nav>
 
 <div class="content">
@@ -763,6 +763,7 @@ document.addEventListener('click', () => {
       #tab-quesitos .qrow{background:var(--bg-card,#2d2d2d);border:1px solid var(--border);border-radius:9px;padding:13px 14px;margin-bottom:11px}
       #tab-quesitos .qrow.todas{border-left:3px solid var(--gold)}
       #tab-quesitos .qrow.especificas{border-left:3px solid #42a5f5}
+      #tab-quesitos .qrow.prod{border-left:3px solid #ce93d8}
       #tab-quesitos .qgrid{display:grid;grid-template-columns:1fr 160px;gap:10px}
       @media(max-width:560px){#tab-quesitos .qgrid{grid-template-columns:1fr}}
       #tab-quesitos label{font-size:10.5px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:5px}
@@ -782,16 +783,17 @@ document.addEventListener('click', () => {
       #tab-quesitos .lgd .tg{display:inline-block;font-size:8.5px;font-weight:800;letter-spacing:.3px;padding:2px 7px;border-radius:20px;vertical-align:middle}
       #tab-quesitos .lgd .tg.g{background:rgba(155,138,92,.13);color:var(--gold-light,#b3a06e);border:1px solid rgba(155,138,92,.32)}
       #tab-quesitos .lgd .tg.b{background:rgba(66,165,245,.12);color:#90caf9;border:1px solid rgba(66,165,245,.4)}
+      #tab-quesitos .lgd .tg.p{background:rgba(206,147,216,.12);color:#ce93d8;border:1px solid rgba(206,147,216,.4)}
       #tab-quesitos .q-save{position:sticky;bottom:0;background:linear-gradient(0deg,var(--bg-page,#1e1e1e) 70%,transparent);padding:14px 0 4px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:8px}
       #tab-quesitos .q-empty{padding:26px;text-align:center;color:var(--text-hint,#666);border:1px dashed var(--border);border-radius:9px}
     </style>
 
     <div class="q-head">
       <div>
-        <h2>📋 Quesitos de Operação</h2>
-        <p>Perguntas próprias de cada operação, que aparecem no card <b>"Operação"</b> do Relatório de Serviço. Cada quesito vale para <b>todas</b> as operações (comum) ou só para <b>operações específicas</b>. No Relatório, a operação recebe os comuns <b>somados</b> aos específicos dela.</p>
+        <h2>📋 Campos & Quesitos</h2>
+        <p>Campos do Relatório de Serviço. Cada um escolhe onde aparece: <b>Produtividade</b> (sem operação, no card Produtividade) · <b>Todas as operações</b> (card Operação, em qualquer operação) · <b>Operações específicas</b>. No card Operação, a operação recebe os comuns <b>somados</b> aos específicos dela.</p>
       </div>
-      <div class="lgd"><span class="tg g">todas</span> comum &nbsp;·&nbsp; <span class="tg b">específicas</span> selecionadas</div>
+      <div class="lgd"><span class="tg p">produtividade</span> &nbsp;·&nbsp; <span class="tg g">todas</span> &nbsp;·&nbsp; <span class="tg b">específicas</span></div>
     </div>
 
     <div id="qsList"></div>
@@ -1020,7 +1022,7 @@ function qRender(){
   const box = document.getElementById('qsList');
   if(!QUESITOS.length){ box.innerHTML = '<div class="q-empty">Nenhum quesito ainda. Clique em <b>+ adicionar quesito</b>.</div>'; return; }
   box.innerHTML = QUESITOS.map((q,i)=>`
-    <div class="qrow ${q.escopo==='especificas'?'especificas':'todas'}">
+    <div class="qrow ${q.escopo==='especificas'?'especificas':(q.escopo==='produtividade'?'prod':'todas')}">
       <div class="qgrid">
         <div><label>Pergunta</label><input value="${qEsc(q.label)}" oninput="QUESITOS[${i}].label=this.value"></div>
         <div><label>Tipo</label><select onchange="QUESITOS[${i}].tipo=this.value;qRender()">${qTipoOpts(q.tipo)}</select></div>
@@ -1031,8 +1033,9 @@ function qRender(){
         <div class="chips">${(q.opcoes||[]).map((o,j)=>`<span class="chip">${qEsc(o)}<b onclick="QUESITOS[${i}].opcoes.splice(${j},1);qRender()">✕</b></span>`).join('')}</div></div>`:''}
       <div class="scopebox">
         <label>Aplica-se a</label>
-        <select onchange="QUESITOS[${i}].escopo=this.value;if(this.value==='todas')QUESITOS[${i}].operacoes=[];qRender()">
-          <option value="todas"${q.escopo!=='especificas'?' selected':''}>Todas as operações (comum)</option>
+        <select onchange="QUESITOS[${i}].escopo=this.value;if(this.value!=='especificas')QUESITOS[${i}].operacoes=[];qRender()">
+          <option value="produtividade"${q.escopo==='produtividade'?' selected':''}>Produtividade (sem operação)</option>
+          <option value="todas"${(q.escopo==='todas'||!q.escopo)?' selected':''}>Todas as operações (comum)</option>
           <option value="especificas"${q.escopo==='especificas'?' selected':''}>Operações específicas…</option>
         </select>
         ${q.escopo==='especificas'?`
