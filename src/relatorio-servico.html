@@ -3471,19 +3471,28 @@ relatorioForm.setAttribute('action', SCRIPT_URL);
 relatorioForm.setAttribute('method', 'POST');
 relatorioForm.setAttribute('target', 'hidden_iframe_relatorio');
 
-document.getElementById('reviewConfirmBtn').addEventListener('click', () => {
+document.getElementById('reviewConfirmBtn').addEventListener('click', async () => {
   if (!SCRIPT_URL || SCRIPT_URL.indexOf('COLE_AQUI') !== -1){
     closeReview();
     alert('O formulário ainda não está conectado à planilha (SCRIPT_URL não configurada). Veja o README.');
     return;
   }
   const payload = collectAllData();
-  ultimoPayloadEnviado = payload;
-  document.getElementById('payloadField').value = JSON.stringify(payload);
-
   const reviewConfirmBtn = document.getElementById('reviewConfirmBtn');
   reviewConfirmBtn.disabled = true;
   reviewConfirmBtn.textContent = 'Enviando...';
+
+  // FASE 3 (id unificado): no CREATE, grava no Supabase PRIMEIRO — ele gera o
+  // uuid e já vincula (sheet_id=uuid). A planilha recebe esse MESMO id como
+  // "ID Relatório", então ambos ficam com o mesmo id. (Na edição, o Supabase é
+  // atualizado depois, no load do iframe, pois já temos o id.)
+  if (payload.modo !== 'atualizarRelatorio'){
+    const uuid = await gravarRelatorioSupabase(payload);
+    if (uuid) payload.idRelatorio = uuid;
+  }
+
+  ultimoPayloadEnviado = payload;
+  document.getElementById('payloadField').value = JSON.stringify(payload);
   enviandoRelatorio = true;
   relatorioForm.submit();
 });
@@ -3495,14 +3504,15 @@ hiddenIframeRelatorio.addEventListener('load', async () => {
   const reviewConfirmBtn = document.getElementById('reviewConfirmBtn');
   reviewConfirmBtn.disabled = false;
   reviewConfirmBtn.textContent = 'Confirmar e Enviar';
-  // FASE 1 (migração p/ Supabase): escrita dupla — grava o relatório também no
-  // Supabase (fonte futura), depois que ele já foi p/ a planilha. Best-effort.
-  await gravarRelatorioSupabase(ultimoPayloadEnviado);
+  const ehEdicao = ultimoPayloadEnviado && ultimoPayloadEnviado.modo === 'atualizarRelatorio';
+  // O CREATE já gravou no Supabase ANTES do envio (Fase 3). Só a EDIÇÃO grava aqui
+  // (depois do espelho na planilha). Best-effort.
+  if (ehEdicao) await gravarRelatorioSupabase(ultimoPayloadEnviado);
   // Baixa automática: marca no Supabase as denúncias/requisições atendidas neste relatório.
   // Best-effort: se falhar, não impede o fluxo do relatório.
   await marcarDemandasAtendidas(ultimoPayloadEnviado);
   ultimoPayloadEnviado = null;
-  alert(modoEdicaoIdRelatorio ? 'Relatório atualizado com sucesso!' : 'Relatório enviado com sucesso!');
+  alert(ehEdicao ? 'Relatório atualizado com sucesso!' : 'Relatório enviado com sucesso!');
   window.location.href = 'meus-relatorios.html';
 });
 
@@ -3528,9 +3538,11 @@ async function gravarRelatorioSupabase(payload){
     const r = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/relatorio_salvar`, {
       method: 'POST', headers: H, body: JSON.stringify({ p_token: S.token, p_dados })
     });
-    if (!r.ok) console.warn('[relatorio→supabase] HTTP ' + r.status + ': ' + (await r.text()));
-    else console.log('[relatorio→supabase] ' + (ehEdicao ? 'atualizado' : 'gravado') + '.');
-  }catch(e){ console.warn('[relatorio→supabase] falhou (best-effort):', e); }
+    const t = await r.text(); let j; try{ j = t ? JSON.parse(t) : null; }catch{ j = t; }
+    if (!r.ok){ console.warn('[relatorio→supabase] HTTP ' + r.status + ': ' + t); return null; }
+    console.log('[relatorio→supabase] ' + (ehEdicao ? 'atualizado' : 'gravado') + '.');
+    return (j && j.id) ? j.id : null;   // uuid (usado no CREATE p/ unificar o id com a planilha)
+  }catch(e){ console.warn('[relatorio→supabase] falhou (best-effort):', e); return null; }
 }
 
 /* ── Baixa automática das demandas (Denúncia de Balcão / Requisição) ──
