@@ -483,6 +483,17 @@ function voltarPastas(){
 /* ── Viaturas do turno (prefixo + motorista) — geram a obrigação da ficha ── */
 function fmtMil(m){ return `${m.matricula} - ${(m.posto_graduacao||'').toUpperCase()} - ${(m.nome_completo||'').toUpperCase()}`; }
 function militarByInput(val){ const mat = ((val||'').split(' - ')[0]||'').trim(); return ROSTER.find(x => x.matricula === mat); }
+/* Máscara de Nº PM (000.000-0) nos campos de militar — só age quando o que
+   está sendo digitado é NÚMERO (sem letras), pra não atrapalhar a busca por nome. */
+function mascaraPM(el){
+  const v = el.value || '';
+  if (/[a-zA-Z]/.test(v)) return;               // digitando nome → não mexe
+  const d = v.replace(/\D/g,'').slice(0,7);
+  if (!d) { el.value = v.replace(/[^\d]/g,''); return; }
+  el.value = d.length>6 ? d.slice(0,3)+'.'+d.slice(3,6)+'-'+d.slice(6)
+           : d.length>3 ? d.slice(0,3)+'.'+d.slice(3)
+           : d;
+}
 function loadMilitaresDatalist(){
   const dl = document.getElementById('militares-dl');
   if (dl) dl.innerHTML = ROSTER.map(m => `<option value="${fmtMil(m)}">`).join('');
@@ -509,9 +520,9 @@ function addEquipe(){
     '<div class="eqhead"><div class="eqtag"><span class="n"></span> Equipe</div>'+
       '<button type="button" class="eq-rm" onclick="removeEquipe(this)">remover</button></div>'+
     '<div class="eq-g3">'+
-      '<div class="f"><label>Comandante da equipe <span class="req">*</span></label><input class="eq-com" list="militares-dl" placeholder="nº ou nome…" oninput="atualizarPresentesAuto()"></div>'+
+      '<div class="f"><label>Comandante da equipe <span class="req">*</span></label><input class="eq-com" list="militares-dl" placeholder="nº ou nome…" oninput="mascaraPM(this);atualizarPresentesAuto()"></div>'+
       '<div class="f"><label>Viatura (prefixo) <span class="req">*</span></label><input class="eq-vtr" list="viaturas-dl" placeholder="ex: 36685" oninput="atualizarPend()"></div>'+
-      '<div class="f"><label>Motorista <span class="req">*</span></label><input class="eq-mot" list="militares-dl" placeholder="nº ou nome…" oninput="atualizarPend();atualizarPresentesAuto()"></div>'+
+      '<div class="f"><label>Motorista <span class="req">*</span></label><input class="eq-mot" list="militares-dl" placeholder="nº ou nome…" oninput="mascaraPM(this);atualizarPend();atualizarPresentesAuto()"></div>'+
     '</div>'+
     '<div class="grid2" style="margin-top:10px">'+
       '<div class="f"><label>Vínculo desta equipe</label><select class="eq-vinc"></select></div>'+
@@ -533,7 +544,7 @@ function removeEquipe(btn){ btn.closest('.equipe').remove(); refreshEquipes(); a
 function addPatrulheiro(btn){
   const box = btn.closest('.equipe').querySelector('.eq-patrs');
   const row = document.createElement('div'); row.className = 'prow';
-  row.innerHTML = '<input class="eq-pat" list="militares-dl" placeholder="nº ou nome…" oninput="atualizarPresentesAuto()" style="flex:1">'+
+  row.innerHTML = '<input class="eq-pat" list="militares-dl" placeholder="nº ou nome…" oninput="mascaraPM(this);atualizarPresentesAuto()" style="flex:1">'+
     '<button type="button" onclick="this.parentNode.remove();atualizarPresentesAuto()" style="background:none;border:none;color:#ef5350;cursor:pointer;font-size:11px">remover</button>';
   box.appendChild(row);
 }
