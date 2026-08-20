@@ -2852,20 +2852,26 @@ async function carregarRelatorioParaEdicao(id){
   const overlay = document.getElementById('overlayCarregandoEdicao');
   if (overlay) overlay.style.display = 'flex';
   try {
-    const res = await fetch(`${SCRIPT_URL}?action=buscarRelatorioCompleto&id=${encodeURIComponent(id)}`);
-    const data = await res.json();
-    if (data.result !== 'success'){
-      alert('Não foi possível carregar esse relatório pra edição (ID: ' + id + ').');
+    // FASE 2: carrega do Supabase (relatorio_completo). `id` é o uuid do relatório.
+    const S = getSessaoAtual();
+    const H = { apikey: SB_AUTH_KEY, Authorization:'Bearer '+SB_AUTH_KEY, 'Content-Type':'application/json' };
+    const res = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/relatorio_completo`, {
+      method:'POST', headers:H, body: JSON.stringify({ p_token: S && S.token, p_id: id })
+    });
+    const data = res.ok ? await res.json() : null;
+    if (!data || data.ok === false){
+      alert('Não foi possível carregar esse relatório pra edição.');
       return;
     }
-    modoEdicaoIdRelatorio = id;
+    supabaseIdEdicao = id;                       // uuid do Supabase (fonte)
+    modoEdicaoIdRelatorio = data.sheet_id || ''; // ID na planilha (espelho); vazio = sem vínculo ainda
     preencherBloco1(data.bloco1 || {});
     (data.categorias || []).forEach(cat => preencherCategoria(cat.categoria, cat.itens || []));
     renderGrid();
 
     const aviso = document.createElement('div');
     aviso.style.cssText = 'background:#3a2f00;color:#f0c419;padding:10px 20px;font-size:13px;text-align:center;';
-    aviso.textContent = `Você está editando o relatório ${id}. Ao confirmar o envio, ele será ATUALIZADO — não será criado um relatório novo.`;
+    aviso.textContent = `Você está editando um relatório. Ao confirmar o envio, ele será ATUALIZADO — não será criado um relatório novo.`;
     document.querySelector('.topbar').after(aviso);
   } catch(err){
     console.error('Erro ao carregar relatório pra edição:', err);
@@ -3367,7 +3373,8 @@ function collectBloco1(){
 }
 
 // ---------- Pacote completo pra envio ----------
-let modoEdicaoIdRelatorio = null;
+let modoEdicaoIdRelatorio = null;   // ID do relatório na PLANILHA (espelho)
+let supabaseIdEdicao = null;         // ID (uuid) do relatório no Supabase (fonte)
 
 function collectAllData(){
   const categorias = [];
@@ -3382,9 +3389,9 @@ function collectAllData(){
     categorias.push({ categoria: 'Equipe de Apoio', itens: apoio });
   }
   const payload = { bloco1: collectBloco1(), categorias };
-  if (modoEdicaoIdRelatorio){
+  if (supabaseIdEdicao){
     payload.modo = 'atualizarRelatorio';
-    payload.idRelatorio = modoEdicaoIdRelatorio;
+    payload.idRelatorio = modoEdicaoIdRelatorio;   // sheet_id p/ o espelho na planilha (pode ser vazio)
     // Identidade de quem está editando AGORA, pro backend registrar no
     // histórico de auditoria (quem fez a alteração, além de quando).
     const sessaoAtual = getSessaoAtual();
@@ -3509,16 +3516,20 @@ async function gravarRelatorioSupabase(payload){
   try{
     if (!payload) return;
     if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
-    if (payload.modo === 'atualizarRelatorio') return;   // edição: Fase 2
     const S = getSessaoAtual();
     if (!S || !S.token) return;
-    const p_dados = { modo: 'criar', bloco1: payload.bloco1 || {}, categorias: payload.categorias || [] };
+    const ehEdicao = payload.modo === 'atualizarRelatorio';
+    if (ehEdicao && !supabaseIdEdicao) return;   // sem id do Supabase, não há o que atualizar
+    const p_dados = ehEdicao
+      ? { modo:'atualizar', id: supabaseIdEdicao, sheet_id: (modoEdicaoIdRelatorio||null),
+          bloco1: payload.bloco1||{}, categorias: payload.categorias||[] }
+      : { modo:'criar', bloco1: payload.bloco1||{}, categorias: payload.categorias||[] };
     const H = { apikey: SB_AUTH_KEY, Authorization: `Bearer ${SB_AUTH_KEY}`, 'Content-Type': 'application/json' };
     const r = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/relatorio_salvar`, {
       method: 'POST', headers: H, body: JSON.stringify({ p_token: S.token, p_dados })
     });
     if (!r.ok) console.warn('[relatorio→supabase] HTTP ' + r.status + ': ' + (await r.text()));
-    else console.log('[relatorio→supabase] gravado.');
+    else console.log('[relatorio→supabase] ' + (ehEdicao ? 'atualizado' : 'gravado') + '.');
   }catch(e){ console.warn('[relatorio→supabase] falhou (best-effort):', e); }
 }
 

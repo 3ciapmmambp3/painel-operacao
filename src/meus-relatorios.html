@@ -338,18 +338,19 @@ async function carregarMeusRelatorios(){
   }
   const ehAdminGeral = sessao.nivel_acesso === 'admin_geral';
   try {
-    // Admin Geral vê TODOS os relatórios lançados, sem restrição de matrícula.
-    const url = ehAdminGeral
-      ? `${SCRIPT_URL}?action=meusRelatorios&matricula=${encodeURIComponent(sessao.matricula)}&todos=true`
-      : `${SCRIPT_URL}?action=meusRelatorios&matricula=${encodeURIComponent(sessao.matricula)}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    if (data.result !== 'success' || !data.relatorios || !data.relatorios.length){
+    // FASE 2: lê do Supabase (relatorio_meus). Admin Geral vê TODOS.
+    const H = { apikey: SB_AUTH_KEY, Authorization:'Bearer '+SB_AUTH_KEY, 'Content-Type':'application/json' };
+    const res = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/relatorio_meus`, {
+      method:'POST', headers:H, body: JSON.stringify({ p_token: sessao.token, p_todos: ehAdminGeral })
+    });
+    if(!res.ok) throw new Error('HTTP '+res.status+': '+(await res.text()));
+    const lista = await res.json();
+    if (!Array.isArray(lista) || !lista.length){
       status.textContent = 'Nenhum relatório encontrado ainda.';
       return;
     }
 
-    todosOsRelatorios = data.relatorios;
+    todosOsRelatorios = lista;
     paginaAtual = 1;
     popularFiltroFracao(todosOsRelatorios);
     renderizarTabela();
