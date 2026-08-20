@@ -455,3 +455,24 @@ window.SbAuth = {
   SENHA_PADRAO,
   hashSenha,
 };
+
+/* ── Item "Gestão Operacional" na barra (só admin_geral/admin/admin_pelotao) ──
+   Injeta o link nas páginas com <nav class="topnav"> ESTÁTICO. As páginas que
+   montam a barra via topnav.js já incluem o item por lá (marcado data-gestao-op),
+   então este bloco não duplica. */
+document.addEventListener('DOMContentLoaded', function(){
+  try{
+    var s = JSON.parse(sessionStorage.getItem('poe_sessao_v2') || 'null');
+    if(!s || ['admin_geral','admin','admin_pelotao'].indexOf(s.nivel_acesso) === -1) return;
+    var nav = document.querySelector('nav.topnav');
+    if(!nav || nav.querySelector('[data-gestao-op]')) return;   // sem barra estática, ou já tem o item
+    var a = document.createElement('a');
+    a.className = 'topnav-link';
+    a.href = 'supervisao-controle.html';
+    a.style.color = 'var(--gold)';
+    a.setAttribute('data-gestao-op', '');
+    a.textContent = '🎯 GESTÃO OPERACIONAL';
+    var adm = nav.querySelector('#admTopnavItem');
+    if(adm) nav.insertBefore(a, adm); else nav.appendChild(a);
+  }catch(e){}
+});

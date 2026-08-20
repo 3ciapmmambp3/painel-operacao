@@ -37,6 +37,7 @@
       <a class="topnav-link${on('criminal')}" href="analise-criminal.html" style="color:#ef5350;">🔴 ANÁLISE CRIMINAL</a>
       <a class="topnav-link${on('relatorio')}" href="meus-relatorios.html">📄 RELATÓRIO DIÁRIO</a>
       <a class="topnav-link${on('demandas')}" href="denuncias.html">📋 CONTROLE DE DEMANDAS</a>
+      ${['admin_geral','admin','admin_pelotao'].includes(nivel) ? `<a class="topnav-link${on('gestaoop')}" href="supervisao-controle.html" data-gestao-op style="color:var(--gold);">🎯 GESTÃO OPERACIONAL</a>` : ''}
       <a class="topnav-link${on('consulta')}" href="painel.html?tab=consulta">📍 CONSULTA</a>
       <div class="topnav-item" id="admTopnavItem" style="display:${isAdmin?'':'none'};">
         <div class="topnav-link${on('adm')}" data-dropdown="ddAdm">⚙ ADM <span class="chev">▾</span></div>
