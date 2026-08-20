@@ -532,10 +532,51 @@ function renderQR(){
       </div>
       <div style="margin-top:10px"><button class="linkbtn" style="color:var(--danger)" onclick="rotacionarQR()">↻ Rotacionar token (invalida o QR antigo)</button></div>`;
 }
-function baixarQR(){
+function _carregarImg(src){
+  return new Promise(res=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=()=>res(null); im.src=src; });
+}
+async function baixarQR(){
   if(!atual||!atual.qr_token) return;
-  const png=qrCanvas(urlPublica(atual),10,4).toDataURL('image/png');
-  const a=document.createElement('a'); a.href=png; a.download=`QR-VTR-${atual.prefixo}.png`;
+  const base=location.href.replace(/[^/]*(\?.*)?$/,'');
+  const qr=qrCanvas(urlPublica(atual),10,4);   // canvas do QR (mesma origem → não "tainta")
+  const [cpe,mamb]=await Promise.all([
+    _carregarImg(base+'assets/escudo-cpe.png'),
+    _carregarImg(base+'assets/brasao-bpmmamb.png')
+  ]);
+
+  const W=860, pad=34, headerH=100, gap=20, qrSize=470, capH=52, crestH=82;
+  const H=pad+headerH+gap+qrSize+gap+capH+pad;
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+  const ctx=cv.getContext('2d');
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+
+  // texto central (Cia / VTR / modelo)
+  const cx=W/2, hy=pad+headerH/2;
+  ctx.fillStyle='#111'; ctx.font='bold 22px Arial';
+  ctx.fillText('3ª Cia PM MAmb — Ficha de Movimentação', cx, hy-26);
+  ctx.fillStyle='#444'; ctx.font='600 17px Arial';
+  ctx.fillText('VTR '+atual.prefixo+(atual.placa?' · '+atual.placa:''), cx, hy+2);
+  ctx.fillStyle='#555'; ctx.font='13px Arial';
+  ctx.fillText((atual.marca_modelo||'')+(atual.gp?' · '+atual.gp:''), cx, hy+26);
+
+  // brasões nas laterais: CPE à esquerda, BPM MAmb à direita
+  const drawCrest=(img,side)=>{ if(!img) return;
+    const h=crestH, w=img.width*(h/img.height), y=pad+(headerH-h)/2, x=(side==='L')?pad:W-pad-w;
+    ctx.drawImage(img,x,y,w,h);
+  };
+  drawCrest(cpe,'L'); drawCrest(mamb,'R');
+
+  // QR
+  const qy=pad+headerH+gap;
+  ctx.drawImage(qr,(W-qrSize)/2,qy,qrSize,qrSize);
+
+  // legenda
+  ctx.fillStyle='#333'; ctx.font='13px Arial';
+  ctx.fillText('Condutor externo: escaneie o QR para registrar a movimentação desta viatura.', cx, qy+qrSize+gap+8);
+  ctx.fillText('Militares cadastrados devem usar o login do painel.', cx, qy+qrSize+gap+28);
+
+  const a=document.createElement('a'); a.href=cv.toDataURL('image/png'); a.download=`QR-VTR-${atual.prefixo}.png`;
   document.body.appendChild(a); a.click(); a.remove();
 }
 function copiarLinkQR(){
