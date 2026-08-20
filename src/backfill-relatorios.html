@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Backfill de Relatórios → Supabase</title>
+<link rel="stylesheet" href="styles/global.css">
+<script src="auth.js"></script>
+<style>
+  body{background:var(--bg-page);color:var(--text-white);font-family:system-ui,Arial,sans-serif}
+  .wrap{max-width:820px;margin:26px auto;padding:0 18px}
+  h1{font-size:20px;font-weight:800}
+  p{font-size:13px;color:var(--text-muted);line-height:1.6}
+  .card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-top:16px}
+  .btn{border:none;border-radius:8px;padding:12px 22px;font-size:13px;font-weight:800;cursor:pointer;background:var(--gold);color:#1a1000}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn.out{background:transparent;border:1px solid var(--border-hover);color:var(--text-muted)}
+  .bar{height:14px;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin:14px 0 6px}
+  .bar > i{display:block;height:100%;background:var(--gold);width:0%;transition:width .2s}
+  .stat{font-size:13px;color:var(--text-muted)}
+  .stat b{color:var(--text-white)}
+  .log{margin-top:14px;max-height:320px;overflow:auto;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-family:ui-monospace,monospace;font-size:11.5px;line-height:1.6}
+  .log .ok{color:var(--success)} .log .err{color:var(--danger)} .log .info{color:var(--text-muted)}
+  .warn{background:var(--gold-bg);border:1px solid var(--gold-border);border-radius:9px;padding:12px 14px;font-size:12.5px;color:var(--gold-light);margin-top:12px}
+  .deny{text-align:center;padding:60px 20px}
+</style>
+</head>
+<body>
+<div class="wrap" id="app" style="display:none">
+  <h1>Backfill de Relatórios → Supabase</h1>
+  <p>Traz os relatórios que já existem na <b>planilha</b> para o <b>Supabase</b>, guardando o vínculo (<code>sheet_id</code>). É <b>idempotente</b> — pode rodar de novo sem duplicar (atualiza pelo <code>sheet_id</code>). Rode uma vez, após executar o <code>db/19_relatorios_fase2.sql</code>.</p>
+
+  <div class="card">
+    <div class="warn">Antes de rodar: confirme que você já executou <b>db/18</b> e <b>db/19</b> no Supabase. Este processo pode levar alguns minutos se houver muitos relatórios.</div>
+    <div style="display:flex;gap:12px;margin-top:14px;flex-wrap:wrap">
+      <button class="btn" id="btn-run" onclick="rodar()">▶ Iniciar backfill</button>
+      <button class="btn out" onclick="location.href='meus-relatorios.html'">Voltar</button>
+    </div>
+    <div class="bar"><i id="bar-fill"></i></div>
+    <div class="stat" id="stat">Pronto.</div>
+    <div class="log" id="log" style="display:none"></div>
+  </div>
+</div>
+
+<div class="deny" id="deny" style="display:none">
+  <h1>Acesso restrito</h1>
+  <p>Esta rotina é só para <b>Admin Geral</b>.</p>
+  <button class="btn out" onclick="location.href='meus-relatorios.html'">Voltar</button>
+</div>
+
+<script>
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxzCS7XHPkn1EvVV5ym_QiAtub3uKVrkXPuwtUNoUhwTIGxUiNm5RZc2i18qEGRqOvJ/exec";
+const S = (typeof sessaoLer === 'function') ? sessaoLer() : null;
+if (!S) location.href = 'index.html';
+const API = (typeof SB_AUTH_URL !== 'undefined') ? SB_AUTH_URL : '';
+const AKEY = (typeof SB_AUTH_KEY !== 'undefined') ? SB_AUTH_KEY : '';
+const H = { apikey:AKEY, Authorization:'Bearer '+AKEY, 'Content-Type':'application/json' };
+
+// só Admin Geral
+if (S && S.nivel_acesso === 'admin_geral'){ document.getElementById('app').style.display=''; }
+else { document.getElementById('deny').style.display=''; }
+
+async function rpc(fn, body){
+  const r = await fetch(`${API}/rest/v1/rpc/${fn}`, { method:'POST', headers:H, body:JSON.stringify(body||{}) });
+  const t = await r.text(); let j; try{ j=t?JSON.parse(t):null; }catch{ j=t; }
+  if(!r.ok) throw new Error((j&&j.message)||('HTTP '+r.status));
+  return j;
+}
+function log(msg, cls){ const el=document.getElementById('log'); el.style.display='block';
+  const d=document.createElement('div'); d.className=cls||'info'; d.textContent=msg; el.appendChild(d); el.scrollTop=el.scrollHeight; }
+function prog(feito,total){ document.getElementById('bar-fill').style.width=(total?Math.round(feito/total*100):0)+'%';
+  document.getElementById('stat').innerHTML=`<b>${feito}</b> de <b>${total}</b> relatórios processados.`; }
+
+async function rodar(){
+  const btn=document.getElementById('btn-run'); btn.disabled=true; btn.textContent='Rodando…';
+  document.getElementById('log').innerHTML=''; document.getElementById('log').style.display='block';
+  let okN=0, errN=0;
+  try{
+    log('Buscando a lista de todos os relatórios na planilha…','info');
+    const mat = encodeURIComponent(S.matricula||'0000000');
+    const rlist = await fetch(`${SCRIPT_URL}?action=meusRelatorios&matricula=${mat}&todos=true`);
+    const dlist = await rlist.json();
+    const lista = (dlist && dlist.relatorios) ? dlist.relatorios : [];
+    if(!lista.length){ log('Nenhum relatório encontrado na planilha.','err'); btn.disabled=false; btn.textContent='▶ Iniciar backfill'; return; }
+    log(`Encontrados ${lista.length} relatórios. Importando…`,'info');
+    const total=lista.length;
+    for(let i=0;i<total;i++){
+      const id = lista[i]['ID Relatório'];
+      try{
+        const rc = await fetch(`${SCRIPT_URL}?action=buscarRelatorioCompleto&id=${encodeURIComponent(id)}`);
+        const dc = await rc.json();
+        if(dc.result!=='success'){ throw new Error(dc.result||'sem sucesso'); }
+        await rpc('relatorio_backfill', { p_token:S.token, p_sheet_id:id, p_bloco1:dc.bloco1||{}, p_categorias:dc.categorias||[] });
+        okN++; if(i%10===0 || i===total-1) log(`✔ ${id}`,'ok');
+      }catch(e){ errN++; log(`x ${id}: ${e.message}`,'err'); }
+      prog(i+1,total);
+    }
+    log(`Concluído: ${okN} importados, ${errN} com erro.`, errN?'err':'ok');
+    document.getElementById('stat').innerHTML=`✅ <b>${okN}</b> importados${errN?`, <b>${errN}</b> com erro`:''}.`;
+  }catch(e){ log('Falha geral: '+e.message,'err'); }
+  btn.disabled=false; btn.textContent='▶ Rodar de novo';
+}
+</script>
+</body>
+</html>
