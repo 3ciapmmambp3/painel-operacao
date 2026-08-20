@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<script>
+(function(){
+  var saved;
+  try{ saved=localStorage.getItem('poe_theme'); }catch(e){}
+  if(!saved) saved=window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+})();
+</script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Supervisão e Controle — 3ª Cia PM MAmb</title>
+  <link rel="stylesheet" href="styles/global.css">
+  <script src="auth.js"></script>
+  <style>
+    body{display:flex;flex-direction:column;min-height:100vh;}
+    .sc-wrap{width:100%;max-width:1160px;margin:0 auto;padding:20px 22px 44px;flex:1;}
+    .sc-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px;}
+    .sc-head .sc-badge{width:46px;height:46px;border-radius:11px;display:grid;place-items:center;background:var(--bg-dark);border:1px solid var(--gold-border);font-size:22px;flex-shrink:0;}
+    .sc-head h1{font-size:19px;color:var(--text-white);letter-spacing:.4px;}
+    .sc-head .sub{font-size:12px;color:var(--text-muted);margin-top:2px;}
+    .sc-head .right{margin-left:auto;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+    .sc-head .stamp{font-size:12px;color:var(--text-hint);text-align:right;}
+    .sc-head .stamp b{display:block;color:var(--text-muted);}
+
+    .sc-filtros{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;background:var(--bg-card);border:1px solid var(--border);border-radius:9px;padding:12px 14px;margin-bottom:16px;}
+    .sc-filtros .fg{display:flex;flex-direction:column;gap:5px;}
+    .sc-filtros label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-hint);font-weight:700;}
+    .sc-filtros select{padding:7px 10px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:6px;color:var(--text-white);font-size:12px;outline:none;min-width:170px;}
+    .sc-filtros select:focus{border-color:var(--gold);}
+    .sc-filtros .lim{margin-left:auto;}
+
+    .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px;}
+    .kpi{background:var(--bg-card);border:1px solid var(--border);border-top:3px solid var(--gold);border-radius:8px;padding:14px 16px;}
+    .kpi.blue{border-top-color:var(--info);}.kpi.green{border-top-color:var(--success);}.kpi.purple{border-top-color:var(--purple);}
+    .kpi .lab{font-size:10px;color:var(--text-hint);text-transform:uppercase;letter-spacing:.5px;}
+    .kpi .val{font-size:30px;font-weight:800;color:var(--text-white);line-height:1;margin-top:6px;}
+    .kpi .val small{font-size:12px;font-weight:400;color:var(--text-hint);}
+
+    .eq-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;}
+    .eq-card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:15px 16px;display:flex;flex-direction:column;gap:9px;}
+    .eq-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:9px;}
+    .eq-num{font-size:14px;font-weight:800;color:var(--gold-light);letter-spacing:.3px;}
+    .eq-tag{font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.3px;}
+    .eq-tag.principal{background:var(--gold-bg);color:var(--gold);border:1px solid var(--gold-border);}
+    .eq-tag.apoio{background:var(--info-bg);color:var(--info);border:1px solid rgba(66,165,245,.3);}
+    .eq-tag.gp{background:rgba(206,147,216,.12);color:var(--purple);border:1px solid rgba(206,147,216,.25);margin-left:auto;}
+    .eq-vtr{font-size:13px;color:var(--text-white);font-weight:700;}
+    .eq-vtr small{color:var(--text-muted);font-weight:400;font-size:11px;}
+    .eq-line{font-size:12.5px;color:#ccc;}
+    .eq-line b{color:var(--text-muted);font-weight:600;}
+    .eq-line .none{color:var(--text-hint);font-style:italic;}
+    .eq-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px;}
+    .eq-meta .m{font-size:10.5px;padding:2px 8px;border-radius:5px;background:var(--bg-dark);border:1px solid var(--border);color:var(--text-muted);}
+    .eq-meta .m.op{color:var(--gold-light);border-color:var(--gold-border);}
+    .eq-munis{display:flex;gap:5px;flex-wrap:wrap;}
+    .eq-munis .mc{font-size:10.5px;padding:2px 8px;border-radius:20px;background:var(--gold-bg);color:var(--gold);border:1px solid var(--gold-border);}
+
+    .sc-msg{padding:44px 20px;text-align:center;color:var(--text-muted);font-size:14px;}
+    .sc-msg.err{color:var(--danger);}
+    .no-access{max-width:520px;margin:60px auto;text-align:center;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:34px;}
+    .no-access h2{color:var(--gold);font-size:18px;margin-bottom:8px;}
+    .no-access p{color:var(--text-muted);font-size:13px;line-height:1.6;}
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <div class="header-shields"><img src="assets/escudo-pmmg.png" alt="PMMG" onerror="this.style.display='none'"><img src="assets/escudo-cpe.png" alt="CPE" onerror="this.style.display='none'"><img src="assets/brasao-bpmmamb.png" alt="BPM MAMB" onerror="this.style.display='none'"></div><div class="header-div"></div>
+    <div class="header-title"><div class="header-kicker">CPE · BPM MAmb · 3ª Cia PM MAmb</div>
+      <h1>PAINEL DE GESTÃO OPERACIONAL</h1>
+      <p>3ª Cia PM MAmb — Acompanhamento 2026</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <div id="user-info" style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);cursor:pointer;padding:5px 10px;border:1px solid var(--border);border-radius:5px;" onclick="window.location.href='perfil.html'" title="Meu Perfil">
+      <span id="user-avatar" style="width:22px;height:22px;border-radius:50%;background:var(--gold);color:#1a1000;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">?</span>
+      <span id="user-nome">—</span>
+      <span id="user-badge" style="font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;"></span>
+    </div>
+    <button class="btn-outline" onclick="localStorage.removeItem('poe_sessao_v2');sessionStorage.removeItem('poe_sessao_v2');localStorage.removeItem('poe_sessao');window.location.href='index.html'">Sair</button>
+  </div>
+</header>
+
+<nav class="topnav" id="topnav">
+  <a class="topnav-link" href="painel.html">🏠 INÍCIO</a>
+  <div class="topnav-item">
+    <div class="topnav-link" data-dropdown="ddOperacao">🛡 OPERAÇÃO <span class="chev">▾</span></div>
+    <div class="topnav-dropdown" id="ddOperacao">
+      <a href="painel.html?tab=operacoes">🛡 OP POE</a>
+      <a href="painel.html?tab=gdo-rural">🌿 OP GDO Rural</a>
+    </div>
+  </div>
+  <a class="topnav-link" href="analise-criminal.html" style="color:#ef5350;">🔴 ANÁLISE CRIMINAL</a>
+  <a class="topnav-link" href="meus-relatorios.html">📄 RELATÓRIO DIÁRIO</a>
+  <a class="topnav-link" href="denuncias.html">📋 CONTROLE DE DEMANDAS</a>
+  <a class="topnav-link active" href="supervisao-controle.html" style="color:var(--gold);">🎯 GESTÃO OPERACIONAL</a>
+  <a class="topnav-link" href="painel.html?tab=consulta">📍 CONSULTA</a>
+  <div class="topnav-item" id="admTopnavItem" style="display:none;">
+    <div class="topnav-link" data-dropdown="ddAdm">⚙ ADM <span class="chev">▾</span></div>
+    <div class="topnav-dropdown" id="ddAdm">
+      <a href="painel.html?tab=relatorios">📋 Relatórios</a>
+      <a href="painel.html?tab=importacao" id="admLinkImportacao" style="display:none;">📥 Importação</a>
+      <a href="admin.html" id="admLinkAdministracao" style="display:none;">⚙️ Administração</a>
+    </div>
+  </div>
+</nav>
+
+<div class="sc-wrap" id="sc-conteudo">
+  <div class="sc-head">
+    <div class="sc-badge">🎯</div>
+    <div>
+      <h1>Supervisão e Controle</h1>
+      <div class="sub">Equipes em serviço no dia — fonte: chamadas do TTA</div>
+    </div>
+    <div class="right">
+      <div class="stamp"><b id="hoje-data">—</b><span id="hoje-dia">—</span></div>
+      <button class="btn-outline btn-sm" onclick="carregar()">↻ Atualizar</button>
+    </div>
+  </div>
+
+  <div class="sc-filtros" id="sc-filtros" style="display:none;">
+    <div class="fg"><label>Grupamento</label><select id="f-gp" onchange="render()"><option value="">Todos</option></select></div>
+    <div class="fg"><label>Pelotão</label><select id="f-pel" onchange="render()"><option value="">Todos</option></select></div>
+    <button class="btn-outline btn-sm lim" onclick="limparFiltros()">✕ Limpar filtros</button>
+  </div>
+
+  <div class="kpis" id="kpis" style="display:none;">
+    <div class="kpi"><div class="lab">Equipes em serviço</div><div class="val" id="k-eq">0</div></div>
+    <div class="kpi blue"><div class="lab">Viaturas empregadas</div><div class="val" id="k-vtr">0</div></div>
+    <div class="kpi green"><div class="lab">Militares em serviço</div><div class="val" id="k-mil">0</div></div>
+    <div class="kpi purple"><div class="lab">Municípios cobertos</div><div class="val" id="k-mun">0</div></div>
+  </div>
+
+  <div id="sc-lista"><div class="sc-msg"><span class="spinner"></span> Carregando equipes do dia…</div></div>
+</div>
+
+<script>
+/* ── sessão / API ── */
+const S = (function(){
+  const raw = sessionStorage.getItem('poe_sessao_v2');
+  if(!raw){ location.href='index.html'; return null; }
+  try{ const s=JSON.parse(raw); if(!s||!s.id){ location.href='index.html'; return null; } return s; }
+  catch(e){ location.href='index.html'; return null; }
+})();
+const API  = (typeof SB_AUTH_URL!=='undefined')?SB_AUTH_URL:'';
+const AKEY = (typeof SB_AUTH_KEY!=='undefined')?SB_AUTH_KEY:'';
+const H = { apikey:AKEY, Authorization:'Bearer '+AKEY, 'Content-Type':'application/json' };
+const NIVEIS_OK = ['admin_geral','admin','admin_pelotao'];
+
+let EQUIPES = [];    // itens achatados (equipe + dados da chamada)
+let VMAP = {};       // prefixo -> {placa, marca_modelo}
+
+async function rpc(fn, body){
+  const r = await fetch(`${API}/rest/v1/rpc/${fn}`, { method:'POST', headers:H, body:JSON.stringify(body||{}) });
+  const t = await r.text(); let j; try{ j=t?JSON.parse(t):null; }catch{ j=t; }
+  if(!r.ok) throw new Error((j&&j.message)||('HTTP '+r.status));
+  return j;
+}
+function fmtMil(m){ if(!m) return null; return ((m.pg?m.pg+' ':'')+(m.nome||m.matricula||'')).trim(); }
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function pelDe(gc){ const m=(gc||'').match(/(\d+)\s*[ºo]?\s*PEL/i); return m?(m[1]+' PEL'):''; }
+
+/* preenche cabeçalho do usuário + reveal ADM */
+(function initUser(){
+  document.getElementById('user-nome').textContent = S.nome || S.matricula;
+  const ini=(S.nome||'U').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+  document.getElementById('user-avatar').textContent = ini;
+  const badge=document.getElementById('user-badge'); const nv=S.nivel_acesso;
+  const map={admin_geral:['ADMIN GERAL','rgba(155,138,92,.2)','var(--gold)','var(--gold-border)'],admin:['ADMIN','rgba(155,138,92,.2)','var(--gold)','var(--gold-border)'],admin_pelotao:['ADMIN PELOTÃO','rgba(255,152,0,.15)','#ffa726','rgba(255,152,0,.4)'],admin_gp:['ADMIN GP','rgba(255,152,0,.15)','#ffa726','rgba(255,152,0,.4)']};
+  const info=map[nv]||['OPERACIONAL','rgba(66,165,245,.15)','var(--info)','rgba(66,165,245,.3)'];
+  badge.textContent=info[0]; badge.style.cssText=`font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;background:${info[1]};color:${info[2]};border:1px solid ${info[3]};`;
+  const admItem=document.getElementById('admTopnavItem');
+  if(admItem && ['admin_geral','admin','admin_pelotao','admin_gp'].includes(nv)) admItem.style.display='';
+  if(nv==='admin_geral'){ const i=document.getElementById('admLinkImportacao'); if(i)i.style.display=''; const a=document.getElementById('admLinkAdministracao'); if(a)a.style.display=''; }
+})();
+
+/* data de hoje */
+(function(){ const d=new Date(); const dias=['domingo','segunda','terça','quarta','quinta','sexta','sábado'];
+  document.getElementById('hoje-data').textContent=d.toLocaleDateString('pt-BR');
+  document.getElementById('hoje-dia').textContent=dias[d.getDay()]; })();
+
+/* dropdowns da barra */
+document.querySelectorAll('.topnav-link[data-dropdown]').forEach(link=>{
+  link.addEventListener('click',e=>{ e.stopPropagation(); const dd=document.getElementById(link.dataset.dropdown);
+    const ab=dd.classList.contains('open'); document.querySelectorAll('.topnav-dropdown.open').forEach(d=>d.classList.remove('open')); if(!ab)dd.classList.add('open'); });
+});
+document.addEventListener('click',()=>document.querySelectorAll('.topnav-dropdown.open').forEach(d=>d.classList.remove('open')));
+
+/* ── carga ── */
+async function carregar(){
+  // trava de acesso (o servidor também barra na RPC)
+  if(!NIVEIS_OK.includes(S.nivel_acesso)){
+    document.getElementById('sc-conteudo').innerHTML =
+      '<div class="no-access"><h2>Acesso restrito</h2><p>A Supervisão e Controle é exclusiva de Admin Geral, Admin e Admin de Pelotão. Fale com o Comando se precisar de acesso.</p></div>';
+    return;
+  }
+  const lista=document.getElementById('sc-lista');
+  lista.innerHTML='<div class="sc-msg"><span class="spinner"></span> Carregando equipes do dia…</div>';
+  document.getElementById('kpis').style.display='none';
+  document.getElementById('sc-filtros').style.display='none';
+  try{
+    const chamadas = await rpc('supervisao_equipes_hoje', { p_token:S.token }) || [];
+    // enriquecer viaturas (placa/modelo) — best-effort
+    try{
+      const rv=await fetch(`${API}/rest/v1/viaturas?select=prefixo,placa,marca_modelo&ativo=eq.true`,{headers:H});
+      if(rv.ok){ (await rv.json()).forEach(v=>{ VMAP[v.prefixo]={placa:v.placa,modelo:v.marca_modelo}; }); }
+    }catch(e){}
+    // achatar: cada equipe da cada chamada vira um item
+    EQUIPES=[];
+    chamadas.forEach(c=>{
+      (c.equipes||[]).forEach(eq=>{
+        EQUIPES.push(Object.assign({}, eq, {
+          gp_responsavel: c.gp_responsavel,
+          grupamento_completo: c.grupamento_completo,
+          pelotao: pelDe(c.grupamento_completo),
+          inicio_turno: c.inicio_turno, final_turno: c.final_turno,
+          tema_assunto: c.tema_assunto
+        }));
+      });
+    });
+    montarFiltros();
+    render();
+  }catch(e){
+    lista.innerHTML='<div class="sc-msg err">Não foi possível carregar: '+esc(e.message)+
+      '<br><span style="color:var(--text-hint);font-size:12px">Se a mensagem for de função inexistente, rode <b>db/21_supervisao.sql</b> no Supabase.</span></div>';
+  }
+}
+
+function montarFiltros(){
+  const gps=[...new Set(EQUIPES.map(e=>e.gp_responsavel).filter(Boolean))].sort();
+  const pels=[...new Set(EQUIPES.map(e=>e.pelotao).filter(Boolean))].sort();
+  const selGp=document.getElementById('f-gp'), selPel=document.getElementById('f-pel');
+  selGp.innerHTML='<option value="">Todos</option>'+gps.map(g=>`<option>${esc(g)}</option>`).join('');
+  selPel.innerHTML='<option value="">Todos</option>'+pels.map(p=>`<option>${esc(p)}</option>`).join('');
+  document.getElementById('sc-filtros').style.display = EQUIPES.length ? 'flex' : 'none';
+}
+function limparFiltros(){ document.getElementById('f-gp').value=''; document.getElementById('f-pel').value=''; render(); }
+
+function render(){
+  const fgp=document.getElementById('f-gp').value, fpel=document.getElementById('f-pel').value;
+  const itens=EQUIPES.filter(e=>(!fgp||e.gp_responsavel===fgp)&&(!fpel||e.pelotao===fpel));
+
+  // KPIs (refletem o filtro atual)
+  const vtr=new Set(), mil=new Set(), mun=new Set();
+  itens.forEach(e=>{
+    if(e.prefixo_viatura) vtr.add(e.prefixo_viatura);
+    [e.comandante,e.motorista,...(e.patrulheiros||[])].forEach(m=>{ if(m&&m.matricula) mil.add(m.matricula); });
+    (e.municipios||[]).forEach(m=>mun.add(m));
+  });
+  document.getElementById('k-eq').textContent=itens.length;
+  document.getElementById('k-vtr').textContent=vtr.size;
+  document.getElementById('k-mil').textContent=mil.size;
+  document.getElementById('k-mun').textContent=mun.size;
+  document.getElementById('kpis').style.display = EQUIPES.length ? 'grid' : 'none';
+
+  const lista=document.getElementById('sc-lista');
+  if(!EQUIPES.length){ lista.innerHTML='<div class="sc-msg">Nenhuma chamada de TTA registrada hoje ainda.</div>'; return; }
+  if(!itens.length){ lista.innerHTML='<div class="sc-msg">Nenhuma equipe para o filtro selecionado.</div>'; return; }
+
+  lista.innerHTML='<div class="eq-grid">'+itens.map(e=>{
+    const v=VMAP[e.prefixo_viatura]||{};
+    const vtrExtra=[v.placa,v.modelo].filter(Boolean).join(' · ');
+    const apoio=/apoi/i.test(e.vinculo||'');
+    const cmt=fmtMil(e.comandante), mot=fmtMil(e.motorista);
+    const pats=(e.patrulheiros||[]).map(fmtMil).filter(Boolean);
+    const turno=[e.inicio_turno,e.final_turno].filter(Boolean).join(' às ');
+    return `<div class="eq-card">
+      <div class="eq-top">
+        <span class="eq-num">Equipe ${esc(e.ordem||'')}</span>
+        <span class="eq-tag ${apoio?'apoio':'principal'}">${apoio?'apoio':'principal'}</span>
+        ${e.gp_responsavel?`<span class="eq-tag gp">${esc(e.gp_responsavel)}${e.pelotao?' · '+esc(e.pelotao):''}</span>`:''}
+      </div>
+      <div class="eq-vtr">🚔 VTR ${esc(e.prefixo_viatura||'—')}${vtrExtra?` <small>${esc(vtrExtra)}</small>`:''}</div>
+      <div class="eq-line"><b>Cmt:</b> ${cmt?esc(cmt):'<span class="none">—</span>'}</div>
+      <div class="eq-line"><b>Motorista:</b> ${mot?esc(mot):'<span class="none">—</span>'}</div>
+      <div class="eq-line"><b>Patrulheiros:</b> ${pats.length?esc(pats.join(', ')):'<span class="none">nenhum</span>'}</div>
+      <div class="eq-meta">
+        ${e.tipo_patrulha?`<span class="m">${esc(e.tipo_patrulha)}</span>`:''}
+        ${turno?`<span class="m">⏱ ${esc(turno)}</span>`:''}
+        ${e.operacao?`<span class="m op">🛡 ${esc(e.operacao)}</span>`:''}
+      </div>
+      ${(e.municipios||[]).length?`<div class="eq-munis">${e.municipios.map(m=>`<span class="mc">${esc(m)}</span>`).join('')}</div>`:''}
+    </div>`;
+  }).join('')+'</div>';
+}
+
+carregar();
+</script>
+</body>
+</html>
