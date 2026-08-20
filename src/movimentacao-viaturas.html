@@ -367,6 +367,12 @@
 <div class="toast" id="toast"></div>
 <datalist id="militares-dl"></datalist>
 
+<!-- espelho da Ficha na planilha do Google (Apps Script) — POST fire-and-forget -->
+<iframe name="mov_sheet_iframe" id="mov_sheet_iframe" style="display:none"></iframe>
+<form id="mov-sheet-form" method="POST" target="mov_sheet_iframe" style="display:none">
+  <input type="hidden" name="payload" id="mov-sheet-payload">
+</form>
+
 <script>
 /* ── sessão / API ────────────────────────────────────────────────── */
 const S = (typeof sessaoLer === 'function') ? sessaoLer() : null;
@@ -381,6 +387,21 @@ async function rpc(fn, body){
   return j;
 }
 function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+
+/* ── espelho na planilha do Google (Apps Script Web App) ─────────────
+   Cole aqui a URL /exec do Web App publicado (ver db/APPS-SCRIPT-mov-ficha.md).
+   Enquanto for COLE_AQUI, o espelho é ignorado silenciosamente — a ficha
+   continua salva no Supabase (fonte da verdade). */
+const MOV_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxdGyyeOcrDyEhkLy4kaYkqkeWuYXcZh679gUGrzB98Nb4KQafz0REABUuAdQfqXCpdyg/exec";
+function espelharFichaNaPlanilha(row){
+  try{
+    if (!MOV_SCRIPT_URL || MOV_SCRIPT_URL.indexOf('COLE_AQUI') !== -1) return false;
+    document.getElementById('mov-sheet-form').setAttribute('action', MOV_SCRIPT_URL);
+    document.getElementById('mov-sheet-payload').value = JSON.stringify(row);
+    document.getElementById('mov-sheet-form').submit();
+    return true;
+  }catch(e){ console.warn('Espelho da planilha falhou (ignorado):', e); return false; }
+}
 function foco(id,msg){ toast(msg); const el=document.getElementById(id); if(el){ el.scrollIntoView({behavior:'smooth',block:'center'}); setTimeout(()=>{try{el.focus()}catch(e){}},250); } }
 
 // Amarra o término ao início: impede escolher/manter data-hora anterior à do início.
@@ -970,9 +991,10 @@ async function salvar(){
 
   try{
     const row = await rpc('mov_viatura_criar', { p_token:S.token, p_dados:payload });
+    const espelhou = espelharFichaNaPlanilha(row);
     document.getElementById('form-wrap').style.display='none';
     const km = row && row.km_rodados!=null ? ` · ${(+row.km_rodados).toLocaleString('pt-BR')} km rodados` : '';
-    document.getElementById('ok-msg').textContent = `Viatura ${base.prefixo}${km}. Sincronizando com a planilha do Google.`;
+    document.getElementById('ok-msg').textContent = `Viatura ${base.prefixo}${km}.` + (espelhou ? ' Sincronizado com a planilha do Google.' : '');
     document.getElementById('ok-screen').classList.add('show');
     window.scrollTo(0,0);
   }catch(e){ toast('Erro ao salvar: '+e.message); btn.disabled=false; btn.textContent='✔ Salvar ficha'; }
