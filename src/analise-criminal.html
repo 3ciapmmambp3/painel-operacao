@@ -1279,6 +1279,14 @@ document.addEventListener('click', () => {
         <label>Grupamento</label>
         <select id="cr-gp" onchange="renderCrimes()" style="font-size:11px;"><option value="">Todos</option></select>
       </div>
+      <div class="fg">
+        <label>Unidade Área</label>
+        <select id="cr-unidarea" onchange="renderCrimes()" style="font-size:11px;"><option value="">Todas</option></select>
+      </div>
+      <div class="fg">
+        <label>UEOp</label>
+        <select id="cr-ueop" onchange="renderCrimes()" style="font-size:11px;"><option value="">Todas</option></select>
+      </div>
       <div class="fg" style="max-width:200px;">
         <label>Buscar (Nº BO / município)</label>
         <input type="text" id="cr-busca" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this);renderCrimes()" maxlength="18">
@@ -4578,7 +4586,7 @@ function limparFiltrosDash(){
 function limparFiltrosCrimes(){
   mesDdClrAll('cr');
   pelDdClrAll('cr');
-  ['cr-indicador','cr-mun','cr-loc','cr-audit'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  ['cr-indicador','cr-mun','cr-loc','cr-audit','cr-unidarea','cr-ueop'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   document.getElementById('cr-busca').value='';
   const cxB = document.getElementById('cx-busca'); if(cxB) cxB.value='';
   const vtB = document.getElementById('vt-busca'); if(vtB) vtB.value='';
@@ -6351,6 +6359,21 @@ function renderCrimes(){
   const gpF   = document.getElementById('cr-gp')?.value || '';
   const pelSel = getPelDd('cr');
   const busca = norm(document.getElementById('cr-busca').value);
+  const fUnidArea = document.getElementById('cr-unidarea')?.value || '';
+  const fUeop     = document.getElementById('cr-ueop')?.value || '';
+  /* popula os filtros Unidade Área / UEOp uma vez, a partir de todas as ocorrências */
+  (function(){
+    const selUA = document.getElementById('cr-unidarea');
+    if(selUA && selUA.options.length <= 1 && dadosCrimes.length){
+      const vs = [...new Set(dadosCrimes.map(d=>d.natureza).filter(Boolean))].sort();
+      selUA.innerHTML = '<option value="">Todas</option>' + vs.map(v=>`<option value="${v}">${v}</option>`).join('');
+    }
+    const selUE = document.getElementById('cr-ueop');
+    if(selUE && selUE.options.length <= 1 && dadosCrimes.length){
+      const vs = [...new Set(dadosCrimes.map(d=>d.ueop).filter(Boolean))].sort();
+      selUE.innerHTML = '<option value="">Todas</option>' + vs.map(v=>`<option value="${v}">${v}</option>`).join('');
+    }
+  })();
 
   let dados = _mesCr.length>1 ? getDadosFiltradosMultiMes(_mesCr, ind, mun, '', loc, audit) : getDadosFiltrados(mes, ind, mun, '', loc, audit);
   /* Filtra por grupamento — compara gpResp (col I) */
@@ -6360,6 +6383,8 @@ function renderCrimes(){
   if(busca)  dados = dados.filter(d =>
     norm(d.bo||d.rat).includes(busca) || norm(d.municipio).includes(busca)
   );
+  if(fUnidArea) dados = dados.filter(d => (d.natureza||'') === fUnidArea);
+  if(fUeop)     dados = dados.filter(d => (d.ueop||'')     === fUeop);
 
   /* Alertas pendentes */
   const pendentes = dados.filter(d=>d._auditoriaPendente);
@@ -10822,6 +10847,7 @@ function abrirAuditoria(bo){
     { l:'Pelotão',     v: pel !== 99 ? pel+'º PEL' : '—' },
     { l:'Localização', v: crime?.localizacao || '—' },
     { l:'Unid. Área',  v: crime?.natureza || '—' },
+    { l:'UEOp',        v: crime?.ueop || '—' },
     { l:'Lat / Lng',   v: (crime?.lat && crime?.lng) ? `${crime.lat.toFixed(5)} / ${crime.lng.toFixed(5)}` : 'Sem coordenadas' },
   ].map(f=>`
     <div style="background:#2d2d2d;border:1px solid #3a3a3a;border-radius:5px;padding:7px 10px;">
