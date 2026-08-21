@@ -429,6 +429,8 @@ window.addEventListener('load', function(){
     <div id="inicio-data" style="font-size:12px;color:var(--text-muted);"></div>
   </div>
 
+  <div id="inicio-avisos" style="margin-bottom:18px;"></div>
+
   <div id="inicio-bloco-poe">
     <div class="empty-state">⏳ Dados ainda não carregados. Clique em Atualizar.</div>
   </div>
@@ -2447,6 +2449,7 @@ function _getUserGP(){
 window.addEventListener('DOMContentLoaded', () => {
   sessaoPainel = lerSessao();
   if (!sessaoPainel) return;
+  carregarAvisosInicio();   /* avisos personalizados da Início (missão / inteligência / ficha pendente) */
   document.getElementById('user-nome').textContent = sessaoPainel.nome || sessaoPainel.numeroPolicia;
   const initials = (sessaoPainel.nome||'U').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
   document.getElementById('user-avatar').textContent = initials;
@@ -5758,6 +5761,70 @@ function _relSecaoCriminal(mesNome, mesesSel, mesIdx, pelF, gpF){
 // ---------- Aba INÍCIO: reaproveita _relSecaoPOE / _relSecaoGDO / _relSecaoCriminal ----------
 // Não recalcula nada — só chama as mesmas funções que a aba "Relatórios" já
 // usa e testa, com o mês atual e o escopo (Pelotão/GP) do usuário logado.
+/* ── Avisos personalizados da Início: missão designada, inteligência da região
+      e ficha de movimentação pendente (motorista). Clicáveis. ── */
+async function carregarAvisosInicio(){
+  const box = document.getElementById('inicio-avisos');
+  if(!box || !sessaoPainel) return;
+  const mat = (sessaoPainel.numeroPolicia||'').replace(/\D/g,'');
+  const lot = (sessaoPainel.lotacao||'').trim();
+  const H = { apikey: SB_KEY, Authorization: 'Bearer '+SB_KEY };
+  const normS = s => (s||'').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim();
+  /* assinatura do GP: N GP + M PEL + último segmento (município) — robusta a variações */
+  const gpSig = s => { const u=normS(s); const g=u.match(/(\d+)\s*GP/); const p=u.match(/(\d+)\s*PEL/); const last=(u.split('/').pop()||'').trim(); return (g?g[1]:'')+'G'+(p?p[1]:'')+'P'+last; };
+  const meuSig = lot ? gpSig(lot) : '';
+  const avisos = [];
+  try {
+    /* 1) Ficha de movimentação de viatura pendente (motorista) */
+    if(mat){
+      const r = await fetch(`${SB_URL}/rest/v1/mov_pendencias?select=prefixo&atendida=eq.false&motorista_matricula=eq.${mat}`, {headers:H});
+      if(r.ok){ const pend = await r.json();
+        if(pend.length){
+          const prefs = [...new Set(pend.map(p=>p.prefixo).filter(Boolean))];
+          avisos.push({ic:'🚨', txt:`Você tem <b>${pend.length} ficha(s) de movimentação de viatura pendente(s)</b>${prefs.length?` — VTR ${prefs.join(', ')}`:''}`, lk:'movimentacao-viaturas.html', lkTxt:'Preencher →'});
+        }
+      }
+    }
+    /* 2) Missão designada ao usuário (militares[].numeroPolicia) */
+    if(mat){
+      const r = await fetch(`${SB_URL}/rest/v1/missoes?select=id,titulo,militares,status`, {headers:H});
+      if(r.ok){ const miss = await r.json();
+        const minhas = miss.filter(m => Array.isArray(m.militares)
+          && m.militares.some(x => (String(x.numeroPolicia||'').replace(/\D/g,'')) === mat)
+          && !['concluida','concluído','concluido','encerrada','encerrado'].includes(String(m.status||'').toLowerCase()));
+        if(minhas.length){
+          const t = minhas.map(m=>m.titulo).filter(Boolean).slice(0,2).join(', ');
+          avisos.push({ic:'🎯', txt:`Você tem <b>${minhas.length} missão(ões)</b> designada(s) a você${t?`: ${t}`:''}`, lk:'analise-criminal.html', lkTxt:'Ver →', sub:'missoes'});
+        }
+      }
+    }
+    /* 3) Inteligência cadastrada para a região (GP) do usuário */
+    if(meuSig){
+      const r = await fetch(`${SB_URL}/rest/v1/fichas_intel?select=id,gps_atuacao,status_ficha`, {headers:H});
+      if(r.ok){ const fichas = await r.json();
+        const daRegiao = fichas.filter(f => String(f.status_ficha||'')!=='encerrado'
+          && Array.isArray(f.gps_atuacao) && f.gps_atuacao.some(g => gpSig(g)===meuSig));
+        if(daRegiao.length){
+          avisos.push({ic:'🕵', txt:`Há <b>${daRegiao.length} ficha(s) de inteligência</b> cadastrada(s) para a sua região`, lk:'analise-criminal.html', lkTxt:'Ver →', sub:'inteligencia'});
+        }
+      }
+    }
+  } catch(e){ console.warn('[avisos-inicio]', e); }
+
+  if(!avisos.length){ box.innerHTML=''; return; }
+  box.innerHTML = `<div style="border:1px solid var(--gold-border);border-radius:11px;overflow:hidden;background:linear-gradient(180deg,var(--gold-bg),transparent);">`
+    + avisos.map(a => {
+        const onclk = a.sub ? ` onclick="try{sessionStorage.setItem('ac_abrir_subtab','${a.sub}')}catch(e){}"` : '';
+        return `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;color:var(--text-white);">
+          <span style="font-size:17px;flex-shrink:0;">${a.ic}</span>
+          <span style="flex:1;min-width:0;">${a.txt}</span>
+          <a href="${a.lk}"${onclk} style="color:var(--gold);font-weight:700;font-size:12px;white-space:nowrap;text-decoration:none;">${a.lkTxt}</a>
+        </div>`;
+      }).join('')
+    + `</div>`;
+  box.querySelector('div').lastElementChild.style.borderBottom='none';
+}
+
 function initInicio(){
   const hora = new Date().getHours();
   const saud = hora < 12 ? 'Bom dia' : (hora < 18 ? 'Boa tarde' : 'Boa noite');
