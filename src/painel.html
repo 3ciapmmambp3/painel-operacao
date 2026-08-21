@@ -5776,6 +5776,12 @@ async function carregarAvisosInicio(){
     lotEf = '1 GP / 1 PEL / 3 CIA PM MAMB / GOVERNADOR VALADARES';
   }
   const meuGp = (typeof gpDoColk==='function') ? gpDoColk(lotEf) : '';
+  /* Visão GERAL da Cia (vê inteligência de TODOS os grupamentos):
+     Admin Geral, função Aux P2 (inteligência) ou CMT CIA. */
+  const _fx = (sessaoPainel.funcao||'').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  const veTudo = (sessaoPainel.nivel_acesso === 'admin_geral')
+    || /AUX\s*P?\s*2/.test(_fx)
+    || (/(CMT|COMANDANTE)/.test(_fx) && /\bCIA\b/.test(_fx));
   const TC  = {homicidio:'Homicídio',tentativa_homicidio:'Tentativa de homicídio',latrocinio:'Latrocínio',feminicidio:'Feminicídio',roubo:'Roubo',furto:'Furto',trafico:'Tráfico',porte_arma:'Porte de arma',cvpa:'CVPA',cvpe:'CVPE',lesao_corporal:'Lesão corporal',estupro:'Estupro',sequestro:'Sequestro',extorsao:'Extorsão',milicia:'Milícia',outros:'Outros'};
   const PR  = {baixa:'Baixa',media:'Média',alta:'Alta',critica:'Crítica'};
   const PRC = {baixa:'#66bb6a',media:'#ffc107',alta:'#ff9800',critica:'#ef5350'};
@@ -5808,12 +5814,13 @@ async function carregarAvisosInicio(){
       }
     }
     /* 3) Inteligência ATIVA da região (GP) — resumo de classificação p/ atiçar a curiosidade */
-    if(meuGp){
+    if(veTudo || meuGp){
       const ST_OK = ['monitoramento','em_analise','confirmado','em_operacao'];
+      const gpJs = veTudo ? '' : `;sessionStorage.setItem('ac_abrir_gp','${_esc(meuGp)}')`;
       const r = await fetch(`${SB_URL}/rest/v1/fichas_intel?select=id,gps_atuacao,status_ficha,tipo_criminal,prioridade,data_fato,rat,municipio`, {headers:H});
       if(r.ok){ const fichas = await r.json();
-        const daRegiao = fichas.filter(f => ST_OK.includes(String(f.status_ficha||''))
-          && Array.isArray(f.gps_atuacao) && f.gps_atuacao.some(g => gpDoColk(g)===meuGp));
+        const ativas = fichas.filter(f => ST_OK.includes(String(f.status_ficha||'')));
+        const daRegiao = veTudo ? ativas : ativas.filter(f => Array.isArray(f.gps_atuacao) && f.gps_atuacao.some(g => gpDoColk(g)===meuGp));
         if(daRegiao.length){
           const teasers = daRegiao.slice(0,3).map(f => {
             const mun = Array.isArray(f.municipio)?f.municipio.join(', '):(f.municipio||'');
@@ -5825,10 +5832,10 @@ async function carregarAvisosInicio(){
               _esc(mun),
               _fmtD(f.data_fato)
             ].filter(Boolean).join(' · ');
-            return `<div onclick="try{sessionStorage.setItem('ac_abrir_subtab','inteligencia');sessionStorage.setItem('ac_abrir_ficha','${_esc(f.id)}');sessionStorage.setItem('ac_abrir_gp','${_esc(meuGp)}')}catch(e){};window.location.href='analise-criminal.html'" style="cursor:pointer;font-size:11.5px;color:#cfcfcf;padding:6px 0 6px 29px;border-top:1px dashed var(--border);">${partes||'ficha de inteligência'}</div>`;
+            return `<div onclick="try{sessionStorage.setItem('ac_abrir_subtab','inteligencia');sessionStorage.setItem('ac_abrir_ficha','${_esc(f.id)}')${gpJs}}catch(e){};window.location.href='analise-criminal.html'" style="cursor:pointer;font-size:11.5px;color:#cfcfcf;padding:6px 0 6px 29px;border-top:1px dashed var(--border);">${partes||'ficha de inteligência'}</div>`;
           }).join('');
           const mais = daRegiao.length>3 ? `<div style="font-size:11px;color:var(--text-hint);padding:6px 0 2px 29px;">+${daRegiao.length-3} outra(s)…</div>` : '';
-          avisos.push({ intel:true, n:daRegiao.length, teasers, mais });
+          avisos.push({ intel:true, n:daRegiao.length, teasers, mais, veTudo });
         }
       }
     }
@@ -5841,8 +5848,8 @@ async function carregarAvisosInicio(){
           return `<div style="padding:12px 16px;border-bottom:1px solid var(--border);">
             <div style="display:flex;align-items:center;gap:12px;font-size:13px;color:var(--text-white);">
               <span style="font-size:17px;flex-shrink:0;">🕵</span>
-              <span style="flex:1;min-width:0;">Há <b>${a.n} ficha(s) de inteligência</b> ativa(s) para a sua região</span>
-              <a href="analise-criminal.html" onclick="try{sessionStorage.setItem('ac_abrir_subtab','inteligencia');sessionStorage.setItem('ac_abrir_gp','${_esc(meuGp)}')}catch(e){}" style="color:var(--gold);font-weight:700;font-size:12px;white-space:nowrap;text-decoration:none;">Ver todas →</a>
+              <span style="flex:1;min-width:0;">Há <b>${a.n} ficha(s) de inteligência</b> ativa(s) ${a.veTudo?'na Companhia':'para a sua região'}</span>
+              <a href="analise-criminal.html" onclick="try{sessionStorage.setItem('ac_abrir_subtab','inteligencia')${a.veTudo?'':`;sessionStorage.setItem('ac_abrir_gp','${_esc(meuGp)}')`}}catch(e){}" style="color:var(--gold);font-weight:700;font-size:12px;white-space:nowrap;text-decoration:none;">Ver todas →</a>
             </div>${a.teasers}${a.mais}
           </div>`;
         }
