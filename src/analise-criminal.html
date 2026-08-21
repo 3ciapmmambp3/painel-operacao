@@ -3135,6 +3135,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   sessao = lerSessao();
   if(!sessao) return;
+  _syncMilitaresSupabase();   /* efetivo ATUAL do Supabase p/ o picker de "Militares Responsáveis" das missões */
 
   document.getElementById('user-nome').textContent = sessao.nome || sessao.numeroPolicia;
   const initials = (sessao.nome||'U').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
@@ -14331,6 +14332,31 @@ function idAcaoExcluir(){
 /* ══════════════════════════════════
    MILITARES POR GRUPAMENTO — MISSÕES
 ══════════════════════════════════ */
+/* Sincroniza o efetivo (poe_usuarios) a partir do Supabase (tabela militares via
+   RPC tta_listar_militares, que aceita anon+token) — fonte ATUAL do cadastro.
+   Substitui o sync antigo do Google Sheets, que ficou defasado. */
+async function _syncMilitaresSupabase(){
+  try{
+    if(!sessao || !sessao.token || typeof SB_URL==='undefined') return;
+    const r = await fetch(`${SB_URL}/rest/v1/rpc/tta_listar_militares`, {
+      method:'POST',
+      headers:{ 'apikey':SB_KEY, 'Authorization':'Bearer '+SB_KEY, 'Content-Type':'application/json' },
+      body: JSON.stringify({ p_token: sessao.token })
+    });
+    if(!r.ok) return;
+    const rows = await r.json();
+    if(Array.isArray(rows) && rows.length){
+      const lista = rows.map(m => ({
+        id: m.id, numeroPolicia: m.matricula, nome: m.nome_completo,
+        guerra: m.nome_guerra, pg: m.posto_graduacao, lotacao: m.grupamento_id,
+        perfil: 'operacional', ativo: true
+      }));
+      _pset('poe_usuarios', JSON.stringify(lista));
+      console.log('[AC] poe_usuarios (Supabase):', lista.length, 'militares');
+    }
+  }catch(e){ console.warn('[AC] sync militares supabase:', e.message); }
+}
+
 function _getMilitaresDoGP(gpNome){
   try{
     const usuarios = JSON.parse(_pget('poe_usuarios')||'[]');
@@ -14356,6 +14382,13 @@ function carregarMilitaresDoGP(jaSelecionados){
   wrap.style.display='block';
   const militares = _getMilitaresDoGP(gp);
   if(!militares.length){
+    /* Efetivo ainda não carregado? Tenta sincronizar do Supabase uma vez e re-renderiza. */
+    if(!window._milSyncTentado){
+      window._milSyncTentado = true;
+      lista.innerHTML = '<div style="font-size:11px;color:var(--text-muted);padding:4px;">Carregando efetivo…</div>';
+      _syncMilitaresSupabase().then(function(){ carregarMilitaresDoGP(jaSelecionados); });
+      return;
+    }
     lista.innerHTML = '<div style="font-size:11px;color:var(--text-muted);padding:4px;">Nenhum militar cadastrado neste grupamento.</div>';
     selDiv.innerHTML = '';
     return;
