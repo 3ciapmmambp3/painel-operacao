@@ -6331,13 +6331,29 @@ function verIntelDaOcorrencia(bo, mun){
 /* Abre uma sub-aba específica ao chegar de um atalho (ex.: avisos da Início salvam
    sessionStorage['ac_abrir_subtab'] = 'missoes' | 'inteligencia' antes de navegar). */
 window.addEventListener('load', function(){
-  let alvo='', ficha=''; try{ alvo=sessionStorage.getItem('ac_abrir_subtab')||''; ficha=sessionStorage.getItem('ac_abrir_ficha')||''; sessionStorage.removeItem('ac_abrir_subtab'); sessionStorage.removeItem('ac_abrir_ficha'); }catch(e){}
-  if(!alvo && !ficha) return;
-  setTimeout(function(){
-    const btn = document.querySelector('.subtab[onclick*="'+(alvo||'inteligencia')+'"]');
-    if(btn) btn.click();
-    if(ficha) setTimeout(function(){ try{ if(typeof abrirDrawerIntel==='function') abrirDrawerIntel(ficha); }catch(e){} }, 600);
-  }, 450);
+  let alvo='', ficha='', gp='';
+  try{ alvo=sessionStorage.getItem('ac_abrir_subtab')||''; ficha=sessionStorage.getItem('ac_abrir_ficha')||''; gp=sessionStorage.getItem('ac_abrir_gp')||'';
+       ['ac_abrir_subtab','ac_abrir_ficha','ac_abrir_gp'].forEach(function(k){ try{sessionStorage.removeItem(k);}catch(e){} }); }catch(e){}
+  if(!alvo && !ficha && !gp) return;
+  setTimeout(function(){ const btn=document.querySelector('.subtab[onclick*="'+(alvo||'inteligencia')+'"]'); if(btn) btn.click(); }, 300);
+  const cidade = gp ? gp.replace(/^GP\s+/i,'').toUpperCase().trim() : '';
+  let n=0, gpFeito=!gp, fichaFeita=!ficha;
+  const t = setInterval(function(){
+    n++;
+    if(!gpFeito){
+      const sel = document.getElementById('intel-busca-gp');
+      if(sel && sel.options.length > 1){
+        const opt = [...sel.options].find(function(o){ return o.value && (o.value.split('/').pop()||'').trim().toUpperCase() === cidade; });
+        if(opt){ if(sel.disabled) sel.disabled=false; sel.value = opt.value; if(typeof renderIntel==='function') renderIntel(); }
+        gpFeito = true;
+      }
+    }
+    if(!fichaFeita && typeof fichasIntel!=='undefined' && typeof abrirDrawerIntel==='function' && fichasIntel.some(function(f){ return f.id===ficha; })){
+      try{ abrirDrawerIntel(ficha); }catch(e){}
+      fichaFeita = true;
+    }
+    if((gpFeito && fichaFeita) || n>=25) clearInterval(t);
+  }, 350);
 });
 
 function renderCrimes(){
