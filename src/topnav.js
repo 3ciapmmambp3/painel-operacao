@@ -1,16 +1,18 @@
 /* ══════════════════════════════════════════════════════════════════════
-   topnav.js — barra de navegação superior COMPARTILHADA.
+   topnav.js — barra de navegação superior COMPARTILHADA (hubs por seção).
 
    Uso na página (auth.js precisa vir ANTES):
      <script src="auth.js"></script>
-     <script src="topnav.js" data-ativo="demandas"></script>
+     <script src="topnav.js" data-ativo="p3"></script>
 
-   data-ativo marca o item atual: inicio | operacao | criminal | relatorio |
-   demandas | consulta | adm. A barra é inserida logo após o <header> da página
-   (ou no topo do body, se não houver header). O CSS vem do global.css (.topnav).
+   data-ativo marca o item atual:
+     inicio | p1 | p2 | p3 | p4 | p5 | consulta | adm
+   A barra é inserida logo após o <header> da página (ou no topo do body,
+   se não houver header). O CSS vem do global.css (.topnav / .hubdot).
 
-   Assim TODAS as páginas usam a mesma barra — mexer aqui reflete em todas, e
-   página nova é só incluir este script (não há mais risco de esquecer um item).
+   Barra: INÍCIO · P1 · P2 · P3 · P4 · P5 · CONSULTA · ADM
+   Fonte única — mexer aqui reflete em TODAS as páginas; página nova é só
+   incluir este script (não há risco de esquecer um item).
    ══════════════════════════════════════════════════════════════════════ */
 (function(){
   const cur = document.currentScript;
@@ -26,18 +28,12 @@
     nav.className = 'topnav';
     nav.id = 'topnav';
     nav.innerHTML = `
-      <a class="topnav-link${on('inicio')}" href="painel.html">🏠 INÍCIO</a>
-      <div class="topnav-item">
-        <div class="topnav-link${on('operacao')}" data-dropdown="ddOperacao">🛡 OPERAÇÃO <span class="chev">▾</span></div>
-        <div class="topnav-dropdown" id="ddOperacao">
-          <a href="painel.html?tab=operacoes">🛡 OP POE</a>
-          <a href="painel.html?tab=gdo-rural">🌿 OP GDO Rural</a>
-        </div>
-      </div>
-      <a class="topnav-link${on('criminal')}" href="analise-criminal.html" style="color:#ef5350;">🔴 ANÁLISE CRIMINAL</a>
-      <a class="topnav-link${on('relatorio')}" href="meus-relatorios.html">📄 RELATÓRIO DIÁRIO</a>
-      <a class="topnav-link${on('demandas')}" href="denuncias.html">📋 CONTROLE DE DEMANDAS</a>
-      ${['admin_geral','admin','admin_pelotao'].includes(nivel) ? `<a class="topnav-link${on('gestaoop')}" href="supervisao-controle.html" data-gestao-op style="color:var(--gold);">🎯 GESTÃO OPERACIONAL</a>` : ''}
+      <a class="topnav-link${on('inicio')}" href="inicio.html">🏠 INÍCIO</a>
+      <a class="topnav-link${on('p1')}" href="hub-p1.html"><span class="hubdot hub-p1"></span> RECURSOS HUMANOS</a>
+      <a class="topnav-link${on('p2')}" href="hub-p2.html"><span class="hubdot hub-p2"></span> INTELIGÊNCIA</a>
+      <a class="topnav-link${on('p3')}" href="hub-p3.html"><span class="hubdot hub-p3"></span> EMPREGO OPERACIONAL</a>
+      <a class="topnav-link${on('p4')}" href="hub-p4.html"><span class="hubdot hub-p4"></span> APOIO LOGÍSTICO</a>
+      <a class="topnav-link${on('p5')}" href="hub-p5.html"><span class="hubdot hub-p5"></span> COMUNICAÇÃO ORGANIZACIONAL</a>
       <a class="topnav-link${on('consulta')}" href="painel.html?tab=consulta">📍 CONSULTA</a>
       <div class="topnav-item" id="admTopnavItem" style="display:${isAdmin?'':'none'};">
         <div class="topnav-link${on('adm')}" data-dropdown="ddAdm">⚙ ADM <span class="chev">▾</span></div>
@@ -52,7 +48,7 @@
     if (header && header.parentNode) header.insertAdjacentElement('afterend', nav);
     else document.body.insertAdjacentElement('afterbegin', nav);
 
-    // Dropdowns (OPERAÇÃO / ADM)
+    // Dropdown (ADM)
     nav.querySelectorAll('.topnav-link[data-dropdown]').forEach(link => {
       link.addEventListener('click', (e) => {
         e.stopPropagation();

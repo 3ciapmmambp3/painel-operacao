@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<script>
+(function(){
+  var saved;
+  try{ saved=localStorage.getItem('poe_theme'); }catch(e){}
+  if(!saved) saved=window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+})();
+</script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chamada de Instrução — 3ª Cia PM MAmb</title>
+  <link rel="stylesheet" href="styles/global.css">
+  <script src="auth.js"></script>
+  <style>
+    body{display:flex;flex-direction:column;min-height:100vh;}
+    .page-layout{display:flex;flex:1;}
+    .rd-conteudo{flex:1;min-width:0;}
+    .ci-wrap{width:100%;max-width:1160px;margin:0 auto;padding:20px 22px 44px;flex:1;}
+    .ci-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:14px;}
+    .ci-head .ci-badge{width:46px;height:46px;border-radius:11px;display:grid;place-items:center;background:var(--bg-dark);border:1px solid var(--gold-border);font-size:22px;flex-shrink:0;}
+    .ci-head h1{font-size:19px;color:var(--text-white);letter-spacing:.4px;}
+    .ci-head .sub{font-size:12px;color:var(--text-muted);margin-top:2px;}
+
+    /* faixa da instrução ativa */
+    .inst-band{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:linear-gradient(180deg,var(--gold-bg),transparent);border:1px solid var(--gold-border);border-radius:10px;padding:13px 16px;margin-bottom:16px;}
+    .inst-band .ib-ic{font-size:20px;}
+    .inst-band .ib-main{min-width:0;}
+    .inst-band .ib-assunto{font-size:14px;font-weight:800;color:var(--gold-light);}
+    .inst-band .ib-meta{font-size:11.5px;color:var(--text-muted);margin-top:2px;}
+    .inst-band.none{background:var(--bg-card);border-style:dashed;border-color:var(--border-hover);}
+    .inst-band.none .ib-assunto{color:var(--text-muted);}
+
+    /* abas internas */
+    .ci-tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:18px;flex-wrap:wrap;}
+    .ci-tab{padding:10px 16px;font-size:12.5px;font-weight:700;color:var(--text-muted);cursor:pointer;border-bottom:2px solid transparent;background:none;border-top:0;border-left:0;border-right:0;}
+    .ci-tab:hover{color:var(--text-white);}
+    .ci-tab.active{color:var(--gold);border-bottom-color:var(--gold);}
+    .ci-pane{display:none;}
+    .ci-pane.active{display:block;}
+
+    /* barra de ação */
+    .ci-actbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
+    .ci-actbar .grow{flex:1;}
+    .ci-search{padding:8px 12px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:7px;color:var(--text-white);font-size:12.5px;outline:none;min-width:220px;}
+    .ci-search:focus{border-color:var(--gold);}
+    .ci-chipbtn{padding:7px 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:7px;color:var(--text-muted);font-size:11.5px;font-weight:700;cursor:pointer;}
+    .ci-chipbtn:hover{border-color:var(--gold-border);color:var(--text-white);}
+
+    /* roster por grupamento */
+    .grp-block{margin-bottom:16px;border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+    .grp-head{display:flex;align-items:center;gap:10px;background:var(--bg-dark);padding:10px 14px;border-bottom:1px solid var(--border);}
+    .grp-head .gt{font-size:12.5px;font-weight:800;color:var(--gold-light);letter-spacing:.3px;}
+    .grp-head .gc{font-size:11px;color:var(--text-hint);margin-left:auto;}
+    .grp-head .gbtns{display:flex;gap:6px;}
+    .grp-head .gbtns button{font-size:10px;padding:3px 8px;border-radius:5px;border:1px solid var(--border-hover);background:var(--bg-input);color:var(--text-muted);cursor:pointer;font-weight:700;}
+    .grp-head .gbtns button:hover{border-color:var(--gold-border);color:var(--text-white);}
+    .mil-row{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap;}
+    .mil-row:last-child{border-bottom:0;}
+    .mil-row .mn{min-width:0;flex:1;}
+    .mil-row .mn .nm{font-size:13px;color:var(--text-white);font-weight:600;}
+    .mil-row .mn .mt{font-size:11px;color:var(--text-hint);}
+    .pa-toggle{display:flex;gap:4px;flex-shrink:0;}
+    .pa-btn{padding:6px 14px;font-size:11.5px;font-weight:800;border-radius:6px;cursor:pointer;border:1px solid var(--border-hover);background:var(--bg-input);color:var(--text-muted);letter-spacing:.3px;}
+    .pa-btn.p.on{background:rgba(102,187,106,.16);border-color:var(--success);color:var(--success);}
+    .pa-btn.a.on{background:rgba(239,83,80,.14);border-color:var(--danger);color:var(--danger);}
+    .just{flex-basis:100%;margin-top:2px;display:none;}
+    .just.show{display:block;}
+    .just input{width:100%;padding:7px 10px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:6px;color:var(--text-white);font-size:12px;outline:none;}
+    .just input:focus{border-color:var(--gold);}
+
+    /* KPIs / dashboard */
+    .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px;}
+    .kpi{background:var(--bg-card);border:1px solid var(--border);border-top:3px solid var(--gold);border-radius:8px;padding:14px 16px;}
+    .kpi.green{border-top-color:var(--success);}.kpi.red{border-top-color:var(--danger);}.kpi.blue{border-top-color:var(--info);}
+    .kpi .lab{font-size:10px;color:var(--text-hint);text-transform:uppercase;letter-spacing:.5px;}
+    .kpi .val{font-size:30px;font-weight:800;color:var(--text-white);line-height:1;margin-top:6px;}
+    .kpi .val small{font-size:12px;font-weight:400;color:var(--text-hint);}
+    table.ci-tbl{width:100%;border-collapse:collapse;font-size:12.5px;}
+    table.ci-tbl th,table.ci-tbl td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--border);}
+    table.ci-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-hint);}
+    table.ci-tbl td.cst{font-weight:700;}
+    .st-pill{font-size:10px;font-weight:800;padding:2px 9px;border-radius:20px;letter-spacing:.3px;}
+    .st-pill.ok{background:rgba(102,187,106,.16);color:var(--success);}
+    .st-pill.pend{background:rgba(255,167,38,.16);color:#ffa726;}
+    .bar{height:7px;border-radius:4px;background:var(--bg-dark);overflow:hidden;min-width:90px;}
+    .bar > i{display:block;height:100%;background:var(--success);}
+    .tblwrap{border:1px solid var(--border);border-radius:10px;overflow:auto;}
+
+    /* config form */
+    .cfg-card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:16px;}
+    .cfg-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;}
+    .fg{display:flex;flex-direction:column;gap:5px;}
+    .fg label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-hint);font-weight:700;}
+    .fg input, .fg input[type=date]{padding:8px 10px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:6px;color:var(--text-white);font-size:12.5px;outline:none;color-scheme:dark;}
+    .fg input:focus{border-color:var(--gold);}
+    .cfg-check{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-white);}
+
+    .ci-msg{padding:40px 20px;text-align:center;color:var(--text-muted);font-size:13.5px;}
+    .ci-msg.err{color:var(--danger);}
+    .no-access{max-width:520px;margin:60px auto;text-align:center;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:34px;}
+    .no-access h2{color:var(--gold);font-size:18px;margin-bottom:8px;}
+
+    #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--bg-dark);border:1px solid var(--gold-border);color:var(--text-white);padding:11px 20px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.25s;z-index:200;box-shadow:0 10px 30px rgba(0,0,0,.4);}
+    #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+    @media(max-width:760px){ .mil-row .pa-toggle{margin-left:auto;} }
+    @media print{
+      header, .topnav, .rd-sidebar, .ci-tabs, .ci-actbar, #toast, .no-print{display:none !important;}
+      .page-layout{display:block;} .ci-wrap{max-width:none;padding:0;}
+      body{background:#fff;color:#000;}
+      table.ci-tbl th,table.ci-tbl td{border-color:#999;color:#000;}
+    }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <div class="header-shields"><img src="assets/escudo-pmmg.png" alt="PMMG" onerror="this.style.display='none'"><img src="assets/escudo-cpe.png" alt="CPE" onerror="this.style.display='none'"><img src="assets/brasao-bpmmamb.png" alt="BPM MAMB" onerror="this.style.display='none'"></div><div class="header-div"></div>
+    <div class="header-title"><div class="header-kicker">CPE · BPM MAmb · 3ª Cia PM MAmb</div>
+      <h1>PAINEL DE GESTÃO OPERACIONAL</h1>
+      <p>3ª Cia PM MAmb — Acompanhamento 2026</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <div id="user-info" style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);cursor:pointer;padding:5px 10px;border:1px solid var(--border);border-radius:5px;" onclick="window.location.href='perfil.html'" title="Meu Perfil">
+      <span id="user-avatar" style="width:22px;height:22px;border-radius:50%;background:var(--gold);color:#1a1000;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">?</span>
+      <span id="user-nome">—</span>
+      <span id="user-badge" style="font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;"></span>
+    </div>
+    <button class="btn-outline" onclick="localStorage.removeItem('poe_sessao_v2');sessionStorage.removeItem('poe_sessao_v2');localStorage.removeItem('poe_sessao');window.location.href='index.html'">Sair</button>
+  </div>
+</header>
+
+<script src="topnav.js" data-ativo="p3"></script>
+
+<div class="page-layout">
+  <aside class="rd-sidebar" id="goSidebar">
+    <div class="rd-sidebar-head"><span class="rd-sidebar-titulo">GESTÃO OPERACIONAL</span></div>
+    <a class="rd-item" href="supervisao-controle.html"><span>🎯</span><span class="lbl">Supervisão e Controle</span></a>
+    <a class="rd-item" href="painel-demandas.html"><span>📋</span><span class="lbl">Painel de Demandas</span></a>
+    <a class="rd-item ativo" href="chamada-instrucao.html"><span>📣</span><span class="lbl">Chamada de Instrução</span></a>
+  </aside>
+  <div class="rd-conteudo">
+
+<div class="ci-wrap" id="ci-conteudo">
+  <div class="ci-head">
+    <div class="ci-badge">📣</div>
+    <div>
+      <h1>Chamada de Instrução</h1>
+      <div class="sub">Presença na instrução — substitui o app externo, agora nativo no painel.</div>
+    </div>
+  </div>
+
+  <div class="inst-band none" id="instBand">
+    <div class="ib-ic">📖</div>
+    <div class="ib-main"><div class="ib-assunto">Carregando instrução…</div><div class="ib-meta">—</div></div>
+  </div>
+
+  <div class="ci-tabs" id="ciTabs">
+    <button class="ci-tab active" data-tab="lancar">📣 Lançar Chamada</button>
+    <button class="ci-tab adm-only" data-tab="dashboard" style="display:none;">📊 Dashboard</button>
+    <button class="ci-tab adm-only" data-tab="consultas" style="display:none;">🔎 Consultas</button>
+    <button class="ci-tab adm-only" data-tab="relatorios" style="display:none;">📄 Relatórios</button>
+    <button class="ci-tab adm-only" data-tab="configurar" style="display:none;">⚙️ Configurar instrução</button>
+  </div>
+
+  <!-- LANÇAR -->
+  <div class="ci-pane active" id="pane-lancar">
+    <div class="ci-actbar" id="lancarBar" style="display:none;">
+      <input class="ci-search" id="buscaMil" placeholder="Buscar por nome ou nº PM…" oninput="filtrarRoster()">
+      <span class="grow"></span>
+      <button class="ci-chipbtn" onclick="marcarTodos('presente')">Todos presentes</button>
+      <button class="btn-gold" id="btnSalvarChamada" onclick="salvarChamada()">Salvar chamada</button>
+    </div>
+    <div id="rosterWrap"><div class="ci-msg">Carregando…</div></div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div class="ci-pane" id="pane-dashboard">
+    <div class="kpis" id="dashKpis"></div>
+    <div class="tblwrap"><table class="ci-tbl" id="dashTbl">
+      <thead><tr><th>Grupamento</th><th>Efetivo marcado</th><th>Presentes</th><th>Ausentes</th><th style="width:160px;">%</th><th>Status</th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+    <div class="ci-msg" id="dashMsg" style="display:none;"></div>
+  </div>
+
+  <!-- CONSULTAS -->
+  <div class="ci-pane" id="pane-consultas">
+    <div class="ci-actbar">
+      <div class="fg" style="min-width:280px;"><label>Instrução</label>
+        <select id="selInstConsulta" class="ci-search" style="min-width:280px;" onchange="carregarConsulta()"></select></div>
+    </div>
+    <div class="tblwrap"><table class="ci-tbl" id="consTbl">
+      <thead><tr><th>Nº PM</th><th>P/G</th><th>Nome</th><th>Grupamento</th><th>Status</th><th>Justificativa</th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+    <div class="ci-msg" id="consMsg" style="display:none;"></div>
+  </div>
+
+  <!-- RELATÓRIOS -->
+  <div class="ci-pane" id="pane-relatorios">
+    <div class="ci-actbar">
+      <div class="fg" style="min-width:280px;"><label>Instrução</label>
+        <select id="selInstRel" class="ci-search" style="min-width:280px;" onchange="montarRelatorio()"></select></div>
+      <span class="grow"></span>
+      <button class="btn-gold no-print" onclick="window.print()">🖨️ Imprimir / PDF</button>
+    </div>
+    <div id="relArea"><div class="ci-msg">Selecione uma instrução.</div></div>
+  </div>
+
+  <!-- CONFIGURAR -->
+  <div class="ci-pane" id="pane-configurar">
+    <div class="cfg-card">
+      <div style="font-size:13px;font-weight:800;color:var(--gold-light);margin-bottom:12px;" id="cfgTitulo">Nova instrução</div>
+      <input type="hidden" id="cfgId">
+      <div class="cfg-grid">
+        <div class="fg"><label>Data da instrução</label><input type="date" id="cfgData"></div>
+        <div class="fg" style="grid-column:1/-1;"><label>Assunto *</label><input id="cfgAssunto" placeholder="Ex.: Memorando nº 30.130/… — abordagem a pessoas"></div>
+        <div class="fg" style="grid-column:1/-1;"><label>Responsável pela instrução</label><input id="cfgResp" placeholder="Nome / posto do responsável"></div>
+      </div>
+      <label class="cfg-check" style="margin-top:12px;"><input type="checkbox" id="cfgAtiva" checked> Definir como <b>instrução ativa</b> (a que aparece para lançar chamada)</label>
+      <div style="margin-top:14px;display:flex;gap:8px;">
+        <button class="btn-gold" onclick="salvarInstrucao()">Salvar instrução</button>
+        <button class="btn-outline" onclick="novaInstrucao()">Limpar</button>
+      </div>
+    </div>
+    <div style="font-size:11px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:.6px;margin:6px 2px 10px;">Histórico de instruções</div>
+    <div class="tblwrap"><table class="ci-tbl" id="cfgTbl">
+      <thead><tr><th>Data</th><th>Assunto</th><th>Responsável</th><th>Ativa</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </div>
+
+</div>
+
+  </div><!-- /rd-conteudo -->
+</div><!-- /page-layout -->
+
+<div id="toast"></div>
+
+<script>
+/* ── guard de sessão ── */
+const sessao = (function(){
+  const raw = sessionStorage.getItem('poe_sessao_v2');
+  if(!raw){ window.location.href='index.html'; return null; }
+  try{ const s = JSON.parse(raw); if(!s || !s.id){ window.location.href='index.html'; return null; } return s; }
+  catch(e){ window.location.href='index.html'; return null; }
+})();
+const EH_ADMIN = sessao && ['admin_geral','admin','admin_pelotao'].includes(sessao.nivel_acesso);
+
+/* ── header user-info ── */
+if (sessao){
+  document.getElementById('user-nome').textContent = sessao.nome || sessao.matricula;
+  const initials = (sessao.nome||'U').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+  document.getElementById('user-avatar').textContent = initials;
+  const badge=document.getElementById('user-badge'); const nivel=sessao.nivel_acesso;
+  const mapa={admin_geral:['ADMIN GERAL','rgba(155,138,92,.2)','var(--gold)','var(--gold-border)'],
+    admin:['ADMIN','rgba(155,138,92,.2)','var(--gold)','var(--gold-border)'],
+    admin_pelotao:['ADMIN PELOTÃO','rgba(255,152,0,.15)','#ffa726','rgba(255,152,0,.4)'],
+    admin_gp:['ADMIN GP','rgba(255,152,0,.15)','#ffa726','rgba(255,152,0,.4)']};
+  const info=mapa[nivel]||['OPERACIONAL','rgba(66,165,245,.15)','var(--info)','rgba(66,165,245,.3)'];
+  badge.textContent=info[0];
+  badge.style.cssText=`font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;background:${info[1]};color:${info[2]};border:1px solid ${info[3]};`;
+}
+
+/* ── Supabase / RPC ── */
+const API=SB_AUTH_URL, AKEY=SB_AUTH_KEY;
+const H={'apikey':AKEY,'Authorization':`Bearer ${AKEY}`,'Content-Type':'application/json'};
+async function rpc(fn, body){
+  const r=await fetch(`${API}/rest/v1/rpc/${fn}`,{method:'POST',headers:H,body:JSON.stringify(body||{})});
+  if(!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  const t=await r.text(); return t?JSON.parse(t):null;
+}
+let toastTimer;
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),3200); }
+function fmtData(d){ if(!d) return '—'; const p=String(d).slice(0,10).split('-'); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d; }
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* ── estado ── */
+let INSTRUCAO=null;      // instrução ativa
+let ROSTER=[];           // militares (tta_listar_militares)
+let MARCAS=new Map();    // matricula -> {status, justificativa, militar}
+
+/* ── abas admin ── */
+if (EH_ADMIN){ document.querySelectorAll('.adm-only').forEach(el=>el.style.display=''); }
+document.querySelectorAll('.ci-tab').forEach(tab=>{
+  tab.addEventListener('click',()=>{
+    const k=tab.dataset.tab;
+    document.querySelectorAll('.ci-tab').forEach(t=>t.classList.toggle('active',t===tab));
+    document.querySelectorAll('.ci-pane').forEach(p=>p.classList.toggle('active',p.id==='pane-'+k));
+    if(k==='dashboard') carregarDashboard();
+    if(k==='consultas') initConsultas();
+    if(k==='relatorios') initRelatorios();
+    if(k==='configurar') carregarHistorico();
+  });
+});
+
+/* ── instrução ativa ── */
+async function carregarInstrucaoAtiva(){
+  const band=document.getElementById('instBand');
+  try{
+    const arr=await rpc('instrucao_ativa_get',{p_token:sessao.token});
+    INSTRUCAO=(arr&&arr.length)?arr[0]:null;
+  }catch(e){ INSTRUCAO=null; console.error(e); }
+  if(INSTRUCAO){
+    band.className='inst-band';
+    band.innerHTML=`<div class="ib-ic">📖</div><div class="ib-main">
+      <div class="ib-assunto">${esc(INSTRUCAO.assunto)}</div>
+      <div class="ib-meta">Instrução de ${fmtData(INSTRUCAO.data)}${INSTRUCAO.responsavel_instrucao?' · Resp.: '+esc(INSTRUCAO.responsavel_instrucao):''}</div>
+    </div>`;
+  }else{
+    band.className='inst-band none';
+    band.innerHTML=`<div class="ib-ic">📭</div><div class="ib-main">
+      <div class="ib-assunto">Nenhuma instrução ativa</div>
+      <div class="ib-meta">${EH_ADMIN?'Cadastre na aba <b>Configurar instrução</b> para liberar a chamada.':'Peça ao administrador para configurar a instrução atual.'}</div>
+    </div>`;
+  }
+}
+
+/* ══ LANÇAR ══════════════════════════════════════════════════════════ */
+async function carregarLancar(){
+  const wrap=document.getElementById('rosterWrap');
+  if(!INSTRUCAO){ wrap.innerHTML='<div class="ci-msg">Sem instrução ativa — não há chamada para lançar.</div>'; return; }
+  wrap.innerHTML='<div class="ci-msg">Carregando efetivo…</div>';
+  try{
+    const [roster, existentes] = await Promise.all([
+      rpc('tta_listar_militares',{p_token:sessao.token}),
+      rpc('chamada_instrucao_listar',{p_token:sessao.token,p_instrucao_id:INSTRUCAO.id})
+    ]);
+    ROSTER = roster||[];
+    MARCAS = new Map();
+    (existentes||[]).forEach(r=>MARCAS.set(r.matricula,{status:r.status,justificativa:r.justificativa||''}));
+    document.getElementById('lancarBar').style.display='flex';
+    renderRoster();
+  }catch(e){
+    wrap.innerHTML='<div class="ci-msg err">Erro ao carregar: '+esc(e.message)+'</div>';
+  }
+}
+function grupamentoDe(m){ return (m.grupamento_id||'Sem grupamento').trim(); }
+function renderRoster(){
+  const wrap=document.getElementById('rosterWrap');
+  const busca=(document.getElementById('buscaMil').value||'').toLowerCase().trim();
+  const grupos={};
+  ROSTER.forEach(m=>{
+    if(busca){ const hay=(m.nome_completo+' '+(m.nome_guerra||'')+' '+m.matricula).toLowerCase(); if(!hay.includes(busca)) return; }
+    const g=grupamentoDe(m); (grupos[g]=grupos[g]||[]).push(m);
+  });
+  const chaves=Object.keys(grupos).sort();
+  if(!chaves.length){ wrap.innerHTML='<div class="ci-msg">Nenhum militar encontrado.</div>'; return; }
+  let html='';
+  chaves.forEach(g=>{
+    const mils=grupos[g];
+    html+=`<div class="grp-block"><div class="grp-head"><span class="gt">${esc(g)}</span>
+      <span class="gbtns"><button onclick="marcarGrupo('${esc(g).replace(/'/g,"")}','presente')">Todos P</button>
+      <button onclick="marcarGrupo('${esc(g).replace(/'/g,"")}','ausente')">Todos A</button></span>
+      <span class="gc">${mils.length} militar(es)</span></div>`;
+    mils.forEach(m=>{
+      const mk=MARCAS.get(m.matricula)||{};
+      const isP=mk.status==='presente', isA=mk.status==='ausente';
+      html+=`<div class="mil-row" data-mat="${esc(m.matricula)}">
+        <div class="mn"><div class="nm">${esc(m.nome_guerra||m.nome_completo)}</div>
+          <div class="mt">${esc(m.posto_graduacao||'')} · ${esc(m.matricula)}${m.nome_guerra?' · '+esc(m.nome_completo):''}</div></div>
+        <div class="pa-toggle">
+          <button class="pa-btn p ${isP?'on':''}" onclick="marcar('${esc(m.matricula)}','presente')">PRESENTE</button>
+          <button class="pa-btn a ${isA?'on':''}" onclick="marcar('${esc(m.matricula)}','ausente')">AUSENTE</button>
+        </div>
+        <div class="just ${isA?'show':''}"><input placeholder="Justificativa da ausência" value="${esc(mk.justificativa||'')}" oninput="setJust('${esc(m.matricula)}',this.value)"></div>
+      </div>`;
+    });
+    html+='</div>';
+  });
+  wrap.innerHTML=html;
+}
+function filtrarRoster(){ renderRoster(); }
+function marcar(mat,status){
+  const m=ROSTER.find(x=>x.matricula===mat); if(!m) return;
+  const cur=MARCAS.get(mat)||{};
+  MARCAS.set(mat,{status,justificativa:cur.justificativa||'',
+    militar:{militar_id:m.id,matricula:m.matricula,posto_graduacao:m.posto_graduacao,nome_completo:m.nome_completo,nome_guerra:m.nome_guerra,grupamento_id:m.grupamento_id}});
+  // atualiza a linha sem re-render total (preserva foco/scroll)
+  const row=document.querySelector(`.mil-row[data-mat="${CSS.escape(mat)}"]`); if(!row) return;
+  row.querySelector('.pa-btn.p').classList.toggle('on',status==='presente');
+  row.querySelector('.pa-btn.a').classList.toggle('on',status==='ausente');
+  row.querySelector('.just').classList.toggle('show',status==='ausente');
+}
+function setJust(mat,val){ const cur=MARCAS.get(mat)||{status:'ausente'}; cur.justificativa=val; MARCAS.set(mat,cur); }
+function marcarGrupo(g,status){
+  ROSTER.filter(m=>grupamentoDe(m)===g).forEach(m=>marcar(m.matricula,status));
+}
+function marcarTodos(status){ ROSTER.forEach(m=>marcar(m.matricula,status)); }
+async function salvarChamada(){
+  if(!INSTRUCAO){ toast('Sem instrução ativa.'); return; }
+  const registros=[];
+  MARCAS.forEach((v,mat)=>{
+    if(!v.status) return;
+    const m=ROSTER.find(x=>x.matricula===mat)||v.militar||{};
+    registros.push({militar_id:m.id||v.militar?.militar_id||null, matricula:mat,
+      posto_graduacao:m.posto_graduacao, nome_completo:m.nome_completo, nome_guerra:m.nome_guerra,
+      grupamento_id:m.grupamento_id, status:v.status, justificativa:v.justificativa||''});
+  });
+  if(!registros.length){ toast('Marque ao menos um militar.'); return; }
+  const btn=document.getElementById('btnSalvarChamada'); btn.disabled=true; const old=btn.textContent; btn.textContent='Salvando…';
+  try{
+    const r=await rpc('chamada_instrucao_lancar',{p_token:sessao.token,p_instrucao_id:INSTRUCAO.id,p_registros:registros});
+    toast(`Chamada salva — ${r&&r.gravados||registros.length} militar(es).`);
+  }catch(e){ toast('Erro ao salvar: '+e.message); }
+  finally{ btn.disabled=false; btn.textContent=old; }
+}
+
+/* ══ DASHBOARD ══════════════════════════════════════════════════════ */
+async function carregarDashboard(){
+  const tb=document.querySelector('#dashTbl tbody'), msg=document.getElementById('dashMsg');
+  const kpis=document.getElementById('dashKpis');
+  if(!INSTRUCAO){ kpis.innerHTML=''; tb.innerHTML=''; msg.style.display=''; msg.textContent='Sem instrução ativa.'; return; }
+  msg.style.display='none'; tb.innerHTML='<tr><td colspan="6" class="ci-msg">Carregando…</td></tr>';
+  try{
+    const [rows, roster] = await Promise.all([
+      rpc('chamada_instrucao_listar',{p_token:sessao.token,p_instrucao_id:INSTRUCAO.id}),
+      rpc('tta_listar_militares',{p_token:sessao.token})
+    ]);
+    const efetivoPorGrupo={}; (roster||[]).forEach(m=>{ const g=(m.grupamento_id||'Sem grupamento').trim(); efetivoPorGrupo[g]=(efetivoPorGrupo[g]||0)+1; });
+    const grp={};
+    (rows||[]).forEach(r=>{ const g=(r.grupamento_id||'Sem grupamento').trim(); const o=grp[g]=grp[g]||{p:0,a:0,tot:0}; o.tot++; if(r.status==='presente')o.p++; else o.a++; });
+    let tp=0,ta=0,tm=0;
+    (rows||[]).forEach(r=>{ tm++; if(r.status==='presente')tp++; else ta++; });
+    const efetivoTotal=(roster||[]).length;
+    kpis.innerHTML=`
+      <div class="kpi"><div class="lab">Efetivo total</div><div class="val">${efetivoTotal}</div></div>
+      <div class="kpi green"><div class="lab">Presentes</div><div class="val">${tp}</div></div>
+      <div class="kpi red"><div class="lab">Ausentes</div><div class="val">${ta}</div></div>
+      <div class="kpi blue"><div class="lab">Marcados</div><div class="val">${tm} <small>/ ${efetivoTotal}</small></div></div>`;
+    const gs=Object.keys(grp).sort();
+    if(!gs.length){ tb.innerHTML=''; msg.style.display=''; msg.textContent='Nenhuma presença lançada ainda para esta instrução.'; return; }
+    tb.innerHTML=gs.map(g=>{
+      const o=grp[g]; const efet=efetivoPorGrupo[g]||o.tot; const pct=o.tot?Math.round(o.p/o.tot*100):0;
+      const concl = o.tot>=efet;
+      return `<tr><td class="cst">${esc(g)}</td><td>${o.tot} <small style="color:var(--text-hint)">/ ${efet}</small></td>
+        <td style="color:var(--success);font-weight:700;">${o.p}</td><td style="color:var(--danger);font-weight:700;">${o.a}</td>
+        <td><div style="display:flex;align-items:center;gap:8px;"><div class="bar"><i style="width:${pct}%"></i></div><span>${pct}%</span></div></td>
+        <td><span class="st-pill ${concl?'ok':'pend'}">${concl?'CONCLUÍDO':'PENDENTE'}</span></td></tr>`;
+    }).join('');
+  }catch(e){ tb.innerHTML=''; msg.style.display=''; msg.className='ci-msg err'; msg.textContent='Erro: '+e.message; }
+}
+
+/* ══ CONSULTAS / RELATÓRIOS (histórico) ═════════════════════════════ */
+let HISTORICO=null;
+async function carregarHistoricoLista(){
+  if(HISTORICO) return HISTORICO;
+  HISTORICO=await rpc('instrucao_listar',{p_token:sessao.token})||[];
+  return HISTORICO;
+}
+function optInstrucao(i){ return `<option value="${i.id}">${fmtData(i.data)} — ${esc(i.assunto)}${i.ativa?' (ativa)':''}</option>`; }
+async function initConsultas(){
+  const sel=document.getElementById('selInstConsulta');
+  const h=await carregarHistoricoLista();
+  sel.innerHTML = h.length? h.map(optInstrucao).join('') : '<option value="">(nenhuma instrução)</option>';
+  if(h.length) carregarConsulta();
+}
+async function carregarConsulta(){
+  const id=document.getElementById('selInstConsulta').value;
+  const tb=document.querySelector('#consTbl tbody'), msg=document.getElementById('consMsg');
+  if(!id){ tb.innerHTML=''; msg.style.display=''; msg.textContent='Nenhuma instrução.'; return; }
+  msg.style.display='none'; tb.innerHTML='<tr><td colspan="6" class="ci-msg">Carregando…</td></tr>';
+  try{
+    const rows=await rpc('chamada_instrucao_listar',{p_token:sessao.token,p_instrucao_id:id});
+    if(!rows||!rows.length){ tb.innerHTML=''; msg.style.display=''; msg.textContent='Nenhuma presença lançada.'; return; }
+    tb.innerHTML=rows.map(r=>`<tr>
+      <td>${esc(r.matricula)}</td><td>${esc(r.posto_graduacao||'')}</td>
+      <td>${esc(r.nome_guerra||r.nome_completo||'')}</td><td>${esc(r.grupamento_id||'')}</td>
+      <td class="cst" style="color:${r.status==='presente'?'var(--success)':'var(--danger)'}">${r.status==='presente'?'Presente':'Ausente'}</td>
+      <td>${esc(r.justificativa||'')}</td></tr>`).join('');
+  }catch(e){ tb.innerHTML=''; msg.style.display=''; msg.className='ci-msg err'; msg.textContent='Erro: '+e.message; }
+}
+async function initRelatorios(){
+  const sel=document.getElementById('selInstRel');
+  const h=await carregarHistoricoLista();
+  sel.innerHTML = h.length? h.map(optInstrucao).join('') : '<option value="">(nenhuma instrução)</option>';
+  if(h.length) montarRelatorio();
+}
+async function montarRelatorio(){
+  const id=document.getElementById('selInstRel').value;
+  const area=document.getElementById('relArea');
+  const inst=(HISTORICO||[]).find(i=>i.id===id);
+  if(!id||!inst){ area.innerHTML='<div class="ci-msg">Selecione uma instrução.</div>'; return; }
+  area.innerHTML='<div class="ci-msg">Carregando…</div>';
+  try{
+    const rows=await rpc('chamada_instrucao_listar',{p_token:sessao.token,p_instrucao_id:id})||[];
+    const p=rows.filter(r=>r.status==='presente').length, a=rows.length-p;
+    const linhas=rows.map((r,i)=>`<tr><td>${i+1}</td><td>${esc(r.matricula)}</td><td>${esc(r.posto_graduacao||'')}</td>
+      <td>${esc(r.nome_guerra||r.nome_completo||'')}</td><td>${esc(r.grupamento_id||'')}</td>
+      <td>${r.status==='presente'?'Presente':'Ausente'}</td><td>${esc(r.justificativa||'')}</td></tr>`).join('');
+    area.innerHTML=`
+      <div style="text-align:center;margin-bottom:14px;">
+        <div style="font-size:15px;font-weight:800;color:var(--text-white);">RELATÓRIO DE CHAMADA DE INSTRUÇÃO</div>
+        <div style="font-size:12.5px;color:var(--text-muted);margin-top:4px;">3ª Cia PM MAmb · Instrução de ${fmtData(inst.data)}</div>
+        <div style="font-size:13px;color:var(--gold-light);margin-top:6px;font-weight:700;">${esc(inst.assunto)}</div>
+        ${inst.responsavel_instrucao?`<div style="font-size:12px;color:var(--text-muted);">Responsável: ${esc(inst.responsavel_instrucao)}</div>`:''}
+        <div style="font-size:12.5px;color:var(--text-muted);margin-top:8px;">Presentes: <b>${p}</b> · Ausentes: <b>${a}</b> · Total marcado: <b>${rows.length}</b></div>
+      </div>
+      <div class="tblwrap"><table class="ci-tbl"><thead><tr><th>#</th><th>Nº PM</th><th>P/G</th><th>Nome</th><th>Grupamento</th><th>Status</th><th>Justificativa</th></tr></thead>
+      <tbody>${linhas||'<tr><td colspan="7" class="ci-msg">Sem presenças lançadas.</td></tr>'}</tbody></table></div>`;
+  }catch(e){ area.innerHTML='<div class="ci-msg err">Erro: '+esc(e.message)+'</div>'; }
+}
+
+/* ══ CONFIGURAR ═════════════════════════════════════════════════════ */
+function novaInstrucao(){
+  document.getElementById('cfgId').value='';
+  document.getElementById('cfgData').value=new Date().toISOString().slice(0,10);
+  document.getElementById('cfgAssunto').value='';
+  document.getElementById('cfgResp').value='';
+  document.getElementById('cfgAtiva').checked=true;
+  document.getElementById('cfgTitulo').textContent='Nova instrução';
+}
+async function salvarInstrucao(){
+  const dados={ id:document.getElementById('cfgId').value||null,
+    data:document.getElementById('cfgData').value||null,
+    assunto:document.getElementById('cfgAssunto').value.trim(),
+    responsavel_instrucao:document.getElementById('cfgResp').value.trim(),
+    ativa:document.getElementById('cfgAtiva').checked };
+  if(!dados.assunto){ toast('Informe o assunto.'); return; }
+  try{
+    await rpc('instrucao_salvar',{p_token:sessao.token,p_dados:dados});
+    toast('Instrução salva.');
+    HISTORICO=null; novaInstrucao();
+    await carregarInstrucaoAtiva(); await carregarHistorico();
+    if(document.getElementById('pane-lancar').classList.contains('active')) carregarLancar();
+  }catch(e){ toast('Erro: '+e.message); }
+}
+async function carregarHistorico(){
+  const tb=document.querySelector('#cfgTbl tbody');
+  tb.innerHTML='<tr><td colspan="5" class="ci-msg">Carregando…</td></tr>';
+  try{
+    HISTORICO=await rpc('instrucao_listar',{p_token:sessao.token})||[];
+    if(!HISTORICO.length){ tb.innerHTML='<tr><td colspan="5" class="ci-msg">Nenhuma instrução cadastrada.</td></tr>'; return; }
+    tb.innerHTML=HISTORICO.map(i=>`<tr>
+      <td>${fmtData(i.data)}</td><td>${esc(i.assunto)}</td><td>${esc(i.responsavel_instrucao||'')}</td>
+      <td>${i.ativa?'<span class="st-pill ok">ATIVA</span>':''}</td>
+      <td><button class="ci-chipbtn" onclick='editarInstrucao(${JSON.stringify(JSON.stringify(i))})'>Editar</button></td></tr>`).join('');
+  }catch(e){ tb.innerHTML='<tr><td colspan="5" class="ci-msg err">Erro: '+esc(e.message)+'</td></tr>'; }
+}
+function editarInstrucao(js){
+  const i=JSON.parse(js);
+  document.getElementById('cfgId').value=i.id;
+  document.getElementById('cfgData').value=(i.data||'').slice(0,10);
+  document.getElementById('cfgAssunto').value=i.assunto||'';
+  document.getElementById('cfgResp').value=i.responsavel_instrucao||'';
+  document.getElementById('cfgAtiva').checked=!!i.ativa;
+  document.getElementById('cfgTitulo').textContent='Editar instrução';
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+/* ── init ── */
+(async function(){
+  await carregarInstrucaoAtiva();
+  await carregarLancar();
+})();
+</script>
+</body>
+</html>
