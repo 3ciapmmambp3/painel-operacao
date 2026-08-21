@@ -13434,7 +13434,10 @@ async function adicionarComplemento(){
 ══════════════════════════════════ */
 function _initIntelFiltroGP(){
   const _isAdmin = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
-  if(_isAdmin) return;
+  /* Visão geral da Cia: Admin Geral / Aux P2 / CMT CIA — sem trava de GP (veem todos) */
+  const _veTudoIntel = _isAdmin || (sessao && ( sessao.nivel_acesso === 'admin_geral'
+    || (function(){ const fx=(sessao.funcao||'').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,''); return /AUX\s*P?\s*2/.test(fx) || ((/CMT|COMANDANTE/.test(fx)) && /\bCIA\b/.test(fx)); })() ));
+  if(_veTudoIntel) return;
 
   const gpSelect = document.getElementById('intel-busca-gp');
   const badge    = document.getElementById('intel-gp-badge');
@@ -13507,9 +13510,12 @@ function renderIntel(resetPage){
   const pelSel     = getPelDd('intel');
 
   const _isAdmin = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
+  /* Visão geral da Cia (vê TODAS as fichas, sem restrição de pelotão): Admin Geral, Aux P2, CMT CIA */
+  const _veTudoIntel = _isAdmin || (sessao && ( sessao.nivel_acesso === 'admin_geral'
+    || (function(){ const fx=(sessao.funcao||'').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,''); return /AUX\s*P?\s*2/.test(fx) || ((/CMT|COMANDANTE/.test(fx)) && /\bCIA\b/.test(fx)); })() ));
 
-  /* Operacional e admin_pelotao: restringe ao pelotão do usuário */
-  const _meuPelNum = !_isAdmin ? _pelotaoDoUsuario() : '';
+  /* Operacional e admin_pelotao (exceto visão geral): restringe ao pelotão do usuário */
+  const _meuPelNum = !_veTudoIntel ? _pelotaoDoUsuario() : '';
   const _gpsDoMeuPelotao = _meuPelNum
     ? [...new Set(dadosGrupos.filter(r => String(r.pelNum) === String(_meuPelNum)).map(r => gpDoColk(r.grupamento)).filter(g => g && g !== '—'))]
     : [];
@@ -13536,8 +13542,8 @@ function renderIntel(resetPage){
       if(!f.gpsAtuacao || !f.gpsAtuacao.length) return false;
       if(!f.gpsAtuacao.some(gp => _gpsDosPelSelecionados.includes(gp))) return false;
     }
-    /* Restrição por pelotão: operacional e admin_pelotao veem apenas fichas do próprio pelotão */
-    if(!_isAdmin && _gpsDoMeuPelotao.length && f.gpsAtuacao && f.gpsAtuacao.length){
+    /* Restrição por pelotão: operacional e admin_pelotao (sem visão geral) veem apenas fichas do próprio pelotão */
+    if(!_veTudoIntel && _gpsDoMeuPelotao.length && f.gpsAtuacao && f.gpsAtuacao.length){
       if(!f.gpsAtuacao.some(gp => _gpsDoMeuPelotao.includes(gp))) return false;
     }
     return true;
