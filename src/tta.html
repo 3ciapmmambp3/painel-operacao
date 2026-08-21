@@ -241,6 +241,11 @@
         @media(max-width:720px){.eq-g3{grid-template-columns:1fr}}
       </style>
 
+      <div id="editHojeBanner" style="display:none;align-items:center;gap:12px;flex-wrap:wrap;background:rgba(255,152,0,.1);border:1px solid rgba(255,152,0,.4);border-left:3px solid #ffa726;border-radius:9px;padding:12px 15px;margin-bottom:14px;font-size:13px;color:var(--text-white);">
+        <span>📋 Você já registrou a chamada de hoje. Precisa ajustar algo? A correção é permitida só hoje.</span>
+        <button type="button" class="btn-outline btn-sm" style="margin-left:auto" onclick="corrigirChamadaHoje()">✏️ Corrigir chamada de hoje</button>
+      </div>
+
       <div class="card">
         <h3>Dados da chamada <span class="req">* obrigatório</span></h3>
         <div class="grid2">
@@ -600,6 +605,63 @@ function coletarEquipes(){
   });
 }
 
+/* ── Correção da chamada de hoje (só no mesmo dia) ────────────────────── */
+let CHAMADA_HOJE = null;      // chamada de hoje do autor logado, se houver
+let CHAMADA_EDIT_ID = null;   // id quando em modo correção
+function milToInput(m){ return m ? `${m.matricula} - ${(m.pg||'').toUpperCase()} - ${(m.nome||'').toUpperCase()}` : ''; }
+
+async function checarChamadaHoje(){
+  try{
+    const r = await rpc('tta_chamada_hoje', { p_token: sessao.token });
+    const c = Array.isArray(r) ? r[0] : r;
+    CHAMADA_HOJE = (c && c.id) ? c : null;
+  }catch(e){ CHAMADA_HOJE = null; }
+  const banner = document.getElementById('editHojeBanner');
+  if (banner) banner.style.display = (CHAMADA_HOJE && !CHAMADA_EDIT_ID) ? 'flex' : 'none';
+}
+
+async function corrigirChamadaHoje(){
+  const c = CHAMADA_HOJE; if(!c) return;
+  // grupamento (repovoa os municípios) → turno → observações
+  document.getElementById('selGrupamento').value = c.gp_responsavel || '';
+  await onGrupamentoChange();
+  document.getElementById('inicioTurno').value = (c.inicio_turno||'').slice(0,5);
+  document.getElementById('fimTurno').value    = (c.final_turno||'').slice(0,5);
+  document.getElementById('observacoes').value = c.observacoes || '';
+  // reconstrói as equipes
+  const box = document.getElementById('equipesTTA'); box.innerHTML='';
+  (c.equipes||[]).forEach(ed=>{
+    addEquipe();
+    const div = box.lastElementChild;
+    div.querySelector('.eq-com').value = milToInput(ed.comandante);
+    div.querySelector('.eq-vtr').value = ed.prefixo_viatura || '';
+    div.querySelector('.eq-mot').value = milToInput(ed.motorista);
+    div.querySelector('.eq-patr').value = ed.tipo_patrulha || '';
+    div.querySelector('.eq-oper').value = ed.operacao || '';
+    const addBtn = [...div.querySelectorAll('button')].find(b=>(b.getAttribute('onclick')||'').includes('addPatrulheiro'));
+    (ed.patrulheiros||[]).forEach(p=>{
+      if(addBtn) addPatrulheiro(addBtn);
+      const pats = div.querySelectorAll('.eq-pat');
+      if(pats.length) pats[pats.length-1].value = milToInput(p);
+    });
+    div.querySelectorAll('.eq-munis label').forEach(lb=>{
+      if((ed.municipios||[]).includes(lb.textContent.trim())){ const cb=lb.querySelector('input'); if(cb) cb.checked=true; }
+    });
+  });
+  refreshEquipes();
+  [...box.querySelectorAll('.equipe')].forEach((div,i)=>{
+    const v=(c.equipes[i]||{}).vinculo; const s=div.querySelector('.eq-vinc');
+    if(v && [...s.options].some(o=>o.value===v)) s.value=v;
+  });
+  atualizarPresentesAuto(); atualizarPend();
+  CHAMADA_EDIT_ID = c.id;
+  const btn = document.getElementById('btnRegistrar');
+  btn.disabled=false; btn.textContent='💾 Salvar correção';
+  document.getElementById('editHojeBanner').style.display='none';
+  document.getElementById('selGrupamento').scrollIntoView({behavior:'smooth',block:'center'});
+  toast('Chamada de hoje carregada para correção.');
+}
+
 async function registrarChamada(){
   const gpr = document.getElementById('selGrupamento').value;
   const g = GRUPOS.find(x => x.gp_responsavel === gpr);
@@ -625,25 +687,37 @@ async function registrarChamada(){
   const municipios = [...new Set(equipes.flatMap(e=>e.municipios))];
   const viaturas = equipes.map(e=>({ prefixo:e.prefixo_viatura, motorista_matricula:e.motorista.matricula, motorista_nome:e.motorista.nome }));
 
+  const payload = {
+    gp_responsavel: g.gp_responsavel, grupamento_completo: g.grupamento_completo,
+    equipes: equipes,
+    militares_presentes: presentes,
+    inicio_turno: inicio, final_turno: fim,
+    prefixo_viatura: viaturas[0].prefixo, viaturas: viaturas,
+    tipo_patrulha: equipes[0].tipo_patrulha,
+    municipios_atuacao: municipios,
+    observacoes: document.getElementById('observacoes').value.trim()
+  };
+
   const btn = document.getElementById('btnRegistrar');
-  btn.disabled = true; btn.textContent = '⏳ Registrando...';
+  const editando = !!CHAMADA_EDIT_ID;
+  btn.disabled = true; btn.textContent = editando ? '⏳ Salvando...' : '⏳ Registrando...';
   try{
-    await rpc('tta_criar_chamada', { p_token: sessao.token, p_dados: {
-      gp_responsavel: g.gp_responsavel, grupamento_completo: g.grupamento_completo,
-      equipes: equipes,
-      militares_presentes: presentes,
-      inicio_turno: inicio, final_turno: fim,
-      prefixo_viatura: viaturas[0].prefixo, viaturas: viaturas,
-      tipo_patrulha: equipes[0].tipo_patrulha,
-      municipios_atuacao: municipios,
-      observacoes: document.getElementById('observacoes').value.trim()
-    }});
-    await criarPendenciasTTA(viaturas);
-    toast('✔ Chamada registrada. Fichas de movimentação geradas para os motoristas.');
-    btn.textContent = '✔ Chamada registrada';
+    if (editando){
+      await rpc('tta_editar_chamada', { p_token: sessao.token, p_id: CHAMADA_EDIT_ID, p_dados: payload });
+      await criarPendenciasTTA(viaturas);
+      toast('✔ Correção salva.');
+      btn.textContent = '✔ Correção salva';
+    } else {
+      const nova = await rpc('tta_criar_chamada', { p_token: sessao.token, p_dados: payload });
+      await criarPendenciasTTA(viaturas);
+      toast('✔ Chamada registrada. Fichas de movimentação geradas para os motoristas.');
+      btn.textContent = '✔ Chamada registrada';
+      const c = Array.isArray(nova)?nova[0]:nova;   // permite corrigir a recém-criada hoje
+      if(c && c.id){ CHAMADA_HOJE = c; const b=document.getElementById('editHojeBanner'); if(b) b.style.display='flex'; }
+    }
   }catch(e){
     toast('Erro: '+e.message);
-    btn.disabled = false; btn.textContent = '✔ Registrar chamada';
+    btn.disabled = false; btn.textContent = editando ? '💾 Salvar correção' : '✔ Registrar chamada';
   }
 }
 
@@ -679,6 +753,7 @@ async function carregarOperacoesTTA(){
   // o resto da página de carregar.
   await Promise.allSettled([carregarGrupos(), carregarRoster(), carregarTemaHoje(), carregarMaterialAtual(), renderPastas(), carregarOperacoesTTA()]);
   onGrupamentoChange();
+  checarChamadaHoje();
 })();
 </script>
 <script>(function(){try{var s=(typeof sessaoLer==='function')?sessaoLer():null;if(s&&(s.nivel_acesso==='admin_geral'||(s.funcao||'').toLowerCase().indexOf('aux p4')===0)){var l=document.getElementById('linkGestaoVtr');if(l)l.style.display='';}}catch(e){}})();</script>
