@@ -1284,6 +1284,7 @@ document.addEventListener('click', () => {
             <th>Município</th>
             <th>Indicador</th>
             <th>Unidade Área</th>
+            <th>UEOp</th>
             <th>Localização</th>
             <th>Pelotão</th>
             <th style="min-width:200px;">Grupamento (Col K)</th>
@@ -2128,6 +2129,12 @@ document.addEventListener('click', () => {
         <option value="validada">✅ Validada</option>
         <option value="indeferida">❌ Indeferida</option>
         <option value="corrigida">✔ Corrigida</option>
+      </select>
+      <select id="audit-lista-filtro-gp" onchange="renderAuditoriasLista()" style="background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:4px 8px;font-size:11px;max-width:230px;">
+        <option value="">Todos os grupamentos</option>
+      </select>
+      <select id="audit-lista-filtro-mes" onchange="renderAuditoriasLista()" style="background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:4px 8px;font-size:11px;">
+        <option value="">Todos os meses</option>
       </select>
       <input type="text" id="audit-lista-busca" placeholder="Ex: 2026-020361740-001 ou nome" oninput="mascaraBO(this);renderAuditoriasLista()" maxlength="18" style="background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:4px 10px;font-size:11px;width:220px;">
       <button class="btn-outline" onclick="_carregarAuditorias().then(()=>renderAuditoriasLista())" style="font-size:11px;padding:4px 10px;">☰ Atualizar</button>
@@ -3418,7 +3425,7 @@ async function carregarCrimes(forcar){
   dadosCrimes = [];
   if(!Object.keys(munParaGrupCrimes).length) await carregarGruposCrimes();
 
-  const CACHE_KEY_CRIMES = 'ac_cache_bd_crimes';
+  const CACHE_KEY_CRIMES = 'ac_cache_bd_crimes_v2';   /* v2: inclui unid_area_nivel_5 (UEOp) */
   const { usarCache, totalAtual } = await _cacheDecidir(CACHE_KEY_CRIMES, 'bd_crimes', null, forcar);
 
   let rows = [];
@@ -3429,7 +3436,7 @@ async function carregarCrimes(forcar){
     try {
       /* Paginação: Supabase Free limita 1000 por requisição */
       const _crimesFields = `select=numero_reds,ano_fato,mes_descricao,data_fato,municipio,` +
-        `descricao_localizacao,latitude,longitude,unid_area_nivel_4,unid_registro_nivel_4,unid_registro_nivel_7,` +
+        `descricao_localizacao,latitude,longitude,unid_area_nivel_4,unid_area_nivel_5,unid_registro_nivel_4,unid_registro_nivel_7,` +
         `imv_total,icvpe_total,icvpa_total,ifzr,descr_natureza_principal,` +
         `codigo_complemento_natureza,complemento_natureza,` +
         `imv_b01121,imv_b01129,imv_b01148,imv_b02001,imv_c01157,imv_b01504,` +
@@ -3513,6 +3520,7 @@ async function carregarCrimes(forcar){
         municipio:     munVal,
         localizacao:   locNorm,
         natureza:      (r.unid_area_nivel_4 || '').toString().trim(),
+        ueop:          (r.unid_area_nivel_5 || '').toString().trim(),   /* UEOp (Unidade Área Nível 5) */
         descrNatureza: (r.descr_natureza_principal || '').toString().trim(),
         unidRegistro7: (r.unid_registro_nivel_7 || '').toString().trim(),
         codComplemento:      parseInt(r.codigo_complemento_natureza) || null,
@@ -6354,7 +6362,7 @@ function renderCrimes(){
 
   const tbody = document.getElementById('crimes-tbody');
   if(!slice.length){
-    tbody.innerHTML = '<tr><td colspan="13" class="empty-state">Nenhuma ocorrência encontrada.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="14" class="empty-state">Nenhuma ocorrência encontrada.</td></tr>';
   } else {
     tbody.innerHTML = slice.map(d => {
       const cor       = CORES_INDICADOR[d.indicador] || '#9b8a5c';
@@ -6415,6 +6423,7 @@ function renderCrimes(){
         <td style="font-weight:600;color:var(--text-white);">${d.municipio||'—'}</td>
         <td><span class="badge-nat" style="background:${cor}22;color:${cor};border-color:${cor}55;">${d.indicador}</span></td>
         <td style="font-size:10px;color:#bbb;max-width:140px;">${d.natureza||'—'}<br><span style="color:var(--text-hint);font-size:10px;">${d.descrNatureza||''}</span></td>
+        <td style="font-size:10px;color:var(--gold-light);font-weight:600;white-space:nowrap;">${d.ueop||'—'}</td>
         <td>${locBadge}</td>
         <td>${pelLabel}</td>
         <td style="font-size:10px;color:var(--gold);font-weight:600;min-width:180px;white-space:normal;line-height:1.4;">${gp}</td>
@@ -11173,6 +11182,29 @@ function renderAuditoriasLista(){
   const busca = (document.getElementById('audit-lista-busca')?.value || '').toLowerCase().trim();
   const entradas = Object.values(auditoriasMap).filter(a => a && (a.motivo || a.justificativa));
 
+  /* Filtros por grupamento e mês (dados vêm da ocorrência vinculada por BO) */
+  const filtroGp  = document.getElementById('audit-lista-filtro-gp')?.value  || '';
+  const filtroMes = document.getElementById('audit-lista-filtro-mes')?.value || '';
+  const _crimeDe = a => dadosCrimes.find(d => d.bo === a.bo);
+  (function(){
+    const selGp = document.getElementById('audit-lista-filtro-gp');
+    if(selGp){
+      const gps = [...new Set(entradas.map(a=>{const c=_crimeDe(a); return c&&c.grupamento?gpDoColk(c.grupamento):'';}).filter(Boolean))].sort();
+      const cur = selGp.value;
+      selGp.innerHTML = '<option value="">Todos os grupamentos</option>' + gps.map(g=>`<option value="${g}">${g}</option>`).join('');
+      if([...selGp.options].some(o=>o.value===cur)) selGp.value = cur;
+    }
+    const selMes = document.getElementById('audit-lista-filtro-mes');
+    if(selMes){
+      const ORD = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
+      const meses = [...new Set(entradas.map(a=>{const c=_crimeDe(a); return c?c.mes:'';}).filter(Boolean))]
+        .sort((x,y)=> ORD.indexOf((x||'').toUpperCase()) - ORD.indexOf((y||'').toUpperCase()));
+      const cur = selMes.value;
+      selMes.innerHTML = '<option value="">Todos os meses</option>' + meses.map(m=>`<option value="${m}">${m}</option>`).join('');
+      if([...selMes.options].some(o=>o.value===cur)) selMes.value = cur;
+    }
+  })();
+
   /* Cards de resumo */
   const contagem = { aguardando:0, em_analise:0, validada:0, indeferida:0, corrigida:0 };
   entradas.forEach(a => { const s = a.status||'aguardando'; if(s in contagem) contagem[s]++; });
@@ -11196,6 +11228,8 @@ function renderAuditoriasLista(){
     (a.bo||'').toLowerCase().includes(busca) ||
     (a.solicitante||'').toLowerCase().includes(busca)
   );
+  if(filtroGp)  filtradas = filtradas.filter(a => { const c=_crimeDe(a); return c && gpDoColk(c.grupamento) === filtroGp; });
+  if(filtroMes) filtradas = filtradas.filter(a => { const c=_crimeDe(a); return c && c.mes === filtroMes; });
 
   if(!filtradas.length){
     container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:30px;">Nenhuma solicitação encontrada.</div>';
@@ -11216,12 +11250,14 @@ function renderAuditoriasLista(){
     const cor = AUDIT_STATUS_COR[status] || '#aaa';
     const label = AUDIT_STATUS_LABEL[status] || status;
     const gp  = crime?.grupamento ? gpDoColk(crime.grupamento) : '—';
+    const ueop = crime?.ueop || '—';
     return `
     <div style="background:var(--bg-card);border:1px solid var(--border);border-left:3px solid ${cor};border-radius:6px;padding:12px 14px;margin-bottom:8px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;">
       <div style="flex:1;min-width:200px;">
         <div style="font-size:11px;font-weight:700;color:#fff;margin-bottom:4px;">BO ${a.bo}</div>
         <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">
           <span style="color:#aaa;">Grupamento:</span> ${gp} &nbsp;|&nbsp;
+          <span style="color:#aaa;">UEOp:</span> <b style="color:var(--gold-light);">${ueop}</b> &nbsp;|&nbsp;
           <span style="color:#aaa;">Solicitante:</span> ${a.solicitante||'—'} &nbsp;|&nbsp;
           <span style="color:#aaa;">Data:</span> ${a.dataSolicitacao||'—'}
         </div>
@@ -11594,6 +11630,29 @@ function renderAuditoriasLista(){
   const busca = (document.getElementById('audit-lista-busca')?.value || '').toLowerCase().trim();
   const entradas = Object.values(auditoriasMap).filter(a => a && (a.motivo || a.justificativa));
 
+  /* Filtros por grupamento e mês (dados vêm da ocorrência vinculada por BO) */
+  const filtroGp  = document.getElementById('audit-lista-filtro-gp')?.value  || '';
+  const filtroMes = document.getElementById('audit-lista-filtro-mes')?.value || '';
+  const _crimeDe = a => dadosCrimes.find(d => d.bo === a.bo);
+  (function(){
+    const selGp = document.getElementById('audit-lista-filtro-gp');
+    if(selGp){
+      const gps = [...new Set(entradas.map(a=>{const c=_crimeDe(a); return c&&c.grupamento?gpDoColk(c.grupamento):'';}).filter(Boolean))].sort();
+      const cur = selGp.value;
+      selGp.innerHTML = '<option value="">Todos os grupamentos</option>' + gps.map(g=>`<option value="${g}">${g}</option>`).join('');
+      if([...selGp.options].some(o=>o.value===cur)) selGp.value = cur;
+    }
+    const selMes = document.getElementById('audit-lista-filtro-mes');
+    if(selMes){
+      const ORD = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
+      const meses = [...new Set(entradas.map(a=>{const c=_crimeDe(a); return c?c.mes:'';}).filter(Boolean))]
+        .sort((x,y)=> ORD.indexOf((x||'').toUpperCase()) - ORD.indexOf((y||'').toUpperCase()));
+      const cur = selMes.value;
+      selMes.innerHTML = '<option value="">Todos os meses</option>' + meses.map(m=>`<option value="${m}">${m}</option>`).join('');
+      if([...selMes.options].some(o=>o.value===cur)) selMes.value = cur;
+    }
+  })();
+
   /* Cards de resumo */
   const contagem = { aguardando:0, em_analise:0, validada:0, indeferida:0, corrigida:0 };
   entradas.forEach(a => { const s = a.status||'aguardando'; if(s in contagem) contagem[s]++; });
@@ -11617,6 +11676,8 @@ function renderAuditoriasLista(){
     (a.bo||'').toLowerCase().includes(busca) ||
     (a.solicitante||'').toLowerCase().includes(busca)
   );
+  if(filtroGp)  filtradas = filtradas.filter(a => { const c=_crimeDe(a); return c && gpDoColk(c.grupamento) === filtroGp; });
+  if(filtroMes) filtradas = filtradas.filter(a => { const c=_crimeDe(a); return c && c.mes === filtroMes; });
 
   if(!filtradas.length){
     container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:30px;">Nenhuma solicitação encontrada.</div>';
@@ -11637,12 +11698,14 @@ function renderAuditoriasLista(){
     const cor = AUDIT_STATUS_COR[status] || '#aaa';
     const label = AUDIT_STATUS_LABEL[status] || status;
     const gp  = crime?.grupamento ? gpDoColk(crime.grupamento) : '—';
+    const ueop = crime?.ueop || '—';
     return `
     <div style="background:var(--bg-card);border:1px solid var(--border);border-left:3px solid ${cor};border-radius:6px;padding:12px 14px;margin-bottom:8px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;">
       <div style="flex:1;min-width:200px;">
         <div style="font-size:11px;font-weight:700;color:#fff;margin-bottom:4px;">BO ${a.bo}</div>
         <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">
           <span style="color:#aaa;">Grupamento:</span> ${gp} &nbsp;|&nbsp;
+          <span style="color:#aaa;">UEOp:</span> <b style="color:var(--gold-light);">${ueop}</b> &nbsp;|&nbsp;
           <span style="color:#aaa;">Solicitante:</span> ${a.solicitante||'—'} &nbsp;|&nbsp;
           <span style="color:#aaa;">Data:</span> ${a.dataSolicitacao||'—'}
         </div>
