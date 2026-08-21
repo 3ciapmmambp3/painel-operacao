@@ -6358,23 +6358,32 @@ window.addEventListener('load', function(){
   if(!alvo && !ficha && !gp) return;
   setTimeout(function(){ const btn=document.querySelector('.subtab[onclick*="'+(alvo||'inteligencia')+'"]'); if(btn) btn.click(); }, 300);
   const cidade = gp ? gp.replace(/^GP\s+/i,'').toUpperCase().trim() : '';
-  let n=0, gpFeito=!gp, fichaFeita=!ficha;
+  let n=0, alvoVal=null, estavel=0, fichaFeita=!ficha;
   const t = setInterval(function(){
     n++;
-    if(!gpFeito){
+    /* Re-aplica o filtro de GP a cada tick: a página repopula o select
+       quando os dados carregam (zerando a seleção) — então re-selecionamos
+       até estabilizar. Só chama renderIntel quando de fato mudou. */
+    if(gp){
       const sel = document.getElementById('intel-busca-gp');
       if(sel && sel.options.length > 1){
-        const opt = [...sel.options].find(function(o){ return o.value && (o.value.split('/').pop()||'').trim().toUpperCase() === cidade; });
-        if(opt){ if(sel.disabled) sel.disabled=false; sel.value = opt.value; if(typeof renderIntel==='function') renderIntel(); }
-        gpFeito = true;
+        if(alvoVal === null){
+          const opt = [...sel.options].find(function(o){ return o.value && (o.value.split('/').pop()||'').trim().toUpperCase() === cidade; });
+          alvoVal = opt ? opt.value : '';
+        }
+        if(alvoVal){
+          if(sel.disabled) sel.disabled = false;
+          if(sel.value !== alvoVal){ sel.value = alvoVal; if(typeof renderIntel==='function') renderIntel(); estavel = 0; }
+          else { estavel++; }
+        } else { estavel++; }
       }
-    }
+    } else { estavel++; }
     if(!fichaFeita && typeof fichasIntel!=='undefined' && typeof abrirDrawerIntel==='function' && fichasIntel.some(function(f){ return f.id===ficha; })){
       try{ abrirDrawerIntel(ficha); }catch(e){}
       fichaFeita = true;
     }
-    if((gpFeito && fichaFeita) || n>=25) clearInterval(t);
-  }, 350);
+    if((estavel >= 8 && fichaFeita) || n >= 40) clearInterval(t);
+  }, 300);
 });
 
 function renderCrimes(){
