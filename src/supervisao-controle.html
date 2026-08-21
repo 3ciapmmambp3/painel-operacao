@@ -30,6 +30,9 @@
     .sc-filtros label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-hint);font-weight:700;}
     .sc-filtros select{padding:7px 10px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:6px;color:var(--text-white);font-size:12px;outline:none;min-width:170px;}
     .sc-filtros select:focus{border-color:var(--gold);}
+    .sc-filtros input[type="date"]{padding:7px 10px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:6px;color:var(--text-white);font-size:12px;outline:none;color-scheme:dark;}
+    .sc-filtros input[type="date"]:focus{border-color:var(--gold);}
+    .eq-tag.data{background:var(--bg-dark);color:var(--text-muted);border:1px solid var(--border);}
     .sc-filtros .lim{margin-left:auto;}
 
     .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px;}
@@ -123,8 +126,14 @@
     </div>
     <div class="right">
       <div class="stamp"><b id="hoje-data">—</b><span id="hoje-dia">—</span></div>
-      <button class="btn-outline btn-sm" onclick="carregar()">↻ Atualizar</button>
     </div>
+  </div>
+
+  <div class="sc-filtros" id="sc-periodo" style="margin-bottom:12px;">
+    <div class="fg"><label>Data início</label><input type="date" id="f-ini" onchange="carregar()"></div>
+    <div class="fg"><label>Data término</label><input type="date" id="f-fim" onchange="carregar()"></div>
+    <button class="btn-outline btn-sm" onclick="filtroHoje()" title="Voltar para o dia de hoje">📅 Hoje</button>
+    <button class="btn-outline btn-sm lim" onclick="carregar()">↻ Atualizar</button>
   </div>
 
   <div class="sc-filtros" id="sc-filtros" style="display:none;">
@@ -168,6 +177,9 @@ async function rpc(fn, body){
 function fmtMil(m){ if(!m) return null; return ((m.pg?m.pg+' ':'')+(m.nome||m.matricula||'')).trim(); }
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function pelDe(gc){ const m=(gc||'').match(/(\d+)\s*[ºo]?\s*PEL/i); return m?(m[1]+' PEL'):''; }
+function dataBR(iso){ const p=(iso||'').split('-'); return p.length===3 ? (p[2]+'/'+p[1]+'/'+p[0]) : (iso||''); }
+function filtroHoje(){ const t=new Date(); const iso=new Date(t.getTime()-t.getTimezoneOffset()*60000).toISOString().slice(0,10);
+  document.getElementById('f-ini').value=iso; document.getElementById('f-fim').value=iso; carregar(); }
 
 /* preenche cabeçalho do usuário + reveal ADM */
 (function initUser(){
@@ -203,12 +215,13 @@ async function carregar(){
       '<div class="no-access"><h2>Acesso restrito</h2><p>A Supervisão e Controle é exclusiva de Admin Geral, Admin e Admin de Pelotão. Fale com o Comando se precisar de acesso.</p></div>';
     return;
   }
+  const ini=document.getElementById('f-ini').value, fim=document.getElementById('f-fim').value;
   const lista=document.getElementById('sc-lista');
-  lista.innerHTML='<div class="sc-msg"><span class="spinner"></span> Carregando equipes do dia…</div>';
+  lista.innerHTML='<div class="sc-msg"><span class="spinner"></span> Carregando equipes…</div>';
   document.getElementById('kpis').style.display='none';
   document.getElementById('sc-filtros').style.display='none';
   try{
-    const chamadas = await rpc('supervisao_equipes_hoje', { p_token:S.token }) || [];
+    const chamadas = await rpc('supervisao_equipes_periodo', { p_token:S.token, p_ini: ini||null, p_fim: fim||null }) || [];
     // enriquecer viaturas (placa/modelo) — best-effort
     try{
       const rv=await fetch(`${API}/rest/v1/viaturas?select=prefixo,placa,marca_modelo&ativo=eq.true`,{headers:H});
@@ -223,7 +236,8 @@ async function carregar(){
           grupamento_completo: c.grupamento_completo,
           pelotao: pelDe(c.grupamento_completo),
           inicio_turno: c.inicio_turno, final_turno: c.final_turno,
-          tema_assunto: c.tema_assunto
+          tema_assunto: c.tema_assunto,
+          data: (c.data_hora_chamada||'').slice(0,10)
         }));
       });
     });
@@ -231,7 +245,7 @@ async function carregar(){
     render();
   }catch(e){
     lista.innerHTML='<div class="sc-msg err">Não foi possível carregar: '+esc(e.message)+
-      '<br><span style="color:var(--text-hint);font-size:12px">Se a mensagem for de função inexistente, rode <b>db/21_supervisao.sql</b> no Supabase.</span></div>';
+      '<br><span style="color:var(--text-hint);font-size:12px">Se a mensagem for de função inexistente, rode <b>db/23_supervisao_periodo.sql</b> no Supabase.</span></div>';
   }
 }
 
@@ -246,6 +260,10 @@ function montarFiltros(){
 function limparFiltros(){ document.getElementById('f-gp').value=''; document.getElementById('f-pel').value=''; render(); }
 
 function render(){
+  const dini=document.getElementById('f-ini').value, dfim=document.getElementById('f-fim').value;
+  const multiDia = dini && dfim && dini!==dfim;
+  const periodoTxt = !dini ? 'hoje' : (multiDia ? `de ${dataBR(dini)} a ${dataBR(dfim)}` : `em ${dataBR(dini)}`);
+  const subEl=document.querySelector('.sc-head .sub'); if(subEl) subEl.textContent='Equipes em serviço '+periodoTxt+' — fonte: chamadas do TTA';
   const fgp=document.getElementById('f-gp').value, fpel=document.getElementById('f-pel').value;
   const itens=EQUIPES.filter(e=>(!fgp||e.gp_responsavel===fgp)&&(!fpel||e.pelotao===fpel));
 
@@ -263,7 +281,7 @@ function render(){
   document.getElementById('kpis').style.display = EQUIPES.length ? 'grid' : 'none';
 
   const lista=document.getElementById('sc-lista');
-  if(!EQUIPES.length){ lista.innerHTML='<div class="sc-msg">Nenhuma chamada de TTA registrada hoje ainda.</div>'; return; }
+  if(!EQUIPES.length){ lista.innerHTML='<div class="sc-msg">Nenhuma chamada de TTA registrada '+periodoTxt+'.</div>'; return; }
   if(!itens.length){ lista.innerHTML='<div class="sc-msg">Nenhuma equipe para o filtro selecionado.</div>'; return; }
 
   lista.innerHTML='<div class="eq-grid">'+itens.map(e=>{
@@ -277,6 +295,7 @@ function render(){
       <div class="eq-top">
         <span class="eq-num">Equipe ${esc(e.ordem||'')}</span>
         <span class="eq-tag ${apoio?'apoio':'principal'}">${apoio?'apoio':'principal'}</span>
+        ${multiDia&&e.data?`<span class="eq-tag data">📅 ${esc(dataBR(e.data))}</span>`:''}
         ${e.gp_responsavel?`<span class="eq-tag gp">${esc(e.gp_responsavel)}${e.pelotao?' · '+esc(e.pelotao):''}</span>`:''}
       </div>
       <div class="eq-vtr">🚔 VTR ${esc(e.prefixo_viatura||'—')}${vtrExtra?` <small>${esc(vtrExtra)}</small>`:''}</div>
@@ -293,6 +312,9 @@ function render(){
   }).join('')+'</div>';
 }
 
+/* ao entrar, fica fixo no dia de hoje */
+(function(){ const t=new Date(); const iso=new Date(t.getTime()-t.getTimezoneOffset()*60000).toISOString().slice(0,10);
+  document.getElementById('f-ini').value=iso; document.getElementById('f-fim').value=iso; })();
 carregar();
 </script>
 </body>
