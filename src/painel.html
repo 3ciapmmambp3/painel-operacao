@@ -5748,10 +5748,14 @@ async function carregarAvisosInicio(){
   const mat = (sessaoPainel.numeroPolicia||'').replace(/\D/g,'');
   const lot = (sessaoPainel.lotacao||'').trim();
   const H = { apikey: SB_KEY, Authorization: 'Bearer '+SB_KEY };
-  const normS = s => (s||'').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim();
-  /* assinatura do GP: N GP + M PEL + último segmento (município) — robusta a variações */
-  const gpSig = s => { const u=normS(s); const g=u.match(/(\d+)\s*GP/); const p=u.match(/(\d+)\s*PEL/); const last=(u.split('/').pop()||'').trim(); return (g?g[1]:'')+'G'+(p?p[1]:'')+'P'+last; };
-  const meuSig = lot ? gpSig(lot) : '';
+  /* GP do usuário — extração canônica do app (gpDoColk = "GP CIDADE" do último segmento) */
+  const meuGp = (lot && lot.includes('/') && typeof gpDoColk==='function') ? gpDoColk(lot) : '';
+  const TC  = {homicidio:'Homicídio',tentativa_homicidio:'Tentativa de homicídio',latrocinio:'Latrocínio',feminicidio:'Feminicídio',roubo:'Roubo',furto:'Furto',trafico:'Tráfico',porte_arma:'Porte de arma',cvpa:'CVPA',cvpe:'CVPE',lesao_corporal:'Lesão corporal',estupro:'Estupro',sequestro:'Sequestro',extorsao:'Extorsão',milicia:'Milícia',outros:'Outros'};
+  const PR  = {baixa:'Baixa',media:'Média',alta:'Alta',critica:'Crítica'};
+  const PRC = {baixa:'#66bb6a',media:'#ffc107',alta:'#ff9800',critica:'#ef5350'};
+  const STL = {em_analise:'Em análise',monitoramento:'Monitoramento',confirmado:'Confirmado',em_operacao:'Em operação'};
+  const _fmtD = s => { if(!s) return ''; const d=new Date(s); return isNaN(d.getTime())?String(s).slice(0,10):d.toLocaleDateString('pt-BR'); };
+  const _esc  = s => (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const avisos = [];
   try {
     /* 1) Ficha de movimentação de viatura pendente (motorista) */
@@ -5777,14 +5781,28 @@ async function carregarAvisosInicio(){
         }
       }
     }
-    /* 3) Inteligência cadastrada para a região (GP) do usuário */
-    if(meuSig){
-      const r = await fetch(`${SB_URL}/rest/v1/fichas_intel?select=id,gps_atuacao,status_ficha`, {headers:H});
+    /* 3) Inteligência ATIVA da região (GP) — resumo de classificação p/ atiçar a curiosidade */
+    if(meuGp){
+      const ST_OK = ['monitoramento','em_analise','confirmado','em_operacao'];
+      const r = await fetch(`${SB_URL}/rest/v1/fichas_intel?select=id,gps_atuacao,status_ficha,tipo_criminal,prioridade,data_fato,rat,municipio`, {headers:H});
       if(r.ok){ const fichas = await r.json();
-        const daRegiao = fichas.filter(f => String(f.status_ficha||'')!=='encerrado'
-          && Array.isArray(f.gps_atuacao) && f.gps_atuacao.some(g => gpSig(g)===meuSig));
+        const daRegiao = fichas.filter(f => ST_OK.includes(String(f.status_ficha||''))
+          && Array.isArray(f.gps_atuacao) && f.gps_atuacao.some(g => gpDoColk(g)===meuGp));
         if(daRegiao.length){
-          avisos.push({ic:'🕵', txt:`Há <b>${daRegiao.length} ficha(s) de inteligência</b> cadastrada(s) para a sua região`, lk:'analise-criminal.html', lkTxt:'Ver →', sub:'inteligencia'});
+          const teasers = daRegiao.slice(0,3).map(f => {
+            const mun = Array.isArray(f.municipio)?f.municipio.join(', '):(f.municipio||'');
+            const partes = [
+              f.rat?('BO '+_esc(f.rat)):'',
+              f.tipo_criminal?_esc(TC[f.tipo_criminal]||f.tipo_criminal):'',
+              f.prioridade?`<b style="color:${PRC[f.prioridade]||'#aaa'};">${_esc(PR[f.prioridade]||f.prioridade)}</b>`:'',
+              f.status_ficha?_esc(STL[f.status_ficha]||f.status_ficha):'',
+              _esc(mun),
+              _fmtD(f.data_fato)
+            ].filter(Boolean).join(' · ');
+            return `<div onclick="try{sessionStorage.setItem('ac_abrir_subtab','inteligencia');sessionStorage.setItem('ac_abrir_ficha','${_esc(f.id)}')}catch(e){};window.location.href='analise-criminal.html'" style="cursor:pointer;font-size:11.5px;color:#cfcfcf;padding:6px 0 6px 29px;border-top:1px dashed var(--border);">${partes||'ficha de inteligência'}</div>`;
+          }).join('');
+          const mais = daRegiao.length>3 ? `<div style="font-size:11px;color:var(--text-hint);padding:6px 0 2px 29px;">+${daRegiao.length-3} outra(s)…</div>` : '';
+          avisos.push({ intel:true, n:daRegiao.length, teasers, mais });
         }
       }
     }
@@ -5793,6 +5811,15 @@ async function carregarAvisosInicio(){
   if(!avisos.length){ box.innerHTML=''; return; }
   box.innerHTML = `<div style="border:1px solid var(--gold-border);border-radius:11px;overflow:hidden;background:linear-gradient(180deg,var(--gold-bg),transparent);">`
     + avisos.map(a => {
+        if(a.intel){
+          return `<div style="padding:12px 16px;border-bottom:1px solid var(--border);">
+            <div style="display:flex;align-items:center;gap:12px;font-size:13px;color:var(--text-white);">
+              <span style="font-size:17px;flex-shrink:0;">🕵</span>
+              <span style="flex:1;min-width:0;">Há <b>${a.n} ficha(s) de inteligência</b> ativa(s) para a sua região</span>
+              <a href="analise-criminal.html" onclick="try{sessionStorage.setItem('ac_abrir_subtab','inteligencia')}catch(e){}" style="color:var(--gold);font-weight:700;font-size:12px;white-space:nowrap;text-decoration:none;">Ver todas →</a>
+            </div>${a.teasers}${a.mais}
+          </div>`;
+        }
         const onclk = a.sub ? ` onclick="try{sessionStorage.setItem('ac_abrir_subtab','${a.sub}')}catch(e){}"` : '';
         return `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;color:var(--text-white);">
           <span style="font-size:17px;flex-shrink:0;">${a.ic}</span>
