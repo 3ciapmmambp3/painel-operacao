@@ -6266,18 +6266,50 @@ document.head.appendChild(styleUrban);
    OCORRÊNCIAS
 ══════════════════════════════════ */
 const CRIMES_PAG_SZ = 30;
-/* Monta o texto do tooltip (title) com o resumo das fichas de inteligência de uma ocorrência. */
+/* Monta o texto do tooltip (title) com um resumo das fichas de inteligência —
+   os MESMOS campos que aparecem no card da ficha (tipo criminal, prioridade,
+   status, município/bairro, facção, envolvido, data). */
 function intelTip(fichas){
-  const cab = '🕵 Inteligencia cadastrada (' + fichas.length + ' ficha' + (fichas.length>1?'s':'') + '):';
-  const linhas = fichas.slice(0,4).map(f => {
-    const primeiro = s => (s||'').split(/[\n,;]/)[0].trim();
-    const partes = [f.tipoCriminal, f.facao, primeiro(f.suspeitos)].map(s=>(s||'').trim()).filter(Boolean);
-    const resumo = partes.length ? partes.join(' - ') : 'ficha registrada';
-    return '- ' + resumo + (f.dataFato ? ' (' + f.dataFato + ')' : '');
+  const TC = {homicidio:'Homicídio Consumado',tentativa_homicidio:'Homicídio Tentado',latrocinio:'Latrocínio',feminicidio:'Feminicídio',roubo:'Roubo',furto:'Furto',trafico:'Tráfico de Drogas',porte_arma:'Porte de Arma',cvpa:'CVPA',cvpe:'CVPE',lesao_corporal:'Lesão Corporal',estupro:'Estupro',sequestro:'Sequestro',extorsao:'Extorsão',milicia:'Milícia',outros:'Outros'};
+  const PR = {baixa:'Baixa',media:'Média',alta:'Alta',critica:'Crítica'};
+  const ST = {em_analise:'Em Análise',monitoramento:'Monitoramento',confirmado:'Confirmado',em_operacao:'Em Operação',encerrado:'Encerrado'};
+  const fmtD = s => { if(!s) return ''; const d = new Date(s); return isNaN(d.getTime()) ? String(s) : d.toLocaleDateString('pt-BR'); };
+  const primeiroEnv = s => (s||'').split('\n')[0].split(/[,;]/)[0].replace(/^(autor|v[ií]tima|suspeito):?\s*/i,'').trim();
+  const cab = '🕵 Inteligência — ' + fichas.length + ' ficha' + (fichas.length>1?'s':'') + ' cadastrada' + (fichas.length>1?'s':'') + ':';
+  const blocos = fichas.slice(0,3).map(f => {
+    const L = [];
+    const tipo = f.tipoCriminal ? (TC[f.tipoCriminal]||f.tipoCriminal) : 'Sem tipo definido';
+    const prio = f.prioridade ? (PR[f.prioridade]||f.prioridade) : '';
+    const st   = f.statusFicha ? (ST[f.statusFicha]||f.statusFicha) : '';
+    L.push('• ' + [tipo, prio && ('Prioridade '+prio), st].filter(Boolean).join(' — '));
+    const muns = Array.isArray(f.municipio) ? f.municipio.join(', ') : (f.municipio||'');
+    const loc = [muns, f.bairro].filter(Boolean).join(' · ');
+    if(loc)          L.push('   📍 ' + loc);
+    if(f.facao)      L.push('   🕵 Facção: ' + f.facao);
+    const env = primeiroEnv(f.suspeitos);
+    if(env)          L.push('   👤 ' + env);
+    if(fmtD(f.dataFato)) L.push('   📅 ' + fmtD(f.dataFato));
+    return L.join('\n');
   });
-  if(fichas.length>4) linhas.push('... e mais ' + (fichas.length-4));
-  linhas.push('Clique para abrir os dados completos.');
-  return (cab + '\n' + linhas.join('\n')).replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  if(fichas.length>3) blocos.push('… e mais ' + (fichas.length-3) + ' ficha(s)');
+  blocos.push('———\nClique para ver as fichas na aba Inteligência.');
+  return (cab + '\n' + blocos.join('\n')).replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+/* Clique no selo/botão de Inteligência de uma ocorrência.
+   - JÁ tem ficha(s): vai para a aba Inteligência e MOSTRA a(s) ficha(s) desse BO
+     na lista (não abre o preenchimento).
+   - NÃO tem ficha: cai no fluxo de criar (abrirIntelPorRat abre a ficha em branco). */
+function verIntelDaOcorrencia(bo, mun){
+  const tem = (typeof fichasIntel!=='undefined') && fichasIntel.some(f => (f.rat||'') === bo);
+  if(!tem){ return abrirIntelPorRat(bo, mun); }
+  const btn = document.querySelector('.subtab[onclick*="inteligencia"]');
+  if(btn && typeof switchSubtab==='function') switchSubtab(btn, 'inteligencia');
+  const busca = document.getElementById('intel-busca-rat');
+  if(busca) busca.value = bo;
+  if(typeof renderIntel==='function') renderIntel(true);
+  const alvo = document.getElementById('tab-inteligencia');
+  if(alvo && alvo.scrollIntoView) setTimeout(()=>alvo.scrollIntoView({behavior:'smooth',block:'start'}), 60);
 }
 
 function renderCrimes(){
@@ -6348,10 +6380,10 @@ function renderCrimes(){
       const fichasBo = (typeof fichasIntel!=='undefined'?fichasIntel:[]).filter(f => (f.rat||'') === boNum);
       const temIntel = fichasBo.length > 0;
       const intelChip = temIntel
-        ? ` <span title="${intelTip(fichasBo)}" onclick="event.stopPropagation();abrirIntelPorRat('${boNum}','${_munSafe}')" style="display:inline-block;margin-left:6px;background:#c026d3;color:#fff;font-size:9px;font-weight:800;letter-spacing:.4px;padding:1px 7px;border-radius:20px;cursor:pointer;box-shadow:0 0 9px rgba(192,38,211,.6);vertical-align:middle;white-space:nowrap;">🕵 INTEL${fichasBo.length>1?' '+fichasBo.length:''}</span>`
+        ? ` <span title="${intelTip(fichasBo)}" onclick="event.stopPropagation();verIntelDaOcorrencia('${boNum}','${_munSafe}')" style="display:inline-block;margin-left:6px;background:#c026d3;color:#fff;font-size:9px;font-weight:800;letter-spacing:.4px;padding:1px 7px;border-radius:20px;cursor:pointer;box-shadow:0 0 9px rgba(192,38,211,.6);vertical-align:middle;white-space:nowrap;">🕵 INTEL${fichasBo.length>1?' '+fichasBo.length:''}</span>`
         : '';
       const intelBtn = temIntel
-        ? `<button title="${intelTip(fichasBo)}" style="font-size:10px;padding:3px 7px;margin-left:3px;background:rgba(192,38,211,.2);border:1px solid #c026d3;color:#e879f9;border-radius:4px;cursor:pointer;font-weight:700;" onclick="abrirIntelPorRat('${boNum}','${_munSafe}')">🕵 Inteligência (${fichasBo.length})</button>`
+        ? `<button title="${intelTip(fichasBo)}" style="font-size:10px;padding:3px 7px;margin-left:3px;background:rgba(192,38,211,.2);border:1px solid #c026d3;color:#e879f9;border-radius:4px;cursor:pointer;font-weight:700;" onclick="verIntelDaOcorrencia('${boNum}','${_munSafe}')">🕵 Inteligência (${fichasBo.length})</button>`
         : `<button class="btn-outline" style="font-size:10px;padding:3px 7px;margin-left:3px;" onclick="abrirIntelPorRat('${boNum}','${_munSafe}')">🕵 Inteligência</button>`;
       const auditBadge  = auditSalvo && auditSalvo.status === 'aguardando'
           ? `<span class="badge-nat" style="background:rgba(255,152,0,.18);color:#ff9800;border-color:rgba(255,152,0,.5);font-weight:700;cursor:pointer;" onclick="verParecer('${boNum}')">⏳ Aguardando</span>`
