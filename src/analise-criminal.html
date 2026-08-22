@@ -14336,6 +14336,31 @@ async function _syncMilitaresSupabase(){
   }catch(e){ console.warn('[AC] sync militares supabase:', e.message); }
 }
 
+/* Ordem hierárquica de posto/graduação p/ ordenar o efetivo:
+   CEL, TEN CEL, MAJ, CAP, 1 TEN, 2 TEN, CAD, SUB TEN, 1 SGT, 2 SGT, 3 SGT, CB, SD. */
+function _postoOrdem(pg){
+  const s = (pg||'').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .replace(/[º°ª\.]/g,'').replace(/\bPM\b/g,'').replace(/\s+/g,' ').trim();
+  const regras = [
+    [/TEN\s*CEL/, 2],
+    [/SUB\s*TEN/, 8],
+    [/1\s*TEN/, 5],
+    [/2\s*TEN/, 6],
+    [/\bCEL\b/, 1],
+    [/\bMAJ/, 3],
+    [/\bCAP/, 4],
+    [/\bCAD/, 7],
+    [/1\s*SGT/, 9],
+    [/2\s*SGT/, 10],
+    [/3\s*SGT/, 11],
+    [/\bSGT\b/, 11],
+    [/\bCB\b/, 12],
+    [/\bSD\b|SOLDADO/, 13],
+  ];
+  for(var i=0;i<regras.length;i++){ if(regras[i][0].test(s)) return regras[i][1]; }
+  return 99;
+}
+
 function _getMilitaresDoGP(gpNome){
   try{
     const usuarios = JSON.parse(_pget('poe_usuarios')||'[]');
@@ -14348,6 +14373,9 @@ function _getMilitaresDoGP(gpNome){
       if(!lot || lot === 'ADM') return false;
       /* Match exato ou GP contido na lotacao */
       return lot === gpN || lot.includes(gpN) || gpN.includes(lot);
+    }).sort(function(a,b){
+      var d = _postoOrdem(a.pg) - _postoOrdem(b.pg);
+      return d !== 0 ? d : (a.guerra||a.nome||'').localeCompare(b.guerra||b.nome||'');
     });
   }catch(e){ console.warn('_getMilitaresDoGP erro:',e); return []; }
 }
