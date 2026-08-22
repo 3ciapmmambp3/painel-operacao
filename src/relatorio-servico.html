@@ -2873,10 +2873,12 @@ async function carregarRelatorioParaEdicao(id){
     (data.categorias || []).forEach(cat => preencherCategoria(cat.categoria, cat.itens || []));
     renderGrid();
 
-    const aviso = document.createElement('div');
-    aviso.style.cssText = 'background:#3a2f00;color:#f0c419;padding:10px 20px;font-size:13px;text-align:center;';
-    aviso.textContent = `Você está editando um relatório. Ao confirmar o envio, ele será ATUALIZADO — não será criado um relatório novo.`;
-    document.querySelector('.topbar').after(aviso);
+    if (!MODO_VISUALIZACAO){
+      const aviso = document.createElement('div');
+      aviso.style.cssText = 'background:#3a2f00;color:#f0c419;padding:10px 20px;font-size:13px;text-align:center;';
+      aviso.textContent = `Você está editando um relatório. Ao confirmar o envio, ele será ATUALIZADO — não será criado um relatório novo.`;
+      document.querySelector('.topbar').after(aviso);
+    }
   } catch(err){
     console.error('Erro ao carregar relatório pra edição:', err);
     alert('Erro ao carregar o relatório pra edição.');
@@ -3069,8 +3071,11 @@ function preencherCategoria(categoriaLabel, itens){
 
 renderGrid();
 fetchReferenceData().then(() => {
-  const idParaEditar = new URLSearchParams(window.location.search).get('editar');
+  const _qs = new URLSearchParams(window.location.search);
+  const idParaEditar = _qs.get('editar');
+  const idParaVer = _qs.get('ver');
   if (idParaEditar) carregarRelatorioParaEdicao(idParaEditar);
+  else if (idParaVer){ MODO_VISUALIZACAO = true; carregarRelatorioParaEdicao(idParaVer).then(aplicarModoVisualizacao); }
 });
 (function(){
   const dataServico = document.getElementById('dataServico');
@@ -3380,6 +3385,50 @@ function collectBloco1(){
     'Observações Gerais do Relatório': (document.getElementById('reviewObsGerais') || {}).value || '',
     'Enviado por': enviadoPor,
   };
+}
+
+// ---------- Modo Visualização (só leitura + imprimir) ----------
+let MODO_VISUALIZACAO = false;
+function aplicarModoVisualizacao(){
+  const form = document.getElementById('relatorioForm');
+  if(!form) return;
+  // trava toda interação sem "acinzentar" os campos
+  form.style.pointerEvents = 'none';
+  form.querySelectorAll('input, textarea').forEach(el=>{ el.readOnly = true; });
+  form.querySelectorAll('select, input[type=checkbox], input[type=radio]').forEach(el=>{ el.setAttribute('tabindex','-1'); });
+  // esconde a linha de envio
+  form.querySelectorAll('.submit-row').forEach(el=>{ el.style.display='none'; });
+  // barra de ações da visualização (fora do form, clicável)
+  if(!document.getElementById('viewToolbar')){
+    const bar = document.createElement('div');
+    bar.id = 'viewToolbar';
+    bar.className = 'view-toolbar';
+    bar.innerHTML = `<span class="vt-tag">👁 Visualização — somente leitura</span>
+      <span style="flex:1"></span>
+      <button type="button" class="vt-btn vt-print" onclick="window.print()">🖨 Imprimir</button>
+      <button type="button" class="vt-btn" onclick="history.length>1?history.back():(window.location.href='meus-relatorios.html')">← Voltar</button>`;
+    const tb = document.querySelector('.topbar');
+    if(tb) tb.after(bar); else document.body.prepend(bar);
+  }
+  // CSS (tela + impressão)
+  if(!document.getElementById('viewCss')){
+    const st = document.createElement('style');
+    st.id = 'viewCss';
+    st.textContent = `
+      .view-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#eef2ee;border-bottom:1px solid #cdd5cd;padding:10px 24px;position:sticky;top:0;z-index:50}
+      .view-toolbar .vt-tag{font-size:12.5px;font-weight:700;color:#3a5a3a}
+      .view-toolbar .vt-btn{font:inherit;font-size:13px;font-weight:700;padding:8px 16px;border-radius:8px;border:1px solid #cdd5cd;background:#fff;color:#2a3a2a;cursor:pointer}
+      .view-toolbar .vt-btn:hover{background:#f5f8f5}
+      .view-toolbar .vt-print{background:var(--pine,#2f5233);color:#fff;border-color:var(--pine,#2f5233)}
+      @media print{
+        header, .view-toolbar, #overlayCarregandoEdicao, .submit-row, [id^="reviewOverlay"]{display:none !important}
+        body{background:#fff !important}
+        .container{max-width:100% !important;padding:0 !important}
+        .card{box-shadow:none !important;break-inside:avoid}
+      }`;
+    document.head.appendChild(st);
+  }
+  document.title = 'Relatório de Serviço — visualização';
 }
 
 // ---------- Pacote completo pra envio ----------
