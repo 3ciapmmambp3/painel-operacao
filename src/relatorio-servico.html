@@ -929,7 +929,8 @@ const REPEATABLE_CONFIGS = {
   fapi: {
     entryLabel: 'Alvo FAPI',
     preFields: [
-      { label: 'ID da Operação FAPI', type: 'select', sourceKey: 'FAPI' },
+      { label: 'ID da Operação FAPI', type: 'select', key: 'fapiId' },
+      { label: 'Nome da Operação', type: 'text', key: 'fapiNome', extraNote: 'preenchido automaticamente ao escolher o ID' },
     ],
     fields: [
       [
@@ -1426,67 +1427,83 @@ document.addEventListener('change', (e) => {
   tipoInput.dispatchEvent(new Event('change', { bubbles: true }));
 });
 
-// ---------- PAF: filtro por Pelotão da fração escolhida + vigência (Início/Final) ----------
-function getPelotaoAtual(){
+// ---------- PAF/FAPI: filtro (opcional) por Pelotão da fração + vigência -------
+// Nº do pelotão da Fração escolhida (1..5), extraído do cadastro de GRUPOS.
+function getPelotaoNumAtual(){
   const sel = document.querySelector('select[name="fracaoAtuacao"]');
-  if (!sel || !sel.value) return '';
+  if (!sel || !sel.value) return null;
   const canon = resolveFracaoCanonica(sel.value);
   const g = gruposList.find(g => g.principal === canon);
-  return g ? normalizeText(g.pelotao || '') : '';
+  if (!g) return null;
+  const m = String(g.pelotao || '').match(/\d+/);
+  return m ? +m[0] : null;
 }
 
-// Validação ESTRITA: só passa se o pelotão bater E a data estiver dentro do
-// período (Início/Final) da operação. Faltando qualquer critério (pelotão da
-// operação vazio, datas vazias, fora do período), o item NÃO aparece.
-function pafItemValido(item, pelotaoAtual, dataServico){
-  if (!item.pelotoes || !item.pelotoes.includes(pelotaoAtual)) return false;
-  if (!item.inicio || !item.final) return false;
-  if (dataServico < item.inicio || dataServico > item.final) return false;
+// Aceita item objeto ({value,nome,pelotoes,inicio,final}) OU string simples
+// (fallback da planilha, enquanto o Supabase não estiver populado).
+function opItemVal(it){ return (typeof it === 'string') ? it : (it && it.value != null ? it.value : ''); }
+function opItemNome(it){ return (it && typeof it === 'object') ? (it.nome || '') : ''; }
+
+// Validação OPCIONAL: um critério só restringe se estiver preenchido no cadastro.
+//   • pelotões preenchidos → precisa bater com o pelotão da Fração;
+//   • vigência preenchida  → precisa estar dentro do período (exige a Data);
+//   • sem pelotões e sem vigência (ou item em texto) → sempre aparece.
+function opPafFapiValido(item, pelNum, dataServico){
+  if (typeof item === 'string') return true;
+  const pels = Array.isArray(item.pelotoes) ? item.pelotoes : [];
+  if (pels.length && (pelNum == null || !pels.includes(pelNum))) return false;
+  if (item.inicio && item.final){
+    if (!dataServico) return false;
+    if (dataServico < item.inicio || dataServico > item.final) return false;
+  }
   return true;
 }
 
-function populatePafSelect(selectEl){
+function populateOpSelect(selectEl, sourceKey){
   if (!selectEl) return;
-  const list = referenceCache['PAF'] || [];
+  const list = referenceCache[sourceKey] || [];
   const currentValue = selectEl.value;
 
-  const pelotaoAtual = getPelotaoAtual();
+  const pelNum = getPelotaoNumAtual();
   const dataServico = getFieldValue('data');
+  const items = list.filter(it => opPafFapiValido(it, pelNum, dataServico));
 
-  let items = [];
   let placeholderText = 'Selecione...';
-  if (pelotaoAtual && dataServico){
-    items = list.filter(it => pafItemValido(it, pelotaoAtual, dataServico));
-    if (!items.length) placeholderText = 'Nenhuma operação vigente pra esse pelotão/data';
-  }
+  if (!items.length) placeholderText = list.length
+    ? 'Nenhuma operação vigente pra essa fração/data'
+    : 'Nenhuma operação cadastrada';
 
-  const optsHtml = items.map(it =>
-    `<option value="${it.value}">${it.value}${it.nome ? ' - ' + it.nome : ''}</option>`
-  ).join('');
+  const optsHtml = items.map(it => {
+    const v = opItemVal(it), nome = opItemNome(it);
+    return `<option value="${v}">${v}${nome ? ' - ' + nome : ''}</option>`;
+  }).join('');
 
   selectEl.innerHTML = `<option value="">${placeholderText}</option>` + optsHtml;
-  if (items.some(it => it.value === currentValue)) selectEl.value = currentValue;
+  if (items.some(it => opItemVal(it) === currentValue)) selectEl.value = currentValue;
 }
 
-function bindPafSmartFilter(panel){
-  const idSelect = panel.querySelector('.pre-fields [data-field="pafId"]');
-  const nomeInput = panel.querySelector('.pre-fields [data-field="pafNome"]');
+// Liga o filtro inteligente num painel PAF ou FAPI.
+function bindOpSmartFilter(panel, cfg){
+  const idSelect  = panel.querySelector(`.pre-fields [data-field="${cfg.idKey}"]`);
+  const nomeInput = panel.querySelector(`.pre-fields [data-field="${cfg.nomeKey}"]`);
   if (!idSelect) return;
 
-  populatePafSelect(idSelect);
+  populateOpSelect(idSelect, cfg.sourceKey);
 
   idSelect.addEventListener('change', () => {
     if (!nomeInput) return;
-    const found = (referenceCache['PAF'] || []).find(it => it.value === idSelect.value);
-    nomeInput.value = found ? found.nome : '';
+    const found = (referenceCache[cfg.sourceKey] || []).find(it => opItemVal(it) === idSelect.value);
+    nomeInput.value = found ? opItemNome(found) : '';
   });
 
-  // Reaplica o filtro se a Fração de Atuação ou a Data do serviço mudarem depois.
   const fracaoSel = document.querySelector('select[name="fracaoAtuacao"]');
   const dataInput = document.getElementById('dataServico');
-  if (fracaoSel) fracaoSel.addEventListener('change', () => populatePafSelect(idSelect));
-  if (dataInput) dataInput.addEventListener('change', () => populatePafSelect(idSelect));
+  const reaplica = () => populateOpSelect(idSelect, cfg.sourceKey);
+  if (fracaoSel) fracaoSel.addEventListener('change', reaplica);
+  if (dataInput) dataInput.addEventListener('change', reaplica);
 }
+function bindPafSmartFilter(panel){ bindOpSmartFilter(panel, { idKey:'pafId',  nomeKey:'pafNome',  sourceKey:'PAF'  }); }
+function bindFapiSmartFilter(panel){ bindOpSmartFilter(panel, { idKey:'fapiId', nomeKey:'fapiNome', sourceKey:'FAPI' }); }
 
 function refreshFracaoScopedSelects(){
   populateSelectsIn(document);
@@ -1571,6 +1588,28 @@ async function carregarOperacoesSupabase(){
     inicio: o.inicio ? String(o.inicio).slice(0,10) : '',
     final:  o.final  ? String(o.final ).slice(0,10) : '',
   }));
+}
+
+// PAF e FAPI agora vêm do painel (tabela operacoes_paf_fapi do Supabase), não
+// mais das abas da planilha. Sobrescreve referenceCache['PAF'] e ['FAPI'] no
+// formato que o filtro (opPafFapiValido/populateOpSelect) consome:
+// {value, nome, pelotoes:[int], inicio, final}.
+async function carregarPafFapiSupabase(){
+  if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
+  const H = { apikey: SB_AUTH_KEY, Authorization: `Bearer ${SB_AUTH_KEY}`, 'Content-Type':'application/json' };
+  const r = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/paf_fapi_listar`, { method:'POST', headers:H, body:'{}' });
+  if (!r.ok) throw new Error('HTTP '+r.status);
+  const rows = await r.json();
+  if (!Array.isArray(rows)) return;
+  const mapTipo = tipo => rows.filter(o => o.tipo === tipo).map(o => ({
+    value:  o.id_operacao,
+    nome:   o.nome || '',
+    pelotoes: Array.isArray(o.pelotoes) ? o.pelotoes.map(Number) : [],
+    inicio: o.inicio ? String(o.inicio).slice(0,10) : '',
+    final:  o.final  ? String(o.final ).slice(0,10) : '',
+  }));
+  referenceCache['PAF']  = mapTipo('PAF');
+  referenceCache['FAPI'] = mapTipo('FAPI');
 }
 
 // MILITARES agora vêm do painel (tabela `militares` do Supabase), unificando
@@ -1691,6 +1730,9 @@ async function fetchReferenceData(){
     // OPERAÇÕES migraram para o painel (Supabase) — sobrescreve o que veio da planilha.
     try { await carregarOperacoesSupabase(); }
     catch(e){ console.warn('[operacoes] mantendo fonte da planilha:', e); }
+    // PAF/FAPI também migraram para o painel (Supabase).
+    try { await carregarPafFapiSupabase(); }
+    catch(e){ console.warn('[paf/fapi] mantendo fonte da planilha:', e); }
     // MILITARES: fonte = tabela `militares` do Supabase (unifica com TTA/Viaturas).
     try { await carregarMilitaresSupabase(); }
     catch(e){ console.warn('[militares] mantendo fonte da planilha:', e); }
@@ -2467,6 +2509,7 @@ function getOrCreatePanelNode(id){
   searchifySelectsIn(div);
   if (REPEATABLE_CONFIGS[id]) bindRepeatablePanel(div, id);
   if (id === 'paf') bindPafSmartFilter(div);
+  if (id === 'fapi') bindFapiSmartFilter(div);
   panelCache[id] = div;
   return div;
 }
