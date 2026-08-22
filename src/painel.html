@@ -5817,16 +5817,33 @@ async function carregarAvisosInicio(){
         }
       }
     }
-    /* 2) Missão designada ao usuário (militares[].numeroPolicia) */
+    /* 2) Missão designada ao usuário — com detalhes (título, prioridade, prazo, status, GP) */
     if(mat){
-      const r = await fetch(`${SB_URL}/rest/v1/missoes?select=id,titulo,militares,status`, {headers:H});
+      const r = await fetch(`${SB_URL}/rest/v1/missoes?select=id,titulo,militares,status,prioridade,prazo,gp,criado_por`, {headers:H});
       if(r.ok){ const miss = await r.json();
         const minhas = miss.filter(m => Array.isArray(m.militares)
           && m.militares.some(x => (String(x.numeroPolicia||'').replace(/\D/g,'')) === mat)
           && !['concluida','concluído','concluido','encerrada','encerrado'].includes(String(m.status||'').toLowerCase()));
         if(minhas.length){
-          const t = minhas.map(m=>m.titulo).filter(Boolean).slice(0,2).join(', ');
-          avisos.push({ic:'🎯', txt:`Você tem <b>${minhas.length} missão(ões)</b> designada(s) a você${t?`: ${t}`:''}`, lk:'analise-criminal.html', lkTxt:'Ver →', sub:'missoes'});
+          const PRM = {baixa:'Baixa',media:'Média',alta:'Alta',critica:'Crítica'};
+          const STM = {pendente:'Pendente',em_execucao:'Em execução',em_andamento:'Em andamento',concluida:'Concluída'};
+          const hoje = new Date(); hoje.setHours(0,0,0,0);
+          const teasers = minhas.slice(0,3).map(m => {
+            const gpCurto = m.gp ? (m.gp.split('/').pop()||'').trim() : '';
+            let prazoTxt = '';
+            if(m.prazo){ const d=new Date(m.prazo+'T12:00'); if(!isNaN(d.getTime())){ const venc = d < hoje; prazoTxt = `<span style="color:${venc?'#ef5350':'var(--text-hint)'};">📅 ${d.toLocaleDateString('pt-BR')}${venc?' (vencido)':''}</span>`; } }
+            const partes = [
+              `<b style="color:#fff;">${_esc(m.titulo||'Missão')}</b>`,
+              m.prioridade?`<b style="color:${PRC[m.prioridade]||'#aaa'};">${_esc(PRM[m.prioridade]||m.prioridade)}</b>`:'',
+              m.status?_esc(STM[String(m.status).toLowerCase()]||m.status):'',
+              gpCurto?('🏠 '+_esc(gpCurto)):'',
+              m.criado_por?('por '+_esc(m.criado_por)):'',
+              prazoTxt
+            ].filter(Boolean).join(' · ');
+            return `<div onclick="try{sessionStorage.setItem('ac_abrir_subtab','missoes')}catch(e){};window.location.href='analise-criminal.html'" style="cursor:pointer;font-size:11.5px;color:#cfcfcf;padding:6px 0 6px 29px;border-top:1px dashed var(--border);">${partes}</div>`;
+          }).join('');
+          const mais = minhas.length>3 ? `<div style="font-size:11px;color:var(--text-hint);padding:6px 0 2px 29px;">+${minhas.length-3} outra(s)…</div>` : '';
+          avisos.push({ missao:true, n:minhas.length, teasers, mais });
         }
       }
     }
@@ -5862,6 +5879,15 @@ async function carregarAvisosInicio(){
   _injectAvisosCss();
   box.innerHTML = `<div class="avisos-hdr"><span class="avisos-bell">🔔</span> <span>Avisos para você</span></div><div class="avisos-card">`
     + avisos.map(a => {
+        if(a.missao){
+          return `<div style="padding:12px 16px;border-bottom:1px solid var(--border);">
+            <div style="display:flex;align-items:center;gap:12px;font-size:13px;color:var(--text-white);">
+              <span style="font-size:17px;flex-shrink:0;">🎯</span>
+              <span style="flex:1;min-width:0;">Você tem <b>${a.n} missão(ões)</b> designada(s) a você</span>
+              <a href="analise-criminal.html" onclick="try{sessionStorage.setItem('ac_abrir_subtab','missoes')}catch(e){}" style="color:var(--gold);font-weight:700;font-size:12px;white-space:nowrap;text-decoration:none;">Ver todas →</a>
+            </div>${a.teasers}${a.mais}
+          </div>`;
+        }
         if(a.intel){
           return `<div style="padding:12px 16px;border-bottom:1px solid var(--border);">
             <div style="display:flex;align-items:center;gap:12px;font-size:13px;color:var(--text-white);">
