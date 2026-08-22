@@ -14834,40 +14834,37 @@ function renderMissoes(){
   const prF  = document.getElementById('mis-prio').value;
   const gpF  = document.getElementById('mis-gp').value;
 
-  /* Militares operacionais veem APENAS suas próprias missões */
-  const isCmdo = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
-
+  /* Visibilidade das missões:
+     - Admin Geral / CMT Cia: TODAS;
+     - CMT Pelotão (admin_pelotao): TODAS as do seu pelotão (+ as que criou / é responsável);
+     - Demais: missões que CRIOU ou onde é RESPONSÁVEL. */
+  const _fx = (sessao?.funcao||'').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  const veTudoMis = sessao && (sessao.perfil==='admin' || sessao.perfil==='comandante'
+    || sessao.nivel_acesso==='admin_geral'
+    || (/(CMT|COMANDANTE)/.test(_fx) && /\bCIA\b/.test(_fx)));
+  const isCmtPel = sessao && (sessao.nivel_acesso==='admin_pelotao' || (/(CMT|COMANDANTE)/.test(_fx) && /\bPEL/.test(_fx)));
+  const meuPel   = _pelotaoDoUsuario();
+  const _npm     = (sessao?.matricula || sessao?.numeroPolicia || '').replace(/\D/g,'');
+  const _guerra  = (sessao?.guerra||'').trim().toUpperCase();
+  const _nome    = (sessao?.nome||'').trim().toUpperCase();
+  const _souResp = m => (m.militares||[]).some(mil =>
+      String(mil.id)===String(sessao?.id)
+      || (_npm && (mil.numeroPolicia||'').replace(/\D/g,'')===_npm)
+      || (_guerra && ((mil.guerra||'').trim().toUpperCase()===_guerra || (mil.nome||'').trim().toUpperCase()===_guerra)));
+  const _souCriador = m => { const c=(m.criadoPor||'').trim().toUpperCase(); if(!c) return false;
+      return (_guerra && (c===_guerra || c.indexOf(_guerra)>=0)) || (_nome && (c===_nome || c.indexOf(_nome)>=0)); };
 
   let lista = missoes.filter(m => {
     if(stF && m.status !== stF) return false;
     if(prF && m.prioridade !== prF) return false;
     if(gpF && m.gp !== gpF) return false;
-    /* Operacional: só vê missões onde está como responsável */
-    if(!isCmdo && sessao){
-      const temMilitares = m.militares && m.militares.length > 0;
-      if(temMilitares){
-        /* 1. Por ID */
-        const porId = m.militares.some(mil => String(mil.id) === String(sessao.id));
-        if(porId) return true;
-        /* 2. Por número de polícia */
-        const npm = (sessao.numeroPolicia||'').replace(/[^0-9]/g,'');
-        if(npm){
-          const porNp = m.militares.some(mil => (mil.numeroPolicia||'').replace(/[^0-9]/g,'') === npm);
-          if(porNp) return true;
-        }
-        /* 3. Por nome de guerra */
-        const guerra = (sessao.guerra||'').trim().toUpperCase();
-        if(guerra){
-          const porGuerra = m.militares.some(mil =>
-            (mil.guerra||'').trim().toUpperCase() === guerra ||
-            (mil.nome||'').trim().toUpperCase() === guerra
-          );
-          if(porGuerra) return true;
-        }
-        return false;
-      }
+    if(veTudoMis) return true;
+    if(isCmtPel && meuPel){
+      const mp = (m.gp||'').match(/(\d+)\s*PEL/i);
+      if(mp && mp[1]===meuPel) return true;
+      return _souResp(m) || _souCriador(m);
     }
-    return true;
+    return _souResp(m) || _souCriador(m);
   });
 
   /* Mostra/oculta botão Nova Missão conforme perfil */
@@ -14894,9 +14891,9 @@ function renderMissoes(){
         <div class="missao-titulo">${m.titulo}</div>
         <div style="display:flex;gap:4px;">
           ${(()=>{
-            if(isCmdo) return true;
+            if(veTudoMis) return true;   /* Admin Geral / CMT Cia editam/excluem qualquer missão */
             if(!sessao) return false;
-            /* Criador: compara nome, guerra ou numeroPolicia */
+            /* Criador: pode editar/excluir/complementar a própria missão */
             const criadorMatch = m.criadoPor && (
               m.criadoPor === sessao.nome ||
               m.criadoPor === sessao.guerra ||
