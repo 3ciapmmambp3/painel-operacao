@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<script>
+(function(){
+  var saved;
+  try{ saved=localStorage.getItem('poe_theme'); }catch(e){}
+  if(!saved) saved=window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+})();
+</script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minhas Movimentações — 3ª Cia PM MAmb</title>
+  <link rel="stylesheet" href="styles/global.css">
+  <script src="auth.js"></script>
+  <style>
+    body{display:flex;flex-direction:column;min-height:100vh;}
+    .mr-card{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:18px 20px;margin:20px;}
+    .mr-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px;flex-wrap:wrap;}
+    .mr-toolbar h2{font-size:14px;color:var(--text-white);}
+    .mr-empty{color:var(--text-muted);font-size:13px;text-align:center;padding:40px 0;}
+    #mr-lista{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+    table.mr-table{width:100%;border-collapse:collapse;font-size:13px;min-width:720px;}
+    table.mr-table th{text-align:left;color:var(--text-muted);font-size:11px;padding:8px 10px;border-bottom:1px solid var(--border);font-weight:700;}
+    table.mr-table td{padding:10px;border-bottom:1px solid var(--border);color:var(--text-white);}
+    .mr-btn-ver{color:var(--text-white);font-weight:700;cursor:pointer;}
+    .mr-btn-ver:hover{color:var(--gold);}
+    .mr-acoes{display:flex;gap:14px;align-items:center;white-space:nowrap;}
+    .mr-btn-editar{color:var(--gold);font-weight:700;cursor:pointer;}
+    .mr-btn-editar.disabled{color:var(--text-muted);cursor:not-allowed;position:relative;}
+    .mr-tip{display:none;position:absolute;bottom:26px;right:0;background:var(--bg-dark);color:var(--text-white);font-size:11px;line-height:1.4;padding:8px 10px;border-radius:6px;border:1px solid var(--border);width:230px;z-index:10;}
+    .mr-btn-editar.disabled:hover .mr-tip{display:block;}
+    .mr-filtros{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
+    .mr-filtro-input{background:var(--bg-dark);color:var(--text-white);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;}
+    .mr-paginacao{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:16px;}
+    .mr-paginacao button:disabled{opacity:.4;cursor:not-allowed;}
+    .tag-ed{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:rgba(255,152,0,.15);color:#ffa726;border:1px solid rgba(255,152,0,.4);}
+
+    .topnav{display:flex;align-items:center;gap:2px;background:var(--bg-dark);border-bottom:1px solid var(--border);padding:0 16px;position:relative;z-index:20;}
+    .topnav-item{position:relative;}
+    .topnav-link{display:flex;align-items:center;gap:5px;padding:13px 16px;color:var(--text-muted);font-size:12.5px;font-weight:700;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;}
+    .topnav-link:hover{color:var(--text-white);}
+    .topnav-link.active{color:var(--gold);border-bottom-color:var(--gold);}
+    .topnav-link .chev{font-size:9px;opacity:.7;}
+    .topnav-dropdown{display:none;position:absolute;top:100%;left:0;background:var(--bg-card);border:1px solid var(--border);border-radius:0 0 8px 8px;min-width:190px;box-shadow:0 12px 24px rgba(0,0,0,.4);padding:6px;}
+    .topnav-dropdown.open{display:block;}
+    .topnav-dropdown a{display:block;padding:9px 12px;color:var(--text-white);font-size:12.5px;border-radius:6px;}
+    .topnav-dropdown a:hover{background:var(--bg-hover);color:var(--gold);}
+
+    .page-layout{display:flex;flex:1;}
+    .rd-sidebar{width:198px;flex-shrink:0;background:var(--bg-dark);border-right:1px solid var(--border);padding:14px 10px;transition:width .18s;}
+    .rd-sidebar.colapsada{width:52px;}
+    .rd-sidebar.colapsada .lbl,.rd-sidebar.colapsada .rd-sidebar-titulo{display:none;}
+    .rd-sidebar.colapsada .rd-item{justify-content:center;padding:9px;}
+    .rd-sidebar-head{display:flex;align-items:center;justify-content:space-between;padding:0 4px 10px;border-bottom:1px solid var(--border);margin-bottom:8px;}
+    .rd-sidebar.colapsada .rd-sidebar-head{justify-content:center;}
+    .rd-sidebar-titulo{color:var(--gold);font-size:10.5px;font-weight:700;letter-spacing:.5px;white-space:nowrap;}
+    .rd-btn-colapsar{background:none;border:none;color:var(--text-muted);cursor:pointer;padding:3px;display:flex;}
+    .rd-item{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:6px;color:var(--text-muted);font-size:12.5px;cursor:pointer;white-space:nowrap;margin-bottom:1px;position:relative;}
+    .rd-item[data-tip]:hover::after{content:attr(data-tip);position:absolute;left:100%;top:50%;transform:translateY(-50%);margin-left:10px;background:#111;color:var(--text-white);padding:6px 12px;border-radius:6px;font-size:11.5px;font-weight:700;white-space:nowrap;z-index:200;box-shadow:0 6px 18px rgba(0,0,0,.5);border:1px solid var(--border);pointer-events:none;}
+    .rd-item:hover{background:var(--bg-hover);}
+    .rd-item.ativo{background:var(--gold-bg);color:var(--gold-light);font-weight:700;}
+    .rd-conteudo{flex:1;min-width:0;}
+
+    @media screen and (max-width: 768px){
+      .topnav{flex-wrap:wrap;overflow:visible;}
+      .topnav-link{padding:11px 12px;font-size:11.5px;}
+      .page-layout{flex-direction:column;}
+      .rd-sidebar{width:100% !important;border-right:none;border-bottom:1px solid var(--border);display:flex;flex-wrap:nowrap;flex-direction:row;gap:4px;padding:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+      .rd-sidebar::-webkit-scrollbar{display:none;}
+      .rd-sidebar-head{display:none;}
+      .rd-btn-colapsar{display:none;}
+      .rd-sidebar .lbl{display:inline;}
+      .rd-item{flex:0 0 auto;justify-content:center;font-size:11px;padding:8px 10px;white-space:nowrap;}
+    }
+  </style>
+  <script src="pwa.js" defer></script>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <div class="header-shields"><img src="assets/escudo-pmmg.png" alt="PMMG" onerror="this.style.display='none'"><img src="assets/escudo-cpe.png" alt="CPE" onerror="this.style.display='none'"><img src="assets/brasao-bpmmamb.png" alt="BPM MAMB" onerror="this.style.display='none'"></div><div class="header-div"></div>
+    <div class="header-title"><div class="header-kicker">CPE · BPM MAmb · 3ª Cia PM MAmb</div>
+      <h1>PAINEL DE GESTÃO OPERACIONAL</h1>
+      <p>3ª Cia PM MAmb — Acompanhamento 2026</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <div id="user-info" style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);cursor:pointer;padding:5px 10px;border:1px solid var(--border);border-radius:5px;" onclick="window.location.href='perfil.html'" title="Meu Perfil">
+      <span id="user-avatar" style="width:22px;height:22px;border-radius:50%;background:var(--gold);color:#1a1000;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">?</span>
+      <span id="user-nome">—</span>
+      <span id="user-badge" style="font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;"></span>
+    </div>
+    <button class="btn-outline" onclick="localStorage.removeItem('poe_sessao_v2');sessionStorage.removeItem('poe_sessao_v2');localStorage.removeItem('poe_sessao');window.location.href='index.html'">Sair</button>
+  </div>
+</header>
+
+<nav class="topnav" id="topnav">
+  <a class="topnav-link" href="painel.html">🏠 INÍCIO</a>
+  <div class="topnav-item">
+    <div class="topnav-link" data-dropdown="ddOperacao">🛡 OPERAÇÃO <span class="chev">▾</span></div>
+    <div class="topnav-dropdown" id="ddOperacao">
+      <a href="painel.html?tab=operacoes">🛡 OP POE</a>
+      <a href="painel.html?tab=gdo-rural">🌿 OP GDO Rural</a>
+    </div>
+  </div>
+  <a class="topnav-link" href="analise-criminal.html" style="color:#ef5350;">🔴 ANÁLISE CRIMINAL</a>
+  <a class="topnav-link active" href="meus-relatorios.html">📄 RELATÓRIO DIÁRIO</a>
+  <a class="topnav-link" href="denuncias.html">📋 CONTROLE DE DEMANDAS</a>
+  <a class="topnav-link" href="painel.html?tab=consulta">📍 CONSULTA</a>
+  <div class="topnav-item" id="admTopnavItem" style="display:none;">
+    <div class="topnav-link" data-dropdown="ddAdm">⚙ ADM <span class="chev">▾</span></div>
+    <div class="topnav-dropdown" id="ddAdm">
+      <a href="painel.html?tab=relatorios">📋 Relatórios</a>
+      <a href="painel.html?tab=importacao" id="admLinkImportacao" style="display:none;">📥 Importação</a>
+      <a href="admin.html" id="admLinkAdministracao" style="display:none;">⚙️ Administração</a>
+    </div>
+  </div>
+</nav>
+
+<div class="page-layout">
+  <aside class="rd-sidebar" id="rdSidebar">
+    <div class="rd-sidebar-head">
+      <span class="rd-sidebar-titulo">RELATÓRIO DIÁRIO</span>
+      <button class="rd-btn-colapsar" id="rdBtnColapsar" aria-label="Recolher menu">◂</button>
+    </div>
+    <a class="rd-item" href="tta.html" data-tip="TTA (Pré-turno)"><span>🎯</span><span class="lbl">TTA (Pré-turno)</span></a>
+    <a class="rd-item" href="tta-gestao.html" id="linkGestaoTTA" data-tip="Gestão do TTA" style="display:none"><span>⚙️</span><span class="lbl">Gestão do TTA</span></a>
+    <a class="rd-item" href="meus-relatorios.html" data-tip="Lista de Relatórios"><span>📄</span><span class="lbl">Lista de Relatórios</span></a>
+    <a class="rd-item" href="relatorio-servico.html" data-tip="Novo Relatório"><span>➕</span><span class="lbl">Novo Relatório</span></a>
+    <a class="rd-item" href="produtividade.html" data-tip="Produtividade"><span>📊</span><span class="lbl">Produtividade</span></a>
+    <a class="rd-item" href="movimentacao-viaturas.html" data-tip="Nova Ficha de Viatura"><span>🚓</span><span class="lbl">Nova Ficha de Viatura</span></a>
+    <a class="rd-item ativo" href="meus-movimentacoes.html" data-tip="Minhas Movimentações"><span>🚗</span><span class="lbl">Minhas Movimentações</span></a>
+    <a class="rd-item" id="linkGestaoVtr" style="display:none" href="viaturas-gestao.html" data-tip="Gestão de Viaturas"><span>⚙️</span><span class="lbl">Gestão de Viaturas</span></a>
+  </aside>
+  <div class="rd-conteudo">
+
+<main class="content">
+  <div class="mr-card">
+    <div class="mr-toolbar">
+      <h2 id="mr-titulo">Minhas fichas de movimentação</h2>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <label id="lblTodas" style="display:none;font-size:12px;color:var(--text-muted);align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="chkTodas" style="width:auto"> Ver de todas as guarnições (gestor)
+        </label>
+        <button class="btn-gold" onclick="window.location.href='movimentacao-viaturas.html'">+ Nova ficha</button>
+      </div>
+    </div>
+    <div class="mr-filtros" id="mr-filtros">
+      <input type="text" id="filtroPrefixo" class="mr-filtro-input" placeholder="🔎 Prefixo…" style="max-width:150px">
+      <input type="text" id="filtroMotorista" class="mr-filtro-input" placeholder="🔎 Motorista…" style="max-width:200px">
+      <input type="date" id="filtroDataInicio" class="mr-filtro-input" title="Data início">
+      <span style="color:var(--text-muted);font-size:12px;">até</span>
+      <input type="date" id="filtroDataFim" class="mr-filtro-input" title="Data final">
+      <button class="btn-outline" id="btnLimparFiltros">Limpar filtros</button>
+    </div>
+    <div id="mr-lista">
+      <div class="mr-empty" id="mr-status">Carregando suas fichas...</div>
+    </div>
+    <div class="mr-paginacao" id="mr-paginacao"></div>
+  </div>
+</main>
+
+  </div>
+</div>
+
+<script>
+const sessao = (function(){
+  const raw = sessionStorage.getItem('poe_sessao_v2');
+  if(!raw){ window.location.href='index.html'; return null; }
+  try{ const s = JSON.parse(raw); if(!s || !s.id){ window.location.href='index.html'; return null; } return s; }
+  catch(e){ window.location.href='index.html'; return null; }
+})();
+
+if (sessao){
+  document.getElementById('user-nome').textContent = sessao.nome || sessao.matricula;
+  document.getElementById('user-avatar').textContent = (sessao.nome||'U').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+  const badge = document.getElementById('user-badge');
+  const nivel = sessao.nivel_acesso;
+  const mapaBadge = {
+    admin_geral: ['ADMIN GERAL','rgba(155,138,92,.2)','var(--gold)','var(--gold-border)'],
+    admin: ['ADMIN','rgba(155,138,92,.2)','var(--gold)','var(--gold-border)'],
+    admin_pelotao: ['ADMIN PELOTÃO','rgba(255,152,0,.15)','#ffa726','rgba(255,152,0,.4)'],
+    admin_gp: ['ADMIN GP','rgba(255,152,0,.15)','#ffa726','rgba(255,152,0,.4)'],
+  };
+  const info = mapaBadge[nivel] || ['OPERACIONAL','rgba(66,165,245,.15)','var(--info)','rgba(66,165,245,.3)'];
+  badge.textContent = info[0];
+  badge.style.cssText = `font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;background:${info[1]};color:${info[2]};border:1px solid ${info[3]};`;
+  const admTopnavItem = document.getElementById('admTopnavItem');
+  if (admTopnavItem && ['admin_geral','admin','admin_pelotao','admin_gp'].includes(nivel)) admTopnavItem.style.display = '';
+  if (nivel === 'admin_geral'){
+    const a=document.getElementById('admLinkImportacao'); if(a)a.style.display='';
+    const b=document.getElementById('admLinkAdministracao'); if(b)b.style.display='';
+  }
+}
+// gestor de viaturas: admin_geral ou Aux P4 → mostra "Gestão de Viaturas" + o toggle "todas"
+const EH_GESTOR = sessao && (sessao.nivel_acesso==='admin_geral' || (sessao.funcao||'').toLowerCase().indexOf('aux p4')===0);
+if (EH_GESTOR){
+  const l=document.getElementById('linkGestaoVtr'); if(l)l.style.display='';
+  const t=document.getElementById('lblTodas'); if(t)t.style.display='inline-flex';
+}
+
+// dropdowns
+document.querySelectorAll('.topnav-link[data-dropdown]').forEach(link => {
+  link.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const dd = document.getElementById(link.dataset.dropdown);
+    const jaAberto = dd.classList.contains('open');
+    document.querySelectorAll('.topnav-dropdown.open').forEach(d => d.classList.remove('open'));
+    if (!jaAberto) dd.classList.add('open');
+  });
+});
+document.addEventListener('click', () => document.querySelectorAll('.topnav-dropdown.open').forEach(d => d.classList.remove('open')));
+
+// sidebar recolher
+(function(){
+  const sidebar = document.getElementById('rdSidebar'), btn = document.getElementById('rdBtnColapsar');
+  if (!sidebar || !btn) return;
+  if (localStorage.getItem('rd_sidebar_colapsada') === '1'){ sidebar.classList.add('colapsada'); btn.textContent = '▸'; }
+  btn.addEventListener('click', () => {
+    sidebar.classList.toggle('colapsada');
+    const agora = sidebar.classList.contains('colapsada');
+    btn.textContent = agora ? '▸' : '◂';
+    localStorage.setItem('rd_sidebar_colapsada', agora ? '1' : '0');
+  });
+})();
+
+function fmtDataHora(iso){
+  if(!iso) return '—';
+  const d = new Date(iso); if(isNaN(d)) return '—';
+  const p = n => String(n).padStart(2,'0');
+  return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+const ITENS_POR_PAGINA = 15;
+let TODAS = [];
+let paginaAtual = 1;
+
+function aplicarFiltros(rows){
+  const pf = (document.getElementById('filtroPrefixo').value||'').trim().toUpperCase();
+  const mt = (document.getElementById('filtroMotorista').value||'').trim().toUpperCase();
+  const di = document.getElementById('filtroDataInicio').value;
+  const df = document.getElementById('filtroDataFim').value;
+  return rows.filter(r => {
+    if (pf && !String(r.prefixo||'').toUpperCase().includes(pf)) return false;
+    if (mt && !String(r.motorista_nome||'').toUpperCase().includes(mt)) return false;
+    const dia = r.inicio ? String(r.inicio).slice(0,10) : (r.criado_em ? String(r.criado_em).slice(0,10) : '');
+    if (di && (!dia || dia < di)) return false;
+    if (df && (!dia || dia > df)) return false;
+    return true;
+  });
+}
+
+function renderizarTabela(){
+  const lista = document.getElementById('mr-lista');
+  const paginacao = document.getElementById('mr-paginacao');
+  const filtrados = aplicarFiltros(TODAS);
+  if (!filtrados.length){
+    lista.innerHTML = `<div class="mr-empty">${TODAS.length ? 'Nenhuma ficha com esses filtros.' : 'Nenhuma ficha de movimentação encontrada ainda.'}</div>`;
+    paginacao.innerHTML = ''; return;
+  }
+  const totalPaginas = Math.max(1, Math.ceil(filtrados.length / ITENS_POR_PAGINA));
+  if (paginaAtual > totalPaginas) paginaAtual = totalPaginas;
+  const pagina = filtrados.slice((paginaAtual-1)*ITENS_POR_PAGINA, (paginaAtual-1)*ITENS_POR_PAGINA + ITENS_POR_PAGINA);
+
+  const linhas = pagina.map(r => {
+    const btnVer = `<span class="mr-btn-ver" onclick="window.open('movimentacao-viaturas.html?ver=${encodeURIComponent(r.id)}','_blank')">👁 Ver / Imprimir</span>`;
+    const btnEd = r.pode_editar
+      ? `<span class="mr-btn-editar" onclick="window.location.href='movimentacao-viaturas.html?editar=${encodeURIComponent(r.id)}'">Editar</span>`
+      : `<span class="mr-btn-editar disabled">Editar<div class="mr-tip">Edição só no mesmo dia (por quem criou). Depois disso, fale com o gestor de viaturas (Aux P4).</div></span>`;
+    const km = (r.km_rodados!=null) ? r.km_rodados+' km' : '—';
+    const ed = r.editado ? ` <span class="tag-ed" title="Editada em ${esc(fmtDataHora(r.atualizado_em))} por ${esc(r.atualizado_por_nome||'')}">editada</span>` : '';
+    return `<tr>
+      <td>${fmtDataHora(r.inicio)}</td>
+      <td><b>${esc(r.prefixo||'—')}</b></td>
+      <td>${esc(r.motorista_nome||'—')}${ed}</td>
+      <td>${esc(r.local_utilizacao||'—')}</td>
+      <td>${km}</td>
+      <td><div class="mr-acoes">${btnVer}${btnEd}</div></td>
+    </tr>`;
+  }).join('');
+
+  lista.innerHTML = `<table class="mr-table">
+    <thead><tr><th>INÍCIO</th><th>PREFIXO</th><th>MOTORISTA</th><th>LOCAL</th><th>KM RODADOS</th><th>AÇÃO</th></tr></thead>
+    <tbody>${linhas}</tbody></table>`;
+
+  paginacao.innerHTML = `
+    <button class="btn-outline" id="btnPagAnterior" ${paginaAtual===1?'disabled':''}>‹ Anterior</button>
+    <span style="color:var(--text-muted);font-size:12px;">Página ${paginaAtual} de ${totalPaginas} (${filtrados.length} ficha${filtrados.length===1?'':'s'})</span>
+    <button class="btn-outline" id="btnPagProxima" ${paginaAtual===totalPaginas?'disabled':''}>Próxima ›</button>`;
+  const a=document.getElementById('btnPagAnterior'), b=document.getElementById('btnPagProxima');
+  if(a) a.addEventListener('click', ()=>{ paginaAtual--; renderizarTabela(); });
+  if(b) b.addEventListener('click', ()=>{ paginaAtual++; renderizarTabela(); });
+}
+
+['filtroPrefixo','filtroMotorista','filtroDataInicio','filtroDataFim'].forEach(id =>
+  document.getElementById(id).addEventListener('input', ()=>{ paginaAtual=1; renderizarTabela(); }));
+document.getElementById('btnLimparFiltros').addEventListener('click', ()=>{
+  ['filtroPrefixo','filtroMotorista','filtroDataInicio','filtroDataFim'].forEach(id=>document.getElementById(id).value='');
+  paginaAtual=1; renderizarTabela();
+});
+const chk=document.getElementById('chkTodas'); if(chk) chk.addEventListener('change', carregar);
+
+async function carregar(){
+  const status = document.getElementById('mr-status');
+  document.getElementById('mr-lista').innerHTML = '<div class="mr-empty">Carregando suas fichas...</div>';
+  try{
+    const H = { apikey: SB_AUTH_KEY, Authorization:'Bearer '+SB_AUTH_KEY, 'Content-Type':'application/json' };
+    const todas = EH_GESTOR && document.getElementById('chkTodas') && document.getElementById('chkTodas').checked;
+    const res = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/mov_ficha_listar`, {
+      method:'POST', headers:H, body: JSON.stringify({ p_token: sessao.token, p_todas: !!todas })
+    });
+    if(!res.ok) throw new Error('HTTP '+res.status+': '+(await res.text()));
+    const rows = await res.json();
+    TODAS = Array.isArray(rows) ? rows : [];
+    paginaAtual = 1;
+    renderizarTabela();
+  }catch(err){
+    console.error('mov_ficha_listar', err);
+    document.getElementById('mr-lista').innerHTML = '<div class="mr-empty">Erro ao carregar suas fichas. Recarregue a página.</div>';
+  }
+}
+if (sessao) carregar();
+</script>
+</body>
+</html>
