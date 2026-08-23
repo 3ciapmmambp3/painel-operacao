@@ -140,7 +140,7 @@ begin
       prefixo=v_new_prefixo, placa=v_new_placa, motorista_matricula=v_new_motmat,
       motorista_nome=v_new_motnome, lotacao_motorista=v_new_lot, local_utilizacao=v_new_local,
       tipo_empenho=v_new_emp, km_inicial=v_new_kmi, km_final=v_new_kmf,
-      km_rodados=greatest(coalesce(v_new_kmf,0) - coalesce(v_new_kmi,0), 0),
+      -- km_rodados é coluna GENERATED (db/08) — recalcula sozinha ao mudar km_inicial/km_final; NÃO gravar aqui.
       inicio=coalesce(v_new_ini, inicio), termino=v_new_ter, comb_armar=v_new_ca, comb_devolver=v_new_cd,
       tem_abastecimento=coalesce((p_dados->>'tem_abastecimento')::boolean, tem_abastecimento),
       tem_acidente=coalesce((p_dados->>'tem_acidente')::boolean, tem_acidente),
