@@ -469,6 +469,7 @@ async function coletarAnexos(){
 let VIATURAS = [];   // cadastro
 let ABAST_CFG = {poc_ativo:false, poc_limite:null, prime_ativo:false, prime_limite:null};
 let VMAP = {};       // prefixo -> viatura
+let EDIT_ID = null, EDIT_ORIG = null;   // modo ?editar=
 
 /* ── boot ────────────────────────────────────────────────────────── */
 (async function init(){
@@ -484,7 +485,7 @@ let VMAP = {};       // prefixo -> viatura
   const _qs = new URLSearchParams(location.search);
   const _verId = _qs.get('ver'), _editId = _qs.get('editar');
   if (_verId){ await abrirVerFicha(_verId); return; }
-  if (_editId){ mostrarEdicaoEmBreve(); return; }
+  if (_editId){ EDIT_ID = _editId; }   // segue o init normal; preenche no fim
 
   // início default = agora
   const now=new Date(); now.setMinutes(now.getMinutes()-now.getTimezoneOffset());
@@ -507,6 +508,7 @@ let VMAP = {};       // prefixo -> viatura
   carregarMilitares();
   carregarCfgAbast();
   carregarListasAbast();
+  if (EDIT_ID) await abrirEditarFicha(EDIT_ID);
 })();
 
 // ── Ver/Imprimir e Editar (Fase C) ───────────────────────────────────────
@@ -533,11 +535,128 @@ function _vanexos(anexos){
   const li = anexos.map(a => `<li><a href="${_vesc(a.link||'#')}" target="_blank">${_vesc(a.nome||a.categoria||'anexo')}</a>${a.categoria?` <span style="color:#888">(${_vesc(a.categoria)})</span>`:''}</li>`).join('');
   return `<h3 class="vsec">Anexos</h3><ul class="vanex">${li}</ul>`;
 }
-function mostrarEdicaoEmBreve(){
-  const fw=document.getElementById('form-wrap'); if(fw) fw.style.display='none';
-  const d=document.createElement('div'); d.className='wrap';
-  d.innerHTML='<div class="card" style="text-align:center;padding:44px 20px"><h2 style="margin-bottom:10px">✏️ Edição em construção</h2><p style="color:var(--text-muted);max-width:520px;margin:0 auto">A edição de fichas (com registro de auditoria de quem alterou o quê) chega em breve. Por enquanto, use <b>Ver / Imprimir</b> na lista.</p><p style="margin-top:18px"><a class="btn-gold" href="meus-movimentacoes.html">← Voltar à lista</a></p></div>';
-  (document.querySelector('.rd-conteudo')||document.body).appendChild(d);
+function _resumoSecoes(f){
+  const d=f.dados||{}; const parts=[];
+  if(f.tem_abastecimento){ const n=(d.abastecimento&&Array.isArray(d.abastecimento.itens))?d.abastecimento.itens.length:0; parts.push(`⛽ Abastecimento: Sim${n?` (${n} lançamento${n>1?'s':''})`:''}`); }
+  else parts.push('⛽ Abastecimento: '+((d.abastecimento&&d.abastecimento.houve==='Não')?'Não (justificado)':'—'));
+  parts.push('🧽 Limpeza: '+(((d.limpeza&&d.limpeza.devolveu_limpa))||'—'));
+  if(f.tem_acidente) parts.push('⚠️ Acidente registrado');
+  if(f.tem_manutencao) parts.push('🔧 Manutenção / defeito');
+  if(f.tem_avaria) parts.push('🩹 Avaria de uso');
+  if(f.tem_taq) parts.push('🚤 Embarcação / Motor / TAQ');
+  if(f.tem_aeronave) parts.push('🚁 Aeronave / Drone');
+  const anx=Array.isArray(f.anexos)?f.anexos.length:0;
+  parts.push('📎 Anexos: '+(anx?anx:'nenhum'));
+  return '<ul style="margin:8px 0 0 18px;font-size:13px;line-height:1.9;color:var(--text-white)">'+parts.map(p=>'<li>'+p+'</li>').join('')+'</ul>';
+}
+
+async function abrirEditarFicha(id){
+  let f;
+  try{ f = await rpc('mov_ficha_completa', { p_token:S.token, p_id:id }); if(Array.isArray(f)) f=f[0]; }
+  catch(e){ f=null; }
+  const fw=document.getElementById('form-wrap');
+  if(!f || !f.id){
+    fw.innerHTML='<div class="card" style="text-align:center;padding:44px 20px"><h2 style="margin-bottom:10px">Não foi possível abrir para edição</h2><p style="color:var(--text-muted);max-width:540px;margin:0 auto">Ficha não encontrada, sem permissão, ou o prazo de edição venceu (edição só no mesmo dia por quem criou; depois, apenas o gestor de viaturas).</p><p style="margin-top:18px"><a class="btn-gold" href="meus-movimentacoes.html">← Voltar à lista</a></p></div>';
+    return;
+  }
+  EDIT_ORIG = f;
+  // cabeçalho da página em modo edição
+  const h1=document.querySelector('#form-wrap .pagehead h1'); if(h1) h1.textContent='✏️ Editar Ficha de Movimentação';
+  const pp=document.querySelector('#form-wrap .pagehead p'); if(pp) pp.innerHTML='Você está editando uma ficha já registrada. <b>Toda alteração fica registrada na auditoria</b> (quem, quando, o que mudou). As seções (abastecimento, TAQ, etc.) e os anexos são mantidos como foram lançados.';
+  const pb=document.getElementById('pend-banner'); if(pb) pb.style.display='none';
+
+  // preenche o BLOCO PRINCIPAL
+  const sel=document.getElementById('sel-prefixo');
+  if(f.prefixo && !Array.from(sel.options).some(o=>o.value===f.prefixo)){ const o=document.createElement('option'); o.value=f.prefixo; o.textContent=f.prefixo; sel.appendChild(o); }
+  sel.value=f.prefixo||'';
+  const setK=(k,v)=>{ const el=document.querySelector('#base [data-k="'+k+'"]'); if(el && v!=null) el.value=v; };
+  setK('placa', f.placa||'');
+  document.getElementById('mot-nome').value=f.motorista_nome||'';
+  document.getElementById('mot-mat').value=f.motorista_matricula||'';
+  setK('tipo_empenho', f.tipo_empenho);
+  setK('local_utilizacao', f.local_utilizacao);
+  document.getElementById('lotacao').value=f.lotacao_motorista||'';
+  setK('comandante_equipe', f.comandante_equipe);
+  document.getElementById('kmi').value=f.km_inicial!=null?f.km_inicial:'';
+  document.getElementById('kmf').value=f.km_final!=null?f.km_final:'';
+  const toLocal=iso=>{ if(!iso) return ''; const d=new Date(iso); if(isNaN(d)) return ''; d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); };
+  document.getElementById('inicio').value=toLocal(f.inicio);
+  document.getElementById('termino').value=toLocal(f.termino);
+  setK('comb_armar', f.comb_armar);
+  setK('comb_devolver', f.comb_devolver);
+  document.getElementById('obs-geral').value=f.observacoes||'';
+  try{ syncDatas(); calc(); }catch(e){}
+  // edição de ficha antiga não deve barrar pelo hodômetro da última devolução
+  ultimoKmFinal=null; kmiConfirmadoMaior=true;
+
+  // esconde as SEÇÕES opcionais (mantidas como estão) e mostra um resumo só-leitura
+  const opts=document.querySelector('#form-wrap .opts'); if(opts) opts.style.display='none';
+  document.querySelectorAll('#form-wrap .card.sec').forEach(el=>el.style.display='none');
+  const obsCard=document.getElementById('obs-geral').closest('.card');
+  if(obsCard){
+    const box=document.createElement('div'); box.className='card'; box.id='edit-secoes-ro';
+    box.innerHTML='<h2>📎 Seções e anexos (mantidos como no lançamento)</h2>'+_resumoSecoes(f)+'<p style="font-size:12px;color:var(--text-muted);margin-top:10px">Estes itens não são alterados nesta edição. Para corrigir abastecimento/TAQ/anexos, faça um novo lançamento.</p>';
+    obsCard.parentNode.insertBefore(box, obsCard);
+  }
+
+  // troca o botão para Salvar alterações
+  const btn=document.getElementById('btn-salvar');
+  btn.textContent='✔ Salvar alterações';
+  btn.setAttribute('onclick','salvarEdicao()');
+  const sn=document.querySelector('#form-wrap .syncnote'); if(sn) sn.style.display='none';
+  const cancelar=document.querySelector('#form-wrap .foot .btn-outline');
+  if(cancelar) cancelar.setAttribute('onclick','history.length>1?history.back():location.href=\'meus-movimentacoes.html\'');
+}
+
+async function salvarEdicao(){
+  const btn=document.getElementById('btn-salvar');
+  if(btn.disabled) return;
+  const base=collect(document.getElementById('base'));
+  if(!base.prefixo)     return foco('sel-prefixo','Selecione a viatura.');
+  if(!base.km_inicial)  return foco('kmi','Informe o Km inicial.');
+  if(!base.km_final)    return foco('kmf','Informe o Km final.');
+  const kmI=+base.km_inicial, kmF=+base.km_final;
+  if(kmF<kmI) return foco('kmf','Km final não pode ser menor que o inicial.');
+  const AGORA=Date.now(), DIA=86400000, FUT=5*60000;
+  const tIni=base.inicio?new Date(base.inicio).getTime():NaN;
+  const tFim=base.termino?new Date(base.termino).getTime():NaN;
+  if(!base.inicio||isNaN(tIni)) return foco('inicio','Informe o início (armar a viatura).');
+  if(tIni>AGORA+FUT)            return foco('inicio','O início não pode ser uma data/hora futura.');
+  if(!isNaN(tFim)){
+    if(tFim<tIni)       return foco('termino','O término não pode ser antes do início.');
+    if(tFim>tIni+DIA)   return foco('termino','O término não pode ser mais de 24h após o início.');
+  }
+
+  const o=EDIT_ORIG||{};
+  const p_dados=Object.assign({}, base, {
+    motorista_nome: document.getElementById('mot-nome').value||'',
+    motorista_matricula: document.getElementById('mot-mat').value||'',
+    lotacao_motorista: document.getElementById('lotacao').value||'',
+    observacoes: document.getElementById('obs-geral').value||'',
+    inicio:  base.inicio  ? new Date(base.inicio).toISOString()  : null,
+    termino: base.termino ? new Date(base.termino).toISOString() : null,
+    km_inicial: kmI, km_final: kmF,
+    // seções/anexos/flags mantidos exatamente como no lançamento
+    dados:  o.dados  || {},   anexos: o.anexos || [],
+    tem_abastecimento:!!o.tem_abastecimento, tem_acidente:!!o.tem_acidente,
+    tem_manutencao:!!o.tem_manutencao, tem_avaria:!!o.tem_avaria,
+    tem_limpeza:!!o.tem_limpeza, tem_taq:!!o.tem_taq, tem_aeronave:!!o.tem_aeronave
+  });
+
+  btn.disabled=true; btn.textContent='Salvando…';
+  try{
+    const r=await rpc('mov_ficha_editar', { p_token:S.token, p_id:EDIT_ID, p_dados });
+    const n=(r&&r.alteracoes!=null)?+r.alteracoes:0;
+    document.getElementById('form-wrap').style.display='none';
+    const h2=document.querySelector('#ok-screen h2'); if(h2) h2.textContent='Alterações salvas!';
+    document.getElementById('ok-msg').textContent = n>0
+      ? `${n} alteração${n>1?'ões':''} registrada${n>1?'s':''} na auditoria.`
+      : 'Nenhuma alteração foi detectada nos campos.';
+    const acoes=document.querySelector('#ok-screen div[style*="justify-content"]'); // container dos botões
+    if(acoes) acoes.innerHTML='<a class="btn-gold" href="meus-movimentacoes.html">← Minhas movimentações</a> <button class="btn-outline" onclick="history.length>1?history.back():location.href=\'viaturas-gestao.html\'">Voltar</button>';
+    document.getElementById('ok-screen').classList.add('show');
+    window.scrollTo(0,0);
+  }catch(e){ toast('Erro ao salvar: '+e.message); btn.disabled=false; btn.textContent='✔ Salvar alterações'; }
 }
 async function abrirVerFicha(id){
   const fw=document.getElementById('form-wrap'); if(fw) fw.style.display='none';
