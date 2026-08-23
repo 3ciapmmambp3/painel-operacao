@@ -520,15 +520,29 @@ function _vrow(l,v){ return `<tr><td class="vl">${_vesc(l)}</td><td class="vv">$
 function _vsecoes(dados){
   if(!dados || typeof dados!=='object') return '';
   const rotulo = { abastecimento:'Abastecimento', acidente:'Acidente', manutencao:'Manutenção / defeito', avaria:'Avarias de uso', limpeza:'Limpeza / higienização', taq:'Embarcação / Motor / TAQ', aeronave:'Aeronave / Drone', externo:'Condutor externo' };
+  const pretty = kk => String(kk).replace(/_/g,' ').replace(/^./, c=>c.toUpperCase());
+  const scalarTable = o => { const rows=Object.keys(o).filter(k=>o[k]!=null&&o[k]!==''&&typeof o[k]!=='object').map(k=>_vrow(pretty(k),o[k])).join(''); return rows?`<table class="vt">${rows}</table>`:''; };
+  const renderObj = o => {
+    let s = scalarTable(o);
+    Object.keys(o).forEach(k=>{
+      const val=o[k]; if(val==null||val==='') return;
+      if(Array.isArray(val)){
+        if(!val.length) return;
+        s += `<div class="vsub">${_vesc(pretty(k))}</div>`;
+        val.forEach((it,i)=>{ s += (it&&typeof it==='object') ? (val.length>1?`<div class="vsub2">#${i+1}</div>`:'')+scalarTable(it) : `<table class="vt">${_vrow(pretty(k)+' '+(i+1), it)}</table>`; });
+      } else if(typeof val==='object'){
+        s += `<div class="vsub">${_vesc(pretty(k))}</div>` + renderObj(val);
+      }
+    });
+    return s;
+  };
   let out='';
   Object.keys(dados).forEach(k=>{
     const v=dados[k]; if(v==null || (typeof v==='object' && !Array.isArray(v) && !Object.keys(v).length) || (Array.isArray(v) && !v.length)) return;
-    out += `<h3 class="vsec">${_vesc(rotulo[k]||k)}</h3>`;
-    const pretty = kk => String(kk).replace(/_/g,' ').replace(/^./, c=>c.toUpperCase());
-    const tabelaObj = o => { let t='<table class="vt">'; Object.keys(o).forEach(kk=>{ const val=o[kk]; if(val==null||val==='') return; t+=_vrow(pretty(kk), (typeof val==='object')?JSON.stringify(val):val); }); return t+'</table>'; };
-    if(Array.isArray(v)) v.forEach(it => out += (typeof it==='object') ? tabelaObj(it) : `<table class="vt">${_vrow('item', it)}</table>`);
-    else if(typeof v==='object') out += tabelaObj(v);
-    else out += `<table class="vt">${_vrow(k, v)}</table>`;
+    out += `<h3 class="vsec">${_vesc(rotulo[k]||pretty(k))}</h3>`;
+    if(Array.isArray(v)) v.forEach(it => out += (it&&typeof it==='object') ? renderObj(it) : `<table class="vt">${_vrow(pretty(k), it)}</table>`);
+    else if(typeof v==='object') out += renderObj(v);
+    else out += `<table class="vt">${_vrow(pretty(k), v)}</table>`;
   });
   return out;
 }
@@ -729,6 +743,8 @@ async function abrirVerFicha(id){
     .ver-doc .vt td{border-bottom:1px solid #e3e0d7;padding:6px 8px;font-size:13px;color:#111;vertical-align:top}
     .ver-doc .vl{width:38%;color:#666;font-weight:600}
     .ver-doc .vv{color:#111}
+    .ver-doc .vsub{font-size:11.5px;font-weight:700;color:#555;margin:10px 0 2px;text-transform:uppercase;letter-spacing:.02em}
+    .ver-doc .vsub2{font-size:11px;font-weight:700;color:#7a6a3a;margin:6px 0 0}
     .ver-doc .vobs{font-size:13px;color:#111;white-space:pre-wrap}
     .ver-doc .vanex{margin:4px 0 0 18px;font-size:13px} .ver-doc .vanex a{color:#1a7a3a}
     .ver-doc .vfoot{font-size:11.5px;color:#666;margin-top:16px;border-top:1px dashed #ccc;padding-top:8px}
