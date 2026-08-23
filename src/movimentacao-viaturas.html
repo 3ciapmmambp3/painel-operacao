@@ -470,6 +470,7 @@ let VIATURAS = [];   // cadastro
 let ABAST_CFG = {poc_ativo:false, poc_limite:null, prime_ativo:false, prime_limite:null};
 let VMAP = {};       // prefixo -> viatura
 let EDIT_ID = null, EDIT_ORIG = null;   // modo ?editar=
+let VOLTAR_URL = 'meus-movimentacoes.html';   // p/ onde o "Voltar" leva (depende da origem)
 
 /* ── boot ────────────────────────────────────────────────────────── */
 (async function init(){
@@ -484,6 +485,7 @@ let EDIT_ID = null, EDIT_ORIG = null;   // modo ?editar=
   // ── modo Ver/Imprimir (?ver=id) / Editar (?editar=id) ──
   const _qs = new URLSearchParams(location.search);
   const _verId = _qs.get('ver'), _editId = _qs.get('editar');
+  VOLTAR_URL = (_qs.get('origem')==='gestao') ? 'viaturas-gestao.html?tab=fichas' : 'meus-movimentacoes.html';
   if (_verId){ await abrirVerFicha(_verId); return; }
   if (_editId){ EDIT_ID = _editId; }   // segue o init normal; preenche no fim
 
@@ -556,7 +558,7 @@ async function abrirEditarFicha(id){
   catch(e){ f=null; }
   const fw=document.getElementById('form-wrap');
   if(!f || !f.id){
-    fw.innerHTML='<div class="card" style="text-align:center;padding:44px 20px"><h2 style="margin-bottom:10px">Não foi possível abrir para edição</h2><p style="color:var(--text-muted);max-width:540px;margin:0 auto">Ficha não encontrada, sem permissão, ou o prazo de edição venceu (edição só no mesmo dia por quem criou; depois, apenas o gestor de viaturas).</p><p style="margin-top:18px"><a class="btn-gold" href="meus-movimentacoes.html">← Voltar à lista</a></p></div>';
+    fw.innerHTML='<div class="card" style="text-align:center;padding:44px 20px"><h2 style="margin-bottom:10px">Não foi possível abrir para edição</h2><p style="color:var(--text-muted);max-width:540px;margin:0 auto">Ficha não encontrada, sem permissão, ou o prazo de edição venceu (edição só no mesmo dia por quem criou; depois, apenas o gestor de viaturas).</p><p style="margin-top:18px"><a class="btn-gold" href="'+VOLTAR_URL+'">← Voltar à lista</a></p></div>';
     return;
   }
   EDIT_ORIG = f;
@@ -605,7 +607,7 @@ async function abrirEditarFicha(id){
   btn.setAttribute('onclick','salvarEdicao()');
   const sn=document.querySelector('#form-wrap .syncnote'); if(sn) sn.style.display='none';
   const cancelar=document.querySelector('#form-wrap .foot .btn-outline');
-  if(cancelar) cancelar.setAttribute('onclick','history.length>1?history.back():location.href=\'meus-movimentacoes.html\'');
+  if(cancelar) cancelar.setAttribute('onclick','location.href=VOLTAR_URL');
 }
 
 async function salvarEdicao(){
@@ -653,7 +655,8 @@ async function salvarEdicao(){
       ? `${n} alteração${n>1?'ões':''} registrada${n>1?'s':''} na auditoria.`
       : 'Nenhuma alteração foi detectada nos campos.';
     const acoes=document.querySelector('#ok-screen div[style*="justify-content"]'); // container dos botões
-    if(acoes) acoes.innerHTML='<a class="btn-gold" href="meus-movimentacoes.html">← Minhas movimentações</a> <button class="btn-outline" onclick="history.length>1?history.back():location.href=\'viaturas-gestao.html\'">Voltar</button>';
+    const voltarLbl = VOLTAR_URL.indexOf('viaturas-gestao')===0 ? '← Gestão de Viaturas' : '← Minhas movimentações';
+    if(acoes) acoes.innerHTML='<a class="btn-gold" href="'+VOLTAR_URL+'">'+voltarLbl+'</a>';
     document.getElementById('ok-screen').classList.add('show');
     window.scrollTo(0,0);
   }catch(e){ toast('Erro ao salvar: '+e.message); btn.disabled=false; btn.textContent='✔ Salvar alterações'; }
@@ -667,7 +670,7 @@ async function abrirVerFicha(id){
   catch(e){ f=null; }
   if(!f || !f.id){
     const e=document.createElement('div'); e.className='wrap';
-    e.innerHTML='<div class="card" style="padding:30px;text-align:center">Não foi possível abrir esta ficha (sem permissão ou não encontrada).<br><a class="btn-gold" style="margin-top:14px;display:inline-block" href="meus-movimentacoes.html">← Voltar</a></div>';
+    e.innerHTML='<div class="card" style="padding:30px;text-align:center">Não foi possível abrir esta ficha (sem permissão ou não encontrada).<br><a class="btn-gold" style="margin-top:14px;display:inline-block" href="'+VOLTAR_URL+'">← Voltar</a></div>';
     host.appendChild(e); return;
   }
   const km = (f.km_rodados!=null) ? f.km_rodados+' km' : '—';
@@ -705,7 +708,7 @@ async function abrirVerFicha(id){
     ${editado}`;
   const bar = document.createElement('div');
   bar.className='ver-actions';
-  bar.innerHTML = `<button class="btn-gold" onclick="window.print()">🖨 Imprimir</button> <a class="btn-outline" href="meus-movimentacoes.html">← Voltar</a>`;
+  bar.innerHTML = `<button class="btn-gold" onclick="window.print()">🖨 Imprimir</button> <button class="btn-outline" onclick="if(window.opener&&!window.opener.closed){window.close()}else{location.href=VOLTAR_URL}">← Voltar</button>`;
   const box = document.createElement('div'); box.className='wrap';
   box.appendChild(bar); box.appendChild(doc);
   host.appendChild(box);
