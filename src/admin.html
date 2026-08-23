@@ -1491,6 +1491,7 @@ function fcRender(){
       <td><span class="st ${cls}">${lbl}</span></td>
       <td style="text-align:right;white-space:nowrap">
         <button class="btn-outline btn-sm" onclick='fcSelecionar(${JSON.stringify(c.id)})'>🎯 Alvos</button>
+        <button class="btn-outline btn-sm" title="Prestação de contas (Excel)" onclick='fapiExportarContas(${JSON.stringify(c.id)})'>📊</button>
         <button class="btn-outline btn-sm" onclick='fcEditar(${JSON.stringify(c.id)})'>✎</button>
         <button class="btn-outline btn-sm" onclick='fcRemover(${JSON.stringify(c.id)}, ${JSON.stringify(c.id_operacao)})' style="color:var(--danger)">🗑</button>
       </td></tr>`;
@@ -1615,19 +1616,25 @@ async function pafExportarContas(operacaoId){
     });
     if(!linhas.length){ alert('Nenhuma fiscalização lançada em relatórios para a operação "'+operacaoId+'".'); return; }
     const porGrup={}; linhas.forEach(l=>{ (porGrup[l.grup]=porGrup[l.grup]||[]).push(l); });
-    let resumo='<h3>Resumo por grupamento</h3><table border="1"><tr><th>Grupamento</th><th>Qtd</th><th>N&ordm; REDS</th></tr>';
-    Object.keys(porGrup).sort().forEach(g=>{ resumo+=`<tr><td>${_xesc(g)}</td><td>${porGrup[g].length}</td><td>${_xesc(porGrup[g].map(x=>x.reds).filter(Boolean).join(', '))}</td></tr>`; });
-    resumo+=`<tr><td><b>TOTAL</b></td><td><b>${linhas.length}</b></td><td></td></tr></table>`;
+    let resumo='<h3>Resumo por grupamento</h3><table border="1"><tr><th>Grupamento</th><th>Qtd</th></tr>';
+    Object.keys(porGrup).sort().forEach(g=>{ resumo+=`<tr><td>${_xesc(g)}</td><td>${porGrup[g].length}</td></tr>`; });
+    resumo+=`<tr><td><b>TOTAL</b></td><td><b>${linhas.length}</b></td></tr></table>`;
     let det='<h3>Detalhe</h3><table border="1"><tr><th>Grupamento</th><th>Data</th><th>N&ordm; REDS</th><th>N&ordm; Ato</th></tr>';
     linhas.forEach(l=>{ det+=`<tr><td>${_xesc(l.grup)}</td><td>${_xesc(l.data)}</td><td>${_xesc(l.reds)}</td><td>${_xesc(l.ato)}</td></tr>`; });
     det+='</table>';
     _baixarXls(`PAF_${operacaoId}_prestacao.xls`, `<h2>PAF &mdash; ${_xesc(operacaoId)}</h2>`+resumo+det);
   }catch(e){ alert('Erro ao exportar: '+e.message); }
 }
-async function fapiExportarContas(){
-  if(!FC_SEL){ alert('Selecione uma campanha primeiro.'); return; }
-  const camp=FC_ADMIN.find(c=>c.id===FC_SEL)||{};
+async function fapiExportarContas(campId){
+  campId = campId || FC_SEL;
+  if(!campId){ alert('Selecione uma campanha primeiro.'); return; }
+  const camp=FC_ADMIN.find(c=>c.id===campId)||{};
   try{
+    // alvos da campanha (usa os já carregados se for a selecionada, senão busca)
+    let alvos;
+    if(campId===FC_SEL){ alvos=FA_ADMIN; }
+    else { const rows=await sbRpc('fapi_alvos_listar',{p_operacao_id:campId}); alvos=Array.isArray(rows)?rows:[]; }
+    if(!alvos.length){ alert('Essa campanha não tem alvos cadastrados.'); return; }
     const itens=await _fetchItensRel('FAPI');
     const baixa={};
     itens.filter(it=>(it.dados&&it.dados['Campanha FAPI'])===camp.id_operacao).forEach(it=>{
@@ -1636,7 +1643,7 @@ async function fapiExportarContas(){
     });
     let atn=0; const porGrup={};
     let det='<table border="1"><tr><th>ID</th><th>Raz&atilde;o Social</th><th>Munic&iacute;pio</th><th>Grupamento</th><th>Situa&ccedil;&atilde;o</th><th>Data</th><th>N&ordm; REDS</th><th>N&ordm; Ato</th></tr>';
-    FA_ADMIN.forEach(a=>{
+    alvos.forEach(a=>{
       const b=baixa[String(a.id_alvo)]; const at=!!b; if(at)atn++;
       const g=faGrup(a); const x=(porGrup[g]=porGrup[g]||{tot:0,at:0}); x.tot++; if(at)x.at++;
       det+=`<tr><td>${_xesc(a.id_alvo)}</td><td>${_xesc(a.razao_social)}</td><td>${_xesc(a.municipio)}</td><td>${_xesc(g)}</td><td>${at?'Atendido':'Pendente'}</td><td>${_xesc(b?b.data:'')}</td><td>${_xesc(b?b.reds:'')}</td><td>${_xesc(b?b.ato:'')}</td></tr>`;
@@ -1644,7 +1651,7 @@ async function fapiExportarContas(){
     det+='</table>';
     let resumo='<h3>Resumo por grupamento</h3><table border="1"><tr><th>Grupamento</th><th>Alvos</th><th>Atendidos</th><th>Pendentes</th></tr>';
     Object.keys(porGrup).sort().forEach(g=>{ const x=porGrup[g]; resumo+=`<tr><td>${_xesc(g)}</td><td>${x.tot}</td><td>${x.at}</td><td>${x.tot-x.at}</td></tr>`; });
-    resumo+=`<tr><td><b>TOTAL</b></td><td><b>${FA_ADMIN.length}</b></td><td><b>${atn}</b></td><td><b>${FA_ADMIN.length-atn}</b></td></tr></table>`;
+    resumo+=`<tr><td><b>TOTAL</b></td><td><b>${alvos.length}</b></td><td><b>${atn}</b></td><td><b>${alvos.length-atn}</b></td></tr></table>`;
     _baixarXls(`FAPI_${camp.id_operacao}_prestacao.xls`, `<h2>FAPI &mdash; ${_xesc(camp.id_operacao)}</h2>`+resumo+det);
   }catch(e){ alert('Erro ao exportar: '+e.message); }
 }
