@@ -915,7 +915,8 @@ document.addEventListener('click', () => {
           <input id="fa-f-mun" placeholder="🔎 Município…" oninput="faRender()" style="max-width:200px">
           <input id="fa-f-gp" placeholder="🔎 Grupamento…" oninput="faRender()" style="max-width:220px">
           <span style="flex:1"></span>
-          <button class="btn-outline btn-sm" onclick="faExportar()">📊 Exportar (Excel)</button>
+          <button class="btn-outline btn-sm" onclick="faExportar()">📥 Exportar alvos</button>
+          <button class="btn-gold btn-sm" onclick="fapiExportarContas()">📊 Prestação de contas</button>
         </div>
         <div class="table-wrap">
           <table class="tbl">
@@ -1418,6 +1419,7 @@ function pfRender(){
       <td>${pfVigTxt(o)}</td>
       <td><span class="st ${cls}">${lbl}</span></td>
       <td style="text-align:right;white-space:nowrap">
+        <button class="btn-outline btn-sm" title="Prestação de contas (Excel)" onclick='pafExportarContas(${JSON.stringify(o.id_operacao)})'>📊</button>
         <button class="btn-outline btn-sm" onclick='pfEditar(${JSON.stringify(o.id)})'>✎</button>
         <button class="btn-outline btn-sm" onclick='pfRemover(${JSON.stringify(o.id)}, ${JSON.stringify(o.id_operacao)})' style="color:var(--danger)">🗑</button>
       </td></tr>`;
@@ -1584,6 +1586,67 @@ function faExportar(){
   h+='</table>';
   const blob=new Blob(['﻿<html><head><meta charset="utf-8"></head><body>'+h+'</body></html>'],{type:'application/vnd.ms-excel'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`FAPI_${camp}_alvos.xls`; document.body.appendChild(a); a.click(); a.remove();
+}
+// ===== Fase 4: extração "prestação de contas" (lê dos relatórios enviados) =====
+function _xesc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function _baixarXls(nome, corpo){
+  const blob=new Blob(['﻿<html><head><meta charset="utf-8"></head><body>'+corpo+'</body></html>'],{type:'application/vnd.ms-excel'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=nome; document.body.appendChild(a); a.click(); a.remove();
+}
+async function _fetchItensRel(categoria){
+  const r=await fetch(`${SB_URL}/rest/v1/relatorio_itens?categoria=eq.${encodeURIComponent(categoria)}&select=dados,relatorios(fracao_atuacao,data)`,{headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY}});
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  const j=await r.json(); return Array.isArray(j)?j:[];
+}
+// fração do relatório -> grupamento_completo
+function grupOfFracao(fracao){
+  const n=pfNormMun(fracao); if(!n) return 'Sem grupamento';
+  let g=GRUPAMENTOS.find(x=>pfNormMun(x.grupamento_completo)===n); if(g) return g.grupamento_completo;
+  g=GRUPAMENTOS.find(x=>pfNormMun(x.gp_responsavel)===n); if(g) return g.grupamento_completo;
+  const gp=MUNI_GP[n]; if(gp){ const g3=GRUPAMENTOS.find(x=>x.gp_responsavel===gp); return g3?g3.grupamento_completo:gp; }
+  return fracao||'Sem grupamento';
+}
+async function pafExportarContas(operacaoId){
+  try{
+    const itens=await _fetchItensRel('PAF');
+    const linhas=itens.filter(it=>(it.dados&&it.dados['ID da Operação PAF'])===operacaoId).map(it=>{
+      const d=it.dados||{}, rel=it.relatorios||{};
+      return { grup:grupOfFracao(rel.fracao_atuacao), data:d['Data da Fiscalização']||'', reds:d['Nº REDS (BO/BOS/RAT)']||'', ato:d['Nº Ato de Fiscalização']||'' };
+    });
+    if(!linhas.length){ alert('Nenhuma fiscalização lançada em relatórios para a operação "'+operacaoId+'".'); return; }
+    const porGrup={}; linhas.forEach(l=>{ (porGrup[l.grup]=porGrup[l.grup]||[]).push(l); });
+    let resumo='<h3>Resumo por grupamento</h3><table border="1"><tr><th>Grupamento</th><th>Qtd</th><th>N&ordm; REDS</th></tr>';
+    Object.keys(porGrup).sort().forEach(g=>{ resumo+=`<tr><td>${_xesc(g)}</td><td>${porGrup[g].length}</td><td>${_xesc(porGrup[g].map(x=>x.reds).filter(Boolean).join(', '))}</td></tr>`; });
+    resumo+=`<tr><td><b>TOTAL</b></td><td><b>${linhas.length}</b></td><td></td></tr></table>`;
+    let det='<h3>Detalhe</h3><table border="1"><tr><th>Grupamento</th><th>Data</th><th>N&ordm; REDS</th><th>N&ordm; Ato</th></tr>';
+    linhas.forEach(l=>{ det+=`<tr><td>${_xesc(l.grup)}</td><td>${_xesc(l.data)}</td><td>${_xesc(l.reds)}</td><td>${_xesc(l.ato)}</td></tr>`; });
+    det+='</table>';
+    _baixarXls(`PAF_${operacaoId}_prestacao.xls`, `<h2>PAF &mdash; ${_xesc(operacaoId)}</h2>`+resumo+det);
+  }catch(e){ alert('Erro ao exportar: '+e.message); }
+}
+async function fapiExportarContas(){
+  if(!FC_SEL){ alert('Selecione uma campanha primeiro.'); return; }
+  const camp=FC_ADMIN.find(c=>c.id===FC_SEL)||{};
+  try{
+    const itens=await _fetchItensRel('FAPI');
+    const baixa={};
+    itens.filter(it=>(it.dados&&it.dados['Campanha FAPI'])===camp.id_operacao).forEach(it=>{
+      const d=it.dados||{}; const id=String(d['ID do Alvo']||'').trim(); if(!id) return;
+      baixa[id]={ data:d['Data da Fiscalização']||'', reds:d['Nº REDS (BO/BOS/RAT)']||'', ato:d['Nº Ato de Fiscalização']||'' };
+    });
+    let atn=0; const porGrup={};
+    let det='<table border="1"><tr><th>ID</th><th>Raz&atilde;o Social</th><th>Munic&iacute;pio</th><th>Grupamento</th><th>Situa&ccedil;&atilde;o</th><th>Data</th><th>N&ordm; REDS</th><th>N&ordm; Ato</th></tr>';
+    FA_ADMIN.forEach(a=>{
+      const b=baixa[String(a.id_alvo)]; const at=!!b; if(at)atn++;
+      const g=faGrup(a); const x=(porGrup[g]=porGrup[g]||{tot:0,at:0}); x.tot++; if(at)x.at++;
+      det+=`<tr><td>${_xesc(a.id_alvo)}</td><td>${_xesc(a.razao_social)}</td><td>${_xesc(a.municipio)}</td><td>${_xesc(g)}</td><td>${at?'Atendido':'Pendente'}</td><td>${_xesc(b?b.data:'')}</td><td>${_xesc(b?b.reds:'')}</td><td>${_xesc(b?b.ato:'')}</td></tr>`;
+    });
+    det+='</table>';
+    let resumo='<h3>Resumo por grupamento</h3><table border="1"><tr><th>Grupamento</th><th>Alvos</th><th>Atendidos</th><th>Pendentes</th></tr>';
+    Object.keys(porGrup).sort().forEach(g=>{ const x=porGrup[g]; resumo+=`<tr><td>${_xesc(g)}</td><td>${x.tot}</td><td>${x.at}</td><td>${x.tot-x.at}</td></tr>`; });
+    resumo+=`<tr><td><b>TOTAL</b></td><td><b>${FA_ADMIN.length}</b></td><td><b>${atn}</b></td><td><b>${FA_ADMIN.length-atn}</b></td></tr></table>`;
+    _baixarXls(`FAPI_${camp.id_operacao}_prestacao.xls`, `<h2>FAPI &mdash; ${_xesc(camp.id_operacao)}</h2>`+resumo+det);
+  }catch(e){ alert('Erro ao exportar: '+e.message); }
 }
 function faShowGp(mun){
   const g = pfMunGrup(mun); const el=document.getElementById('fa-gp-hint');
