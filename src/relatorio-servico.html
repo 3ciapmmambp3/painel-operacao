@@ -929,18 +929,22 @@ const REPEATABLE_CONFIGS = {
   fapi: {
     entryLabel: 'Alvo FAPI',
     preFields: [
-      { label: 'ID da Operação FAPI', type: 'select', key: 'fapiId' },
-      { label: 'Nome da Operação', type: 'text', key: 'fapiNome', extraNote: 'preenchido automaticamente ao escolher o ID' },
+      { label: 'Campanha FAPI', type: 'select', key: 'fapiId', extraNote: 'os alvos mostrados são só os do seu grupamento' },
     ],
     fields: [
       [
-        { label: 'ID do Alvo', type: 'select', sourceKey: 'FAPI_ALVO' },
+        { label: 'ID do Alvo', type: 'select', key: 'fapiAlvo' },
+        { label: 'Razão Social', type: 'text', key: 'fapiRazao', readonly: true, extraNote: 'preenchido ao escolher o alvo' },
+      ],
+      [
+        { label: 'Município', type: 'text', key: 'fapiMunicipio', readonly: true },
         { label: 'Data da Fiscalização', type: 'date', required: true },
       ],
       [
         { label: 'Nº REDS (BO/BOS/RAT)', type: 'text', mask: 'reds', required: true },
         { label: 'Nº Ato de Fiscalização', type: 'text', mask: 'ato', required: true },
       ],
+      { label: 'Status', type: 'select', key: 'fapiStatus', options: ['RESPONDIDA', 'NÃO RESPONDIDA', 'PENDENTE'] },
     ],
   },
   ima: {
@@ -1452,6 +1456,10 @@ function opPafFapiValido(item, pelNum, dataServico){
   if (typeof item === 'string') return true;
   const pels = Array.isArray(item.pelotoes) ? item.pelotoes : [];
   if (pels.length && (pelNum == null || !pels.includes(pelNum))) return false;
+  const gps = Array.isArray(item.grupamentos) ? item.grupamentos : [];
+  if (gps.length){
+    if (!MEU_GP_RESP || !gps.map(_normGp).includes(_normGp(MEU_GP_RESP))) return false;
+  }
   if (item.inicio && item.final){
     if (!dataServico) return false;
     if (dataServico < item.inicio || dataServico > item.final) return false;
@@ -1503,7 +1511,58 @@ function bindOpSmartFilter(panel, cfg){
   if (dataInput) dataInput.addEventListener('change', reaplica);
 }
 function bindPafSmartFilter(panel){ bindOpSmartFilter(panel, { idKey:'pafId',  nomeKey:'pafNome',  sourceKey:'PAF'  }); }
-function bindFapiSmartFilter(panel){ bindOpSmartFilter(panel, { idKey:'fapiId', nomeKey:'fapiNome', sourceKey:'FAPI' }); }
+
+// ---------- FAPI: campanha → alvos do MEU grupamento → baixa ----------
+function fapiCampanhaId(panel){
+  const sel = panel.querySelector('.pre-fields [data-field="fapiId"]');
+  if (!sel || !sel.value) return null;
+  const camp = (referenceCache['FAPI'] || []).find(c => opItemVal(c) === sel.value);
+  return camp ? camp.id : null;
+}
+function fapiAlvosDoCard(panel){
+  const opId = fapiCampanhaId(panel);
+  if (!opId) return [];
+  const meu = _normGp(MEU_GP_RESP);
+  return FAPI_ALVOS_ALL.filter(a => {
+    if (a.operacao_id !== opId) return false;
+    if (meu) return _normGp(a.gp_responsavel || '') === meu;  // só o meu grupamento
+    return true;  // fallback: sem GP identificado, mostra todos
+  });
+}
+function fapiPopularAlvoSelect(sel, panel){
+  const alvos = fapiAlvosDoCard(panel);
+  const cur = sel.value;
+  const opts = alvos.map(a => {
+    const v = String(a.id_alvo || '').replace(/"/g, '&quot;');
+    const txt = (a.id_alvo || '') + (a.razao_social ? ' - ' + a.razao_social : '') + (a.municipio ? ' (' + a.municipio + ')' : '');
+    return `<option value="${v}">${txt}</option>`;
+  }).join('');
+  const ph = alvos.length ? 'Selecione o alvo...'
+    : (fapiCampanhaId(panel) ? 'Nenhum alvo do seu grupamento nesta campanha' : 'Escolha a campanha primeiro');
+  sel.innerHTML = `<option value="">${ph}</option>` + opts;
+  if (alvos.some(a => String(a.id_alvo) === cur)) sel.value = cur;
+}
+function bindFapiEntry(entry, panel){
+  const alvoSel = entry.querySelector('[data-field="fapiAlvo"]');
+  if (!alvoSel) return;
+  fapiPopularAlvoSelect(alvoSel, panel);
+  alvoSel.addEventListener('change', () => {
+    const a = fapiAlvosDoCard(panel).find(x => String(x.id_alvo) === alvoSel.value);
+    const rz = entry.querySelector('[data-field="fapiRazao"]');
+    const mn = entry.querySelector('[data-field="fapiMunicipio"]');
+    if (rz) rz.value = a ? (a.razao_social || '') : '';
+    if (mn) mn.value = a ? (a.municipio || '') : '';
+  });
+}
+function bindFapiCard(panel){
+  const campSel = panel.querySelector('.pre-fields [data-field="fapiId"]');
+  if (campSel) populateOpSelect(campSel, 'FAPI');   // campanhas (referenceCache FAPI)
+  panel.querySelectorAll('[data-repeat-entry]').forEach(e => bindFapiEntry(e, panel));
+  const reAll = () => panel.querySelectorAll('[data-field="fapiAlvo"]').forEach(sel => fapiPopularAlvoSelect(sel, panel));
+  if (campSel) campSel.addEventListener('change', reAll);
+  const dataInput = document.getElementById('dataServico');
+  if (dataInput && campSel) dataInput.addEventListener('change', () => populateOpSelect(campSel, 'FAPI'));
+}
 
 function refreshFracaoScopedSelects(){
   populateSelectsIn(document);
@@ -1602,14 +1661,42 @@ async function carregarPafFapiSupabase(){
   const rows = await r.json();
   if (!Array.isArray(rows)) return;
   const mapTipo = tipo => rows.filter(o => o.tipo === tipo).map(o => ({
+    id:     o.id,
     value:  o.id_operacao,
     nome:   o.nome || '',
     pelotoes: Array.isArray(o.pelotoes) ? o.pelotoes.map(Number) : [],
+    grupamentos: Array.isArray(o.grupamentos) ? o.grupamentos : [],
     inicio: o.inicio ? String(o.inicio).slice(0,10) : '',
     final:  o.final  ? String(o.final ).slice(0,10) : '',
   }));
   referenceCache['PAF']  = mapTipo('PAF');
   referenceCache['FAPI'] = mapTipo('FAPI');
+  // alvos do FAPI (todos) — filtrados no card por campanha + grupamento do militar
+  try{
+    const ra = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/fapi_alvos_listar`, { method:'POST', headers:H, body:'{}' });
+    FAPI_ALVOS_ALL = ra.ok ? (await ra.json()) : [];
+    if(!Array.isArray(FAPI_ALVOS_ALL)) FAPI_ALVOS_ALL = [];
+  }catch(e){ FAPI_ALVOS_ALL = []; console.warn('fapi_alvos_listar', e); }
+}
+
+// Mapa grupamento_completo → gp_responsavel + grupamento do militar logado
+let FAPI_ALVOS_ALL = [];
+let GRUPOS_MAP = {};
+let MEU_GP_RESP = '';
+let MEU_GRUP_COMPLETO = '';
+function _normGp(s){ return (s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim(); }
+async function carregarGruposMap(){
+  if (typeof SB_AUTH_URL === 'undefined') return;
+  const H = { apikey: SB_AUTH_KEY, Authorization:'Bearer '+SB_AUTH_KEY };
+  try{
+    const r = await fetch(`${SB_AUTH_URL}/rest/v1/grupos?select=grupamento_completo,gp_responsavel`, { headers:H });
+    const rows = r.ok ? await r.json() : [];
+    GRUPOS_MAP = {};
+    rows.forEach(g=>{ GRUPOS_MAP[_normGp(g.grupamento_completo)] = g.gp_responsavel; });
+  }catch(e){ GRUPOS_MAP = {}; console.warn('grupos map', e); }
+  const S = (typeof getSessaoAtual === 'function') ? getSessaoAtual() : null;
+  MEU_GRUP_COMPLETO = (S && (S.grupamento_id || S.lotacao)) || '';
+  MEU_GP_RESP = GRUPOS_MAP[_normGp(MEU_GRUP_COMPLETO)] || '';
 }
 
 // MILITARES agora vêm do painel (tabela `militares` do Supabase), unificando
@@ -1731,6 +1818,7 @@ async function fetchReferenceData(){
     try { await carregarOperacoesSupabase(); }
     catch(e){ console.warn('[operacoes] mantendo fonte da planilha:', e); }
     // PAF/FAPI também migraram para o painel (Supabase).
+    try { await carregarGruposMap(); } catch(e){ console.warn('[grupos map]', e); }
     try { await carregarPafFapiSupabase(); }
     catch(e){ console.warn('[paf/fapi] mantendo fonte da planilha:', e); }
     // MILITARES: fonte = tabela `militares` do Supabase (unifica com TTA/Viaturas).
@@ -2406,6 +2494,7 @@ function bindRepeatablePanel(panel, categoryId){
       bindHodometroFromMov(entry);
     }
     if (categoryId === 'ima') bindImaDuracao(entry);
+    if (categoryId === 'fapi') bindFapiEntry(entry, panel);
   }
   list.querySelectorAll('[data-repeat-entry]').forEach(entry => {
     bindRemove(entry);
@@ -2509,7 +2598,7 @@ function getOrCreatePanelNode(id){
   searchifySelectsIn(div);
   if (REPEATABLE_CONFIGS[id]) bindRepeatablePanel(div, id);
   if (id === 'paf') bindPafSmartFilter(div);
-  if (id === 'fapi') bindFapiSmartFilter(div);
+  if (id === 'fapi') bindFapiCard(div);
   panelCache[id] = div;
   return div;
 }
