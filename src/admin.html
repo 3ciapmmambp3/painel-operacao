@@ -1599,8 +1599,22 @@ function _xmlEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/
 function _sheetXml(sheet){
   const cell = v => `<Cell><Data ss:Type="${typeof v==='number'?'Number':'String'}">${_xmlEsc(v)}</Data></Cell>`;
   const rowXml = arr => `<Row>${arr.map(cell).join('')}</Row>`;
-  const rows = [sheet.headers].concat(sheet.rows).map(rowXml).join('');
-  return `<Worksheet ss:Name="${_xmlEsc(sheet.name)}"><Table>${rows}</Table></Worksheet>`;
+  const all = (sheet.title||[]).concat([sheet.headers]).concat(sheet.rows);
+  return `<Worksheet ss:Name="${_xmlEsc(sheet.name)}"><Table>${all.map(rowXml).join('')}</Table></Worksheet>`;
+}
+// Cabeçalho (mesmas linhas do Relatório de Serviço) + identificação da operação
+function _cabecalhoRows(subtitulo, operacao, inicio, final){
+  const vig = (inicio || final) ? ((inicio?opFmt(inicio):'—') + ' a ' + (final?opFmt(final):'—')) : 'sem período definido';
+  return [
+    ['COMANDO DE POLICIAMENTO ESPECIALIZADO'],
+    ['BATALHÃO DE POLÍCIA MILITAR DE MEIO AMBIENTE'],
+    ['3ª COMPANHIA DE POLÍCIA MILITAR DE MEIO AMBIENTE'],
+    [''],
+    ['PRESTAÇÃO DE CONTAS — ' + subtitulo],
+    ['Operação: ' + (operacao || '—')],
+    ['Início/Final: ' + vig],
+    [''],
+  ];
 }
 function _baixarXlsMulti(nome, sheets){
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<?mso-application progid="Excel.Sheet"?>\n`
@@ -1634,9 +1648,11 @@ async function pafExportarContas(operacaoId){
     const resumoRows=Object.keys(porGrup).sort().map(g=>[g, porGrup[g]]);
     resumoRows.push(['TOTAL', linhas.length]);
     const detRows=linhas.map(l=>[l.grup, l.data, l.reds, l.ato]);
+    const op=(PAF_ADMIN||[]).find(o=>o.id_operacao===operacaoId)||{};
+    const cab=_cabecalhoRows('PAF', operacaoId + (op.nome?(' — '+op.nome):''), op.inicio, op.final);
     _baixarXlsMulti(`PAF_${operacaoId}_prestacao.xls`, [
-      { name:'Resumo',  headers:['Grupamento','Qtd'], rows:resumoRows },
-      { name:'Detalhe', headers:['Grupamento','Data','Nº REDS','Nº Ato'], rows:detRows },
+      { name:'Resumo',  title:cab, headers:['Grupamento','Qtd'], rows:resumoRows },
+      { name:'Detalhe', title:cab, headers:['Grupamento','Data','Nº REDS','Nº Ato'], rows:detRows },
     ]);
   }catch(e){ alert('Erro ao exportar: '+e.message); }
 }
@@ -1664,9 +1680,10 @@ async function fapiExportarContas(campId){
     });
     const resumoRows=Object.keys(porGrup).sort().map(g=>{ const x=porGrup[g]; return [g, x.tot, x.at, x.tot-x.at]; });
     resumoRows.push(['TOTAL', alvos.length, atn, alvos.length-atn]);
+    const cab=_cabecalhoRows('FAPI', camp.id_operacao||'—', camp.inicio, camp.final);
     _baixarXlsMulti(`FAPI_${camp.id_operacao}_prestacao.xls`, [
-      { name:'Resumo', headers:['Grupamento','Alvos','Atendidos','Pendentes'], rows:resumoRows },
-      { name:'Alvos',  headers:['ID','Razão Social','Município','Grupamento','Situação','Data','Nº REDS','Nº Ato'], rows:alvoRows },
+      { name:'Resumo', title:cab, headers:['Grupamento','Alvos','Atendidos','Pendentes'], rows:resumoRows },
+      { name:'Alvos',  title:cab, headers:['ID','Razão Social','Município','Grupamento','Situação','Data','Nº REDS','Nº Ato'], rows:alvoRows },
     ]);
   }catch(e){ alert('Erro ao exportar: '+e.message); }
 }
