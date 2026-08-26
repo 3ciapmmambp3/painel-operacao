@@ -4549,21 +4549,25 @@ function pelDdClrAll(prefix){
   onPelDdChange(prefix);
 }
 
-function getDadosFiltradosMultiMes(meses, indicadorId, munId, pelId, locId, auditId){
+function getDadosFiltradosMultiMes(meses, indicadorId, munId, pelId, locId, auditId, incluirValidadas){
   /* Igual a getDadosFiltrados mas aceita array de meses */
-  if(!meses || !meses.length) return getDadosFiltrados('', indicadorId, munId, pelId, locId, auditId);
+  if(!meses || !meses.length) return getDadosFiltrados('', indicadorId, munId, pelId, locId, auditId, incluirValidadas);
   let result = [];
   meses.forEach(m => {
-    const r = getDadosFiltrados(m, indicadorId, munId, pelId, locId, auditId);
+    const r = getDadosFiltrados(m, indicadorId, munId, pelId, locId, auditId, incluirValidadas);
     result = result.concat(r.filter(d => !result.some(x => x === d)));
   });
   return result;
 }
 
-function getDadosFiltrados(mesId, indicadorId, munId, pelId, locId, auditId){
+function getDadosFiltrados(mesId, indicadorId, munId, pelId, locId, auditId, incluirValidadas){
   /* Normaliza mês para comparação sem acento */
   const mesNorm = mesId ? norm(mesId) : '';
   return dadosCrimes.filter(d => {
+    /* Auditoria "Validada — Incoerência Confirmada": sai de TUDO que compõe o
+       indicador (dashboard, mapa, cruzamento, prioridade, PDFs). Só a lista de
+       Ocorrências passa incluirValidadas=true para exibi-las (destacadas). */
+    if(!incluirValidadas && d._auditoria?.status === 'validada') return false;
     if(mesNorm      && norm(d.mes) !== mesNorm)          return false;
     if(indicadorId  && d.indicador !== indicadorId)       return false;
     if(munId        && d.municipio !== munId)             return false;
@@ -4642,6 +4646,8 @@ function renderDashboard(){
   let dados = getDadosFiltradosMultiMes(meses, ind, mun, pel, '', '');
   /* Filtra por grupamento usando gpResp (col I) via gpDoColk */
   if(gp) dados = dados.filter(d => d.grupamento && gpDoColk(d.grupamento) === gp);
+  /* Nota: ocorrências "Validada — Incoerência Confirmada" já saem na fonte
+     (getDadosFiltrados exclui por padrão; só a lista de Ocorrências as inclui). */
 
   /* Contagens por indicador: IMV/CVPE/CVPA somam qtdVitimas; IF conta ocorrências */
   const contagem = {IMV:0, CVPE:0, CVPA:0, IF:0};
@@ -6422,7 +6428,7 @@ function renderCrimes(){
     }
   })();
 
-  let dados = _mesCr.length>1 ? getDadosFiltradosMultiMes(_mesCr, ind, mun, '', loc, audit) : getDadosFiltrados(mes, ind, mun, '', loc, audit);
+  let dados = _mesCr.length>1 ? getDadosFiltradosMultiMes(_mesCr, ind, mun, '', loc, audit, true) : getDadosFiltrados(mes, ind, mun, '', loc, audit, true);
   /* Filtra por grupamento — compara gpResp (col I) */
   if(gpF)    dados = dados.filter(d => d.grupamento && gpDoColk(d.grupamento) === gpF);
   /* Filtra por pelotão (multi-seleção) */
@@ -6462,6 +6468,8 @@ function renderCrimes(){
       const isUrb     = d._auditoriaPendente;
       /* Badge auditoria — mostra status completo */
       const auditSalvo  = d._auditoria;
+      /* Validada = incoerência confirmada: fora da contagem do indicador (mantida no banco) */
+      const isValidada  = !!(auditSalvo && auditSalvo.status === 'validada');
       const locBadge = d.localizacao.includes('RURAL')
         ? `<span class="badge-nat badge-rural">Rural</span>`
         : d.localizacao.includes('URBAN')
@@ -6491,7 +6499,7 @@ function renderCrimes(){
           : auditSalvo && auditSalvo.status === 'em_analise'
             ? `<span class="badge-nat" style="background:rgba(66,165,245,.18);color:#42a5f5;border-color:rgba(66,165,245,.5);font-weight:700;cursor:pointer;" onclick="verParecer('${boNum}')">🔍 Em Análise</span>`
             : auditSalvo && auditSalvo.status === 'validada'
-              ? `<span class="badge-nat" style="background:rgba(102,187,106,.18);color:#66bb6a;border-color:rgba(102,187,106,.5);font-weight:700;cursor:pointer;" onclick="verParecer('${boNum}')">✔ Validada</span>`
+              ? `<span class="badge-nat" title="Incoerência confirmada em auditoria — não é contabilizada no indicador, mas permanece no banco para controle." style="background:rgba(102,187,106,.18);color:#66bb6a;border-color:rgba(102,187,106,.5);font-weight:700;cursor:pointer;" onclick="verParecer('${boNum}')">✔ Validada</span>`
               : auditSalvo && auditSalvo.status === 'corrigida'
                 ? `<span class="badge-nat" style="background:rgba(171,71,188,.18);color:#ce93d8;border-color:rgba(171,71,188,.5);font-weight:700;cursor:pointer;" onclick="verParecer('${boNum}')">✔ Corrigida</span>`
                 : auditSalvo && auditSalvo.status === 'indeferida'
@@ -6509,12 +6517,12 @@ function renderCrimes(){
           ? `<span style="color:#ef5350;font-weight:700;font-size:12px;">${d.qtdVitimas}</span>`
           : `<span style="color:var(--text-hint);font-size:10px;">0</span>`;
 
-      return `<tr>
+      return `<tr${isValidada ? ' style="background:rgba(102,187,106,.10);box-shadow:inset 3px 0 0 #66bb6a;"' : ''}>
         <td style="font-weight:700;color:var(--text-white);font-size:11px;white-space:nowrap;">${boNum}${intelChip}</td>
         <td style="white-space:nowrap;">${d.data||'—'}</td>
         <td><span style="font-size:10px;color:var(--text-hint);">${d.mes||'—'}</span></td>
         <td style="font-weight:600;color:var(--text-white);">${d.municipio||'—'}</td>
-        <td><span class="badge-nat" style="background:${cor}22;color:${cor};border-color:${cor}55;">${d.indicador}</span></td>
+        <td><span class="badge-nat" style="background:${cor}22;color:${cor};border-color:${cor}55;${isValidada?'text-decoration:line-through;opacity:.55;':''}">${d.indicador}</span>${isValidada?'<br><span style="font-size:8.5px;color:#66bb6a;font-weight:700;letter-spacing:.3px;white-space:nowrap;">fora da contagem</span>':''}</td>
         <td style="font-size:10px;color:#bbb;max-width:140px;">${d.natureza||'—'}<br><span style="color:var(--text-hint);font-size:10px;">${d.descrNatureza||''}</span></td>
         <td style="font-size:10px;color:var(--gold-light);font-weight:600;white-space:nowrap;">${d.ueop||'—'}</td>
         <td>${locBadge}</td>
