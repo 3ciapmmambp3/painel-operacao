@@ -555,7 +555,7 @@
   /* ---- Nova barra de navegação (topo, com dropdown) — cores locais deste arquivo ---- */
   .topnav{display:flex;align-items:center;gap:2px;background:#111111;border-bottom:1px solid var(--border);padding:0 16px;position:relative;z-index:20;font-family:'Inter',sans-serif;}
   .topnav-item{position:relative;}
-  .topnav-link{display:flex;align-items:center;gap:5px;padding:13px 16px;color:var(--muted);font-size:12.5px;font-weight:700;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;text-decoration:none;}
+  .topnav-link{display:flex;align-items:center;gap:5px;padding:11px 9px;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;text-decoration:none;}
   .topnav-link:hover{color:var(--charcoal);}
   .topnav-link.active{color:var(--gold-text);border-bottom-color:var(--gold);}
   .topnav-link .chev{font-size:9px;opacity:.7;}
@@ -641,21 +641,9 @@
 </header>
 
 <script src="topnav.js" data-ativo="p3"></script>
+<script src="secnav.js" data-secao="p3"></script>
 
 <div class="page-layout">
-  <aside class="rd-sidebar" id="rdSidebar">
-    <div class="rd-sidebar-head">
-      <span class="rd-sidebar-titulo">RELATÓRIO DIÁRIO</span>
-      <button class="rd-btn-colapsar" id="rdBtnColapsar" aria-label="Recolher menu">◂</button>
-    </div>
-    <a class="rd-item" href="tta.html" data-tip="TTA (Pré-turno)"><span>🎯</span><span class="lbl">TTA (Pré-turno)</span></a>
-    <a class="rd-item" href="tta-gestao.html" id="linkGestaoTTA" data-tip="Gestão do TTA" style="display:none"><span>⚙️</span><span class="lbl">Gestão do TTA</span></a>
-    <a class="rd-item" href="meus-relatorios.html" data-tip="Lista de Relatórios"><span>📄</span><span class="lbl">Lista de Relatórios</span></a>
-    <a class="rd-item ativo" href="relatorio-servico.html" data-tip="Novo Relatório"><span>➕</span><span class="lbl">Novo Relatório</span></a>
-    <a class="rd-item" href="produtividade.html" data-tip="Produtividade"><span>📊</span><span class="lbl">Produtividade</span></a>
-    <a class="rd-item" href="movimentacao-viaturas.html" data-tip="Movimentação de Viaturas"><span>🚓</span><span class="lbl">Movimentação de Viaturas</span></a>
-    <a class="rd-item" id="linkGestaoVtr" style="display:none" href="viaturas-gestao.html" data-tip="Gestão de Viaturas"><span>⚙️</span><span class="lbl">Gestão de Viaturas</span></a>
-  </aside>
   <div class="rd-conteudo">
 
 <div class="topbar">
@@ -1814,6 +1802,7 @@ async function fetchReferenceData(){
     searchifySelectsIn(document);
     Object.values(panelCache).forEach(node => searchifySelectsIn(node));
     preencherEquipeDoTTA();
+    renderGrid();   // reflete o estado dos quesitos (ex.: card Produtividade sem indicadores ativos)
   }catch(err){
     console.error('Erro ao buscar dados de referência da planilha:', err);
     setPlaceholderText('Erro ao carregar — recarregue a página');
@@ -2526,21 +2515,33 @@ function countForCategory(id){
   return 0;
 }
 
+// Produtividade sem NENHUM indicador ativo no catálogo → card inativo.
+function _produtividadeSemAtivos(){
+  const arr = (typeof QUESITOS_OPERACAO !== 'undefined' && QUESITOS_OPERACAO) || [];
+  const prod = arr.filter(q => q.escopo === 'produtividade');
+  return prod.length > 0 && !prod.some(q => q.ativo !== false);   // configurado, mas nenhum ativo
+}
 function renderGrid(){
   grid.innerHTML = '';
   CATEGORIES.forEach(cat => {
     const count = countForCategory(cat.id);
+    const prodInativa = cat.id === 'produtividade' && _produtividadeSemAtivos();
     const naoPronto = cat.ready === false;
     const div = document.createElement('div');
-    div.className = 'category-card' + (count > 0 ? ' active' : '') + (naoPronto ? ' nao-pronto' : '');
+    div.className = 'category-card' + (count > 0 ? ' active' : '') + ((naoPronto||prodInativa) ? ' nao-pronto' : '') + (prodInativa ? ' disabled' : '');
     div.dataset.id = cat.id;
     div.innerHTML = `
       <span class="count" style="${count > 0 ? 'display:flex;' : ''}">${count > 0 ? count : ''}</span>
       <div class="icon">${cat.icon}</div>
       <div class="label">${cat.label}</div>
       ${naoPronto ? '<div class="badge-em-breve">EM BREVE</div>' : ''}
+      ${prodInativa ? '<div class="badge-em-breve">SEM INDICADORES</div>' : ''}
     `;
     div.addEventListener('click', () => {
+      if (prodInativa){
+        alert('Não há indicadores de produtividade ativos para preencher. O administrador pode ativá-los em Campos & Quesitos.');
+        return;
+      }
       if (naoPronto){
         alert('"' + cat.label + '" ainda não está disponível — chega em uma próxima etapa.');
         return;
@@ -2914,9 +2915,18 @@ function preencherOperacoesDoTTA(ops){
 
 // ---------- Exemplo completo: PRODUTIVIDADE (dinâmico) ----------
 function buildProdutividadePanel(){
-  const catalogFields = _prodCatalogFieldsHTML();   // campos escopo 'produtividade' (painel)
-  // O PAINEL é a fonte quando há campos de produtividade no catálogo; enquanto
-  // não houver (antes de rodar o seed), usa a planilha como fallback.
+  const catalogFields = _prodCatalogFieldsHTML();   // campos escopo 'produtividade' ATIVOS (painel)
+  // O catálogo do painel (Campos & Quesitos) é a fonte quando ESTÁ CONFIGURADO
+  // (tem ao menos um campo de produtividade, ativo ou não). Só cai no fallback da
+  // planilha quando o catálogo ainda NÃO foi semeado.
+  const catalogoConfigurado = (QUESITOS_OPERACAO || []).some(q => q.escopo === 'produtividade');
+
+  // Catálogo configurado, mas NENHUM campo ativo → nada a preencher (não usa a planilha).
+  if (catalogoConfigurado && !catalogFields){
+    return `<p class="placeholder-note">Não há indicadores de produtividade ativos para preencher.
+      <br><span style="font-size:11px;color:var(--muted)">O administrador pode ativá-los em <b>Campos &amp; Quesitos</b>.</span></p>`;
+  }
+
   const camposReais = catalogFields ? [] : (referenceCache.CAMPOS_PRODUTIVIDADE || []).filter(c => c.status !== 'Inativo');
 
   if (!camposReais.length && !catalogFields){
@@ -3977,19 +3987,7 @@ document.addEventListener('click', () => {
 });
 
 // ---------- Sidebar do Relatório Diário: recolher/expandir (lembra a escolha) ----------
-(function(){
-  const sidebar = document.getElementById('rdSidebar');
-  const btn = document.getElementById('rdBtnColapsar');
-  if (!sidebar || !btn) return;
-  const colapsada = localStorage.getItem('rd_sidebar_colapsada') === '1';
-  if (colapsada){ sidebar.classList.add('colapsada'); btn.textContent = '▸'; }
-  btn.addEventListener('click', () => {
-    sidebar.classList.toggle('colapsada');
-    const agora = sidebar.classList.contains('colapsada');
-    btn.textContent = agora ? '▸' : '◂';
-    localStorage.setItem('rd_sidebar_colapsada', agora ? '1' : '0');
-  });
-})();
+/* sidebar por secao agora vem de secnav.js */
 </script>
 
 <script>(function(){try{var s=(typeof sessaoLer==='function')?sessaoLer():null;if(s&&(s.nivel_acesso==='admin_geral'||(s.funcao||'').toLowerCase().indexOf('aux p4')===0)){var l=document.getElementById('linkGestaoVtr');if(l)l.style.display='';}}catch(e){}})();</script>

@@ -154,7 +154,9 @@
     <div class="frow">
       <div class="fg"><label>Quem deve fazer (Nº PM ou nome)</label>
         <input id="f-responsavel" list="dl-militares" autocomplete="off" placeholder="000.000-0 ou nome">
-        <div class="mil-hint" id="f-responsavel-nome"></div></div>
+        <div class="mil-hint" id="f-responsavel-nome"></div>
+        <button type="button" class="ag-multi-link" id="btn-multi" onclick="abrirMulti()">👥 Atribuir a vários militares…</button>
+        <div class="ag-multi-state" id="multi-state" style="display:none;"></div></div>
       <div class="fg"><label>Prazo (data e hora)</label><input type="datetime-local" id="f-prazo"></div>
     </div>
     <div class="fg" id="fg-executor" style="display:none;"><label>Quem fez — Nº PM ou nome (executor)</label>
@@ -165,6 +167,52 @@
     <div class="mdl-acoes">
       <button class="btn-outline" onclick="fecharModal()">Cancelar</button>
       <button class="btn-gold" id="f-salvar" onclick="salvar()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<style>
+  .ag-multi-link{background:none;border:none;color:var(--gold);font-size:11.5px;font-weight:700;cursor:pointer;padding:4px 0 0;text-align:left;text-decoration:underline;}
+  .ag-multi-link:hover{color:var(--gold-light);}
+  .ag-multi-state{margin-top:6px;font-size:11.5px;color:var(--gold-light);background:var(--gold-bg);border:1px solid var(--gold-border);border-radius:6px;padding:6px 10px;display:flex;align-items:center;gap:8px;justify-content:space-between;}
+  .ag-multi-state button{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:11px;text-decoration:underline;}
+  .mdl-multi{max-width:560px;width:96%;display:flex;flex-direction:column;max-height:88vh;}
+  .multi-tools{display:flex;flex-direction:column;gap:8px;margin-bottom:10px;}
+  .multi-tools>input{background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;outline:none;width:100%;}
+  .multi-tools>input:focus{border-color:var(--gold);}
+  .multi-btns{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .btn-sm{padding:6px 11px !important;font-size:11.5px !important;}
+  .multi-count{margin-left:auto;font-size:12px;font-weight:800;color:var(--gold-light);white-space:nowrap;}
+  .multi-list{flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:4px;min-height:200px;}
+  .multi-grp{margin-bottom:4px;}
+  .multi-grp-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 9px;background:var(--bg-dark);border-radius:6px;position:sticky;top:0;z-index:1;}
+  .multi-grp-head .gnome{font-size:11px;font-weight:800;letter-spacing:.3px;color:var(--text-muted);text-transform:uppercase;}
+  .multi-grp-head .gsel{background:none;border:none;color:var(--gold);font-size:10.5px;font-weight:700;cursor:pointer;text-decoration:underline;white-space:nowrap;}
+  .multi-item{display:flex;align-items:center;gap:10px;padding:8px 9px;border-radius:6px;cursor:pointer;}
+  .multi-item:hover{background:var(--bg-hover);}
+  .multi-item input{width:16px;height:16px;flex-shrink:0;accent-color:var(--gold);cursor:pointer;}
+  .multi-item .mi-pg{font-size:11px;color:var(--gold-light);font-weight:700;min-width:64px;}
+  .multi-item .mi-pm{font-size:11.5px;color:var(--text-muted);min-width:76px;font-variant-numeric:tabular-nums;}
+  .multi-item .mi-nm{font-size:12.5px;color:var(--text-white);}
+  .multi-empty{padding:24px;text-align:center;color:var(--text-hint);font-size:12.5px;}
+</style>
+
+<!-- Modal Atribuir a vários (multi-seleção da Companhia) -->
+<div class="ov" id="ov-multi" onclick="if(event.target===this)fecharMulti()">
+  <div class="mdl mdl-multi">
+    <h2>Atribuir a vários militares</h2>
+    <div class="multi-tools">
+      <input id="multi-busca" autocomplete="off" placeholder="🔍 Buscar por nome ou Nº PM…" oninput="renderMulti()">
+      <div class="multi-btns">
+        <button type="button" class="btn-outline btn-sm" onclick="marcarTodos(true)">Marcar todos da Companhia</button>
+        <button type="button" class="btn-outline btn-sm" onclick="marcarTodos(false)">Limpar</button>
+        <span class="multi-count" id="multi-count">0 selecionados</span>
+      </div>
+    </div>
+    <div class="multi-list" id="multi-list"></div>
+    <div class="mdl-acoes">
+      <button class="btn-outline" onclick="fecharMulti()">Cancelar</button>
+      <button class="btn-gold" onclick="confirmarMulti()">Usar selecionados</button>
     </div>
   </div>
 </div>
@@ -193,6 +241,8 @@ const sessao = (function(){
 let TAREFAS = [];
 let filtro = 'abertas';
 const MIL_MAP = {};   // dígitos da matrícula (7) → {matricula, nome, label}
+let MILITARES = [];        // lista completa p/ o seletor múltiplo (com grupamento)
+let MULTI_SEL = new Set(); // dígitos (7) marcados no seletor "Atribuir a vários"
 const esc = s => (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const H = ()=>({'apikey':SB_AUTH_KEY,'Authorization':`Bearer ${SB_AUTH_KEY}`,'Content-Type':'application/json'});
 async function rpc(fn, body){
@@ -232,6 +282,7 @@ async function carregarMilitares(){
   try{
     const lst = await rpc('agenda_pessoas_listar', {p_token: sessao.token});
     const dl = document.getElementById('dl-militares'); let html='';
+    MILITARES = [];
     (lst||[]).forEach(m=>{
       const dig = (m.matricula||'').replace(/\D/g,'');
       if(!dig) return;
@@ -239,6 +290,7 @@ async function carregarMilitares(){
       const label = [m.posto_graduacao, m.nome_guerra||nome].filter(Boolean).join(' ');
       const key = dig.padStart(7,'0');
       MIL_MAP[key] = {matricula: m.matricula, nome, label};
+      MILITARES.push({ dig:key, matricula:m.matricula, nome, nome_guerra:m.nome_guerra||'', posto:m.posto_graduacao||'', grupamento:m.grupamento_id||'' });
       html += `<option data-mat="${esc(m.matricula)}" data-nome="${esc(nome)}" value="${esc(label)}"></option>`;
     });
     if(dl) dl.innerHTML = html;
@@ -416,6 +468,8 @@ function abrirModal(id){
   _setMilitarInput('f-executor', t? t.executor_matricula : '', t? t.executor_nome : '', 'f-executor-nome');
   document.getElementById('f-observacao').value = t? (t.observacao||'') : '';
   toggleExecutor();
+  limparMulti();
+  document.getElementById('btn-multi').style.display = t ? 'none' : '';   // lote só p/ tarefa nova
   const m=document.getElementById('mmsg'); m.className='mmsg'; m.textContent='';
   document.getElementById('ov').classList.add('show');
 }
@@ -444,9 +498,82 @@ async function salvar(){
     observacao: document.getElementById('f-observacao').value.trim()
   };
   const btn=document.getElementById('f-salvar'); btn.disabled=true; btn.textContent='Salvando…';
-  try{ await rpc('agenda_salvar', {p_token: sessao.token, p_dados: dados}); fecharModal(); await carregar(); }
+  try{
+    if(MULTI_SEL.size && !dados.id){
+      // LOTE: 1 tarefa por militar marcado (cada um executa/conclui a sua).
+      const alvos = [...MULTI_SEL];
+      let feitas=0, erros=0;
+      for(const dig of alvos){
+        const m = MIL_MAP[dig]; if(!m) continue;
+        const d = Object.assign({}, dados, { responsavel_matricula: m.matricula, responsavel_nome: m.nome });
+        try{ await rpc('agenda_salvar', {p_token: sessao.token, p_dados: d}); feitas++; }
+        catch(e){ erros++; }
+        btn.textContent = `Salvando… ${feitas}/${alvos.length}`;
+      }
+      limparMulti(); fecharModal(); await carregar();
+      if(erros) alert(`${feitas} tarefa(s) criada(s). ${erros} falharam.`);
+    } else {
+      await rpc('agenda_salvar', {p_token: sessao.token, p_dados: dados}); fecharModal(); await carregar();
+    }
+  }
   catch(e){ msg.className='mmsg err'; msg.textContent=e.message; }
   finally{ btn.disabled=false; btn.textContent='Salvar'; }
+}
+
+/* ── Seletor "Atribuir a vários" (todos da Companhia, com desmarcar) ── */
+function abrirMulti(){ renderMulti(); document.getElementById('ov-multi').classList.add('show'); }
+function fecharMulti(){ document.getElementById('ov-multi').classList.remove('show'); }
+function _grpLabel(g){ return (g||'—').replace(/\s*\/\s*3 CIA PM MAMB.*/i,'').trim() || '—'; }
+function renderMulti(){
+  const q = (document.getElementById('multi-busca').value||'').toLowerCase().trim();
+  const box = document.getElementById('multi-list');
+  const lst = MILITARES.filter(m=>{
+    if(!q) return true;
+    return (m.nome+' '+m.nome_guerra+' '+m.matricula+' '+m.dig).toLowerCase().indexOf(q)>=0;
+  });
+  if(!lst.length){ box.innerHTML='<div class="multi-empty">Nenhum militar encontrado.</div>'; atualizarMultiCount(); return; }
+  const grupos = {};
+  lst.forEach(m=>{ const g=_grpLabel(m.grupamento); (grupos[g]=grupos[g]||[]).push(m); });
+  const chaves = Object.keys(grupos).sort();
+  box.innerHTML = chaves.map(g=>{
+    const itens = grupos[g].map(m=>{
+      const ck = MULTI_SEL.has(m.dig) ? 'checked' : '';
+      const pm = m.matricula || m.dig;
+      return `<label class="multi-item">
+        <input type="checkbox" ${ck} onchange="toggleMil('${m.dig}',this.checked)">
+        <span class="mi-pm">${esc(pm)}</span>
+        <span class="mi-pg">${esc(m.posto||'')}</span>
+        <span class="mi-nm">${esc(m.nome)}</span>
+      </label>`;
+    }).join('');
+    return `<div class="multi-grp">
+      <div class="multi-grp-head"><span class="gnome">${esc(g)}</span>
+        <button type="button" class="gsel" onclick="marcarGrupo('${esc(g).replace(/'/g,"\\'")}',true)">marcar grupo</button></div>
+      ${itens}</div>`;
+  }).join('');
+  atualizarMultiCount();
+}
+function toggleMil(dig, on){ if(on) MULTI_SEL.add(dig); else MULTI_SEL.delete(dig); atualizarMultiCount(); }
+function marcarTodos(on){ if(on) MILITARES.forEach(m=>MULTI_SEL.add(m.dig)); else MULTI_SEL.clear(); renderMulti(); }
+function marcarGrupo(gLabel, on){
+  MILITARES.filter(m=>_grpLabel(m.grupamento)===gLabel).forEach(m=>{ if(on) MULTI_SEL.add(m.dig); else MULTI_SEL.delete(m.dig); });
+  renderMulti();
+}
+function atualizarMultiCount(){ document.getElementById('multi-count').textContent = `${MULTI_SEL.size} selecionado(s)`; }
+function confirmarMulti(){ fecharMulti(); atualizarMultiState(); }
+function atualizarMultiState(){
+  const el = document.getElementById('multi-state');
+  const resp = document.getElementById('f-responsavel');
+  if(MULTI_SEL.size){
+    el.style.display='flex';
+    el.innerHTML = `<span>👥 <b>${MULTI_SEL.size}</b> militar(es) — 1 tarefa para cada</span><button type="button" onclick="limparMulti()">remover</button>`;
+    resp.disabled = true; resp.value=''; resp.placeholder='(usando seleção de vários)';
+  } else { limparMulti(); }
+}
+function limparMulti(){
+  MULTI_SEL.clear();
+  const el=document.getElementById('multi-state'); if(el){ el.style.display='none'; el.innerHTML=''; }
+  const resp=document.getElementById('f-responsavel'); if(resp){ resp.disabled=false; resp.placeholder='000.000-0 ou nome'; }
 }
 
 if(sessao) boot();

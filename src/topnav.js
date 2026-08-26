@@ -33,10 +33,26 @@
       if (/^p[1-5]$/.test(s||'')) return s;
     }
     if (p === 'hub-go.html') return 'go';
+    // analise-criminal.html é "dual-home": Inteligência pertence à P2, o
+    // resto (Ocorrências, Mapa, Auditorias…) à P3. O parâmetro ?sub decide.
+    if (p === 'analise-criminal.html'){
+      const sub = new URLSearchParams(location.search).get('sub');
+      return sub === 'inteligencia' ? 'p2' : 'p3';
+    }
+    // admin.html: os painéis de cadastro (Metas/Operações/PAF/FAPI/Quesitos)
+    // pertencem à P3 (abertos pelos cards "Gestão e Cadastros" do hub-p3);
+    // sem ?tab (ou Relatórios/Importação) é a área de Administração (ADM).
+    if (p === 'admin.html'){
+      const t = new URLSearchParams(location.search).get('tab') || '';
+      if (['metas','operacoes','paf','fapi','quesitos'].includes(t)) return 'p3';
+      return 'adm';
+    }
     if (p === 'painel.html'){
       const t = new URLSearchParams(location.search).get('tab') || '';
       if (t === 'consulta') return 'consulta';
-      if (['relatorios','importacao','operacoes','gdo-rural'].includes(t)) return 'adm';
+      // OP POE (operacoes) e OP GDO Rural (gdo-rural) são análise operacional → P3.
+      if (['operacoes','gdo-rural'].includes(t)) return 'p3';
+      if (['relatorios','importacao'].includes(t)) return 'adm';
       return 'visaogeral';
     }
     return '';
@@ -53,7 +69,7 @@
       {ic:'📰', t:'Publicações', soon:true},
     ],
     p2: [
-      {ic:'🕵', t:'Inteligência', h:'analise-criminal.html'},
+      {ic:'🕵', t:'Inteligência', h:'analise-criminal.html?sub=inteligencia'},
       {ic:'🧩', t:'Produção de Conhecimento', soon:true},
       {ic:'🎯', t:'Alvos e Monitoramento', soon:true},
       {ic:'📈', t:'Estatística Criminal', soon:true},
@@ -61,7 +77,8 @@
     p3: [
       {ic:'📄', t:'Relatório de Serviço', h:'meus-relatorios.html'},
       {ic:'📋', t:'Controle de Demandas', h:'denuncias.html'},
-      {ic:'🛡️', t:'Operações', h:'painel.html?tab=operacoes'},
+      {ic:'🛡️', t:'Operações POE', h:'painel.html?tab=operacoes'},
+      {ic:'🌿', t:'Operações GDO Rural', h:'painel.html?tab=gdo-rural'},
       {ic:'📊', t:'Produtividade', h:'produtividade.html'},
       {ic:'🔴', t:'Análise Criminal', h:'analise-criminal.html'},
       {ic:'📊', t:'Metas', h:'admin.html?tab=metas'},
@@ -72,8 +89,13 @@
     ],
     p4: [
       {ic:'📝', t:'Movimentação de Viaturas', h:'movimentacao-viaturas.html'},
+      {ic:'📋', t:'Minhas Movimentações', h:'minhas-movimentacoes.html'},
       {ic:'🚔', t:'Gestão de Viaturas', h:'viaturas-gestao.html'},
-      {ic:'⛽', t:'Abastecimento', h:'viaturas-gestao.html'},
+      {ic:'⛽', t:'Abastecimento', h:'abastecimento.html'},
+      {ic:'🔧', t:'Revisão da frota', h:'revisao-frota.html'},
+      {ic:'⚠️', t:'Acidentes', h:'acidentes.html'},
+      {ic:'🔫', t:'SAT', h:'https://armamento.bpmmamb.com.br', ext:true},
+      {ic:'📦', t:'CPELOG', h:'https://inventario.cpelog.com.br/login', ext:true},
       {ic:'📦', t:'Material e Patrimônio', soon:true},
     ],
     p5: [
@@ -101,7 +123,9 @@
     const tab = (k, href, rot) => {
       const itens = (MODULOS[k]||[]).map(m => m.soon
         ? `<span class="tn-soon"><span class="tn-ic">${m.ic}</span>${m.t}<em>em breve</em></span>`
-        : `<a href="${m.h}"><span class="tn-ic">${m.ic}</span>${m.t}</a>`).join('');
+        : m.ext
+          ? `<a href="${m.h}" target="_blank" rel="noopener noreferrer"><span class="tn-ic">${m.ic}</span>${m.t}<em style="margin-left:auto;font-style:normal;opacity:.6">↗</em></a>`
+          : `<a href="${m.h}"><span class="tn-ic">${m.ic}</span>${m.t}</a>`).join('');
       return `<div class="topnav-item tn-has">
           <a class="topnav-link${on(k)}" href="${href}">${rot} <span class="chev">▾</span></a>
           <div class="topnav-dropdown tn-mega">${itens}</div>
@@ -133,8 +157,15 @@
     if(!document.getElementById('tn-mega-css')){
       const st=document.createElement('style'); st.id='tn-mega-css';
       st.textContent =
+        // Barra fixa ao rolar (fica no topo). Injetado aqui p/ vencer os
+        // `.topnav{position:relative}` inline de cada página. z-index alto p/
+        // ficar acima do conteúdo, abaixo dos modais (9999) e do hover (9990).
+        '.topnav{position:sticky;top:0;z-index:900;}'+
         '.topnav-item:hover > .topnav-dropdown{display:block;}'+
-        '.topnav-dropdown.tn-mega{min-width:252px;}'+
+        // Enquanto um mega-menu está aberto (hover), a barra sobe acima do conteúdo
+        // da página (o painel POE/GDO Rural tem cards com z-index alto que tapavam o menu).
+        '.topnav.tn-megaopen{z-index:9990;}'+
+        '.topnav-dropdown.tn-mega{min-width:252px;z-index:9990;}'+
         '.topnav-dropdown a,.topnav-dropdown .tn-soon{display:flex;align-items:center;gap:8px;padding:9px 12px;font-size:12.5px;border-radius:6px;white-space:nowrap;}'+
         '.topnav-dropdown .tn-ic{width:18px;text-align:center;flex-shrink:0;}'+
         '.topnav-dropdown .tn-soon{color:var(--text-hint);cursor:default;}'+
@@ -143,8 +174,27 @@
     }
 
     const header = document.querySelector('header');
-    if (header && header.parentNode) header.insertAdjacentElement('afterend', nav);
-    else document.body.insertAdjacentElement('afterbegin', nav);
+    if (header && header.parentNode) {
+      header.insertAdjacentElement('afterend', nav);
+      // Fixa o header (brasões) e a barra no topo. Aplicado INLINE (não via CSS)
+      // para vencer o `.topnav{position:relative}` que algumas páginas têm inline.
+      header.style.position = 'sticky';
+      header.style.top = '0';
+      header.style.zIndex = '901';
+      nav.style.position = 'sticky';
+      nav.style.zIndex = '900';
+      const ajustarTop = () => { nav.style.top = (header.offsetHeight || 0) + 'px'; };
+      ajustarTop();
+      window.addEventListener('resize', ajustarTop);
+    } else {
+      document.body.insertAdjacentElement('afterbegin', nav);
+    }
+
+    // Mega-menu (hover): eleva a barra acima do conteúdo enquanto aberto.
+    nav.querySelectorAll('.topnav-item.tn-has').forEach(it => {
+      it.addEventListener('mouseenter', () => nav.classList.add('tn-megaopen'));
+      it.addEventListener('mouseleave', () => nav.classList.remove('tn-megaopen'));
+    });
 
     // Dropdown (ADM)
     nav.querySelectorAll('.topnav-link[data-dropdown]').forEach(link => {

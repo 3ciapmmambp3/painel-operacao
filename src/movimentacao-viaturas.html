@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="styles/global.css">
 <script src="auth.js"></script>
 <script src="topnav.js" data-ativo="p4"></script>
+<script src="secnav.js" data-secao="p4"></script>
 <style>
   body{padding-bottom:60px}
   /* sidebar do Relatório Diário (mesmo padrão das outras telas) */
@@ -117,15 +118,6 @@
 </header>
 
 <div class="rd-shell">
-  <aside class="rd-sidebar">
-    <span class="rd-sidebar-titulo">RELATÓRIO DIÁRIO</span>
-    <a class="rd-item" href="tta.html"><span>🎯</span><span class="lbl">TTA (Pré-turno)</span></a>
-    <a class="rd-item" href="meus-relatorios.html"><span>📄</span><span class="lbl">Lista de Relatórios</span></a>
-    <a class="rd-item" href="relatorio-servico.html"><span>➕</span><span class="lbl">Novo Relatório</span></a>
-    <a class="rd-item" href="produtividade.html"><span>📊</span><span class="lbl">Produtividade</span></a>
-    <a class="rd-item ativo" href="movimentacao-viaturas.html"><span>🚔</span><span class="lbl">Movimentação de Viaturas</span></a>
-    <a class="rd-item" id="linkGestaoVtr" href="viaturas-gestao.html" style="display:none"><span>⚙️</span><span class="lbl">Gestão de Viaturas</span></a>
-  </aside>
 
   <div class="rd-conteudo">
   <div class="wrap" id="form-wrap">
@@ -483,8 +475,11 @@ let VMAP = {};       // prefixo -> viatura
   document.getElementById('inicio').value = now.toISOString().slice(0,16);
   syncDatas();
   // Gestão de Viaturas visível só p/ Aux P4 / Admin Geral
+  // (a sidebar agora vem do secnav.js — este link antigo pode não existir mais)
   const funcao=(S.funcao||'').toLowerCase();
-  if (S.nivel_acesso==='admin_geral' || funcao.includes('aux p4')) document.getElementById('linkGestaoVtr').style.display='';
+  if (S.nivel_acesso==='admin_geral' || funcao.includes('aux p4')){
+    const _lg=document.getElementById('linkGestaoVtr'); if(_lg) _lg.style.display='';
+  }
 
   try {
     const r = await fetch(`${API}/rest/v1/viaturas?select=prefixo,placa,marca_modelo,pel,gp,municipio,situacao_viatura,situacao_operacional,ativo&order=prefixo`, { headers:H });
@@ -605,7 +600,23 @@ async function onVtr(){
       hint.innerHTML=`Digite o Km inicial conferindo no hodômetro. Última devolução: <b>${(+ult).toLocaleString('pt-BR')} km</b>.`; }
     else { hint.textContent='Sem registro anterior — informe o Km inicial.'; }
   }catch(e){ hint.textContent='Não foi possível buscar o Km anterior. Informe manualmente.'; }
+  checarRevisao(p);
   calc();
+}
+// Alerta de revisão próxima/vencida para a viatura selecionada (não bloqueia).
+async function checarRevisao(prefixo){
+  const st=document.getElementById('vtr-status');
+  try{
+    const al = await rpc('frota_revisao_alertas', { p_token: (S&&S.token) });
+    if(!Array.isArray(al)) return;
+    const r = al.find(a=>String(a.prefixo)===String(prefixo));
+    if(!r) return;
+    const falta = r.km_faltando;
+    st.className='vtr-status warn';
+    st.innerHTML = (falta!=null && falta<=0)
+      ? `🔧 <b>Revisão VENCIDA</b> — passou ${Math.abs(falta).toLocaleString('pt-BR')} km da próxima revisão (${(r.km_proxima_revisao||0).toLocaleString('pt-BR')} km). Solicite autorização e baixa p/ manutenção.`
+      : `🔧 <b>Revisão próxima</b> — faltam ${Number(falta||0).toLocaleString('pt-BR')} km (próxima em ${(r.km_proxima_revisao||0).toLocaleString('pt-BR')} km). Avise o Aux P4.`;
+  }catch(e){ /* silencioso — não atrapalha o lançamento */ }
 }
 let ultimoKmFinal=null, kmiConfirmadoMaior=false;
 

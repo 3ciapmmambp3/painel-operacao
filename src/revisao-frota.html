@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Revisão da Frota — 3ª Cia PM MAmb</title>
+<link rel="stylesheet" href="styles/global.css">
+<script src="auth.js"></script>
+<script src="topnav.js" data-ativo="p4"></script>
+<script src="secnav.js" data-secao="p4"></script>
+<style>
+  body{padding-bottom:60px}
+  .rd-shell{display:flex;align-items:flex-start}
+  .rd-conteudo{flex:1;min-width:0}
+  @media(max-width:760px){.rd-shell{flex-direction:column;align-items:stretch}}
+  .wrap{max-width:1080px;margin:20px auto 0;padding:0 20px}
+  .pagehead h1{font-size:20px;font-weight:800}
+  .pagehead p{font-size:12.5px;color:var(--text-muted);margin-top:5px;line-height:1.5}
+  .tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:16px 0 10px}
+  .tools input[type=text]{flex:1;min-width:160px;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:12.5px;outline:none}
+  .tools input[type=text]:focus{border-color:var(--gold)}
+  .tools label{font-size:11.5px;color:var(--text-muted);display:flex;align-items:center;gap:6px}
+  .badge{font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;background:var(--danger-bg);color:#ef9a9a;border:1px solid rgba(239,83,80,.4)}
+  .tablewrap{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;overflow-x:auto}
+  table{width:100%;border-collapse:collapse;min-width:720px}
+  th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-hint);font-weight:700;padding:11px 14px;border-bottom:1px solid var(--border);background:var(--bg-dark)}
+  td{padding:11px 14px;border-bottom:1px solid var(--border);font-size:12.5px;vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  .empty{padding:40px;text-align:center;color:var(--text-hint)}
+  .noperm{padding:60px 20px;text-align:center;color:var(--text-muted)}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111;border:1px solid var(--border);color:var(--text-white);padding:12px 20px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:300}
+  .toast.show{opacity:1}
+</style>
+<script src="pwa.js" defer></script>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <div class="header-shields"><img src="assets/escudo-pmmg.png" alt="PMMG" onerror="this.style.display='none'"><img src="assets/escudo-cpe.png" alt="CPE" onerror="this.style.display='none'"><img src="assets/brasao-bpmmamb.png" alt="BPM MAMB" onerror="this.style.display='none'"></div><div class="header-div"></div>
+    <div class="header-title">
+      <div class="header-kicker">CPE · BPM MAmb · 3ª Cia PM MAmb</div>
+      <h1>PAINEL DE GESTÃO OPERACIONAL</h1>
+      <p>Revisão da Frota</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <div id="user-info" style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);padding:5px 10px;border:1px solid var(--border);border-radius:5px">
+      <span id="user-nome">—</span></div>
+    <button class="btn-outline" onclick="localStorage.removeItem('poe_sessao_v2');sessionStorage.removeItem('poe_sessao_v2');location.href='index.html'">Sair</button>
+  </div>
+</header>
+
+<div class="rd-shell">
+  <div class="rd-conteudo">
+    <div class="wrap" id="wrap">
+      <div class="pagehead">
+        <h1>🔧 Revisão da Frota <span class="badge" id="rev-badge" style="display:none"></span></h1>
+        <p>Km da próxima revisão de cada viatura + alerta faltando <b>1.000 km</b> ou menos. Use o botão <b>🔧</b> para <b>reportar um defeito</b> (igual à seção Manutenção da ficha). O <b>Aux P4 / Admin Geral</b> define o km e resolve os defeitos; o <b>grupamento</b> reporta os das suas viaturas.</p>
+      </div>
+      <div class="tools">
+        <input type="text" id="rev-busca" placeholder="Buscar por prefixo, placa…" oninput="revRender()">
+        <label><input type="checkbox" id="rev-so-alerta" onchange="revRender()"> só alertas</label>
+      </div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Prefixo</th><th>Placa</th><th>Km atual</th><th>Próx. revisão (km)</th><th>Faltam</th><th>Status</th><th>Ações</th></tr></thead>
+        <tbody id="rev-tb"><tr><td colspan="7" class="empty">Carregando…</td></tr></tbody>
+      </table></div>
+
+      <div class="pagehead" style="margin-top:28px">
+        <h1 style="font-size:16px">📋 Defeitos reportados <span class="badge" id="def-badge" style="display:none"></span></h1>
+        <p>Defeitos reportados pelo botão 🔧 e pelas fichas de movimentação (seção Manutenção). O gestor marca como <b>resolvido</b> após providenciar.</p>
+      </div>
+      <div class="tools">
+        <label><input type="checkbox" id="def-so-abertos" checked onchange="defRender()"> só em aberto</label>
+        <button class="btn-gold" style="padding:8px 14px;font-size:12px;margin-left:auto" onclick="defExportar()">⬇ Exportar Excel</button>
+      </div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Data</th><th>VTR</th><th>Tipo</th><th>Urgência</th><th>Defeito</th><th>Impede uso</th><th>Reportado por</th><th>Origem</th><th>Ações</th></tr></thead>
+        <tbody id="def-tb"><tr><td colspan="9" class="empty">Carregando…</td></tr></tbody>
+      </table></div>
+    </div>
+    <div class="noperm" id="noperm" style="display:none">Faça login para acessar.</div>
+  </div>
+</div>
+
+<!-- Modal: reportar defeito -->
+<div id="rep-ov" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)repFechar()">
+  <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:20px;width:100%;max-width:520px;max-height:88vh;overflow-y:auto">
+    <h2 style="font-size:16px;font-weight:800;margin-bottom:4px">🔧 Manutenção / defeito reportado</h2>
+    <p style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px">Viatura <b id="rep-vtr">—</b>. Aqui você reporta o defeito. A decisão de baixar a viatura para manutenção é do setor responsável (Aux P4).</p>
+    <input type="hidden" id="rep-prefixo">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div><label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Tipo</label>
+        <select id="rep-tipo" style="width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;margin-top:4px"><option>Corretiva</option><option>Preventiva</option></select></div>
+      <div><label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Urgência</label>
+        <select id="rep-urgencia" style="width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;margin-top:4px"><option>Baixa</option><option>Média</option><option>Alta</option></select></div>
+      <div><label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Odômetro</label>
+        <input id="rep-odometro" type="number" style="width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;margin-top:4px"></div>
+      <div><label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Impede o uso?</label>
+        <select id="rep-impede" style="width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;margin-top:4px"><option>Não</option><option>Sim</option></select></div>
+    </div>
+    <div style="margin-top:12px"><label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Defeito reclamado *</label>
+      <textarea id="rep-defeito" rows="2" placeholder="Descreva o defeito" style="width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;margin-top:4px;font-family:inherit"></textarea></div>
+    <div style="margin-top:12px"><label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Observações</label>
+      <textarea id="rep-obs" rows="2" style="width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;margin-top:4px;font-family:inherit"></textarea></div>
+    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px">
+      <button class="btn-outline" onclick="repFechar()">Cancelar</button>
+      <button class="btn-gold" onclick="repSalvar()">Reportar defeito</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const S = (typeof sessaoLer==='function') ? sessaoLer() : null;
+if(!S){ location.href='index.html'; }
+const API=(typeof SB_AUTH_URL!=='undefined')?SB_AUTH_URL:'';
+const AKEY=(typeof SB_AUTH_KEY!=='undefined')?SB_AUTH_KEY:'';
+const H={apikey:AKEY,Authorization:'Bearer '+AKEY,'Content-Type':'application/json'};
+const podeGerir=(S&&(S.nivel_acesso==='admin_geral'||(S.funcao||'').toLowerCase().startsWith('aux p4')));
+async function rpc(fn,body){ const r=await fetch(`${API}/rest/v1/rpc/${fn}`,{method:'POST',headers:H,body:JSON.stringify(body||{})}); const t=await r.text(); let j; try{j=t?JSON.parse(t):null}catch{j=t}
+  if(!r.ok){ const msg=(j&&j.message)||('HTTP '+r.status);
+    if(/sess[aã]o (inv[aá]lida|expirada)/i.test(msg)){ // sessão expirou → volta ao login
+      try{ sessionStorage.removeItem('poe_sessao_v2'); localStorage.removeItem('poe_sessao_v2'); }catch(e){}
+      alert('Sua sessão expirou. Faça login novamente.'); location.href='index.html'; throw new Error(msg);
+    }
+    throw new Error(msg);
+  }
+  return j; }
+function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+const _re=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// município do usuário (último segmento do grupamento_id) p/ recorte dos não-gestores
+const _norm = s => (s||'').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[ºª°]/g,'').replace(/\s+/g,' ').trim();
+const MEU_MUNI = _norm((S&&S.grupamento_id||'').split('/').pop());
+
+(function init(){
+  if(S) document.getElementById('user-nome').textContent = S.nome_guerra || S.nome_completo || S.nome || '—';
+  if(!S){ document.getElementById('wrap').style.display='none'; document.getElementById('noperm').style.display='block'; return; }
+  revCarregar();
+  defCarregar();
+})();
+
+let REV=[];
+const REV_ST = {
+  vencida:      {t:'VENCIDA',      bg:'var(--danger-bg)',  c:'#ef9a9a', b:'rgba(239,83,80,.4)'},
+  proxima:      {t:'Próxima',      bg:'rgba(255,183,77,.14)', c:'#ffcc80', b:'rgba(255,183,77,.4)'},
+  ok:           {t:'Ok',           bg:'var(--success-bg)', c:'var(--success)', b:'rgba(102,187,106,.35)'},
+  sem_cadastro: {t:'Sem cadastro', bg:'var(--bg-input)',   c:'var(--text-hint)', b:'var(--border)'},
+  sem_km:       {t:'Sem km',       bg:'var(--bg-input)',   c:'var(--text-hint)', b:'var(--border)'},
+};
+async function revCarregar(){
+  const tb=document.getElementById('rev-tb');
+  try{
+    REV = await rpc('frota_revisao_listar',{p_token:S.token}) || [];
+    if(!Array.isArray(REV)) REV=[];
+    // não-gestor vê só as viaturas do seu grupamento/município
+    if(!podeGerir && MEU_MUNI){ REV = REV.filter(r=> _norm(r.municipio)===MEU_MUNI || _norm(r.gp).indexOf(MEU_MUNI)>=0); }
+    const n = REV.filter(r=>r.status==='vencida'||r.status==='proxima').length;
+    const bd=document.getElementById('rev-badge');
+    if(n){ bd.style.display=''; bd.textContent = n+(n===1?' em alerta':' em alerta'); } else bd.style.display='none';
+    revRender();
+  }catch(e){ tb.innerHTML=`<tr><td colspan="7" class="empty">Erro: ${_re(e.message)}</td></tr>`; }
+}
+function revRender(){
+  const q=(document.getElementById('rev-busca').value||'').toLowerCase().trim();
+  const soAlerta=document.getElementById('rev-so-alerta').checked;
+  let lst = REV.filter(r=>{
+    if(soAlerta && !(r.status==='vencida'||r.status==='proxima')) return false;
+    if(q && (r.prefixo+' '+(r.placa||'')).toLowerCase().indexOf(q)<0) return false;
+    return true;
+  });
+  const tb=document.getElementById('rev-tb');
+  if(!lst.length){ tb.innerHTML='<tr><td colspan="7" class="empty">Nenhuma viatura.</td></tr>'; return; }
+  tb.innerHTML = lst.map(r=>{
+    const st=REV_ST[r.status]||REV_ST.sem_cadastro;
+    const falta = (r.km_faltando==null) ? '—' : (r.km_faltando<=0 ? `${Math.abs(r.km_faltando).toLocaleString('pt-BR')} km passou` : `${r.km_faltando.toLocaleString('pt-BR')} km`);
+    const kmAtual = r.km_atual==null ? '—' : r.km_atual.toLocaleString('pt-BR');
+    const kmProx  = r.km_proxima_revisao==null ? '' : r.km_proxima_revisao;
+    // km da próxima revisão: editável só p/ gestor; demais veem o valor
+    const celKmProx = podeGerir
+      ? `<input type="number" value="${kmProx}" id="rev-km-${_re(r.prefixo)}" style="width:110px;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:6px;padding:6px 8px;color:var(--text-white);font-size:12.5px">`
+      : (r.km_proxima_revisao!=null ? r.km_proxima_revisao.toLocaleString('pt-BR') : '<span class="sub" style="color:var(--text-hint)">—</span>');
+    const acoes = (podeGerir?`<button class="btn-gold" style="padding:6px 10px;font-size:11.5px" onclick="revSalvar('${_re(r.prefixo)}')">Salvar</button> `:'')
+      + `<button class="btn-outline" style="padding:6px 9px;font-size:12px" title="Reportar defeito" onclick="repAbrir('${_re(r.prefixo)}')">🔧</button>`;
+    return `<tr>
+      <td><b>${_re(r.prefixo)}</b></td>
+      <td>${_re(r.placa||'')}</td>
+      <td>${kmAtual}</td>
+      <td>${celKmProx}</td>
+      <td>${falta}</td>
+      <td><span style="font-size:9px;font-weight:800;letter-spacing:.3px;padding:2px 8px;border-radius:20px;background:${st.bg};color:${st.c};border:1px solid ${st.b}">${st.t}</span></td>
+      <td style="white-space:nowrap">${acoes}</td>
+    </tr>`;
+  }).join('');
+}
+async function revSalvar(prefixo){
+  const el=document.getElementById('rev-km-'+prefixo); const km=el && el.value!==''?+el.value:null;
+  try{
+    await rpc('frota_revisao_salvar',{p_token:S.token,p_prefixo:prefixo,p_km:km,p_obs:null});
+    toast('Revisão da VTR '+prefixo+' salva.');
+    await revCarregar();
+  }catch(e){ toast('Erro: '+e.message); }
+}
+
+/* ── Reportar defeito (modal) ── */
+function repAbrir(prefixo){
+  document.getElementById('rep-prefixo').value=prefixo;
+  document.getElementById('rep-vtr').textContent=prefixo;
+  document.getElementById('rep-tipo').value='Corretiva';
+  document.getElementById('rep-urgencia').value='Baixa';
+  document.getElementById('rep-odometro').value='';
+  document.getElementById('rep-impede').value='Não';
+  document.getElementById('rep-defeito').value='';
+  document.getElementById('rep-obs').value='';
+  document.getElementById('rep-ov').style.display='flex';
+}
+function repFechar(){ document.getElementById('rep-ov').style.display='none'; }
+async function repSalvar(){
+  const defeito=document.getElementById('rep-defeito').value.trim();
+  if(!defeito){ toast('Descreva o defeito.'); return; }
+  const dados={
+    prefixo: document.getElementById('rep-prefixo').value,
+    tipo: document.getElementById('rep-tipo').value,
+    urgencia: document.getElementById('rep-urgencia').value,
+    odometro: document.getElementById('rep-odometro').value,
+    impede_uso: document.getElementById('rep-impede').value,
+    defeito, observacoes: document.getElementById('rep-obs').value.trim()
+  };
+  try{ await rpc('defeito_reportar',{p_token:S.token,p_dados:dados}); repFechar(); toast('Defeito reportado.'); await defCarregar(); }
+  catch(e){ toast('Erro: '+e.message); }
+}
+
+/* ── Lista "Defeitos reportados" (avulso + ficha) ── */
+let DEF=[];
+const _urg={Alta:{c:'#ef9a9a',b:'rgba(239,83,80,.4)',bg:'var(--danger-bg)'},'Média':{c:'#ffcc80',b:'rgba(255,183,77,.4)',bg:'rgba(255,183,77,.14)'},Baixa:{c:'var(--text-muted)',b:'var(--border)',bg:'var(--bg-input)'}};
+async function defCarregar(){
+  const tb=document.getElementById('def-tb');
+  try{
+    DEF = await rpc('defeitos_listar',{p_token:S.token}) || [];
+    if(!Array.isArray(DEF)) DEF=[];
+    const ab=DEF.filter(d=>d.status==='aberto').length;
+    const bd=document.getElementById('def-badge');
+    if(ab){ bd.style.display=''; bd.textContent=ab+' em aberto'; } else bd.style.display='none';
+    defRender();
+  }catch(e){ tb.innerHTML=`<tr><td colspan="9" class="empty">Erro: ${_re(e.message)}</td></tr>`; }
+}
+function defRender(){
+  const soAb=document.getElementById('def-so-abertos').checked;
+  const lst=DEF.filter(d=>!soAb || d.status==='aberto');
+  const tb=document.getElementById('def-tb');
+  if(!lst.length){ tb.innerHTML='<tr><td colspan="9" class="empty">Nenhum defeito reportado.</td></tr>'; return; }
+  tb.innerHTML=lst.map(d=>{
+    const dt=d.criado_em?new Date(d.criado_em).toLocaleDateString('pt-BR'):'—';
+    const u=_urg[d.urgencia]||_urg.Baixa;
+    const urg=d.urgencia?`<span style="font-size:9px;font-weight:800;padding:2px 8px;border-radius:20px;background:${u.bg};color:${u.c};border:1px solid ${u.b}">${_re(d.urgencia)}</span>`:'—';
+    const impede=/sim/i.test(d.impede_uso||'')?'<span style="color:#ef9a9a;font-weight:700">Sim</span>':'Não';
+    const orig=d.origem==='ficha'?'<span class="sub" style="font-size:10px">ficha</span>':'<span class="sub" style="font-size:10px">🔧 avulso</span>';
+    const resolvido=d.status==='resolvido';
+    const acao = resolvido
+      ? '<span style="color:var(--success);font-size:11px;font-weight:700">✔ Resolvido</span>'
+      : (podeGerir?`<button class="btn-outline" style="padding:5px 10px;font-size:11px" onclick="defResolver('${d.origem}','${d.ref_id}')">Marcar resolvido</button>`:'<span class="sub" style="font-size:10px">aberto</span>');
+    return `<tr${resolvido?' style="opacity:.55"':''}>
+      <td>${dt}</td><td><b>${_re(d.prefixo)}</b></td><td>${_re(d.tipo||'—')}</td><td>${urg}</td>
+      <td style="max-width:280px">${_re(d.defeito||'—')}</td><td>${impede}</td>
+      <td>${_re(d.reportado_por_nome||'—')}</td><td>${orig}</td><td style="white-space:nowrap">${acao}</td>
+    </tr>`;
+  }).join('');
+}
+async function defResolver(origem, ref){
+  try{ await rpc('defeito_resolver',{p_token:S.token,p_origem:origem,p_ref:ref}); toast('Defeito resolvido.'); await defCarregar(); }
+  catch(e){ toast('Erro: '+e.message); }
+}
+function defExportar(){
+  const soAb=document.getElementById('def-so-abertos').checked;
+  const lst=DEF.filter(d=>!soAb || d.status==='aberto');
+  if(!lst.length){ toast('Nada para exportar.'); return; }
+  const cell=v=>{ let s=(v==null?'':String(v)); if(/[";\n\r]/.test(s)) s='"'+s.replace(/"/g,'""')+'"'; return s; };
+  const cols=['Data','VTR','Placa','Grupamento','Tipo','Urgência','Odômetro','Defeito','Impede uso','Observações','Status','Reportado por','Origem'];
+  const linhas=lst.map(d=>[
+    d.criado_em?new Date(d.criado_em).toLocaleDateString('pt-BR'):'', d.prefixo, d.placa, d.gp, d.tipo, d.urgencia,
+    d.odometro, d.defeito, d.impede_uso, d.observacoes, d.status, d.reportado_por_nome, d.origem
+  ].map(cell).join(';'));
+  const csv='﻿'+[cols.map(cell).join(';')].concat(linhas).join('\r\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`Defeitos_reportados_${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  toast('Arquivo CSV gerado (abre no Excel).');
+}
+</script>
+</body>
+</html>

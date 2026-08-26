@@ -7,14 +7,21 @@
   <link rel="stylesheet" href="styles/global.css">
   <script src="auth.js"></script>
   <script>
-    /* Verificação imediata — sessão Supabase v2 */
+    /* Verificação imediata — sessão Supabase v2.
+       admin_geral = acesso total. Aux P3 (função "aux p3") = acesso SOMENTE aos
+       tabs de cadastro da P3 (Metas/Operações/PAF/FAPI/Quesitos), abertos via
+       admin.html?tab=... a partir do hub P3 "Gestão e Cadastros". */
+    window.TABS_CADASTRO_P3 = ['metas','operacoes','paf','fapi','quesitos'];
     (function(){
       try {
         const raw = sessionStorage.getItem('poe_sessao_v2');
         if (!raw) { window.location.replace('index.html'); return; }
         const s = JSON.parse(raw);
-        const nivel = s.nivel_acesso || '';
-        if (!['admin_geral'].includes(nivel)) {
+        const nivel  = s.nivel_acesso || '';
+        const funcao = (s.funcao || '').toLowerCase().trim();
+        const tab    = new URLSearchParams(location.search).get('tab') || '';
+        const cadastroP3 = funcao === 'aux p3' && window.TABS_CADASTRO_P3.includes(tab);
+        if (nivel !== 'admin_geral' && !cadastroP3) {
           window.location.replace('painel.html');
         }
       } catch(e) { window.location.replace('index.html'); }
@@ -177,30 +184,31 @@
 </head>
 <body>
 
-<!-- TOPBAR -->
-<div class="topbar">
-  <div class="topbar-left">
-    <img src="assets/header-pmmg.png" alt="PMMG">
-    <div class="topbar-title">
-      <h1>⚙️ PAINEL ADMINISTRATIVO</h1>
+<!-- HEADER padrão (3 brasões PMMG · CPE · BPM MAmb) -->
+<header class="header">
+  <div class="header-left">
+    <div class="header-shields"><img src="assets/escudo-pmmg.png" alt="PMMG" onerror="this.style.display='none'"><img src="assets/escudo-cpe.png" alt="CPE" onerror="this.style.display='none'"><img src="assets/brasao-bpmmamb.png" alt="BPM MAMB" onerror="this.style.display='none'"></div><div class="header-div"></div>
+    <div class="header-title"><div class="header-kicker">CPE · BPM MAmb · 3ª Cia PM MAmb</div>
+      <h1>PAINEL ADMINISTRATIVO</h1>
       <p>3ª Cia PM MAmb — Gestão de Usuários</p>
     </div>
   </div>
-  <div class="topbar-right">
-    <div id="user-info" style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:6px;">
-      <span id="user-avatar" style="width:22px;height:22px;border-radius:50%;background:var(--gold);color:#1a1000;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;">?</span>
+  <div class="header-right">
+    <div id="user-info" style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);cursor:pointer;padding:5px 10px;border:1px solid var(--border);border-radius:5px;" onclick="window.location.href='perfil.html'" title="Meu Perfil">
+      <span id="user-avatar" style="width:22px;height:22px;border-radius:50%;background:var(--gold);color:#1a1000;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">?</span>
       <span id="user-nome-hdr">—</span>
+      <span id="user-badge" style="font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;"></span>
     </div>
-    <button class="btn-outline" onclick="SbAuth.sessaoLimpar();window.location.href='index.html'">Sair</button>
+    <button class="btn-outline" onclick="localStorage.removeItem('poe_sessao_v2');sessionStorage.removeItem('poe_sessao_v2');localStorage.removeItem('poe_sessao');window.location.href='index.html'">Sair</button>
   </div>
-</div>
+</header>
 
-<script src="topnav.js" data-ativo="adm"></script>
+<script src="topnav.js"></script>
 
 <style>
   .topnav{display:flex;align-items:center;gap:2px;background:var(--bg-dark);border-bottom:1px solid var(--border);padding:0 16px;position:relative;z-index:20;flex-wrap:wrap;overflow:visible;}
   .topnav-item{position:relative;}
-  .topnav-link{display:flex;align-items:center;gap:5px;padding:13px 16px;color:var(--text-muted);font-size:12.5px;font-weight:700;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;text-decoration:none;}
+  .topnav-link{display:flex;align-items:center;gap:5px;padding:11px 9px;color:var(--text-muted);font-size:11px;font-weight:700;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;text-decoration:none;}
   .topnav-link:hover{color:var(--text-white);}
   .topnav-link.active{color:var(--gold);border-bottom-color:var(--gold);}
   .topnav-link .chev{font-size:9px;opacity:.7;}
@@ -233,11 +241,15 @@ document.addEventListener('click', () => {
 <nav class="tabs-bar">
   <div class="tab active" data-tip="Usuários" onclick="switchTab(this,'usuarios')">👥 Usuários</div>
   <div class="tab" data-tip="Grupamentos" onclick="switchTab(this,'grupamentos');renderGruposAdmin()">📍 Grupamentos</div>
-  <div class="tab" data-tip="Metas" onclick="switchTab(this,'metas');metasInit()">📊 Metas</div>
-  <div class="tab" data-tip="Operações" onclick="switchTab(this,'operacoes');operacoesInit()">🎯 Operações</div>
-  <div class="tab" data-tip="PAF — Plano Anual de Fiscalização" onclick="switchTab(this,'paf');pafInit()">🌲 PAF</div>
-  <div class="tab" data-tip="FAPI — Fiscalização Preventiva na Indústria" onclick="switchTab(this,'fapi');fapiInit()">🏭 FAPI</div>
-  <div class="tab" data-tip="Campos & Quesitos" onclick="switchTab(this,'quesitos');quesitosInit()">📋 Campos & Quesitos</div>
+  <div class="tab" data-tip="Links Úteis" onclick="switchTab(this,'links');linksInit()">🔗 Links Úteis</div>
+  <!-- Metas/Operações/PAF/FAPI/Campos & Quesitos migraram para o hub P3 ("Gestão e Cadastros").
+       Ocultos aqui (não deletar): os cards da P3 abrem estes painéis via admin.html?tab=... e o
+       handler de ?tab= clica no botão correspondente, que precisa continuar existindo no DOM. -->
+  <div class="tab" data-tip="Metas" onclick="switchTab(this,'metas');metasInit()" style="display:none">📊 Metas</div>
+  <div class="tab" data-tip="Operações" onclick="switchTab(this,'operacoes');operacoesInit()" style="display:none">🎯 Operações</div>
+  <div class="tab" data-tip="PAF — Plano Anual de Fiscalização" onclick="switchTab(this,'paf');pafInit()" style="display:none">🌲 PAF</div>
+  <div class="tab" data-tip="FAPI — Fiscalização Preventiva na Indústria" onclick="switchTab(this,'fapi');fapiInit()" style="display:none">🏭 FAPI</div>
+  <div class="tab" data-tip="Campos & Quesitos" onclick="switchTab(this,'quesitos');quesitosInit()" style="display:none">📋 Campos & Quesitos</div>
 </nav>
 
 <div class="content">
@@ -991,6 +1003,34 @@ document.addEventListener('click', () => {
     <datalist id="qs-operacoes-dl"></datalist>
   </div><!-- /tab-quesitos -->
 
+  <!-- ===== ABA LINKS ÚTEIS ===== -->
+  <div class="tab-pane" id="tab-links">
+    <div class="card" style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:16px">
+      <h2 style="font-size:14px;font-weight:800;color:var(--gold-light);margin-bottom:6px">🔗 Links Úteis</h2>
+      <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px">Cadastre atalhos (nome + endereço) que aparecem na seção <b>“Links úteis”</b> do Meu Dia, para todos os militares. Abrem em nova aba.</p>
+      <div style="display:grid;grid-template-columns:1fr 2fr auto auto;gap:10px;align-items:end">
+        <div><label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Nome do card</label>
+          <input id="lk-nome" placeholder="Ex.: REDS" style="width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;outline:none;margin-top:4px"></div>
+        <div><label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Endereço (URL)</label>
+          <input id="lk-url" placeholder="https://…" style="width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;outline:none;margin-top:4px"></div>
+        <input type="hidden" id="lk-id">
+        <button class="btn-gold" id="lk-salvar" style="padding:10px 18px" onclick="linksSalvar()">Adicionar</button>
+        <button class="btn-outline" id="lk-cancelar" style="padding:10px 14px;display:none" onclick="linksCancelar()">Cancelar</button>
+      </div>
+      <div id="lk-msg" style="font-size:12px;margin-top:8px"></div>
+    </div>
+    <div class="tablewrap" style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr>
+          <th style="text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-hint);font-weight:700;padding:11px 14px;border-bottom:1px solid var(--border);background:var(--bg-dark)">Nome</th>
+          <th style="text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-hint);font-weight:700;padding:11px 14px;border-bottom:1px solid var(--border);background:var(--bg-dark)">URL</th>
+          <th style="text-align:right;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-hint);font-weight:700;padding:11px 14px;border-bottom:1px solid var(--border);background:var(--bg-dark)">Ações</th>
+        </tr></thead>
+        <tbody id="lk-tb"><tr><td colspan="3" style="padding:30px;text-align:center;color:var(--text-hint)">Carregando…</td></tr></tbody>
+      </table>
+    </div>
+  </div><!-- /tab-links -->
+
 </div><!-- /content -->
 
 <!-- MODAL EDITAR -->
@@ -1190,6 +1230,12 @@ window.addEventListener('load', function(){
   try{
     var t = new URLSearchParams(location.search).get('tab');
     if(!t) return;
+    // Aberto por um cadastro da P3 → contexto P3: esconde a barra de sub-abas de
+    // Administração (Usuários/Grupamentos), que só faz sentido na área ADM.
+    if ((window.TABS_CADASTRO_P3||[]).includes(t)) {
+      var tbar = document.querySelector('.tabs-bar');
+      if (tbar) tbar.style.display = 'none';
+    }
     var el = Array.prototype.find.call(document.querySelectorAll('.tab'), function(x){
       return (x.getAttribute('onclick')||'').indexOf("switchTab(this,'"+t+"'") !== -1;
     });
@@ -1212,6 +1258,61 @@ async function sbRpc(fn, body){
   const t = await res.text(); let j; try{ j = t?JSON.parse(t):null; }catch{ j = t; }
   if(!res.ok) throw new Error((j&&j.message)||('HTTP '+res.status));
   return j;
+}
+
+/* ═══════════════ LINKS ÚTEIS (Meu Dia) ═══════════════ */
+let LINKS=[]; let linksIniciado=false;
+const _lkEsc = s => (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function linksInit(){ if(!linksIniciado){ linksIniciado=true; } await linksCarregar(); }
+async function linksCarregar(){
+  const tb=document.getElementById('lk-tb');
+  try{
+    LINKS = await sbRpc('links_uteis_listar', {}) || [];
+    if(!Array.isArray(LINKS)) LINKS=[];
+    if(!LINKS.length){ tb.innerHTML='<tr><td colspan="3" style="padding:30px;text-align:center;color:var(--text-hint)">Nenhum link cadastrado.</td></tr>'; return; }
+    tb.innerHTML = LINKS.map(l=>`<tr>
+      <td style="padding:11px 14px;border-bottom:1px solid var(--border);font-size:12.5px;font-weight:700">${_lkEsc(l.nome)}</td>
+      <td style="padding:11px 14px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-muted);word-break:break-all"><a href="${_lkEsc(l.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--info)">${_lkEsc(l.url)}</a></td>
+      <td style="padding:11px 14px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap">
+        <button class="btn-outline" style="padding:5px 11px;font-size:11.5px" onclick="linksEditar('${l.id}')">✎ Editar</button>
+        <button class="btn-outline" style="padding:5px 11px;font-size:11.5px;color:#ef9a9a;border-color:rgba(239,83,80,.4)" onclick="linksRemover('${l.id}','${_lkEsc(l.nome)}')">🗑</button>
+      </td></tr>`).join('');
+  }catch(e){ tb.innerHTML=`<tr><td colspan="3" style="padding:20px;text-align:center;color:#ef9a9a">Erro: ${_lkEsc(e.message)}</td></tr>`; }
+}
+async function linksSalvar(){
+  const nome=document.getElementById('lk-nome').value.trim();
+  const url=document.getElementById('lk-url').value.trim();
+  const id=document.getElementById('lk-id').value;
+  const msg=document.getElementById('lk-msg');
+  if(!nome){ msg.style.color='#ef9a9a'; msg.textContent='Informe o nome do card.'; return; }
+  if(!url){ msg.style.color='#ef9a9a'; msg.textContent='Informe a URL.'; return; }
+  const urlFinal = /^https?:\/\//i.test(url) ? url : ('https://'+url);
+  try{
+    await sbRpc('links_uteis_salvar', {p_token:sessao.token, p_dados:{id:id||'', nome, url:urlFinal}});
+    msg.style.color='#2ea043'; msg.textContent = id?'Link atualizado.':'Link adicionado.';
+    linksCancelar(); await linksCarregar();
+  }catch(e){ msg.style.color='#ef9a9a'; msg.textContent='Erro: '+e.message; }
+}
+function linksEditar(id){
+  const l=LINKS.find(x=>x.id===id); if(!l) return;
+  document.getElementById('lk-id').value=l.id;
+  document.getElementById('lk-nome').value=l.nome;
+  document.getElementById('lk-url').value=l.url;
+  document.getElementById('lk-salvar').textContent='Salvar';
+  document.getElementById('lk-cancelar').style.display='';
+  document.getElementById('lk-nome').focus();
+}
+function linksCancelar(){
+  document.getElementById('lk-id').value='';
+  document.getElementById('lk-nome').value='';
+  document.getElementById('lk-url').value='';
+  document.getElementById('lk-salvar').textContent='Adicionar';
+  document.getElementById('lk-cancelar').style.display='none';
+}
+async function linksRemover(id, nome){
+  if(!confirm('Remover o link "'+nome+'"?')) return;
+  try{ await sbRpc('links_uteis_remover', {p_token:sessao.token, p_id:id}); await linksCarregar(); }
+  catch(e){ alert('Erro: '+e.message); }
 }
 
 async function quesitosInit(){
@@ -2493,10 +2594,17 @@ let sessao = null;
 function lerSessaoAdmin() {
   const s = SbAuth.sessaoLer();
   if (!s) { window.location.replace('index.html'); return null; }
-  const niveis_admin = ['admin_geral'];
-  if (!niveis_admin.includes(s.nivel_acesso)) {
+  const funcao = (s.funcao || '').toLowerCase().trim();
+  const tab    = new URLSearchParams(location.search).get('tab') || '';
+  const cadastroP3 = funcao === 'aux p3' && (window.TABS_CADASTRO_P3||[]).includes(tab);
+  if (s.nivel_acesso !== 'admin_geral' && !cadastroP3) {
     document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#1a1a1a;flex-direction:column;gap:16px;"><div style="color:#ef5350;font-size:48px;">🔒</div><div style="color:#ef5350;font-size:18px;font-weight:700;">ACESSO RESTRITO</div><div style="color:#999;font-size:13px;">Apenas administradores podem acessar esta área.</div><button onclick="window.location.href=\'painel.html\'" style="margin-top:12px;background:#9b8a5c;color:#1a1000;border:none;padding:10px 24px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;">← Voltar ao Painel</button></div>';
     return null;
+  }
+  /* Aux P3 (modo cadastro): esconde a barra de sub-abas administrativas
+     (Usuários/Grupamentos), deixando só o cadastro da P3 pedido. */
+  if (s.nivel_acesso !== 'admin_geral' && cadastroP3) {
+    try { var tb = document.querySelector('.tabs-bar'); if (tb) tb.style.display = 'none'; } catch(e){}
   }
   /* Normaliza campos de lotação — garante grupamento_id independente de como o auth.js salvou */
   s.grupamento_id = s.grupamento_id || s.lotacao || s.grupamento || '';

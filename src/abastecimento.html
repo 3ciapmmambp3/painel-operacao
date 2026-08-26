@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Abastecimento — 3ª Cia PM MAmb</title>
+<link rel="stylesheet" href="styles/global.css">
+<script src="auth.js"></script>
+<script src="topnav.js" data-ativo="p4"></script>
+<script src="secnav.js" data-secao="p4"></script>
+<style>
+  body{padding-bottom:60px}
+  .rd-shell{display:flex;align-items:flex-start}
+  .rd-conteudo{flex:1;min-width:0}
+  @media(max-width:760px){.rd-shell{flex-direction:column;align-items:stretch}}
+  .wrap{max-width:1180px;margin:20px auto 0;padding:0 20px}
+  .pagehead h1{font-size:20px;font-weight:800}
+  .pagehead p{font-size:12.5px;color:var(--text-muted);margin-top:5px;line-height:1.5}
+  .tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:16px 0 10px}
+  .tools select{background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:8px 11px;color:var(--text-white);font-size:12.5px;outline:none}
+  .tools label{font-size:11.5px;color:var(--text-muted);display:flex;align-items:center;gap:6px}
+  .totais{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;font-size:12px}
+  .totais span{background:var(--bg-input);border:1px solid var(--border);border-radius:20px;padding:5px 12px}
+  .totais b{color:var(--gold-light)}
+  .tablewrap{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;overflow-x:auto}
+  table{width:100%;border-collapse:collapse;min-width:820px}
+  th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-hint);font-weight:700;padding:11px 14px;border-bottom:1px solid var(--border);background:var(--bg-dark)}
+  td{padding:11px 14px;border-bottom:1px solid var(--border);font-size:12.5px;vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  .km{font-weight:700}
+  .sub{color:var(--text-hint)}
+  .empty{padding:40px;text-align:center;color:var(--text-hint)}
+  .noperm{padding:60px 20px;text-align:center;color:var(--text-muted)}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111;border:1px solid var(--border);color:var(--text-white);padding:12px 20px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:300}
+  .toast.show{opacity:1}
+</style>
+<script src="pwa.js" defer></script>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <div class="header-shields"><img src="assets/escudo-pmmg.png" alt="PMMG" onerror="this.style.display='none'"><img src="assets/escudo-cpe.png" alt="CPE" onerror="this.style.display='none'"><img src="assets/brasao-bpmmamb.png" alt="BPM MAMB" onerror="this.style.display='none'"></div><div class="header-div"></div>
+    <div class="header-title">
+      <div class="header-kicker">CPE · BPM MAmb · 3ª Cia PM MAmb</div>
+      <h1>PAINEL DE GESTÃO OPERACIONAL</h1>
+      <p>Abastecimento</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <div id="user-info" style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);padding:5px 10px;border:1px solid var(--border);border-radius:5px">
+      <span id="user-nome">—</span></div>
+    <button class="btn-outline" onclick="localStorage.removeItem('poe_sessao_v2');sessionStorage.removeItem('poe_sessao_v2');location.href='index.html'">Sair</button>
+  </div>
+</header>
+
+<div class="rd-shell">
+  <div class="rd-conteudo">
+    <div class="wrap" id="wrap">
+      <div class="pagehead">
+        <h1>⛽ Abastecimento</h1>
+        <p>Abastecimentos lançados nas fichas, por mês. Litros, km rodados e controle do que já foi <b>lançado no SIAD</b> (só Convênio/Doação). Filtre e exporte para Excel. Restrito ao Aux P4 e ao Admin Geral.</p>
+      </div>
+      <details id="cfg-card" style="margin:6px 0 12px;border:1px solid var(--border);border-radius:10px;padding:12px 14px;background:var(--bg-card)">
+        <summary style="cursor:pointer;font-size:13px;font-weight:700;color:var(--gold-light)">⛽ Controle de limite de abastecimento (POC / PRIME)</summary>
+        <p style="font-size:12px;color:var(--text-muted);margin:10px 0 4px">Enquanto o limite estiver <b>desligado</b>, a ficha não pergunta litros para a fonte. Ao <b>ligar</b> e definir o limite (litros por abastecimento), a ficha passa a pedir os litros; se o abastecimento passar do limite, exige <b>quem autorizou</b> e <b>o motivo</b>.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:10px" id="cfg-grid">
+          <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+            <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;cursor:pointer">
+              <input type="checkbox" id="cfg-poc-ativo" onchange="cfgToggle('poc')"> Limite POC ativo
+            </label>
+            <div class="fld" id="cfg-poc-wrap" style="margin-top:8px;display:none">
+              <label style="font-size:11px;font-weight:700;color:var(--text-muted)">Limite por abastecimento (litros)</label>
+              <input id="cfg-poc-limite" type="number" step="0.001" placeholder="ex.: 40" style="background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;outline:none;width:100%;margin-top:4px">
+            </div>
+          </div>
+          <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+            <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;cursor:pointer">
+              <input type="checkbox" id="cfg-prime-ativo" onchange="cfgToggle('prime')"> Limite PRIME ativo
+            </label>
+            <div class="fld" id="cfg-prime-wrap" style="margin-top:8px;display:none">
+              <label style="font-size:11px;font-weight:700;color:var(--text-muted)">Limite por abastecimento (litros)</label>
+              <input id="cfg-prime-limite" type="number" step="0.001" placeholder="ex.: 40" style="background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;outline:none;width:100%;margin-top:4px">
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap">
+          <button class="btn-gold" style="padding:9px 18px" onclick="salvarCfgLimites()">Salvar limites</button>
+          <span id="cfg-info" style="font-size:11.5px;color:var(--text-hint)"></span>
+        </div>
+      </details>
+
+      <details id="lst-card" style="margin:0 0 14px;border:1px solid var(--border);border-radius:10px;padding:12px 14px;background:var(--bg-card)">
+        <summary style="cursor:pointer;font-size:13px;font-weight:700;color:var(--gold-light)">🛢️ Listas de combustível e convênios</summary>
+        <p style="font-size:12px;color:var(--text-muted);margin:10px 0 4px">Estas opções aparecem nos selects da Ficha de Movimentação (abastecimento). Edite conforme a realidade da Cia.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:10px" id="lst-grid">
+          <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+            <div style="font-size:12.5px;font-weight:700;margin-bottom:8px">Combustíveis</div>
+            <div id="chips-combustiveis" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
+            <div style="display:flex;gap:6px"><input id="add-combustiveis" placeholder="novo combustível" style="flex:1;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:8px 10px;color:var(--text-white);font-size:12.5px;outline:none" onkeydown="if(event.key==='Enter'){event.preventDefault();addItemLista('combustiveis')}">
+              <button class="btn-gold" style="padding:8px 14px" onclick="addItemLista('combustiveis')">＋</button></div>
+          </div>
+          <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+            <div style="font-size:12.5px;font-weight:700;margin-bottom:8px">Convênios / Doações</div>
+            <div id="chips-convenios" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
+            <div style="display:flex;gap:6px"><input id="add-convenios" placeholder="novo convênio" style="flex:1;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:8px 10px;color:var(--text-white);font-size:12.5px;outline:none" onkeydown="if(event.key==='Enter'){event.preventDefault();addItemLista('convenios')}">
+              <button class="btn-gold" style="padding:8px 14px" onclick="addItemLista('convenios')">＋</button></div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap">
+          <button class="btn-gold" style="padding:9px 18px" onclick="salvarListas()">Salvar listas</button>
+          <span id="lst-info" style="font-size:11.5px;color:var(--text-hint)"></span>
+        </div>
+      </details>
+
+      <div class="tools">
+        <select id="ab-mes" onchange="abCarregar()"></select>
+        <select id="ab-ano" onchange="abCarregar()"></select>
+        <select id="ab-fonte-f" onchange="abRender()">
+          <option value="">Todas as fontes</option><option>POC</option><option>Cartão PRIME</option><option>Convênio ou Doação</option>
+        </select>
+        <label><input type="checkbox" id="ab-so-siad" onchange="abRender()"> só SIAD pendente</label>
+        <button class="btn-gold" style="padding:8px 14px;font-size:12px;margin-left:auto" onclick="abExportar()">⬇ Exportar Excel</button>
+      </div>
+      <div class="totais" id="ab-totais"></div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Data</th><th>VTR</th><th>Fonte</th><th>Comb.</th><th>Litros</th><th>Valor</th><th>Km rod.</th><th>Convênio/Doador</th><th>SIAD</th></tr></thead>
+        <tbody id="ab-tb"><tr><td colspan="9" class="empty">Carregando…</td></tr></tbody>
+      </table></div>
+    </div>
+    <div class="noperm" id="noperm" style="display:none">Acesso restrito ao setor responsável (Aux P4) e ao Admin Geral.</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const S = (typeof sessaoLer==='function') ? sessaoLer() : null;
+if(!S){ location.href='index.html'; }
+const API=(typeof SB_AUTH_URL!=='undefined')?SB_AUTH_URL:'';
+const AKEY=(typeof SB_AUTH_KEY!=='undefined')?SB_AUTH_KEY:'';
+const H={apikey:AKEY,Authorization:'Bearer '+AKEY,'Content-Type':'application/json'};
+const podeGerir=(S&&(S.nivel_acesso==='admin_geral'||(S.funcao||'').toLowerCase().startsWith('aux p4')));
+async function rpc(fn,body){ const r=await fetch(`${API}/rest/v1/rpc/${fn}`,{method:'POST',headers:H,body:JSON.stringify(body||{})}); const t=await r.text(); let j; try{j=t?JSON.parse(t):null}catch{j=t} if(!r.ok) throw new Error((j&&j.message)||('HTTP '+r.status)); return j; }
+function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+const _re=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+let AB=[], AB_TOT={};
+const AB_MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+(function init(){
+  if(S) document.getElementById('user-nome').textContent = S.nome_guerra || S.nome_completo || S.nome || '—';
+  if(!podeGerir){ document.getElementById('wrap').style.display='none'; document.getElementById('noperm').style.display='block'; return; }
+  const hoje=new Date();
+  const selM=document.getElementById('ab-mes'), selA=document.getElementById('ab-ano');
+  selM.innerHTML='<option value="">Todos os meses</option>'+AB_MESES.map((m,i)=>`<option value="${i+1}">${m}</option>`).join('');
+  selM.value=hoje.getMonth()+1;
+  const anos=[]; for(let a=hoje.getFullYear();a>=hoje.getFullYear()-2;a--) anos.push(a);
+  selA.innerHTML=anos.map(a=>`<option value="${a}">${a}</option>`).join('');
+  selA.value=hoje.getFullYear();
+  abCarregar();
+  carregarCfgLimites(); carregarListas();
+})();
+
+const fmt=iso=>{ if(!iso) return ''; const d=new Date(iso); return d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); };
+
+// ── Controle de limite de abastecimento (POC/PRIME) ─────────────────────
+function cfgToggle(fonte){
+  const on=document.getElementById(`cfg-${fonte}-ativo`).checked;
+  document.getElementById(`cfg-${fonte}-wrap`).style.display = on?'block':'none';
+}
+async function carregarCfgLimites(){
+  try{
+    const c=await rpc('abastecimento_config_get',{});
+    const cfg=Array.isArray(c)?c[0]:c; if(!cfg) return;
+    document.getElementById('cfg-poc-ativo').checked = !!cfg.poc_ativo;
+    document.getElementById('cfg-poc-limite').value = cfg.poc_limite!=null?cfg.poc_limite:'';
+    document.getElementById('cfg-prime-ativo').checked = !!cfg.prime_ativo;
+    document.getElementById('cfg-prime-limite').value = cfg.prime_limite!=null?cfg.prime_limite:'';
+    cfgToggle('poc'); cfgToggle('prime');
+    if(cfg.atualizado_por) document.getElementById('cfg-info').textContent =
+      `Última alteração: ${cfg.atualizado_por}${cfg.atualizado_em?' · '+fmt(cfg.atualizado_em):''}`;
+  }catch(e){ console.error(e); }
+}
+async function salvarCfgLimites(){
+  const pocAtivo=document.getElementById('cfg-poc-ativo').checked;
+  const primeAtivo=document.getElementById('cfg-prime-ativo').checked;
+  const pocLim=document.getElementById('cfg-poc-limite').value;
+  const primeLim=document.getElementById('cfg-prime-limite').value;
+  if(pocAtivo && !(+pocLim>0)) return toast('Informe o limite (litros) do POC.');
+  if(primeAtivo && !(+primeLim>0)) return toast('Informe o limite (litros) do PRIME.');
+  try{
+    const dados={ poc_ativo:pocAtivo, poc_limite:pocAtivo?pocLim:'',
+      prime_ativo:primeAtivo, prime_limite:primeAtivo?primeLim:'' };
+    await rpc('abastecimento_config_salvar',{p_token:S.token,p_dados:dados});
+    toast('Limites salvos.'); carregarCfgLimites();
+  }catch(e){ toast('Erro: '+e.message); }
+}
+
+// ── Listas editáveis (combustíveis / convênios) ─────────────────────────
+let LISTAS={combustiveis:[], convenios:[]};
+async function carregarListas(){
+  try{
+    const rows=await rpc('listas_config_get',{});
+    (Array.isArray(rows)?rows:[]).forEach(r=>{ if(r&&r.chave) LISTAS[r.chave]=Array.isArray(r.itens)?r.itens:[]; });
+    renderChips('combustiveis'); renderChips('convenios');
+  }catch(e){ console.error(e); }
+}
+function renderChips(chave){
+  const box=document.getElementById('chips-'+chave); if(!box) return;
+  const arr=LISTAS[chave]||[];
+  box.innerHTML = arr.length ? arr.map((x,i)=>
+    `<span style="display:inline-flex;align-items:center;gap:6px;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:20px;padding:4px 6px 4px 12px;font-size:12px">${_re(x)}`
+    +`<button onclick="removeItemLista('${chave}',${i})" title="remover" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px;line-height:1;padding:0 2px">✕</button></span>`
+  ).join('') : '<span style="font-size:12px;color:var(--text-hint)">Nenhum item.</span>';
+}
+function addItemLista(chave){
+  const inp=document.getElementById('add-'+chave); const v=(inp.value||'').trim();
+  if(!v) return;
+  const arr=LISTAS[chave]||(LISTAS[chave]=[]);
+  if(arr.some(x=>x.toLowerCase()===v.toLowerCase())) return toast('Item já existe na lista.');
+  arr.push(v); inp.value=''; renderChips(chave); inp.focus();
+}
+function removeItemLista(chave,idx){ (LISTAS[chave]||[]).splice(idx,1); renderChips(chave); }
+async function salvarListas(){
+  try{
+    await rpc('listas_config_salvar',{p_token:S.token,p_chave:'combustiveis',p_itens:LISTAS.combustiveis||[]});
+    await rpc('listas_config_salvar',{p_token:S.token,p_chave:'convenios',p_itens:LISTAS.convenios||[]});
+    document.getElementById('lst-info').textContent='Listas salvas.';
+    toast('Listas salvas.');
+  }catch(e){ toast('Erro: '+e.message); }
+}
+
+async function abCarregar(){
+  const ano=+document.getElementById('ab-ano').value;
+  const mesRaw=document.getElementById('ab-mes').value;
+  const mes = mesRaw==='' ? null : +mesRaw;   // null = todos os meses do ano
+  const tb=document.getElementById('ab-tb');
+  tb.innerHTML='<tr><td colspan="9" class="empty">Carregando…</td></tr>';
+  try{
+    AB = await rpc('frota_abast_listar',{p_token:S.token,p_ano:ano,p_mes:mes}) || [];
+    if(!Array.isArray(AB)) AB=[];
+    AB_TOT = await rpc('frota_abast_totais',{p_token:S.token,p_ano:ano,p_mes:mes}) || {};
+    abRenderTotais(); abRender();
+  }catch(e){ tb.innerHTML=`<tr><td colspan="9" class="empty">Erro: ${_re(e.message)}</td></tr>`; }
+}
+function abRenderTotais(){
+  const t=AB_TOT||{}; const box=document.getElementById('ab-totais');
+  const chip=(lbl,val)=>`<span><b>${val}</b> ${lbl}</span>`;
+  const lt=(+(t.litros_total||0)).toLocaleString('pt-BR',{maximumFractionDigits:3});
+  const km=(+(t.km_total||0)).toLocaleString('pt-BR');
+  let fontes=''; const pf=t.litros_por_fonte||{};
+  Object.keys(pf).forEach(f=>{ fontes+=chip(_re(f)+' (L)', (+pf[f]).toLocaleString('pt-BR',{maximumFractionDigits:3})); });
+  box.innerHTML = chip('litros no mês', lt) + chip('km rodados', km) + fontes;
+}
+function abLinhas(){
+  const ff=document.getElementById('ab-fonte-f').value;
+  const soSiad=document.getElementById('ab-so-siad').checked;
+  return AB.filter(r=>{
+    if(ff && r.fonte!==ff) return false;
+    if(soSiad && r.siad_lancado) return false;   // pendente = ainda não lançado
+    return true;
+  });
+}
+function abRender(){
+  const tb=document.getElementById('ab-tb'); const lst=abLinhas();
+  if(!lst.length){ tb.innerHTML='<tr><td colspan="9" class="empty">Nenhum abastecimento.</td></tr>'; return; }
+  tb.innerHTML=lst.map(r=>{
+    const dt=r.data_ficha?new Date(r.data_ficha).toLocaleDateString('pt-BR'):'—';
+    const litros=r.litros!=null?(+r.litros).toLocaleString('pt-BR',{maximumFractionDigits:3}):'—';
+    const valor=r.valor_total!=null?('R$ '+(+r.valor_total).toLocaleString('pt-BR',{minimumFractionDigits:2})):'—';
+    const km=r.km_rodados!=null?(+r.km_rodados).toLocaleString('pt-BR'):'—';
+    const cd=[r.convenio,r.doador].filter(Boolean).join(' / ')||'—';
+    // Todos os abastecimentos podem ser marcados como lançados no SIAD.
+    const siad=`<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;${r.siad_lancado?'color:var(--success)':'color:#ffcc80'}"><input type="checkbox" ${r.siad_lancado?'checked':''} onchange="abSiad('${r.mov_id}',${r.idx},this.checked)">${r.siad_lancado?'Lançado':'Pendente'}</label>`;
+    return `<tr>
+      <td>${dt}</td><td><b>${_re(r.prefixo)}</b></td><td>${_re(r.fonte||'—')}</td>
+      <td>${_re(r.combustivel||'—')}</td><td class="km" style="color:var(--gold-light)">${litros}</td>
+      <td>${valor}</td><td>${km}</td><td>${_re(cd)}</td><td>${siad}</td>
+    </tr>`;
+  }).join('');
+}
+async function abSiad(movId, idx, lancado){
+  try{ await rpc('frota_siad_marcar',{p_token:S.token,p_mov_id:movId,p_idx:idx,p_lancado:lancado});
+    const r=AB.find(x=>x.mov_id===movId && x.idx===idx); if(r) r.siad_lancado=lancado;
+    toast(lancado?'Marcado como lançado no SIAD.':'Desmarcado.'); abRender();
+  }catch(e){ toast('Erro: '+e.message); abRender(); }
+}
+function abExportar(){
+  const lst=abLinhas();
+  if(!lst.length){ toast('Nada para exportar.'); return; }
+  const mesRaw=document.getElementById('ab-mes').value;
+  const mesNome=mesRaw===''?'Ano-todo':AB_MESES[(+mesRaw)-1], ano=document.getElementById('ab-ano').value;
+  // CSV com ; (padrão Excel pt-BR) + BOM (acentos). Evita o aviso de "arquivo adulterado" do .xls-HTML.
+  const cols=['Data','VTR','Placa','Fonte','Tipo','Combustível','Litros','Valor total','Km rodados','Convênio','Doador','Vai p/ SIAD','Lançado no SIAD','Motorista','Grupamento'];
+  const cell=v=>{ let s=(v==null?'':String(v)); if(/[";\n\r]/.test(s)) s='"'+s.replace(/"/g,'""')+'"'; return s; };
+  const linhas=lst.map(r=>[
+    r.data_ficha?new Date(r.data_ficha).toLocaleDateString('pt-BR'):'', r.prefixo, r.placa, r.fonte, r.tipo,
+    r.combustivel, r.litros, r.valor_total, r.km_rodados, r.convenio, r.doador,
+    r.vai_siad?'Sim':'Não', r.siad_lancado?'Sim':'Não', r.motorista_nome, r.gp_responsavel
+  ].map(cell).join(';'));
+  const csv='﻿'+[cols.map(cell).join(';')].concat(linhas).join('\r\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`Abastecimento_${mesNome}_${ano}.csv`; document.body.appendChild(a); a.click(); a.remove();
+  toast('Arquivo CSV gerado (abre no Excel).');
+}
+</script>
+</body>
+</html>

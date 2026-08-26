@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Acidentes de Viatura — 3ª Cia PM MAmb</title>
+<link rel="stylesheet" href="styles/global.css">
+<script src="auth.js"></script>
+<script src="topnav.js" data-ativo="p4"></script>
+<script src="secnav.js" data-secao="p4"></script>
+<style>
+  body{padding-bottom:60px}
+  .rd-shell{display:flex;align-items:flex-start}
+  .rd-conteudo{flex:1;min-width:0}
+  @media(max-width:760px){.rd-shell{flex-direction:column;align-items:stretch}}
+  .wrap{max-width:1180px;margin:20px auto 0;padding:0 20px}
+  .pagehead h1{font-size:20px;font-weight:800}
+  .pagehead p{font-size:12.5px;color:var(--text-muted);margin-top:5px;line-height:1.5}
+  .tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:16px 0 10px}
+  .tools select{background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:8px 11px;color:var(--text-white);font-size:12.5px;outline:none}
+  .totais{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;font-size:12px}
+  .totais span{background:var(--bg-input);border:1px solid var(--border);border-radius:20px;padding:5px 12px}
+  .totais b{color:var(--danger)}
+  .tablewrap{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;overflow-x:auto}
+  table{width:100%;border-collapse:collapse;min-width:900px}
+  th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-hint);font-weight:700;padding:11px 14px;border-bottom:1px solid var(--border);background:var(--bg-dark)}
+  td{padding:11px 14px;border-bottom:1px solid var(--border);font-size:12.5px;vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  .sub{color:var(--text-hint)}
+  .pill{font-size:9px;font-weight:800;letter-spacing:.3px;padding:2px 8px;border-radius:20px}
+  .pill.sim{background:var(--danger-bg);color:#ef9a9a;border:1px solid rgba(239,83,80,.4)}
+  .pill.nao{background:var(--bg-input);color:var(--text-hint);border:1px solid var(--border)}
+  .empty{padding:40px;text-align:center;color:var(--text-hint)}
+  .noperm{padding:60px 20px;text-align:center;color:var(--text-muted)}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111;border:1px solid var(--border);color:var(--text-white);padding:12px 20px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:300}
+  .toast.show{opacity:1}
+</style>
+<script src="pwa.js" defer></script>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <div class="header-shields"><img src="assets/escudo-pmmg.png" alt="PMMG" onerror="this.style.display='none'"><img src="assets/escudo-cpe.png" alt="CPE" onerror="this.style.display='none'"><img src="assets/brasao-bpmmamb.png" alt="BPM MAMB" onerror="this.style.display='none'"></div><div class="header-div"></div>
+    <div class="header-title">
+      <div class="header-kicker">CPE · BPM MAmb · 3ª Cia PM MAmb</div>
+      <h1>PAINEL DE GESTÃO OPERACIONAL</h1>
+      <p>Acidentes de Viatura</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <div id="user-info" style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);padding:5px 10px;border:1px solid var(--border);border-radius:5px">
+      <span id="user-nome">—</span></div>
+    <button class="btn-outline" onclick="localStorage.removeItem('poe_sessao_v2');sessionStorage.removeItem('poe_sessao_v2');location.href='index.html'">Sair</button>
+  </div>
+</header>
+
+<div class="rd-shell">
+  <div class="rd-conteudo">
+    <div class="wrap" id="wrap">
+      <div class="pagehead">
+        <h1>⚠️ Acidentes de Viatura</h1>
+        <p>Acidentes registrados nas fichas de movimentação, por mês. Para controle e acompanhamento. Filtre e exporte para Excel. Restrito ao Aux P4 e ao Admin Geral.</p>
+      </div>
+      <div class="tools">
+        <select id="ac-mes" onchange="acCarregar()"></select>
+        <select id="ac-ano" onchange="acCarregar()"></select>
+        <button class="btn-gold" style="padding:8px 14px;font-size:12px;margin-left:auto" onclick="acExportar()">⬇ Exportar Excel</button>
+      </div>
+      <div class="totais" id="ac-totais"></div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Data</th><th>VTR</th><th>REDS</th><th>Odômetro</th><th>Vítimas</th><th>Perícia</th><th>Guincho</th><th>Motorista</th><th>Grupamento</th></tr></thead>
+        <tbody id="ac-tb"><tr><td colspan="9" class="empty">Carregando…</td></tr></tbody>
+      </table></div>
+    </div>
+    <div class="noperm" id="noperm" style="display:none">Acesso restrito ao setor responsável (Aux P4) e ao Admin Geral.</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const S = (typeof sessaoLer==='function') ? sessaoLer() : null;
+if(!S){ location.href='index.html'; }
+const API=(typeof SB_AUTH_URL!=='undefined')?SB_AUTH_URL:'';
+const AKEY=(typeof SB_AUTH_KEY!=='undefined')?SB_AUTH_KEY:'';
+const H={apikey:AKEY,Authorization:'Bearer '+AKEY,'Content-Type':'application/json'};
+const podeGerir=(S&&(S.nivel_acesso==='admin_geral'||(S.funcao||'').toLowerCase().startsWith('aux p4')));
+async function rpc(fn,body){ const r=await fetch(`${API}/rest/v1/rpc/${fn}`,{method:'POST',headers:H,body:JSON.stringify(body||{})}); const t=await r.text(); let j; try{j=t?JSON.parse(t):null}catch{j=t} if(!r.ok) throw new Error((j&&j.message)||('HTTP '+r.status)); return j; }
+function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+const _re=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+let AC=[];
+const AC_MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+(function init(){
+  if(S) document.getElementById('user-nome').textContent = S.nome_guerra || S.nome_completo || S.nome || '—';
+  if(!podeGerir){ document.getElementById('wrap').style.display='none'; document.getElementById('noperm').style.display='block'; return; }
+  const hoje=new Date();
+  const selM=document.getElementById('ac-mes'), selA=document.getElementById('ac-ano');
+  selM.innerHTML='<option value="">Todos os meses</option>'+AC_MESES.map((m,i)=>`<option value="${i+1}">${m}</option>`).join('');
+  selM.value=hoje.getMonth()+1;
+  const anos=[]; for(let a=hoje.getFullYear();a>=hoje.getFullYear()-2;a--) anos.push(a);
+  selA.innerHTML=anos.map(a=>`<option value="${a}">${a}</option>`).join('');
+  selA.value=hoje.getFullYear();
+  acCarregar();
+})();
+
+function _fmtDH(s){ if(!s) return '—'; const d=new Date(s); return isNaN(d)?_re(s):d.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}); }
+async function acCarregar(){
+  const ano=+document.getElementById('ac-ano').value;
+  const mesRaw=document.getElementById('ac-mes').value;
+  const mes = mesRaw==='' ? null : +mesRaw;
+  const tb=document.getElementById('ac-tb');
+  tb.innerHTML='<tr><td colspan="9" class="empty">Carregando…</td></tr>';
+  try{
+    AC = await rpc('frota_acidentes_listar',{p_token:S.token,p_ano:ano,p_mes:mes}) || [];
+    if(!Array.isArray(AC)) AC=[];
+    acRenderTotais(); acRender();
+  }catch(e){ tb.innerHTML=`<tr><td colspan="9" class="empty">Erro: ${_re(e.message)}</td></tr>`; }
+}
+function acRenderTotais(){
+  const box=document.getElementById('ac-totais');
+  const comVitima=AC.filter(a=>/sim/i.test(a.vitimas||'')).length;
+  box.innerHTML = `<span><b>${AC.length}</b> acidente(s) no período</span><span><b>${comVitima}</b> com vítima(s)</span>`;
+}
+function _simnao(v){ return /sim/i.test(v||'') ? '<span class="pill sim">Sim</span>' : (v?`<span class="pill nao">${_re(v)}</span>`:'—'); }
+function acRender(){
+  const tb=document.getElementById('ac-tb');
+  if(!AC.length){ tb.innerHTML='<tr><td colspan="9" class="empty">Nenhum acidente registrado no período.</td></tr>'; return; }
+  tb.innerHTML=AC.map(a=>{
+    const dt=a.data_ficha?new Date(a.data_ficha).toLocaleDateString('pt-BR'):'—';
+    const odo=a.odometro?(+String(a.odometro).replace(/\D/g,'')||a.odometro).toLocaleString?.('pt-BR'):null;
+    return `<tr>
+      <td>${dt}${a.data_hora?`<div class="sub">${_fmtDH(a.data_hora)}</div>`:''}</td>
+      <td><b>${_re(a.prefixo||'—')}</b><div class="sub">${_re(a.placa||'')}</div></td>
+      <td>${_re(a.reds||'—')}</td>
+      <td>${_re(a.odometro||'—')}</td>
+      <td>${_simnao(a.vitimas)}</td>
+      <td>${_simnao(a.pericia)}</td>
+      <td>${_simnao(a.guincho)}</td>
+      <td>${_re(a.motorista_nome||'—')}<div class="sub">${_re(a.motorista_matricula||'')}</div></td>
+      <td>${_re((a.gp_responsavel||'—'))}</td>
+    </tr>`;
+  }).join('');
+}
+function acExportar(){
+  if(!AC.length){ toast('Nada para exportar.'); return; }
+  const mesRaw=document.getElementById('ac-mes').value;
+  const mesNome=mesRaw===''?'Ano-todo':AC_MESES[(+mesRaw)-1], ano=document.getElementById('ac-ano').value;
+  const cell=v=>{ let s=(v==null?'':String(v)); if(/[";\n\r]/.test(s)) s='"'+s.replace(/"/g,'""')+'"'; return s; };
+  const cols=['Data','VTR','Placa','REDS','Odômetro','Data/hora acidente','Vítimas','Perícia','CPU','Bafômetro','Guincho','Mesmo motorista','Responsável definido','Km rodados','Motorista','Matrícula','Grupamento'];
+  const linhas=AC.map(a=>[
+    a.data_ficha?new Date(a.data_ficha).toLocaleDateString('pt-BR'):'', a.prefixo, a.placa, a.reds, a.odometro, a.data_hora,
+    a.vitimas, a.pericia, a.cpu, a.bafometro, a.guincho, a.mesmo_motorista, a.responsavel,
+    a.km_rodados, a.motorista_nome, a.motorista_matricula, a.gp_responsavel
+  ].map(cell).join(';'));
+  const csv='﻿'+[cols.map(cell).join(';')].concat(linhas).join('\r\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`Acidentes_${mesNome}_${ano}.csv`; document.body.appendChild(a); a.click(); a.remove();
+  toast('Arquivo CSV gerado (abre no Excel).');
+}
+</script>
+</body>
+</html>
