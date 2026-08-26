@@ -490,7 +490,7 @@ let VMAP = {};       // prefixo -> viatura
   const sel=document.getElementById('sel-prefixo');
   VIATURAS.forEach(v=>{ VMAP[v.prefixo]=v; const o=document.createElement('option'); o.value=v.prefixo; o.textContent=`${v.prefixo} — ${v.marca_modelo||''}`.trim(); sel.appendChild(o); });
   if (!VIATURAS.length){ sel.innerHTML='<option value="">(cadastro de viaturas vazio — rode o SQL/sync)</option>'; }
-  carregarPendencias().then(()=>preencherFichaDoTTA());
+  carregarPendencias().then(teve => { if(!teve) preencherFichaDoTTA(); });
   carregarMilitares();
   carregarCfgAbast();
   carregarListasAbast();
@@ -549,25 +549,34 @@ async function carregarMilitares(){
 // Pré-preenche a ficha com a EQUIPE do TTA de HOJE do motorista logado: viatura
 // (+placa via cadastro), municípios e Comandante da equipe (supervisão). Tudo fica
 // editável pelo motorista. Best-effort — se não houver TTA hoje, não faz nada.
-async function preencherFichaDoTTA(){
+async function preencherFichaDoTTA(dataISO){
   try{
     if(!S || !S.token) return;
+    const temData = dataISO && /^\d{4}-\d{2}-\d{2}$/.test(dataISO);
     let ch=null;
-    try{ ch = await rpc('tta_chamada_do_militar_hoje', { p_token: S.token }); }catch(e){ return; }
+    try{
+      ch = temData
+        ? await rpc('tta_chamada_do_militar_na_data', { p_token: S.token, p_data: dataISO })
+        : await rpc('tta_chamada_do_militar_hoje',    { p_token: S.token });
+    }catch(e){ return; }
     if(!ch || !ch.id) return;
     const soDig=s=>(s||'').toString().replace(/\D/g,'');
     const meu=soDig(S.matricula);
     const equipes=Array.isArray(ch.equipes)?ch.equipes:[];
     const naEquipe=e=>[e.comandante&&e.comandante.matricula, e.motorista&&e.motorista.matricula]
       .concat((e.patrulheiros||[]).map(p=>p.matricula)).filter(Boolean).map(soDig).includes(meu);
-    // prioriza a equipe onde o logado é o MOTORISTA; senão a 1ª que o contém
-    const eq = equipes.find(e=>e.motorista && soDig(e.motorista.matricula)===meu) || equipes.find(naEquipe);
+    const selEl=document.getElementById('sel-prefixo');
+    const selPref=(selEl&&selEl.value||'').trim();
+    // prioriza a equipe onde o logado é MOTORISTA (e da viatura já selecionada);
+    // depois qualquer equipe onde ele é motorista; por fim, a 1ª que o contém.
+    const eq = equipes.find(e=>e.motorista && soDig(e.motorista.matricula)===meu && (!selPref || e.prefixo_viatura===selPref))
+            || equipes.find(e=>e.motorista && soDig(e.motorista.matricula)===meu)
+            || equipes.find(naEquipe);
     if(!eq) return;
     // Viatura + placa (a placa vem do cadastro via onVtr)
-    const sel=document.getElementById('sel-prefixo');
-    if(sel && !sel.value && eq.prefixo_viatura){
-      if(![...sel.options].some(o=>o.value===eq.prefixo_viatura)){ const o=document.createElement('option'); o.value=eq.prefixo_viatura; o.textContent=eq.prefixo_viatura; sel.appendChild(o); }
-      sel.value=eq.prefixo_viatura; if(typeof onVtr==='function') onVtr();
+    if(selEl && !selEl.value && eq.prefixo_viatura){
+      if(![...selEl.options].some(o=>o.value===eq.prefixo_viatura)){ const o=document.createElement('option'); o.value=eq.prefixo_viatura; o.textContent=eq.prefixo_viatura; selEl.appendChild(o); }
+      selEl.value=eq.prefixo_viatura; if(typeof onVtr==='function') onVtr();
     }
     // Onde a viatura será utilizada = municípios da equipe no TTA
     const locEl=document.querySelector('[data-k="local_utilizacao"]');
@@ -575,6 +584,16 @@ async function preencherFichaDoTTA(){
     // Comandante da equipe (supervisão) = comandante da equipe no TTA
     const cmtEl=document.querySelector('[data-k="comandante_equipe"]');
     if(cmtEl && !cmtEl.value && eq.comandante){ const c=eq.comandante; cmtEl.value=[c.pg,c.nome].filter(Boolean).join(' ').trim() || (c.matricula||''); }
+    // Início/Término = dia do serviço + horário do turno do TTA (sobrepõe o "agora").
+    let dataBase = temData ? dataISO : null;
+    if(!dataBase && ch.data_hora_chamada){ const d=new Date(ch.data_hora_chamada); dataBase=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10); }
+    if(dataBase){
+      const iniEl=document.getElementById('inicio');
+      const fimEl=document.getElementById('termino');
+      if(iniEl && ch.inicio_turno) iniEl.value=`${dataBase}T${String(ch.inicio_turno).slice(0,5)}`;
+      if(fimEl && ch.final_turno)  fimEl.value =`${dataBase}T${String(ch.final_turno).slice(0,5)}`;
+      if(typeof syncDatas==='function') syncDatas();
+    }
   }catch(e){ /* silencioso */ }
 }
 
@@ -582,28 +601,32 @@ async function preencherFichaDoTTA(){
 async function carregarPendencias(){
   try{
     const mat=(S.matricula||'').replace(/\D/g,'');
-    if(!mat) return;
-    const r=await fetch(`${API}/rest/v1/mov_pendencias?select=prefixo,motorista_nome,solicitado_por_nome&atendida=eq.false&motorista_matricula=eq.${mat}&order=criado_em.desc`,{headers:H});
-    if(!r.ok) return;
-    const lista=await r.json(); if(!Array.isArray(lista)||!lista.length) return;
+    if(!mat) return false;
+    const r=await fetch(`${API}/rest/v1/mov_pendencias?select=prefixo,dia,motorista_nome,solicitado_por_nome&atendida=eq.false&motorista_matricula=eq.${mat}&order=dia.desc`,{headers:H});
+    if(!r.ok) return false;
+    const lista=await r.json(); if(!Array.isArray(lista)||!lista.length) return false;
     const box=document.getElementById('pend-banner');
+    const _diaBR=s=>{ const d=new Date(String(s)+'T00:00:00'); return isNaN(d.getTime())?'':d.toLocaleDateString('pt-BR'); };
     const cab = lista.length>1
       ? '<h4>⚠️ Você tem '+lista.length+' ficha(s) pendente(s) — a 1ª já veio selecionada</h4>'
       : '<h4>⚠️ Ficha pendente — viatura já selecionada abaixo</h4>';
     box.innerHTML=cab+
-      lista.map(p=>`<div class="pitem"><span>VTR <b>${p.prefixo}</b>${p.solicitado_por_nome?` · solicitada por ${p.solicitado_por_nome}`:''}</span>`+
-        `<button class="pbtn" onclick="preencherPendencia('${p.prefixo}')">Selecionar</button></div>`).join('');
+      lista.map(p=>{ const dia=_diaBR(p.dia); return `<div class="pitem"><span>VTR <b>${p.prefixo}</b>${dia?` · ${dia}`:''}${p.solicitado_por_nome?` · solicitada por ${p.solicitado_por_nome}`:''}</span>`+
+        `<button class="pbtn" onclick="preencherPendencia('${p.prefixo}', true, '${p.dia||''}')">Selecionar</button></div>`; }).join('');
     box.classList.add('show');
-    // pré-preenche a viatura da 1ª pendência (sem rolar a tela)
-    preencherPendencia(lista[0].prefixo, false);
-  }catch(e){ /* silencioso */ }
+    // pré-preenche a viatura + dados do TTA da 1ª pendência (sem rolar a tela)
+    preencherPendencia(lista[0].prefixo, false, lista[0].dia||'');
+    return true;
+  }catch(e){ /* silencioso */ return false; }
 }
-function preencherPendencia(prefixo, scroll){
+function preencherPendencia(prefixo, scroll, dia){
   const sel=document.getElementById('sel-prefixo'); sel.value=prefixo;
   if(sel.value!==prefixo){ // prefixo não está na lista carregada
     const o=document.createElement('option'); o.value=prefixo; o.textContent=prefixo; sel.appendChild(o); sel.value=prefixo;
   }
   onVtr();
+  // Pré-preenche municípios/comandante/turno pela chamada do TTA daquele dia.
+  preencherFichaDoTTA(dia || undefined);
   if(scroll!==false) document.getElementById('base').scrollIntoView({behavior:'smooth',block:'start'});
 }
 
