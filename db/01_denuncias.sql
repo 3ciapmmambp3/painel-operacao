@@ -71,7 +71,8 @@ create table if not exists public.denuncias (
 
   -- workflow / atendimento
   situacao      text not null default 'PENDENTE'
-                  check (situacao in ('PENDENTE','EM ANDAMENTO','CONCLUIDA','RESPONDIDA')),
+                  check (situacao in ('PENDENTE','EM ANDAMENTO','CONCLUIDA','RESPONDIDA','INATIVADA')),
+  situacao_anterior text,   -- situacao antes de inativar (restaurada ao reativar) — ver db/39
   -- dados do atendimento (espelham o relatório de serviço)
   data_resposta           date,   -- data da fiscalização / atendimento
   numero_reds             text,   -- Nº REDS (BO/BOS/RAT)
@@ -107,6 +108,7 @@ alter table public.denuncias add column if not exists inativado_por_matricula te
 alter table public.denuncias add column if not exists inativado_por_nome      text;
 alter table public.denuncias add column if not exists motivo_inativacao       text;
 alter table public.denuncias add column if not exists inativado_em            timestamptz;
+alter table public.denuncias add column if not exists situacao_anterior       text;
 
 create unique index if not exists uq_denuncias_num_tipo_ano on public.denuncias (ano, tipo, numero_seq);
 create index if not exists idx_denuncias_gp        on public.denuncias (gp_responsavel);

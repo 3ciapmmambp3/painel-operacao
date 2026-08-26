@@ -69,6 +69,8 @@ begin
 
   update public.denuncias set
     ativo = false,
+    situacao_anterior = case when situacao <> 'INATIVADA' then situacao else situacao_anterior end,
+    situacao = 'INATIVADA',
     motivo_inativacao = upper(trim(p_motivo)),
     inativado_por_matricula = v_me.matricula,
     inativado_por_nome = trim(both ' ' from
@@ -94,7 +96,10 @@ begin
   end if;
 
   update public.denuncias set
-    ativo = true, motivo_inativacao = null,
+    ativo = true,
+    situacao = coalesce(situacao_anterior, 'PENDENTE'),
+    situacao_anterior = null,
+    motivo_inativacao = null,
     inativado_por_matricula = null, inativado_por_nome = null, inativado_em = null
   where id = p_id
   returning * into v_row;
