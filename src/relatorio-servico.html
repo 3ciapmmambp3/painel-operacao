@@ -1801,9 +1801,17 @@ async function fetchReferenceData(){
     Object.values(panelCache).forEach(node => populateSelectsIn(node));
     searchifySelectsIn(document);
     Object.values(panelCache).forEach(node => searchifySelectsIn(node));
+    // Entrada por pendência (Meu Dia): ?data fixa a Data do serviço; ?chamada
+    // pré-preenche a equipe daquele DIA específico (não só hoje).
+    const _params = new URLSearchParams(location.search);
+    const _dataParam = _params.get('data');
+    if (_dataParam && /^\d{4}-\d{2}-\d{2}$/.test(_dataParam)){
+      const _df = document.querySelector('[name="data"]');
+      if (_df){ _df.value = _dataParam; _df.dispatchEvent(new Event('change', { bubbles: true })); }
+    }
     // Rascunho não enviado tem prioridade sobre o prefill do TTA (não sobrepõe).
     const _restaurou = (typeof window.__rsRestaurarRascunho === 'function') && window.__rsRestaurarRascunho();
-    if (!_restaurou) preencherEquipeDoTTA();
+    if (!_restaurou) preencherEquipeDoTTA(_params.get('chamada') || '');
     renderGrid();   // reflete o estado dos quesitos (ex.: card Produtividade sem indicadores ativos)
   }catch(err){
     console.error('Erro ao buscar dados de referência da planilha:', err);
@@ -1818,13 +1826,17 @@ async function fetchReferenceData(){
 // o valor não bate com nenhuma opção). Best-effort — se não achar a chamada
 // de hoje, ou não achar alguém na lista de referência, não faz nada; o
 // comandante preenche manualmente como sempre.
-async function preencherEquipeDoTTA(){
+async function preencherEquipeDoTTA(chamadaId){
   try{
     const S = (typeof getSessaoAtual === 'function') ? getSessaoAtual() : null;
     if (!S || !S.token || typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
     const H = { apikey: SB_AUTH_KEY, Authorization: `Bearer ${SB_AUTH_KEY}`, 'Content-Type': 'application/json' };
-    const r = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/tta_chamada_do_militar_hoje`, {
-      method: 'POST', headers: H, body: JSON.stringify({ p_token: S.token })
+    // Com chamadaId (relatório pendente de um DIA específico) busca aquela chamada;
+    // senão, a chamada de HOJE que contém o militar.
+    const rpc  = chamadaId ? 'tta_chamada_por_id' : 'tta_chamada_do_militar_hoje';
+    const body = chamadaId ? { p_token: S.token, p_id: chamadaId } : { p_token: S.token };
+    const r = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/${rpc}`, {
+      method: 'POST', headers: H, body: JSON.stringify(body)
     });
     if (!r.ok) return;
     const chamada = await r.json();
@@ -2333,7 +2345,7 @@ function fieldInputHTML(field, idx){
         <label>${field.label}</label>
         <div style="display:flex;gap:8px;">
           <input type="text" placeholder="Número" data-numeric="1" data-label="${field.label}"${requiredAttr} style="flex:2;">
-          <input type="text" placeholder="Ano" data-numeric="1" maxlength="4" value="${anoAtual}" style="flex:1;max-width:90px;">
+          <input type="text" placeholder="Ano" data-numeric="1" data-nocount="1" maxlength="4" value="${anoAtual}" style="flex:1;max-width:90px;">
         </div>
       </div>`;
   }
@@ -2502,7 +2514,14 @@ function fieldHasValue(el){
   return el.value.trim() !== '';
 }
 function entryIsFilled(entry){
-  return Array.from(entry.querySelectorAll('input, select, textarea')).some(fieldHasValue);
+  // Ignora campos que já nascem com valor-padrão (data-nocount, ex.: o "Ano" do
+  // Nº do Auto de Infração) e campos ocultos/desabilitados — senão a entrada
+  // "conta" mesmo sem o militar ter lançado nada (count "1"/card escurecido).
+  return Array.from(entry.querySelectorAll('input, select, textarea')).some(el => {
+    if (el.type === 'hidden' || el.disabled) return false;
+    if (el.dataset && el.dataset.nocount === '1') return false;
+    return fieldHasValue(el);
+  });
 }
 function countForCategory(id){
   const node = panelCache[id];

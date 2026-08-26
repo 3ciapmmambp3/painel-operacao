@@ -352,6 +352,25 @@ async function carregarAvisosMeuDia(){
         }
       }
     }
+    /* 1.c) Relatório(s) de serviço pendente(s) — por EQUIPE do TTA (some quando
+       QUALQUER integrante lança o relatório daquele dia). Cada dia vira um aviso;
+       o link abre o relatório já pré-preenchido com a equipe daquele dia. */
+    if(mat){
+      try{
+        const rp=await fetch(`${SB_AUTH_URL}/rest/v1/rpc/relatorios_pendentes_do_militar`,{method:'POST',headers:{...H,'Content-Type':'application/json'},body:JSON.stringify({p_token:sessao.token})});
+        if(rp.ok){ const pendR=await rp.json();
+          if(Array.isArray(pendR) && pendR.length){
+            const _diaBR=s=>{ const d=new Date(String(s)+'T00:00:00'); return isNaN(d.getTime())?String(s):d.toLocaleDateString('pt-BR'); };
+            pendR.slice(0,6).forEach(p=>{
+              const extra=[p.operacao?('Op.: '+_esc(p.operacao)):'', p.prefixo_viatura?('VTR '+_esc(p.prefixo_viatura)):''].filter(Boolean).join(' · ');
+              const url='relatorio-servico.html?data='+encodeURIComponent(p.dia)+(p.chamada_id?('&chamada='+encodeURIComponent(p.chamada_id)):'');
+              avisos.push({ic:'📝',txt:`<b>Relatório de serviço pendente</b> do dia ${_diaBR(p.dia)}${extra?(' — '+extra):''}`,lk:url,lkTxt:'Preencher →'});
+            });
+            if(pendR.length>6) avisos.push({ic:'📝',txt:`E mais <b>${pendR.length-6}</b> relatório(s) de serviço pendente(s).`,lk:'meus-relatorios.html',lkTxt:'Ver →'});
+          }
+        }
+      }catch(e){ /* silencioso */ }
+    }
     /* 1.b) Revisão de viatura próxima/vencida.
        - Gestor de frota (Aux P4 / Admin Geral): vê TODAS.
        - Demais militares: veem só as viaturas do SEU grupamento/município (a viatura lotada onde servem). */
