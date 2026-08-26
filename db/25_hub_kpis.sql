@@ -62,7 +62,7 @@ begin
   -- P4: fichas de movimentação lançadas hoje
   select count(*) into v_fichas
     from public.mov_viaturas
-   where (created_at at time zone 'America/Sao_Paulo')::date = v_hoje;
+   where (criado_em at time zone 'America/Sao_Paulo')::date = v_hoje;
 
   -- Meu Dia: minhas fichas de viatura pendentes
   select count(*) into v_minhas_pend
