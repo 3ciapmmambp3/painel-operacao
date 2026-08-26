@@ -1801,7 +1801,9 @@ async function fetchReferenceData(){
     Object.values(panelCache).forEach(node => populateSelectsIn(node));
     searchifySelectsIn(document);
     Object.values(panelCache).forEach(node => searchifySelectsIn(node));
-    preencherEquipeDoTTA();
+    // Rascunho não enviado tem prioridade sobre o prefill do TTA (não sobrepõe).
+    const _restaurou = (typeof window.__rsRestaurarRascunho === 'function') && window.__rsRestaurarRascunho();
+    if (!_restaurou) preencherEquipeDoTTA();
     renderGrid();   // reflete o estado dos quesitos (ex.: card Produtividade sem indicadores ativos)
   }catch(err){
     console.error('Erro ao buscar dados de referência da planilha:', err);
@@ -3728,6 +3730,7 @@ hiddenIframeRelatorio.addEventListener('load', async () => {
   // Best-effort: se falhar, não impede o fluxo do relatório.
   await marcarDemandasAtendidas(ultimoPayloadEnviado);
   ultimoPayloadEnviado = null;
+  try{ if (typeof window.__rsLimparRascunho === 'function') window.__rsLimparRascunho(); }catch(e){}
   alert(ehEdicao ? 'Relatório atualizado com sucesso!' : 'Relatório enviado com sucesso!');
   window.location.href = 'meus-relatorios.html';
 });
@@ -3895,18 +3898,45 @@ function getTodasViaturasInformadas(){
   return [...set];
 }
 
-// Verifica no Supabase se a viatura tem Ficha de Movimentação lançada hoje.
+// Range UTC [início, fim] do dia CIVIL local informado (YYYY-MM-DD). Usa o fuso
+// do próprio navegador (militares em horário de Brasília) p/ casar com timestamps
+// (timestamptz em UTC). Sem hardcode de offset. Sem milissegundos (evita o "." de
+// mais no parser do PostgREST dentro do or=()).
+function _diaRangeUTC(dataISO){
+  let base = (dataISO && /^\d{4}-\d{2}-\d{2}$/.test(dataISO)) ? dataISO : null;
+  if (!base){ const d=new Date(); base = new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10); }
+  const semMs = dt => dt.toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const ini = new Date(base + 'T00:00:00');       // interpretado no fuso LOCAL
+  const fim = new Date(base + 'T23:59:59');
+  return { gte: semMs(ini), lte: semMs(fim) };
+}
+
+// Filtro PostgREST: viatura + a ficha cai no dia do relatório PELA DATA DA
+// MOVIMENTAÇÃO (`inicio`) OU, na falta dela, pela data de lançamento (`criado_em`).
+// Assim não trava quando a ficha é lançada no dia da movimentação e o relatório é
+// finalizado em outro dia (nem vice-versa).
+function _fichaNoDiaFilter(prefixo, rg){
+  const orExpr = `or=(and(inicio.gte.${rg.gte},inicio.lte.${rg.lte}),and(criado_em.gte.${rg.gte},criado_em.lte.${rg.lte}))`;
+  return `&prefixo=eq.${encodeURIComponent(prefixo)}&${orExpr}`;
+}
+
+// Data (YYYY-MM-DD) do próprio relatório; cai p/ hoje se ainda não preenchida.
+function _dataDoRelatorio(){
+  try{ const v = (typeof getFieldValue==='function') ? getFieldValue('data') : ''; if (v) return v; }catch(e){}
+  const d=new Date(); return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+}
+
+// Verifica no Supabase se a viatura tem Ficha de Movimentação lançada NA DATA do
+// relatório (não no relógio de hoje — assim relatórios de dias anteriores fecham).
 // Retorna true/false, ou null se não deu p/ verificar (fallback: não bloqueia).
-async function viaturaTemMovimentacaoHoje(prefixo){
+async function viaturaTemMovimentacaoHoje(prefixo, dataISO){
   try{
     if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return null;
     if (!prefixo) return null;
     const H = { apikey: SB_AUTH_KEY, Authorization: `Bearer ${SB_AUTH_KEY}` };
-    const d = new Date();
-    const dia = new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+    const rg = _diaRangeUTC(dataISO || _dataDoRelatorio());
     const url = `${SB_AUTH_URL}/rest/v1/mov_viaturas?select=id&ativo=eq.true`
-      + `&prefixo=eq.${encodeURIComponent(prefixo)}`
-      + `&criado_em=gte.${dia}T00:00:00&limit=1`;
+      + _fichaNoDiaFilter(prefixo, rg) + `&limit=1`;
     const r = await fetch(url, { headers: H });
     if (!r.ok) return null;                 // tabela ausente/erro → fallback (não bloqueia)
     const rows = await r.json();
@@ -3914,24 +3944,120 @@ async function viaturaTemMovimentacaoHoje(prefixo){
   }catch(e){ return null; }
 }
 
-// Busca a Ficha de Movimentação lançada HOJE para a viatura (fluxo "movimentação
+// Busca a Ficha de Movimentação da viatura NA DATA do relatório (fluxo "movimentação
 // primeiro, relatório puxa"). Retorna {km_inicial,km_final,motorista_*} ou null.
-async function buscarMovimentacaoHoje(prefixo){
+async function buscarMovimentacaoHoje(prefixo, dataISO){
   try{
     if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return null;
     if (!prefixo) return null;
     const H = { apikey: SB_AUTH_KEY, Authorization: `Bearer ${SB_AUTH_KEY}` };
-    const d = new Date();
-    const dia = new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+    const rg = _diaRangeUTC(dataISO || _dataDoRelatorio());
     const url = `${SB_AUTH_URL}/rest/v1/mov_viaturas?select=km_inicial,km_final,motorista_nome,motorista_matricula`
-      + `&ativo=eq.true&prefixo=eq.${encodeURIComponent(prefixo)}`
-      + `&criado_em=gte.${dia}T00:00:00&order=criado_em.desc&limit=1`;
+      + `&ativo=eq.true` + _fichaNoDiaFilter(prefixo, rg) + `&order=criado_em.desc&limit=1`;
     const r = await fetch(url, { headers: H });
     if (!r.ok) return null;
     const rows = await r.json();
     return (Array.isArray(rows) && rows.length) ? rows[0] : null;
   }catch(e){ return null; }
 }
+
+/* ═══════════════ AUTO-SAVE LOCAL DO RASCUNHO ═══════════════
+   Salva o relatório em andamento no localStorage (a cada digitação + a cada 15s
+   + antes de sair). Se a aba fechar ou o PC desligar, ao reabrir o rascunho é
+   restaurado. Só no fluxo de CRIAÇÃO (edição/visualização de relatório existente
+   NÃO usa rascunho). Reaproveita collectAllData/preencherBloco1/preencherCategoria
+   (mesmo mecanismo do modo edição). Expira em 18h p/ não vazar entre dias. */
+(function(){
+  var params = new URLSearchParams(location.search);
+  if (params.get('ver') || params.get('editar') || params.get('id')) return; // não é criação
+  var sess = (typeof getSessaoAtual==='function') ? (getSessaoAtual()||{}) : {};
+  var mat  = ((sess.matricula||'').replace(/\D/g,'')) || 'anon';
+  var ctx  = params.get('data') || 'novo';
+  var KEY  = 'rs_rascunho_v1::' + mat + '::' + ctx;
+  var MAX_IDADE = 18*3600*1000;   // 18h
+  var restaurando = false, jaRestaurou = false, timer = null, houveInteracao = false;
+
+  function temConteudo(p){
+    if (!p) return false;
+    var b = p.bloco1 || {};
+    var algum = Object.keys(b).some(function(k){ return String(b[k]==null?'':b[k]).trim() !== ''; });
+    return algum || (Array.isArray(p.categorias) && p.categorias.length > 0);
+  }
+  function salvar(){
+    if (restaurando) return;
+    try{
+      if (typeof collectAllData !== 'function') return;
+      var p = collectAllData();
+      if (p && p.modo === 'atualizarRelatorio') return;  // segurança: não é criação
+      if (!temConteudo(p)){ try{ localStorage.removeItem(KEY); }catch(e){} return; }
+      p._ts = Date.now();
+      localStorage.setItem(KEY, JSON.stringify(p));
+    }catch(e){ /* indisponível/cheio: ignora */ }
+  }
+  // Só salva depois de uma interação REAL do usuário (evento isTrusted). Assim o
+  // prefill automático do TTA (eventos programáticos) não gera rascunho sozinho.
+  function agendar(e){
+    if (e && e.isTrusted) houveInteracao = true;
+    if (!houveInteracao || restaurando) return;
+    clearTimeout(timer); timer = setTimeout(salvar, 800);
+  }
+
+  var form = document.getElementById('relatorioForm');
+  if (form){
+    form.addEventListener('input',  agendar, true);
+    form.addEventListener('change', agendar, true);
+  }
+  setInterval(function(){ if (houveInteracao) salvar(); }, 15000);
+  window.addEventListener('beforeunload', function(){ if (houveInteracao) salvar(); });
+
+  window.__rsLimparRascunho = function(){ try{ localStorage.removeItem(KEY); }catch(e){} };
+
+  window.__rsRestaurarRascunho = function(){
+    if (jaRestaurou) return true;   // idempotente: já restaurado = "sim, restaurou"
+    var raw=''; try{ raw = localStorage.getItem(KEY) || ''; }catch(e){}
+    if (!raw) return false;
+    var p=null; try{ p = JSON.parse(raw); }catch(e){}
+    if (!temConteudo(p)){ window.__rsLimparRascunho(); return false; }
+    if (p._ts && (Date.now() - p._ts) > MAX_IDADE){ window.__rsLimparRascunho(); return false; }
+    jaRestaurou = true; restaurando = true;
+    try{
+      if (typeof preencherBloco1 === 'function') preencherBloco1(p.bloco1 || {});
+      if (typeof preencherCategoria === 'function') (p.categorias||[]).forEach(function(c){ preencherCategoria(c.categoria, c.itens||[]); });
+      if (typeof renderGrid === 'function') renderGrid();
+    }catch(e){ console.warn('[rascunho] restaurar', e); }
+    restaurando = false;
+    _faixaRestaurado(p._ts);
+    return true;
+  };
+
+  function _faixaRestaurado(ts){
+    var quando=''; try{ quando = ts ? new Date(ts).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : ''; }catch(e){}
+    var bar = document.createElement('div');
+    bar.style.cssText = 'background:#12351f;color:#8ee6a8;border:1px solid #1f7a3f;border-radius:8px;padding:9px 14px;margin:0 auto 14px;max-width:900px;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;';
+    var span = document.createElement('span');
+    span.textContent = '✓ Recuperamos seu rascunho não enviado' + (quando ? (' (salvo em ' + quando + ')') : '') + '. Continue de onde parou.';
+    var btn = document.createElement('button');
+    btn.type = 'button'; btn.textContent = 'Começar do zero';
+    btn.style.cssText = 'background:transparent;border:1px solid #1f7a3f;color:#8ee6a8;border-radius:6px;padding:5px 11px;font-size:12px;cursor:pointer;white-space:nowrap;';
+    btn.onclick = function(){ window.__rsLimparRascunho(); location.reload(); };
+    bar.appendChild(span); bar.appendChild(btn);
+    var f = document.getElementById('relatorioForm');
+    if (f && f.parentNode) f.parentNode.insertBefore(bar, f);
+  }
+
+  // Rede de segurança: se o carregamento de dados não chamar o restaurar, tenta no
+  // load — mas SÓ depois que os selects de referência estiverem populados (senão os
+  // valores de <select> do rascunho não "colam"). Para quando restaurar ou ~6s.
+  window.addEventListener('load', function(){
+    var tries = 0;
+    var iv = setInterval(function(){
+      tries++;
+      if (jaRestaurou || tries > 20){ clearInterval(iv); return; }
+      var sel = document.querySelector('[name="fracaoAtuacao"]');
+      if (sel && sel.options && sel.options.length > 1){ clearInterval(iv); window.__rsRestaurarRascunho(); }
+    }, 300);
+  });
+})();
 
 </script>
 
