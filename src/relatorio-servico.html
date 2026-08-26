@@ -619,8 +619,8 @@
 <header style="background:linear-gradient(180deg,#181818 0%,#0d0d0d 100%);padding:0 24px;height:64px;border-bottom:2px solid #9b8a5c;box-shadow:inset 0 -1px 0 rgba(155,138,92,.25),0 2px 10px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:space-between;font-family:'Inter',sans-serif;">
   <div style="display:flex;align-items:center;">
     <div style="display:flex;align-items:center;gap:11px;">
-      <img src="assets/escudo-pmmg.png" alt="PMMG" style="height:42px;display:block;" onerror="this.style.display='none'">
       <img src="assets/escudo-cpe.png" alt="CPE" style="height:42px;display:block;" onerror="this.style.display='none'">
+      <img src="assets/escudo-pmmg.png" alt="PMMG" style="height:42px;display:block;" onerror="this.style.display='none'">
       <img src="assets/brasao-bpmmamb.png" alt="BPM MAMB" style="height:42px;display:block;" onerror="this.style.display='none'">
     </div>
     <div style="width:1px;height:38px;margin:0 18px;background:linear-gradient(180deg,transparent,rgba(155,138,92,.32) 20%,rgba(155,138,92,.32) 80%,transparent);"></div>
@@ -1036,7 +1036,6 @@ const REPEATABLE_CONFIGS = {
         { label: 'Hodômetro Final', type: 'text', narrow: true, numeric: true },
         { label: 'KM Rodado', type: 'text', readonly: true, narrow: true, key: 'kmRodado', extraNote: 'calculado automaticamente' },
       ],
-      { label: 'Houve Abastecimento?', type: 'select', options: ['Sim', 'Não'] },
       [
         { label: 'Aeronaves Empregadas (inclusive drone)', type: 'text' },
         { label: 'Embarcações Empregadas', type: 'text' },
@@ -1871,9 +1870,19 @@ async function preencherEquipeDoTTA(chamadaId){
         if (campo && ref && !campo.value) campo.value = ref;
       });
 
-      // Viatura principal (só se o card Recursos Empregados já estiver na tela)
-      const vp = document.querySelector('[data-field="viaturaPrincipal"]');
-      if (vp && !vp.value && minha.prefixo_viatura){ vp.value = minha.prefixo_viatura; vp.dispatchEvent(new Event('change')); }
+      // Viatura principal → card Recursos Empregados. Cria o card se ainda não
+      // estiver na tela pra JÁ VINCULAR à Ficha de Movimentação (puxa o hodômetro)
+      // sem exigir que o militar abra o card manualmente.
+      let vpVinculada = false;
+      if (minha.prefixo_viatura && typeof getOrCreatePanelNode === 'function'){
+        const recNode = getOrCreatePanelNode('recursos');
+        const vp = recNode && recNode.querySelector('[data-field="viaturaPrincipal"]');
+        if (vp && !vp.value){
+          vp.value = minha.prefixo_viatura;
+          vp.dispatchEvent(new Event('change', { bubbles: true }));   // puxa hodômetro da ficha do dia
+          vpVinculada = true;
+        }
+      }
 
       // Equipes que APOIAM a minha → Equipe de Apoio do relatório
       equipes.filter(eq => eq.vinculo === ('apoio:' + minha.ordem)).forEach(eq => {
@@ -1889,9 +1898,10 @@ async function preencherEquipeDoTTA(chamadaId){
 
       const ops = [...new Set(equipes.filter(naEquipe).map(e=>e.operacao).filter(Boolean))];
       const lembr = [];
-      if (!vp && minha.prefixo_viatura) lembr.push('Viatura <b>'+minha.prefixo_viatura+'</b> (adicione "Recursos Empregados" para vincular)');
+      if (minha.prefixo_viatura && !vpVinculada) lembr.push('Viatura <b>'+minha.prefixo_viatura+'</b> (confira em "Recursos Empregados")');
       if (ops.length){ preencherOperacoesDoTTA(ops); lembr.push('Operação <b>'+ops.join(', ')+'</b> já lançada no card "Operação" (confira)'); }
-      mostrarAvisoTTA('Equipe preenchida a partir do TTA de hoje.' + (lembr.length ? ' Lembre: ' + lembr.join('; ') + '.' : ' Confira e complete.'));
+      let _diaTTA=''; try{ if(chamada.data_hora_chamada) _diaTTA = new Date(chamada.data_hora_chamada).toLocaleDateString('pt-BR'); }catch(e){}
+      mostrarAvisoTTA('Equipe preenchida a partir do TTA'+(_diaTTA?(' de '+_diaTTA):'')+'.' + (lembr.length ? ' Lembre: ' + lembr.join('; ') + '.' : ' Confira e complete.'));
       return;
     }
 

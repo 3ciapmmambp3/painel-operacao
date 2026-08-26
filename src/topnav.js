@@ -96,6 +96,7 @@
       {ic:'⚠️', t:'Acidentes', h:'acidentes.html'},
       {ic:'🔫', t:'SAT', h:'https://armamento.bpmmamb.com.br', ext:true},
       {ic:'📦', t:'CPELOG', h:'https://inventario.cpelog.com.br/login', ext:true},
+      {ic:'🧭', t:'SIGA CPE', h:'https://p4.bpmmamb.com.br', ext:true},
       {ic:'📦', t:'Material e Patrimônio', soon:true},
     ],
     p5: [
