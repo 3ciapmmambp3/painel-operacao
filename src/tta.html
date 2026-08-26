@@ -216,10 +216,6 @@
         <h3>Dados da chamada <span class="req">* obrigatório</span></h3>
         <div class="grid2">
           <div class="f"><label>Responsável pela Chamada</label><div class="readonly" id="comandanteAtual">—</div></div>
-          <div class="f">
-            <label>Grupamento de Atuação <span class="req">*</span> <span class="hint">— onde vai atuar hoje, pode ser diferente da lotação</span></label>
-            <select id="selGrupamento" onchange="onGrupamentoChange()"><option value="">Selecione…</option></select>
-          </div>
           <div class="f"><label>Início do turno <span class="req">*</span></label><input type="time" id="inicioTurno"></div>
           <div class="f"><label>Final do turno <span class="req">*</span></label><input type="time" id="fimTurno"></div>
           <div class="f"><label>Data e hora da chamada</label><div class="readonly" id="dataHoraAuto">—</div></div>
@@ -333,32 +329,44 @@ document.getElementById('dataHoraAuto').textContent =
 
 /* ── Grupamento de Atuação ────────────────────────────────────────── */
 async function carregarGrupos(){
-  const sel = document.getElementById('selGrupamento');
   try{
     const r = await fetch(`${API}/rest/v1/grupos?select=gp_responsavel,grupamento_completo&order=grupamento_completo`, { headers:H });
     if (!r.ok) throw new Error(`${r.status}`);
     GRUPOS = await r.json();
-    sel.innerHTML = '<option value="">Selecione…</option>' +
-      GRUPOS.map(g => `<option value="${g.gp_responsavel}">${g.grupamento_completo}</option>`).join('');
-  }catch(e){ sel.innerHTML = '<option value="">Erro ao carregar — recarregue a página</option>'; console.error('grupos:', e); }
+  }catch(e){ GRUPOS = []; console.error('grupos:', e); }
+  // Repovoa os selects de grupamento das equipes já criadas (mantém a seleção).
+  document.querySelectorAll('#equipesTTA .eq-grup').forEach(sel => {
+    const atual = sel.value;
+    sel.innerHTML = grupamentoOptionsHTML();
+    if (atual && [...sel.options].some(o=>o.value===atual)) sel.value = atual;
+  });
 }
-let MUNIS = [];   // municípios do grupamento selecionado (por equipe)
-async function onGrupamentoChange(){
-  const gpr = document.getElementById('selGrupamento').value;
-  MUNIS = [];
-  if (gpr){
+// Opções do select "Grupamento de Atuação" (por equipe), a partir de GRUPOS.
+function grupamentoOptionsHTML(){
+  return '<option value="">Selecione…</option>' +
+    (GRUPOS||[]).map(g => `<option value="${g.gp_responsavel}">${g.grupamento_completo}</option>`).join('');
+}
+// Municípios AGORA são por EQUIPE: cada equipe tem seu Grupamento de Atuação e seu
+// próprio checklist de municípios. Cache por gp_responsavel p/ não refazer o fetch.
+const MUNIS_CACHE = {};
+async function carregarMunisEquipe(div){
+  if (!div) return;
+  const box = div.querySelector('.eq-munis'); if (!box) return;
+  const gpr = ((div.querySelector('.eq-grup')||{}).value || '').trim();
+  if (!gpr){ box.innerHTML = '<div class="hint" style="padding:8px">Selecione o Grupamento de Atuação desta equipe para ver os municípios.</div>'; return; }
+  let munis = MUNIS_CACHE[gpr];
+  if (!munis){
+    box.innerHTML = '<div class="hint" style="padding:8px">Carregando municípios…</div>';
     try{
       const r = await fetch(`${API}/rest/v1/vw_municipio_grupamento?select=municipio&gp_responsavel=eq.${encodeURIComponent(gpr)}&order=municipio`, { headers:H });
       const lista = await r.json();
-      MUNIS = (Array.isArray(lista) ? lista : []).map(x => x.municipio);
-    }catch(e){ MUNIS = []; }
+      munis = (Array.isArray(lista) ? lista : []).map(x => x.municipio);
+      MUNIS_CACHE[gpr] = munis;
+    }catch(e){ munis = []; }
   }
-  // repovoa os checklists de município de cada equipe (limpa seleção anterior)
-  document.querySelectorAll('#equipesTTA .eq-munis').forEach(popularMunisEquipe);
-}
-function popularMunisEquipe(box){
-  if (!MUNIS.length){ box.innerHTML = '<div class="hint" style="padding:8px">Selecione o Grupamento de Atuação para ver os municípios.</div>'; return; }
-  box.innerHTML = MUNIS.map(m => `<label><input type="checkbox"> ${m}</label>`).join('');
+  box.innerHTML = munis.length
+    ? munis.map(m => `<label><input type="checkbox"> ${m}</label>`).join('')
+    : '<div class="hint" style="padding:8px">Nenhum município para este grupamento.</div>';
 }
 
 /* ── Militares presentes ──────────────────────────────────────────── */
@@ -479,6 +487,8 @@ function addEquipe(){
   div.innerHTML =
     '<div class="eqhead"><div class="eqtag"><span class="n"></span> Equipe</div>'+
       '<button type="button" class="eq-rm" onclick="removeEquipe(this)">remover</button></div>'+
+    '<div class="f full" style="margin-bottom:10px"><label>Grupamento de Atuação <span class="req">*</span> <span class="hint">— onde ESTA equipe vai atuar (pode diferir entre equipes)</span></label>'+
+      '<select class="eq-grup" onchange="carregarMunisEquipe(this.closest(\'.equipe\'))">'+grupamentoOptionsHTML()+'</select></div>'+
     '<div class="eq-g3">'+
       '<div class="f"><label>Comandante da equipe <span class="req">*</span></label><input class="eq-com" list="militares-dl" placeholder="nº ou nome…" oninput="mascaraPM(this);atualizarPresentesAuto()"></div>'+
       '<div class="f"><label>Viatura (prefixo) <span class="req">*</span></label><input class="eq-vtr" list="viaturas-dl" placeholder="ex: 36685" oninput="atualizarPend()"></div>'+
@@ -497,7 +507,7 @@ function addEquipe(){
       '<div class="checklist eq-munis" style="max-height:120px"></div></div>'+
     '<div class="eq-pend"></div>';
   document.getElementById('equipesTTA').appendChild(div);
-  popularMunisEquipe(div.querySelector('.eq-munis'));
+  carregarMunisEquipe(div);
   refreshEquipes();
 }
 function removeEquipe(btn){ btn.closest('.equipe').remove(); refreshEquipes(); atualizarPresentesAuto(); }
@@ -546,8 +556,12 @@ function coletarEquipes(){
     const pats = [...eq.querySelectorAll('.eq-pat')].map(s=>militarByInput(s.value)).filter(Boolean)
       .map(m=>({matricula:m.matricula,pg:m.posto_graduacao,nome:m.nome_completo}));
     const munis = [...eq.querySelectorAll('.eq-munis input:checked')].map(c=>c.parentElement.textContent.trim());
+    const gpr = ((eq.querySelector('.eq-grup')||{}).value||'').trim();
+    const gopt = (GRUPOS||[]).find(x=>x.gp_responsavel===gpr);
     return {
       ordem:i+1,
+      gp_responsavel: gpr || null,
+      grupamento_completo: gopt ? gopt.grupamento_completo : null,
       comandante: com?{matricula:com.matricula,pg:com.posto_graduacao,nome:com.nome_completo}:null,
       motorista:  mot?{matricula:mot.matricula,pg:mot.posto_graduacao,nome:mot.nome_completo}:null,
       prefixo_viatura:(eq.querySelector('.eq-vtr').value||'').trim(),
@@ -577,17 +591,20 @@ async function checarChamadaHoje(){
 
 async function corrigirChamadaHoje(){
   const c = CHAMADA_HOJE; if(!c) return;
-  // grupamento (repovoa os municípios) → turno → observações
-  document.getElementById('selGrupamento').value = c.gp_responsavel || '';
-  await onGrupamentoChange();
+  // turno → observações (o Grupamento de Atuação agora é POR EQUIPE, no loop abaixo)
   document.getElementById('inicioTurno').value = (c.inicio_turno||'').slice(0,5);
   document.getElementById('fimTurno').value    = (c.final_turno||'').slice(0,5);
   document.getElementById('observacoes').value = c.observacoes || '';
   // reconstrói as equipes
   const box = document.getElementById('equipesTTA'); box.innerHTML='';
-  (c.equipes||[]).forEach(ed=>{
+  for (const ed of (c.equipes||[])){
     addEquipe();
     const div = box.lastElementChild;
+    // grupamento da equipe → carrega SEUS municípios antes de marcar os salvos.
+    // Fallback: chamadas antigas sem grupamento por equipe herdam o da chamada.
+    const gsel = div.querySelector('.eq-grup');
+    if (gsel){ gsel.value = ed.gp_responsavel || c.gp_responsavel || ''; }
+    await carregarMunisEquipe(div);
     div.querySelector('.eq-com').value = milToInput(ed.comandante);
     div.querySelector('.eq-vtr').value = ed.prefixo_viatura || '';
     div.querySelector('.eq-mot').value = milToInput(ed.motorista);
@@ -602,7 +619,7 @@ async function corrigirChamadaHoje(){
     div.querySelectorAll('.eq-munis label').forEach(lb=>{
       if((ed.municipios||[]).includes(lb.textContent.trim())){ const cb=lb.querySelector('input'); if(cb) cb.checked=true; }
     });
-  });
+  }
   refreshEquipes();
   [...box.querySelectorAll('.equipe')].forEach((div,i)=>{
     const v=(c.equipes[i]||{}).vinculo; const s=div.querySelector('.eq-vinc');
@@ -613,27 +630,27 @@ async function corrigirChamadaHoje(){
   const btn = document.getElementById('btnRegistrar');
   btn.disabled=false; btn.textContent='💾 Salvar correção';
   document.getElementById('editHojeBanner').style.display='none';
-  document.getElementById('selGrupamento').scrollIntoView({behavior:'smooth',block:'center'});
+  document.getElementById('equipesTTA').scrollIntoView({behavior:'smooth',block:'center'});
   toast('Chamada de hoje carregada para correção.');
 }
 
 async function registrarChamada(){
-  const gpr = document.getElementById('selGrupamento').value;
-  const g = GRUPOS.find(x => x.gp_responsavel === gpr);
   const inicio = document.getElementById('inicioTurno').value;
   const fim = document.getElementById('fimTurno').value;
   const equipes = coletarEquipes();
 
-  if (!gpr) return toast('Selecione o Grupamento de Atuação.');
   if (!inicio || !fim) return toast('Informe início e fim do turno.');
   if (!equipes.length) return toast('Adicione ao menos uma equipe.');
   for (const e of equipes){
+    if (!e.gp_responsavel)      return toast(`Equipe ${e.ordem}: selecione o Grupamento de Atuação.`);
     if (!e.comandante)          return toast(`Equipe ${e.ordem}: informe o comandante.`);
     if (!e.prefixo_viatura)     return toast(`Equipe ${e.ordem}: informe a viatura.`);
     if (!e.motorista)           return toast(`Equipe ${e.ordem}: informe o motorista.`);
     if (!e.tipo_patrulha)       return toast(`Equipe ${e.ordem}: selecione o tipo de patrulha.`);
     if (!e.municipios.length)   return toast(`Equipe ${e.ordem}: marque ao menos um município.`);
   }
+  // Nível-chamada = grupamento da EQUIPE 1 (principal), p/ compat com consumidores.
+  const g = { gp_responsavel: equipes[0].gp_responsavel, grupamento_completo: equipes[0].grupamento_completo };
 
   // derivados (compatibilidade com os campos atuais do TTA)
   const pmap = {};
@@ -707,7 +724,6 @@ async function carregarOperacoesTTA(){
   // allSettled de propósito: uma falha aqui (ex.: rede) nunca pode impedir
   // o resto da página de carregar.
   await Promise.allSettled([carregarGrupos(), carregarRoster(), carregarTemaHoje(), carregarMaterialAtual(), renderPastas(), carregarOperacoesTTA()]);
-  onGrupamentoChange();
   checarChamadaHoje();
 })();
 </script>
