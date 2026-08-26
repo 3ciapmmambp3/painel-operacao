@@ -49,10 +49,12 @@ begin
     from public.relatorios
    where data = v_hoje;
 
-  -- P3: demandas (denúncias/requisições) em aberto
+  -- P3: demandas (denúncias/requisições) em aberto — só as ATIVAS
+  -- (exclui as inativadas/soft-delete que ficaram com situacao em aberto)
   select count(*) into v_demandas
     from public.denuncias
-   where situacao in ('PENDENTE','EM ANDAMENTO');
+   where situacao in ('PENDENTE','EM ANDAMENTO')
+     and coalesce(ativo, true) = true;
 
   -- P4: frota total e viaturas baixadas
   select count(*) into v_vtr_total from public.viaturas;
