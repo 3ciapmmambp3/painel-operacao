@@ -490,7 +490,7 @@ let VMAP = {};       // prefixo -> viatura
   const sel=document.getElementById('sel-prefixo');
   VIATURAS.forEach(v=>{ VMAP[v.prefixo]=v; const o=document.createElement('option'); o.value=v.prefixo; o.textContent=`${v.prefixo} — ${v.marca_modelo||''}`.trim(); sel.appendChild(o); });
   if (!VIATURAS.length){ sel.innerHTML='<option value="">(cadastro de viaturas vazio — rode o SQL/sync)</option>'; }
-  carregarPendencias();
+  carregarPendencias().then(()=>preencherFichaDoTTA());
   carregarMilitares();
   carregarCfgAbast();
   carregarListasAbast();
@@ -544,6 +544,38 @@ async function carregarMilitares(){
     const dl=document.getElementById('militares-dl');
     if(dl) dl.innerHTML = ROSTER.map(m=>`<option value="${fmtMil(m)}">`).join('');
   }catch(e){ ROSTER=[]; }
+}
+
+// Pré-preenche a ficha com a EQUIPE do TTA de HOJE do motorista logado: viatura
+// (+placa via cadastro), municípios e Comandante da equipe (supervisão). Tudo fica
+// editável pelo motorista. Best-effort — se não houver TTA hoje, não faz nada.
+async function preencherFichaDoTTA(){
+  try{
+    if(!S || !S.token) return;
+    let ch=null;
+    try{ ch = await rpc('tta_chamada_do_militar_hoje', { p_token: S.token }); }catch(e){ return; }
+    if(!ch || !ch.id) return;
+    const soDig=s=>(s||'').toString().replace(/\D/g,'');
+    const meu=soDig(S.matricula);
+    const equipes=Array.isArray(ch.equipes)?ch.equipes:[];
+    const naEquipe=e=>[e.comandante&&e.comandante.matricula, e.motorista&&e.motorista.matricula]
+      .concat((e.patrulheiros||[]).map(p=>p.matricula)).filter(Boolean).map(soDig).includes(meu);
+    // prioriza a equipe onde o logado é o MOTORISTA; senão a 1ª que o contém
+    const eq = equipes.find(e=>e.motorista && soDig(e.motorista.matricula)===meu) || equipes.find(naEquipe);
+    if(!eq) return;
+    // Viatura + placa (a placa vem do cadastro via onVtr)
+    const sel=document.getElementById('sel-prefixo');
+    if(sel && !sel.value && eq.prefixo_viatura){
+      if(![...sel.options].some(o=>o.value===eq.prefixo_viatura)){ const o=document.createElement('option'); o.value=eq.prefixo_viatura; o.textContent=eq.prefixo_viatura; sel.appendChild(o); }
+      sel.value=eq.prefixo_viatura; if(typeof onVtr==='function') onVtr();
+    }
+    // Onde a viatura será utilizada = municípios da equipe no TTA
+    const locEl=document.querySelector('[data-k="local_utilizacao"]');
+    if(locEl && !locEl.value){ const muns=(eq.municipios||[]).filter(Boolean); if(muns.length) locEl.value=muns.join(', '); }
+    // Comandante da equipe (supervisão) = comandante da equipe no TTA
+    const cmtEl=document.querySelector('[data-k="comandante_equipe"]');
+    if(cmtEl && !cmtEl.value && eq.comandante){ const c=eq.comandante; cmtEl.value=[c.pg,c.nome].filter(Boolean).join(' ').trim() || (c.matricula||''); }
+  }catch(e){ /* silencioso */ }
 }
 
 // Pendências de ficha atribuídas a este motorista (criadas pelo Relatório de Serviço).
