@@ -681,6 +681,14 @@ async function abrirVerFicha(id){
     host.appendChild(e); return;
   }
   const km = (f.km_rodados!=null) ? f.km_rodados+' km' : '—';
+  // Posto/graduação do motorista — não é gravado na ficha; busca no efetivo pela matrícula.
+  let _motPosto = f.motorista_posto || f.posto_graduacao || '';
+  const _motMat = (f.motorista_matricula||'').replace(/\D/g,'');
+  if(!_motPosto && _motMat){
+    try{ if(!ROSTER.length) ROSTER = await rpc('tta_listar_militares', { p_token:S.token }) || []; }catch(e){}
+    const _m = (ROSTER||[]).find(x => (x.matricula||'').replace(/\D/g,'') === _motMat);
+    if(_m) _motPosto = _m.posto_graduacao || '';
+  }
   const editado = f.atualizado_em ? `<div class="vfoot">✏️ Editada em ${_vdh(f.atualizado_em)} por ${_vesc(f.atualizado_por_nome||'—')}. (Histórico completo com o gestor de viaturas.)</div>` : '';
   const doc = document.createElement('div');
   doc.className='ver-doc';
@@ -698,8 +706,8 @@ async function abrirVerFicha(id){
     <h3 class="vsec">Viatura e motorista</h3>
     <table class="vt">
       ${_vrow('Prefixo', f.prefixo)}${_vrow('Placa', f.placa)}
-      ${_vrow('Motorista', f.motorista_nome)}${_vrow('Matrícula', f.motorista_matricula)}
-      ${_vrow('Lotação', f.lotacao_motorista)}
+      ${_vrow('Motorista', f.motorista_nome)}${_vrow('Posto / Graduação', _motPosto)}
+      ${_vrow('Nº PM', f.motorista_matricula)}${_vrow('Lotação', f.lotacao_motorista)}
     </table>
     <h3 class="vsec">Utilização</h3>
     <table class="vt">
