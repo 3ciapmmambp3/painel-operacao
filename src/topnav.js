@@ -84,20 +84,20 @@
       {ic:'🤝', t:'Visitas Tranquilizadoras', h:'analise-criminal.html?sub=visitas'},
       {ic:'🏘️', t:'Reunião Comunitária Rural', h:'analise-criminal.html?sub=rcr'},
       // "Gestão e Cadastros" — no hub-p3 só aparecem p/ Aux P3 ou Admin Geral.
-      // O menu espelha essa regra (gest:true → gated por podeGestP3).
-      {ic:'📊', t:'Metas', h:'admin.html?tab=metas', gest:true},
-      {ic:'🎯', t:'Cadastro de Operações', h:'admin.html?tab=operacoes', gest:true},
-      {ic:'🌲', t:'PAF', h:'admin.html?tab=paf', gest:true},
-      {ic:'🏭', t:'FAPI', h:'admin.html?tab=fapi', gest:true},
-      {ic:'📋', t:'Campos e Quesitos', h:'admin.html?tab=quesitos', gest:true},
+      // O menu espelha essa regra (req:'gestP3').
+      {ic:'📊', t:'Metas', h:'admin.html?tab=metas', req:'gestP3'},
+      {ic:'🎯', t:'Cadastro de Operações', h:'admin.html?tab=operacoes', req:'gestP3'},
+      {ic:'🌲', t:'PAF', h:'admin.html?tab=paf', req:'gestP3'},
+      {ic:'🏭', t:'FAPI', h:'admin.html?tab=fapi', req:'gestP3'},
+      {ic:'📋', t:'Campos e Quesitos', h:'admin.html?tab=quesitos', req:'gestP3'},
     ],
     p4: [
       {ic:'📝', t:'Movimentação de Viaturas', h:'movimentacao-viaturas.html'},
       {ic:'📋', t:'Minhas Movimentações', h:'minhas-movimentacoes.html'},
-      {ic:'🚔', t:'Gestão de Viaturas', h:'viaturas-gestao.html'},
-      {ic:'⛽', t:'Abastecimento', h:'abastecimento.html'},
+      {ic:'🚔', t:'Gestão de Viaturas', h:'viaturas-gestao.html', req:'vtr'},
+      {ic:'⛽', t:'Abastecimento', h:'abastecimento.html', req:'vtr'},
       {ic:'🔧', t:'Revisão da frota', h:'revisao-frota.html'},
-      {ic:'⚠️', t:'Acidentes', h:'acidentes.html'},
+      {ic:'⚠️', t:'Acidentes', h:'acidentes.html', req:'vtr'},
       {ic:'🔫', t:'SAT', h:'https://armamento.bpmmamb.com.br', ext:true},
       {ic:'📦', t:'CPELOG', h:'https://inventario.cpelog.com.br/login', ext:true},
       {ic:'🧭', t:'SIGA CPE', h:'https://p4.bpmmamb.com.br', ext:true},
@@ -121,16 +121,21 @@
     const isAdmin = ['admin_geral','admin','admin_pelotao','admin_gp'].includes(nivel);
     // Gestão Operacional (Supervisão e Controle) = mesma regra da página: sem admin_gp.
     const podeGO = ['admin_geral','admin','admin_pelotao'].includes(nivel);
-    // "Gestão e Cadastros" da P3 = mesma regra do card no hub-p3: Aux P3 ou Admin Geral.
+    // Permissões por item (MESMAS regras do secnav.js e das páginas — não afrouxar).
     const funcao = (sessao && sessao.funcao || '').toLowerCase().trim();
-    const podeGestP3 = funcao === 'aux p3' || nivel === 'admin_geral';
+    const grup   = (sessao && sessao.grupamento_id || '').toUpperCase();
+    const podeGestP3       = funcao === 'aux p3' || nivel === 'admin_geral';
+    const podeGerenciarVtr = nivel === 'admin_geral' || funcao.indexOf('aux p4') === 0;
+    const podeGerenciarTTA = nivel === 'admin_geral' || (funcao === 'aux p1' && grup === 'ADM');
+    // Um item com req:'x' só aparece quando canReq['x'] for verdadeiro.
+    const canReq = { gestP3: podeGestP3, vtr: podeGerenciarVtr, tta: podeGerenciarTTA };
     const on = k => ativo===k ? ' active' : '';
 
     // Aba com menu suspenso (mega): clicar no nome vai ao hub; passar o mouse
     // mostra os módulos daquela seção pra ir direto, de qualquer página.
     const tab = (k, href, rot) => {
       const itens = (MODULOS[k]||[])
-        .filter(m => !m.gest || podeGestP3)   // esconde cadastros p/ quem não é Aux P3/Admin Geral
+        .filter(m => !m.req || canReq[m.req])   // esconde itens sem permissão (mesma regra dos cards)
         .map(m => m.soon
         ? `<span class="tn-soon"><span class="tn-ic">${m.ic}</span>${m.t}<em>em breve</em></span>`
         : m.ext

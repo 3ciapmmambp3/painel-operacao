@@ -23,6 +23,12 @@ begin
   if (select sm.id from public._sessao_militar(p_token) sm) is null then
     raise exception 'Sessão inválida ou expirada.';
   end if;
+  if not exists (
+    select 1 from public._sessao_militar(p_token) sm
+     where public._pode_gerenciar_viaturas(sm.nivel_acesso, sm.funcao)
+  ) then
+    raise exception 'Sem permissão: dados de acidentes restritos ao Aux P4 / Admin Geral.';
+  end if;
   return query
   select
     m.id::uuid, m.prefixo::text, m.placa::text,
