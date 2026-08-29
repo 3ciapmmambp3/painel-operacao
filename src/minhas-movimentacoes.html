@@ -56,6 +56,15 @@
   .loading{padding:44px 20px;text-align:center;color:var(--text-muted);font-size:13px}
   .errbox{margin-top:12px;background:var(--danger-bg);border:1px solid rgba(239,83,80,.4);color:#ef9a9a;
      border-radius:9px;padding:12px 15px;font-size:12.5px;display:none}
+  .acoes{display:flex;gap:12px;align-items:center;white-space:nowrap}
+  .act{font-weight:700;cursor:pointer;font-size:11.5px;text-decoration:none}
+  .act-ver{color:var(--text-white)} .act-ver:hover{color:var(--gold-light)}
+  .act-ed{color:var(--gold-light)} .act-ed:hover{text-decoration:underline}
+  .act-ed.disabled{color:var(--text-hint);cursor:not-allowed;position:relative}
+  .act-ed.disabled:hover .tip{display:block}
+  .act-del{color:#ef9a9a} .act-del:hover{text-decoration:underline}
+  .tip{display:none;position:absolute;bottom:130%;left:0;z-index:20;background:#1a1a1a;border:1px solid var(--border-mid);
+       border-radius:6px;padding:7px 9px;font-size:10.5px;font-weight:500;color:var(--text-muted);width:210px;line-height:1.5;white-space:normal}
 </style>
 <script src="pwa.js" defer></script>
 </head>
@@ -85,7 +94,7 @@
     <div class="wrap">
       <div class="pagehead">
         <h1>🚔 Minhas Movimentações</h1>
-        <p>Fichas de movimentação de viatura em que você é o motorista, mais as da sua equipe/grupamento. Somente leitura.</p>
+        <p>Fichas de movimentação de viatura em que você é o motorista, mais as da sua equipe/grupamento. Você pode <b>ver/imprimir</b> qualquer ficha; o motorista pode <b>editar</b> no mesmo dia (enquanto a viatura não for assumida por outro militar). Correções e exclusões posteriores são feitas pelo gestor (Aux P4).</p>
       </div>
 
       <div class="toolbar">
@@ -93,6 +102,7 @@
           <span class="chip active" data-f="todas">Minhas + equipe <span class="n" id="n-todas">0</span></span>
           <span class="chip" data-f="minhas">Só as minhas <span class="n" id="n-minhas">0</span></span>
           <span class="chip" data-f="equipe">Da equipe <span class="n" id="n-equipe">0</span></span>
+          <span class="chip" data-f="gestao" id="chip-gestao" style="display:none">Todas (gestão) <span class="n" id="n-gestao">0</span></span>
         </div>
         <div class="search"><input id="busca" type="text" placeholder="Buscar por prefixo, placa, motorista ou local…"></div>
       </div>
@@ -104,10 +114,10 @@
         <div class="tblscroll">
           <table>
             <thead><tr>
-              <th>Data / Turno</th><th>Viatura</th><th>Motorista</th><th>Km rodados</th><th>Grupamento</th><th>Registros</th>
+              <th>Data / Turno</th><th>Viatura</th><th>Motorista</th><th>Km rodados</th><th>Grupamento</th><th>Registros</th><th>Ações</th>
             </tr></thead>
             <tbody id="tbody">
-              <tr><td colspan="6"><div class="loading" id="loading">Carregando movimentações…</div></td></tr>
+              <tr><td colspan="7"><div class="loading" id="loading">Carregando movimentações…</div></td></tr>
             </tbody>
           </table>
         </div>
@@ -187,6 +197,7 @@ function render(){
     if (FILTRO==='minhas' && !x.mine) return false;
     if (FILTRO==='equipe' && !(x.team && !x.mine)) return false;
     if (FILTRO==='todas' && !(x.mine || x.team)) return false;
+    // 'gestao' (só Aux P4/Admin): mostra TODAS as fichas, sem recorte de equipe.
     if (q){
       const r=x.r;
       const hay = [r.prefixo,r.placa,r.motorista_nome,r.local_utilizacao,r.grupamento_completo].join(' ').toLowerCase();
@@ -196,7 +207,7 @@ function render(){
   });
   const tb = document.getElementById('tbody');
   document.getElementById('cnt').textContent = lista.length + (lista.length===1?' ficha':' fichas');
-  if (!lista.length){ tb.innerHTML = `<tr><td colspan="6"><div class="empty">Nenhuma movimentação encontrada.</div></td></tr>`; return; }
+  if (!lista.length){ tb.innerHTML = `<tr><td colspan="7"><div class="empty">Nenhuma movimentação encontrada.</div></td></tr>`; return; }
   tb.innerHTML = lista.map(x=>{
     const r=x.r;
     const flags=[];
@@ -216,8 +227,64 @@ function render(){
       <td class="km">${km}</td>
       <td>${esc(grupTxt)}</td>
       <td><div class="flags">${flags.join('')||'<span class="sub">—</span>'}</div></td>
+      <td>${acoesCell(x)}</td>
     </tr>`;
   }).join('');
+}
+
+/* ── Ações por ficha: Ver/Imprimir (todos), Editar (motorista mesmo dia /
+      gestor sempre), Excluir (só gestor — Aux P4/Admin, com auditoria). ── */
+function _mesmoDia(r){
+  const d = r.inicio ? new Date(r.inicio) : (r.criado_em ? new Date(r.criado_em) : null);
+  if (!d || isNaN(d)) return false;
+  const hoje = new Date();
+  return d.getFullYear()===hoje.getFullYear() && d.getMonth()===hoje.getMonth() && d.getDate()===hoje.getDate();
+}
+function _assumidaPorOutro(r){
+  // Existe ficha mais recente da MESMA viatura (prefixo) iniciada depois desta?
+  const t = new Date(r.inicio||r.criado_em||0).getTime();
+  return ROWS.some(y => {
+    const o=y.r; if(!o || o.id===r.id) return false;
+    if((o.prefixo||'')!==(r.prefixo||'')) return false;
+    return new Date(o.inicio||o.criado_em||0).getTime() > t;
+  });
+}
+function podeEditar(x){
+  if (PODE_GERIR) return true;                 // Aux P4 / Admin Geral: sempre
+  if (!x.mine) return false;                   // só o próprio motorista/criador
+  return _mesmoDia(x.r) && !_assumidaPorOutro(x.r);
+}
+function acoesCell(x){
+  const r=x.r;
+  const id = encodeURIComponent(r.id||'');
+  const ver = `<a class="act act-ver" href="movimentacao-viaturas.html?ver=${id}" target="_blank" rel="noopener">👁 Ver/Imprimir</a>`;
+  const ed = podeEditar(x)
+    ? `<a class="act act-ed" href="movimentacao-viaturas.html?editar=${id}">Editar</a>`
+    : `<span class="act act-ed disabled">Editar<div class="tip">Edição só no mesmo dia, pelo motorista, enquanto a viatura não for assumida por outro militar. Depois disso, fale com o gestor de viaturas (Aux P4).</div></span>`;
+  const del = PODE_GERIR
+    ? `<span class="act act-del" onclick="excluirFicha('${(r.id||'').replace(/'/g,'')}','${esc(r.prefixo||'').replace(/'/g,'')}')">🗑 Excluir</span>`
+    : '';
+  return `<div class="acoes">${ver}${ed}${del}</div>`;
+}
+
+async function excluirFicha(id, prefixo){
+  if (!id) return;
+  const just = prompt(`Excluir a ficha de movimentação da viatura ${prefixo||''}?\n\nA ficha é preservada no banco e a exclusão fica registrada na auditoria.\nInforme a JUSTIFICATIVA (obrigatória):`, '');
+  if (just===null) return;                       // cancelou
+  if (!just.trim()){ alert('A justificativa é obrigatória para excluir.'); return; }
+  try{
+    const H = { apikey: SB_AUTH_KEY, Authorization:'Bearer '+SB_AUTH_KEY, 'Content-Type':'application/json' };
+    const res = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/mov_ficha_excluir`, {
+      method:'POST', headers:H,
+      body: JSON.stringify({ p_token: S.token, p_id: id, p_justificativa: just.trim() })
+    });
+    const t = await res.text(); let j; try{ j=t?JSON.parse(t):null; }catch{ j=t; }
+    if(!res.ok) throw new Error((j&&j.message)||('HTTP '+res.status));
+    carregar();                                  // recarrega a lista (a ficha some — ativo=false)
+  }catch(e){
+    alert('Não foi possível excluir: '+e.message);
+    console.error('mov_ficha_excluir', e);
+  }
 }
 
 function atualizaContadores(){
@@ -226,6 +293,10 @@ function atualizaContadores(){
   document.getElementById('n-minhas').textContent = nMinhas;
   document.getElementById('n-equipe').textContent = nEquipe;
   document.getElementById('n-todas').textContent  = ROWS.filter(x=>x.mine||x.team).length;
+  if (PODE_GERIR){
+    const cg=document.getElementById('chip-gestao'); if(cg) cg.style.display='';
+    const ng=document.getElementById('n-gestao'); if(ng) ng.textContent = ROWS.length;
+  }
 }
 
 async function carregar(){
@@ -239,8 +310,9 @@ async function carregar(){
     const res = await fetch(url,{headers:H});
     if (!res.ok) throw new Error('HTTP '+res.status);
     const data = await res.json();
-    ROWS = (Array.isArray(data)?data:[]).map(r=>({ r, mine: ehMinha(r), team: daMinhaEquipe(r) }))
-                                        .filter(x=> x.mine || x.team);   // só o que me interessa
+    // Mantém TODAS as fichas ativas em memória (o recorte por chip é feito no render).
+    // Não-gestor só enxerga mine/team; o gestor (Aux P4/Admin) tem o chip "Todas (gestão)".
+    ROWS = (Array.isArray(data)?data:[]).map(r=>({ r, mine: ehMinha(r), team: daMinhaEquipe(r) }));
     atualizaContadores();
     render();
   }catch(e){
@@ -248,7 +320,7 @@ async function carregar(){
     const eb=document.getElementById('errbox');
     eb.style.display='block';
     eb.textContent='Não foi possível carregar as movimentações agora. Tente novamente em instantes.';
-    document.getElementById('tbody').innerHTML = `<tr><td colspan="6"><div class="empty">—</div></td></tr>`;
+    document.getElementById('tbody').innerHTML = `<tr><td colspan="7"><div class="empty">—</div></td></tr>`;
     console.error('minhas-movimentacoes', e);
   }
 }

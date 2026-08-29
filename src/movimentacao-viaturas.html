@@ -460,6 +460,8 @@ async function coletarAnexos(){
 let VIATURAS = [];   // cadastro
 let ABAST_CFG = {poc_ativo:false, poc_limite:null, prime_ativo:false, prime_limite:null};
 let VMAP = {};       // prefixo -> viatura
+let EDIT_ID = null, EDIT_ORIG = null;              // modo ?editar=
+let VOLTAR_URL = 'minhas-movimentacoes.html';      // p/ onde o "Voltar" leva (depende da origem)
 
 /* ── boot ────────────────────────────────────────────────────────── */
 (async function init(){
@@ -470,6 +472,14 @@ let VMAP = {};       // prefixo -> viatura
   document.getElementById('mot-nome').value = nome;
   document.getElementById('mot-mat').value  = S.matricula || '';
   document.getElementById('lotacao').value  = S.grupamento_id || '';
+
+  // ── modo Ver/Imprimir (?ver=id) / Editar (?editar=id) ──
+  const _qs = new URLSearchParams(location.search);
+  const _verId = _qs.get('ver'), _editId = _qs.get('editar');
+  VOLTAR_URL = (_qs.get('origem')==='gestao') ? 'viaturas-gestao.html?tab=fichas' : 'minhas-movimentacoes.html';
+  if (_verId){ await abrirVerFicha(_verId); return; }
+  if (_editId){ EDIT_ID = _editId; }   // segue o init normal; preenche o form no fim
+
   // início default = agora
   const now=new Date(); now.setMinutes(now.getMinutes()-now.getTimezoneOffset());
   document.getElementById('inicio').value = now.toISOString().slice(0,16);
@@ -490,11 +500,250 @@ let VMAP = {};       // prefixo -> viatura
   const sel=document.getElementById('sel-prefixo');
   VIATURAS.forEach(v=>{ VMAP[v.prefixo]=v; const o=document.createElement('option'); o.value=v.prefixo; o.textContent=`${v.prefixo} — ${v.marca_modelo||''}`.trim(); sel.appendChild(o); });
   if (!VIATURAS.length){ sel.innerHTML='<option value="">(cadastro de viaturas vazio — rode o SQL/sync)</option>'; }
-  carregarPendencias().then(teve => { if(!teve) preencherFichaDoTTA(); });
+  // No modo edição não pré-preenche pela pendência/TTA (a ficha é carregada a seguir).
+  if (EDIT_ID) carregarPendencias();
+  else carregarPendencias().then(teve => { if(!teve) preencherFichaDoTTA(); });
   carregarMilitares();
   carregarCfgAbast();
   carregarListasAbast();
+  if (EDIT_ID) await abrirEditarFicha(EDIT_ID);
 })();
+
+// ── Ver/Imprimir e Editar (Fase C) — restaurado da versão publicada ───────
+function _vesc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function _vdh(iso){ if(!iso) return '—'; const d=new Date(iso); if(isNaN(d)) return '—'; const p=n=>String(n).padStart(2,'0'); return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+function _vrow(l,v){ return `<tr><td class="vl">${_vesc(l)}</td><td class="vv">${(v==null||v==='')?'—':_vesc(v)}</td></tr>`; }
+function _vsecoes(dados){
+  if(!dados || typeof dados!=='object') return '';
+  const rotulo = { abastecimento:'Abastecimento', acidente:'Acidente', manutencao:'Manutenção / defeito', avaria:'Avarias de uso', limpeza:'Limpeza / higienização', taq:'Embarcação / Motor / TAQ', aeronave:'Aeronave / Drone', externo:'Condutor externo' };
+  const pretty = kk => String(kk).replace(/_/g,' ').replace(/^./, c=>c.toUpperCase());
+  const _vmoney = v => { const n=Number(String(v).replace(',','.')); return isNaN(n)?v:('R$ '+n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})); };
+  const _fmtV = (k,v) => /^valor/i.test(k) ? _vmoney(v) : v;
+  const scalarTable = o => { const rows=Object.keys(o).filter(k=>o[k]!=null&&o[k]!==''&&typeof o[k]!=='object').map(k=>_vrow(pretty(k),_fmtV(k,o[k]))).join(''); return rows?`<table class="vt">${rows}</table>`:''; };
+  const renderObj = o => {
+    let s = scalarTable(o);
+    Object.keys(o).forEach(k=>{
+      const val=o[k]; if(val==null||val==='') return;
+      if(Array.isArray(val)){
+        if(!val.length) return;
+        s += `<div class="vsub">${_vesc(pretty(k))}</div>`;
+        val.forEach((it,i)=>{ s += (it&&typeof it==='object') ? (val.length>1?`<div class="vsub2">#${i+1}</div>`:'')+scalarTable(it) : `<table class="vt">${_vrow(pretty(k)+' '+(i+1), it)}</table>`; });
+      } else if(typeof val==='object'){
+        s += `<div class="vsub">${_vesc(pretty(k))}</div>` + renderObj(val);
+      }
+    });
+    return s;
+  };
+  let out='';
+  Object.keys(dados).forEach(k=>{
+    const v=dados[k]; if(v==null || (typeof v==='object' && !Array.isArray(v) && !Object.keys(v).length) || (Array.isArray(v) && !v.length)) return;
+    out += `<h3 class="vsec">${_vesc(rotulo[k]||pretty(k))}</h3>`;
+    if(Array.isArray(v)) v.forEach(it => out += (it&&typeof it==='object') ? renderObj(it) : `<table class="vt">${_vrow(pretty(k), it)}</table>`);
+    else if(typeof v==='object') out += renderObj(v);
+    else out += `<table class="vt">${_vrow(pretty(k), v)}</table>`;
+  });
+  return out;
+}
+function _vanexos(anexos){
+  if(!Array.isArray(anexos) || !anexos.length) return '';
+  const li = anexos.map(a => `<li><a href="${_vesc(a.link||'#')}" target="_blank">${_vesc(a.nome||a.categoria||'anexo')}</a>${a.categoria?` <span style="color:#888">(${_vesc(a.categoria)})</span>`:''}</li>`).join('');
+  return `<h3 class="vsec">Anexos</h3><ul class="vanex">${li}</ul>`;
+}
+function _resumoSecoes(f){
+  const d=f.dados||{}; const parts=[];
+  if(f.tem_abastecimento){ const n=(d.abastecimento&&Array.isArray(d.abastecimento.itens))?d.abastecimento.itens.length:0; parts.push(`⛽ Abastecimento: Sim${n?` (${n} lançamento${n>1?'s':''})`:''}`); }
+  else parts.push('⛽ Abastecimento: '+((d.abastecimento&&d.abastecimento.houve==='Não')?'Não (justificado)':'—'));
+  parts.push('🧽 Limpeza: '+(((d.limpeza&&d.limpeza.devolveu_limpa))||'—'));
+  if(f.tem_acidente) parts.push('⚠️ Acidente registrado');
+  if(f.tem_manutencao) parts.push('🔧 Manutenção / defeito');
+  if(f.tem_avaria) parts.push('🩹 Avaria de uso');
+  if(f.tem_taq) parts.push('🚤 Embarcação / Motor / TAQ');
+  if(f.tem_aeronave) parts.push('🚁 Aeronave / Drone');
+  const anx=Array.isArray(f.anexos)?f.anexos.length:0;
+  parts.push('📎 Anexos: '+(anx?anx:'nenhum'));
+  return '<ul style="margin:8px 0 0 18px;font-size:13px;line-height:1.9;color:var(--text-white)">'+parts.map(p=>'<li>'+p+'</li>').join('')+'</ul>';
+}
+
+async function abrirEditarFicha(id){
+  let f;
+  try{ f = await rpc('mov_ficha_completa', { p_token:S.token, p_id:id }); if(Array.isArray(f)) f=f[0]; }
+  catch(e){ f=null; }
+  const fw=document.getElementById('form-wrap');
+  if(!f || !f.id){
+    fw.innerHTML='<div class="card" style="text-align:center;padding:44px 20px"><h2 style="margin-bottom:10px">Não foi possível abrir para edição</h2><p style="color:var(--text-muted);max-width:540px;margin:0 auto">Ficha não encontrada, sem permissão, ou o prazo de edição venceu (edição só no mesmo dia por quem criou, enquanto a viatura não for assumida por outro militar; depois, apenas o gestor de viaturas — Aux P4).</p><p style="margin-top:18px"><a class="btn-gold" href="'+VOLTAR_URL+'">← Voltar à lista</a></p></div>';
+    return;
+  }
+  EDIT_ORIG = f;
+  const h1=document.querySelector('#form-wrap .pagehead h1'); if(h1) h1.textContent='✏️ Editar Ficha de Movimentação';
+  const pp=document.querySelector('#form-wrap .pagehead p'); if(pp) pp.innerHTML='Você está editando uma ficha já registrada. <b>Toda alteração fica registrada na auditoria</b> (quem, quando, o que mudou). As seções (abastecimento, TAQ, etc.) e os anexos são mantidos como foram lançados.';
+  const pb=document.getElementById('pend-banner'); if(pb) pb.style.display='none';
+
+  const sel=document.getElementById('sel-prefixo');
+  if(f.prefixo && !Array.from(sel.options).some(o=>o.value===f.prefixo)){ const o=document.createElement('option'); o.value=f.prefixo; o.textContent=f.prefixo; sel.appendChild(o); }
+  sel.value=f.prefixo||'';
+  const setK=(k,v)=>{ const el=document.querySelector('#base [data-k="'+k+'"]'); if(el && v!=null) el.value=v; };
+  setK('placa', f.placa||'');
+  document.getElementById('mot-nome').value=f.motorista_nome||'';
+  document.getElementById('mot-mat').value=f.motorista_matricula||'';
+  setK('tipo_empenho', f.tipo_empenho);
+  setK('local_utilizacao', f.local_utilizacao);
+  document.getElementById('lotacao').value=f.lotacao_motorista||'';
+  setK('comandante_equipe', f.comandante_equipe);
+  document.getElementById('kmi').value=f.km_inicial!=null?f.km_inicial:'';
+  document.getElementById('kmf').value=f.km_final!=null?f.km_final:'';
+  const toLocal=iso=>{ if(!iso) return ''; const d=new Date(iso); if(isNaN(d)) return ''; d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); };
+  document.getElementById('inicio').value=toLocal(f.inicio);
+  document.getElementById('termino').value=toLocal(f.termino);
+  setK('comb_armar', f.comb_armar);
+  setK('comb_devolver', f.comb_devolver);
+  document.getElementById('obs-geral').value=f.observacoes||'';
+  try{ syncDatas(); calc(); }catch(e){}
+  ultimoKmFinal=null; kmiConfirmadoMaior=true;   // edição não é barrada pelo hodômetro da última devolução
+
+  const opts=document.querySelector('#form-wrap .opts'); if(opts) opts.style.display='none';
+  document.querySelectorAll('#form-wrap .card.sec').forEach(el=>el.style.display='none');
+  const obsCard=document.getElementById('obs-geral').closest('.card');
+  if(obsCard){
+    const box=document.createElement('div'); box.className='card'; box.id='edit-secoes-ro';
+    box.innerHTML='<h2>📎 Seções e anexos (mantidos como no lançamento)</h2>'+_resumoSecoes(f)+'<p style="font-size:12px;color:var(--text-muted);margin-top:10px">Estes itens não são alterados nesta edição. Para corrigir abastecimento/TAQ/anexos, faça um novo lançamento.</p>';
+    obsCard.parentNode.insertBefore(box, obsCard);
+  }
+
+  const btn=document.getElementById('btn-salvar');
+  btn.textContent='✔ Salvar alterações';
+  btn.setAttribute('onclick','salvarEdicao()');
+  const sn=document.querySelector('#form-wrap .syncnote'); if(sn) sn.style.display='none';
+  const cancelar=document.querySelector('#form-wrap .foot .btn-outline');
+  if(cancelar) cancelar.setAttribute('onclick','location.href=VOLTAR_URL');
+}
+
+async function salvarEdicao(){
+  const btn=document.getElementById('btn-salvar');
+  if(btn.disabled) return;
+  const base=collect(document.getElementById('base'));
+  if(!base.prefixo)     return foco('sel-prefixo','Selecione a viatura.');
+  if(!base.km_inicial)  return foco('kmi','Informe o Km inicial.');
+  if(!base.km_final)    return foco('kmf','Informe o Km final.');
+  const kmI=+base.km_inicial, kmF=+base.km_final;
+  if(kmF<kmI) return foco('kmf','Km final não pode ser menor que o inicial.');
+  const AGORA=Date.now(), DIA=86400000, FUT=5*60000;
+  const tIni=base.inicio?new Date(base.inicio).getTime():NaN;
+  const tFim=base.termino?new Date(base.termino).getTime():NaN;
+  if(!base.inicio||isNaN(tIni)) return foco('inicio','Informe o início (armar a viatura).');
+  if(tIni>AGORA+FUT)            return foco('inicio','O início não pode ser uma data/hora futura.');
+  if(!isNaN(tFim)){
+    if(tFim<tIni)       return foco('termino','O término não pode ser antes do início.');
+    if(tFim>tIni+DIA)   return foco('termino','O término não pode ser mais de 24h após o início.');
+  }
+
+  const o=EDIT_ORIG||{};
+  const p_dados=Object.assign({}, base, {
+    motorista_nome: document.getElementById('mot-nome').value||'',
+    motorista_matricula: document.getElementById('mot-mat').value||'',
+    lotacao_motorista: document.getElementById('lotacao').value||'',
+    observacoes: document.getElementById('obs-geral').value||'',
+    inicio:  base.inicio  ? new Date(base.inicio).toISOString()  : null,
+    termino: base.termino ? new Date(base.termino).toISOString() : null,
+    km_inicial: kmI, km_final: kmF,
+    dados:  o.dados  || {},   anexos: o.anexos || [],
+    tem_abastecimento:!!o.tem_abastecimento, tem_acidente:!!o.tem_acidente,
+    tem_manutencao:!!o.tem_manutencao, tem_avaria:!!o.tem_avaria,
+    tem_limpeza:!!o.tem_limpeza, tem_taq:!!o.tem_taq, tem_aeronave:!!o.tem_aeronave
+  });
+
+  btn.disabled=true; btn.textContent='Salvando…';
+  try{
+    const r=await rpc('mov_ficha_editar', { p_token:S.token, p_id:EDIT_ID, p_dados });
+    const n=(r&&r.alteracoes!=null)?+r.alteracoes:0;
+    document.getElementById('form-wrap').style.display='none';
+    const h2=document.querySelector('#ok-screen h2'); if(h2) h2.textContent='Alterações salvas!';
+    document.getElementById('ok-msg').textContent = n>0
+      ? `${n} alteração${n>1?'ões':''} registrada${n>1?'s':''} na auditoria.`
+      : 'Nenhuma alteração foi detectada nos campos.';
+    const acoes=document.querySelector('#ok-screen div[style*="justify-content"]');
+    const voltarLbl = VOLTAR_URL.indexOf('viaturas-gestao')===0 ? '← Gestão de Viaturas' : '← Minhas movimentações';
+    if(acoes) acoes.innerHTML='<a class="btn-gold" href="'+VOLTAR_URL+'">'+voltarLbl+'</a>';
+    document.getElementById('ok-screen').classList.add('show');
+    window.scrollTo(0,0);
+  }catch(e){ toast('Erro ao salvar: '+e.message); btn.disabled=false; btn.textContent='✔ Salvar alterações'; }
+}
+
+async function abrirVerFicha(id){
+  const fw=document.getElementById('form-wrap'); if(fw) fw.style.display='none';
+  const ok=document.getElementById('ok-screen'); if(ok) ok.style.display='none';
+  const host=document.querySelector('.rd-conteudo')||document.body;
+  let f;
+  try{ f = await rpc('mov_ficha_completa', { p_token: S.token, p_id: id }); if(Array.isArray(f)) f=f[0]; }
+  catch(e){ f=null; }
+  if(!f || !f.id){
+    const e=document.createElement('div'); e.className='wrap';
+    e.innerHTML='<div class="card" style="padding:30px;text-align:center">Não foi possível abrir esta ficha (sem permissão ou não encontrada).<br><a class="btn-gold" style="margin-top:14px;display:inline-block" href="'+VOLTAR_URL+'">← Voltar</a></div>';
+    host.appendChild(e); return;
+  }
+  const km = (f.km_rodados!=null) ? f.km_rodados+' km' : '—';
+  const editado = f.atualizado_em ? `<div class="vfoot">✏️ Editada em ${_vdh(f.atualizado_em)} por ${_vesc(f.atualizado_por_nome||'—')}. (Histórico completo com o gestor de viaturas.)</div>` : '';
+  const doc = document.createElement('div');
+  doc.className='ver-doc';
+  doc.innerHTML = `
+    <div class="vcab">
+      <img class="vbras" src="assets/escudo-cpe.png" alt="CPE" onerror="this.style.display='none'">
+      <div class="vtit">
+        <div>COMANDO DE POLICIAMENTO ESPECIALIZADO</div>
+        <div>BATALHÃO DE POLÍCIA MILITAR DE MEIO AMBIENTE</div>
+        <div>3ª COMPANHIA DE POLÍCIA MILITAR DE MEIO AMBIENTE</div>
+        <h1>FICHA DE MOVIMENTAÇÃO DE VIATURA</h1>
+      </div>
+      <img class="vbras" src="assets/brasao-bpmmamb.png" alt="BPM MAmb" onerror="this.style.display='none'">
+    </div>
+    <h3 class="vsec">Viatura e motorista</h3>
+    <table class="vt">
+      ${_vrow('Prefixo', f.prefixo)}${_vrow('Placa', f.placa)}
+      ${_vrow('Motorista', f.motorista_nome)}${_vrow('Matrícula', f.motorista_matricula)}
+      ${_vrow('Lotação', f.lotacao_motorista)}
+    </table>
+    <h3 class="vsec">Utilização</h3>
+    <table class="vt">
+      ${_vrow('Local de utilização', f.local_utilizacao)}${_vrow('Tipo de empenho', f.tipo_empenho)}
+      ${_vrow('Início (armar)', _vdh(f.inicio))}${_vrow('Término (devolver)', _vdh(f.termino))}
+      ${_vrow('Km inicial', f.km_inicial)}${_vrow('Km final', f.km_final)}${_vrow('Km rodados', km)}
+      ${_vrow('Combustível ao armar', f.comb_armar)}${_vrow('Combustível ao devolver', f.comb_devolver)}
+    </table>
+    ${_vsecoes(f.dados)}
+    ${(f.observacoes)?`<h3 class="vsec">Observações</h3><p class="vobs">${_vesc(f.observacoes)}</p>`:''}
+    ${_vanexos(f.anexos)}
+    <div class="vfoot">Registrada por ${_vesc(f.criado_por_nome||'—')} em ${_vdh(f.criado_em)}.</div>
+    ${editado}`;
+  const bar = document.createElement('div');
+  bar.className='ver-actions';
+  bar.innerHTML = `<button class="btn-gold" onclick="window.print()">🖨 Imprimir</button> <button class="btn-outline" onclick="if(window.opener&&!window.opener.closed){window.close()}else{location.href=VOLTAR_URL}">← Voltar</button>`;
+  const box = document.createElement('div'); box.className='wrap';
+  box.appendChild(bar); box.appendChild(doc);
+  host.appendChild(box);
+  const st=document.createElement('style');
+  st.textContent = `
+    .ver-actions{display:flex;gap:10px;margin:14px 0}
+    .ver-doc{background:#fff !important;color:#111;max-width:820px;margin:0 auto 30px;padding:28px 34px;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.15)}
+    .ver-doc .vcab{display:flex;align-items:center;gap:14px;border-bottom:2px solid #111;padding-bottom:12px;margin-bottom:16px}
+    .ver-doc .vbras{height:58px;width:auto}
+    .ver-doc .vtit{flex:1;text-align:center;font-size:10.5px;line-height:1.5;color:#333;font-weight:600}
+    .ver-doc .vtit h1{font-size:15px;margin-top:6px;color:#111;letter-spacing:.5px}
+    .ver-doc .vsec{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#111;background:#eee;padding:5px 9px;border-radius:4px;margin:18px 0 8px}
+    .ver-doc .vt{width:100%;border-collapse:collapse;margin-bottom:4px}
+    .ver-doc .vt td{padding:5px 9px;border:1px solid #ddd;font-size:12px;vertical-align:top}
+    .ver-doc .vt td.vl{width:38%;color:#555;font-weight:600;background:#fafafa}
+    .ver-doc .vt td.vv{color:#111}
+    .ver-doc .vsub{font-size:11px;font-weight:700;color:#444;margin:8px 0 3px}
+    .ver-doc .vsub2{font-size:11px;color:#777;margin:6px 0 2px}
+    .ver-doc .vobs{font-size:12px;color:#111;white-space:pre-wrap;border:1px solid #ddd;border-radius:4px;padding:8px 10px}
+    .ver-doc .vanex{margin:4px 0 0 18px;font-size:12px;color:#111}
+    .ver-doc .vfoot{margin-top:16px;font-size:11px;color:#555;border-top:1px dashed #bbb;padding-top:8px}
+    @media print{
+      body{background:#fff !important}
+      header,.topnav,.rd-sidebar,.ver-actions,#toast{display:none !important}
+      .ver-doc{box-shadow:none;margin:0;max-width:none;border-radius:0;padding:0}
+    }`;
+  document.head.appendChild(st);
+}
 
 // Listas de combustível/convênio configuradas pelo Aux P4 / Admin Geral (fallback: constantes).
 async function carregarListasAbast(){
