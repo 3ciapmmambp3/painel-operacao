@@ -308,9 +308,15 @@ async function demandasPendentesDoMeuGrupamento(){
     const H = { apikey: SB_AUTH_KEY, Authorization: 'Bearer '+SB_AUTH_KEY };
     const gpNum  = s => { const m=(s||'').match(/(\d+)\s*GP/i);  return m?+m[1]:null; };
     const pelNum = s => { const m=(s||'').match(/(\d+)\s*PEL/i); return m?+m[1]:null; };
-    const nivel = sessao.nivel_acesso;
-    const isAdminTotal = nivel==='admin' || nivel==='admin_geral';
-    const isAdminPel   = nivel==='admin_pelotao';
+    // Mesmo modelo de escopo do hub_kpis: staff (admin, lotado na ADM, Cmt Cia) vê tudo;
+    // admin_pelotao/Cmt Pelotão vê o pelotão; demais veem o próprio grupamento.
+    const nivel  = sessao.nivel_acesso;
+    const funcao = (sessao.funcao||'').toLowerCase();
+    const grup   = (sessao.grupamento_id||'').toUpperCase();
+    const veTudo = nivel==='admin' || nivel==='admin_geral' || /^\s*ADM/.test(grup)
+                || (/(cmt|comandante)/.test(funcao) && /\bcia\b/.test(funcao));
+    const isAdminPel = !veTudo && ( nivel==='admin_pelotao'
+                || (/(cmt|comandante)/.test(funcao) && /\bpel\b/.test(funcao)) );
 
     const rg = await fetch(`${SB_AUTH_URL}/rest/v1/grupos?select=gp_responsavel,grupamento_completo,pelotao&order=grupamento_completo`, { headers:H });
     if(!rg.ok) return 0;
@@ -318,7 +324,7 @@ async function demandasPendentesDoMeuGrupamento(){
 
     const meuGp = gpNum(sessao.grupamento_id), meuPel = pelNum(sessao.grupamento_id);
     let ALLOWED;
-    if (isAdminTotal)      ALLOWED = GRUPOS.slice();
+    if (veTudo)            ALLOWED = GRUPOS.slice();
     else if (isAdminPel)   ALLOWED = GRUPOS.filter(g => g.pel===meuPel);
     else {
       ALLOWED = GRUPOS.filter(g => g.gp===meuGp && g.pel===meuPel);
