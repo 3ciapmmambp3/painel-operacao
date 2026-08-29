@@ -21,12 +21,13 @@
 -- Faça um backup/expdump da tabela antes, se possível.
 -- ════════════════════════════════════════════════════════════════════════
 
--- Defina o instante do deploy do fix em produção (edite a linha abaixo).
--- Formato aceito: 'YYYY-MM-DD HH:MM:SS-03' (Brasília) ou '...+00' (UTC).
--- Deixe o placeholder para FORÇAR o preenchimento (o SQL falha se não editar).
+-- CUTOFF definido para a FASE DE TESTE (2026-08-29): a última ficha existente
+-- foi criada 20:57Z e não há nenhuma depois; 21:00Z fica depois de todos os
+-- registros atuais (que estão errados, +3h a corrigir) e antes de qualquer
+-- ficha nova (que já nasce correta com o código corrigido). Rodar UMA vez.
 do $$
 declare
-  v_cutoff timestamptz := '<<PREENCHER_INSTANTE_DO_DEPLOY_EM_PRODUCAO>>';
+  v_cutoff timestamptz := '2026-08-29 21:00:00+00';
   v_n      int;
 begin
   update public.mov_viaturas
