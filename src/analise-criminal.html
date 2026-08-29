@@ -1484,6 +1484,40 @@ document.addEventListener('click', () => {
 
   <!-- ════ SUB-ABA: REGISTROS (RAT) ════ -->
   <div id="cx-subtab-registros" style="display:none;">
+
+    <!-- Filtros PRÓPRIOS da aba Registros (RAT) — estado independente da aba Análise. -->
+    <div class="filter-box">
+      <div class="filter-box-title">📋 Filtros — Registros (RAT)</div>
+      <div class="filter-row">
+        <div class="fg">
+          <label>Pelotão</label>
+          <select id="creg-pel" onchange="renderCxRegistrosTab()">
+            <option value="">Todos</option>
+            <option value="1">1º Pelotão</option><option value="2">2º Pelotão</option>
+            <option value="3">3º Pelotão</option><option value="4">4º Pelotão</option>
+            <option value="5">5º Pelotão</option>
+          </select>
+        </div>
+        <div class="fg" style="min-width:220px;flex:2;">
+          <label>Grupamento</label>
+          <select id="creg-gp" onchange="renderCxRegistrosTab()" style="font-size:11px;"><option value="">Todos</option></select>
+        </div>
+        <div class="fg" style="min-width:200px;">
+          <label>Natureza</label>
+          <select id="creg-nat" onchange="renderCxRegistrosTab()">
+            <option value="">Todas</option>
+            <option value="Y07001">Y07001 — Batida Policial</option>
+            <option value="Y07002">Y07002 — Operação Presença</option>
+            <option value="Y07014">Y07014 — Ação/Op. Zona Rural</option>
+          </select>
+        </div>
+        <div class="fg" style="min-width:200px;">
+          <label>Buscar (Nº RAT)</label>
+          <input type="text" id="creg-busca" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this);renderCxRegistrosTab()" maxlength="18">
+        </div>
+      </div>
+    </div>
+
     <div style="background:var(--bg-card);border-radius:8px;overflow:hidden;border:1px solid var(--border);">
       <div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
         <span style="font-size:13px;font-weight:700;color:var(--gold);">Registros de Operações (GDO Rural)</span>
@@ -1505,7 +1539,7 @@ document.addEventListener('click', () => {
             </tr>
           </thead>
           <tbody id="cx-reg-tbody">
-            <tr><td colspan="9" style="padding:20px;text-align:center;color:var(--text-muted);">Configure os filtros na aba Análise para visualizar.</td></tr>
+            <tr><td colspan="9" style="padding:20px;text-align:center;color:var(--text-muted);">Carregando registros…</td></tr>
           </tbody>
         </table>
       </div>
@@ -3337,7 +3371,12 @@ async function recarregarTudo(forcar){
         /* Atualiza abas que dependem de ops/visitas */
         try{ renderDashboard(); } catch(e){}
         try{ renderCruzamento(); } catch(e){}
+        try{ renderCxRegistrosTab(); } catch(e){}  /* tabela Registros (RAT) — filtros próprios */
         try{ if(dadosVisitas.length) renderVisitas(); } catch(e){}
+        /* RCR também lê de dadosVisitas — re-renderiza aqui para que a entrada
+           direta pelo card (?sub=rcr) mostre os dados assim que carregarem,
+           igual ao acesso pelo sidebar. */
+        try{ if(dadosVisitas.length) renderRCR(); } catch(e){}
       })
       .catch(e => console.warn('Ops/Visitas background:', e.message));
 
@@ -4227,7 +4266,7 @@ function popularFiltrosGPs(){
       .map(r => [r.grupamento, r.grupamento])
   ).values()];
 
-  ['mis-gp','m-gp','cr-gp','f-gp-dash','mapa-gp','fs-gp','cx-gp','vt-gp','intel-busca-gp'].forEach(id => {
+  ['mis-gp','m-gp','cr-gp','f-gp-dash','mapa-gp','fs-gp','cx-gp','creg-gp','vt-gp','intel-busca-gp'].forEach(id => {
     const el = document.getElementById(id);
     if(!el) return;
     const isModal = id === 'm-gp';
@@ -4278,7 +4317,7 @@ function _restringirFiltrosAoPelotao(){
   if(!meuPel) return;
 
   /* Trava e oculta todos os selects de Pelotão existentes nas diversas abas */
-  ['mapa-pel','cx-pel','vt-pel','rcr-pel','pr-pel','fs-pel','f-pel-dash'].forEach(id => {
+  ['mapa-pel','cx-pel','creg-pel','vt-pel','rcr-pel','pr-pel','fs-pel','f-pel-dash'].forEach(id => {
     const el = document.getElementById(id);
     if(!el) return;
     el.value = meuPel;
@@ -4311,7 +4350,7 @@ function _restringirFiltrosAoGrupamento(){
   if(!meuGrup) return;
 
   /* Trava e oculta todos os selects de Pelotão */
-  ['mapa-pel','cx-pel','vt-pel','rcr-pel','pr-pel','fs-pel','f-pel-dash'].forEach(id => {
+  ['mapa-pel','cx-pel','creg-pel','vt-pel','rcr-pel','pr-pel','fs-pel','f-pel-dash'].forEach(id => {
     const el = document.getElementById(id);
     if(!el) return;
     if(meuPel) el.value = meuPel;
@@ -4323,7 +4362,7 @@ function _restringirFiltrosAoGrupamento(){
   /* Repopula os selects de Grupamento (formato longo) restritos ao próprio pelotão,
      depois trava no grupamento exato do usuário */
   popularFiltrosGPs();
-  ['mapa-gp','cr-gp','cx-gp','vt-gp','mis-gp','f-gp-dash','fs-gp','intel-busca-gp'].forEach(id => {
+  ['mapa-gp','cr-gp','cx-gp','creg-gp','vt-gp','mis-gp','f-gp-dash','fs-gp','intel-busca-gp'].forEach(id => {
     const el = document.getElementById(id);
     if(!el) return;
     if(![...el.options].some(o => o.value === meuGrup)){
@@ -7826,13 +7865,9 @@ function renderCruzamento(){
   const cxGp  = document.getElementById('cx-gp')?.value  || '';
   const cxBusca = norm(document.getElementById('cx-busca')?.value || '');
 
-  /* Registros (RAT) — lista bruta de operações GDO Rural, independente da correlação com crimes */
-  let opsRegistros = dadosGdoRural.slice();
-  if(_mesCx.length) opsRegistros = opsRegistros.filter(op => _mesCx.includes(op.mes));
-  if(cxPel) opsRegistros = opsRegistros.filter(op => pelDoColk(op.grupamento) === parseInt(cxPel));
-  if(cxGp)  opsRegistros = opsRegistros.filter(op => gpDoColk(op.grupamento) === cxGp);
-  if(cxBusca) opsRegistros = opsRegistros.filter(op => norm(op.rat||'').includes(cxBusca) || norm(op.municipio||'').includes(cxBusca));
-  _renderCxRegistros(opsRegistros);
+  /* NOTA: a tabela "Registros (RAT)" NÃO é mais renderizada aqui. Ela tem
+     estado/filtros próprios (creg-*) e é montada por renderCxRegistrosTab(),
+     para não compartilhar filtro com esta aba de Análise. */
 
   let crimes = _mesCx.length>1 ? getDadosFiltradosMultiMes(_mesCx, ind, '', cxPel, '', '') : getDadosFiltrados(mes, ind, '', cxPel, '', '');
   if(cxGp) crimes = crimes.filter(d => d.grupamento && gpDoColk(d.grupamento) === cxGp);
@@ -8564,12 +8599,30 @@ function cxSwitchSubtab(qual){
     if(elRegistros) elRegistros.style.display = '';
     if(btnAnalise)   btnAnalise.style.cssText   = inativo;
     if(btnRegistros) btnRegistros.style.cssText = ativo;
+    renderCxRegistrosTab();   /* usa os filtros PRÓPRIOS da aba Registros (creg-*) */
   } else {
     if(elAnalise)   elAnalise.style.display   = '';
     if(elRegistros) elRegistros.style.display = 'none';
     if(btnAnalise)   btnAnalise.style.cssText   = ativo;
     if(btnRegistros) btnRegistros.style.cssText = inativo;
   }
+}
+
+/** Renderiza a tabela "Registros (RAT)" a partir dos filtros PRÓPRIOS dessa aba
+ *  (creg-pel / creg-gp / creg-nat / creg-busca) — estado totalmente independente
+ *  da aba Análise (cx-*). Fonte única: dadosGdoRural. */
+function renderCxRegistrosTab(){
+  const pel   = document.getElementById('creg-pel')?.value   || '';
+  const gp    = document.getElementById('creg-gp')?.value    || '';
+  const nat   = document.getElementById('creg-nat')?.value   || '';
+  const busca = norm(document.getElementById('creg-busca')?.value || '');
+
+  let ops = dadosGdoRural.slice();
+  if(pel)   ops = ops.filter(op => pelDoColk(op.grupamento) === parseInt(pel));
+  if(gp)    ops = ops.filter(op => gpDoColk(op.grupamento) === gp);
+  if(nat)   ops = ops.filter(op => (op.natureza||'') === nat);
+  if(busca) ops = ops.filter(op => norm(op.rat||'').includes(busca));
+  _renderCxRegistros(ops);
 }
 
 /** Renderiza a tabela "Registros de Operações (GDO Rural)" — lista cada RAT

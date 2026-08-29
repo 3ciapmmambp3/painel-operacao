@@ -81,11 +81,15 @@
       {ic:'🌿', t:'Operações GDO Rural', h:'painel.html?tab=gdo-rural'},
       {ic:'📊', t:'Produtividade', h:'produtividade.html'},
       {ic:'🔴', t:'Análise Criminal', h:'analise-criminal.html'},
-      {ic:'📊', t:'Metas', h:'admin.html?tab=metas'},
-      {ic:'🎯', t:'Cadastro de Operações', h:'admin.html?tab=operacoes'},
-      {ic:'🌲', t:'PAF', h:'admin.html?tab=paf'},
-      {ic:'🏭', t:'FAPI', h:'admin.html?tab=fapi'},
-      {ic:'📋', t:'Campos e Quesitos', h:'admin.html?tab=quesitos'},
+      {ic:'🤝', t:'Visitas Tranquilizadoras', h:'analise-criminal.html?sub=visitas'},
+      {ic:'🏘️', t:'Reunião Comunitária Rural', h:'analise-criminal.html?sub=rcr'},
+      // "Gestão e Cadastros" — no hub-p3 só aparecem p/ Aux P3 ou Admin Geral.
+      // O menu espelha essa regra (gest:true → gated por podeGestP3).
+      {ic:'📊', t:'Metas', h:'admin.html?tab=metas', gest:true},
+      {ic:'🎯', t:'Cadastro de Operações', h:'admin.html?tab=operacoes', gest:true},
+      {ic:'🌲', t:'PAF', h:'admin.html?tab=paf', gest:true},
+      {ic:'🏭', t:'FAPI', h:'admin.html?tab=fapi', gest:true},
+      {ic:'📋', t:'Campos e Quesitos', h:'admin.html?tab=quesitos', gest:true},
     ],
     p4: [
       {ic:'📝', t:'Movimentação de Viaturas', h:'movimentacao-viaturas.html'},
@@ -117,12 +121,17 @@
     const isAdmin = ['admin_geral','admin','admin_pelotao','admin_gp'].includes(nivel);
     // Gestão Operacional (Supervisão e Controle) = mesma regra da página: sem admin_gp.
     const podeGO = ['admin_geral','admin','admin_pelotao'].includes(nivel);
+    // "Gestão e Cadastros" da P3 = mesma regra do card no hub-p3: Aux P3 ou Admin Geral.
+    const funcao = (sessao && sessao.funcao || '').toLowerCase().trim();
+    const podeGestP3 = funcao === 'aux p3' || nivel === 'admin_geral';
     const on = k => ativo===k ? ' active' : '';
 
     // Aba com menu suspenso (mega): clicar no nome vai ao hub; passar o mouse
     // mostra os módulos daquela seção pra ir direto, de qualquer página.
     const tab = (k, href, rot) => {
-      const itens = (MODULOS[k]||[]).map(m => m.soon
+      const itens = (MODULOS[k]||[])
+        .filter(m => !m.gest || podeGestP3)   // esconde cadastros p/ quem não é Aux P3/Admin Geral
+        .map(m => m.soon
         ? `<span class="tn-soon"><span class="tn-ic">${m.ic}</span>${m.t}<em>em breve</em></span>`
         : m.ext
           ? `<a href="${m.h}" target="_blank" rel="noopener noreferrer"><span class="tn-ic">${m.ic}</span>${m.t}<em style="margin-left:auto;font-style:normal;opacity:.6">↗</em></a>`

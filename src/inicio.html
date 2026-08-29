@@ -296,6 +296,46 @@ document.querySelectorAll('.topnav-link[data-dropdown]').forEach(link=>{
 });
 document.addEventListener('click',()=>document.querySelectorAll('.topnav-dropdown.open').forEach(d=>d.classList.remove('open')));
 
+// ── Demandas pendentes do grupamento do usuário ──────────────────────
+//  Replica a MESMA regra de escopo do denuncias.html (nível de acesso →
+//  grupamentos visíveis) para que a contagem do "Meu Dia" bata exatamente
+//  com o que o usuário enxerga ao abrir Controle de Demandas.
+//    • admin / admin_geral → todos os grupamentos
+//    • admin_pelotao       → grupamentos do seu pelotão
+//    • operacional / gp    → apenas o seu grupamento (fallback por município)
+async function demandasPendentesDoMeuGrupamento(){
+  try{
+    const H = { apikey: SB_AUTH_KEY, Authorization: 'Bearer '+SB_AUTH_KEY };
+    const gpNum  = s => { const m=(s||'').match(/(\d+)\s*GP/i);  return m?+m[1]:null; };
+    const pelNum = s => { const m=(s||'').match(/(\d+)\s*PEL/i); return m?+m[1]:null; };
+    const nivel = sessao.nivel_acesso;
+    const isAdminTotal = nivel==='admin' || nivel==='admin_geral';
+    const isAdminPel   = nivel==='admin_pelotao';
+
+    const rg = await fetch(`${SB_AUTH_URL}/rest/v1/grupos?select=gp_responsavel,grupamento_completo,pelotao&order=grupamento_completo`, { headers:H });
+    if(!rg.ok) return 0;
+    const GRUPOS = (await rg.json()).map(g => ({ gpr:g.gp_responsavel, comp:g.grupamento_completo, gp:gpNum(g.grupamento_completo), pel:pelNum(g.grupamento_completo) }));
+
+    const meuGp = gpNum(sessao.grupamento_id), meuPel = pelNum(sessao.grupamento_id);
+    let ALLOWED;
+    if (isAdminTotal)      ALLOWED = GRUPOS.slice();
+    else if (isAdminPel)   ALLOWED = GRUPOS.filter(g => g.pel===meuPel);
+    else {
+      ALLOWED = GRUPOS.filter(g => g.gp===meuGp && g.pel===meuPel);
+      if (!ALLOWED.length) ALLOWED = GRUPOS.filter(g => (sessao.grupamento_id||'').toUpperCase().includes(g.gpr.replace('GP ','')));
+    }
+
+    const gprs = [...new Set(ALLOWED.map(g=>g.gpr))];
+    if(!gprs.length) return 0;
+    const inList = '(' + gprs.map(v=>`"${v.replace(/"/g,'')}"`).join(',') + ')';
+    const url = `${SB_AUTH_URL}/rest/v1/denuncias?select=id&ativo=eq.true&situacao=in.(PENDENTE,%22EM%20ANDAMENTO%22)&gp_responsavel=in.${encodeURIComponent(inList)}&limit=5000`;
+    const rd = await fetch(url, { headers:H });
+    if(!rd.ok) return 0;
+    const arr = await rd.json();
+    return Array.isArray(arr) ? arr.length : 0;
+  }catch(e){ console.error('demandasPendentesDoMeuGrupamento', e); return 0; }
+}
+
 // ── Pendências reais do dia (hub_kpis) ──
 (async function(){
   const box=document.getElementById('pend');
@@ -309,8 +349,11 @@ document.addEventListener('click',()=>document.querySelectorAll('.topnav-dropdow
       rows.push(`<div class="pr"><span class="pi">🚨</span><span>Você tem <b>${k.minhas_pendencias_ficha} ficha(s) de viatura pendente(s)</b></span><a class="lk" href="movimentacao-viaturas.html">Preencher →</a></div>`);
     if(!k.tta_hoje_lancado)
       rows.push(`<div class="pr"><span class="pi">⏰</span><span>Você ainda <b>não lançou o TTA de hoje</b></span><a class="lk" href="tta.html">Lançar →</a></div>`);
-    if((k.demandas_abertas||0)>0)
-      rows.push(`<div class="pr"><span class="pi">📋</span><span><b>${k.demandas_abertas} demanda(s)</b> aguardando atendimento</span><a class="lk" href="denuncias.html">Ver →</a></div>`);
+    // Demandas pendentes — SÓ do grupamento do usuário (mesma regra de escopo do denuncias.html).
+    // Não usa k.demandas_abertas (que é a contagem global do sistema, usada pelos hubs de comando).
+    const nDemandas = await demandasPendentesDoMeuGrupamento();
+    if(nDemandas>0)
+      rows.push(`<div class="pr"><span class="pi">📋</span><span><b>${nDemandas} demanda(s)</b> aguardando atendimento</span><a class="lk" href="denuncias.html">Ver →</a></div>`);
     box.innerHTML = rows.length ? rows.join('') : '<div class="pend-empty">✓ Nada pendente para hoje.</div>';
   }catch(e){ box.innerHTML='<div class="pend-empty">Não foi possível carregar as pendências agora.</div>'; }
 })();
