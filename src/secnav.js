@@ -60,7 +60,7 @@
 
   // Ícone pode ser um EMOJI ou um CAMINHO DE IMAGEM (ex.: assets/drone.png).
   const icoHTML = ic => /\.(png|jpe?g|svg|webp|gif)(\?|#|$)/i.test(ic||'')
-    ? `<img src="${ic}" alt="" style="width:18px;height:18px;object-fit:contain;display:inline-block;vertical-align:middle">`
+    ? `<img src="${ic}" alt="" style="width:24px;height:24px;object-fit:contain;display:inline-block;vertical-align:middle;background:#fff;border-radius:5px;padding:2px;box-sizing:border-box">`
     : (ic || '');
   function montar(){
   const itensHTML = conf.itens
