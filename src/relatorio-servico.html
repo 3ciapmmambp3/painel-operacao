@@ -347,6 +347,23 @@
   }
   .btn-add:hover{background:rgba(155,138,92,0.12);}
 
+  /* Resposta compartilhada: demandas extras (mesma resposta) */
+  .rc-add{
+    background:none;border:1px dashed var(--gold);color:var(--gold-text);
+    font-weight:600;font-size:12.5px;padding:6px 12px;border-radius:999px;cursor:pointer;
+    margin-top:8px;display:inline-flex;align-items:center;gap:6px;
+  }
+  .rc-add:hover{background:rgba(155,138,92,0.12);}
+  .rc-add::before{content:"⇢";font-weight:700;}
+  .rc-extras{display:flex;flex-direction:column;gap:8px;margin-top:8px;}
+  .rc-extras:empty{margin:0;}
+  .rc-extra-row{display:flex;align-items:flex-end;gap:8px;
+    border-left:2px solid var(--gold);padding-left:10px;}
+  .rc-extra-row .field{flex:1;margin:0;}
+  .rc-remove{flex:0 0 auto;width:30px;height:34px;border:1px solid var(--border);background:none;
+    color:var(--danger,#c0392b);border-radius:7px;cursor:pointer;font-size:17px;line-height:1;}
+  .rc-remove:hover{border-color:var(--danger,#c0392b);}
+
   .placeholder-note{
     color:var(--muted);
     font-size:14px;
@@ -852,7 +869,7 @@ const REPEATABLE_CONFIGS = {
     ],
   },
   nuden: {
-    entryLabel: 'Denúncia/Requisição',
+    entryLabel: 'Denúncia/Requisição', respostaCompartilhada: true,
     fields: [
       { label: 'Nº da Denúncia/Requisição', type: 'select', sourceKey: 'NUDEN', fracaoScoped: true },
       [
@@ -866,7 +883,7 @@ const REPEATABLE_CONFIGS = {
     ],
   },
   ddu: {
-    entryLabel: 'Denúncia DDU 181',
+    entryLabel: 'Denúncia DDU 181', respostaCompartilhada: true,
     fields: [
       { label: 'Nº da Denúncia DDU', type: 'select', sourceKey: 'DDU181', fracaoScoped: true },
       [
@@ -880,7 +897,7 @@ const REPEATABLE_CONFIGS = {
     ],
   },
   balcao: {
-    entryLabel: 'Denúncia/Requisição (Balcão)',
+    entryLabel: 'Denúncia/Requisição (Balcão)', respostaCompartilhada: true,
     fields: [
       [
         { label: 'Denúncia de Balcão', type: 'select', sourceKey: 'DEN_BALCAO', fracaoScoped: true },
@@ -951,7 +968,7 @@ const REPEATABLE_CONFIGS = {
     ],
   },
   mc: {
-    entryLabel: 'Monitoramento',
+    entryLabel: 'Monitoramento', respostaCompartilhada: true,
     fields: [
       { label: 'GEOCODE_IEF', type: 'select', sourceKey: 'MC', fracaoScoped: true },
       [
@@ -965,7 +982,7 @@ const REPEATABLE_CONFIGS = {
     ],
   },
   emergencia: {
-    entryLabel: 'Emergência Ambiental',
+    entryLabel: 'Emergência Ambiental', respostaCompartilhada: true,
     fields: [
       { label: 'Nº Protocolo', type: 'select', sourceKey: 'EMERGENCIA', fracaoScoped: true },
       [
@@ -979,7 +996,7 @@ const REPEATABLE_CONFIGS = {
     ],
   },
   ftp: {
-    entryLabel: 'Atendimento FTP/RI',
+    entryLabel: 'Atendimento FTP/RI', respostaCompartilhada: true,
     fields: [
       { label: 'Nº RI', type: 'select', sourceKey: 'RI', fracaoScoped: true },
       [
@@ -993,7 +1010,7 @@ const REPEATABLE_CONFIGS = {
     ],
   },
   requisicao: {
-    entryLabel: 'Requisição Externa',
+    entryLabel: 'Requisição Externa', respostaCompartilhada: true,
     fields: [
       { label: 'Nº da Requisição', type: 'select', sourceKey: 'REQUISICAO', fracaoScoped: true },
       [
@@ -2543,6 +2560,36 @@ function bindRepeatablePanel(panel, categoryId){
     }
     if (categoryId === 'ima') bindImaDuracao(entry);
     if (categoryId === 'fapi') bindFapiEntry(entry, panel);
+    setupRespCompart(entry);
+  }
+  // Resposta compartilhada: acha o campo de DEMANDA (o select fração-scoped) e
+  // injeta "+ outra demanda com a mesma resposta" — na coleta a entrada expande
+  // em 1 item por demanda, com os MESMOS dados de resposta (REDS, Auto, Data…).
+  function _demandaDef(){
+    const flat = [];
+    (config.fields || []).forEach(f => Array.isArray(f) ? flat.push(...f) : flat.push(f));
+    return flat.find(f => f && f.fracaoScoped && f.sourceKey) || null;
+  }
+  function setupRespCompart(entry){
+    if (!config.respostaCompartilhada || entry.dataset.rcReady === '1') return;
+    const dd = _demandaDef(); if (!dd) return;
+    const el = entry.querySelector('[data-fracao-scoped="1"]');
+    const field = el && el.closest('.field'); if (!field) return;
+    entry.dataset.rcReady = '1';
+    entry.dataset.rcDemandaLabel = dd.label;
+    const extras = document.createElement('div'); extras.className = 'rc-extras';
+    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'rc-add';
+    btn.textContent = '+ Outra demanda com a mesma resposta';
+    field.after(extras); extras.after(btn);
+    btn.addEventListener('click', () => {
+      const row = document.createElement('div'); row.className = 'rc-extra-row';
+      row.innerHTML = renderFieldGroup(dd) + '<button type="button" class="rc-remove" title="Remover demanda">×</button>';
+      const lb = row.querySelector('label'); if (lb) lb.textContent = dd.label + ' (mesma resposta)';
+      extras.appendChild(row);
+      populateSelectsIn(row); bindMasksIn(row); searchifySelectsIn(row);
+      row.querySelector('.rc-remove').addEventListener('click', () => row.remove());
+      const inp = row.querySelector('[data-source], input, select'); if (inp) inp.focus();
+    });
   }
   list.querySelectorAll('[data-repeat-entry]').forEach(entry => {
     bindRemove(entry);
@@ -2597,7 +2644,16 @@ function countForCategory(id){
   }
   const entries = node.querySelectorAll('[data-repeat-entry]');
   if (entries.length){
-    return Array.from(entries).filter(entryIsFilled).length;
+    let c = 0;
+    entries.forEach(e => {
+      if (!entryIsFilled(e)) return;
+      c += 1;
+      // Resposta compartilhada: cada demanda extra preenchida conta como +1 item.
+      if (e.dataset.rcDemandaLabel){
+        e.querySelectorAll('.rc-extras [data-source]').forEach(inp => { if ((inp.value||'').trim()) c += 1; });
+      }
+    });
+    return c;
   }
   return 0;
 }
@@ -3506,6 +3562,15 @@ function collectCategoryEntries(id){
     Array.from(entry.querySelectorAll(':scope > .field, :scope .row2 .field, :scope .row3 .field, :scope .cemig-variant-fields .field'))
       .forEach(f => aplicarCampo_(f, campos));
     if (Object.keys(campos).length) result.push(campos);
+    // Resposta compartilhada: cada demanda EXTRA vira um item individualizado
+    // com os MESMOS dados de resposta (só troca o nº da demanda).
+    const rcLabel = entry.dataset.rcDemandaLabel;
+    if (rcLabel){
+      entry.querySelectorAll('.rc-extras [data-source]').forEach(inp => {
+        const v = (inp.value || '').trim();
+        if (v) result.push(Object.assign({}, campos, { [rcLabel]: v }));
+      });
+    }
   });
   return result;
 }
