@@ -138,17 +138,13 @@ declare
   v_row public.tta_chamadas;
   v_tema public.tta_temas;
   v_hoje date := (now() at time zone 'America/Sao_Paulo')::date;
-  v_conf text;
 begin
   select * into v_me from public._sessao_militar(p_token);
   if v_me.id is null then raise exception 'Sessão expirada. Faça login novamente.'; end if;
 
-  -- Impede duplicidade: militar/viatura já lançado(s) em outro TTA de hoje.
-  -- Nesse caso o correto é EDITAR o TTA existente, não criar outro. (db/42)
-  v_conf := public._tta_conflitos(p_dados, v_hoje, null);
-  if v_conf <> '' then
-    raise exception 'Lançamento duplicado — %', v_conf;
-  end if;
+  -- NOTA: a checagem anti-duplicidade de tta_criar_chamada foi movida para
+  -- db/42 (create-or-replace), para não obrigar a re-rodar TODO o 07 (cuja
+  -- tta_listar_militares diverge da versão em produção). Ver db/42.
 
   select * into v_tema from public.tta_temas
     where ano = extract(year from v_hoje)::int

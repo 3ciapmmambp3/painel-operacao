@@ -155,7 +155,61 @@ end;
 $$;
 grant execute on function public.tta_auditoria_listar(uuid, uuid) to anon;
 
+-- 6) tta_criar_chamada com anti-duplicidade -------------------------------
+--    Redefinida aqui (create-or-replace, mesmo tipo de retorno) para NÃO
+--    obrigar a re-rodar todo o 07 (cuja tta_listar_militares diverge da
+--    versão em produção e falha com "cannot change return type").
+create or replace function public.tta_criar_chamada(p_token uuid, p_dados jsonb)
+returns public.tta_chamadas
+language plpgsql security definer set search_path = public as $$
+declare
+  v_me   record;
+  v_row  public.tta_chamadas;
+  v_tema public.tta_temas;
+  v_hoje date := (now() at time zone 'America/Sao_Paulo')::date;
+  v_conf text;
+begin
+  select * into v_me from public._sessao_militar(p_token);
+  if v_me.id is null then raise exception 'Sessão expirada. Faça login novamente.'; end if;
+
+  -- Impede duplicidade: militar/viatura já lançado(s) em outro TTA de hoje.
+  v_conf := public._tta_conflitos(p_dados, v_hoje, null);
+  if v_conf <> '' then
+    raise exception 'Lançamento duplicado — %', v_conf;
+  end if;
+
+  select * into v_tema from public.tta_temas
+    where ano = extract(year from v_hoje)::int
+      and mes = extract(month from v_hoje)::int
+      and extract(day from v_hoje)::int = any(dias)
+    order by created_at
+    limit 1;
+
+  insert into public.tta_chamadas (
+    gp_responsavel, grupamento_completo,
+    militar_resp_matricula, militar_resp_nome,
+    militares_presentes, data_hora_chamada,
+    tema_id, tema_assunto, tema_referencia,
+    inicio_turno, final_turno, prefixo_viatura, viaturas, equipes, tipo_patrulha,
+    municipios_atuacao, observacoes,
+    registrado_por_matricula, registrado_por_nome
+  ) values (
+    p_dados->>'gp_responsavel', p_dados->>'grupamento_completo',
+    v_me.matricula, v_me.nome_completo,
+    coalesce(p_dados->'militares_presentes', '[]'::jsonb), now(),
+    v_tema.id, v_tema.assunto, v_tema.referencia,
+    nullif(p_dados->>'inicio_turno','')::time, nullif(p_dados->>'final_turno','')::time,
+    nullif(p_dados->>'prefixo_viatura',''), coalesce(p_dados->'viaturas','[]'::jsonb), coalesce(p_dados->'equipes','[]'::jsonb), nullif(p_dados->>'tipo_patrulha',''),
+    coalesce(p_dados->'municipios_atuacao', '[]'::jsonb), nullif(p_dados->>'observacoes',''),
+    v_me.matricula, v_me.nome_completo
+  ) returning * into v_row;
+
+  return v_row;
+end;
+$$;
+grant execute on function public.tta_criar_chamada(uuid, jsonb) to anon;
+
 -- ════════════════════════════════════════════════════════════════════════
--- FIM. Ordem: rodar este 42, depois RE-RODAR 07 e 22 (versões novas de
--- tta_criar_chamada e tta_editar_chamada).
+-- FIM. Ordem: rodar SÓ este 42 e depois o 22. NÃO precisa re-rodar o 07
+-- (tta_criar_chamada já está redefinida aqui).
 -- ════════════════════════════════════════════════════════════════════════
