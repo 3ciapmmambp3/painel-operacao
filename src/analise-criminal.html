@@ -1304,7 +1304,7 @@ document.addEventListener('click', () => {
         <select id="cr-ueop" onchange="renderCrimes()" style="font-size:11px;max-width:150px;"><option value="">Todas</option></select>
       </div>
       <div class="fg" style="max-width:200px;">
-        <label>Buscar (Nº BO / município)</label>
+        <label>Buscar (Nº BO / RAT)</label>
         <input type="text" id="cr-busca" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this);renderCrimes()" maxlength="18">
       </div>
       <div style="align-self:flex-end;"><button class="btn-outline" onclick="limparFiltrosCrimes()">✕</button></div>
@@ -1445,9 +1445,13 @@ document.addEventListener('click', () => {
           <option value="visita">🔵 Visita Tranquilizadora</option>
         </select>
       </div>
-      <div class="fg" style="min-width:200px;">
-        <label>Buscar (Nº BO / RAT / BOS / município)</label>
-        <input type="text" id="cx-busca" placeholder="Ex: 2026-020361740-001 ou nome do município" oninput="renderCruzamento()" maxlength="40">
+      <div class="fg" style="min-width:160px;">
+        <label>Município</label>
+        <select id="cx-municipio" onchange="renderCruzamento()" style="font-size:11px;"><option value="">Todos</option></select>
+      </div>
+      <div class="fg" style="min-width:180px;">
+        <label>Buscar (Nº BO / RAT / BOS)</label>
+        <input type="text" id="cx-busca" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this);renderCruzamento()" maxlength="18">
       </div>
     </div>
   </div>
@@ -4241,7 +4245,7 @@ function pontoEmPoligono(lat, lng, poligono){
 ══════════════════════════════════ */
 function popularFiltrosMunicipios(){
   const muns = [...new Set(dadosCrimes.map(d=>d.municipio).filter(Boolean))].sort();
-  ['f-mun-dash','cr-mun'].forEach(id => {
+  ['f-mun-dash','cr-mun','cx-municipio'].forEach(id => {
     const el = document.getElementById(id);
     if(!el) return;
     const cur = el.value;
@@ -4649,6 +4653,7 @@ function limparFiltrosCrimes(){
   ['cr-indicador','cr-mun','cr-loc','cr-audit','cr-unidarea','cr-ueop'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   document.getElementById('cr-busca').value='';
   const cxB = document.getElementById('cx-busca'); if(cxB) cxB.value='';
+  const cxM = document.getElementById('cx-municipio'); if(cxM) cxM.value='';
   const vtB = document.getElementById('vt-busca'); if(vtB) vtB.value='';
   const vtI = document.getElementById('vt-indicador'); if(vtI) vtI.value='';
   const mbB = document.getElementById('mapa-busca'); if(mbB) mbB.value='';
@@ -6481,7 +6486,7 @@ function renderCrimes(){
   /* Filtra por pelotão (multi-seleção) */
   if(pelSel.length) dados = dados.filter(d => d.grupamento && pelSel.includes(String(pelDoColk(d.grupamento))));
   if(busca)  dados = dados.filter(d =>
-    norm(d.bo||d.rat).includes(busca) || norm(d.municipio).includes(busca)
+    norm(d.bo||d.rat).includes(busca)   /* município → filtro próprio (cr-mun) */
   );
   if(fUnidArea) dados = dados.filter(d => (d.natureza||'') === fUnidArea);
   if(fUeop)     dados = dados.filter(d => (d.ueop||'')     === fUeop);
@@ -7963,9 +7968,10 @@ function renderCruzamento(){
   let html = '';
   const cxStatus = document.getElementById('cx-status')?.value || '';
   let resultadosFiltrados = cxStatus ? resultados.filter(r => r.status === cxStatus) : resultados;
+  const cxMun = document.getElementById('cx-municipio')?.value || '';
+  if(cxMun) resultadosFiltrados = resultadosFiltrados.filter(r => (r.crime.municipio||'') === cxMun);
   if(cxBusca) resultadosFiltrados = resultadosFiltrados.filter(r =>
     norm(r.crime.bo||r.crime.rat||'').includes(cxBusca) ||
-    norm(r.crime.municipio||'').includes(cxBusca) ||
     [...r.opsProximas, ...r.opsInvalidas].some(op => norm(op.rat||'').includes(cxBusca)) ||
     _crzVisitasVinculadas(r.crime, dias).some(v => norm(v.bo||'').includes(cxBusca))
   );
