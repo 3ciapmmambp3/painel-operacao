@@ -135,7 +135,7 @@
 
     // Ícone pode ser um EMOJI ou um CAMINHO DE IMAGEM (ex.: assets/drone.png).
     const icoHTML = ic => /\.(png|jpe?g|svg|webp|gif)(\?|#|$)/i.test(ic||'')
-      ? `<img src="${ic}" alt="" style="width:22px;height:22px;object-fit:contain;vertical-align:middle;background:#fff;border-radius:5px;padding:2px;box-sizing:border-box">`
+      ? `<img src="${ic}" alt="" style="width:22px;height:22px;object-fit:contain;vertical-align:middle;box-sizing:border-box">`
       : (ic || '');
     // Aba com menu suspenso (mega): clicar no nome vai ao hub; passar o mouse
     // mostra os módulos daquela seção pra ir direto, de qualquer página.
