@@ -1010,7 +1010,13 @@ document.addEventListener('click', () => {
       <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px">Cadastre atalhos (nome + endereço) que aparecem na seção <b>“Links úteis”</b> do Meu Dia, para todos os militares. Abrem em nova aba.</p>
       <div style="display:grid;grid-template-columns:150px 1fr 2fr auto auto;gap:10px;align-items:end">
         <div><label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase" title="Emoji (ex.: 🔗) OU caminho de imagem (ex.: assets/escudo-pmmg.png)">Ícone <span style="text-transform:none;font-weight:400;color:var(--text-hint)">emoji ou imagem</span></label>
-          <input id="lk-icone" maxlength="120" placeholder="🔗 ou assets/escudo-pmmg.png" style="width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:8px 8px;color:var(--text-white);font-size:13px;outline:none;margin-top:4px"></div>
+          <input id="lk-icone" maxlength="500" placeholder="🔗, assets/escudo-pmmg.png ou envie uma imagem" style="width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:8px 8px;color:var(--text-white);font-size:13px;outline:none;margin-top:4px">
+          <div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input type="file" id="lk-img-file" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif" style="display:none" onchange="lkUploadImagem(this)">
+            <button type="button" class="btn-outline" style="padding:6px 10px;font-size:11px" onclick="document.getElementById('lk-img-file').click()">📤 Enviar imagem do computador</button>
+            <img id="lk-img-preview" alt="" style="width:22px;height:22px;object-fit:contain;display:none;border:1px solid var(--border);border-radius:4px;background:#fff">
+            <span id="lk-img-status" style="font-size:11px;color:var(--text-muted)"></span>
+          </div></div>
         <div><label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Nome do card</label>
           <input id="lk-nome" placeholder="Ex.: REDS" style="width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;outline:none;margin-top:4px"></div>
         <div><label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Endereço (URL)</label>
@@ -1273,7 +1279,7 @@ async function linksCarregar(){
     if(!Array.isArray(LINKS)) LINKS=[];
     if(!LINKS.length){ tb.innerHTML='<tr><td colspan="3" style="padding:30px;text-align:center;color:var(--text-hint)">Nenhum link cadastrado.</td></tr>'; return; }
     tb.innerHTML = LINKS.map(l=>`<tr>
-      <td style="padding:11px 14px;border-bottom:1px solid var(--border);font-size:12.5px;font-weight:700"><span style="font-size:16px;margin-right:7px;display:inline-block;vertical-align:middle">${/\.(png|jpe?g|svg|webp|gif)$/i.test(l.icone||'')?`<img src="${_lkEsc(l.icone)}" alt="" style="width:18px;height:18px;object-fit:contain;vertical-align:middle" onerror="this.replaceWith(document.createTextNode('🔗'))">`:(l.icone?_lkEsc(l.icone):'🔗')}</span>${_lkEsc(l.nome)}</td>
+      <td style="padding:11px 14px;border-bottom:1px solid var(--border);font-size:12.5px;font-weight:700"><span style="font-size:16px;margin-right:7px;display:inline-block;vertical-align:middle">${/\.(png|jpe?g|svg|webp|gif)(\?|#|$)/i.test(l.icone||'')?`<img src="${_lkEsc(l.icone)}" alt="" style="width:18px;height:18px;object-fit:contain;vertical-align:middle" onerror="this.replaceWith(document.createTextNode('🔗'))">`:(l.icone?_lkEsc(l.icone):'🔗')}</span>${_lkEsc(l.nome)}</td>
       <td style="padding:11px 14px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-muted);word-break:break-all"><a href="${_lkEsc(l.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--info)">${_lkEsc(l.url)}</a></td>
       <td style="padding:11px 14px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap">
         <button class="btn-outline" style="padding:5px 11px;font-size:11.5px" onclick="linksEditar('${l.id}')">✎ Editar</button>
@@ -1281,6 +1287,53 @@ async function linksCarregar(){
       </td></tr>`).join('');
   }catch(e){ tb.innerHTML=`<tr><td colspan="3" style="padding:20px;text-align:center;color:#ef9a9a">Erro: ${_lkEsc(e.message)}</td></tr>`; }
 }
+// ── Upload de imagem do computador p/ o ícone do link (Storage: bucket anexos) ──
+const _LK_STORAGE=`${SB_AUTH_URL}/storage/v1`, _LK_BUCKET='anexos', _LK_TTL=315360000;
+const _LK_MAX_MB=5;   // limite do arquivo escolhido (antes de comprimir)
+const _lkSanitize=n=>(n||'img').normalize('NFD').replace(/[^\x00-\x7F]/g,'').replace(/[^\w.\-]+/g,'_').replace(/_+/g,'_').slice(-80)||'img';
+const _lkEnc=p=>p.split('/').map(encodeURIComponent).join('/');
+async function _lkComprimir(file){
+  if(!/^image\//.test(file.type) || /gif|svg/i.test(file.type)) return file;   // gif/svg não recomprime
+  try{
+    const bmp=await createImageBitmap(file);
+    const scale=Math.min(1, 512/Math.max(bmp.width,bmp.height));   // ícone: no máx 512px
+    const w=Math.round(bmp.width*scale), h=Math.round(bmp.height*scale);
+    const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+    cv.getContext('2d').drawImage(bmp,0,0,w,h);
+    const blob=await new Promise(res=>cv.toBlob(res,'image/png',0.85));
+    if(blob) return new File([blob], file.name.replace(/\.[^.]+$/,'')+'.png', {type:'image/png'});
+  }catch(e){ console.warn('compressão do ícone falhou:', e); }
+  return file;
+}
+function _lkPreview(link){
+  const img=document.getElementById('lk-img-preview'); if(!img) return;
+  if(link && /\.(png|jpe?g|svg|webp|gif)(\?|#|$)/i.test(link)){ img.src=link; img.style.display=''; }
+  else { img.style.display='none'; img.removeAttribute('src'); }
+}
+async function lkUploadImagem(input){
+  const file=input.files && input.files[0]; if(!file) return;
+  const status=document.getElementById('lk-img-status');
+  const fail=m=>{ status.style.color='#ef9a9a'; status.textContent=m; input.value=''; };
+  if(!/^image\//.test(file.type)) return fail('Selecione um arquivo de imagem (PNG, JPG, WEBP, SVG ou GIF).');
+  if(file.size > _LK_MAX_MB*1048576) return fail(`Imagem acima de ${_LK_MAX_MB} MB.`);
+  status.style.color='var(--text-muted)'; status.textContent='Enviando…';
+  try{
+    const f=await _lkComprimir(file);
+    const path=`links/${new Date().getFullYear()}/${crypto.randomUUID()}-${_lkSanitize(f.name)}`;
+    const enc=_lkEnc(path), AH={apikey:SB_AUTH_KEY,Authorization:'Bearer '+SB_AUTH_KEY};
+    const up=await fetch(`${_LK_STORAGE}/object/${_LK_BUCKET}/${enc}`,{method:'POST',headers:{...AH,'Content-Type':f.type||'application/octet-stream','x-upsert':'true'},body:f});
+    if(!up.ok) throw new Error('HTTP '+up.status+' '+(await up.text()));
+    const sg=await fetch(`${_LK_STORAGE}/object/sign/${_LK_BUCKET}/${enc}`,{method:'POST',headers:{...AH,'Content-Type':'application/json'},body:JSON.stringify({expiresIn:_LK_TTL})});
+    if(!sg.ok) throw new Error('assinatura HTTP '+sg.status);
+    const sj=await sg.json();
+    const link=`${_LK_STORAGE}${sj.signedURL||sj.signedUrl}`;
+    document.getElementById('lk-icone').value=link;
+    _lkPreview(link);
+    status.style.color='var(--success)'; status.textContent='✔ Imagem enviada. Clique em salvar.';
+  }catch(e){ status.style.color='#ef9a9a'; status.textContent='Falha ao enviar: '+e.message; }
+  finally{ input.value=''; }
+}
+
 async function linksSalvar(){
   const nome=document.getElementById('lk-nome').value.trim();
   const url=document.getElementById('lk-url').value.trim();
@@ -1300,6 +1353,7 @@ function linksEditar(id){
   const l=LINKS.find(x=>x.id===id); if(!l) return;
   document.getElementById('lk-id').value=l.id;
   document.getElementById('lk-icone').value=l.icone||'';
+  _lkPreview(l.icone||''); const _st=document.getElementById('lk-img-status'); if(_st) _st.textContent='';
   document.getElementById('lk-nome').value=l.nome;
   document.getElementById('lk-url').value=l.url;
   document.getElementById('lk-salvar').textContent='Salvar';
@@ -1309,6 +1363,7 @@ function linksEditar(id){
 function linksCancelar(){
   document.getElementById('lk-id').value='';
   document.getElementById('lk-icone').value='';
+  _lkPreview(''); const _st=document.getElementById('lk-img-status'); if(_st) _st.textContent='';
   document.getElementById('lk-nome').value='';
   document.getElementById('lk-url').value='';
   document.getElementById('lk-salvar').textContent='Adicionar';
