@@ -158,19 +158,12 @@ create or replace function public.tta_listar_militares(p_token uuid)
 returns table (id uuid, matricula text, posto_graduacao text, nome_completo text,
                nome_guerra text, grupamento_id text, funcao text)
 language plpgsql security definer set search_path = public as $$
-declare v_me record; v_ge boolean; v_adm boolean; v_pel text;
+declare v_me record;
 begin
   select * into v_me from public._sessao_militar(p_token);
   if v_me.id is null then raise exception 'Sessão expirada. Faça login novamente.'; end if;
-  -- Recorte por grupamento (mesma hierarquia da seleção de equipes do Relatório):
-  --  visão total = Admin Geral/Admin ou Comando da Cia (função CMT + CIA);
-  --  ADM = quem é lotado na ADM vê todos os da ADM;
-  --  Admin Pelotão = todos os grupamentos do SEU pelotão;
-  --  demais (GP/Operacional/Admin GP) = só o próprio grupamento.
-  v_ge  := coalesce(v_me.nivel_acesso,'') in ('admin_geral','admin')
-        or (upper(coalesce(v_me.funcao,'')) like '%CMT%' and upper(coalesce(v_me.funcao,'')) like '%CIA%');
-  v_adm := upper(btrim(coalesce(v_me.grupamento_id,''))) like 'ADM%';
-  v_pel := (regexp_match(upper(coalesce(v_me.grupamento_id,'')), '(\d+)\s*PEL'))[1];
+  -- SEM recorte por grupamento/pelotão: a equipe do TTA/Relatório pode misturar
+  -- militares da 3ª Cia inteira (operações e apoio). Ver db/44 (fonte da correção).
   return query
     select m.id, m.matricula, m.posto_graduacao, m.nome_completo, m.nome_guerra,
            m.grupamento_id, m.funcao
@@ -178,14 +171,6 @@ begin
     where m.ativo = true
       and m.matricula_clean not in ('0000001','0000002','0000003','0000004')
       and coalesce(upper(btrim(m.funcao)),'') <> 'ASPM'   -- ASPM não é militar
-      and (
-            v_ge
-         or (v_adm and upper(btrim(coalesce(m.grupamento_id,''))) like 'ADM%')
-         or (not v_adm and v_me.nivel_acesso = 'admin_pelotao' and v_pel is not null
-             and (regexp_match(upper(coalesce(m.grupamento_id,'')), '(\d+)\s*PEL'))[1] = v_pel)
-         or (not v_adm and coalesce(v_me.nivel_acesso,'') <> 'admin_pelotao'
-             and m.grupamento_id = v_me.grupamento_id)
-          )
     order by m.matricula_clean;
 end;
 $$;
