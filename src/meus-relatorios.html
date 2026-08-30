@@ -244,6 +244,8 @@ function renderizarTabela(){
   const pagina = filtrados.slice(inicio, inicio + ITENS_POR_PAGINA);
 
   const ehAdminGeral = sessao && sessao.nivel_acesso === 'admin_geral';
+  // Excluir lançamento errado/duplicado — só Admin Geral ou Aux P3.
+  const podeExcluir = ehAdminGeral || (sessao && (sessao.funcao||'').toLowerCase().startsWith('aux p3'));
 
   const linhas = pagina.map(r => {
     const podeEditarEfetivo = r.podeEditar || ehAdminGeral;
@@ -251,6 +253,9 @@ function renderizarTabela(){
       ? `<span class="mr-btn-editar" onclick="window.location.href='relatorio-servico.html?editar=${encodeURIComponent(r['ID Relatório'])}'">Editar</span>`
       : `<span class="mr-btn-editar disabled">Editar<div class="mr-tip">Entrar em contato com a P3 caso seja necessário alterar algo, já expirou o prazo para editar.</div></span>`;
     const btnVer = `<span class="mr-btn-ver" onclick="window.open('relatorio-servico.html?ver=${encodeURIComponent(r['ID Relatório'])}','_blank')">👁 Ver / Imprimir</span>`;
+    const btnDel = podeExcluir
+      ? `<span class="mr-btn-excluir" style="color:#ef9a9a;font-weight:700;cursor:pointer" onclick="excluirRelatorio('${(r['ID Relatório']||'').toString().replace(/'/g,'')}','${(formatarDataBR(r['Data'])||'').replace(/'/g,'')}','${((r['Fração de Atuação']||'').split('/')[0].trim()).replace(/'/g,'')}')">🗑 Excluir</span>`
+      : '';
     return `<tr>
       <td>${formatarDataBR(r['Data'])}</td>
       <td>${r['Fração de Atuação'] || '—'}</td>
@@ -258,7 +263,7 @@ function renderizarTabela(){
       <td>${r['Fim do Turno'] || '—'}</td>
       <td>${r['Equipe'] || '—'}</td>
       <td>${r['Tipo de Serviço'] || '—'}</td>
-      <td><div class="mr-acoes">${btnVer}${btn}</div></td>
+      <td><div class="mr-acoes">${btnVer}${btn}${btnDel}</div></td>
     </tr>`;
   }).join('');
 
@@ -276,6 +281,24 @@ function renderizarTabela(){
   const btnProx = document.getElementById('btnPagProxima');
   if (btnAnt) btnAnt.addEventListener('click', () => { paginaAtual--; renderizarTabela(); });
   if (btnProx) btnProx.addEventListener('click', () => { paginaAtual++; renderizarTabela(); });
+}
+
+// Excluir relatório (Admin Geral / Aux P3) — lançamento errado ou duplicado.
+async function excluirRelatorio(id, dataBR, fracao){
+  if(!id) return;
+  const motivo = prompt(`Excluir o relatório de ${fracao||''} — ${dataBR||''}?\n\nO relatório é preservado no banco (fica registrado quem/quando/motivo) e some das listas.\nInforme o MOTIVO (ex.: lançamento errado / duplicado):`, '');
+  if(motivo===null) return;                 // cancelou
+  try{
+    const H = { apikey: SB_AUTH_KEY, Authorization:'Bearer '+SB_AUTH_KEY, 'Content-Type':'application/json' };
+    const res = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/relatorio_excluir`, {
+      method:'POST', headers:H, body: JSON.stringify({ p_token: sessao.token, p_id: id, p_justificativa: motivo.trim() })
+    });
+    const t = await res.text(); let j; try{ j=t?JSON.parse(t):null; }catch{ j=t; }
+    if(!res.ok) throw new Error((j&&j.message)||('HTTP '+res.status));
+    // recarrega a lista (o excluído sai por ativo=false)
+    todosOsRelatorios = todosOsRelatorios.filter(r => (r['ID Relatório']||'').toString() !== id.toString());
+    renderizarTabela();
+  }catch(e){ alert('Não foi possível excluir: '+e.message); }
 }
 
 ['filtroFracao', 'filtroDataInicio', 'filtroDataFim'].forEach(id => {
