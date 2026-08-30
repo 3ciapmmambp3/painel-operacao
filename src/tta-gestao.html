@@ -245,7 +245,7 @@
             <table class="temas" style="min-width:900px">
               <thead><tr>
                 <th>Grupamento</th><th>Responsável pela Chamada</th><th>Data/hora</th><th>Presentes</th>
-                <th>Referência</th><th>Turno</th><th>Viatura</th><th>Patrulha</th><th>Município(s)</th>
+                <th>Referência</th><th>Turno</th><th>Viatura</th><th>Patrulha</th><th>Município(s)</th><th style="width:70px;text-align:right">Ações</th>
               </tr></thead>
               <tbody id="corpoChamadas"></tbody>
             </table>
@@ -598,16 +598,84 @@ let paginaChamadas = 1;
 
 async function carregarChamadasAdmin(){
   const corpo = document.getElementById('corpoChamadas');
-  corpo.innerHTML = '<tr><td colspan="9" class="hint">Carregando…</td></tr>';
+  corpo.innerHTML = '<tr><td colspan="10" class="hint">Carregando…</td></tr>';
   try{
     CHAMADAS_MES = await rpc('tta_listar_chamadas', { p_token: sessao.token, p_ano: admAno, p_mes: admMes }) || [];
     paginaChamadas = 1;
     renderChamadasPage();
   }catch(e){
-    corpo.innerHTML = '<tr><td colspan="9" class="hint">Erro ao carregar lançamentos.</td></tr>';
+    corpo.innerHTML = '<tr><td colspan="10" class="hint">Erro ao carregar lançamentos.</td></tr>';
     document.getElementById('contadorChamadas').textContent = '';
     document.getElementById('pagerChamadas').style.display = 'none';
   }
+}
+
+// ── Excluir TTA (Aux P1/Admin — a própria página já é restrita) ──
+const _escG = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const _milG = m => { if(!m) return '—'; return `${_escG(m.matricula||'')} — ${_escG((m.pg||'').toUpperCase())} — ${_escG((m.nome||'').toUpperCase())}`; };
+async function excluirChamadaTTA(id){
+  const c = (CHAMADAS_MES||[]).find(x=>x.id===id); if(!c) return;
+  const just = prompt(`Excluir o TTA de ${(c.grupamento_completo||'').split('/')[0].trim()} — ${fmtDataHoraCompleta(c.data_hora_chamada)}?\n\nA exclusão fica registrada na auditoria.\nInforme a JUSTIFICATIVA (obrigatória):`, '');
+  if(just===null) return;
+  if(!just.trim()){ alert('A justificativa é obrigatória para excluir.'); return; }
+  try{ await rpc('tta_excluir_chamada', { p_token: sessao.token, p_id: id, p_justificativa: just.trim() }); toast('TTA excluído.'); carregarChamadasAdmin(); }
+  catch(e){ alert('Não foi possível excluir: '+e.message); }
+}
+// ── Ver / Imprimir TTA (documento em nova janela) ──
+function imprimirChamadaTTA(id){
+  const c = (CHAMADAS_MES||[]).find(x=>x.id===id); if(!c) return;
+  const dia = c.data_hora_chamada ? new Date(c.data_hora_chamada).toLocaleDateString('pt-BR') : '—';
+  const turno = `${(c.inicio_turno||'—').slice(0,5)} às ${(c.final_turno||'—').slice(0,5)}`;
+  const eqsHtml = (c.equipes||[]).map((e,i)=>{
+    const pats=(e.patrulheiros||[]).map(p=>`<div>${_milG(p)}</div>`).join('')||'<div>—</div>';
+    const munis=(e.municipios||[]).join(', ')||'—';
+    return `<div class="eqbox"><div class="eqh">Equipe ${e.ordem||i+1}${e.vinculo?` <span class="vinc">(${_escG(e.vinculo)})</span>`:''}</div>
+      <table class="t"><tr><td class="l">Grupamento de atuação</td><td>${_escG(e.grupamento_completo||c.grupamento_completo||'—')}</td></tr>
+      <tr><td class="l">Comandante</td><td>${_milG(e.comandante)}</td></tr>
+      <tr><td class="l">Viatura</td><td>${e.sem_viatura?'<i>Sem viatura (a pé / manutenção)</i>':_escG(e.prefixo_viatura||'—')}</td></tr>
+      <tr><td class="l">Motorista</td><td>${e.sem_viatura?'—':_milG(e.motorista)}</td></tr>
+      <tr><td class="l">Tipo de patrulha</td><td>${_escG(e.tipo_patrulha||'—')}</td></tr>
+      ${e.operacao?`<tr><td class="l">Operação</td><td>${_escG(e.operacao)}</td></tr>`:''}
+      <tr><td class="l">Patrulheiro(s)</td><td>${pats}</td></tr>
+      <tr><td class="l">Município(s)</td><td>${_escG(munis)}</td></tr></table></div>`;
+  }).join('');
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>TTA — ${dia}</title>
+    <style>
+      body{font:13px/1.5 system-ui,Segoe UI,Arial,sans-serif;color:#111;margin:0;padding:24px 16px;background:#e9e9ee}
+      .doc{max-width:820px;margin:0 auto;background:#fff;padding:28px 34px;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.15)}
+      .cab{display:flex;align-items:center;gap:14px;border-bottom:2px solid #111;padding-bottom:12px;margin-bottom:16px}
+      .cab img{height:56px}.tit{flex:1;text-align:center;font-size:10.5px;line-height:1.5;color:#333;font-weight:600}
+      .tit h1{font-size:15px;margin:6px 0 0;color:#111;letter-spacing:.5px}
+      h3{font-size:12px;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #111;padding:5px 0 4px;margin:18px 0 8px}
+      table.t{width:100%;border-collapse:collapse;margin-bottom:4px}
+      table.t td{border:1px solid #ddd;padding:5px 9px;vertical-align:top;background:#fff}
+      table.t td.l{width:34%;color:#555;font-weight:600}
+      table.t.dados td.l{width:1%;white-space:nowrap;padding-right:14px}
+      .eqbox{margin:10px 0 14px}.eqh{font-weight:700;margin-bottom:4px}.vinc{font-weight:400;color:#777}
+      .foot{margin-top:16px;font-size:11px;color:#555;border-top:1px dashed #bbb;padding-top:8px}
+      .actions{max-width:820px;margin:0 auto 14px}
+      button{font:600 13px system-ui;padding:8px 14px;border:1px solid #999;border-radius:6px;background:#f3f3f3;cursor:pointer;margin-right:8px}
+      @media print{ body{background:#fff;padding:0} .doc{max-width:none;box-shadow:none;border-radius:0;padding:0} .actions{display:none} }
+    </style></head><body>
+    <div class="actions"><button onclick="window.print()">🖨 Imprimir</button><button onclick="window.close()">Fechar</button></div>
+    <div class="doc">
+    <div class="cab"><img src="assets/escudo-cpe.png" onerror="this.style.display='none'">
+      <div class="tit"><div>COMANDO DE POLICIAMENTO ESPECIALIZADO</div><div>BATALHÃO DE POLÍCIA MILITAR DE MEIO AMBIENTE</div><div>3ª COMPANHIA DE POLÍCIA MILITAR DE MEIO AMBIENTE</div><h1>TTA — TREINAMENTO TÁTICO / CHAMADA DE SERVIÇO</h1></div>
+      <img src="assets/brasao-bpmmamb.png" onerror="this.style.display='none'"></div>
+    <h3>Dados da chamada</h3>
+    <table class="t dados">
+      <tr><td class="l">Data</td><td>${dia}</td><td class="l">Turno</td><td>${turno}</td></tr>
+      <tr><td class="l">Grupamento (Eq. 1)</td><td>${_escG(c.grupamento_completo||'—')}</td><td class="l">Responsável pela chamada</td><td>${_escG(c.militar_resp_nome||'—')} (Nº ${_escG(c.militar_resp_matricula||'')})</td></tr>
+      ${c.tema_assunto?`<tr><td class="l">Tema</td><td colspan="3">${_escG(c.tema_assunto)}${c.tema_referencia?' — '+_escG(c.tema_referencia):''}</td></tr>`:''}
+    </table>
+    <h3>Equipes de serviço</h3>
+    ${eqsHtml||'<p>—</p>'}
+    ${c.observacoes?`<h3>Observações</h3><p>${_escG(c.observacoes)}</p>`:''}
+    <div class="foot">Registrado por ${_escG(c.registrado_por_nome||c.militar_resp_nome||'—')} em ${c.created_at?new Date(c.created_at).toLocaleString('pt-BR'):'—'}.</div>
+    </div></body></html>`;
+  const w = window.open('', '_blank');
+  if(!w){ alert('Permita pop-ups para imprimir.'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
 }
 
 function mudarPorPagina(){
@@ -629,7 +697,7 @@ function renderChamadasPage(){
   document.getElementById('badgeLancamentos').textContent = total;
 
   if (!total){
-    corpo.innerHTML = '<tr><td colspan="9" class="hint">Nenhuma chamada registrada neste mês.</td></tr>';
+    corpo.innerHTML = '<tr><td colspan="10" class="hint">Nenhuma chamada registrada neste mês.</td></tr>';
     pager.style.display = 'none';
     return;
   }
@@ -650,6 +718,7 @@ function renderChamadasPage(){
       <td class="desc">${c.prefixo_viatura||'—'}</td>
       <td class="desc">${c.tipo_patrulha||'—'}</td>
       <td class="desc">${(c.municipios_atuacao||[]).join(', ')||'—'}</td>
+      <td class="acoes" style="white-space:nowrap"><button title="Ver / Imprimir" onclick="imprimirChamadaTTA('${(c.id||'').replace(/'/g,'')}')">👁</button><button title="Excluir este TTA" onclick="excluirChamadaTTA('${(c.id||'').replace(/'/g,'')}')">🗑</button></td>
     </tr>`).join('');
 
   if (totalPaginas <= 1){
