@@ -494,9 +494,13 @@ function addEquipe(){
     '<div class="f full" style="margin-bottom:10px"><label>Grupamento de Atuação <span class="req">*</span> <span class="hint">— onde ESTA equipe vai atuar (pode diferir entre equipes)</span></label>'+
       '<select class="eq-grup" onchange="carregarMunisEquipe(this.closest(\'.equipe\'))">'+grupamentoOptionsHTML()+'</select></div>'+
     '<div class="eq-g3">'+
-      '<div class="f"><label>Comandante da equipe <span class="req">*</span></label><input class="eq-com" list="militares-dl" placeholder="nº ou nome…" oninput="mascaraPM(this);atualizarPresentesAuto()"></div>'+
-      '<div class="f"><label>Viatura (prefixo) <span class="req">*</span></label><input class="eq-vtr" list="viaturas-dl" placeholder="ex: 36685" oninput="atualizarPend()"></div>'+
-      '<div class="f"><label>Motorista <span class="req">*</span></label><input class="eq-mot" list="militares-dl" placeholder="nº ou nome…" oninput="mascaraPM(this);atualizarPend();atualizarPresentesAuto()"></div>'+
+      '<div class="f"><label>Comandante da equipe <span class="req">*</span></label><input class="eq-com" list="militares-dl" placeholder="nº ou nome…" oninput="mascaraPM(this);ttaSyncComMot(this);atualizarPresentesAuto()"></div>'+
+      '<div class="f eq-vtr-wrap"><label>Viatura (prefixo) <span class="req">*</span></label><input class="eq-vtr" list="viaturas-dl" placeholder="ex: 36685" oninput="atualizarPend()"></div>'+
+      '<div class="f eq-mot-wrap"><label>Motorista <span class="req">*</span></label><input class="eq-mot" list="militares-dl" placeholder="nº ou nome…" oninput="mascaraPM(this);atualizarPend();atualizarPresentesAuto()"></div>'+
+    '</div>'+
+    '<div class="f full" style="margin-top:8px;display:flex;gap:20px;flex-wrap:wrap">'+
+      '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" class="eq-com-mot" onchange="ttaComMot(this)"> Comandante também é o motorista</label>'+
+      '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" class="eq-sem-vtr" onchange="ttaSemVtr(this)"> Sem viatura (a pé / manutenção)</label>'+
     '</div>'+
     '<div class="grid2" style="margin-top:10px">'+
       '<div class="f"><label>Vínculo desta equipe</label><select class="eq-vinc"></select></div>'+
@@ -521,6 +525,37 @@ function addPatrulheiro(btn){
   row.innerHTML = '<input class="eq-pat" list="militares-dl" placeholder="nº ou nome…" oninput="mascaraPM(this);atualizarPresentesAuto()" style="flex:1">'+
     '<button type="button" onclick="this.parentNode.remove();atualizarPresentesAuto()" style="background:none;border:none;color:#ef5350;cursor:pointer;font-size:11px">remover</button>';
   box.appendChild(row);
+}
+// #10 — Comandante acumula a função de motorista (mesma pessoa, conta 1x).
+function ttaComMot(cb){
+  const eq=cb.closest('.equipe'); if(!eq) return;
+  const com=eq.querySelector('.eq-com'), mot=eq.querySelector('.eq-mot');
+  if(cb.checked){ mot.value=com.value; mot.readOnly=true; mot.style.opacity='.6'; }
+  else { mot.readOnly=false; mot.style.opacity=''; mot.value=''; mot.focus(); }
+  atualizarPend(); atualizarPresentesAuto();
+}
+function ttaSyncComMot(comInput){
+  const eq=comInput.closest('.equipe'); if(!eq) return;
+  const cb=eq.querySelector('.eq-com-mot');
+  if(cb && cb.checked){ const mot=eq.querySelector('.eq-mot'); if(mot) mot.value=comInput.value; }
+}
+// #11 — Equipe SEM viatura (a pé / manutenção): não exige viatura nem motorista.
+function ttaSemVtr(cb){
+  const eq=cb.closest('.equipe'); if(!eq) return;
+  const vtrWrap=eq.querySelector('.eq-vtr-wrap'), motWrap=eq.querySelector('.eq-mot-wrap');
+  const vtr=eq.querySelector('.eq-vtr'), mot=eq.querySelector('.eq-mot');
+  const comMot=eq.querySelector('.eq-com-mot');
+  if(cb.checked){
+    vtr.value=''; mot.value=''; mot.readOnly=false; mot.style.opacity='';
+    if(comMot){ comMot.checked=false; comMot.disabled=true; }
+    if(vtrWrap) vtrWrap.style.display='none';
+    if(motWrap) motWrap.style.display='none';
+  } else {
+    if(comMot) comMot.disabled=false;
+    if(vtrWrap) vtrWrap.style.display='';
+    if(motWrap) motWrap.style.display='';
+  }
+  atualizarPend(); atualizarPresentesAuto();
 }
 // renumera as equipes e recalcula as opções de vínculo (principal / apoia a Equipe N)
 function refreshEquipes(){
@@ -568,6 +603,7 @@ function coletarEquipes(){
       grupamento_completo: gopt ? gopt.grupamento_completo : null,
       comandante: com?{matricula:com.matricula,pg:com.posto_graduacao,nome:com.nome_completo}:null,
       motorista:  mot?{matricula:mot.matricula,pg:mot.posto_graduacao,nome:mot.nome_completo}:null,
+      sem_viatura: !!(eq.querySelector('.eq-sem-vtr') && eq.querySelector('.eq-sem-vtr').checked),
       prefixo_viatura:(eq.querySelector('.eq-vtr').value||'').trim(),
       vinculo: eq.querySelector('.eq-vinc').value,
       tipo_patrulha: eq.querySelector('.eq-patr').value,
@@ -615,6 +651,13 @@ async function carregarChamadaParaEdicao(c){
     div.querySelector('.eq-mot').value = milToInput(ed.motorista);
     div.querySelector('.eq-patr').value = ed.tipo_patrulha || '';
     div.querySelector('.eq-oper').value = ed.operacao || '';
+    // #11 sem viatura / #10 comandante = motorista (restaura os checkboxes)
+    if (ed.sem_viatura){
+      const sv=div.querySelector('.eq-sem-vtr'); if(sv){ sv.checked=true; ttaSemVtr(sv); }
+    } else if (ed.comandante && ed.motorista &&
+               (ed.comandante.matricula||'')===(ed.motorista.matricula||'')){
+      const cm=div.querySelector('.eq-com-mot'); if(cm){ cm.checked=true; ttaComMot(cm); }
+    }
     const addBtn = [...div.querySelectorAll('button')].find(b=>(b.getAttribute('onclick')||'').includes('addPatrulheiro'));
     (ed.patrulheiros||[]).forEach(p=>{
       if(addBtn) addPatrulheiro(addBtn);
@@ -651,8 +694,10 @@ async function registrarChamada(){
   for (const e of equipes){
     if (!e.gp_responsavel)      return toast(`Equipe ${e.ordem}: selecione o Grupamento de Atuação.`);
     if (!e.comandante)          return toast(`Equipe ${e.ordem}: informe o comandante.`);
-    if (!e.prefixo_viatura)     return toast(`Equipe ${e.ordem}: informe a viatura.`);
-    if (!e.motorista)           return toast(`Equipe ${e.ordem}: informe o motorista.`);
+    if (!e.sem_viatura){        // #11 — equipe sem viatura dispensa viatura/motorista
+      if (!e.prefixo_viatura)   return toast(`Equipe ${e.ordem}: informe a viatura (ou marque "Sem viatura").`);
+      if (!e.motorista)         return toast(`Equipe ${e.ordem}: informe o motorista (ou marque "Sem viatura").`);
+    }
     if (!e.tipo_patrulha)       return toast(`Equipe ${e.ordem}: selecione o tipo de patrulha.`);
     if (!e.municipios.length)   return toast(`Equipe ${e.ordem}: marque ao menos um município.`);
   }
@@ -664,14 +709,16 @@ async function registrarChamada(){
   equipes.forEach(e=>{ [e.comandante,e.motorista,...e.patrulheiros].forEach(p=>{ if(p) pmap[p.matricula]=p; }); });
   const presentes = Object.values(pmap);
   const municipios = [...new Set(equipes.flatMap(e=>e.municipios))];
-  const viaturas = equipes.map(e=>({ prefixo:e.prefixo_viatura, motorista_matricula:e.motorista.matricula, motorista_nome:e.motorista.nome }));
+  // só equipes COM viatura+motorista geram viatura (e obrigação da ficha); "sem viatura" fica de fora.
+  const viaturas = equipes.filter(e=>e.prefixo_viatura && e.motorista)
+    .map(e=>({ prefixo:e.prefixo_viatura, motorista_matricula:e.motorista.matricula, motorista_nome:e.motorista.nome }));
 
   const payload = {
     gp_responsavel: g.gp_responsavel, grupamento_completo: g.grupamento_completo,
     equipes: equipes,
     militares_presentes: presentes,
     inicio_turno: inicio, final_turno: fim,
-    prefixo_viatura: viaturas[0].prefixo, viaturas: viaturas,
+    prefixo_viatura: (viaturas[0] ? viaturas[0].prefixo : null), viaturas: viaturas,
     tipo_patrulha: equipes[0].tipo_patrulha,
     municipios_atuacao: municipios,
     observacoes: document.getElementById('observacoes').value.trim(),
