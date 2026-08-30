@@ -851,7 +851,8 @@ const REPEATABLE_CONFIGS = {
   registro: {
     entryLabel: 'Registro',
     fields: [
-      { label: 'Tipo de atividade', type: 'select', options: ['Operação','Palestra','Atividade educativa','Atividade extraordinária','Reunião','Apoio','Outra atividade'] },
+      { label: 'Tipo de atividade', type: 'select', options: ['Operação','Palestra','Atividade educativa','Atividade extraordinária','Reunião','Apoio','Outra atividade'],
+        allowOutroLivre: true, outroValor: 'Outra atividade', outroPlaceholder: 'Qual atividade? Descreva' },
       [
         { label: 'Nº do REDS / Registro', type: 'text' },
         { label: 'Data', type: 'date', required: true },
@@ -1378,7 +1379,7 @@ document.addEventListener('change', (e) => {
   const fieldDiv = el.closest('.field');
   const outroInput = fieldDiv && fieldDiv.querySelector('.outro-livre-input');
   if (!outroInput) return;
-  const ehOutro = (el.value || '').trim().toLowerCase() === 'outro:';
+  const ehOutro = (el.value || '').trim().toLowerCase() === (el.dataset.outroValor || 'outro:');
   outroInput.style.display = ehOutro ? 'block' : 'none';
   if (!ehOutro) outroInput.value = '';
 });
@@ -2381,9 +2382,10 @@ function fieldInputHTML(field, idx){
     const scopedAttr = field.fracaoScoped ? ' data-fracao-scoped="1"' : '';
     const requiredAttr = field.required ? ' data-required="1"' : '';
     const labelAttr = ` data-label="${field.label}"`;
-    const outroAttr = field.allowOutroLivre ? ' data-allow-outro="1"' : '';
+    const outroTrig = field.allowOutroLivre ? (field.outroValor || 'Outro:') : '';
+    const outroAttr = field.allowOutroLivre ? ` data-allow-outro="1" data-outro-valor="${outroTrig.toLowerCase()}"` : '';
     const outroInputHTML = field.allowOutroLivre
-      ? `<input type="text" class="outro-livre-input" placeholder="Digite o nome da unidade" style="display:none;margin-top:6px;">`
+      ? `<input type="text" class="outro-livre-input" placeholder="${field.outroPlaceholder || 'Digite o nome da unidade'}" style="display:none;margin-top:6px;">`
       : '';
     return `
       <div class="field">
@@ -3261,9 +3263,15 @@ function preencherEntradaPorLabel_(escopo, itemData){
     // que é inválido).
     if (el.dataset && el.dataset.allowOutro === '1'){
       const sourceKey = el.dataset.source;
-      const listaConhecida = (referenceCache[sourceKey] || []).map(optionValueOf_);
-      if (!listaConhecida.includes(valor.toString())){
-        el.value = 'Outro:';
+      // select com data-source usa a lista de referência; select de opções
+      // estáticas (ex.: Registro → Tipo de atividade) usa as próprias opções.
+      const listaConhecida = sourceKey
+        ? (referenceCache[sourceKey] || []).map(optionValueOf_)
+        : Array.from(el.options).map(o => o.value);
+      const trig = el.dataset.outroValor || 'outro:';
+      const optOutro = Array.from(el.options).find(o => (o.value || '').trim().toLowerCase() === trig);
+      if (optOutro && !listaConhecida.includes(valor.toString())){
+        el.value = optOutro.value;
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
         const outroInput = fieldDiv && fieldDiv.querySelector('.outro-livre-input');
@@ -3505,7 +3513,7 @@ function collectCategoryEntries(id){
 
     // Campo com opção "Outro:" — se a opção escolhida for "Outro:", usa o
     // texto digitado no campo livre em vez de gravar literalmente "Outro:".
-    if (input && input.dataset && input.dataset.allowOutro === '1' && value.trim().toLowerCase() === 'outro:'){
+    if (input && input.dataset && input.dataset.allowOutro === '1' && value.trim().toLowerCase() === (input.dataset.outroValor || 'outro:')){
       const outroInput = f.querySelector('.outro-livre-input');
       if (outroInput && outroInput.value.trim()) value = outroInput.value.trim();
     }
