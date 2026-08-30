@@ -101,7 +101,7 @@
       {ic:'⚠️', t:'Acidentes', h:'acidentes.html', req:'vtr'},
       {ic:'🔫', t:'SAT', h:'https://armamento.bpmmamb.com.br', ext:true},
       {ic:'📦', t:'CPELOG', h:'https://inventario.cpelog.com.br/login', ext:true},
-      {ic:'🛸', t:'Pilotos de Drone', h:'https://pilotodrone.bpmmamb.com.br/', ext:true},
+      {ic:'assets/drone.png', t:'Pilotos de Drone', h:'https://pilotodrone.bpmmamb.com.br/', ext:true},
       {ic:'🧭', t:'SIGA CPE', h:'https://p4.bpmmamb.com.br', ext:true},
       {ic:'📦', t:'Material e Patrimônio', soon:true},
     ],
@@ -133,16 +133,20 @@
     const canReq = { gestP3: podeGestP3, vtr: podeGerenciarVtr, tta: podeGerenciarTTA };
     const on = k => ativo===k ? ' active' : '';
 
+    // Ícone pode ser um EMOJI ou um CAMINHO DE IMAGEM (ex.: assets/drone.png).
+    const icoHTML = ic => /\.(png|jpe?g|svg|webp|gif)(\?|#|$)/i.test(ic||'')
+      ? `<img src="${ic}" alt="" style="width:16px;height:16px;object-fit:contain;vertical-align:middle">`
+      : (ic || '');
     // Aba com menu suspenso (mega): clicar no nome vai ao hub; passar o mouse
     // mostra os módulos daquela seção pra ir direto, de qualquer página.
     const tab = (k, href, rot) => {
       const itens = (MODULOS[k]||[])
         .filter(m => !m.req || canReq[m.req])   // esconde itens sem permissão (mesma regra dos cards)
         .map(m => m.soon
-        ? `<span class="tn-soon"><span class="tn-ic">${m.ic}</span>${m.t}<em>em breve</em></span>`
+        ? `<span class="tn-soon"><span class="tn-ic">${icoHTML(m.ic)}</span>${m.t}<em>em breve</em></span>`
         : m.ext
-          ? `<a href="${m.h}" target="_blank" rel="noopener noreferrer"><span class="tn-ic">${m.ic}</span>${m.t}<em style="margin-left:auto;font-style:normal;opacity:.6">↗</em></a>`
-          : `<a href="${m.h}"><span class="tn-ic">${m.ic}</span>${m.t}</a>`).join('');
+          ? `<a href="${m.h}" target="_blank" rel="noopener noreferrer"><span class="tn-ic">${icoHTML(m.ic)}</span>${m.t}<em style="margin-left:auto;font-style:normal;opacity:.6">↗</em></a>`
+          : `<a href="${m.h}"><span class="tn-ic">${icoHTML(m.ic)}</span>${m.t}</a>`).join('');
       return `<div class="topnav-item tn-has">
           <a class="topnav-link${on(k)}" href="${href}">${rot} <span class="chev">▾</span></a>
           <div class="topnav-dropdown tn-mega">${itens}</div>

@@ -50,7 +50,7 @@
       {ic:'⚠️', t:'Acidentes',                 h:'acidentes.html', show:()=>podeGerenciarVtr},
       {ic:'🔫', t:'SAT',                       h:'https://armamento.bpmmamb.com.br', ext:true},
       {ic:'📦', t:'CPELOG',                    h:'https://inventario.cpelog.com.br/login', ext:true},
-      {ic:'🛸', t:'Pilotos de Drone',          h:'https://pilotodrone.bpmmamb.com.br/', ext:true},
+      {ic:'assets/drone.png', t:'Pilotos de Drone', h:'https://pilotodrone.bpmmamb.com.br/', ext:true},
       {ic:'🧭', t:'SIGA CPE',                  h:'https://p4.bpmmamb.com.br', ext:true},
     ]},
   };
@@ -58,16 +58,20 @@
   const conf = SECOES[secao];
   if (!conf) return;
 
+  // Ícone pode ser um EMOJI ou um CAMINHO DE IMAGEM (ex.: assets/drone.png).
+  const icoHTML = ic => /\.(png|jpe?g|svg|webp|gif)(\?|#|$)/i.test(ic||'')
+    ? `<img src="${ic}" alt="" style="width:18px;height:18px;object-fit:contain;display:inline-block;vertical-align:middle">`
+    : (ic || '');
   function montar(){
   const itensHTML = conf.itens
     .filter(m => !m.show || m.show())
     .map(m => {
       if (m.ext) {
         // Link externo: nova aba, marcador ↗, sem "ativo".
-        return `<a class="rd-item" href="${m.h}" target="_blank" rel="noopener noreferrer" data-tip="${m.t}"><span>${m.ic}</span><span class="lbl">${m.t}</span><span style="margin-left:auto;font-size:9px;opacity:.6">↗</span></a>`;
+        return `<a class="rd-item" href="${m.h}" target="_blank" rel="noopener noreferrer" data-tip="${m.t}"><span>${icoHTML(m.ic)}</span><span class="lbl">${m.t}</span><span style="margin-left:auto;font-size:9px;opacity:.6">↗</span></a>`;
       }
       const ativo = (m.h.toLowerCase() === page) ? ' ativo' : '';
-      return `<a class="rd-item${ativo}" href="${m.h}" data-tip="${m.t}"><span>${m.ic}</span><span class="lbl">${m.t}</span></a>`;
+      return `<a class="rd-item${ativo}" href="${m.h}" data-tip="${m.t}"><span>${icoHTML(m.ic)}</span><span class="lbl">${m.t}</span></a>`;
     }).join('');
 
   const aside = document.createElement('aside');
