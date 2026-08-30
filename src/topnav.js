@@ -65,6 +65,7 @@
     p1: [
       {ic:'👥', t:'Efetivo', soon:true},
       {ic:'🗓️', t:'TTA — Treinamento Tático', h:'tta.html'},
+      {ic:'🗂️', t:'Meus TTA', h:'meus-tta.html'},
       {ic:'🏖️', t:'Férias', soon:true},
       {ic:'📰', t:'Publicações', soon:true},
     ],

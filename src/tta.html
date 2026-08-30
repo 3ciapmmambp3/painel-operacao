@@ -233,6 +233,10 @@
           <label>Observações e alterações verificadas na chamada</label>
           <textarea id="observacoes" placeholder="Opcional — ex: militar de folga médica, viatura em manutenção, etc."></textarea>
         </div>
+        <div class="f full" id="justificativaWrap" style="margin-top:12px;display:none">
+          <label>Justificativa da alteração <span class="req">*</span> <span class="hint" style="font-weight:400;color:var(--text-muted)">(obrigatória ao substituir viatura, motorista, comandante ou integrante)</span></label>
+          <textarea id="justificativa" placeholder="Ex.: motorista escalado passou mal; viatura X entrou em manutenção; troca de integrante por afastamento."></textarea>
+        </div>
         <button class="btn-gold" id="btnRegistrar" onclick="registrarChamada()" style="margin-top:6px">✔ Registrar chamada</button>
       </div>
       <datalist id="viaturas-dl"></datalist>
@@ -589,8 +593,9 @@ async function checarChamadaHoje(){
   if (banner) banner.style.display = (CHAMADA_HOJE && !CHAMADA_EDIT_ID) ? 'flex' : 'none';
 }
 
-async function corrigirChamadaHoje(){
-  const c = CHAMADA_HOJE; if(!c) return;
+function corrigirChamadaHoje(){ return carregarChamadaParaEdicao(CHAMADA_HOJE); }
+async function carregarChamadaParaEdicao(c){
+  if(!c) return;
   // turno → observações (o Grupamento de Atuação agora é POR EQUIPE, no loop abaixo)
   document.getElementById('inicioTurno').value = (c.inicio_turno||'').slice(0,5);
   document.getElementById('fimTurno').value    = (c.final_turno||'').slice(0,5);
@@ -628,10 +633,12 @@ async function corrigirChamadaHoje(){
   atualizarPresentesAuto(); atualizarPend();
   CHAMADA_EDIT_ID = c.id;
   const btn = document.getElementById('btnRegistrar');
-  btn.disabled=false; btn.textContent='💾 Salvar correção';
+  btn.disabled=false; btn.textContent='💾 Salvar alteração';
+  const jw=document.getElementById('justificativaWrap'); if(jw) jw.style.display='';   // substituição exige justificativa
+  const jv=document.getElementById('justificativa'); if(jv) jv.value='';
   document.getElementById('editHojeBanner').style.display='none';
   document.getElementById('equipesTTA').scrollIntoView({behavior:'smooth',block:'center'});
-  toast('Chamada de hoje carregada para correção.');
+  toast('TTA carregado para alteração.');
 }
 
 async function registrarChamada(){
@@ -667,7 +674,9 @@ async function registrarChamada(){
     prefixo_viatura: viaturas[0].prefixo, viaturas: viaturas,
     tipo_patrulha: equipes[0].tipo_patrulha,
     municipios_atuacao: municipios,
-    observacoes: document.getElementById('observacoes').value.trim()
+    observacoes: document.getElementById('observacoes').value.trim(),
+    // usada só na edição; o backend exige quando há substituição de viatura/militar
+    justificativa: (document.getElementById('justificativa')?.value || '').trim()
   };
 
   const btn = document.getElementById('btnRegistrar');
@@ -724,7 +733,12 @@ async function carregarOperacoesTTA(){
   // allSettled de propósito: uma falha aqui (ex.: rede) nunca pode impedir
   // o resto da página de carregar.
   await Promise.allSettled([carregarGrupos(), carregarRoster(), carregarTemaHoje(), carregarMaterialAtual(), renderPastas(), carregarOperacoesTTA()]);
-  checarChamadaHoje();
+  await checarChamadaHoje();
+
+  // Handoff do "Meus TTA": editar um TTA específico (a chamada vem no sessionStorage).
+  let _ttaEdit=null;
+  try{ const raw=sessionStorage.getItem('tta_editar_chamada'); if(raw){ _ttaEdit=JSON.parse(raw); sessionStorage.removeItem('tta_editar_chamada'); } }catch(e){}
+  if(_ttaEdit && _ttaEdit.id){ await carregarChamadaParaEdicao(_ttaEdit); }
 })();
 </script>
 <script>(function(){try{var s=(typeof sessaoLer==='function')?sessaoLer():null;if(s&&(s.nivel_acesso==='admin_geral'||(s.funcao||'').toLowerCase().indexOf('aux p4')===0)){var l=document.getElementById('linkGestaoVtr');if(l)l.style.display='';}}catch(e){}})();</script>

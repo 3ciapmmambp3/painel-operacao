@@ -33,6 +33,7 @@
   const SECOES = {
     p1: { titulo: 'RECURSOS HUMANOS', itens: [
       {ic:'🎯', t:'TTA (Pré-turno)', h:'tta.html'},
+      {ic:'🗂️', t:'Meus TTA',        h:'meus-tta.html'},
       {ic:'⚙️', t:'Gestão do TTA',   h:'tta-gestao.html', show:()=>podeGerenciarTTA},
     ]},
     p3: { titulo: 'EMPREGO OPERACIONAL', itens: [
