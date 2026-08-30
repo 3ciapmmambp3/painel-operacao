@@ -1593,8 +1593,32 @@ async function carregarDemandasSupabase(){
     const extras = [d.municipio, d.tema].filter(Boolean).join(' · ');
     return extras ? `${d.numero} — ${extras}` : `${d.numero}`;
   };
-  referenceCache['DEN_BALCAO'] = rows.filter(d=>d.tipo==='denuncia').map(rotulo);
-  referenceCache['REQUISICAO'] = rows.filter(d=>d.tipo==='requisicao').map(rotulo);
+  const supBalcao = rows.filter(d=>d.tipo==='denuncia').map(rotulo);
+  const supReq    = rows.filter(d=>d.tipo==='requisicao').map(rotulo);
+
+  // MERGE com o que a planilha (BD_atualização, via referências) trouxe — as
+  // demandas antigas que ficaram pendentes lá também devem aparecer, ESCOPADAS
+  // pelo grupamento do militar. Sem regressão: se a planilha não trouxe nada,
+  // fica só o Supabase. Escopo da planilha: fração ∈ ALLOWED (mesmos gprs).
+  const _fracEscopo = fr => {
+    const f = (fr||'').toUpperCase();
+    if(!f) return false;
+    if (gprs.some(g => f.includes(String(g).toUpperCase().replace(/^GP\s+/,'')))) return true;
+    return ALLOWED.some(a => gpN(f)===a.gp && pelN(f)===a.pel);
+  };
+  const _valOf = it => (it && typeof it==='object') ? (it.value||'') : (it||'');
+  const _scopePlan = arr => (Array.isArray(arr)?arr:[])
+    .filter(it => (it && typeof it==='object') ? _fracEscopo(it.fracao) : false);
+  const _merge = (planScoped, sup) => {
+    const seen = new Set(); const out = [];
+    [...planScoped, ...sup].forEach(it => {
+      const k = _valOf(it).replace(/\s+/g,' ').trim();
+      if (k && !seen.has(k)) { seen.add(k); out.push(it); }
+    });
+    return out;
+  };
+  referenceCache['DEN_BALCAO'] = _merge(_scopePlan(referenceCache['DEN_BALCAO']), supBalcao);
+  referenceCache['REQUISICAO'] = _merge(_scopePlan(referenceCache['REQUISICAO']), supReq);
 }
 
 // OPERAÇÕES agora vêm do painel (Supabase), não mais da aba da planilha.
