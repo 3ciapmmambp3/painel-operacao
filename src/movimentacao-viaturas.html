@@ -259,9 +259,45 @@
         <div class="f"><label>Tipo</label><select data-k="tipo"><option>Corretiva</option><option>Preventiva</option></select></div>
         <div class="f"><label>Urgência</label><select data-k="urgencia"><option>Baixa</option><option>Média</option><option>Alta</option></select></div>
         <div class="f"><label>Odômetro</label><input type="number" data-k="odometro"></div>
+        <div class="f"><label>Situação da viatura</label>
+          <select data-k="situacao" id="manut-situacao" onchange="manutSituacao()">
+            <option value="">Selecione…</option>
+            <option>Rodando, perfeitamente</option>
+            <option>Rodando, precariamente</option>
+            <option>Imobilizada, necessita de guincho</option>
+          </select></div>
         <div class="f col2"><label>Defeito reclamado</label><input data-k="defeito"></div>
         <div class="f"><label>Impede o uso da viatura?</label><select data-k="impede_uso"><option>Não</option><option>Sim</option></select></div>
         <div class="f col2"><label>Observações</label><input data-k="obs"></div>
+      </div>
+      <div class="subsec" id="manut-servicos">
+        <h3>Serviços solicitados <span class="hint" style="font-weight:400;text-transform:none;letter-spacing:0">(marque um ou mais)</span></h3>
+        <div class="rowchecks">
+          <label class="pillcheck"><input type="checkbox" value="Revisão periódica">Revisão periódica</label>
+          <label class="pillcheck"><input type="checkbox" value="Troca de óleo do motor">Troca de óleo do motor</label>
+          <label class="pillcheck"><input type="checkbox" value="Troca de filtro de óleo">Troca de filtro de óleo</label>
+          <label class="pillcheck"><input type="checkbox" value="Troca de filtro de combustível">Troca de filtro de combustível</label>
+          <label class="pillcheck"><input type="checkbox" value="Troca de filtro de ar">Troca de filtro de ar</label>
+          <label class="pillcheck"><input type="checkbox" value="Higienização do ar-condicionado">Higienização do ar-condicionado</label>
+          <label class="pillcheck"><input type="checkbox" value="Troca de lâmpadas de farol">Troca de lâmpadas de farol</label>
+          <label class="pillcheck"><input type="checkbox" value="Troca de bateria">Troca de bateria</label>
+          <label class="pillcheck"><input type="checkbox" value="Troca de pneus dianteiros">Troca de pneus dianteiros</label>
+          <label class="pillcheck"><input type="checkbox" value="Troca de pneus traseiros">Troca de pneus traseiros</label>
+          <label class="pillcheck"><input type="checkbox" value="Alinhamento">Alinhamento</label>
+          <label class="pillcheck"><input type="checkbox" value="Balanceamento de rodas">Balanceamento de rodas</label>
+          <label class="pillcheck"><input type="checkbox" value="Cambagem">Cambagem</label>
+          <label class="pillcheck"><input type="checkbox" value="Substituição das pastilhas de freio dianteiras">Substituição das pastilhas de freio dianteiras</label>
+          <label class="pillcheck"><input type="checkbox" value="Substituição das sapatas/pastilhas de freio traseiras">Substituição das sapatas/pastilhas de freio traseiras</label>
+          <label class="pillcheck"><input type="checkbox" value="__outro__" id="manut-serv-outro-chk" onchange="manutServOutro()">Outro</label>
+        </div>
+        <div class="sec" id="manut-servico-outro-wrap" style="margin-top:8px">
+          <div class="f"><label>Especifique o outro serviço</label>
+            <input id="manut-servico-outro" placeholder="Descreva o serviço solicitado"></div>
+        </div>
+      </div>
+      <div class="sec" id="manut-guincho">
+        <div class="f"><label>Endereço completo onde a viatura está imobilizada <span class="req">obrigatório</span></label>
+          <input data-k="endereco_imobilizada" id="manut-endereco" placeholder="Rua/Av., nº, bairro, cidade, ponto de referência"></div>
       </div>
     </div>
 
@@ -1165,6 +1201,11 @@ function addAbastecimento(){
 }
 function limpDev(){ const v=document.getElementById('limp-dev').value;
   document.getElementById('limp-nao').classList.toggle('show', v==='Não'); }
+function manutSituacao(){ const v=document.getElementById('manut-situacao').value;
+  document.getElementById('manut-guincho').classList.toggle('show', v==='Imobilizada, necessita de guincho'); }
+function manutServOutro(){ const on=document.getElementById('manut-serv-outro-chk').checked;
+  document.getElementById('manut-servico-outro-wrap').classList.toggle('show', on);
+  if(!on) document.getElementById('manut-servico-outro').value=''; }
 
 /* coleta genérica: todos os [data-k] dentro de root viram {k:valor} */
 function collect(root){
@@ -1255,6 +1296,14 @@ async function salvar(){
   if (devLimpa==='Não' && !document.getElementById('limp-just').value.trim())
     return foco('limp-just','Justifique por que a viatura não foi higienizada.');
 
+  // ── Manutenção / defeito: endereço obrigatório se imobilizada c/ guincho ──
+  const manutOpt=document.querySelector('.opt[data-flag="tem_manutencao"]');
+  if (manutOpt && manutOpt.classList.contains('active')){
+    const sit=document.getElementById('manut-situacao').value;
+    if (sit==='Imobilizada, necessita de guincho' && !document.getElementById('manut-endereco').value.trim())
+      return foco('manut-endereco','Viatura imobilizada: informe o endereço completo onde ela está.');
+  }
+
   // ── Coleta de TODAS as seções ativas (inclui as obrigatórias já abertas) ──
   document.querySelectorAll('.opt').forEach(opt=>{
     const on=opt.classList.contains('active'); flags[opt.dataset.flag]=on;
@@ -1262,6 +1311,15 @@ async function salvar(){
   });
   flags.tem_abastecimento = (houve==='Sim');   // reflete "houve", não só "seção aberta"
   flags.tem_limpeza = true;
+
+  // manutenção — serviços solicitados (checkboxes + "Outro")
+  if (flags.tem_manutencao){
+    const servicos=[...document.querySelectorAll('#manut-servicos input[type=checkbox]:checked')]
+      .map(c=>c.value).filter(v=>v!=='__outro__');
+    const outro=(document.getElementById('manut-servico-outro').value||'').trim();
+    if(outro) servicos.push(outro);
+    if(servicos.length) dados.manutencao = Object.assign(dados.manutencao||{}, { servicos_solicitados: servicos });
+  }
 
   // abastecimentos (lista ilimitada, campos por fonte)
   if (houve==='Sim'){
