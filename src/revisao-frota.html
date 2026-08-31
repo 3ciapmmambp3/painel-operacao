@@ -13,7 +13,7 @@
   .rd-shell{display:flex;align-items:flex-start}
   .rd-conteudo{flex:1;min-width:0}
   @media(max-width:760px){.rd-shell{flex-direction:column;align-items:stretch}}
-  .wrap{max-width:1080px;margin:20px auto 0;padding:0 20px}
+  .wrap{max-width:1360px;margin:20px auto 0;padding:0 20px}
   .pagehead h1{font-size:20px;font-weight:800}
   .pagehead p{font-size:12.5px;color:var(--text-muted);margin-top:5px;line-height:1.5}
   .tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:16px 0 10px}
@@ -30,6 +30,11 @@
   .noperm{padding:60px 20px;text-align:center;color:var(--text-muted)}
   .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111;border:1px solid var(--border);color:var(--text-white);padding:12px 20px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:300}
   .toast.show{opacity:1}
+  /* modal reportar defeito — pílulas de serviços solicitados */
+  .rep-checks{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+  .rep-pill{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--text-white);background:var(--bg-input);border:1px solid var(--border-mid);padding:6px 11px;border-radius:20px;cursor:pointer}
+  .rep-pill input{width:auto}
+  .rep-hide{display:none}
   /* abas Revisão × Defeitos */
   .rf-tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin:18px 0 0;overflow-x:auto}
   .rf-tab{display:flex;align-items:center;gap:8px;padding:11px 18px;font-size:13px;font-weight:700;color:var(--text-muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;margin-bottom:-1px;white-space:nowrap;font-family:inherit}
@@ -102,7 +107,7 @@
 
 <!-- Modal: reportar defeito -->
 <div id="rep-ov" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)repFechar()">
-  <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:20px;width:100%;max-width:520px;max-height:88vh;overflow-y:auto">
+  <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:20px;width:100%;max-width:760px;max-height:92vh;overflow-y:auto">
     <h2 style="font-size:16px;font-weight:800;margin-bottom:4px">🔧 Manutenção / defeito reportado</h2>
     <p style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px">Viatura <b id="rep-vtr">—</b>. Aqui você reporta o defeito. A decisão de baixar a viatura para manutenção é do setor responsável (Aux P4).</p>
     <input type="hidden" id="rep-prefixo">
@@ -111,10 +116,36 @@
         <select id="rep-tipo" style="width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;margin-top:4px"><option>Corretiva</option><option>Preventiva</option></select></div>
       <div><label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Urgência</label>
         <select id="rep-urgencia" style="width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;margin-top:4px"><option>Baixa</option><option>Média</option><option>Alta</option></select></div>
-      <div><label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Odômetro</label>
+      <div><label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Odômetro *</label>
         <input id="rep-odometro" type="number" style="width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;margin-top:4px"></div>
       <div><label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Impede o uso?</label>
         <select id="rep-impede" style="width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;margin-top:4px"><option>Não</option><option>Sim</option></select></div>
+      <div style="grid-column:1/-1"><label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Situação da viatura</label>
+        <select id="rep-situacao" onchange="repSituacao()" style="width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;margin-top:4px"><option value="">Selecione…</option><option>Rodando, perfeitamente</option><option>Rodando, precariamente</option><option>Imobilizada, necessita de guincho</option></select></div>
+    </div>
+    <div id="rep-guincho" class="rep-hide" style="margin-top:12px"><label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Endereço completo onde a viatura está imobilizada *</label>
+      <input id="rep-endereco" placeholder="Rua/Av., nº, bairro, cidade, ponto de referência" style="width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;margin-top:4px"></div>
+    <div style="margin-top:12px"><label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Serviços solicitados <span style="font-weight:400;text-transform:none;color:var(--text-hint)">(marque um ou mais)</span></label>
+      <div class="rep-checks" id="rep-servicos">
+        <label class="rep-pill"><input type="checkbox" value="Revisão periódica">Revisão periódica</label>
+        <label class="rep-pill"><input type="checkbox" value="Troca de óleo do motor">Troca de óleo do motor</label>
+        <label class="rep-pill"><input type="checkbox" value="Troca de filtro de óleo">Troca de filtro de óleo</label>
+        <label class="rep-pill"><input type="checkbox" value="Troca de filtro de combustível">Troca de filtro de combustível</label>
+        <label class="rep-pill"><input type="checkbox" value="Troca de filtro de ar">Troca de filtro de ar</label>
+        <label class="rep-pill"><input type="checkbox" value="Higienização do ar-condicionado">Higienização do ar-condicionado</label>
+        <label class="rep-pill"><input type="checkbox" value="Troca de lâmpadas de farol">Troca de lâmpadas de farol</label>
+        <label class="rep-pill"><input type="checkbox" value="Troca de bateria">Troca de bateria</label>
+        <label class="rep-pill"><input type="checkbox" value="Troca de pneus dianteiros">Troca de pneus dianteiros</label>
+        <label class="rep-pill"><input type="checkbox" value="Troca de pneus traseiros">Troca de pneus traseiros</label>
+        <label class="rep-pill"><input type="checkbox" value="Alinhamento">Alinhamento</label>
+        <label class="rep-pill"><input type="checkbox" value="Balanceamento de rodas">Balanceamento de rodas</label>
+        <label class="rep-pill"><input type="checkbox" value="Cambagem">Cambagem</label>
+        <label class="rep-pill"><input type="checkbox" value="Substituição das pastilhas de freio dianteiras">Substituição das pastilhas de freio dianteiras</label>
+        <label class="rep-pill"><input type="checkbox" value="Substituição das sapatas/pastilhas de freio traseiras">Substituição das sapatas/pastilhas de freio traseiras</label>
+        <label class="rep-pill"><input type="checkbox" value="__outro__" id="rep-serv-outro-chk" onchange="repServOutro()">Outro</label>
+      </div>
+      <div id="rep-servico-outro-wrap" class="rep-hide" style="margin-top:8px">
+        <input id="rep-servico-outro" placeholder="Especifique o outro serviço" style="width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px"></div>
     </div>
     <div style="margin-top:12px"><label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Defeito reclamado *</label>
       <textarea id="rep-defeito" rows="2" placeholder="Descreva o defeito" style="width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;margin-top:4px;font-family:inherit"></textarea></div>
@@ -239,19 +270,38 @@ function repAbrir(prefixo){
   document.getElementById('rep-impede').value='Não';
   document.getElementById('rep-defeito').value='';
   document.getElementById('rep-obs').value='';
+  document.getElementById('rep-situacao').value='';
+  document.getElementById('rep-endereco').value='';
+  document.getElementById('rep-guincho').classList.add('rep-hide');
+  document.querySelectorAll('#rep-servicos input[type=checkbox]').forEach(c=>c.checked=false);
+  document.getElementById('rep-servico-outro').value='';
+  document.getElementById('rep-servico-outro-wrap').classList.add('rep-hide');
   document.getElementById('rep-ov').style.display='flex';
 }
 function repFechar(){ document.getElementById('rep-ov').style.display='none'; }
+function repSituacao(){ const v=document.getElementById('rep-situacao').value;
+  document.getElementById('rep-guincho').classList.toggle('rep-hide', v!=='Imobilizada, necessita de guincho'); }
+function repServOutro(){ const on=document.getElementById('rep-serv-outro-chk').checked;
+  document.getElementById('rep-servico-outro-wrap').classList.toggle('rep-hide', !on);
+  if(!on) document.getElementById('rep-servico-outro').value=''; }
 async function repSalvar(){
   const defeito=document.getElementById('rep-defeito').value.trim();
   if(!defeito){ toast('Descreva o defeito.'); return; }
+  if(!document.getElementById('rep-odometro').value.trim()){ toast('Informe o odômetro da viatura.'); return; }
+  const situacao=document.getElementById('rep-situacao').value;
+  const endereco=document.getElementById('rep-endereco').value.trim();
+  if(situacao==='Imobilizada, necessita de guincho' && !endereco){ toast('Viatura imobilizada: informe o endereço completo onde ela está.'); return; }
+  const servicos=[...document.querySelectorAll('#rep-servicos input[type=checkbox]:checked')].map(c=>c.value).filter(v=>v!=='__outro__');
+  const outro=document.getElementById('rep-servico-outro').value.trim();
+  if(outro) servicos.push(outro);
   const dados={
     prefixo: document.getElementById('rep-prefixo').value,
     tipo: document.getElementById('rep-tipo').value,
     urgencia: document.getElementById('rep-urgencia').value,
     odometro: document.getElementById('rep-odometro').value,
     impede_uso: document.getElementById('rep-impede').value,
-    defeito, observacoes: document.getElementById('rep-obs').value.trim()
+    defeito, observacoes: document.getElementById('rep-obs').value.trim(),
+    situacao, endereco, servicos_solicitados: servicos
   };
   try{ await rpc('defeito_reportar',{p_token:S.token,p_dados:dados}); repFechar(); toast('Defeito reportado.'); await defCarregar(); }
   catch(e){ toast('Erro: '+e.message); }
@@ -289,13 +339,16 @@ function defRender(){
     const imob=/imobilizad/i.test(d.situacao||'');
     const sit=d.situacao?`<span style="font-size:11px${imob?';color:#ef9a9a;font-weight:700':''}">${_re(d.situacao)}</span>`:'—';
     const ende=d.endereco?_re(d.endereco):'—';
+    // Serviços solicitados: lista embaixo do defeito.
+    const servs=Array.isArray(d.servicos_solicitados)?d.servicos_solicitados:[];
+    const defCell=`${_re(d.defeito||'—')}${servs.length?`<br><span class="sub" style="font-size:10px;color:var(--text-hint)">🔧 ${servs.map(s=>_re(s)).join(', ')}</span>`:''}`;
     const resolvido=d.status==='resolvido';
     const acao = resolvido
       ? '<span style="color:var(--success);font-size:11px;font-weight:700">✔ Resolvido</span>'
       : (podeGerir?`<button class="btn-outline" style="padding:5px 10px;font-size:11px" onclick="defResolver('${d.origem}','${d.ref_id}')">Marcar resolvido</button>`:'<span class="sub" style="font-size:10px">aberto</span>');
     return `<tr${resolvido?' style="opacity:.55"':''}>
       <td>${dt}</td><td><b>${_re(d.prefixo)}</b></td><td style="white-space:nowrap">${lot}</td><td>${_re(d.tipo||'—')}</td><td>${urg}</td><td>${sit}</td>
-      <td style="max-width:260px">${_re(d.defeito||'—')}</td><td>${impede}</td><td style="max-width:220px">${ende}</td>
+      <td style="max-width:260px">${defCell}</td><td>${impede}</td><td style="max-width:220px">${ende}</td>
       <td>${_re(d.reportado_por_nome||'—')}</td><td>${orig}</td><td style="white-space:nowrap">${acao}</td>
     </tr>`;
   }).join('');
@@ -309,10 +362,10 @@ function defExportar(){
   const lst=DEF.filter(d=>!soAb || d.status==='aberto');
   if(!lst.length){ toast('Nada para exportar.'); return; }
   const cell=v=>{ let s=(v==null?'':String(v)); if(/[";\n\r]/.test(s)) s='"'+s.replace(/"/g,'""')+'"'; return s; };
-  const cols=['Data','VTR','Placa','Lotação VTR (Gp)','Lotação VTR (Pel)','Lotação VTR (Município)','Grupamento (uso)','Tipo','Urgência','Situação','Defeito','Impede uso','Endereço (imobilizada)','Observações','Status','Reportado por','Origem'];
+  const cols=['Data','VTR','Placa','Lotação VTR (Gp)','Lotação VTR (Pel)','Lotação VTR (Município)','Grupamento (uso)','Tipo','Urgência','Situação','Defeito','Serviços solicitados','Impede uso','Endereço (imobilizada)','Observações','Status','Reportado por','Origem'];
   const linhas=lst.map(d=>[
     d.criado_em?new Date(d.criado_em).toLocaleDateString('pt-BR'):'', d.prefixo, d.placa, d.vtr_gp, d.vtr_pel, d.vtr_municipio, d.gp, d.tipo, d.urgencia,
-    d.situacao, d.defeito, d.impede_uso, d.endereco, d.observacoes, d.status, d.reportado_por_nome, d.origem
+    d.situacao, d.defeito, (Array.isArray(d.servicos_solicitados)?d.servicos_solicitados.join(', '):''), d.impede_uso, d.endereco, d.observacoes, d.status, d.reportado_por_nome, d.origem
   ].map(cell).join(';'));
   const csv='﻿'+[cols.map(cell).join(';')].concat(linhas).join('\r\n');
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
