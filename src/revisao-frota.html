@@ -91,8 +91,8 @@
           <button class="btn-gold" style="padding:8px 14px;font-size:12px;margin-left:auto" onclick="defExportar()">⬇ Exportar Excel</button>
         </div>
         <div class="tablewrap"><table>
-          <thead><tr><th>Data</th><th>VTR</th><th>Tipo</th><th>Urgência</th><th>Defeito</th><th>Impede uso</th><th>Reportado por</th><th>Origem</th><th>Ações</th></tr></thead>
-          <tbody id="def-tb"><tr><td colspan="9" class="empty">Carregando…</td></tr></tbody>
+          <thead><tr><th>Data</th><th>VTR</th><th>Lotação VTR</th><th>Tipo</th><th>Urgência</th><th>Situação</th><th>Defeito</th><th>Impede uso</th><th>Endereço (imobilizada)</th><th>Reportado por</th><th>Origem</th><th>Ações</th></tr></thead>
+          <tbody id="def-tb"><tr><td colspan="12" class="empty">Carregando…</td></tr></tbody>
         </table></div>
       </div>
     </div>
@@ -268,26 +268,34 @@ async function defCarregar(){
     const ab=DEF.filter(d=>d.status==='aberto').length;
     rfCnt('tabcnt-def', ab);
     defRender();
-  }catch(e){ tb.innerHTML=`<tr><td colspan="9" class="empty">Erro: ${_re(e.message)}</td></tr>`; }
+  }catch(e){ tb.innerHTML=`<tr><td colspan="12" class="empty">Erro: ${_re(e.message)}</td></tr>`; }
 }
 function defRender(){
   const soAb=document.getElementById('def-so-abertos').checked;
   const lst=DEF.filter(d=>!soAb || d.status==='aberto');
   const tb=document.getElementById('def-tb');
-  if(!lst.length){ tb.innerHTML='<tr><td colspan="9" class="empty">Nenhum defeito reportado.</td></tr>'; return; }
+  if(!lst.length){ tb.innerHTML='<tr><td colspan="12" class="empty">Nenhum defeito reportado.</td></tr>'; return; }
   tb.innerHTML=lst.map(d=>{
     const dt=d.criado_em?new Date(d.criado_em).toLocaleDateString('pt-BR'):'—';
     const u=_urg[d.urgencia]||_urg.Baixa;
     const urg=d.urgencia?`<span style="font-size:9px;font-weight:800;padding:2px 8px;border-radius:20px;background:${u.bg};color:${u.c};border:1px solid ${u.b}">${_re(d.urgencia)}</span>`:'—';
     const impede=/sim/i.test(d.impede_uso||'')?'<span style="color:#ef9a9a;font-weight:700">Sim</span>':'Não';
     const orig=d.origem==='ficha'?'<span class="sub" style="font-size:10px">ficha</span>':'<span class="sub" style="font-size:10px">🔧 avulso</span>';
+    // Lotação da VIATURA (cadastro): grupamento em destaque + município embaixo.
+    const lot = (d.vtr_gp||d.vtr_municipio)
+      ? `${d.vtr_gp?`<b>${_re(d.vtr_gp)}</b>`:''}${d.vtr_municipio?`<br><span class="sub" style="font-size:10px">${_re(d.vtr_municipio)}</span>`:''}`
+      : '—';
+    // Situação da viatura: destaque vermelho quando imobilizada c/ guincho.
+    const imob=/imobilizad/i.test(d.situacao||'');
+    const sit=d.situacao?`<span style="font-size:11px${imob?';color:#ef9a9a;font-weight:700':''}">${_re(d.situacao)}</span>`:'—';
+    const ende=d.endereco?_re(d.endereco):'—';
     const resolvido=d.status==='resolvido';
     const acao = resolvido
       ? '<span style="color:var(--success);font-size:11px;font-weight:700">✔ Resolvido</span>'
       : (podeGerir?`<button class="btn-outline" style="padding:5px 10px;font-size:11px" onclick="defResolver('${d.origem}','${d.ref_id}')">Marcar resolvido</button>`:'<span class="sub" style="font-size:10px">aberto</span>');
     return `<tr${resolvido?' style="opacity:.55"':''}>
-      <td>${dt}</td><td><b>${_re(d.prefixo)}</b></td><td>${_re(d.tipo||'—')}</td><td>${urg}</td>
-      <td style="max-width:280px">${_re(d.defeito||'—')}</td><td>${impede}</td>
+      <td>${dt}</td><td><b>${_re(d.prefixo)}</b></td><td style="white-space:nowrap">${lot}</td><td>${_re(d.tipo||'—')}</td><td>${urg}</td><td>${sit}</td>
+      <td style="max-width:260px">${_re(d.defeito||'—')}</td><td>${impede}</td><td style="max-width:220px">${ende}</td>
       <td>${_re(d.reportado_por_nome||'—')}</td><td>${orig}</td><td style="white-space:nowrap">${acao}</td>
     </tr>`;
   }).join('');
@@ -301,10 +309,10 @@ function defExportar(){
   const lst=DEF.filter(d=>!soAb || d.status==='aberto');
   if(!lst.length){ toast('Nada para exportar.'); return; }
   const cell=v=>{ let s=(v==null?'':String(v)); if(/[";\n\r]/.test(s)) s='"'+s.replace(/"/g,'""')+'"'; return s; };
-  const cols=['Data','VTR','Placa','Grupamento','Tipo','Urgência','Odômetro','Defeito','Impede uso','Observações','Status','Reportado por','Origem'];
+  const cols=['Data','VTR','Placa','Lotação VTR (Gp)','Lotação VTR (Pel)','Lotação VTR (Município)','Grupamento (uso)','Tipo','Urgência','Situação','Defeito','Impede uso','Endereço (imobilizada)','Observações','Status','Reportado por','Origem'];
   const linhas=lst.map(d=>[
-    d.criado_em?new Date(d.criado_em).toLocaleDateString('pt-BR'):'', d.prefixo, d.placa, d.gp, d.tipo, d.urgencia,
-    d.odometro, d.defeito, d.impede_uso, d.observacoes, d.status, d.reportado_por_nome, d.origem
+    d.criado_em?new Date(d.criado_em).toLocaleDateString('pt-BR'):'', d.prefixo, d.placa, d.vtr_gp, d.vtr_pel, d.vtr_municipio, d.gp, d.tipo, d.urgencia,
+    d.situacao, d.defeito, d.impede_uso, d.endereco, d.observacoes, d.status, d.reportado_por_nome, d.origem
   ].map(cell).join(';'));
   const csv='﻿'+[cols.map(cell).join(';')].concat(linhas).join('\r\n');
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
