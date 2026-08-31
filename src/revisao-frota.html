@@ -108,7 +108,7 @@
 <!-- Modal: reportar defeito -->
 <div id="rep-ov" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)repFechar()">
   <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:20px;width:100%;max-width:760px;max-height:92vh;overflow-y:auto">
-    <h2 style="font-size:16px;font-weight:800;margin-bottom:4px">🔧 Manutenção / defeito reportado</h2>
+    <h2 id="rep-title" style="font-size:16px;font-weight:800;margin-bottom:4px">🔧 Manutenção / defeito reportado</h2>
     <p style="font-size:11.5px;color:var(--text-muted);margin-bottom:14px">Viatura <b id="rep-vtr">—</b>. Aqui você reporta o defeito. A decisão de baixar a viatura para manutenção é do setor responsável (Aux P4).</p>
     <input type="hidden" id="rep-prefixo">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -153,7 +153,7 @@
       <textarea id="rep-obs" rows="2" style="width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;margin-top:4px;font-family:inherit"></textarea></div>
     <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px">
       <button class="btn-outline" onclick="repFechar()">Cancelar</button>
-      <button class="btn-gold" onclick="repSalvar()">Reportar defeito</button>
+      <button class="btn-gold" id="rep-btn" onclick="repSalvar()">Reportar defeito</button>
     </div>
   </div>
 </div>
@@ -261,7 +261,11 @@ async function revSalvar(prefixo){
 }
 
 /* ── Reportar defeito (modal) ── */
+let REP_EDIT_ID=null;   // null = novo lançamento; uuid = editando defeito avulso
 function repAbrir(prefixo){
+  REP_EDIT_ID=null;
+  document.getElementById('rep-title').textContent='🔧 Manutenção / defeito reportado';
+  document.getElementById('rep-btn').textContent='Reportar defeito';
   document.getElementById('rep-prefixo').value=prefixo;
   document.getElementById('rep-vtr').textContent=prefixo;
   document.getElementById('rep-tipo').value='Corretiva';
@@ -284,6 +288,39 @@ function repSituacao(){ const v=document.getElementById('rep-situacao').value;
 function repServOutro(){ const on=document.getElementById('rep-serv-outro-chk').checked;
   document.getElementById('rep-servico-outro-wrap').classList.toggle('rep-hide', !on);
   if(!on) document.getElementById('rep-servico-outro').value=''; }
+/* Editar um defeito AVULSO já lançado (só gestor). Pré-preenche o modal. */
+function repEditar(id){
+  const d=(DEF||[]).find(x=>x.origem==='avulso' && String(x.ref_id)===String(id));
+  if(!d){ toast('Defeito não encontrado.'); return; }
+  REP_EDIT_ID=id;
+  document.getElementById('rep-title').textContent='✏️ Editar defeito reportado';
+  document.getElementById('rep-btn').textContent='Salvar alterações';
+  document.getElementById('rep-prefixo').value=d.prefixo||'';
+  document.getElementById('rep-vtr').textContent=d.prefixo||'—';
+  document.getElementById('rep-tipo').value=d.tipo||'Corretiva';
+  document.getElementById('rep-urgencia').value=d.urgencia||'Baixa';
+  document.getElementById('rep-odometro').value=d.odometro||'';
+  document.getElementById('rep-impede').value=/sim/i.test(d.impede_uso||'')?'Sim':'Não';
+  document.getElementById('rep-defeito').value=d.defeito||'';
+  document.getElementById('rep-obs').value=d.observacoes||'';
+  document.getElementById('rep-situacao').value=d.situacao||'';
+  document.getElementById('rep-endereco').value=d.endereco||'';
+  // serviços: marca os fixos; o que não for da lista vai pro "Outro"
+  const servs=Array.isArray(d.servicos_solicitados)?d.servicos_solicitados:[];
+  const fixos=[...document.querySelectorAll('#rep-servicos input[type=checkbox]')].map(c=>c.value).filter(v=>v!=='__outro__');
+  document.querySelectorAll('#rep-servicos input[type=checkbox]').forEach(c=>{ c.checked = servs.includes(c.value); });
+  const extra=servs.filter(s=>!fixos.includes(s));
+  const chkOutro=document.getElementById('rep-serv-outro-chk');
+  chkOutro.checked=extra.length>0;
+  document.getElementById('rep-servico-outro').value=extra.join(', ');
+  repServOutro(); repSituacao();
+  document.getElementById('rep-ov').style.display='flex';
+}
+async function defExcluir(id){
+  if(!confirm('Excluir este defeito reportado? Esta ação não pode ser desfeita.')) return;
+  try{ await rpc('defeito_excluir',{p_token:S.token,p_id:id}); toast('Defeito excluído.'); await defCarregar(); }
+  catch(e){ toast('Erro: '+e.message); }
+}
 async function repSalvar(){
   const defeito=document.getElementById('rep-defeito').value.trim();
   if(!defeito){ toast('Descreva o defeito.'); return; }
@@ -303,7 +340,11 @@ async function repSalvar(){
     defeito, observacoes: document.getElementById('rep-obs').value.trim(),
     situacao, endereco, servicos_solicitados: servicos
   };
-  try{ await rpc('defeito_reportar',{p_token:S.token,p_dados:dados}); repFechar(); toast('Defeito reportado.'); await defCarregar(); }
+  try{
+    if(REP_EDIT_ID){ await rpc('defeito_editar',{p_token:S.token,p_id:REP_EDIT_ID,p_dados:dados}); repFechar(); toast('Defeito atualizado.'); }
+    else{ await rpc('defeito_reportar',{p_token:S.token,p_dados:dados}); repFechar(); toast('Defeito reportado.'); }
+    await defCarregar();
+  }
   catch(e){ toast('Erro: '+e.message); }
 }
 
@@ -343,9 +384,18 @@ function defRender(){
     const servs=Array.isArray(d.servicos_solicitados)?d.servicos_solicitados:[];
     const defCell=`${_re(d.defeito||'—')}${servs.length?`<br><span class="sub" style="font-size:10px;color:var(--text-hint)">🔧 ${servs.map(s=>_re(s)).join(', ')}</span>`:''}`;
     const resolvido=d.status==='resolvido';
-    const acao = resolvido
+    const btnResolver = resolvido
       ? '<span style="color:var(--success);font-size:11px;font-weight:700">✔ Resolvido</span>'
       : (podeGerir?`<button class="btn-outline" style="padding:5px 10px;font-size:11px" onclick="defResolver('${d.origem}','${d.ref_id}')">Marcar resolvido</button>`:'<span class="sub" style="font-size:10px">aberto</span>');
+    // Editar/Excluir só para defeito AVULSO e só p/ gestor; ficha → link p/ abrir a ficha.
+    let btnsExtra='';
+    if(podeGerir && d.origem==='avulso'){
+      btnsExtra=`<button class="btn-outline" style="padding:5px 9px;font-size:11px" onclick="repEditar('${d.ref_id}')">Editar</button>`
+              + `<button class="btn-outline" style="padding:5px 9px;font-size:11px;color:#ef9a9a;border-color:rgba(239,83,80,.4)" onclick="defExcluir('${d.ref_id}')">Excluir</button>`;
+    } else if(d.origem==='ficha'){
+      btnsExtra=`<a class="btn-outline" style="padding:5px 9px;font-size:11px;text-decoration:none" href="movimentacao-viaturas.html?ver=${d.ref_id}" target="_blank" rel="noopener">Ver ficha</a>`;
+    }
+    const acao=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${btnResolver}${btnsExtra}</div>`;
     return `<tr${resolvido?' style="opacity:.55"':''}>
       <td>${dt}</td><td><b>${_re(d.prefixo)}</b></td><td style="white-space:nowrap">${lot}</td><td>${_re(d.tipo||'—')}</td><td>${urg}</td><td>${sit}</td>
       <td style="max-width:260px">${defCell}</td><td>${impede}</td><td style="max-width:220px">${ende}</td>
