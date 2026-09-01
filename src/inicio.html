@@ -496,6 +496,27 @@ async function carregarAvisosMeuDia(){
         }
       }
     }
+    /* 4) Instrução(ões) próxima(s) — Chamada de Instrução.
+       Aparece a partir de 8 dias antes e some quando o dia da instrução passa
+       (o filtro por grupamento do militar é feito no servidor). */
+    {
+      try{
+        const ri=await fetch(`${SB_AUTH_URL}/rest/v1/rpc/instrucao_avisos_get`,{method:'POST',headers:{...H,'Content-Type':'application/json'},body:JSON.stringify({p_token:sessao.token})});
+        if(ri.ok){ const insts=await ri.json();
+          if(Array.isArray(insts) && insts.length){
+            const hoje=new Date(); hoje.setHours(0,0,0,0);
+            insts.slice(0,5).forEach(it=>{
+              const d=new Date(String(it.data)+'T00:00:00');
+              const dias=isNaN(d.getTime())?null:Math.round((d-hoje)/86400000);
+              const quando = dias===0?'<b>hoje</b>' : dias===1?'<b>amanhã</b>' : (dias!=null?`em <b>${dias} dias</b>`:'');
+              const dataBR = isNaN(d.getTime())?String(it.data):d.toLocaleDateString('pt-BR');
+              const resp = it.responsavel_instrucao?(' · Resp.: '+_esc(it.responsavel_instrucao)):'';
+              avisos.push({ic:'📣',txt:`<b>Instrução ${quando}</b> (${dataBR}) — ${_esc(it.assunto)}${resp}`,lk:'chamada-instrucao.html',lkTxt:'Ver →'});
+            });
+          }
+        }
+      }catch(e){ /* silencioso */ }
+    }
   }catch(e){ console.warn('[avisos-meudia]',e); }
 
   if(!avisos.length){ box.innerHTML=''; return; }

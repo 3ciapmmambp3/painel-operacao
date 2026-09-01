@@ -97,6 +97,10 @@
     .fg input, .fg input[type=date]{padding:8px 10px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:6px;color:var(--text-white);font-size:12.5px;outline:none;color-scheme:dark;}
     .fg input:focus{border-color:var(--gold);}
     .cfg-check{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-white);}
+    /* seleção de grupamentos participantes */
+    .grp-picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px 14px;margin-top:6px;padding:10px 12px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:7px;}
+    .grp-picker label{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text-white);cursor:pointer;}
+    .grp-picker .gp-empty{grid-column:1/-1;font-size:12px;color:var(--text-muted);}
 
     .ci-msg{padding:40px 20px;text-align:center;color:var(--text-muted);font-size:13.5px;}
     .ci-msg.err{color:var(--danger);}
@@ -217,6 +221,11 @@
         <div class="fg" style="grid-column:1/-1;"><label>Assunto *</label><input id="cfgAssunto" placeholder="Ex.: Memorando nº 30.130/… — abordagem a pessoas"></div>
         <div class="fg" style="grid-column:1/-1;"><label>Responsável pela instrução</label><input id="cfgResp" placeholder="Nome / posto do responsável"></div>
       </div>
+      <div class="fg" style="margin-top:12px;">
+        <label>Grupamentos participantes</label>
+        <label class="cfg-check" style="margin:4px 0 2px;"><input type="checkbox" id="cfgTodaCia" checked onchange="toggleTodaCia()"> <b>Toda a Companhia</b> <span style="color:var(--text-hint);font-weight:400;">(todos os grupamentos)</span></label>
+        <div class="grp-picker" id="cfgGrupamentos" style="display:none;"><div class="gp-empty">Carregando grupamentos…</div></div>
+      </div>
       <label class="cfg-check" style="margin-top:12px;"><input type="checkbox" id="cfgAtiva" checked> Definir como <b>instrução ativa</b> (a que aparece para lançar chamada)</label>
       <div style="margin-top:14px;display:flex;gap:8px;">
         <button class="btn-gold" onclick="salvarInstrucao()">Salvar instrução</button>
@@ -225,7 +234,7 @@
     </div>
     <div style="font-size:11px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:.6px;margin:6px 2px 10px;">Histórico de instruções</div>
     <div class="tblwrap"><table class="ci-tbl" id="cfgTbl">
-      <thead><tr><th>Data</th><th>Assunto</th><th>Responsável</th><th>Ativa</th><th></th></tr></thead>
+      <thead><tr><th>Data</th><th>Assunto</th><th>Responsável</th><th>Participantes</th><th>Ativa</th><th></th></tr></thead>
       <tbody></tbody>
     </table></div>
   </div>
@@ -279,6 +288,12 @@ function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;
 let INSTRUCAO=null;      // instrução ativa
 let ROSTER=[];           // militares (tta_listar_militares)
 let MARCAS=new Map();    // matricula -> {status, justificativa, militar}
+let GRUPAMENTOS_DISP=null;  // lista distinta de grupamentos (Configurar)
+
+/* Rótulo dos grupamentos participantes de uma instrução (null/vazio = toda a Cia). */
+function grupamentosLabel(grps){
+  return (Array.isArray(grps) && grps.length) ? grps.join(', ') : 'Toda a Companhia';
+}
 
 /* ── abas admin ── */
 if (EH_ADMIN){ document.querySelectorAll('.adm-only').forEach(el=>el.style.display=''); }
@@ -290,7 +305,7 @@ document.querySelectorAll('.ci-tab').forEach(tab=>{
     if(k==='dashboard') carregarDashboard();
     if(k==='consultas') initConsultas();
     if(k==='relatorios') initRelatorios();
-    if(k==='configurar') carregarHistorico();
+    if(k==='configurar') initConfigurar();
   });
 });
 
@@ -305,7 +320,7 @@ async function carregarInstrucaoAtiva(){
     band.className='inst-band';
     band.innerHTML=`<div class="ib-ic">📖</div><div class="ib-main">
       <div class="ib-assunto">${esc(INSTRUCAO.assunto)}</div>
-      <div class="ib-meta">Instrução de ${fmtData(INSTRUCAO.data)}${INSTRUCAO.responsavel_instrucao?' · Resp.: '+esc(INSTRUCAO.responsavel_instrucao):''}</div>
+      <div class="ib-meta">Instrução de ${fmtData(INSTRUCAO.data)}${INSTRUCAO.responsavel_instrucao?' · Resp.: '+esc(INSTRUCAO.responsavel_instrucao):''} · Participantes: ${esc(grupamentosLabel(INSTRUCAO.grupamentos))}</div>
     </div>`;
   }else{
     band.className='inst-band none';
@@ -502,21 +517,74 @@ async function montarRelatorio(){
 }
 
 /* ══ CONFIGURAR ═════════════════════════════════════════════════════ */
+/* Lista distinta de grupamentos (mesmos rótulos que a chamada agrupa). */
+async function carregarGrupamentosDisponiveis(){
+  if(GRUPAMENTOS_DISP) return GRUPAMENTOS_DISP;
+  try{
+    const roster=await rpc('tta_listar_militares',{p_token:sessao.token})||[];
+    const set=new Set();
+    roster.forEach(m=>{ const g=(m.grupamento_id||'').trim(); if(g) set.add(g); });
+    GRUPAMENTOS_DISP=Array.from(set).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  }catch(e){ GRUPAMENTOS_DISP=[]; console.error('grupamentos',e); }
+  return GRUPAMENTOS_DISP;
+}
+/* Marca os checkboxes conforme a seleção (lista de grupamentos). */
+function renderGrupamentosChecks(selecionados){
+  const box=document.getElementById('cfgGrupamentos');
+  const sel=new Set(selecionados||[]);
+  if(!GRUPAMENTOS_DISP || !GRUPAMENTOS_DISP.length){
+    box.innerHTML='<div class="gp-empty">Nenhum grupamento encontrado no efetivo.</div>'; return;
+  }
+  box.innerHTML=GRUPAMENTOS_DISP.map(g=>`<label><input type="checkbox" value="${esc(g)}" ${sel.has(g)?'checked':''}> ${esc(g)}</label>`).join('');
+}
+function grupamentosSelecionadosNaTela(){
+  return Array.from(document.querySelectorAll('#cfgGrupamentos input[type=checkbox]:checked')).map(c=>c.value);
+}
+/* "Toda a Companhia": esconde a lista; ao desmarcar, garante a lista carregada. */
+async function toggleTodaCia(){
+  const toda=document.getElementById('cfgTodaCia').checked;
+  const box=document.getElementById('cfgGrupamentos');
+  box.style.display=toda?'none':'';
+  if(!toda){
+    const sel=grupamentosSelecionadosNaTela();
+    await carregarGrupamentosDisponiveis();
+    renderGrupamentosChecks(sel);
+  }
+}
+/* Grupamentos a gravar: [] = toda a Cia (o backend normaliza pra NULL). */
+function coletarGrupamentos(){
+  if(document.getElementById('cfgTodaCia').checked) return [];
+  return grupamentosSelecionadosNaTela();
+}
+async function initConfigurar(){
+  await carregarGrupamentosDisponiveis();
+  if(!document.getElementById('cfgTodaCia').checked){
+    renderGrupamentosChecks(grupamentosSelecionadosNaTela());
+  }
+  carregarHistorico();
+}
 function novaInstrucao(){
   document.getElementById('cfgId').value='';
   document.getElementById('cfgData').value=new Date().toISOString().slice(0,10);
   document.getElementById('cfgAssunto').value='';
   document.getElementById('cfgResp').value='';
   document.getElementById('cfgAtiva').checked=true;
+  document.getElementById('cfgTodaCia').checked=true;
+  renderGrupamentosChecks([]);
+  document.getElementById('cfgGrupamentos').style.display='none';
   document.getElementById('cfgTitulo').textContent='Nova instrução';
 }
 async function salvarInstrucao(){
+  const todaCia=document.getElementById('cfgTodaCia').checked;
+  const grupamentos=coletarGrupamentos();
   const dados={ id:document.getElementById('cfgId').value||null,
     data:document.getElementById('cfgData').value||null,
     assunto:document.getElementById('cfgAssunto').value.trim(),
     responsavel_instrucao:document.getElementById('cfgResp').value.trim(),
-    ativa:document.getElementById('cfgAtiva').checked };
+    ativa:document.getElementById('cfgAtiva').checked,
+    grupamentos };
   if(!dados.assunto){ toast('Informe o assunto.'); return; }
+  if(!todaCia && !grupamentos.length){ toast('Selecione ao menos um grupamento ou marque "Toda a Companhia".'); return; }
   try{
     await rpc('instrucao_salvar',{p_token:sessao.token,p_dados:dados});
     toast('Instrução salva.');
@@ -530,20 +598,27 @@ async function carregarHistorico(){
   tb.innerHTML='<tr><td colspan="5" class="ci-msg">Carregando…</td></tr>';
   try{
     HISTORICO=await rpc('instrucao_listar',{p_token:sessao.token})||[];
-    if(!HISTORICO.length){ tb.innerHTML='<tr><td colspan="5" class="ci-msg">Nenhuma instrução cadastrada.</td></tr>'; return; }
+    if(!HISTORICO.length){ tb.innerHTML='<tr><td colspan="6" class="ci-msg">Nenhuma instrução cadastrada.</td></tr>'; return; }
     tb.innerHTML=HISTORICO.map(i=>`<tr>
       <td>${fmtData(i.data)}</td><td>${esc(i.assunto)}</td><td>${esc(i.responsavel_instrucao||'')}</td>
+      <td>${esc(grupamentosLabel(i.grupamentos))}</td>
       <td>${i.ativa?'<span class="st-pill ok">ATIVA</span>':''}</td>
       <td><button class="ci-chipbtn" onclick='editarInstrucao(${JSON.stringify(JSON.stringify(i))})'>Editar</button></td></tr>`).join('');
-  }catch(e){ tb.innerHTML='<tr><td colspan="5" class="ci-msg err">Erro: '+esc(e.message)+'</td></tr>'; }
+  }catch(e){ tb.innerHTML='<tr><td colspan="6" class="ci-msg err">Erro: '+esc(e.message)+'</td></tr>'; }
 }
-function editarInstrucao(js){
+async function editarInstrucao(js){
   const i=JSON.parse(js);
   document.getElementById('cfgId').value=i.id;
   document.getElementById('cfgData').value=(i.data||'').slice(0,10);
   document.getElementById('cfgAssunto').value=i.assunto||'';
   document.getElementById('cfgResp').value=i.responsavel_instrucao||'';
   document.getElementById('cfgAtiva').checked=!!i.ativa;
+  const grps=Array.isArray(i.grupamentos)?i.grupamentos:[];
+  const todaCia=!grps.length;
+  document.getElementById('cfgTodaCia').checked=todaCia;
+  document.getElementById('cfgGrupamentos').style.display=todaCia?'none':'';
+  await carregarGrupamentosDisponiveis();
+  renderGrupamentosChecks(grps);
   document.getElementById('cfgTitulo').textContent='Editar instrução';
   window.scrollTo({top:0,behavior:'smooth'});
 }
