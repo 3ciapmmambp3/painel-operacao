@@ -291,14 +291,23 @@ function fmtData(d){ if(!d) return '—'; const p=String(d).slice(0,10).split('-
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
 /* ── estado ── */
-let INSTRUCAO=null;      // instrução ativa
-let ROSTER=[];           // militares (tta_listar_militares)
+let INSTRUCAO=null;      // instrução selecionada (default: ativa)
+let LANCAVEIS=[];        // instruções que dá pra lançar/ver (seletor)
+let ROSTER=[];           // militares (recorte por grupamento da instrução)
 let MARCAS=new Map();    // matricula -> {status, justificativa, militar}
 let GRUPAMENTOS_DISP=null;  // lista distinta de grupamentos (Configurar)
 
 /* Rótulo dos grupamentos participantes de uma instrução (null/vazio = toda a Cia). */
 function grupamentosLabel(grps){
   return (Array.isArray(grps) && grps.length) ? grps.join(', ') : 'Toda a Companhia';
+}
+/* Recorta uma lista de militares pelos grupamentos da instrução selecionada.
+   Instrução "toda a Cia" (sem grupamentos) → devolve todos. */
+function filtrarPorGrupamentosDaInstrucao(lista){
+  const grps = INSTRUCAO && INSTRUCAO.grupamentos;
+  if(!Array.isArray(grps) || !grps.length) return lista;
+  const set = new Set(grps.map(g=>(g||'').trim()));
+  return lista.filter(m=>set.has((m.grupamento_id||'').trim()));
 }
 
 /* ── abas admin ── */
@@ -315,39 +324,60 @@ document.querySelectorAll('.ci-tab').forEach(tab=>{
   });
 });
 
-/* ── instrução ativa ── */
-async function carregarInstrucaoAtiva(){
-  const band=document.getElementById('instBand');
+/* ── instrução selecionada (com seletor p/ 2+ instruções, ex.: mesmo dia) ── */
+async function carregarInstrucoesLancaveis(){
   try{
-    const arr=await rpc('instrucao_ativa_get',{p_token:sessao.token});
-    INSTRUCAO=(arr&&arr.length)?arr[0]:null;
-  }catch(e){ INSTRUCAO=null; console.error(e); }
-  if(INSTRUCAO){
-    band.className='inst-band';
-    band.innerHTML=`<div class="ib-ic">📖</div><div class="ib-main">
-      <div class="ib-assunto">${esc(INSTRUCAO.assunto)}</div>
-      <div class="ib-meta">Instrução de ${fmtData(INSTRUCAO.data)}${INSTRUCAO.responsavel_instrucao?' · Resp.: '+esc(INSTRUCAO.responsavel_instrucao):''} · Participantes: ${esc(grupamentosLabel(INSTRUCAO.grupamentos))}</div>
-    </div>`;
-  }else{
+    LANCAVEIS = await rpc('instrucao_lancaveis_listar',{p_token:sessao.token}) || [];
+  }catch(e){ LANCAVEIS=[]; console.error(e); }
+  // preserva a seleção atual se ainda existir; senão, ativa; senão, a 1ª
+  const atual = INSTRUCAO && LANCAVEIS.find(i=>String(i.id)===String(INSTRUCAO.id));
+  INSTRUCAO = atual || LANCAVEIS.find(i=>i.ativa) || LANCAVEIS[0] || null;
+  renderBand();
+}
+function renderBand(){
+  const band=document.getElementById('instBand');
+  if(!INSTRUCAO){
     band.className='inst-band none';
     band.innerHTML=`<div class="ib-ic">📭</div><div class="ib-main">
-      <div class="ib-assunto">Nenhuma instrução ativa</div>
+      <div class="ib-assunto">Nenhuma instrução disponível</div>
       <div class="ib-meta">${EH_ADMIN?'Cadastre na aba <b>Configurar instrução</b> para liberar a chamada.':'Peça ao administrador para configurar a instrução atual.'}</div>
     </div>`;
+    return;
   }
+  const temVarias = LANCAVEIS.length > 1;
+  const seletor = temVarias
+    ? `<div style="margin-top:9px;"><select class="ci-search" id="selInstBand" style="min-width:min(100%,420px);" onchange="trocarInstrucao(this.value)">
+        ${LANCAVEIS.map(i=>`<option value="${esc(i.id)}" ${String(i.id)===String(INSTRUCAO.id)?'selected':''}>${fmtData(i.data)} — ${esc(i.assunto)}${i.ativa?' (ativa)':''}</option>`).join('')}
+       </select></div>`
+    : '';
+  band.className='inst-band';
+  band.innerHTML=`<div class="ib-ic">📖</div><div class="ib-main">
+    <div class="ib-assunto">${esc(INSTRUCAO.assunto)}</div>
+    <div class="ib-meta">Instrução de ${fmtData(INSTRUCAO.data)}${INSTRUCAO.responsavel_instrucao?' · Resp.: '+esc(INSTRUCAO.responsavel_instrucao):''} · Participantes: ${esc(grupamentosLabel(INSTRUCAO.grupamentos))}</div>
+    ${seletor}
+  </div>`;
+}
+function trocarInstrucao(id){
+  const nova = LANCAVEIS.find(i=>String(i.id)===String(id));
+  if(!nova) return;
+  INSTRUCAO = nova;
+  renderBand();
+  // recarrega a aba ativa com a instrução escolhida
+  if(document.getElementById('pane-lancar').classList.contains('active')) carregarLancar();
+  if(document.getElementById('pane-dashboard').classList.contains('active')) carregarDashboard();
 }
 
 /* ══ LANÇAR ══════════════════════════════════════════════════════════ */
 async function carregarLancar(){
   const wrap=document.getElementById('rosterWrap');
-  if(!INSTRUCAO){ wrap.innerHTML='<div class="ci-msg">Sem instrução ativa — não há chamada para lançar.</div>'; return; }
+  if(!INSTRUCAO){ wrap.innerHTML='<div class="ci-msg">Sem instrução selecionada — não há chamada para lançar.</div>'; return; }
   wrap.innerHTML='<div class="ci-msg">Carregando efetivo…</div>';
   try{
     const [roster, existentes] = await Promise.all([
       rpc('militares_roster_escopo',{p_token:sessao.token}),   /* roster COM recorte por grupamento/pelotão */
       rpc('chamada_instrucao_listar',{p_token:sessao.token,p_instrucao_id:INSTRUCAO.id})
     ]);
-    ROSTER = roster||[];
+    ROSTER = filtrarPorGrupamentosDaInstrucao(roster||[]);
     MARCAS = new Map();
     (existentes||[]).forEach(r=>MARCAS.set(r.matricula,{status:r.status,justificativa:r.justificativa||''}));
     document.getElementById('lancarBar').style.display='flex';
@@ -431,13 +461,15 @@ async function salvarChamada(){
 async function carregarDashboard(){
   const tb=document.querySelector('#dashTbl tbody'), msg=document.getElementById('dashMsg');
   const kpis=document.getElementById('dashKpis');
-  if(!INSTRUCAO){ kpis.innerHTML=''; tb.innerHTML=''; msg.style.display=''; msg.textContent='Sem instrução ativa.'; return; }
+  if(!INSTRUCAO){ kpis.innerHTML=''; tb.innerHTML=''; msg.style.display=''; msg.textContent='Sem instrução selecionada.'; return; }
   msg.style.display='none'; tb.innerHTML='<tr><td colspan="6" class="ci-msg">Carregando…</td></tr>';
   try{
-    const [rows, roster] = await Promise.all([
+    const [rows, rosterAll] = await Promise.all([
       rpc('chamada_instrucao_listar',{p_token:sessao.token,p_instrucao_id:INSTRUCAO.id}),
       rpc('tta_listar_militares',{p_token:sessao.token})
     ]);
+    // efetivo esperado = só os grupamentos participantes (ou toda a Cia)
+    const roster = filtrarPorGrupamentosDaInstrucao(rosterAll||[]);
     const efetivoPorGrupo={}; (roster||[]).forEach(m=>{ const g=(m.grupamento_id||'Sem grupamento').trim(); efetivoPorGrupo[g]=(efetivoPorGrupo[g]||0)+1; });
     const grp={};
     (rows||[]).forEach(r=>{ const g=(r.grupamento_id||'Sem grupamento').trim(); const o=grp[g]=grp[g]||{p:0,a:0,tot:0}; o.tot++; if(r.status==='presente')o.p++; else o.a++; });
@@ -595,7 +627,7 @@ async function salvarInstrucao(){
     await rpc('instrucao_salvar',{p_token:sessao.token,p_dados:dados});
     toast('Instrução salva.');
     HISTORICO=null; novaInstrucao();
-    await carregarInstrucaoAtiva(); await carregarHistorico();
+    await carregarInstrucoesLancaveis(); await carregarHistorico();
     if(document.getElementById('pane-lancar').classList.contains('active')) carregarLancar();
   }catch(e){ toast('Erro: '+e.message); }
 }
@@ -631,7 +663,7 @@ async function editarInstrucao(js){
 
 /* ── init ── */
 (async function(){
-  await carregarInstrucaoAtiva();
+  await carregarInstrucoesLancaveis();
   await carregarLancar();
 })();
 </script>

@@ -85,25 +85,33 @@ $$;
    Ancorada só na data da instrução — independe de quando foi cadastrada.
    No dia da instrução ainda aparece; no dia seguinte some.
    Filtro: toda a Cia (grupamentos NULL/vazio) OU o grupamento do militar
-   está na lista. Todos os logados. */
+   está na lista. EXCEÇÃO: o CMT da Cia (e o admin_geral) vê TODAS as
+   instruções, independente do grupamento — ele precisa ter ciência de
+   quem participou. Todos os logados. */
 create or replace function public.instrucao_avisos_get(p_token uuid)
 returns setof public.instrucoes
 language plpgsql security definer set search_path = public as $$
 declare
   v_me   record;
   v_hoje date;
+  v_ve_todas boolean;
 begin
   select * into v_me from public._sessao_militar(p_token);
   if v_me.id is null then
     raise exception 'Sessão expirada. Faça login novamente.';
   end if;
   v_hoje := (now() at time zone 'America/Sao_Paulo')::date;
+  -- CMT da Cia (função com CMT/COMANDANTE + CIA) ou admin_geral: vê todas.
+  v_ve_todas := coalesce(v_me.nivel_acesso,'') = 'admin_geral'
+    or (coalesce(v_me.funcao,'') ~* '(cmt|comandante)'
+        and coalesce(v_me.funcao,'') ~* '\ycia\y');
   return query
     select * from public.instrucoes i
      where i.data >= v_hoje          -- some no dia seguinte à instrução
        and i.data <= v_hoje + 8      -- começa a avisar 8 dias antes
        and (
-         i.grupamentos is null
+         v_ve_todas
+         or i.grupamentos is null
          or array_length(i.grupamentos, 1) is null
          or coalesce(v_me.grupamento_id, '') = any (i.grupamentos)
        )
@@ -111,9 +119,45 @@ begin
 end;
 $$;
 
+/* ─── 4) LANÇÁVEIS: instruções que o usuário pode escolher para lançar ─────
+   Resolve o caso de 2+ instruções no mesmo dia — a gestão escolhe qual.
+   Janela: ativa OU nos últimos 30 dias / próximos 8. Recorte:
+     • gestor (admin_geral/admin/admin_pelotao ou CMT da Cia) → vê TODAS;
+     • demais militares → só as do seu grupamento (ou toda a Cia).
+   Todos os logados. */
+create or replace function public.instrucao_lancaveis_listar(p_token uuid)
+returns setof public.instrucoes
+language plpgsql security definer set search_path = public as $$
+declare
+  v_me     record;
+  v_hoje   date;
+  v_gestor boolean;
+begin
+  select * into v_me from public._sessao_militar(p_token);
+  if v_me.id is null then
+    raise exception 'Sessão expirada. Faça login novamente.';
+  end if;
+  v_hoje := (now() at time zone 'America/Sao_Paulo')::date;
+  v_gestor := public._pode_gerir_instrucao(v_me.nivel_acesso)
+    or (coalesce(v_me.funcao,'') ~* '(cmt|comandante)'
+        and coalesce(v_me.funcao,'') ~* '\ycia\y');
+  return query
+    select * from public.instrucoes i
+     where (i.ativa = true or (i.data >= v_hoje - 30 and i.data <= v_hoje + 8))
+       and (
+         v_gestor
+         or i.grupamentos is null
+         or array_length(i.grupamentos, 1) is null
+         or coalesce(v_me.grupamento_id, '') = any (i.grupamentos)
+       )
+     order by i.data desc, i.created_at desc;
+end;
+$$;
+
 /* ─── grants ───────────────────────────────────────────────────────────── */
-grant execute on function public.instrucao_salvar(uuid, jsonb)     to anon;
-grant execute on function public.instrucao_avisos_get(uuid)        to anon;
+grant execute on function public.instrucao_salvar(uuid, jsonb)          to anon;
+grant execute on function public.instrucao_avisos_get(uuid)             to anon;
+grant execute on function public.instrucao_lancaveis_listar(uuid)       to anon;
 
 -- ════════════════════════════════════════════════════════════════════════
 -- FIM. Ordem no SQL Editor: depois do 24_chamada_instrucao.sql.
