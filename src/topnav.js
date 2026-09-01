@@ -113,7 +113,7 @@
     go: [
       {ic:'🎯', t:'Supervisão e Controle', h:'supervisao-controle.html'},
       {ic:'📣', t:'Chamada de Instrução', h:'chamada-instrucao.html'},
-      {ic:'📊', t:'Painel de Demandas', soon:true},
+      {ic:'📊', t:'Painel de Demandas', h:'https://painel-3cia.vercel.app', sso:true},
     ],
   };
 
@@ -144,6 +144,10 @@
         .filter(m => !m.req || canReq[m.req])   // esconde itens sem permissão (mesma regra dos cards)
         .map(m => m.soon
         ? `<span class="tn-soon"><span class="tn-ic">${icoHTML(m.ic)}</span>${m.t}<em>em breve</em></span>`
+        : m.sso
+          // App externo com login único (SSO): leva o token da sessão no
+          // fragmento (#) — o painel-3cia valida e entra sem pedir senha.
+          ? `<a href="${m.h}${sessao&&sessao.token ? '/sso#t='+encodeURIComponent(sessao.token) : ''}" target="_blank" rel="noopener noreferrer"><span class="tn-ic">${icoHTML(m.ic)}</span>${m.t}<em style="margin-left:auto;font-style:normal;opacity:.6">↗</em></a>`
         : m.ext
           ? `<a href="${m.h}" target="_blank" rel="noopener noreferrer"><span class="tn-ic">${icoHTML(m.ic)}</span>${m.t}<em style="margin-left:auto;font-style:normal;opacity:.6">↗</em></a>`
           : `<a href="${m.h}"><span class="tn-ic">${icoHTML(m.ic)}</span>${m.t}</a>`).join('');
