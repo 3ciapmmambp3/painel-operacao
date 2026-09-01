@@ -79,9 +79,12 @@
     .kpi .val{font-size:30px;font-weight:800;color:var(--text-white);line-height:1;margin-top:6px;}
     .kpi .val small{font-size:12px;font-weight:400;color:var(--text-hint);}
     table.ci-tbl{width:100%;border-collapse:collapse;font-size:12.5px;}
-    table.ci-tbl th,table.ci-tbl td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--border);}
-    table.ci-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-hint);}
+    table.ci-tbl th,table.ci-tbl td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:top;}
+    table.ci-tbl th{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-hint);white-space:nowrap;}
     table.ci-tbl td.cst{font-weight:700;}
+    /* colunas curtas nunca quebram (Nº PM, P/G, #, Status) */
+    table.ci-tbl .nowrap{white-space:nowrap;}
+    table.ci-tbl .num{white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums;}
     .st-pill{font-size:10px;font-weight:800;padding:2px 9px;border-radius:20px;letter-spacing:.3px;}
     .st-pill.ok{background:rgba(102,187,106,.16);color:var(--success);}
     .st-pill.pend{background:rgba(255,167,38,.16);color:#ffa726;}
@@ -115,7 +118,10 @@
       header, .topnav, .rd-sidebar, .ci-tabs, .ci-actbar, #toast, .no-print{display:none !important;}
       .page-layout{display:block;} .ci-wrap{max-width:none;padding:0;}
       body{background:#fff;color:#000;}
-      table.ci-tbl th,table.ci-tbl td{border-color:#999;color:#000;}
+      .tblwrap{border:none;overflow:visible;}
+      table.ci-tbl{font-size:10.5px;}
+      table.ci-tbl th,table.ci-tbl td{border-color:#999;color:#000;padding:5px 7px;}
+      table.ci-tbl th{white-space:nowrap;}
     }
   </style>
 </head>
@@ -479,9 +485,9 @@ async function carregarConsulta(){
     const rows=await rpc('chamada_instrucao_listar',{p_token:sessao.token,p_instrucao_id:id});
     if(!rows||!rows.length){ tb.innerHTML=''; msg.style.display=''; msg.textContent='Nenhuma presença lançada.'; return; }
     tb.innerHTML=rows.map(r=>`<tr>
-      <td>${esc(r.matricula)}</td><td>${esc(r.posto_graduacao||'')}</td>
+      <td class="nowrap">${esc(r.matricula)}</td><td class="nowrap">${esc(r.posto_graduacao||'')}</td>
       <td>${esc(r.nome_guerra||r.nome_completo||'')}</td><td>${esc(r.grupamento_id||'')}</td>
-      <td class="cst" style="color:${r.status==='presente'?'var(--success)':'var(--danger)'}">${r.status==='presente'?'Presente':'Ausente'}</td>
+      <td class="cst nowrap" style="color:${r.status==='presente'?'var(--success)':'var(--danger)'}">${r.status==='presente'?'Presente':'Ausente'}</td>
       <td>${esc(r.justificativa||'')}</td><td>${esc(r.registrado_por_nome||'')}</td></tr>`).join('');
   }catch(e){ tb.innerHTML=''; msg.style.display=''; msg.className='ci-msg err'; msg.textContent='Erro: '+e.message; }
 }
@@ -500,9 +506,9 @@ async function montarRelatorio(){
   try{
     const rows=await rpc('chamada_instrucao_listar',{p_token:sessao.token,p_instrucao_id:id})||[];
     const p=rows.filter(r=>r.status==='presente').length, a=rows.length-p;
-    const linhas=rows.map((r,i)=>`<tr><td>${i+1}</td><td>${esc(r.matricula)}</td><td>${esc(r.posto_graduacao||'')}</td>
+    const linhas=rows.map((r,i)=>`<tr><td class="num">${i+1}</td><td class="nowrap">${esc(r.matricula)}</td><td class="nowrap">${esc(r.posto_graduacao||'')}</td>
       <td>${esc(r.nome_guerra||r.nome_completo||'')}</td><td>${esc(r.grupamento_id||'')}</td>
-      <td>${r.status==='presente'?'Presente':'Ausente'}</td><td>${esc(r.justificativa||'')}</td><td>${esc(r.registrado_por_nome||'')}</td></tr>`).join('');
+      <td class="nowrap">${r.status==='presente'?'Presente':'Ausente'}</td><td>${esc(r.justificativa||'')}</td><td>${esc(r.registrado_por_nome||'')}</td></tr>`).join('');
     area.innerHTML=`
       <div style="text-align:center;margin-bottom:14px;">
         <div style="font-size:15px;font-weight:800;color:var(--text-white);">RELATÓRIO DE CHAMADA DE INSTRUÇÃO</div>
@@ -511,7 +517,7 @@ async function montarRelatorio(){
         ${inst.responsavel_instrucao?`<div style="font-size:12px;color:var(--text-muted);">Responsável: ${esc(inst.responsavel_instrucao)}</div>`:''}
         <div style="font-size:12.5px;color:var(--text-muted);margin-top:8px;">Presentes: <b>${p}</b> · Ausentes: <b>${a}</b> · Total marcado: <b>${rows.length}</b></div>
       </div>
-      <div class="tblwrap"><table class="ci-tbl"><thead><tr><th>#</th><th>Nº PM</th><th>P/G</th><th>Nome</th><th>Grupamento</th><th>Status</th><th>Justificativa</th><th>Registrado por</th></tr></thead>
+      <div class="tblwrap"><table class="ci-tbl"><thead><tr><th class="num">#</th><th>Nº PM</th><th>P/G</th><th>Nome</th><th>Grupamento</th><th>Status</th><th>Justificativa</th><th>Registrado por</th></tr></thead>
       <tbody>${linhas||'<tr><td colspan="7" class="ci-msg">Sem presenças lançadas.</td></tr>'}</tbody></table></div>`;
   }catch(e){ area.innerHTML='<div class="ci-msg err">Erro: '+esc(e.message)+'</div>'; }
 }
