@@ -92,11 +92,14 @@
     .bar > i{display:block;height:100%;background:var(--success);}
     .tblwrap{border:1px solid var(--border);border-radius:10px;overflow:auto;}
     /* relatório agrupado por grupamento */
-    .rel-grp{margin-bottom:16px;}
-    .rel-grp-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--bg-dark);border:1px solid var(--border);border-bottom:none;border-radius:8px 8px 0 0;padding:8px 14px;}
+    .rel-grp{margin-bottom:18px;}
+    .rel-grp-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--bg-dark);border:1px solid var(--border);border-radius:8px;padding:8px 14px;margin-bottom:8px;}
     .rel-grp-head .rgt{font-size:12.5px;font-weight:800;color:var(--gold-light);letter-spacing:.3px;}
     .rel-grp-head .rgc{font-size:11px;color:var(--text-hint);margin-left:auto;}
-    .rel-grp .tblwrap{border-radius:0 0 8px 8px;}
+    .rel-grp .tblwrap{border-radius:8px;margin-bottom:8px;}
+    .rel-sub{font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:2px 2px 5px;}
+    .rel-sub-p{color:var(--success);}
+    .rel-sub-a{color:var(--danger);}
 
     /* config form */
     .cfg-card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:16px;}
@@ -556,14 +559,21 @@ async function montarRelatorio(){
     const chaves=Object.keys(porGrupo).sort((x,y)=>x.localeCompare(y,'pt-BR'));
     const blocos=chaves.map(g=>{
       const lista=porGrupo[g];
-      const gp=lista.filter(r=>r.status==='presente').length, ga=lista.length-gp;
-      const linhas=lista.map((r,i)=>`<tr><td class="num">${i+1}</td><td class="nowrap">${esc(r.matricula)}</td><td class="nowrap">${esc(r.posto_graduacao||'')}</td>
-        <td>${esc(r.nome_guerra||r.nome_completo||'')}</td>
-        <td class="nowrap">${r.status==='presente'?'Presente':'Ausente'}</td><td>${esc(r.justificativa||'')}</td><td>${esc(r.registrado_por_nome||'')}</td></tr>`).join('');
+      const pres=lista.filter(r=>r.status==='presente');
+      const aus =lista.filter(r=>r.status!=='presente');
+      // Presentes: sem status nem justificativa (economiza espaço no PDF)
+      const tabPres = pres.length ? `
+        <div class="rel-sub rel-sub-p">Presentes — ${pres.length}</div>
+        <div class="tblwrap"><table class="ci-tbl"><thead><tr><th class="num">#</th><th>Nº PM</th><th>P/G</th><th>Nome</th><th>Registrado por</th></tr></thead>
+        <tbody>${pres.map((r,i)=>`<tr><td class="num">${i+1}</td><td class="nowrap">${esc(r.matricula)}</td><td class="nowrap">${esc(r.posto_graduacao||'')}</td><td>${esc(r.nome_guerra||r.nome_completo||'')}</td><td>${esc(r.registrado_por_nome||'')}</td></tr>`).join('')}</tbody></table></div>` : '';
+      // Ausentes: com Justificativa
+      const tabAus = aus.length ? `
+        <div class="rel-sub rel-sub-a">Ausentes — ${aus.length}</div>
+        <div class="tblwrap"><table class="ci-tbl"><thead><tr><th class="num">#</th><th>Nº PM</th><th>P/G</th><th>Nome</th><th>Justificativa</th><th>Registrado por</th></tr></thead>
+        <tbody>${aus.map((r,i)=>`<tr><td class="num">${i+1}</td><td class="nowrap">${esc(r.matricula)}</td><td class="nowrap">${esc(r.posto_graduacao||'')}</td><td>${esc(r.nome_guerra||r.nome_completo||'')}</td><td>${esc(r.justificativa||'')}</td><td>${esc(r.registrado_por_nome||'')}</td></tr>`).join('')}</tbody></table></div>` : '';
       return `<div class="rel-grp">
-        <div class="rel-grp-head"><span class="rgt">${esc(g)}</span><span class="rgc">Presentes: ${gp} · Ausentes: ${ga} · Total: ${lista.length}</span></div>
-        <div class="tblwrap"><table class="ci-tbl"><thead><tr><th class="num">#</th><th>Nº PM</th><th>P/G</th><th>Nome</th><th>Status</th><th>Justificativa</th><th>Registrado por</th></tr></thead>
-        <tbody>${linhas}</tbody></table></div>
+        <div class="rel-grp-head"><span class="rgt">${esc(g)}</span><span class="rgc">Presentes: ${pres.length} · Ausentes: ${aus.length} · Total: ${lista.length}</span></div>
+        ${tabPres}${tabAus}
       </div>`;
     }).join('');
     area.innerHTML=`
