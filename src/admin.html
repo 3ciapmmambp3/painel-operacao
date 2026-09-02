@@ -1007,7 +1007,7 @@ document.addEventListener('click', () => {
   <div class="tab-pane" id="tab-links">
     <div class="card" style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:16px">
       <h2 style="font-size:14px;font-weight:800;color:var(--gold-light);margin-bottom:6px">🔗 Links Úteis</h2>
-      <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px">Cadastre atalhos (nome + endereço) que aparecem na seção <b>“Links úteis”</b> do Meu Dia, para todos os militares. Abrem em nova aba.</p>
+      <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px">Cadastre atalhos (nome + endereço) que aparecem na seção <b>“Links úteis”</b> do Meu Dia, para todos os militares. Abrem em nova aba. Para mudar a ordem em que aparecem, <b>arraste as linhas</b> pela alça <span style="color:var(--text-hint)">⠿</span> na tabela abaixo.</p>
       <div style="display:grid;grid-template-columns:150px 1fr 2fr auto auto;gap:10px;align-items:end">
         <div><label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase" title="Emoji (ex.: 🔗) OU caminho de imagem (ex.: assets/escudo-pmmg.png)">Ícone <span style="text-transform:none;font-weight:400;color:var(--text-hint)">emoji ou imagem</span></label>
           <input id="lk-icone" maxlength="500" placeholder="🔗, assets/escudo-pmmg.png ou envie uma imagem" style="width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:8px 8px;color:var(--text-white);font-size:13px;outline:none;margin-top:4px">
@@ -1030,11 +1030,12 @@ document.addEventListener('click', () => {
     <div class="tablewrap" style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;overflow-x:auto">
       <table style="width:100%;border-collapse:collapse">
         <thead><tr>
+          <th style="width:34px;padding:11px 6px;border-bottom:1px solid var(--border);background:var(--bg-dark)"></th>
           <th style="text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-hint);font-weight:700;padding:11px 14px;border-bottom:1px solid var(--border);background:var(--bg-dark)">Nome</th>
           <th style="text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-hint);font-weight:700;padding:11px 14px;border-bottom:1px solid var(--border);background:var(--bg-dark)">URL</th>
           <th style="text-align:right;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-hint);font-weight:700;padding:11px 14px;border-bottom:1px solid var(--border);background:var(--bg-dark)">Ações</th>
         </tr></thead>
-        <tbody id="lk-tb"><tr><td colspan="3" style="padding:30px;text-align:center;color:var(--text-hint)">Carregando…</td></tr></tbody>
+        <tbody id="lk-tb"><tr><td colspan="4" style="padding:30px;text-align:center;color:var(--text-hint)">Carregando…</td></tr></tbody>
       </table>
     </div>
   </div><!-- /tab-links -->
@@ -1277,15 +1278,57 @@ async function linksCarregar(){
   try{
     LINKS = await sbRpc('links_uteis_listar', {}) || [];
     if(!Array.isArray(LINKS)) LINKS=[];
-    if(!LINKS.length){ tb.innerHTML='<tr><td colspan="3" style="padding:30px;text-align:center;color:var(--text-hint)">Nenhum link cadastrado.</td></tr>'; return; }
-    tb.innerHTML = LINKS.map(l=>`<tr>
+    if(!LINKS.length){ tb.innerHTML='<tr><td colspan="4" style="padding:30px;text-align:center;color:var(--text-hint)">Nenhum link cadastrado.</td></tr>'; return; }
+    tb.innerHTML = LINKS.map(l=>`<tr draggable="true" data-id="${l.id}" ondragstart="lkDragStart(event)" ondragover="lkDragOver(event)" ondragleave="lkDragLeave(event)" ondrop="lkDrop(event)" ondragend="lkDragEnd(event)">
+      <td class="lk-handle" title="Arraste para reordenar" style="padding:11px 6px;border-bottom:1px solid var(--border);text-align:center;color:var(--text-hint);cursor:grab;font-size:16px;user-select:none">⠿</td>
       <td style="padding:11px 14px;border-bottom:1px solid var(--border);font-size:12.5px;font-weight:700"><span style="font-size:16px;margin-right:7px;display:inline-block;vertical-align:middle">${/\.(png|jpe?g|svg|webp|gif)(\?|#|$)/i.test(l.icone||'')?`<img src="${_lkEsc(l.icone)}" alt="" style="width:18px;height:18px;object-fit:contain;vertical-align:middle" onerror="this.replaceWith(document.createTextNode('🔗'))">`:(l.icone?_lkEsc(l.icone):'🔗')}</span>${_lkEsc(l.nome)}</td>
       <td style="padding:11px 14px;border-bottom:1px solid var(--border);font-size:12px;color:var(--text-muted);word-break:break-all"><a href="${_lkEsc(l.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--info)">${_lkEsc(l.url)}</a></td>
       <td style="padding:11px 14px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap">
         <button class="btn-outline" style="padding:5px 11px;font-size:11.5px" onclick="linksEditar('${l.id}')">✎ Editar</button>
         <button class="btn-outline" style="padding:5px 11px;font-size:11.5px;color:#ef9a9a;border-color:rgba(239,83,80,.4)" onclick="linksRemover('${l.id}','${_lkEsc(l.nome)}')">🗑</button>
       </td></tr>`).join('');
-  }catch(e){ tb.innerHTML=`<tr><td colspan="3" style="padding:20px;text-align:center;color:#ef9a9a">Erro: ${_lkEsc(e.message)}</td></tr>`; }
+  }catch(e){ tb.innerHTML=`<tr><td colspan="4" style="padding:20px;text-align:center;color:#ef9a9a">Erro: ${_lkEsc(e.message)}</td></tr>`; }
+}
+
+/* ── Arrastar-e-soltar para reordenar (persiste em links_uteis_reordenar) ── */
+let _lkDragId=null;
+function lkDragStart(ev){
+  const tr=ev.target.closest('tr'); if(!tr) return;
+  _lkDragId=tr.dataset.id;
+  ev.dataTransfer.effectAllowed='move';
+  try{ ev.dataTransfer.setData('text/plain', _lkDragId); }catch(_){}
+  tr.style.opacity='.4';
+}
+function lkDragOver(ev){
+  ev.preventDefault(); ev.dataTransfer.dropEffect='move';
+  const tr=ev.target.closest('tr'); if(!tr || tr.dataset.id===_lkDragId) return;
+  tr.style.boxShadow='inset 0 2px 0 0 var(--gold-light)';
+}
+function lkDragLeave(ev){
+  const tr=ev.target.closest('tr'); if(tr) tr.style.boxShadow='';
+}
+function lkDragEnd(){
+  document.querySelectorAll('#lk-tb tr').forEach(tr=>{ tr.style.opacity=''; tr.style.boxShadow=''; });
+}
+async function lkDrop(ev){
+  ev.preventDefault();
+  const alvo=ev.target.closest('tr'); lkDragEnd();
+  if(!alvo || !_lkDragId || alvo.dataset.id===_lkDragId){ _lkDragId=null; return; }
+  const de=LINKS.findIndex(x=>x.id===_lkDragId);
+  const para=LINKS.findIndex(x=>x.id===alvo.dataset.id);
+  _lkDragId=null;
+  if(de<0 || para<0) return;
+  const [mov]=LINKS.splice(de,1); LINKS.splice(para,0,mov);   // reordena em memória (otimista)
+  await linksReordenarSalvar();
+}
+async function linksReordenarSalvar(){
+  const msg=document.getElementById('lk-msg');
+  const ids=LINKS.map(l=>l.id);
+  try{
+    await sbRpc('links_uteis_reordenar', {p_token:sessao.token, p_ids:ids});
+    msg.style.color='#2ea043'; msg.textContent='Ordem atualizada.';
+    await linksCarregar();
+  }catch(e){ msg.style.color='#ef9a9a'; msg.textContent='Erro ao reordenar: '+e.message; await linksCarregar(); }
 }
 // ── Upload de imagem do computador p/ o ícone do link (Storage: bucket anexos) ──
 const _LK_STORAGE=`${SB_AUTH_URL}/storage/v1`, _LK_BUCKET='anexos', _LK_TTL=315360000;
