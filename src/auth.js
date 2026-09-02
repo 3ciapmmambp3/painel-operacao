@@ -477,31 +477,66 @@ document.addEventListener('DOMContentLoaded', function(){
   }catch(e){}
 });
 
-/* ── Cartão do usuário no topo (avatar/nome/badge): PADRÃO ÚNICO em todas as
-   telas, igual ao da tela "Meu Dia". Cada página montava esse bloco por conta
-   própria — daí o formato variava (nome, badge, iniciais). Aqui uniformizamos
-   num lugar só; roda ao carregar e reforça depois (páginas que montam o topo
-   de forma assíncrona). Não faz nada se a tela não tiver o bloco. ── */
+/* ── Cartão do usuário no topo (avatar + nome + badge + Sair): PADRÃO ÚNICO em
+   todas as telas, igual ao da tela "Meu Dia". Cada página montava esse bloco
+   por conta própria — daí o formato variava (sem badge, sem avatar, id
+   diferente, ou só um "who"). Aqui uniformizamos num lugar só, de forma NÃO
+   destrutiva: só criamos o que falta e atualizamos conteúdo/estilo, sem remover
+   os outros botões que algumas telas têm no cabeçalho (painel, análise…).
+   Roda ao carregar e reforça depois (telas que montam o topo async). ── */
+var POE_UI_STYLE_PILL  = 'display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);cursor:pointer;padding:5px 10px;border:1px solid var(--border);border-radius:5px;';
+var POE_UI_STYLE_AV    = 'width:22px;height:22px;border-radius:50%;background:var(--gold);color:#1a1000;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;';
+var POE_UI_SAIR_ONCLICK= "localStorage.removeItem('poe_sessao_v2');sessionStorage.removeItem('poe_sessao_v2');localStorage.removeItem('poe_sessao');window.location.href='index.html'";
 function poeRenderUserInfo(){
   var s=null;
   try{ s=JSON.parse(sessionStorage.getItem('poe_sessao_v2')||'null'); }catch(e){}
   if(!s) return;
-  var elNome=document.getElementById('user-nome');
-  var elAv=document.getElementById('user-avatar');
-  var elBadge=document.getElementById('user-badge');
-  if(elNome) elNome.textContent = s.nome || s.matricula || '';
-  if(elAv) elAv.textContent = (s.nome||'U').split(' ').filter(Boolean).map(function(w){return w[0];}).slice(0,2).join('').toUpperCase();
-  if(elBadge){
-    var mapa={
-      admin_geral:['ADMIN GERAL','rgba(155,138,92,.2)','var(--gold)','var(--gold-border)'],
-      admin:['ADMIN','rgba(155,138,92,.2)','var(--gold)','var(--gold-border)'],
-      admin_pelotao:['ADMIN PELOTÃO','rgba(255,152,0,.15)','#ffa726','rgba(255,152,0,.4)'],
-      admin_gp:['ADMIN GP','rgba(255,152,0,.15)','#ffa726','rgba(255,152,0,.4)']
-    };
-    var info=mapa[s.nivel_acesso]||['OPERACIONAL','rgba(66,165,245,.15)','var(--info)','rgba(66,165,245,.3)'];
-    elBadge.textContent=info[0];
-    elBadge.style.cssText='font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;background:'+info[1]+';color:'+info[2]+';border:1px solid '+info[3]+';';
+  var nome = s.nome || s.matricula || '';
+  var initials = (s.nome||'U').split(' ').filter(Boolean).map(function(w){return w[0];}).slice(0,2).join('').toUpperCase();
+  var mapa={
+    admin_geral:['ADMIN GERAL','rgba(155,138,92,.2)','var(--gold)','var(--gold-border)'],
+    admin:['ADMIN','rgba(155,138,92,.2)','var(--gold)','var(--gold-border)'],
+    admin_pelotao:['ADMIN PELOTÃO','rgba(255,152,0,.15)','#ffa726','rgba(255,152,0,.4)'],
+    admin_gp:['ADMIN GP','rgba(255,152,0,.15)','#ffa726','rgba(255,152,0,.4)']
+  };
+  var bi = mapa[s.nivel_acesso] || ['OPERACIONAL','rgba(66,165,245,.15)','var(--info)','rgba(66,165,245,.3)'];
+  var BADGE_STYLE='font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;background:'+bi[1]+';color:'+bi[2]+';border:1px solid '+bi[3]+';';
+
+  var info = document.getElementById('user-info');
+  if(!info){
+    var hr = document.querySelector('.header-right');
+    if(!hr) return;                                   // tela sem cabeçalho padrão
+    var who = hr.querySelector('#who'); if(who) who.style.display='none';   // esconde o "who" antigo (não remove: o script da tela ainda o referencia)
+    info = document.createElement('div');
+    info.id='user-info';
+    info.title='Meu Perfil';
+    info.setAttribute('onclick',"window.location.href='perfil.html'");
+    hr.insertBefore(info, hr.firstChild);
+    if(!hr.querySelector('button.btn-outline')){       // garante o botão Sair
+      var sair=document.createElement('button');
+      sair.className='btn-outline';
+      sair.textContent='Sair';
+      sair.setAttribute('onclick', POE_UI_SAIR_ONCLICK);
+      hr.appendChild(sair);
+    }
   }
+  info.style.cssText = POE_UI_STYLE_PILL;
+
+  var av = info.querySelector('#user-avatar');
+  if(!av){ av=document.createElement('span'); av.id='user-avatar'; info.insertBefore(av, info.firstChild); }
+  av.style.cssText = POE_UI_STYLE_AV;
+  av.textContent = initials;
+
+  // nome: id padrão é "user-nome"; o admin usa "user-nome-hdr" — atualiza o que existir
+  var nm = info.querySelector('#user-nome') || info.querySelector('#user-nome-hdr');
+  if(!nm){ nm=document.createElement('span'); nm.id='user-nome';
+    if(av.nextSibling) info.insertBefore(nm, av.nextSibling); else info.appendChild(nm); }
+  nm.textContent = nome;
+
+  var bg = info.querySelector('#user-badge');
+  if(!bg){ bg=document.createElement('span'); bg.id='user-badge'; info.appendChild(bg); }
+  bg.style.cssText = BADGE_STYLE;
+  bg.textContent = bi[0];
 }
 document.addEventListener('DOMContentLoaded', function(){ poeRenderUserInfo(); setTimeout(poeRenderUserInfo, 800); });
 if(document.readyState!=='loading'){ poeRenderUserInfo(); setTimeout(poeRenderUserInfo, 800); }
