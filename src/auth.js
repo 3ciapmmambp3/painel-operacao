@@ -476,3 +476,32 @@ document.addEventListener('DOMContentLoaded', function(){
     if(adm) nav.insertBefore(a, adm); else nav.appendChild(a);
   }catch(e){}
 });
+
+/* ── Cartão do usuário no topo (avatar/nome/badge): PADRÃO ÚNICO em todas as
+   telas, igual ao da tela "Meu Dia". Cada página montava esse bloco por conta
+   própria — daí o formato variava (nome, badge, iniciais). Aqui uniformizamos
+   num lugar só; roda ao carregar e reforça depois (páginas que montam o topo
+   de forma assíncrona). Não faz nada se a tela não tiver o bloco. ── */
+function poeRenderUserInfo(){
+  var s=null;
+  try{ s=JSON.parse(sessionStorage.getItem('poe_sessao_v2')||'null'); }catch(e){}
+  if(!s) return;
+  var elNome=document.getElementById('user-nome');
+  var elAv=document.getElementById('user-avatar');
+  var elBadge=document.getElementById('user-badge');
+  if(elNome) elNome.textContent = s.nome || s.matricula || '';
+  if(elAv) elAv.textContent = (s.nome||'U').split(' ').filter(Boolean).map(function(w){return w[0];}).slice(0,2).join('').toUpperCase();
+  if(elBadge){
+    var mapa={
+      admin_geral:['ADMIN GERAL','rgba(155,138,92,.2)','var(--gold)','var(--gold-border)'],
+      admin:['ADMIN','rgba(155,138,92,.2)','var(--gold)','var(--gold-border)'],
+      admin_pelotao:['ADMIN PELOTÃO','rgba(255,152,0,.15)','#ffa726','rgba(255,152,0,.4)'],
+      admin_gp:['ADMIN GP','rgba(255,152,0,.15)','#ffa726','rgba(255,152,0,.4)']
+    };
+    var info=mapa[s.nivel_acesso]||['OPERACIONAL','rgba(66,165,245,.15)','var(--info)','rgba(66,165,245,.3)'];
+    elBadge.textContent=info[0];
+    elBadge.style.cssText='font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;background:'+info[1]+';color:'+info[2]+';border:1px solid '+info[3]+';';
+  }
+}
+document.addEventListener('DOMContentLoaded', function(){ poeRenderUserInfo(); setTimeout(poeRenderUserInfo, 800); });
+if(document.readyState!=='loading'){ poeRenderUserInfo(); setTimeout(poeRenderUserInfo, 800); }
