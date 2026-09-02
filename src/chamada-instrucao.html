@@ -91,6 +91,12 @@
     .bar{height:7px;border-radius:4px;background:var(--bg-dark);overflow:hidden;min-width:90px;}
     .bar > i{display:block;height:100%;background:var(--success);}
     .tblwrap{border:1px solid var(--border);border-radius:10px;overflow:auto;}
+    /* relatório agrupado por grupamento */
+    .rel-grp{margin-bottom:16px;}
+    .rel-grp-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--bg-dark);border:1px solid var(--border);border-bottom:none;border-radius:8px 8px 0 0;padding:8px 14px;}
+    .rel-grp-head .rgt{font-size:12.5px;font-weight:800;color:var(--gold-light);letter-spacing:.3px;}
+    .rel-grp-head .rgc{font-size:11px;color:var(--text-hint);margin-left:auto;}
+    .rel-grp .tblwrap{border-radius:0 0 8px 8px;}
 
     /* config form */
     .cfg-card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:16px;}
@@ -115,13 +121,19 @@
 
     @media(max-width:760px){ .mil-row .pa-toggle{margin-left:auto;} }
     @media print{
-      header, .topnav, .rd-sidebar, .ci-tabs, .ci-actbar, #toast, .no-print{display:none !important;}
+      /* imprime só o relatório (do título "RELATÓRIO DE CHAMADA..." pra baixo) */
+      header, .topnav, .rd-sidebar, .ci-tabs, .ci-actbar, #toast, .no-print,
+      .ci-head, .inst-band{display:none !important;}
       .page-layout{display:block;} .ci-wrap{max-width:none;padding:0;}
       body{background:#fff;color:#000;}
+      #relArea, #relArea *{color:#000 !important;}
       .tblwrap{border:none;overflow:visible;}
       table.ci-tbl{font-size:10.5px;}
       table.ci-tbl th,table.ci-tbl td{border-color:#999;color:#000;padding:5px 7px;}
       table.ci-tbl th{white-space:nowrap;}
+      /* cada grupamento é um bloco que não deve quebrar entre páginas */
+      .rel-grp{break-inside:avoid;}
+      .rel-grp-head{background:#eee !important;border-color:#999 !important;}
     }
   </style>
 </head>
@@ -538,19 +550,32 @@ async function montarRelatorio(){
   try{
     const rows=await rpc('chamada_instrucao_listar',{p_token:sessao.token,p_instrucao_id:id})||[];
     const p=rows.filter(r=>r.status==='presente').length, a=rows.length-p;
-    const linhas=rows.map((r,i)=>`<tr><td class="num">${i+1}</td><td class="nowrap">${esc(r.matricula)}</td><td class="nowrap">${esc(r.posto_graduacao||'')}</td>
-      <td>${esc(r.nome_guerra||r.nome_completo||'')}</td><td>${esc(r.grupamento_id||'')}</td>
-      <td class="nowrap">${r.status==='presente'?'Presente':'Ausente'}</td><td>${esc(r.justificativa||'')}</td><td>${esc(r.registrado_por_nome||'')}</td></tr>`).join('');
+    // agrupa por grupamento — um bloco por grupamento (com contagem própria)
+    const porGrupo={};
+    rows.forEach(r=>{ const g=(r.grupamento_id||'Sem grupamento').trim(); (porGrupo[g]=porGrupo[g]||[]).push(r); });
+    const chaves=Object.keys(porGrupo).sort((x,y)=>x.localeCompare(y,'pt-BR'));
+    const blocos=chaves.map(g=>{
+      const lista=porGrupo[g];
+      const gp=lista.filter(r=>r.status==='presente').length, ga=lista.length-gp;
+      const linhas=lista.map((r,i)=>`<tr><td class="num">${i+1}</td><td class="nowrap">${esc(r.matricula)}</td><td class="nowrap">${esc(r.posto_graduacao||'')}</td>
+        <td>${esc(r.nome_guerra||r.nome_completo||'')}</td>
+        <td class="nowrap">${r.status==='presente'?'Presente':'Ausente'}</td><td>${esc(r.justificativa||'')}</td><td>${esc(r.registrado_por_nome||'')}</td></tr>`).join('');
+      return `<div class="rel-grp">
+        <div class="rel-grp-head"><span class="rgt">${esc(g)}</span><span class="rgc">Presentes: ${gp} · Ausentes: ${ga} · Total: ${lista.length}</span></div>
+        <div class="tblwrap"><table class="ci-tbl"><thead><tr><th class="num">#</th><th>Nº PM</th><th>P/G</th><th>Nome</th><th>Status</th><th>Justificativa</th><th>Registrado por</th></tr></thead>
+        <tbody>${linhas}</tbody></table></div>
+      </div>`;
+    }).join('');
     area.innerHTML=`
       <div style="text-align:center;margin-bottom:14px;">
         <div style="font-size:15px;font-weight:800;color:var(--text-white);">RELATÓRIO DE CHAMADA DE INSTRUÇÃO</div>
         <div style="font-size:12.5px;color:var(--text-muted);margin-top:4px;">3ª Cia PM MAmb · Instrução de ${fmtData(inst.data)}</div>
         <div style="font-size:13px;color:var(--gold-light);margin-top:6px;font-weight:700;">${esc(inst.assunto)}</div>
         ${inst.responsavel_instrucao?`<div style="font-size:12px;color:var(--text-muted);">Responsável: ${esc(inst.responsavel_instrucao)}</div>`:''}
-        <div style="font-size:12.5px;color:var(--text-muted);margin-top:8px;">Presentes: <b>${p}</b> · Ausentes: <b>${a}</b> · Total marcado: <b>${rows.length}</b></div>
+        <div style="font-size:12.5px;color:var(--text-muted);margin-top:8px;">Participantes: <b>${esc(grupamentosLabel(inst.grupamentos))}</b></div>
+        <div style="font-size:12.5px;color:var(--text-muted);margin-top:4px;">Presentes: <b>${p}</b> · Ausentes: <b>${a}</b> · Total marcado: <b>${rows.length}</b></div>
       </div>
-      <div class="tblwrap"><table class="ci-tbl"><thead><tr><th class="num">#</th><th>Nº PM</th><th>P/G</th><th>Nome</th><th>Grupamento</th><th>Status</th><th>Justificativa</th><th>Registrado por</th></tr></thead>
-      <tbody>${linhas||'<tr><td colspan="7" class="ci-msg">Sem presenças lançadas.</td></tr>'}</tbody></table></div>`;
+      ${blocos||'<div class="ci-msg">Sem presenças lançadas.</div>'}`;
   }catch(e){ area.innerHTML='<div class="ci-msg err">Erro: '+esc(e.message)+'</div>'; }
 }
 
