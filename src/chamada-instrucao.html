@@ -48,6 +48,8 @@
     .ci-search:focus{border-color:var(--gold);}
     .ci-chipbtn{padding:7px 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:7px;color:var(--text-muted);font-size:11.5px;font-weight:700;cursor:pointer;}
     .ci-chipbtn:hover{border-color:var(--gold-border);color:var(--text-white);}
+    .ci-chipbtn.danger{border-color:rgba(239,83,80,.4);color:var(--danger);}
+    .ci-chipbtn.danger:hover{border-color:var(--danger);background:rgba(239,83,80,.12);color:var(--danger);}
 
     /* roster por grupamento */
     .grp-block{margin-bottom:16px;border:1px solid var(--border);border-radius:10px;overflow:hidden;}
@@ -276,6 +278,7 @@ const sessao = (function(){
   catch(e){ window.location.href='index.html'; return null; }
 })();
 const EH_ADMIN = sessao && ['admin_geral','admin','admin_pelotao'].includes(sessao.nivel_acesso);
+const EH_ADMIN_GERAL = sessao && sessao.nivel_acesso === 'admin_geral';
 
 /* ── header user-info ── */
 if (sessao){
@@ -668,7 +671,7 @@ async function salvarInstrucao(){
 }
 async function carregarHistorico(){
   const tb=document.querySelector('#cfgTbl tbody');
-  tb.innerHTML='<tr><td colspan="5" class="ci-msg">Carregando…</td></tr>';
+  tb.innerHTML='<tr><td colspan="6" class="ci-msg">Carregando…</td></tr>';
   try{
     HISTORICO=await rpc('instrucao_listar',{p_token:sessao.token})||[];
     if(!HISTORICO.length){ tb.innerHTML='<tr><td colspan="6" class="ci-msg">Nenhuma instrução cadastrada.</td></tr>'; return; }
@@ -676,7 +679,7 @@ async function carregarHistorico(){
       <td>${fmtData(i.data)}</td><td>${esc(i.assunto)}</td><td>${esc(i.responsavel_instrucao||'')}</td>
       <td>${esc(grupamentosLabel(i.grupamentos))}</td>
       <td>${i.ativa?'<span class="st-pill ok">ATIVA</span>':''}</td>
-      <td><button class="ci-chipbtn" onclick='editarInstrucao(${JSON.stringify(JSON.stringify(i))})'>Editar</button></td></tr>`).join('');
+      <td style="white-space:nowrap;"><button class="ci-chipbtn" onclick='editarInstrucao(${JSON.stringify(JSON.stringify(i))})'>Editar</button>${EH_ADMIN_GERAL?` <button class="ci-chipbtn danger" onclick='excluirInstrucao(${JSON.stringify(JSON.stringify(i))})'>Excluir</button>`:''}</td></tr>`).join('');
   }catch(e){ tb.innerHTML='<tr><td colspan="6" class="ci-msg err">Erro: '+esc(e.message)+'</td></tr>'; }
 }
 async function editarInstrucao(js){
@@ -694,6 +697,25 @@ async function editarInstrucao(js){
   renderGrupamentosChecks(grps);
   document.getElementById('cfgTitulo').textContent='Editar instrução';
   window.scrollTo({top:0,behavior:'smooth'});
+}
+/* Excluir instrução (só Admin Geral). Apaga junto os lançamentos (cascade). */
+async function excluirInstrucao(js){
+  if(!EH_ADMIN_GERAL){ toast('Apenas o Admin Geral pode excluir.'); return; }
+  const i=JSON.parse(js);
+  const label=`${fmtData(i.data)} — ${i.assunto||''}`;
+  if(!confirm(`Excluir a instrução:\n${label}\n\nISSO TAMBÉM APAGA todos os lançamentos (presentes e ausentes) dessa instrução. Não dá para desfazer.`)) return;
+  try{
+    const r=await rpc('instrucao_excluir',{p_token:sessao.token,p_id:i.id});
+    const n=(r&&r.lancamentos_removidos)||0;
+    toast(`Instrução excluída${n?` — ${n} lançamento(s) removido(s)`:''}.`);
+    if(INSTRUCAO && String(INSTRUCAO.id)===String(i.id)) INSTRUCAO=null;
+    HISTORICO=null;
+    // se estava editando essa instrução, limpa o formulário
+    if(document.getElementById('cfgId').value===String(i.id)) novaInstrucao();
+    await carregarInstrucoesLancaveis();
+    await carregarHistorico();
+    if(document.getElementById('pane-lancar').classList.contains('active')) carregarLancar();
+  }catch(e){ toast('Erro ao excluir: '+e.message); }
 }
 
 /* ── init ── */
