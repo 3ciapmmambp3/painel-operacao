@@ -501,7 +501,7 @@ document.addEventListener('click', () => {
               <th>GP Responsável</th>
               <th>Pelotão</th>
               <th>RPM</th>
-              <th>BPM</th>
+              <th>UEOP</th>
               <th style="text-align:center;">Ações</th>
             </tr></thead>
             <tbody id="grp-tbody"><tr><td colspan="8" style="text-align:center;padding:32px;color:var(--text-muted);">Carregando...</td></tr></tbody>
@@ -3153,11 +3153,11 @@ async function _carregarGruposAdmin(){
   try{
     /* Carrega grupamentos do Supabase */
     const grpsData = await sbFetch('grupos',
-      'select=id,gp_responsavel,grupamento_bpm,grupamento_completo,pelotao,rpm,bpm&order=gp_responsavel');
+      'select=id,gp_responsavel,grupamento_bpm,grupamento_completo,pelotao,rpm&order=gp_responsavel');
 
     /* Carrega municípios vinculados */
     const munsData = await sbFetch('municipios_grupos',
-      'select=id,municipio,gp_responsavel&order=municipio');
+      'select=id,municipio,gp_responsavel,ueop&order=municipio');
 
     _adminGrupos = [];
     const seen = new Set();
@@ -3182,7 +3182,7 @@ async function _carregarGruposAdmin(){
         gp:         pelNum < 99 ? `${pelNum} GP` : '—',
         pelotao:    gp.pelotao || pelLabel,
         rpm:        gp.rpm || '',
-        bpm:        gp.bpm || '',
+        ueop:       (m.ueop || '').trim(),   /* UEOp por município (bd_crimes.unid_area_nivel_5) */
         gpResp,
         grupamento: colK,
         pelNum,
@@ -3239,7 +3239,7 @@ function _filtrarRenderGrp(){
     <td style="font-size:11px;color:var(--text-muted);">${r.gpResp}</td>
     <td style="font-size:11px;">${r.pelotao}</td>
     <td style="font-size:11px;">${r.rpm}</td>
-    <td style="font-size:11px;">${r.bpm}</td>
+    <td style="font-size:11px;">${r.ueop||''}</td>
     <td style="text-align:center;white-space:nowrap;">
       <button class="btn-outline btn-sm" title="Editar GP" onclick="abrirModalGrpEditar('${encodeURIComponent(r.gpResp)}')"
         style="padding:3px 9px;font-size:11px;margin-right:4px;">✏ Editar GP</button>
@@ -3269,7 +3269,7 @@ function limparFiltrosGrpAdmin(){ ['fg-grp','fg-pel','fg-mun'].forEach(id=>{ con
 function abrirModalGrp(){
   document.getElementById('modal-grp-title').textContent = '➕ Novo Grupamento';
   document.getElementById('grp-edit-id').value = '';
-  ['grp-f-gpResp','grp-f-grupBpm','grp-f-grupCompleto','grp-f-rpm','grp-f-bpm'].forEach(id=>{
+  ['grp-f-gpResp','grp-f-grupBpm','grp-f-grupCompleto','grp-f-rpm'].forEach(id=>{
     const el = document.getElementById(id); if(el) el.value = '';
   });
   document.getElementById('grp-f-pelotao').value = '';
@@ -3289,7 +3289,6 @@ function abrirModalGrpEditar(gpRespEnc){
   document.getElementById('grp-f-grupBpm').value = r.grupBpm || '';
   document.getElementById('grp-f-grupCompleto').value = r.grupCompleto || '';
   document.getElementById('grp-f-rpm').value = r.rpm || '';
-  document.getElementById('grp-f-bpm').value = r.bpm || '';
   _grpMsg('');
   document.getElementById('modal-grp-overlay').style.display = 'flex';
 }
@@ -3315,7 +3314,6 @@ async function salvarGrp(){
   const grupBpm    = document.getElementById('grp-f-grupBpm').value.trim();
   const grupComp   = document.getElementById('grp-f-grupCompleto').value.trim();
   const rpm        = document.getElementById('grp-f-rpm').value.trim();
-  const bpm        = document.getElementById('grp-f-bpm').value.trim();
 
   if(!gpResp)   return _grpMsg('Informe o GP Responsável.');
   if(!pelotao)  return _grpMsg('Selecione o Pelotão.');
@@ -3327,7 +3325,6 @@ async function salvarGrp(){
     grupamento_completo: grupComp || grupBpm,
     pelotao,
     rpm,
-    bpm,
   };
 
   try{
@@ -3489,16 +3486,12 @@ function showMsg(id, tipo, txt) {
         <label>Grupamento Completo</label>
         <input type="text" id="grp-f-grupCompleto" placeholder="Ex: 1 GP / 1 PEL / 3 CIA PM MAMB / BPM MAMB">
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
-        <div class="fg">
-          <label>RPM</label>
-          <input type="text" id="grp-f-rpm" placeholder="Ex: 8 RPM">
-        </div>
-        <div class="fg">
-          <label>BPM</label>
-          <input type="text" id="grp-f-bpm" placeholder="Ex: 6 BPM">
-        </div>
+      <div class="fg" style="margin-bottom:12px;">
+        <label>RPM</label>
+        <input type="text" id="grp-f-rpm" placeholder="Ex: 8 RPM">
       </div>
+      <!-- UEOp é por município (vem de bd_crimes.unid_area_nivel_5) e é exibido
+           por cidade na tabela; não é atributo do GP, por isso não fica aqui. -->
       <div id="grp-f-msg" style="font-size:12px;padding:6px 10px;border-radius:5px;display:none;"></div>
     </div>
     <div class="modal-foot">
