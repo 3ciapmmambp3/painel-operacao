@@ -246,7 +246,7 @@
       </div>
       <div class="fg" style="margin-top:12px;">
         <label>Grupamentos participantes</label>
-        <label class="cfg-check" style="margin:4px 0 2px;"><input type="checkbox" id="cfgTodaCia" checked onchange="toggleTodaCia()"> <b>Toda a Companhia</b> <span style="color:var(--text-hint);font-weight:400;">(todos os grupamentos)</span></label>
+        <label class="cfg-check" id="cfgTodaCiaWrap" style="margin:4px 0 2px;"><input type="checkbox" id="cfgTodaCia" checked onchange="toggleTodaCia()"> <b>Toda a Companhia</b> <span style="color:var(--text-hint);font-weight:400;">(todos os grupamentos)</span></label>
         <div class="grp-picker" id="cfgGrupamentos" style="display:none;"><div class="gp-empty">Carregando grupamentos…</div></div>
       </div>
       <label class="cfg-check" style="margin-top:12px;"><input type="checkbox" id="cfgAtiva" checked> Definir como <b>instrução ativa</b> (a que aparece para lançar chamada)</label>
@@ -277,8 +277,13 @@ const sessao = (function(){
   try{ const s = JSON.parse(raw); if(!s || !s.id){ window.location.href='index.html'; return null; } return s; }
   catch(e){ window.location.href='index.html'; return null; }
 })();
-const EH_ADMIN = sessao && ['admin_geral','admin','admin_pelotao'].includes(sessao.nivel_acesso);
+const EH_ADMIN = sessao && ['admin_geral','admin','admin_pelotao','admin_gp'].includes(sessao.nivel_acesso);
 const EH_ADMIN_GERAL = sessao && sessao.nivel_acesso === 'admin_geral';
+/* Escopo TOTAL (cria p/ qualquer grupamento ou "Toda a Companhia"): Admin Geral,
+   Admin ou função CMT CIA. Espelha o v_ge do db/45. O backend é a autoridade;
+   isto só ajusta a UI (esconder "Toda a Companhia" p/ Pelotão/GP). */
+const EH_ESCOPO_TOTAL = sessao && (['admin_geral','admin'].includes(sessao.nivel_acesso)
+  || (/CMT/i.test(sessao.funcao||'') && /CIA/i.test(sessao.funcao||'')));
 
 /* ── header user-info ── */
 if (sessao){
@@ -593,11 +598,13 @@ async function montarRelatorio(){
 }
 
 /* ══ CONFIGURAR ═════════════════════════════════════════════════════ */
-/* Lista distinta de grupamentos (mesmos rótulos que a chamada agrupa). */
+/* Lista distinta de grupamentos que ESTE usuário pode escolher.
+   Usa o roster ESCOPADO (db/45): total vê todos; Pelotão vê os do seu escopo;
+   GP vê só o próprio grupamento. Mesma fonte que o backend valida. */
 async function carregarGrupamentosDisponiveis(){
   if(GRUPAMENTOS_DISP) return GRUPAMENTOS_DISP;
   try{
-    const roster=await rpc('tta_listar_militares',{p_token:sessao.token})||[];
+    const roster=await rpc('militares_roster_escopo',{p_token:sessao.token})||[];
     const set=new Set();
     roster.forEach(m=>{ const g=(m.grupamento_id||'').trim(); if(g) set.add(g); });
     GRUPAMENTOS_DISP=Array.from(set).sort((a,b)=>a.localeCompare(b,'pt-BR'));
@@ -632,9 +639,25 @@ function coletarGrupamentos(){
   if(document.getElementById('cfgTodaCia').checked) return [];
   return grupamentosSelecionadosNaTela();
 }
+/* Ajusta o painel Configurar ao escopo do usuário. Pelotão/GP não têm "Toda a
+   Companhia": some o checkbox, força a lista de grupamentos e, ao criar, já
+   pré-marca todo o escopo do usuário (ele pode desmarcar o que não quiser). */
+async function aplicarEscopoConfig(){
+  const wrap=document.getElementById('cfgTodaCiaWrap');
+  if(EH_ESCOPO_TOTAL){ if(wrap) wrap.style.display=''; return; }
+  if(wrap) wrap.style.display='none';
+  document.getElementById('cfgTodaCia').checked=false;
+  document.getElementById('cfgGrupamentos').style.display='';
+  await carregarGrupamentosDisponiveis();
+  // criando (sem id) e nada marcado → pré-marca todo o escopo
+  if(!document.getElementById('cfgId').value && !grupamentosSelecionadosNaTela().length){
+    renderGrupamentosChecks(GRUPAMENTOS_DISP||[]);
+  }
+}
 async function initConfigurar(){
   await carregarGrupamentosDisponiveis();
-  if(!document.getElementById('cfgTodaCia').checked){
+  await aplicarEscopoConfig();
+  if(EH_ESCOPO_TOTAL && !document.getElementById('cfgTodaCia').checked){
     renderGrupamentosChecks(grupamentosSelecionadosNaTela());
   }
   carregarHistorico();
@@ -645,10 +668,14 @@ function novaInstrucao(){
   document.getElementById('cfgAssunto').value='';
   document.getElementById('cfgResp').value='';
   document.getElementById('cfgAtiva').checked=true;
-  document.getElementById('cfgTodaCia').checked=true;
-  renderGrupamentosChecks([]);
-  document.getElementById('cfgGrupamentos').style.display='none';
   document.getElementById('cfgTitulo').textContent='Nova instrução';
+  if(EH_ESCOPO_TOTAL){
+    document.getElementById('cfgTodaCia').checked=true;
+    renderGrupamentosChecks([]);
+    document.getElementById('cfgGrupamentos').style.display='none';
+  }else{
+    aplicarEscopoConfig();
+  }
 }
 async function salvarInstrucao(){
   const todaCia=document.getElementById('cfgTodaCia').checked;
