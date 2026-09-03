@@ -108,8 +108,9 @@
     .cfg-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;}
     .fg{display:flex;flex-direction:column;gap:5px;}
     .fg label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-hint);font-weight:700;}
-    .fg input, .fg input[type=date]{padding:8px 10px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:6px;color:var(--text-white);font-size:12.5px;outline:none;color-scheme:dark;}
-    .fg input:focus{border-color:var(--gold);}
+    .fg input, .fg input[type=date], .fg textarea{padding:8px 10px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:6px;color:var(--text-white);font-size:12.5px;outline:none;color-scheme:dark;font-family:inherit;}
+    .fg textarea{resize:vertical;min-height:64px;}
+    .fg input:focus, .fg textarea:focus{border-color:var(--gold);}
     .cfg-check{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text-white);}
     /* seleção de grupamentos participantes */
     .grp-picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px 14px;margin-top:6px;padding:10px 12px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:7px;}
@@ -243,6 +244,7 @@
         <div class="fg"><label>Data da instrução</label><input type="date" id="cfgData"></div>
         <div class="fg" style="grid-column:1/-1;"><label>Assunto *</label><input id="cfgAssunto" placeholder="Ex.: Memorando nº 30.130/… — abordagem a pessoas"></div>
         <div class="fg" style="grid-column:1/-1;"><label>Responsável pela instrução</label><input id="cfgResp" placeholder="Nome / posto do responsável"></div>
+        <div class="fg" style="grid-column:1/-1;"><label>Detalhes da Instrução <span style="color:var(--text-hint);font-weight:400;text-transform:none;letter-spacing:0;">(preencher após a instrução)</span></label><textarea id="cfgObs" rows="3" placeholder="Constatações, assuntos tratados, dúvidas, sugestões…"></textarea></div>
       </div>
       <div class="fg" style="margin-top:12px;">
         <label>Grupamentos participantes</label>
@@ -593,7 +595,8 @@ async function montarRelatorio(){
         <div style="font-size:12.5px;color:var(--text-muted);margin-top:8px;">Participantes: <b>${esc(grupamentosLabel(inst.grupamentos))}</b></div>
         <div style="font-size:12.5px;color:var(--text-muted);margin-top:4px;">Presentes: <b>${p}</b> · Ausentes: <b>${a}</b> · Total marcado: <b>${rows.length}</b></div>
       </div>
-      ${blocos||'<div class="ci-msg">Sem presenças lançadas.</div>'}`;
+      ${blocos||'<div class="ci-msg">Sem presenças lançadas.</div>'}
+      ${inst.observacao?`<div class="rel-grp" style="margin-top:14px;"><div class="rel-grp-head"><span class="rgt">Detalhes da Instrução</span></div><div style="padding:10px 12px;font-size:12.5px;color:var(--text-muted);white-space:pre-wrap;">${esc(inst.observacao)}</div></div>`:''}`;
   }catch(e){ area.innerHTML='<div class="ci-msg err">Erro: '+esc(e.message)+'</div>'; }
 }
 
@@ -667,6 +670,7 @@ function novaInstrucao(){
   document.getElementById('cfgData').value=new Date().toISOString().slice(0,10);
   document.getElementById('cfgAssunto').value='';
   document.getElementById('cfgResp').value='';
+  document.getElementById('cfgObs').value='';
   document.getElementById('cfgAtiva').checked=true;
   document.getElementById('cfgTitulo').textContent='Nova instrução';
   if(EH_ESCOPO_TOTAL){
@@ -684,6 +688,7 @@ async function salvarInstrucao(){
     data:document.getElementById('cfgData').value||null,
     assunto:document.getElementById('cfgAssunto').value.trim(),
     responsavel_instrucao:document.getElementById('cfgResp').value.trim(),
+    observacao:document.getElementById('cfgObs').value.trim(),
     ativa:document.getElementById('cfgAtiva').checked,
     grupamentos };
   if(!dados.assunto){ toast('Informe o assunto.'); return; }
@@ -706,7 +711,7 @@ async function carregarHistorico(){
       <td>${fmtData(i.data)}</td><td>${esc(i.assunto)}</td><td>${esc(i.responsavel_instrucao||'')}</td>
       <td>${esc(grupamentosLabel(i.grupamentos))}</td>
       <td>${i.ativa?'<span class="st-pill ok">ATIVA</span>':''}</td>
-      <td style="white-space:nowrap;"><button class="ci-chipbtn" onclick='editarInstrucao(${JSON.stringify(JSON.stringify(i))})'>Editar</button>${EH_ADMIN_GERAL?` <button class="ci-chipbtn danger" onclick='excluirInstrucao(${JSON.stringify(JSON.stringify(i))})'>Excluir</button>`:''}</td></tr>`).join('');
+      <td style="white-space:nowrap;"><button class="ci-chipbtn" onclick='editarInstrucao(${JSON.stringify(JSON.stringify(i))})'>Editar</button>${podeExcluir(i)?` <button class="ci-chipbtn danger" onclick='excluirInstrucao(${JSON.stringify(JSON.stringify(i))})'>Excluir</button>`:''}</td></tr>`).join('');
   }catch(e){ tb.innerHTML='<tr><td colspan="6" class="ci-msg err">Erro: '+esc(e.message)+'</td></tr>'; }
 }
 async function editarInstrucao(js){
@@ -715,6 +720,7 @@ async function editarInstrucao(js){
   document.getElementById('cfgData').value=(i.data||'').slice(0,10);
   document.getElementById('cfgAssunto').value=i.assunto||'';
   document.getElementById('cfgResp').value=i.responsavel_instrucao||'';
+  document.getElementById('cfgObs').value=i.observacao||'';
   document.getElementById('cfgAtiva').checked=!!i.ativa;
   const grps=Array.isArray(i.grupamentos)?i.grupamentos:[];
   const todaCia=!grps.length;
@@ -725,10 +731,22 @@ async function editarInstrucao(js){
   document.getElementById('cfgTitulo').textContent='Editar instrução';
   window.scrollTo({top:0,behavior:'smooth'});
 }
-/* Excluir instrução (só Admin Geral). Apaga junto os lançamentos (cascade). */
+/* Sou o criador desta instrução? (compara matrícula só pelos dígitos) */
+function souCriador(i){
+  const d=s=>String(s||'').replace(/\D/g,'');
+  return !!d(sessao.matricula) && d(sessao.matricula)===d(i.criado_por_matricula);
+}
+/* Quem pode excluir: Admin Geral sempre; o criador até o DIA da instrução
+   (inclusive). Depois da data, só o Admin Geral. Espelha o backend (db/52). */
+function podeExcluir(i){
+  if(EH_ADMIN_GERAL) return true;
+  const hoje=new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD no fuso local
+  return souCriador(i) && String(i.data||'').slice(0,10) >= hoje;
+}
+/* Excluir instrução. Apaga junto os lançamentos (cascade). */
 async function excluirInstrucao(js){
-  if(!EH_ADMIN_GERAL){ toast('Apenas o Admin Geral pode excluir.'); return; }
   const i=JSON.parse(js);
+  if(!podeExcluir(i)){ toast('Sem permissão para excluir esta instrução.'); return; }
   const label=`${fmtData(i.data)} — ${i.assunto||''}`;
   if(!confirm(`Excluir a instrução:\n${label}\n\nISSO TAMBÉM APAGA todos os lançamentos (presentes e ausentes) dessa instrução. Não dá para desfazer.`)) return;
   try{
