@@ -3241,7 +3241,7 @@ function _filtrarRenderGrp(){
     <td style="font-size:11px;">${r.rpm}</td>
     <td style="font-size:11px;">${r.ueop||''}</td>
     <td style="text-align:center;white-space:nowrap;">
-      <button class="btn-outline btn-sm" title="Editar GP" onclick="abrirModalGrpEditar('${encodeURIComponent(r.gpResp)}')"
+      <button class="btn-outline btn-sm" title="Editar GP" onclick="abrirModalGrpEditar('${encodeURIComponent(r.gpResp)}', ${r.munId})"
         style="padding:3px 9px;font-size:11px;margin-right:4px;">✏ Editar GP</button>
       <button class="btn-danger btn-sm" title="Excluir GP" onclick="abrirModalDelGrp('${encodeURIComponent(r.gpResp)}')"
         style="padding:3px 9px;font-size:11px;">🗑</button>
@@ -3273,42 +3273,43 @@ function abrirModalGrp(){
     const el = document.getElementById(id); if(el) el.value = '';
   });
   document.getElementById('grp-f-pelotao').value = '';
-  /* UEOp é por município — só existe ao editar um GP já com cidades */
+  /* UEOp é por município — só faz sentido ao editar a linha de uma cidade */
   document.getElementById('grp-f-ueop-wrap').style.display = 'none';
-  document.getElementById('grp-f-ueop-list').innerHTML = '';
+  document.getElementById('grp-f-ueop').value = '';
+  document.getElementById('grp-f-ueop-mun').textContent = '';
+  document.getElementById('grp-f-ueop-munid').value = '';
   _grpMsg('');
   document.getElementById('modal-grp-overlay').style.display = 'flex';
 }
 
-function abrirModalGrpEditar(gpRespEnc){
+function abrirModalGrpEditar(gpRespEnc, munId){
   const gpResp = decodeURIComponent(gpRespEnc);
-  /* Pega os dados do primeiro registro deste GP */
-  const r = _adminGrupos.find(x => x.gpResp === gpResp);
-  if(!r){ alert('GP não encontrado.'); return; }
-  document.getElementById('modal-grp-title').textContent = '✏ Editar Grupamento';
-  document.getElementById('grp-edit-id').value = r.grpId || '';
-  document.getElementById('grp-f-gpResp').value = r.gpResp;
-  document.getElementById('grp-f-pelotao').value = r.pelotao || '';
-  document.getElementById('grp-f-grupBpm').value = r.grupBpm || '';
-  document.getElementById('grp-f-grupCompleto').value = r.grupCompleto || '';
-  document.getElementById('grp-f-rpm').value = r.rpm || '';
+  /* Campos do GP vêm de qualquer linha deste GP (são iguais p/ todas) */
+  const rGp = _adminGrupos.find(x => x.gpResp === gpResp);
+  if(!rGp){ alert('GP não encontrado.'); return; }
+  /* UEOp é da CIDADE da linha clicada */
+  const rMun = (munId != null) ? _adminGrupos.find(x => String(x.munId) === String(munId)) : null;
 
-  /* Lista de cidades deste GP com o UEOp editável de cada uma */
-  const muns = _adminGrupos
-    .filter(x => x.gpResp === gpResp)
-    .sort((a,b) => a.municipio.localeCompare(b.municipio));
+  document.getElementById('modal-grp-title').textContent = '✏ Editar Grupamento';
+  document.getElementById('grp-edit-id').value = rGp.grpId || '';
+  document.getElementById('grp-f-gpResp').value = rGp.gpResp;
+  document.getElementById('grp-f-pelotao').value = rGp.pelotao || '';
+  document.getElementById('grp-f-grupBpm').value = rGp.grupBpm || '';
+  document.getElementById('grp-f-grupCompleto').value = rGp.grupCompleto || '';
+  document.getElementById('grp-f-rpm').value = rGp.rpm || '';
+
+  /* UEOp do município da linha */
   const wrap = document.getElementById('grp-f-ueop-wrap');
-  const list = document.getElementById('grp-f-ueop-list');
-  if(muns.length){
+  if(rMun){
     wrap.style.display = '';
-    list.innerHTML = muns.map(m => `<div style="display:grid;grid-template-columns:1fr 140px;gap:8px;align-items:center;">
-      <span style="font-size:12px;color:#ddd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${_escHtml(m.municipio)}">${_escHtml(m.municipio)}</span>
-      <input type="text" class="grp-ueop-inp" data-munid="${m.munId}" value="${_escHtml(m.ueop||'')}" placeholder="Ex: 6 BPM"
-        style="padding:5px 8px;background:#1e1e1e;border:1px solid var(--border-hover);border-radius:5px;color:#fff;font-size:12px;">
-    </div>`).join('');
+    document.getElementById('grp-f-ueop-mun').textContent = '· ' + rMun.municipio;
+    document.getElementById('grp-f-ueop').value = rMun.ueop || '';
+    document.getElementById('grp-f-ueop-munid').value = rMun.munId;
   } else {
     wrap.style.display = 'none';
-    list.innerHTML = '';
+    document.getElementById('grp-f-ueop-mun').textContent = '';
+    document.getElementById('grp-f-ueop').value = '';
+    document.getElementById('grp-f-ueop-munid').value = '';
   }
 
   _grpMsg('');
@@ -3368,19 +3369,18 @@ async function salvarGrp(){
     }
     if(!res.ok){ const t=await res.text(); throw new Error(t); }
 
-    /* Grava o UEOp de cada cidade (municipios_grupos), só os que mudaram */
-    const inps = [...document.querySelectorAll('#grp-f-ueop-list .grp-ueop-inp')];
-    for(const inp of inps){
-      const munId = inp.getAttribute('data-munid');
-      const novo  = inp.value.trim();
-      const orig  = _adminGrupos.find(x => String(x.munId) === String(munId));
+    /* Grava o UEOp da cidade da linha editada (municipios_grupos), se mudou */
+    const ueMunId = document.getElementById('grp-f-ueop-munid').value.trim();
+    if(ueMunId){
+      const novo = document.getElementById('grp-f-ueop').value.trim();
+      const orig = _adminGrupos.find(x => String(x.munId) === String(ueMunId));
       if(orig && (orig.ueop || '') !== novo){
-        const ur = await fetch(`${SB_URL}/rest/v1/municipios_grupos?id=eq.${munId}`,{
+        const ur = await fetch(`${SB_URL}/rest/v1/municipios_grupos?id=eq.${ueMunId}`,{
           method:'PATCH',
           headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'},
           body: JSON.stringify({ ueop: novo || null }),
         });
-        if(!ur.ok){ const t=await ur.text(); throw new Error('UEOp ('+(orig.municipio||munId)+'): '+t); }
+        if(!ur.ok){ const t=await ur.text(); throw new Error('UEOp ('+(orig.municipio||ueMunId)+'): '+t); }
       }
     }
 
@@ -3525,19 +3525,19 @@ function showMsg(id, tipo, txt) {
         <label>Grupamento Completo</label>
         <input type="text" id="grp-f-grupCompleto" placeholder="Ex: 1 GP / 1 PEL / 3 CIA PM MAMB / BPM MAMB">
       </div>
-      <div class="fg" style="margin-bottom:12px;">
-        <label>RPM</label>
-        <input type="text" id="grp-f-rpm" placeholder="Ex: 8 RPM">
-      </div>
-      <!-- UEOp é POR MUNICÍPIO (bd_crimes.unid_area_nivel_5). Como um GP pode ter
-           cidades em batalhões diferentes, edita-se cada cidade separadamente. -->
-      <div class="fg" style="margin-bottom:12px;" id="grp-f-ueop-wrap">
-        <label>UEOp por município</label>
-        <div style="font-size:11px;color:var(--text-muted);margin:-2px 0 8px;">
-          Batalhão/CIA de cada cidade deste GP. Deixe vazio se não houver dado.
+      <!-- UEOp é POR MUNICÍPIO (bd_crimes.unid_area_nivel_5): refere-se à cidade
+           da linha que abriu o modal, gravado em municipios_grupos.ueop. -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+        <div class="fg">
+          <label>RPM</label>
+          <input type="text" id="grp-f-rpm" placeholder="Ex: 8 RPM">
         </div>
-        <div id="grp-f-ueop-list" style="display:flex;flex-direction:column;gap:6px;max-height:230px;overflow-y:auto;padding-right:2px;"></div>
+        <div class="fg" id="grp-f-ueop-wrap">
+          <label>UEOp <span id="grp-f-ueop-mun" style="color:var(--text-muted);font-weight:400;font-size:11px;"></span></label>
+          <input type="text" id="grp-f-ueop" placeholder="Ex: 6 BPM">
+        </div>
       </div>
+      <input type="hidden" id="grp-f-ueop-munid">
       <div id="grp-f-msg" style="font-size:12px;padding:6px 10px;border-radius:5px;display:none;"></div>
     </div>
     <div class="modal-foot">
