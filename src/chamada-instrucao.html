@@ -489,12 +489,15 @@ async function carregarDashboard(){
   if(!INSTRUCAO){ kpis.innerHTML=''; tb.innerHTML=''; msg.style.display=''; msg.textContent='Sem instrução selecionada.'; return; }
   msg.style.display='none'; tb.innerHTML='<tr><td colspan="6" class="ci-msg">Carregando…</td></tr>';
   try{
-    const [rows, rosterAll] = await Promise.all([
+    const [rowsAll, rosterAll] = await Promise.all([
       rpc('chamada_instrucao_listar',{p_token:sessao.token,p_instrucao_id:INSTRUCAO.id}),
-      rpc('tta_listar_militares',{p_token:sessao.token})
+      rpc('militares_roster_escopo',{p_token:sessao.token})   /* efetivo ESCOPADO: GP→grupamento, PEL→pelotão, Comando→Cia */
     ]);
-    // efetivo esperado = só os grupamentos participantes (ou toda a Cia)
+    // efetivo esperado = escopo do usuário ∩ grupamentos participantes da instrução
     const roster = filtrarPorGrupamentosDaInstrucao(rosterAll||[]);
+    // grupamentos do escopo do usuário — recorta as presenças pra bater com o efetivo mostrado
+    const escopoGrps = new Set((rosterAll||[]).map(m=>(m.grupamento_id||'').trim()).filter(Boolean));
+    const rows = (rowsAll||[]).filter(r=> !escopoGrps.size || escopoGrps.has((r.grupamento_id||'').trim()));
     const efetivoPorGrupo={}; (roster||[]).forEach(m=>{ const g=(m.grupamento_id||'Sem grupamento').trim(); efetivoPorGrupo[g]=(efetivoPorGrupo[g]||0)+1; });
     const grp={};
     (rows||[]).forEach(r=>{ const g=(r.grupamento_id||'Sem grupamento').trim(); const o=grp[g]=grp[g]||{p:0,a:0,tot:0}; o.tot++; if(r.status==='presente')o.p++; else o.a++; });
