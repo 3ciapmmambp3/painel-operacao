@@ -3273,6 +3273,9 @@ function abrirModalGrp(){
     const el = document.getElementById(id); if(el) el.value = '';
   });
   document.getElementById('grp-f-pelotao').value = '';
+  /* UEOp é por município — só existe ao editar um GP já com cidades */
+  document.getElementById('grp-f-ueop-wrap').style.display = 'none';
+  document.getElementById('grp-f-ueop-list').innerHTML = '';
   _grpMsg('');
   document.getElementById('modal-grp-overlay').style.display = 'flex';
 }
@@ -3289,6 +3292,25 @@ function abrirModalGrpEditar(gpRespEnc){
   document.getElementById('grp-f-grupBpm').value = r.grupBpm || '';
   document.getElementById('grp-f-grupCompleto').value = r.grupCompleto || '';
   document.getElementById('grp-f-rpm').value = r.rpm || '';
+
+  /* Lista de cidades deste GP com o UEOp editável de cada uma */
+  const muns = _adminGrupos
+    .filter(x => x.gpResp === gpResp)
+    .sort((a,b) => a.municipio.localeCompare(b.municipio));
+  const wrap = document.getElementById('grp-f-ueop-wrap');
+  const list = document.getElementById('grp-f-ueop-list');
+  if(muns.length){
+    wrap.style.display = '';
+    list.innerHTML = muns.map(m => `<div style="display:grid;grid-template-columns:1fr 140px;gap:8px;align-items:center;">
+      <span style="font-size:12px;color:#ddd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${_escHtml(m.municipio)}">${_escHtml(m.municipio)}</span>
+      <input type="text" class="grp-ueop-inp" data-munid="${m.munId}" value="${_escHtml(m.ueop||'')}" placeholder="Ex: 6 BPM"
+        style="padding:5px 8px;background:#1e1e1e;border:1px solid var(--border-hover);border-radius:5px;color:#fff;font-size:12px;">
+    </div>`).join('');
+  } else {
+    wrap.style.display = 'none';
+    list.innerHTML = '';
+  }
+
   _grpMsg('');
   document.getElementById('modal-grp-overlay').style.display = 'flex';
 }
@@ -3345,6 +3367,23 @@ async function salvarGrp(){
       });
     }
     if(!res.ok){ const t=await res.text(); throw new Error(t); }
+
+    /* Grava o UEOp de cada cidade (municipios_grupos), só os que mudaram */
+    const inps = [...document.querySelectorAll('#grp-f-ueop-list .grp-ueop-inp')];
+    for(const inp of inps){
+      const munId = inp.getAttribute('data-munid');
+      const novo  = inp.value.trim();
+      const orig  = _adminGrupos.find(x => String(x.munId) === String(munId));
+      if(orig && (orig.ueop || '') !== novo){
+        const ur = await fetch(`${SB_URL}/rest/v1/municipios_grupos?id=eq.${munId}`,{
+          method:'PATCH',
+          headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'},
+          body: JSON.stringify({ ueop: novo || null }),
+        });
+        if(!ur.ok){ const t=await ur.text(); throw new Error('UEOp ('+(orig.municipio||munId)+'): '+t); }
+      }
+    }
+
     _grpMsg('✔ Salvo com sucesso!', 'ok');
     _adminGrupos = []; /* força reload */
     setTimeout(()=>{ fecharModalGrp(); renderGruposAdmin(true); }, 800);
@@ -3490,8 +3529,15 @@ function showMsg(id, tipo, txt) {
         <label>RPM</label>
         <input type="text" id="grp-f-rpm" placeholder="Ex: 8 RPM">
       </div>
-      <!-- UEOp é por município (vem de bd_crimes.unid_area_nivel_5) e é exibido
-           por cidade na tabela; não é atributo do GP, por isso não fica aqui. -->
+      <!-- UEOp é POR MUNICÍPIO (bd_crimes.unid_area_nivel_5). Como um GP pode ter
+           cidades em batalhões diferentes, edita-se cada cidade separadamente. -->
+      <div class="fg" style="margin-bottom:12px;" id="grp-f-ueop-wrap">
+        <label>UEOp por município</label>
+        <div style="font-size:11px;color:var(--text-muted);margin:-2px 0 8px;">
+          Batalhão/CIA de cada cidade deste GP. Deixe vazio se não houver dado.
+        </div>
+        <div id="grp-f-ueop-list" style="display:flex;flex-direction:column;gap:6px;max-height:230px;overflow-y:auto;padding-right:2px;"></div>
+      </div>
       <div id="grp-f-msg" style="font-size:12px;padding:6px 10px;border-radius:5px;display:none;"></div>
     </div>
     <div class="modal-foot">
