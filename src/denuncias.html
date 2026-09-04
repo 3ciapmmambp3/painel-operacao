@@ -526,6 +526,8 @@ function atendimentoResumo(d){
   return `<div class="rs"><b>${SIT_LBL[d.situacao]}</b>${d.atendido_por_nome?` — por ${d.atendido_por_nome}`:''}</div>`+
     `<dl class="dl" style="margin-top:12px">`+
       li(dataLbl(d), fmtData(d.data_resposta))+
+      li('Equipe', d.resp_equipe)+
+      li('Viatura', d.resp_viatura)+
       li('Nº REDS (BO/BOS/RAT)', d.numero_reds)+
       li('Nº Auto de Infração', d.numero_auto_infracao)+
       li('Nº Ato de Fiscalização', d.numero_ato_fiscalizacao)+
@@ -718,6 +720,22 @@ function gerarPDF(d){
       L('HISTÓRICO', d.descricao, 'hist')+L('ROTEIRO', d.referencia)+
       L('PM QUE RECEBEU', d.registrado_por_nome)+L('DATA DE RECEBIMENTO', fmtData(d.created_at))+
       L('PRAZO', fmtData(d.prazo))+anexoRow+L('OBSERVAÇÕES', d.observacoes);
+  // Bloco RESPOSTA / ATENDIMENTO — aparece quando a demanda foi respondida
+  // (dados espelhados do relatório de serviço via denuncia_baixa_automatica).
+  // Genérico: vale para qualquer tipo que entre na tabela de demandas.
+  const respondida = d.situacao==='RESPONDIDA' || d.situacao==='CONCLUIDA';
+  const respostaBloco = respondida
+    ? `<tr><td class="sechdr">RESPOSTA / ATENDIMENTO <small>— conforme lançado no relatório de serviço</small></td></tr>`
+      + L('SITUAÇÃO', SIT_LBL[d.situacao]||d.situacao)
+      + L(denuncia?'DATA DA FISCALIZAÇÃO':'DATA DE ATENDIMENTO', fmtData(d.data_resposta))
+      + L('EQUIPE', d.resp_equipe)
+      + L('VIATURA', d.resp_viatura)
+      + L('Nº REDS (BO/BOS/RAT)', d.numero_reds)
+      + L('Nº AUTO DE INFRAÇÃO', d.numero_auto_infracao)
+      + L('Nº ATO DE FISCALIZAÇÃO', d.numero_ato_fiscalizacao)
+      + (d.observacoes_resposta ? L('OBSERVAÇÕES DA RESPOSTA', d.observacoes_resposta, 'hist') : '')
+      + L('ATENDIDO POR', d.atendido_por_nome)
+    : '';
   const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>${d.numero} — ${titulo}</title>
   <style>
     *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;color:#000;margin:0;padding:0;background:#e9ece9}
@@ -735,6 +753,8 @@ function gerarPDF(d){
     table{width:100%;border-collapse:collapse;table-layout:fixed}
     td{border:1px solid #000;padding:6px 9px;font-size:13px;line-height:1.45;vertical-align:top;word-wrap:break-word}
     td.nr{font-weight:bold}
+    td.sechdr{font-weight:bold;text-align:center;background:#e8efe8;font-size:12px;letter-spacing:.4px}
+    td.sechdr small{font-weight:normal;color:#3a5a3a}
     /* HISTÓRICO cresce só o necessário (encaixa no conteúdo), sem esticar a folha.
        Em célula de tabela 'height' age como mínimo e cresce com o texto. */
     td.hist{height:90px}
@@ -758,6 +778,7 @@ function gerarPDF(d){
       <table>
         <tr><td class="nr">${U(nrTexto)}</td></tr>
         ${corpo}
+        ${respostaBloco}
       </table>
     </div>
   </body></html>`;

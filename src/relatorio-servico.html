@@ -3975,6 +3975,12 @@ async function marcarDemandasAtendidas(payload){
     const H = { apikey: SB_AUTH_KEY, Authorization: `Bearer ${SB_AUTH_KEY}`, 'Content-Type': 'application/json' };
     const sess = (typeof getSessaoAtual === 'function') ? (getSessaoAtual() || {}) : {};
     if (!sess.token) return; // sem sessão válida: mesmo comportamento de hoje (best-effort, não impede o relatório)
+    // Equipe e viatura vêm do Bloco 1 do relatório (mesmo p/ todas as demandas
+    // atendidas neste relatório) — espelhadas na demanda p/ sair no PDF.
+    const b1 = payload.bloco1 || {};
+    const equipeTxt = [b1['Comandante'], b1['Motorista'], b1['Patrulheiro(s)']]
+      .map(s => (s||'').trim()).filter(Boolean).join('; ') || null;
+    const viaturaTxt = ((typeof getFieldValue === 'function' ? (getFieldValue('viaturaPrincipal')||'') : '')).trim() || null;
     const alvos = [
       { cat: 'Denúncia de Balcão', tipo: 'denuncia',   campoNum: 'Denúncia de Balcão' },
       { cat: 'Requisição',         tipo: 'requisicao', campoNum: 'Nº da Requisição' },
@@ -3991,7 +3997,9 @@ async function marcarDemandasAtendidas(payload){
           p_reds: item['Nº REDS (BO/BOS/RAT)'] || null,
           p_auto_infracao: item['Nº Auto de Infração'] || null,
           p_ato_fiscalizacao: item['Nº Ato de Fiscalização'] || null,
-          p_obs: item['Observações'] || null
+          p_obs: item['Observações'] || null,
+          p_equipe: equipeTxt,
+          p_viatura: viaturaTxt
         };
         try {
           await fetch(`${SB_AUTH_URL}/rest/v1/rpc/denuncia_baixa_automatica`,
