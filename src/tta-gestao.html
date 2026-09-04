@@ -205,7 +205,10 @@
         </div>
 
         <div class="card">
-          <h3>Temas cadastrados neste mês</h3>
+          <h3 style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+            <span>Temas cadastrados neste mês</span>
+            <button class="btn-outline" id="btnLimparTemas" onclick="excluirTemasDoMes()" style="font-size:12px;padding:6px 12px">🗑 Limpar todos deste mês</button>
+          </h3>
           <div style="overflow-x:auto">
             <table class="temas" style="min-width:520px">
               <thead><tr><th style="width:90px">Dias</th><th>Assunto</th><th>Referência</th><th style="width:70px"></th></tr></thead>
@@ -383,6 +386,7 @@ if (typeof pdfjsLib !== 'undefined'){
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 }
 function extrairTabelaDaPagina(items){
+  // 1) agrupa itens por linha física (mesma y, ~3px) e ordena topo→baixo, esq→dir
   const linhasRaw = [];
   items.forEach(it => {
     const x = it.transform[4], y = Math.round(it.transform[5]);
@@ -395,37 +399,70 @@ function extrairTabelaDaPagina(items){
   linhasRaw.sort((a,b) => b.y - a.y); // PDF cresce pra cima: topo primeiro
   linhasRaw.forEach(l => l.itens.sort((a,b) => a.x - b.x));
 
+  // 2) acha o cabeçalho DATA / ASSUNTO / REFERÊNCIA e guarda o x de cada rótulo
   const normaliza = s => s.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
-  let headerIdx = -1, xDias=0, xAssunto=0, xReferencia=0;
-  linhasRaw.forEach((l, idx) => {
-    if (headerIdx !== -1) return;
+  let xDias=0, xAssunto=0, xReferencia=0, headerY=null;
+  for (const l of linhasRaw){
     const dataIt = l.itens.find(i => normaliza(i.texto) === 'DATA');
     const assIt  = l.itens.find(i => normaliza(i.texto) === 'ASSUNTO');
     const refIt  = l.itens.find(i => normaliza(i.texto).startsWith('REFER'));
-    if (dataIt && assIt && refIt){ headerIdx = idx; xDias=dataIt.x; xAssunto=assIt.x; xReferencia=refIt.x; }
-  });
-  if (headerIdx === -1) return { linhas: [], assunto: '' };
-
-  const coluna = x => x < (xDias+xAssunto)/2 ? 'dias' : (x < (xAssunto+xReferencia)/2 ? 'assunto' : 'referencia');
-
-  const linhas = [];
-  const assuntoPartes = [];
-  for (let i = headerIdx+1; i < linhasRaw.length; i++){
-    const cols = { dias:'', assunto:'', referencia:'' };
-    const fimAnterior = { dias:null, assunto:null, referencia:null };
-    linhasRaw[i].itens.forEach(it => {
-      const c = coluna(it.x);
-      // só põe espaço se sobrou um vão real entre o trecho anterior e este
-      // (senão junta direto — é a mesma palavra quebrada letra por letra)
-      const precisaEspaco = fimAnterior[c] !== null && (it.x - fimAnterior[c]) > 1.2;
-      cols[c] += (precisaEspaco ? ' ' : '') + it.texto;
-      fimAnterior[c] = it.x + it.w;
-    });
-    if (cols.assunto.trim()) assuntoPartes.push(cols.assunto.trim());
-    const diasNums = (cols.dias.match(/\d+/g) || []).join(', ');
-    if (diasNums && cols.referencia.trim()) linhas.push({ dias: diasNums, referencia: cols.referencia.trim() });
+    if (dataIt && assIt && refIt){ xDias=dataIt.x; xAssunto=assIt.x; xReferencia=refIt.x; headerY=l.y; break; }
   }
-  return { linhas, assunto: assuntoPartes.join(' ').replace(/\s+/g,' ').trim() };
+  if (headerY === null) return { linhas: [], assunto: '' };
+
+  // Limites de coluna. O rótulo "ASSUNTO" é centralizado numa célula larga, mas
+  // o texto do assunto é alinhado à ESQUERDA (célula mesclada) — por isso o
+  // limite dias|assunto não pode ser o meio dos rótulos, senão o assunto cai na
+  // coluna dias e some. Usa 40% do vão (dias fica bem colado à esquerda).
+  const xRefBoundary  = (xAssunto + xReferencia) / 2;
+  const xDiasBoundary = xDias + (xAssunto - xDias) * 0.4;
+  const coluna = x => x >= xRefBoundary ? 'referencia' : (x < xDiasBoundary ? 'dias' : 'assunto');
+
+  // 3) monta um "pedaço" de texto por (linha física, coluna)
+  const pedacos = [];
+  for (const l of linhasRaw){
+    if (l.y >= headerY) continue; // ignora tudo acima/na linha do cabeçalho
+    const acc = {}, fim = {};
+    l.itens.forEach(it => {
+      const c = coluna(it.x);
+      // só põe espaço se sobrou um vão real (senão é a mesma palavra letra a letra)
+      const precisaEspaco = fim[c] != null && (it.x - fim[c]) > 1.2;
+      acc[c] = (acc[c]||'') + (precisaEspaco ? ' ' : '') + it.texto;
+      fim[c] = it.x + it.w;
+    });
+    Object.keys(acc).forEach(c => { if (acc[c].trim()) pedacos.push({ y: l.y, col: c, texto: acc[c].trim() }); });
+  }
+
+  // 4) âncoras = linhas de dados reais: pedaço da coluna dias que é SÓ número/
+  //    vírgula (exclui o rodapé numerado "1. As chamadas...", que tem letras)
+  const anchors = pedacos
+    .filter(p => p.col === 'dias' && /\d/.test(p.texto) && !/[a-zA-Z]/.test(p.texto))
+    .map(p => ({ y: p.y, dias: (p.texto.match(/\d+/g)||[]).join(', '), assunto: [], referencia: [] }))
+    .sort((a,b) => b.y - a.y);
+  if (!anchors.length) return { linhas: [], assunto: '' };
+  const ultimoAnchorY = anchors[anchors.length-1].y; // menor y = última linha da tabela
+
+  // 5) atribui cada pedaço de assunto/referência à âncora mais próxima em y
+  //    (resolve célula mesclada e referência com baseline levemente deslocada);
+  //    descarta o que estiver ABAIXO da tabela (OBS., assinatura do comandante)
+  const nearest = y => anchors.reduce((best,a) => Math.abs(a.y-y) < Math.abs(best.y-y) ? a : best, anchors[0]);
+  pedacos.forEach(p => {
+    if (p.col === 'dias') return;
+    if (p.y < ultimoAnchorY - 3) return;
+    nearest(p.y)[p.col].push(p);
+  });
+
+  // 6) monta a saída
+  const linhas = [];
+  anchors.forEach(a => {
+    const ref = a.referencia.sort((x,y)=>y.y-x.y).map(o=>o.texto).join(' ').replace(/\s+/g,' ').trim();
+    if (a.dias && ref) linhas.push({ dias: a.dias, referencia: ref });
+  });
+  const assuntoTodos = [];
+  anchors.forEach(a => a.assunto.forEach(o => assuntoTodos.push(o)));
+  assuntoTodos.sort((x,y)=>y.y-x.y); // ordem de leitura (topo→baixo)
+  const assunto = assuntoTodos.map(o=>o.texto).join(' ').replace(/\s+/g,' ').trim();
+  return { linhas, assunto };
 }
 async function extrairDoPdf(file){
   if (!file) return;
@@ -521,6 +558,8 @@ async function carregarTemasAdmin(){
   try{
     const temas = await rpc('tta_listar_temas', { p_token: sessao.token, p_ano: admAno, p_mes: admMes });
     document.getElementById('badgeTemas').textContent = (temas||[]).length;
+    const btnLimpar = document.getElementById('btnLimparTemas');
+    if (btnLimpar) btnLimpar.style.display = (temas||[]).length ? '' : 'none';
     corpo.innerHTML = (temas||[]).map(t => `
       <tr class="${(t.dias||[]).includes(DIA_ATUAL) && admAno===ANO_ATUAL && admMes===MES_ATUAL ? 'hoje':''}">
         <td class="tit">${(t.dias||[]).join(', ')}</td>
@@ -533,6 +572,17 @@ async function carregarTemasAdmin(){
 async function excluirTema(id){
   try{ await rpc('tta_excluir_tema', { p_token: sessao.token, p_id: id }); toast('Tema excluído.'); carregarTemasAdmin(); }
   catch(e){ toast('Erro: '+e.message); }
+}
+async function excluirTemasDoMes(){
+  const n = +(document.getElementById('badgeTemas').textContent || 0);
+  if (!n){ toast('Não há temas cadastrados neste mês.'); return; }
+  const rotulo = `${MESES_LBL[admMes-1]}/${admAno}`;
+  if (!confirm(`Apagar TODOS os ${n} tema(s) de ${rotulo}?\n\nEssa ação não pode ser desfeita.`)) return;
+  try{
+    const r = await rpc('tta_excluir_temas_mes', { p_token: sessao.token, p_ano: admAno, p_mes: admMes });
+    toast(`${(r&&r.removidos)||n} tema(s) removido(s) de ${rotulo}.`);
+    carregarTemasAdmin();
+  }catch(e){ toast('Erro ao limpar: '+e.message); }
 }
 
 /* ── Arquivos do mês ───────────────────────────────────────────────── */
