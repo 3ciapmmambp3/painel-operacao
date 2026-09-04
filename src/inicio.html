@@ -454,6 +454,23 @@ async function carregarAvisosMeuDia(){
         }
       }catch(e){}
     }
+    /* 1.d) Ordem de Serviço do PAF a confeccionar — Aux P3 / Admin Geral.
+       A RPC devolve vazio p/ quem não é P3/Admin. Alerta a partir de 10 dias
+       antes do início e some quando a OS for marcada como enviada. */
+    try{
+      const rp=await fetch(`${SB_AUTH_URL}/rest/v1/rpc/paf_os_pendentes`,{method:'POST',headers:{...H,'Content-Type':'application/json'},body:JSON.stringify({p_token:sessao.token})});
+      if(rp.ok){ const ops=await rp.json();
+        if(Array.isArray(ops) && ops.length){
+          ops.forEach(op=>{
+            const d=op.dias_para_inicio;
+            const quando = d>1?`início em ${d} dias`:(d===1?'início amanhã':(d===0?'início hoje':`em andamento (iniciou há ${-d} dia(s))`));
+            const nome = op.nome?`${_esc(op.id_operacao)} — ${_esc(op.nome)}`:_esc(op.id_operacao);
+            const jaTem = op.os_numero?` — Nº ${_esc(op.os_numero)} já informado, falta marcar como enviada`:'';
+            avisos.push({ic:'📋',txt:`<b>Confeccionar a Ordem de Serviço</b> da operação PAF <b>${nome}</b> (${quando})${jaTem}.`,lk:'admin.html?tab=paf',lkTxt:'Ir ao PAF →'});
+          });
+        }
+      }
+    }catch(e){ /* silencioso */ }
     /* 2) Missão designada ao usuário */
     if(mat){
       const r=await fetch(`${SB_AUTH_URL}/rest/v1/missoes?select=id,titulo,militares,status,prioridade,prazo,gp,criado_por`,{headers:H});
