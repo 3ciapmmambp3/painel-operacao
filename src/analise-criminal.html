@@ -12155,6 +12155,19 @@ async function _salvarFichasComAnexos(fichaId){
     console.warn('[fichas_intel] Colunas de classificação ainda não existem. Execute o ALTER TABLE no Supabase:', e.message);
   }
 
+  /* Coordenadas — upsert próprio (tolerante): se a coluna `coordenadas` ainda
+     não existir (antes do db/61), só as coordenadas deixam de salvar, sem
+     derrubar o restante. */
+  try{
+    await _sbUpsert('fichas_intel', {
+      id:          ficha.id,
+      coordenadas: ficha.coordenadas || null,
+      updated_at:  new Date().toISOString(),
+    });
+  }catch(e){
+    console.warn('[fichas_intel] Coluna coordenadas ainda não existe. Rode o db/61 no Supabase:', e.message);
+  }
+
   /* Atualiza em memória com URLs */
   const idx = fichasIntel.findIndex(f => f.id === fichaId);
   if(idx >= 0) fichasIntel[idx].fotos = fotosComUrl;
@@ -12253,6 +12266,7 @@ async function _carregarFichasComAnexos(){
       tipoCriminal: r.tipo_criminal || '',
       prioridade:   r.prioridade    || '',
       statusFicha:  r.status_ficha  || 'em_analise',
+      coordenadas:  r.coordenadas   || null,
       criadoPor:    r.criado_por||'',
       criadoEm:     r.criado_em||'',
     }));
@@ -12758,9 +12772,32 @@ async function adicionarVideosIntel(input, prefixo){
 function adicionarFotosIntel(input){ adicionarAnexosIntel(input,'intel'); }
 function renderFotosIntelModal(){ _renderAnexos('intel'); }
 
+/* timer do preenchimento das coordenadas na edição — cancelado a cada reset
+   pra não reinserir coords da ficha anterior numa ficha nova (corrida). */
+var _intelCoordTimer = null;
+/* datetime-local só aceita "YYYY-MM-DDTHH:MM"; o banco devolve timestamptz
+   completo (com segundos/fuso), que o input rejeita e zera. Normaliza. */
+function _toDatetimeLocal(v){
+  if(!v) return '';
+  return String(v).replace(' ','T').slice(0,16);
+}
+/* Reset ÚNICO de todos os campos do formulário da ficha — usado em toda
+   abertura, pra nunca sobrar dado da ficha anterior. */
+function _intelResetForm(){
+  if(_intelCoordTimer){ clearTimeout(_intelCoordTimer); _intelCoordTimer=null; }
+  ['i-id','i-rat','i-mun','i-bairro','i-unidade','i-tags','i-suspeitos','i-veiculos',
+   'i-facao','i-modus','i-armas','i-conexoes','i-obs','i-data-fato',
+   'i-tipo-criminal','i-prioridade'].forEach(fid=>{
+    const el=document.getElementById(fid); if(el) el.value='';
+  });
+  _intelLimparDMS();
+  const rein=document.getElementById('i-reincidencia'); if(rein) rein.value='nao';
+  const stf =document.getElementById('i-status-ficha'); if(stf) stf.value='em_analise';
+}
 function abrirModalIntel(id){
   _intelFotosBuffer = [];
   _compAnexosBuffer = [];
+  _intelResetForm();   // limpa TODOS os campos primeiro (evita sobra da ficha anterior)
   if(id !== undefined){
     const f = fichasIntel.find(x=>x.id===id);
     if(f){
@@ -12779,23 +12816,15 @@ function abrirModalIntel(id){
       document.getElementById('i-unidade').value    = f.unidade  ||'';
       document.getElementById('i-tags').value       = f.tags     ||'';
       /* ── Novos campos de classificação ── */
-      document.getElementById('i-data-fato').value      = f.dataFato     || '';
+      document.getElementById('i-data-fato').value      = _toDatetimeLocal(f.dataFato);
       document.getElementById('i-tipo-criminal').value  = f.tipoCriminal || '';
       document.getElementById('i-prioridade').value     = f.prioridade   || '';
       document.getElementById('i-status-ficha').value   = f.statusFicha  || 'em_analise';
       /* Preenche campos DMS de coordenadas ao editar */
-      if(f.coordenadas){ setTimeout(() => { _intelPreencherDMS('lat', f.coordenadas.lat); _intelPreencherDMS('lng', f.coordenadas.lng); }, 50); }
+      if(f.coordenadas){ _intelCoordTimer = setTimeout(() => { _intelPreencherDMS('lat', f.coordenadas.lat); _intelPreencherDMS('lng', f.coordenadas.lng); }, 50); }
       else { _intelLimparDMS(); }
       _intelFotosBuffer = (f.fotos||[]).map(fb=>({...fb}));
     }
-  } else {
-    ['i-id','i-rat','i-mun','i-bairro','i-unidade','i-tags','i-suspeitos','i-veiculos','i-facao','i-modus','i-armas','i-conexoes','i-obs',
-     'i-data-fato','i-tipo-criminal','i-prioridade'].forEach(fid=>{
-      document.getElementById(fid).value='';
-    });
-    _intelLimparDMS();
-    document.getElementById('i-reincidencia').value='nao';
-    document.getElementById('i-status-ficha').value='em_analise';
   }
   /* Limpa campo de texto do complemento */
   const compTxt = document.getElementById('comp-texto');
@@ -12820,10 +12849,8 @@ function abrirIntelPorRat(rat, mun){
   if(f) abrirModalIntel(f.id);
   else {
     _intelFotosBuffer = [];
-    ['i-id','i-rat','i-mun','i-bairro','i-unidade','i-tags','i-suspeitos','i-veiculos','i-facao','i-modus','i-armas','i-conexoes','i-obs'].forEach(fid=>{
-      document.getElementById(fid).value='';
-    });
-    document.getElementById('i-reincidencia').value='nao';
+    _compAnexosBuffer = [];
+    _intelResetForm();   // limpa TODOS os campos (inclui data/tipo/prioridade/status/coords)
     document.getElementById('i-rat').value = rat;
     document.getElementById('i-mun').value = mun||'';
     abrirModal('modal-intel');
