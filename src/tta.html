@@ -386,11 +386,16 @@ async function carregarRoster(){
 /* ── Tema do dia (só leitura — o servidor recalcula na hora de gravar) ── */
 async function carregarTemaHoje(){
   try{
-    const temas = await rpc('tta_listar_temas', { p_token: sessao.token, p_ano: ANO_ATUAL, p_mes: MES_ATUAL });
-    TEMA_HOJE = (temas||[]).find(t => (t.dias||[]).includes(DIA_ATUAL)) || null;
+    // Tema do dia com fallback pro mês anterior enquanto o cronograma do mês
+    // atual não é lançado (o servidor aplica a mesma regra ao gravar).
+    TEMA_HOJE = await rpc('tta_tema_do_dia', { p_token: sessao.token, p_ano: ANO_ATUAL, p_mes: MES_ATUAL, p_dia: DIA_ATUAL }) || null;
     if (TEMA_HOJE){
-      document.getElementById('diaCronograma').textContent = TEMA_HOJE.dias.join(', ');
-      document.getElementById('temaPreview').innerHTML = `<b>Assunto:</b> ${TEMA_HOJE.assunto}<br><b>Referência:</b> ${TEMA_HOJE.referencia}`;
+      document.getElementById('diaCronograma').textContent = (TEMA_HOJE.dias||[]).join(', ');
+      let html = `<b>Assunto:</b> ${TEMA_HOJE.assunto}<br><b>Referência:</b> ${TEMA_HOJE.referencia}`;
+      if (TEMA_HOJE.fallback){
+        html = `<div style="background:rgba(200,150,40,.15);border:1px solid var(--gold-border);border-radius:6px;padding:7px 10px;margin-bottom:8px;font-size:11.5px;color:var(--gold-light)">⚠ Cronograma de ${MESES_LBL[MES_ATUAL-1]}/${ANO_ATUAL} ainda não lançado — exibindo o TTA de ${MESES_LBL[(TEMA_HOJE.mes||1)-1]}/${TEMA_HOJE.ano} para não interromper a instrução. Avise o Aux P1.</div>` + html;
+      }
+      document.getElementById('temaPreview').innerHTML = html;
     } else {
       document.getElementById('diaCronograma').textContent = '—';
       document.getElementById('temaPreview').innerHTML = '<span class="hint">Nenhum tema cadastrado para hoje neste mês — avise o Aux P1.</span>';
