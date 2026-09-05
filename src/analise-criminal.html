@@ -2644,7 +2644,7 @@ document.addEventListener('click', () => {
         <div>
           <div class="intel-field">
             <label>Nº BO Vinculado</label>
-            <input type="text" id="i-rat" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this)" maxlength="18">
+            <input type="text" id="i-rat" placeholder="Ex: 2026-020361740-001" oninput="mascaraBO(this)" onblur="_intelPuxarCoordsDoBO()" maxlength="18">
           </div>
           <div class="intel-field">
             <label>Município de Atuação <span style="color:var(--text-muted);font-weight:400;">(um ou mais, separados por vírgula)</span></label>
@@ -12794,6 +12794,22 @@ function _intelResetForm(){
   const rein=document.getElementById('i-reincidencia'); if(rein) rein.value='nao';
   const stf =document.getElementById('i-status-ficha'); if(stf) stf.value='em_analise';
 }
+/* Puxa as coordenadas do crime do BO vinculado (bd_crimes / dadosCrimes).
+   Só preenche se as coordenadas estiverem VAZIAS — não sobrescreve o que foi
+   digitado à mão. Casa o BO por dígitos (tolerante à formatação). */
+function _intelPuxarCoordsDoBO(){
+  const boDig = s => (s==null?'':String(s)).replace(/\D/g,'');
+  const alvo = boDig(document.getElementById('i-rat')?.value);
+  if(!alvo) return;
+  const latVazio = !((document.getElementById('i-lat-g')?.value||'').trim());
+  const lngVazio = !((document.getElementById('i-lng-g')?.value||'').trim());
+  if(!latVazio || !lngVazio) return;   // já tem coordenada → respeita
+  const crime = (typeof dadosCrimes!=='undefined' ? dadosCrimes : []).find(c =>
+    boDig(c.rat||c.bo)===alvo && c.lat!=null && c.lng!=null);
+  if(!crime) return;
+  _intelPreencherDMS('lat', crime.lat);
+  _intelPreencherDMS('lng', crime.lng);
+}
 function abrirModalIntel(id){
   _intelFotosBuffer = [];
   _compAnexosBuffer = [];
@@ -12842,6 +12858,9 @@ function abrirModalIntel(id){
     _renderAnexos('comp');
     _renderComplementos(id);
   }, 50);
+  /* Depois do preenchimento das coords salvas (50ms), tenta puxar do BO se
+     ainda estiver vazio — ajuda fichas antigas sem coordenada. */
+  setTimeout(_intelPuxarCoordsDoBO, 130);
 }
 
 function abrirIntelPorRat(rat, mun){
@@ -12853,6 +12872,7 @@ function abrirIntelPorRat(rat, mun){
     _intelResetForm();   // limpa TODOS os campos (inclui data/tipo/prioridade/status/coords)
     document.getElementById('i-rat').value = rat;
     document.getElementById('i-mun').value = mun||'';
+    _intelPuxarCoordsDoBO();   // ficha nova a partir do BO → já puxa as coords do crime
     abrirModal('modal-intel');
     setTimeout(()=>{ _renderGpCheckboxes([]); _renderAnexos('intel'); }, 50);
   }
