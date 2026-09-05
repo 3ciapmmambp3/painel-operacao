@@ -2058,6 +2058,14 @@ function bindMiniLists(root){
           </div>
           <button type="button" class="mini-remove" aria-label="Remover">&times;</button>
         `;
+      } else if (kind === 'auto-infracao'){
+        const anoAtual = new Date().getFullYear();
+        const labelTexto = fieldDiv.querySelector('label') ? fieldDiv.querySelector('label').textContent : '';
+        row.innerHTML = `
+          <input type="text" placeholder="Número" data-numeric="1" data-label="${labelTexto}">
+          <input type="text" placeholder="Ano" data-numeric="1" data-nocount="1" maxlength="4" value="${anoAtual}" style="flex:0 0 90px;max-width:90px;">
+          <button type="button" class="mini-remove" aria-label="Remover">&times;</button>
+        `;
       } else {
         const labelTexto = fieldDiv.querySelector('label') ? fieldDiv.querySelector('label').textContent : '';
         row.innerHTML = `
@@ -2435,13 +2443,20 @@ function fieldInputHTML(field, idx){
   if (field.type === 'auto-infracao'){
     const anoAtual = new Date().getFullYear();
     const requiredAttr = field.required ? ' data-required="1"' : '';
+    // Campo composto (Número + Ano) e REPETÍVEL: podem ser feitos vários autos
+    // de infração para o mesmo atendimento. Guarda-se `data-auto-infracao="1"`
+    // (usado pela validação/coleta) e também `data-mini-field` para reaproveitar
+    // o "+ Adicionar" das mini-listas.
     return `
-      <div class="field" data-auto-infracao="1">
+      <div class="field" data-auto-infracao="1" data-mini-field data-mini-kind="auto-infracao">
         <label>${field.label}</label>
-        <div style="display:flex;gap:8px;">
-          <input type="text" placeholder="Número" data-numeric="1" data-label="${field.label}"${requiredAttr} style="flex:2;">
-          <input type="text" placeholder="Ano" data-numeric="1" data-nocount="1" maxlength="4" value="${anoAtual}" style="flex:1;max-width:90px;">
+        <div class="mini-list">
+          <div class="mini-row">
+            <input type="text" placeholder="Número" data-numeric="1" data-label="${field.label}"${requiredAttr}>
+            <input type="text" placeholder="Ano" data-numeric="1" data-nocount="1" maxlength="4" value="${anoAtual}" style="flex:0 0 90px;max-width:90px;">
+          </div>
         </div>
+        <button type="button" class="btn-add-mini">+ Adicionar Auto de Infração</button>
       </div>`;
   }
   if (field.type === 'reds-list'){
@@ -2801,10 +2816,12 @@ function validarModalAtual(){
       return labelEl && labelEl.textContent.trim() === label;
     });
 
-    // Se tem Auto de Infração preenchido, o Ato de Fiscalização passa a ser obrigatório.
-    const autoInfracao = campoPorLabel('Nº Auto de Infração');
+    // Se tem Auto de Infração preenchido (qualquer uma das linhas), o Ato de
+    // Fiscalização passa a ser obrigatório.
+    const autoInfracaoBox = escopo.querySelector('[data-auto-infracao="1"]');
+    const temAlgumAuto = autoInfracaoBox && Array.from(autoInfracaoBox.querySelectorAll('.mini-row input[data-label]')).some(inp => inp.value.trim());
     const ato = campoPorLabel('Nº Ato de Fiscalização');
-    if (autoInfracao && autoInfracao.value.trim() && ato && !ato.value.trim()){
+    if (temAlgumAuto && ato && !ato.value.trim()){
       problemas.push('"Nº Ato de Fiscalização" é obrigatório quando "Nº Auto de Infração" foi preenchido.');
     }
 
@@ -2812,10 +2829,14 @@ function validarModalAtual(){
     // padrão) — bloqueia, já que é justamente isso que essa mudança evita.
     const autoInfracaoField = escopo.querySelector('[data-auto-infracao="1"]');
     if (autoInfracaoField){
-      const inputs = autoInfracaoField.querySelectorAll('input');
-      const numero = inputs[0] && inputs[0].value.trim();
-      const ano = inputs[1] && inputs[1].value.trim();
-      if (numero && !ano){
+      // Vale para cada auto lançado (podem ser vários): número sem ano bloqueia.
+      const semAno = Array.from(autoInfracaoField.querySelectorAll('.mini-row')).some(row => {
+        const inputs = row.querySelectorAll('input');
+        const numero = inputs[0] && inputs[0].value.trim();
+        const ano = inputs[1] && inputs[1].value.trim();
+        return numero && !ano;
+      });
+      if (semAno){
         problemas.push('"Nº Auto de Infração" está com o número preenchido mas sem o ano.');
       }
     }
@@ -3247,20 +3268,35 @@ function preencherEntradaPorLabel_(escopo, itemData){
     // Aqui separamos certinho: Número vai pro 1º input, Ano pro 2º.
     const fieldDiv = el.closest('.field');
     if (fieldDiv && fieldDiv.dataset.autoInfracao === '1'){
-      const partes = valor.toString().split('/');
-      const numero = partes[0] || '';
-      const ano = partes.length > 1 ? partes[partes.length - 1] : '';
-      const inputs = fieldDiv.querySelectorAll('input');
-      if (inputs[0]){
-        inputs[0].value = numero;
-        inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
-        inputs[0].dispatchEvent(new Event('change', { bubbles: true }));
+      // Extrai TODOS os pares "Número/Ano" do valor salvo (aceita vários autos e
+      // ignora o marcador "(N autos)"). Recria uma linha para cada auto.
+      const pares = [];
+      const re = /(\d+)\s*\/\s*(\d{2,4})/g;
+      let m;
+      while ((m = re.exec(valor.toString())) !== null){ pares.push([m[1], m[2]]); }
+      // Compat.: valor antigo só com número, sem "/ano".
+      if (!pares.length){
+        const soNum = (valor.toString().match(/\d+/) || [])[0];
+        if (soNum) pares.push([soNum, '']);
       }
-      if (inputs[1] && ano){
-        inputs[1].value = ano;
-        inputs[1].dispatchEvent(new Event('input', { bubbles: true }));
-        inputs[1].dispatchEvent(new Event('change', { bubbles: true }));
-      }
+      const addBtn = fieldDiv.querySelector('.btn-add-mini');
+      const linhas = () => fieldDiv.querySelectorAll('.mini-row');
+      pares.forEach((par, idx) => {
+        while (linhas().length <= idx && addBtn){ addBtn.click(); }
+        const row = linhas()[idx];
+        if (!row) return;
+        const inputs = row.querySelectorAll('input');
+        if (inputs[0]){
+          inputs[0].value = par[0];
+          inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
+          inputs[0].dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        if (inputs[1] && par[1]){
+          inputs[1].value = par[1];
+          inputs[1].dispatchEvent(new Event('input', { bubbles: true }));
+          inputs[1].dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      });
       return;
     }
 
@@ -3511,10 +3547,17 @@ function collectCategoryEntries(id){
   // mini-listas (REDS múltiplos, etc.), ou o padrão simples de 1 input.
   function lerValorDoCampo_(f){
     if (f.dataset.autoInfracao === '1'){
-      const inputs = f.querySelectorAll('input');
-      const numero = (inputs[0] && inputs[0].value.trim()) || '';
-      const ano = (inputs[1] && inputs[1].value.trim()) || '';
-      return numero ? `${numero}/${ano}` : '';
+      // Cada linha é um auto (Número + Ano). Podem ser vários para o mesmo
+      // atendimento — junta todos no mesmo campo como "N/AAAA, N/AAAA" e, quando
+      // há mais de um, acrescenta "(N autos)" para ficar identificável na planilha.
+      const autos = Array.from(f.querySelectorAll('.mini-row')).map(row => {
+        const inputs = row.querySelectorAll('input');
+        const numero = (inputs[0] && inputs[0].value.trim()) || '';
+        const ano = (inputs[1] && inputs[1].value.trim()) || '';
+        return numero ? `${numero}/${ano}` : '';
+      }).filter(Boolean);
+      if (!autos.length) return '';
+      return autos.length > 1 ? `${autos.join(', ')} (${autos.length} autos)` : autos[0];
     }
     const input = f.querySelector('input, select, textarea');
     let value = input ? input.value : '';
