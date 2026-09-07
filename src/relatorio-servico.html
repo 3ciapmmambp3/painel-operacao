@@ -1169,6 +1169,13 @@ function normalizeText(str){
     // corrigir a planilha). Se um dia o cadastro for corrigido, continua
     // inofensiva.
     .replace(/JOAO MONLEVADE/g, 'JOAO MOLEVADE')
+    // Mesmo caso do GP de Marliéria: a planilha inicial (cadastro/GRUPOS) foi
+    // digitada como "MARILIERIA" (com um I a mais), mas parte das demandas usa
+    // a grafia correta "MARLIERIA". São o MESMO GP — colapsamos a grafia certa
+    // na do cadastro pra elas casarem no filtro por fração, sem mexer na
+    // planilha. "MARILIERIA" não contém "MARLIERIA", então o replace nunca
+    // afeta a grafia já correta do cadastro.
+    .replace(/MARLIERIA/g, 'MARILIERIA')
     .trim();
 }
 
@@ -1703,7 +1710,7 @@ let FAPI_ALVOS_ALL = [];
 let GRUPOS_MAP = {};
 let MEU_GP_RESP = '';
 let MEU_GRUP_COMPLETO = '';
-function _normGp(s){ return (s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').replace(/JOAO MONLEVADE/g,'JOAO MOLEVADE').trim(); }
+function _normGp(s){ return (s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').replace(/JOAO MONLEVADE/g,'JOAO MOLEVADE').replace(/MARLIERIA/g,'MARILIERIA').trim(); }
 async function carregarGruposMap(){
   if (typeof SB_AUTH_URL === 'undefined') return;
   const H = { apikey: SB_AUTH_KEY, Authorization:'Bearer '+SB_AUTH_KEY };
@@ -1835,6 +1842,16 @@ async function fetchReferenceData(){
   try{
     const data = await auth_fetchReferencias(SCRIPT_URL);
     gruposList = data.GRUPOS || [];
+    // Grafia de exibição do GP de Marliéria: a planilha (cadastro) foi digitada
+    // como "MARILIERIA" (com um I a mais). Aqui corrigimos APENAS o texto que o
+    // usuário vê/seleciona (nome do município correto). O casamento com as
+    // demandas continua funcionando porque normalizeText/resolveFracaoCanonica
+    // colapsam as duas grafias no mesmo GP. "MARILIERIA" não contém "MARLIERIA",
+    // então o replace é idempotente e nunca corrompe a grafia já correta.
+    gruposList.forEach(g => {
+      if (g && typeof g.principal === 'string') g.principal = g.principal.replace(/MARILIERIA/g, 'MARLIERIA');
+      if (g && Array.isArray(g.variacoes)) g.variacoes = g.variacoes.map(v => (typeof v === 'string' ? v.replace(/MARILIERIA/g, 'MARLIERIA') : v));
+    });
     Object.assign(referenceCache, data);
     // OPERAÇÕES migraram para o painel (Supabase) — sobrescreve o que veio da planilha.
     try { await carregarOperacoesSupabase(); }
