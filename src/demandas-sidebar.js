@@ -28,6 +28,7 @@
     const qs = new URLSearchParams(location.search);
     let ativo = '';
     if (path === 'denuncias.html')                ativo = qs.get('tipo') === 'requisicao' ? 'req' : 'den';
+    else if (path === 'nova-denuncia.html')       ativo = qs.get('tipo') === 'requisicao' ? 'req' : 'den';
     else if (path === 'materiais-tco-semad.html') ativo = qs.get('aba') === 'SEMAD' ? 'mat-semad' : 'mat-tco';
     else if (path === 'relatorio-demandas.html')  ativo = 'relatorio';
     const on = k => ativo === k ? ' ativo' : '';
