@@ -236,6 +236,9 @@ begin
   update public.oficios set
     situacao             = coalesce(nullif(p_dados->>'situacao',''), situacao),
     observacoes_controle = case when p_dados ? 'observacoes_controle' then nullif(p_dados->>'observacoes_controle','') else observacoes_controle end,
+    -- anexos: quando enviado, substitui pelo array completo (existentes + novos)
+    -- que o cliente monta. Serve p/ anexar a via assinada de um ofício de saída.
+    anexos               = case when p_dados ? 'anexos' then coalesce(p_dados->'anexos','[]'::jsonb) else anexos end,
     controlado_por_matricula = v_me.matricula,
     controlado_por_nome      = coalesce(v_me.posto_graduacao,'') || ' ' || coalesce(v_me.nome_guerra, v_me.nome_completo)
   where id = p_id

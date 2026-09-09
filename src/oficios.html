@@ -68,6 +68,16 @@
   .anx{display:flex;flex-direction:column;gap:8px}
   .anx a{display:flex;align-items:center;gap:9px;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:12.5px;color:var(--text-white);text-decoration:none}
   .anx a:hover{border-color:var(--gold)}
+  .cdrop{border:1.5px dashed var(--border-mid);border-radius:9px;padding:13px;text-align:center;cursor:pointer;background:var(--bg-input);font-size:12px;color:var(--text-muted);margin-top:8px}
+  .cdrop:hover{border-color:var(--gold);color:var(--gold)}
+  .canx{display:flex;flex-direction:column;gap:6px}
+  .canx .it{display:flex;align-items:center;gap:9px;background:var(--bg-input);border:1px solid var(--border);border-radius:7px;padding:7px 10px;font-size:12px}
+  .canx .it .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-white)}
+  .canx .it .nm a{color:var(--gold);text-decoration:none}
+  .canx .it .st{font-size:9px;padding:1px 7px;border-radius:20px;font-weight:600;white-space:nowrap}
+  .canx .it .st.up{color:var(--info);background:var(--info-bg)} .canx .it .st.ok{color:var(--success);background:var(--success-bg)} .canx .it .st.err{color:var(--danger);background:var(--danger-bg)}
+  .canx .it .rm{background:none;border:none;color:var(--text-hint);cursor:pointer;font-size:14px}
+  .canx .it .rm:hover{color:var(--danger)}
   .pmsg{margin:0 20px 12px;padding:10px 13px;border-radius:8px;font-size:12.5px;display:none}
   .pmsg.show{display:block}.pmsg.err{background:var(--danger-bg);color:#ef9a9a}.pmsg.ok{background:var(--success-bg);color:#a5d6a7}
   @media(max-width:640px){ .dl,.grid2{grid-template-columns:1fr} }
@@ -194,6 +204,61 @@ const FOOTER_TEL='Governador Valadares/MG · Telefone: (33) 3279-4250 / 3279-425
 
 let DADOS=[]; let atual=null;
 
+/* ── Upload de anexo (via assinada / documentos) no Controle ─────── */
+const DRIVE_URL=(typeof OFICIOS_DRIVE_URL!=='undefined')?OFICIOS_DRIVE_URL:'';
+const STORAGE=`${API}/storage/v1`, BUCKET='anexos', MAX_MB=15, IMG_MAX_DIM=1600, IMG_QUALITY=0.7, LINK_TTL=315360000;
+let anexosCtrl=[];
+function fmtTam(b){ return b>1048576 ? (b/1048576).toFixed(1)+' MB' : Math.max(1,Math.round(b/1024))+' KB'; }
+async function comprimirImagem(file){
+  if(!/^image\//.test(file.type) || /gif|svg/i.test(file.type)) return file;
+  try{ const bmp=await createImageBitmap(file); const scale=Math.min(1, IMG_MAX_DIM/Math.max(bmp.width,bmp.height));
+    const w=Math.round(bmp.width*scale), h=Math.round(bmp.height*scale);
+    const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(bmp,0,0,w,h);
+    const blob=await new Promise(res=>cv.toBlob(res,'image/jpeg',IMG_QUALITY));
+    if(blob && blob.size<file.size) return new File([blob], file.name.replace(/\.[^.]+$/,'')+'.jpg', {type:'image/jpeg'});
+  }catch(e){} return file;
+}
+function sanitizeNome(n){ return (n||'arquivo').normalize('NFD').replace(/[^\x00-\x7F]/g,'').replace(/[^\w.\-]+/g,'_').replace(/_+/g,'_').slice(-80)||'arquivo'; }
+const encPath=p=>p.split('/').map(encodeURIComponent).join('/');
+function b64(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=rej; r.readAsDataURL(file); }); }
+async function subirDrive(f){
+  const payload={ nome:f.name, mime:f.type||'application/octet-stream', ano:new Date().getFullYear(), base64:await b64(f) };
+  const r=await fetch(DRIVE_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)});
+  if(!r.ok) throw new Error(`Drive ${r.status}`); const j=await r.json();
+  if(!j||!j.link) throw new Error(j&&j.erro?j.erro:'Drive sem link'); return { path:j.id||null, link:j.link };
+}
+async function subirStorage(f){
+  const path=`oficios/${new Date().getFullYear()}/${crypto.randomUUID()}-${sanitizeNome(f.name)}`; const enc=encPath(path);
+  const AH={ apikey:AKEY, Authorization:`Bearer ${AKEY}` };
+  const up=await fetch(`${STORAGE}/object/${BUCKET}/${enc}`,{method:'POST',headers:{...AH,'Content-Type':f.type||'application/octet-stream','x-upsert':'true'},body:f});
+  if(!up.ok) throw new Error(`${up.status} ${await up.text()}`);
+  const sg=await fetch(`${STORAGE}/object/sign/${BUCKET}/${enc}`,{method:'POST',headers:{...AH,'Content-Type':'application/json'},body:JSON.stringify({expiresIn:LINK_TTL})});
+  if(!sg.ok) throw new Error(`${sg.status} ${await sg.text()}`); const sj=await sg.json();
+  return { path, link:`${STORAGE}${sj.signedURL||sj.signedUrl}` };
+}
+function ctrlHandleFiles(files){
+  [...files].forEach(async file=>{
+    const item={ nome:file.name, tamanho:file.size, mime:file.type, status:'up', path:null, link:null };
+    anexosCtrl.push(item); renderCtrlAnx();
+    try{
+      const f=await comprimirImagem(file);
+      if(f.size>MAX_MB*1048576) throw new Error(`acima de ${MAX_MB} MB`);
+      item.nome=f.name; item.tamanho=f.size; item.mime=f.type;
+      let res; if(DRIVE_URL){ try{ res=await subirDrive(f); }catch(e){ res=await subirStorage(f); } } else { res=await subirStorage(f); }
+      item.path=res.path; item.link=res.link; item.status='ok'; renderCtrlAnx();
+    }catch(e){ console.error('anexo controle:', e); item.status='err'; item.erro=e.message; renderCtrlAnx(); }
+  });
+}
+function rmCtrlAnx(i){ anexosCtrl.splice(i,1); renderCtrlAnx(); }
+function renderCtrlAnx(){
+  const el=document.getElementById('c-anxlist'); if(!el) return;
+  el.innerHTML = anexosCtrl.length ? anexosCtrl.map((a,i)=>{
+    const st=a.status==='ok'?'<span class="st ok">ok</span>':a.status==='err'?'<span class="st err">erro</span>':'<span class="st up">enviando…</span>';
+    const nm=a.link?`<a href="${_esc(a.link)}" target="_blank" rel="noopener">${_esc(a.nome)}</a>`:_esc(a.nome);
+    return `<div class="it"><span class="nm">📎 ${nm}</span><span style="color:var(--text-hint);font-size:10px">${fmtTam(a.tamanho||0)}</span>${st}<button class="rm" onclick="rmCtrlAnx(${i})" title="Remover">✕</button></div>`;
+  }).join('') : '<span style="color:var(--text-hint);font-size:12px">Sem anexo.</span>';
+}
+
 function _esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function dBR(s){ if(!s) return '—'; const d=new Date(String(s).slice(0,10)+'T00:00:00'); return isNaN(d.getTime())?String(s):d.toLocaleDateString('pt-BR'); }
 const MESES=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
@@ -259,7 +324,7 @@ function abrir(id){
   const r=atual;
   document.getElementById('pn').textContent=(r.tipo==='Saída'?(r.numero||'Ofício de saída'):'Ofício de entrada');
   document.getElementById('pmsg').className='pmsg';
-  const anx=(Array.isArray(r.anexos)?r.anexos:[]).map(a=>`<a href="${_esc(a.link||'#')}" target="_blank" rel="noopener">📎 ${_esc(a.nome||'anexo')}</a>`).join('') || '<span style="color:var(--text-hint);font-size:12px">Sem anexo.</span>';
+  anexosCtrl = (Array.isArray(r.anexos)?r.anexos:[]).map(a=>({ path:a.path, nome:a.nome, tamanho:a.tamanho, mime:a.mime, link:a.link, status:'ok' }));
   const linhasTipo = r.tipo==='Saída'
     ? `<div class="di"><span class="k">Emitente</span><span class="v">${_esc(r.emitente||'—')}</span></div>
        <div class="di"><span class="k">Destino (externo)</span><span class="v">${_esc(r.destino_ext||'—')}</span></div>`
@@ -276,7 +341,6 @@ function abrir(id){
       <div class="di"><span class="k">Responsável</span><span class="v">${_esc(r.responsavel||'—')}</span></div>
       <div class="di"><span class="k">Grupamento</span><span class="v">${_esc(r.grupamento_id||'—')}</span></div>
       ${r.observacoes?`<div class="di full"><span class="k">Observações</span><span class="v">${_esc(r.observacoes)}</span></div>`:''}
-      <div class="di full"><span class="k">Ofício digitalizado</span><span class="v anx">${anx}</span></div>
       <div class="di full"><span class="k">Registrado por</span><span class="v" style="color:var(--text-hint)">${_esc(r.registrado_por_nome||'—')} · ${_esc(dBR(r.created_at))}</span></div>
     </div>
 
@@ -288,11 +352,18 @@ function abrir(id){
           <option value="ARQUIVADO" ${r.situacao==='ARQUIVADO'?'selected':''}>Arquivado</option>
         </select></div>
       <div class="fld" style="grid-column:1/-1"><label>Observações do controle</label><textarea id="c-obs" placeholder="Anotações">${_esc(r.observacoes_controle||'')}</textarea></div>
+      <div class="fld" style="grid-column:1/-1">
+        <label>Anexos ${r.tipo==='Saída'?'(via assinada / documentos)':'(ofício recebido / documentos)'}</label>
+        <div class="canx" id="c-anxlist"></div>
+        <div class="cdrop" onclick="document.getElementById('c-file').click()">📎 Anexar arquivo — PDF ou imagem, máx. 15 MB</div>
+        <input type="file" id="c-file" multiple style="display:none" onchange="ctrlHandleFiles(this.files)">
+      </div>
     </div>
     ${r.controlado_por_nome?`<div style="font-size:11px;color:var(--text-hint);margin-top:4px">Último controle por ${_esc(r.controlado_por_nome)} · ${_esc(dBR(r.updated_at))}</div>`:''}
   `;
   document.getElementById('btn-excluir').style.display = isAG ? '' : 'none';
   document.getElementById('btn-pdf').style.display = (r.tipo==='Saída' && r.of_corpo) ? '' : 'none';
+  renderCtrlAnx();
   document.getElementById('ov').classList.add('show');
 }
 function fechar(){ document.getElementById('ov').classList.remove('show'); atual=null; }
@@ -300,7 +371,12 @@ function pmsg(cls,txt){ const el=document.getElementById('pmsg'); el.className='
 
 async function salvarControle(){
   if(!atual) return;
-  const p_dados={ situacao: document.getElementById('c-sit').value, observacoes_controle: document.getElementById('c-obs').value.trim() };
+  if(anexosCtrl.some(a=>a.status==='up')){ pmsg('err','Aguarde o envio dos anexos terminar.'); return; }
+  const p_dados={
+    situacao: document.getElementById('c-sit').value,
+    observacoes_controle: document.getElementById('c-obs').value.trim(),
+    anexos: anexosCtrl.filter(a=>a.status==='ok').map(a=>({ path:a.path, nome:a.nome, tamanho:a.tamanho, mime:a.mime, link:a.link }))
+  };
   try{
     const r=await fetch(`${API}/rest/v1/rpc/oficio_controle_salvar`,{method:'POST',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify({p_token:sessao.token,p_id:atual.id,p_dados})});
     if(!r.ok) throw new Error(await r.text());
