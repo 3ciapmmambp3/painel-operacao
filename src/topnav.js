@@ -66,6 +66,8 @@
       {ic:'👥', t:'Efetivo', soon:true},
       {ic:'🗓️', t:'TTA — Treinamento Tático', h:'tta.html'},
       {ic:'🗂️', t:'Meus TTA', h:'meus-tta.html'},
+      // Aux P1 / Admin Geral / CMT Cia → controle; demais → formulário.
+      {ic:'⚖️', t:'Controle de Requisição Judicial', h:'nova-requisicao-judicial.html', hGest:'requisicoes-judiciais.html', reqGest:'reqjud'},
       {ic:'🏖️', t:'Férias', soon:true},
       {ic:'📰', t:'Publicações', soon:true},
     ],
@@ -129,8 +131,12 @@
     const podeGestP3       = funcao === 'aux p3' || nivel === 'admin_geral';
     const podeGerenciarVtr = nivel === 'admin_geral' || funcao.indexOf('aux p4') === 0;
     const podeGerenciarTTA = nivel === 'admin_geral' || (funcao === 'aux p1' && grup === 'ADM');
+    // Controle de Requisição Judicial: Aux P1 (qualquer GP), Admin Geral ou CMT da Cia.
+    const podeReqJud = nivel === 'admin_geral'
+      || /aux\s*p?\s*1/.test(funcao)
+      || (/(cmt|comandante)/.test(funcao) && /\bcia\b/.test(funcao));
     // Um item com req:'x' só aparece quando canReq['x'] for verdadeiro.
-    const canReq = { gestP3: podeGestP3, vtr: podeGerenciarVtr, tta: podeGerenciarTTA };
+    const canReq = { gestP3: podeGestP3, vtr: podeGerenciarVtr, tta: podeGerenciarTTA, reqjud: podeReqJud };
     const on = k => ativo===k ? ' active' : '';
 
     // Ícone pode ser um EMOJI ou um CAMINHO DE IMAGEM (ex.: assets/drone.png).
@@ -142,7 +148,10 @@
     const tab = (k, href, rot) => {
       const itens = (MODULOS[k]||[])
         .filter(m => !m.req || canReq[m.req])   // esconde itens sem permissão (mesma regra dos cards)
-        .map(m => m.soon
+        .map(m => {
+        // Destino que muda por permissão: hGest quando canReq[reqGest], senão h.
+        const href = (m.reqGest && canReq[m.reqGest] && m.hGest) ? m.hGest : m.h;
+        return m.soon
         ? `<span class="tn-soon"><span class="tn-ic">${icoHTML(m.ic)}</span>${m.t}<em>em breve</em></span>`
         : m.sso
           // App externo com login único (SSO): leva o token da sessão no
@@ -150,7 +159,8 @@
           ? `<a href="${m.h}${sessao&&sessao.token ? '/sso#t='+encodeURIComponent(sessao.token) : ''}" target="_blank" rel="noopener noreferrer"><span class="tn-ic">${icoHTML(m.ic)}</span>${m.t}<em style="margin-left:auto;font-style:normal;opacity:.6">↗</em></a>`
         : m.ext
           ? `<a href="${m.h}" target="_blank" rel="noopener noreferrer"><span class="tn-ic">${icoHTML(m.ic)}</span>${m.t}<em style="margin-left:auto;font-style:normal;opacity:.6">↗</em></a>`
-          : `<a href="${m.h}"><span class="tn-ic">${icoHTML(m.ic)}</span>${m.t}</a>`).join('');
+          : `<a href="${href}"><span class="tn-ic">${icoHTML(m.ic)}</span>${m.t}</a>`;
+        }).join('');
       return `<div class="topnav-item tn-has">
           <a class="topnav-link${on(k)}" href="${href}">${rot} <span class="chev">▾</span></a>
           <div class="topnav-dropdown tn-mega">${itens}</div>
