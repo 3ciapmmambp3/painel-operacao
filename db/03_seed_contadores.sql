@@ -1,37 +1,58 @@
 -- ══════════════════════════════════════════════════════════════════════
---  VIRADA DA NUMERAÇÃO — continuar de onde a PLANILHA parou
---  Rodar no Supabase → SQL Editor NO MOMENTO EM QUE FOR LIGAR O SISTEMA.
+--  VIRADA DA NUMERAÇÃO — continuar de onde a PLANILHA / FORMULÁRIO parou
+--  Rodar no Supabase → SQL Editor NO MOMENTO EM QUE FOR LIGAR CADA MÓDULO.
 --
 --  Como a numeração funciona:
 --    proximo_numero(ano, tipo) devolve  ultimo + 1  (atômico, sem duplicar).
---    Logo, "ultimo" tem que ser o ÚLTIMO NÚMERO JÁ USADO na planilha.
+--    Logo, "ultimo" = ÚLTIMO NÚMERO JÁ USADO na planilha/formulário.
 --    Ex.: para a próxima DENÚNCIA sair 743/2026, ultimo = 742.
---         para a próxima REQUISIÇÃO sair 525/2026, ultimo = 524.
 --
---  PASSO A PASSO (dia da virada):
---    1. Abra a planilha e veja o MAIOR número de CADA tipo no ANO corrente.
---    2. Ajuste os dois valores abaixo (e o ano, se já for outro).
---    3. Execute este bloco.
---    4. A partir daí, registre SÓ no sistema (não use mais a planilha p/ numerar).
+--  ⚠️  CADA tipo é um comando SEPARADO. Rode SÓ o(s) tipo(s) que você está
+--      ativando agora, com o número certo. NÃO re-rode um tipo que já está
+--      em uso no sistema (isso faria a numeração "voltar" para trás).
+--
+--  PASSO A PASSO (dia da virada de cada módulo):
+--    1. Veja o MAIOR número daquele tipo no ANO corrente (na planilha/form).
+--    2. Coloque (esse número) no comando do tipo e ajuste o ano se preciso.
+--    3. Execute SÓ aquele comando.
+--    4. A partir daí registre só no sistema (não use mais a planilha p/ numerar).
 -- ══════════════════════════════════════════════════════════════════════
 
+-- ── DENÚNCIA (balcão) ──  próxima => ultimo + 1
 insert into public.contadores (ano, tipo, ultimo) values
-  (2026, 'denuncia',   742),   -- próxima DENÚNCIA   => 743/2026
-  (2026, 'requisicao', 524)    -- próxima REQUISIÇÃO => 525/2026
+  (2026, 'denuncia', 742)                 -- << último da planilha (próxima = 743/2026)
 on conflict (ano, tipo) do update set ultimo = excluded.ultimo;
 
--- Conferência (deve mostrar 742 e 524):
+-- ── REQUISIÇÃO ──  próxima => ultimo + 1
+insert into public.contadores (ano, tipo, ultimo) values
+  (2026, 'requisicao', 524)               -- << último da planilha (próxima = 525/2026)
+on conflict (ano, tipo) do update set ultimo = excluded.ultimo;
+
+-- ── OFÍCIO (saída) ──  próxima => ultimo + 1
+-- ⚠️ AJUSTE o número abaixo com o ÚLTIMO ofício de SAÍDA já usado no formulário
+--    Google deste ano, e SÓ ENTÃO execute esta linha.
+insert into public.contadores (ano, tipo, ultimo) values
+  (2026, 'oficio', 0)                     -- << TROCAR pelo último ofício de saída (ex.: 276 → próxima 277/2026)
+on conflict (ano, tipo) do update set ultimo = excluded.ultimo;
+
+-- ── REQUISIÇÃO JUDICIAL ──  próxima => ultimo + 1
+-- ⚠️ AJUSTE o número abaixo com a ÚLTIMA requisição judicial já usada no
+--    formulário Google deste ano, e SÓ ENTÃO execute esta linha.
+insert into public.contadores (ano, tipo, ultimo) values
+  (2026, 'req_judicial', 0)               -- << TROCAR pela última requisição judicial (ex.: 40 → próxima 41/2026)
+on conflict (ano, tipo) do update set ultimo = excluded.ultimo;
+
+-- Conferência:
 --   select * from public.contadores where ano = 2026 order by tipo;
 
--- ── Vira de ano: quando entrar 2027, o sistema começa 001/2027 sozinho
+-- ── Vira de ano: quando entrar 2027, cada tipo começa 001/2027 sozinho
 --    (não precisa fazer nada). Só rode de novo se quiser forçar outro início.
 
--- ── LIMPEZA DE TESTES (opcional): se você fez registros de teste antes da
---    virada, remova-os para não aparecerem na Caixa de Entrada / Relatório.
---    Veja o que existe:
---      select numero, tipo, municipio, created_at
---      from public.denuncias order by created_at;
---    Apague os de teste por id (troque pelos ids reais):
+-- ── LIMPEZA DE TESTES (opcional): se fez registros de teste antes da virada,
+--    remova-os. Ex. denúncias:
+--      select numero, tipo, municipio, created_at from public.denuncias order by created_at;
 --      delete from public.denuncias where id in ('id-1','id-2');
---    Se apagou TODOS os testes e quer reiniciar o contador, rode o insert acima
---    de novo com os números corretos da planilha.
+--    Ofícios de teste:
+--      select numero, tipo, assunto, created_at from public.oficios order by created_at;
+--      delete from public.oficios where id in ('id-1','id-2');   -- (só Admin Geral pelo painel)
+-- ══════════════════════════════════════════════════════════════════════
