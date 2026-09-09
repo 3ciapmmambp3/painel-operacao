@@ -20,11 +20,10 @@
       4. Implantar → Nova implantação → Tipo "App da Web":
          Executar como = Eu (3ciapmmamb@gmail.com); Quem tem acesso = Qualquer pessoa.
       5. Autorize os escopos quando pedir.
-      6. Copie a URL /exec e cole no painel: em src/config.js (ou onde ficam as
-         constantes globais) declare:
-             window.OFICIOS_DRIVE_URL = 'https://script.google.com/macros/s/…/exec';
-         O nova-oficio.html já usa OFICIOS_DRIVE_URL se existir; senão cai no
-         Supabase Storage automaticamente (fallback).
+      6. Copie a URL /exec e cole no painel em src/auth.js, na constante
+         OFICIOS_DRIVE_URL (deixe '' para usar o Supabase Storage). As telas
+         nova-oficio.html e oficios.html já usam essa constante; se o Drive
+         falhar, caem no Supabase Storage automaticamente (fallback).
 
     ENTRADA (POST, corpo = JSON como text/plain p/ evitar preflight CORS):
         { nome:'arquivo.pdf', mime:'application/pdf', ano:2026, base64:'…' }
