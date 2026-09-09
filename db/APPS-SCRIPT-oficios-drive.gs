@@ -26,14 +26,16 @@
          falhar, caem no Supabase Storage automaticamente (fallback).
 
     ENTRADA (POST, corpo = JSON como text/plain p/ evitar preflight CORS):
-        { nome:'arquivo.pdf', mime:'application/pdf', ano:2026, base64:'…' }
+        { nome:'arquivo.pdf', mime:'application/pdf', ano:2026,
+          subpasta:'oficios'|'requisicao-judicial', base64:'…' }
+        (subpasta opcional; separa os arquivos por módulo dentro de "Painel - Anexos")
     SAÍDA (JSON):
         { ok:true, id:'<fileId>', link:'https://drive.google.com/file/d/<id>/view' }
         { ok:false, erro:'mensagem' }
     ═══════════════════════════════════════════════════════════════════════ */
 
 var ROOT_FOLDER_ID = '';   // ID da pasta raiz no Drive. '' = cria "Painel - Anexos" na raiz.
-var SUBPASTA       = 'oficios';
+var SUBPASTA       = 'anexos';  // subpasta padrão (o painel manda a subpasta por módulo)
 
 function doPost(e) {
   try {
@@ -41,13 +43,14 @@ function doPost(e) {
     var nome = String(body.nome || 'arquivo');
     var mime = String(body.mime || 'application/octet-stream');
     var ano  = String(body.ano  || (new Date()).getFullYear());
+    var sub  = _limpaPasta(body.subpasta) || SUBPASTA;  // 'oficios', 'requisicao-judicial', …
     var b64  = String(body.base64 || '');
     if (!b64) return _json({ ok:false, erro:'sem conteúdo (base64 vazio)' });
 
     var bytes = Utilities.base64Decode(b64);
     var blob  = Utilities.newBlob(bytes, mime, nome);
 
-    var pasta = _pastaDoAno(ano);
+    var pasta = _pastaDoAno(ano, sub);
     var file  = pasta.createFile(blob);
     // link de visualização p/ quem tiver o link (o painel guarda esse link)
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
@@ -59,14 +62,19 @@ function doPost(e) {
 }
 
 function doGet() {
-  return _json({ ok:true, msg:'Ofícios Drive uploader ativo. Use POST.' });
+  return _json({ ok:true, msg:'Painel Drive uploader ativo. Use POST.' });
 }
 
-// pasta ROOT/oficios/ANO (cria o que faltar)
-function _pastaDoAno(ano) {
+// pasta ROOT/<subpasta>/ANO (cria o que faltar)
+function _pastaDoAno(ano, subpasta) {
   var root = ROOT_FOLDER_ID ? DriveApp.getFolderById(ROOT_FOLDER_ID) : _garantePasta(DriveApp.getRootFolder(), 'Painel - Anexos');
-  var sub  = _garantePasta(root, SUBPASTA);
+  var sub  = _garantePasta(root, subpasta || SUBPASTA);
   return _garantePasta(sub, ano);
+}
+// só letras/números/-/_/espaço (evita subpasta maliciosa ou com "/")
+function _limpaPasta(v) {
+  var s = String(v || '').replace(/[^A-Za-z0-9 _-]+/g, '').trim();
+  return s.slice(0, 60);
 }
 function _garantePasta(pai, nome) {
   var it = pai.getFoldersByName(nome);

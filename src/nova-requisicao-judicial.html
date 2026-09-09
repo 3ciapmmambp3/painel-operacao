@@ -210,7 +210,8 @@ const AKEY = (typeof SB_AUTH_KEY !== 'undefined') ? SB_AUTH_KEY : '';
 const H = { 'apikey': AKEY, 'Authorization': `Bearer ${AKEY}`, 'Content-Type': 'application/json' };
 const VIEW_MUNICIPIOS = 'vw_municipio_grupamento';
 
-/* Anexos → Supabase Storage (mesmo bucket privado das denúncias) */
+/* Anexos → Google Drive via Apps Script (se OFICIOS_DRIVE_URL) ou Supabase Storage */
+const DRIVE_URL = (typeof OFICIOS_DRIVE_URL !== 'undefined') ? OFICIOS_DRIVE_URL : '';
 const STORAGE = `${API}/storage/v1`;
 const BUCKET  = 'anexos';
 const MAX_MB  = 15;
@@ -337,6 +338,24 @@ async function comprimirImagem(file){
 }
 function sanitizeNome(n){ return (n||'arquivo').normalize('NFD').replace(/[^\x00-\x7F]/g,'').replace(/[^\w.\-]+/g,'_').replace(/_+/g,'_').slice(-80)||'arquivo'; }
 const encPath = p => p.split('/').map(encodeURIComponent).join('/');
+function b64(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=rej; r.readAsDataURL(file); }); }
+async function subirDrive(f){
+  const payload={ nome:f.name, mime:f.type||'application/octet-stream', ano:new Date().getFullYear(), subpasta:'requisicao-judicial', base64:await b64(f) };
+  const r=await fetch(DRIVE_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(payload) });
+  if(!r.ok) throw new Error(`Drive ${r.status}`); const j=await r.json();
+  if(!j || !j.link) throw new Error(j && j.erro ? j.erro : 'Drive sem link'); return { path:j.id||null, link:j.link };
+}
+async function subirStorage(f){
+  const path=`requisicao-judicial/${new Date().getFullYear()}/${crypto.randomUUID()}-${sanitizeNome(f.name)}`;
+  const enc=encPath(path);
+  const AH={ apikey:AKEY, Authorization:`Bearer ${AKEY}` };
+  const up=await fetch(`${STORAGE}/object/${BUCKET}/${enc}`, { method:'POST', headers:{...AH,'Content-Type':f.type||'application/octet-stream','x-upsert':'true'}, body:f });
+  if(!up.ok) throw new Error(`${up.status} ${await up.text()}`);
+  const sg=await fetch(`${STORAGE}/object/sign/${BUCKET}/${enc}`, { method:'POST', headers:{...AH,'Content-Type':'application/json'}, body:JSON.stringify({expiresIn:LINK_TTL}) });
+  if(!sg.ok) throw new Error(`${sg.status} ${await sg.text()}`);
+  const sj=await sg.json();
+  return { path, link:`${STORAGE}${sj.signedURL||sj.signedUrl}` };
+}
 function handleFiles(files){
   [...files].forEach(async file=>{
     const item={ nome:file.name, tamanho:file.size, mime:file.type, status:'up', path:null, link:null };
@@ -345,15 +364,10 @@ function handleFiles(files){
       const f=await comprimirImagem(file);
       if(f.size > MAX_MB*1048576) throw new Error(`acima de ${MAX_MB} MB`);
       item.nome=f.name; item.tamanho=f.size; item.mime=f.type;
-      const path=`requisicao-judicial/${new Date().getFullYear()}/${crypto.randomUUID()}-${sanitizeNome(f.name)}`;
-      const enc=encPath(path);
-      const AH={ apikey:AKEY, Authorization:`Bearer ${AKEY}` };
-      const up=await fetch(`${STORAGE}/object/${BUCKET}/${enc}`, { method:'POST', headers:{...AH,'Content-Type':f.type||'application/octet-stream','x-upsert':'true'}, body:f });
-      if(!up.ok) throw new Error(`${up.status} ${await up.text()}`);
-      const sg=await fetch(`${STORAGE}/object/sign/${BUCKET}/${enc}`, { method:'POST', headers:{...AH,'Content-Type':'application/json'}, body:JSON.stringify({expiresIn:LINK_TTL}) });
-      if(!sg.ok) throw new Error(`${sg.status} ${await sg.text()}`);
-      const sj=await sg.json();
-      item.path=path; item.link=`${STORAGE}${sj.signedURL||sj.signedUrl}`; item.status='ok'; renderAnexos();
+      let res;
+      if(DRIVE_URL){ try{ res=await subirDrive(f); }catch(e){ console.warn('Drive falhou, indo p/ Storage:', e); res=await subirStorage(f); } }
+      else { res=await subirStorage(f); }
+      item.path=res.path; item.link=res.link; item.status='ok'; renderAnexos();
     }catch(e){ console.error('anexo:', e); item.status='err'; item.erro=e.message; renderAnexos(); }
   });
 }
