@@ -68,6 +68,7 @@
       {ic:'🗂️', t:'Meus TTA', h:'meus-tta.html'},
       // Aux P1 / Admin Geral / CMT Cia → controle; demais → formulário.
       {ic:'⚖️', t:'Controle de Requisição Judicial', h:'nova-requisicao-judicial.html', hGest:'requisicoes-judiciais.html', reqGest:'reqjud'},
+      {ic:'✉️', t:'Controle de Ofícios', h:'oficios.html'},
       {ic:'🏖️', t:'Férias', soon:true},
       {ic:'📰', t:'Publicações', soon:true},
     ],
