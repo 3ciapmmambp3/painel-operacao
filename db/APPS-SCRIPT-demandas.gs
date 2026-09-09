@@ -71,7 +71,14 @@ var ORDEM_GPs = [
 ];
 var ORDEM_IDX = {}; ORDEM_GPs.forEach(function(gp, i){ ORDEM_IDX[gp] = i; });
 
-function norm(s){ return String(s == null ? '' : s).trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+function norm(s){
+  return String(s == null ? '' : s).trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    // Erros históricos de digitação: o cadastro/ORDEM_GPs usa "JOAO MOLEVADE"
+    // (sem N) e "MARILIERIA", mas parte das demandas foi gravada com a grafia
+    // correta "MONLEVADE"/"MARLIERIA". Tratar como o MESMO GP p/ elas casarem.
+    .replace(/MONLEVADE/g, 'MOLEVADE')
+    .replace(/MARLIERIA/g, 'MARILIERIA');
+}
 function pelotaoDeGP(gp){ var m = gp.match(/(\d)\s*PEL/); return m ? m[1] : '?'; }
 function nomeCurtoGP(gp){ var p = gp.split('/'); return (p[p.length-1] || gp).trim(); }
 function cidadeDe(gp){ return norm(nomeCurtoGP(gp)); }
