@@ -166,7 +166,7 @@ begin
     nullif(dados->>'dest_tratamento',''), nullif(dados->>'dest_nome',''),
     nullif(dados->>'dest_orgao',''), nullif(dados->>'dest_endereco',''),
     coalesce(dados->'anexos','[]'::jsonb),
-    v_me.matricula, coalesce(v_me.posto_graduacao,'') || ' ' || coalesce(v_me.nome_guerra, v_me.nome_completo)
+    v_me.matricula, coalesce(v_me.posto_graduacao,'') || ' ' || coalesce(v_me.nome_completo, v_me.nome_guerra)
   ) returning * into v_row;
 
   return v_row;
@@ -240,7 +240,7 @@ begin
     -- que o cliente monta. Serve p/ anexar a via assinada de um ofício de saída.
     anexos               = case when p_dados ? 'anexos' then coalesce(p_dados->'anexos','[]'::jsonb) else anexos end,
     controlado_por_matricula = v_me.matricula,
-    controlado_por_nome      = coalesce(v_me.posto_graduacao,'') || ' ' || coalesce(v_me.nome_guerra, v_me.nome_completo)
+    controlado_por_nome      = coalesce(v_me.posto_graduacao,'') || ' ' || coalesce(v_me.nome_completo, v_me.nome_guerra)
   where id = p_id
   returning * into v_row;
   if v_row.id is null then raise exception 'Ofício não encontrado.'; end if;
