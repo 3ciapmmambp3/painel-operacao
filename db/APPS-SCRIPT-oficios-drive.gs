@@ -2,23 +2,23 @@
     APPS-SCRIPT-oficios-drive.gs — Upload de anexos no Google DRIVE.
 
     Web App que RECEBE um arquivo (base64) do painel e o grava no Drive da
-    conta que publica o script (Executar como: Eu = 3ciapmmamb.p3), devolvendo
+    conta que publica o script (Executar como: Eu = 3ciapmmamb@gmail.com), devolvendo
     um link de visualização. Assim os anexos dos Ofícios (e da Requisição
     Judicial) ficam no Drive da unidade, e não no Storage do Supabase.
 
     POR QUE APPS SCRIPT (e não conta de serviço):
       Conta de serviço do Google NÃO tem cota de Drive própria (Gmail comum →
       403 storageQuotaExceeded). O Web App "Executar como: Eu" roda com a cota
-      do próprio Gmail 3ciapmmamb.p3 — que é o que queremos.
+      do próprio Gmail 3ciapmmamb@gmail.com — que é o que queremos.
 
     COMO PUBLICAR:
-      1. drive.google.com da conta 3ciapmmamb.p3 → crie a pasta raiz (ex.:
+      1. drive.google.com da conta 3ciapmmamb@gmail.com → crie a pasta raiz (ex.:
          "Ofícios - 3ª Cia PM MAmb") e copie o ID dela (da URL da pasta).
       2. script.google.com → Novo projeto. Cole TODO este arquivo.
       3. Ajuste ROOT_FOLDER_ID abaixo com o ID da pasta (ou deixe '' para
          gravar em "Painel - Anexos/oficios/ANO" na raiz do Drive).
       4. Implantar → Nova implantação → Tipo "App da Web":
-         Executar como = Eu (3ciapmmamb.p3); Quem tem acesso = Qualquer pessoa.
+         Executar como = Eu (3ciapmmamb@gmail.com); Quem tem acesso = Qualquer pessoa.
       5. Autorize os escopos quando pedir.
       6. Copie a URL /exec e cole no painel: em src/config.js (ou onde ficam as
          constantes globais) declare:

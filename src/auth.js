@@ -41,7 +41,7 @@ const SENHA_PADRAO = 'Mudar@123';
  * Supabase Storage (padrão, já funciona). Para usar o Google Drive, publique
  * o Web App de db/APPS-SCRIPT-oficios-drive.gs (Executar como: Eu) e cole
  * aqui a URL /exec. Vale p/ Ofícios (e futuramente Requisição Judicial). */
-const OFICIOS_DRIVE_URL = '';
+const OFICIOS_DRIVE_URL = 'https://script.google.com/macros/s/AKfycbw1Of3KetyN55B9ciFGTMoPy3bprTBluWcCJCfly450hk9RJ7DJSgvw11PwParT7TTXRw/exec';
 
 /* Níveis de acesso em ordem crescente de permissão */
 const NIVEIS = ['operacional', 'admin_gp', 'admin_pelotao', 'admin', 'admin_geral'];
