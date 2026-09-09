@@ -48,7 +48,7 @@ const OFICIOS_DRIVE_URL = 'https://script.google.com/macros/s/AKfycbz0qm_ckK8zg0
  * (padrão atual). Para usar o Drive, publique db/APPS-SCRIPT-oficios-drive.gs
  * NESSA conta (Executar como: Eu) e cole aqui a URL /exec. Usa subpasta
  * 'inteligencia'. É separado do OFICIOS_DRIVE_URL de propósito (contas diferentes). */
-const INTEL_DRIVE_URL = '';
+const INTEL_DRIVE_URL = 'https://script.google.com/macros/s/AKfycbxSmtwcfMQGa0-a4ZYzf64TwS6Ul-OghfpHLkK-MXq9Hm9cVKT6WVUqfOyX2c9Fiw7ELQ/exec';
 
 /* Níveis de acesso em ordem crescente de permissão */
 const NIVEIS = ['operacional', 'admin_gp', 'admin_pelotao', 'admin', 'admin_geral'];
