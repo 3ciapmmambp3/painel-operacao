@@ -152,6 +152,7 @@
       <option value="REGISTRADO">Registrado</option>
       <option value="ARQUIVADO">Arquivado</option>
     </select>
+    <button class="btn-outline" onclick="exportar()" title="Exportar a lista filtrada para planilha (.csv)">📥 Exportar planilha</button>
   </div>
 
   <div class="tablewrap">
@@ -292,7 +293,7 @@ function flow(r){
   if(r.tipo==='Saída') return `${_esc(r.emitente||'—')}<small>→ ${_esc(r.destino_ext||'—')}</small>`;
   return `${_esc(r.emitente_ext||'—')}<small>→ ${_esc(r.destino_int||'—')}</small>`;
 }
-function render(){
+function listaFiltrada(){
   const q=(document.getElementById('busca').value||'').toUpperCase().trim();
   const ft=document.getElementById('f-tipo').value;
   const fs=document.getElementById('f-sit').value;
@@ -300,6 +301,10 @@ function render(){
   if(ft) lista=lista.filter(r=>r.tipo===ft);
   if(fs) lista=lista.filter(r=>r.situacao===fs);
   if(q) lista=lista.filter(r=>[r.numero,r.num_externo,r.assunto,r.emitente,r.destino_ext,r.emitente_ext,r.destino_int,r.responsavel,r.grupamento_id].join(' ').toUpperCase().includes(q));
+  return lista;
+}
+function render(){
+  const lista=listaFiltrada();
   const tb=document.getElementById('tbody');
   if(!lista.length){ tb.innerHTML=`<tr><td colspan="7" class="empty">Nenhum ofício encontrado.</td></tr>`; return; }
   tb.innerHTML=lista.map(r=>{
@@ -434,6 +439,33 @@ function abrirDoc(reg){
   window.scrollTo(0,0);
 }
 function fecharDoc(){ document.getElementById('docov').classList.remove('show'); }
+
+/* ── Exportar para planilha (CSV ; + BOM — abre no Excel/Sheets) ──── */
+function exportar(){
+  const lst=listaFiltrada();
+  if(!lst.length){ alert('Nada para exportar com os filtros atuais.'); return; }
+  const cols=['Data','Tipo','Número','Nº externo','Assunto','Origem (emitente)','Destino',
+              'Grupamento','Em resposta a','Responsável','Situação','Observações',
+              'Obs. do controle','Registrado por','Registrado em','Controlado por','Anexos'];
+  const cell=v=>{ let s=(v==null?'':String(v)); if(/[";\n\r]/.test(s)) s='"'+s.replace(/"/g,'""')+'"'; return s; };
+  const linhas=lst.map(r=>{
+    const origem  = r.tipo==='Saída' ? (r.emitente||'')     : (r.emitente_ext||'');
+    const destino = r.tipo==='Saída' ? (r.destino_ext||'')  : (r.destino_int||'');
+    const anexos  = (Array.isArray(r.anexos)?r.anexos:[]).map(a=>a.link||a.nome||'').filter(Boolean).join(' | ');
+    return [
+      dBR(r.data_doc), r.tipo, r.numero||'', r.num_externo||'', r.assunto||'',
+      origem, destino, r.grupamento_id||'', r.em_resposta||'', r.responsavel||'',
+      ({REGISTRADO:'Registrado',ARQUIVADO:'Arquivado'})[r.situacao]||r.situacao||'',
+      r.observacoes||'', r.observacoes_controle||'', r.registrado_por_nome||'',
+      r.created_at?new Date(r.created_at).toLocaleString('pt-BR'):'', r.controlado_por_nome||'', anexos
+    ].map(cell).join(';');
+  });
+  const csv='﻿'+[cols.map(cell).join(';')].concat(linhas).join('\r\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const hoje=new Date().toISOString().slice(0,10);
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`Controle_Oficios_${hoje}.csv`; document.body.appendChild(a); a.click(); a.remove();
+}
 
 carregar();
 </script>
