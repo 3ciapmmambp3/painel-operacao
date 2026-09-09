@@ -535,6 +535,34 @@ async function carregarAvisosMeuDia(){
         }
       }catch(e){ /* silencioso */ }
     }
+    /* 5) Requisição Judicial — audiência do próprio militar.
+       Aparece de 15 dias antes até o dia da audiência (regra no servidor).
+       Presencial → comparecer no local/endereço; Videoconferência → ficar atento ao acesso. */
+    {
+      try{
+        const rj=await fetch(`${SB_AUTH_URL}/rest/v1/rpc/requisicao_judicial_avisos_get`,{method:'POST',headers:{...H,'Content-Type':'application/json'},body:JSON.stringify({p_token:sessao.token})});
+        if(rj.ok){ const reqs=await rj.json();
+          if(Array.isArray(reqs) && reqs.length){
+            const hoje=new Date(); hoje.setHours(0,0,0,0);
+            reqs.slice(0,6).forEach(it=>{
+              const d=new Date(String(it.data_audiencia)+'T00:00:00');
+              const dias=isNaN(d.getTime())?null:Math.round((d-hoje)/86400000);
+              const quando = dias===0?'<b>hoje</b>' : dias===1?'<b>amanhã</b>' : (dias!=null?`em <b>${dias} dias</b>`:'');
+              const dataBR = isNaN(d.getTime())?String(it.data_audiencia):d.toLocaleDateString('pt-BR');
+              const hora = (it.horario||'').toString().slice(0,5);
+              const video = /videoconf/i.test(it.metodo||'');
+              const detalhe = video
+                ? `Audiência por <b>videoconferência</b> — <b>fique atento ao acesso</b>${it.endereco?`: <span style="color:var(--gold-light);">${_esc(it.endereco)}</span>`:''}.`
+                : `<b>Compareça</b> ${it.local_audiencia?('no '+_esc(it.local_audiencia)):'ao local'}${it.endereco?` — ${_esc(it.endereco)}`:''}.`;
+              const linha2 = [it.numero?_esc(it.numero):'', it.processo?('Processo '+_esc(it.processo)):'', it.tipo_envolvimento?_esc(it.tipo_envolvimento):'', it.municipio_requisicao?_esc(it.municipio_requisicao):''].filter(Boolean).join(' · ');
+              avisos.push({reqjud:true, ic:video?'💻':'⚖️',
+                txt:`<b>Requisição judicial ${quando}</b> — audiência em <b>${dataBR}</b>${hora?` às <b>${hora}</b>`:''}. ${detalhe}`,
+                linha2});
+            });
+          }
+        }
+      }catch(e){ /* silencioso */ }
+    }
   }catch(e){ console.warn('[avisos-meudia]',e); }
 
   if(!avisos.length){ box.innerHTML=''; return; }
@@ -556,6 +584,14 @@ async function carregarAvisosMeuDia(){
               <span style="flex:1;min-width:0;">Há <b>${a.n} ficha(s) de inteligência</b> ativa(s) ${a.veTudo?'na Companhia':'para a sua região'}</span>
               <a href="analise-criminal.html?sub=inteligencia" onclick="try{sessionStorage.setItem('ac_abrir_subtab','inteligencia')${a.veTudo?'':`;sessionStorage.setItem('ac_abrir_gp','${_esc(meuGp)}')`}}catch(e){}" style="color:var(--gold);font-weight:700;font-size:12px;white-space:nowrap;text-decoration:none;">Ver todas →</a>
             </div>${a.teasers}${a.mais}
+          </div>`;
+        }
+        if(a.reqjud){
+          return `<div style="padding:12px 16px;border-bottom:1px solid var(--border);">
+            <div style="display:flex;align-items:flex-start;gap:12px;font-size:13px;color:var(--text-white);">
+              <span style="font-size:17px;flex-shrink:0;">${a.ic}</span>
+              <span style="flex:1;min-width:0;">${a.txt}</span>
+            </div>${a.linha2?`<div style="font-size:11px;color:var(--text-hint);padding:5px 0 0 29px;">${a.linha2}</div>`:''}
           </div>`;
         }
         return `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;color:var(--text-white);">

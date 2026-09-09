@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Controle de Requisição Judicial — 3ª Cia PM MAmb</title>
+<link rel="stylesheet" href="styles/global.css">
+<script src="auth.js"></script>
+<script src="topnav.js" data-ativo="p1"></script>
+<style>
+  body{padding-bottom:40px}
+  .wrap{max-width:1180px;margin:22px auto 0;padding:0 20px}
+  .crumbs{font-size:11.5px;color:var(--text-hint);margin-bottom:14px;display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+  .crumbs a{color:var(--text-muted)} .crumbs b{color:var(--gold);font-weight:600}
+  .pagehead{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:16px;gap:16px;flex-wrap:wrap}
+  .pagehead h2{font-size:20px;font-weight:700}
+  .pagehead .sub{font-size:12px;color:var(--text-muted);margin-top:4px}
+  .btn-gold{background:var(--gold);border:none;color:#1a1000;padding:11px 18px;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:8px;text-decoration:none}
+  .btn-gold svg{width:16px;height:16px;stroke:#1a1000;fill:none;stroke-width:2.4}
+
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+  .kpi{background:var(--bg-card);border:1px solid var(--border);border-radius:9px;padding:13px 15px;border-top:3px solid var(--border-mid)}
+  .kpi.p{border-top-color:#ffb300}.kpi.h{border-top-color:var(--info)}.kpi.e{border-top-color:var(--danger)}.kpi.ok{border-top-color:var(--success)}
+  .kpi .lbl{font-size:10px;color:var(--text-hint);text-transform:uppercase;letter-spacing:.5px}
+  .kpi .val{font-size:26px;font-weight:800;color:var(--text-white);line-height:1;margin-top:6px}
+  .kpi .s{font-size:10.5px;color:var(--text-hint);margin-top:5px}
+
+  .toolbar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+  .toolbar input,.toolbar select{background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 12px;color:var(--text-white);font-size:13px;font-family:inherit;outline:none}
+  .toolbar input{flex:1;min-width:180px}
+
+  table{width:100%;border-collapse:collapse;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+  th,td{padding:11px 13px;text-align:left;font-size:12.5px;border-bottom:1px solid var(--border);vertical-align:top}
+  th{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-hint);background:var(--bg-dark);font-weight:700;white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:var(--bg-hover)}
+  .num{font-weight:800;color:var(--gold);white-space:nowrap}
+  .mils{color:var(--text-white)}
+  .mils small{color:var(--text-hint);display:block;font-size:10.5px}
+  .badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px;white-space:nowrap}
+  .b-noprazo{color:var(--success);background:var(--success-bg)}
+  .b-hoje{color:#1a1000;background:var(--gold)}
+  .b-exp{color:var(--danger);background:var(--danger-bg)}
+  .s-PENDENTE{color:#ffb300;background:rgba(255,179,0,.13)}
+  .s-EMCONTROLE{color:var(--info);background:var(--info-bg)}
+  .s-CONCLUIDA{color:var(--success);background:var(--success-bg)}
+  .met{font-size:11px;color:var(--text-muted);white-space:nowrap}
+  .tbtn{background:none;border:1px solid var(--border-mid);color:var(--text-muted);padding:6px 11px;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap}
+  .tbtn:hover{border-color:var(--gold);color:var(--gold)}
+  .empty{padding:40px;text-align:center;color:var(--text-hint);font-size:13px}
+  .tablewrap{overflow-x:auto}
+
+  /* overlay / painel */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.62);display:none;align-items:center;justify-content:center;z-index:100;padding:18px}
+  .overlay.show{display:flex}
+  .panel{background:var(--bg-card);border:1px solid var(--border);border-radius:13px;max-width:720px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 24px 70px rgba(0,0,0,.6)}
+  .p-head{position:sticky;top:0;background:#111;border-bottom:1px solid var(--border);padding:15px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;z-index:2}
+  .p-head .pn{font-size:15px;font-weight:800;color:var(--gold)}
+  .p-head .x{background:none;border:none;color:var(--text-hint);font-size:20px;cursor:pointer}
+  .p-body{padding:18px 20px}
+  .dl{display:grid;grid-template-columns:1fr 1fr;gap:12px 18px;margin-bottom:8px}
+  .di{display:flex;flex-direction:column;gap:3px} .di.full{grid-column:1/-1}
+  .di .k{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-hint)}
+  .di .v{font-size:13px;color:var(--text-white)}
+  .di .v a{color:var(--gold)}
+  .sec{font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--gold);font-weight:700;margin:18px 0 10px;border-top:1px solid var(--border);padding-top:14px}
+  .fld{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+  .fld label{font-size:11px;font-weight:600;color:var(--gold)}
+  .fld input,.fld select,.fld textarea{background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:10px 12px;color:var(--text-white);font-size:13px;font-family:inherit;outline:none}
+  .fld textarea{resize:vertical;min-height:64px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .p-actions{position:sticky;bottom:0;background:var(--bg-page,#0d0d0d);border-top:1px solid var(--border);padding:13px 20px;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+  .anx{display:flex;flex-direction:column;gap:8px}
+  .anx a{display:flex;align-items:center;gap:9px;background:var(--bg-input);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:12.5px;color:var(--text-white);text-decoration:none}
+  .anx a:hover{border-color:var(--gold)}
+  .pmsg{margin:0 20px 12px;padding:10px 13px;border-radius:8px;font-size:12.5px;display:none}
+  .pmsg.show{display:block}.pmsg.err{background:var(--danger-bg);color:#ef9a9a}.pmsg.ok{background:var(--success-bg);color:#a5d6a7}
+  @media(max-width:640px){ .dl,.grid2{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <div class="header-shields"><img src="assets/escudo-cpe.png" alt="CPE" onerror="this.style.display='none'"><img src="assets/escudo-pmmg.png" alt="PMMG" onerror="this.style.display='none'"><img src="assets/brasao-bpmmamb.png" alt="BPM MAMB" onerror="this.style.display='none'"></div><div class="header-div"></div>
+    <div class="header-title"><div class="header-kicker">CPE · BPM MAmb · 3ª Cia PM MAmb</div><h1>PAINEL DE GESTÃO OPERACIONAL</h1><p>Controle de Requisição Judicial</p></div>
+  </div>
+  <div class="header-right"><span class="last-update" id="who"></span></div>
+</header>
+
+<div class="wrap">
+  <div class="crumbs"><a href="painel.html">Painel</a> <span>›</span> <a href="hub-p1.html">P1 · Recursos Humanos</a> <span>›</span> <b>Controle de Requisição Judicial</b></div>
+
+  <div class="pagehead">
+    <div>
+      <h2>Controle de Requisição Judicial</h2>
+      <div class="sub">Requisições judiciais de militares — controle da P1. O militar requisitado é avisado no Meu Dia.</div>
+    </div>
+    <a class="btn-gold" href="nova-requisicao-judicial.html"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> Nova Requisição Judicial</a>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><div class="lbl">Total</div><div class="val" id="k-total">—</div><div class="s">no ano</div></div>
+    <div class="kpi p"><div class="lbl">Próximas (15 dias)</div><div class="val" id="k-prox">—</div><div class="s">audiência chegando</div></div>
+    <div class="kpi h"><div class="lbl">Hoje</div><div class="val" id="k-hoje">—</div><div class="s">audiência é hoje</div></div>
+    <div class="kpi ok"><div class="lbl">Concluídas</div><div class="val" id="k-ok">—</div><div class="s">controle finalizado</div></div>
+  </div>
+
+  <div class="toolbar">
+    <input type="text" id="busca" placeholder="Buscar por nº, processo, militar, local…" oninput="render()">
+    <select id="f-sit" onchange="render()">
+      <option value="">Todas as situações</option>
+      <option value="PENDENTE">Pendente</option>
+      <option value="EM CONTROLE">Em controle</option>
+      <option value="CONCLUIDA">Concluída</option>
+    </select>
+    <select id="f-prazo" onchange="render()">
+      <option value="">Todos os prazos</option>
+      <option value="noprazo">No prazo</option>
+      <option value="hoje">Hoje</option>
+      <option value="exp">Expirado</option>
+    </select>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr>
+        <th>Nº</th><th>Audiência</th><th>Prazo</th><th>Militar(es)</th><th>Local / Autoridade</th><th>Método</th><th>Situação</th><th></th>
+      </tr></thead>
+      <tbody id="tbody"><tr><td colspan="8" class="empty">Carregando…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Painel de detalhe / controle -->
+<div class="overlay" id="ov" onclick="if(event.target===this)fechar()">
+  <div class="panel">
+    <div class="p-head"><span class="pn" id="pn">—</span><button class="x" onclick="fechar()">✕</button></div>
+    <div class="pmsg" id="pmsg"></div>
+    <div class="p-body" id="pbody"></div>
+    <div class="p-actions">
+      <button class="tbtn" id="btn-excluir" onclick="excluir()" style="margin-right:auto;color:var(--danger);border-color:rgba(239,83,80,.4);display:none">Excluir</button>
+      <button class="tbtn" onclick="fechar()">Fechar</button>
+      <button class="btn-gold" onclick="salvarControle()">Salvar controle</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const sessao = (typeof sessaoLer === 'function') ? sessaoLer() : null;
+if(!sessao){ location.href='index.html'; }
+const API=(typeof SB_AUTH_URL!=='undefined')?SB_AUTH_URL:'';
+const AKEY=(typeof SB_AUTH_KEY!=='undefined')?SB_AUTH_KEY:'';
+const H={ 'apikey':AKEY,'Authorization':`Bearer ${AKEY}`,'Content-Type':'application/json' };
+const isAG = sessao && sessao.nivel_acesso==='admin_geral';
+document.getElementById('who').textContent = sessao ? `${sessao.matricula} — ${sessao.pg||''} ${sessao.guerra||sessao.nome||''}`.replace(/\s+/g,' ').trim() : '';
+
+let DADOS=[]; let atual=null;
+
+function _esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function dBR(s){ if(!s) return '—'; const d=new Date(String(s)+'T00:00:00'); return isNaN(d.getTime())?String(s):d.toLocaleDateString('pt-BR'); }
+function hoje0(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
+function diasPara(dataISO){ if(!dataISO) return null; const d=new Date(String(dataISO)+'T00:00:00'); if(isNaN(d.getTime())) return null; return Math.round((d-hoje0())/86400000); }
+function prazoInfo(dataISO){
+  const n=diasPara(dataISO);
+  if(n==null) return {cls:'',txt:'—',key:''};
+  if(n>0)  return {cls:'b-noprazo',txt:`No prazo · ${n} dia(s)`,key:'noprazo'};
+  if(n===0) return {cls:'b-hoje',txt:'Hoje é o dia',key:'hoje'};
+  return {cls:'b-exp',txt:'Prazo expirado',key:'exp'};
+}
+function milResumo(r){
+  const arr=Array.isArray(r.militares)?r.militares:[];
+  const nomes=arr.map(m=>`${m.pg||''} ${m.guerra||m.nome||''}`.replace(/\s+/g,' ').trim()).filter(Boolean);
+  if(r.militares_extra) nomes.push(r.militares_extra);
+  if(!nomes.length) return '—';
+  const head=nomes[0]; const resto=nomes.length-1;
+  return `${_esc(head)}${resto>0?` <small>+${resto} outro(s)</small>`:''}`;
+}
+
+async function carregar(){
+  try{
+    const r=await fetch(`${API}/rest/v1/rpc/requisicao_judicial_listar`,{method:'POST',headers:H,body:JSON.stringify({p_token:sessao.token})});
+    if(!r.ok){
+      const t=await r.text();
+      if(/restrito|expirad/i.test(t)){ location.href='nova-requisicao-judicial.html'; return; }
+      throw new Error(t);
+    }
+    DADOS=await r.json()||[];
+    kpis(); render();
+  }catch(e){
+    console.error('listar:', e);
+    document.getElementById('tbody').innerHTML=`<tr><td colspan="8" class="empty">Erro ao carregar: ${_esc(e.message)}</td></tr>`;
+  }
+}
+function kpis(){
+  const anoAtual=new Date().getFullYear();
+  const doAno=DADOS.filter(r=>(r.ano||anoAtual)===anoAtual);
+  document.getElementById('k-total').textContent=doAno.length;
+  document.getElementById('k-prox').textContent=DADOS.filter(r=>{const n=diasPara(r.data_audiencia);return n!=null&&n>=0&&n<=15;}).length;
+  document.getElementById('k-hoje').textContent=DADOS.filter(r=>diasPara(r.data_audiencia)===0).length;
+  document.getElementById('k-ok').textContent=DADOS.filter(r=>r.situacao==='CONCLUIDA').length;
+}
+function render(){
+  const q=(document.getElementById('busca').value||'').toUpperCase().trim();
+  const fs=document.getElementById('f-sit').value;
+  const fp=document.getElementById('f-prazo').value;
+  let lista=DADOS.slice();
+  if(fs) lista=lista.filter(r=>r.situacao===fs);
+  if(fp) lista=lista.filter(r=>prazoInfo(r.data_audiencia).key===fp);
+  if(q) lista=lista.filter(r=>{
+    const arr=Array.isArray(r.militares)?r.militares.map(m=>`${m.pg||''} ${m.guerra||''} ${m.nome||''} ${m.matricula||''}`).join(' '):'';
+    return [r.numero,r.processo,r.local_audiencia,r.autoridade_solicitante,r.municipio_requisicao,r.militares_extra,arr].join(' ').toUpperCase().includes(q);
+  });
+  const tb=document.getElementById('tbody');
+  if(!lista.length){ tb.innerHTML=`<tr><td colspan="8" class="empty">Nenhuma requisição encontrada.</td></tr>`; return; }
+  tb.innerHTML=lista.map(r=>{
+    const pz=prazoInfo(r.data_audiencia);
+    const sitCls='s-'+(r.situacao||'PENDENTE').replace(/\s/g,'');
+    const sitTxt=({PENDENTE:'Pendente','EM CONTROLE':'Em controle',CONCLUIDA:'Concluída'})[r.situacao]||r.situacao||'Pendente';
+    return `<tr>
+      <td class="num">${_esc(r.numero||'—')}</td>
+      <td>${dBR(r.data_audiencia)}<br><small style="color:var(--text-hint)">${_esc(r.horario||'')}</small></td>
+      <td><span class="badge ${pz.cls}">${pz.txt}</span></td>
+      <td class="mils">${milResumo(r)}</td>
+      <td>${_esc(r.local_audiencia||'—')}<br><small style="color:var(--text-hint)">${_esc(r.autoridade_solicitante||'')}</small></td>
+      <td class="met">${_esc(r.metodo||'—')}</td>
+      <td><span class="badge ${sitCls}">${_esc(sitTxt)}</span></td>
+      <td><button class="tbtn" onclick="abrir('${r.id}')">Controlar</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function abrir(id){
+  atual=DADOS.find(r=>r.id===id); if(!atual) return;
+  const r=atual;
+  document.getElementById('pn').textContent=r.numero||'Requisição judicial';
+  document.getElementById('pmsg').className='pmsg';
+  const arr=Array.isArray(r.militares)?r.militares:[];
+  const milsFull = arr.map(m=>`${_esc(`${m.pg||''} ${m.guerra||m.nome||''}`.replace(/\s+/g,' ').trim())} <small style="color:var(--text-hint)">(Nº PM ${_esc(m.matricula||'—')})</small>`).join('<br>') || '—';
+  const extra = r.militares_extra ? `<br><span style="color:var(--text-hint)">À mão: ${_esc(r.militares_extra)}</span>` : '';
+  const anx=(Array.isArray(r.anexos)?r.anexos:[]).map(a=>`<a href="${_esc(a.link||'#')}" target="_blank" rel="noopener">📎 ${_esc(a.nome||'anexo')}</a>`).join('') || '<span style="color:var(--text-hint);font-size:12px">Sem anexo.</span>';
+  const tipo = r.tipo_envolvimento==='Outro' ? (r.tipo_envolvimento_outro||'Outro') : (r.tipo_envolvimento||'—');
+  const pz=prazoInfo(r.data_audiencia); const n=diasPara(r.data_audiencia);
+  const contagem = n==null?'':(n<0?'Expirado':`${n} dia(s) para a audiência`);
+  document.getElementById('pbody').innerHTML=`
+    <div class="dl">
+      <div class="di"><span class="k">Data da audiência</span><span class="v">${dBR(r.data_audiencia)} ${_esc(r.horario||'')}</span></div>
+      <div class="di"><span class="k">Prazo</span><span class="v"><span class="badge ${pz.cls}">${pz.txt}</span> ${_esc(contagem)}</span></div>
+      <div class="di"><span class="k">Nº do processo</span><span class="v">${_esc(r.processo||'—')}</span></div>
+      <div class="di"><span class="k">Documento de origem</span><span class="v">${_esc(r.documento_origem||'—')}</span></div>
+      <div class="di"><span class="k">Tipo de envolvimento</span><span class="v">${_esc(tipo)}</span></div>
+      <div class="di"><span class="k">Método</span><span class="v">${_esc(r.metodo||'—')}</span></div>
+      <div class="di full"><span class="k">Militar(es) requisitado(s)</span><span class="v">${milsFull}${extra}</span></div>
+      <div class="di"><span class="k">Município de lotação</span><span class="v">${_esc(r.municipio_lotacao||'—')}</span></div>
+      <div class="di"><span class="k">Município da audiência</span><span class="v">${_esc(r.municipio_requisicao||'—')}</span></div>
+      <div class="di"><span class="k">Local da audiência</span><span class="v">${_esc(r.local_audiencia||'—')}</span></div>
+      <div class="di"><span class="k">Autoridade solicitante</span><span class="v">${_esc(r.autoridade_solicitante||'—')}</span></div>
+      <div class="di full"><span class="k">Endereço / link</span><span class="v">${_esc(r.endereco||'—')}</span></div>
+      ${r.observacoes?`<div class="di full"><span class="k">Observações gerais</span><span class="v">${_esc(r.observacoes)}</span></div>`:''}
+      <div class="di full"><span class="k">Requisição digitalizada</span><span class="v anx">${anx}</span></div>
+      <div class="di full"><span class="k">Registrado por</span><span class="v" style="color:var(--text-hint)">${_esc(r.registrado_por_nome||'—')} · ${_esc(dBR(r.created_at))}</span></div>
+    </div>
+
+    <div class="sec">Controle da P1 (ações pós-envio)</div>
+    <div class="grid2">
+      <div class="fld"><label>Situação</label>
+        <select id="c-sit">
+          <option value="PENDENTE" ${r.situacao==='PENDENTE'?'selected':''}>Pendente</option>
+          <option value="EM CONTROLE" ${r.situacao==='EM CONTROLE'?'selected':''}>Em controle</option>
+          <option value="CONCLUIDA" ${r.situacao==='CONCLUIDA'?'selected':''}>Concluída</option>
+        </select></div>
+      <div class="fld"><label>Nº do grupamento</label><input type="text" id="c-grp" value="${_esc(r.num_grupamento||'')}" placeholder="Ex.: 1º GP"></div>
+      <div class="fld"><label>Autoridade solicitante</label><input type="text" id="c-aut" value="${_esc(r.autoridade_solicitante||'')}" placeholder="Automático pelo local — ajuste se necessário"></div>
+      <div class="fld"><label>Já foi cadastrada na intranet?</label>
+        <select id="c-intra">
+          <option value="" ${!r.cadastrada_intranet?'selected':''}>—</option>
+          <option value="Sim" ${r.cadastrada_intranet==='Sim'?'selected':''}>Sim</option>
+          <option value="Não" ${r.cadastrada_intranet==='Não'?'selected':''}>Não</option>
+        </select></div>
+      <div class="fld"><label>Data do cadastro</label><input type="date" id="c-datacad" value="${_esc(r.data_cadastro||'')}"></div>
+      <div class="fld" style="grid-column:1/-1"><label>Observações do controle</label><textarea id="c-obs" placeholder="Anotações da P1">${_esc(r.observacoes_controle||'')}</textarea></div>
+    </div>
+    ${r.controlado_por_nome?`<div style="font-size:11px;color:var(--text-hint);margin-top:4px">Último controle por ${_esc(r.controlado_por_nome)} · ${_esc(dBR(r.updated_at))}</div>`:''}
+  `;
+  document.getElementById('btn-excluir').style.display = isAG ? '' : 'none';
+  document.getElementById('ov').classList.add('show');
+}
+function fechar(){ document.getElementById('ov').classList.remove('show'); atual=null; }
+function pmsg(cls,txt){ const el=document.getElementById('pmsg'); el.className='pmsg '+cls+' show'; el.textContent=txt; }
+
+async function salvarControle(){
+  if(!atual) return;
+  const p_dados={
+    situacao: document.getElementById('c-sit').value,
+    num_grupamento: document.getElementById('c-grp').value.trim(),
+    autoridade_solicitante: document.getElementById('c-aut').value.trim(),
+    cadastrada_intranet: document.getElementById('c-intra').value,
+    data_cadastro: document.getElementById('c-datacad').value,
+    observacoes_controle: document.getElementById('c-obs').value.trim()
+  };
+  try{
+    const r=await fetch(`${API}/rest/v1/rpc/requisicao_judicial_controle_salvar`,{method:'POST',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify({p_token:sessao.token,p_id:atual.id,p_dados})});
+    if(!r.ok) throw new Error(await r.text());
+    const row=await r.json(); const novo=Array.isArray(row)?row[0]:row;
+    const i=DADOS.findIndex(x=>x.id===atual.id); if(i>=0&&novo) DADOS[i]=novo;
+    pmsg('ok','✓ Controle salvo.'); kpis(); render();
+    setTimeout(fechar, 700);
+  }catch(e){ console.error('controle:', e); pmsg('err','Erro ao salvar: '+e.message); }
+}
+async function excluir(){
+  if(!atual || !isAG) return;
+  if(!confirm(`Excluir a requisição ${atual.numero}? Esta ação não pode ser desfeita.`)) return;
+  try{
+    const r=await fetch(`${API}/rest/v1/rpc/requisicao_judicial_excluir`,{method:'POST',headers:H,body:JSON.stringify({p_token:sessao.token,p_id:atual.id})});
+    if(!r.ok) throw new Error(await r.text());
+    DADOS=DADOS.filter(x=>x.id!==atual.id); kpis(); render(); fechar();
+  }catch(e){ console.error('excluir:', e); pmsg('err','Erro ao excluir: '+e.message); }
+}
+
+carregar();
+</script>
+</body>
+</html>
