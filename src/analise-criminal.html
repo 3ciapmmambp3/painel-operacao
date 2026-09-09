@@ -12052,12 +12052,25 @@ async function _sbDelete(tabela, id){
 /* ── Storage (upload/download de anexos) ── */
 const SB_BUCKET = 'anexos-operacionais';
 async function _sbUpload(path, base64, tipo){
-  /* Converte base64 para Blob de forma robusta */
+  const mime = (base64.split(',')[0].match(/:(.*?);/)?.[1]) || tipo || 'application/octet-stream';
+  const pure = base64.split(',').pop();
+
+  /* 1) Google Drive (conta da Inteligência), se configurado. Fallback p/ Storage. */
+  const DURL = (typeof INTEL_DRIVE_URL !== 'undefined') ? INTEL_DRIVE_URL : '';
+  if(DURL){
+    try{
+      const nome = (path.split('/').pop() || 'anexo');
+      const payload = { nome, mime, ano:new Date().getFullYear(), subpasta:'inteligencia', base64:pure };
+      const dr = await fetch(DURL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(payload) });
+      if(dr.ok){ const j = await dr.json(); if(j && j.link) return j.link; }
+      console.warn('Drive (intel) sem link, indo p/ Storage');
+    }catch(e){ console.warn('Drive (intel) falhou, indo p/ Storage:', e); }
+  }
+
+  /* 2) Supabase Storage (comportamento padrão) */
   let blob;
   try{
-    const arr = base64.split(',');
-    const mime = arr[0].match(/:(.*?);/)?.[1] || tipo || 'application/octet-stream';
-    const bstr = atob(arr[1] || arr[0]);
+    const bstr = atob(pure);
     const bytes = new Uint8Array(bstr.length);
     for(let i=0; i<bstr.length; i++) bytes[i] = bstr.charCodeAt(i);
     blob = new Blob([bytes], {type: mime});

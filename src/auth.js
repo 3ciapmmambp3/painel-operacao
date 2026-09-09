@@ -43,6 +43,13 @@ const SENHA_PADRAO = 'Mudar@123';
  * aqui a URL /exec. Vale p/ Ofícios (e futuramente Requisição Judicial). */
 const OFICIOS_DRIVE_URL = 'https://script.google.com/macros/s/AKfycbz0qm_ckK8zg01cIDE_apFVcAHp0W7zpQIjq6zom3WXg71XJhcvtFRuTjnpcMXT5kiDWw/exec';
 
+/* Anexos da INTELIGÊNCIA no Google Drive (OPCIONAL) — CONTA SEPARADA
+ * (si.8ciamamb@gmail.com). Deixe '' para os anexos irem pro Supabase Storage
+ * (padrão atual). Para usar o Drive, publique db/APPS-SCRIPT-oficios-drive.gs
+ * NESSA conta (Executar como: Eu) e cole aqui a URL /exec. Usa subpasta
+ * 'inteligencia'. É separado do OFICIOS_DRIVE_URL de propósito (contas diferentes). */
+const INTEL_DRIVE_URL = '';
+
 /* Níveis de acesso em ordem crescente de permissão */
 const NIVEIS = ['operacional', 'admin_gp', 'admin_pelotao', 'admin', 'admin_geral'];
 

@@ -2,9 +2,16 @@
     APPS-SCRIPT-oficios-drive.gs — Upload de anexos no Google DRIVE.
 
     Web App que RECEBE um arquivo (base64) do painel e o grava no Drive da
-    conta que publica o script (Executar como: Eu = 3ciapmmamb@gmail.com), devolvendo
-    um link de visualização. Assim os anexos dos Ofícios (e da Requisição
-    Judicial) ficam no Drive da unidade, e não no Storage do Supabase.
+    conta que publica o script (Executar como: Eu), devolvendo um link de
+    visualização. Assim os anexos ficam no Drive da unidade, e não no Storage.
+
+    É GENÉRICO — o mesmo código é publicado UMA VEZ POR CONTA e o painel manda
+    a `subpasta` por módulo:
+      • 3ciapmmamb@gmail.com  → Ofícios (subpasta 'oficios') e Requisição
+        Judicial ('requisicao-judicial')  →  constante OFICIOS_DRIVE_URL
+      • si.8ciamamb@gmail.com → Inteligência (subpasta 'inteligencia')
+        →  constante INTEL_DRIVE_URL
+    Cada conta tem sua PRÓPRIA implantação (URL /exec própria).
 
     POR QUE APPS SCRIPT (e não conta de serviço):
       Conta de serviço do Google NÃO tem cota de Drive própria (Gmail comum →
