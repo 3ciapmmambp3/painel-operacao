@@ -37,6 +37,12 @@ const SB_AUTH_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const SB_TABLE    = 'militares';
 const SENHA_PADRAO = 'Mudar@123';
 
+/* Anexos no Google Drive (OPCIONAL). Deixe '' para os anexos irem pro
+ * Supabase Storage (padrão, já funciona). Para usar o Google Drive, publique
+ * o Web App de db/APPS-SCRIPT-oficios-drive.gs (Executar como: Eu) e cole
+ * aqui a URL /exec. Vale p/ Ofícios (e futuramente Requisição Judicial). */
+const OFICIOS_DRIVE_URL = '';
+
 /* Níveis de acesso em ordem crescente de permissão */
 const NIVEIS = ['operacional', 'admin_gp', 'admin_pelotao', 'admin', 'admin_geral'];
 
