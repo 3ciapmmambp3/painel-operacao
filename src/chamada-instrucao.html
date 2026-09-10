@@ -317,14 +317,26 @@ function fmtData(d){ if(!d) return '—'; const p=String(d).slice(0,10).split('-
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 /* Extrai a 1ª URL do texto do convite (Teams/Meet/Zoom). */
 function primeiraUrl(txt){ const m=String(txt||'').match(/https?:\/\/[^\s<>"')]+/i); return m?m[0]:''; }
-/* Bloco de acesso à reunião online. compacto=true → só o botão Ingressar. */
+/* Copia texto p/ a área de transferência (com fallback) e dá feedback no botão. */
+function copiarTexto(txt, btn){
+  const done=()=>{ if(!btn) return; const o=btn.dataset._orig||btn.innerHTML; btn.dataset._orig=o; btn.innerHTML='✓ Copiado'; setTimeout(()=>{btn.innerHTML=o;},1600); };
+  const fb=()=>{ const t=document.createElement('textarea'); t.value=txt; t.style.position='fixed'; t.style.opacity='0'; document.body.appendChild(t); t.focus(); t.select(); try{document.execCommand('copy');}catch(e){} document.body.removeChild(t); done(); };
+  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(done).catch(fb); } else { fb(); }
+}
+function copiarLinkBtn(btn){ copiarTexto(btn.getAttribute('data-copy')||'', btn); }
+/* Bloco de acesso à reunião online. compacto=true → botões em linha (faixa). */
 function linkReuniaoHtml(txt, compacto){
   const raw=(txt||'').trim(); if(!raw) return '';
   const url=primeiraUrl(raw);
-  const btn=url?`<a href="${esc(url)}" target="_blank" rel="noopener" class="btn-gold" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;font-size:12.5px;padding:7px 14px;">🔗 Ingressar na reunião</a>`:'';
-  if(compacto) return btn||`<span style="font-size:12px;color:var(--gold-light);white-space:pre-wrap;">${esc(raw)}</span>`;
-  const detalhe=`<div style="font-size:12px;color:var(--text-muted);white-space:pre-wrap;margin-top:8px;">${esc(raw)}</div>`;
-  return `<div class="rel-grp" style="margin-top:14px;"><div class="rel-grp-head"><span class="rgt">Reunião online — acesso</span></div><div style="padding:10px 12px;">${btn}${detalhe}</div></div>`;
+  const attr=esc(raw); /* aspas viram &quot; → seguro em atributo com aspas duplas */
+  const wa=`https://wa.me/?text=${encodeURIComponent(raw)}`;
+  const bIngressar = url?`<a href="${esc(url)}" target="_blank" rel="noopener" class="btn-gold" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;font-size:12.5px;padding:7px 14px;">🔗 Ingressar na reunião</a>`:'';
+  const bCopiar = `<button type="button" class="ci-chipbtn" data-copy="${attr}" onclick="copiarLinkBtn(this)" style="display:inline-flex;align-items:center;gap:6px;">📋 Copiar</button>`;
+  const bWhats = `<a href="${esc(wa)}" target="_blank" rel="noopener" class="ci-chipbtn" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;">🟢 WhatsApp</a>`;
+  const botoes = `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">${bIngressar}${bCopiar}${bWhats}</div>`;
+  if(compacto) return botoes;
+  const detalhe=`<div style="font-size:12px;color:var(--text-muted);white-space:pre-wrap;margin-top:10px;">${esc(raw)}</div>`;
+  return `<div class="rel-grp" style="margin-top:14px;"><div class="rel-grp-head"><span class="rgt">Reunião online — acesso</span></div><div style="padding:10px 12px;">${botoes}${detalhe}</div></div>`;
 }
 
 /* ── estado ── */
