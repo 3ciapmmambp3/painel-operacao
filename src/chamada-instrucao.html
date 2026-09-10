@@ -244,6 +244,7 @@
         <div class="fg"><label>Data da instrução</label><input type="date" id="cfgData"></div>
         <div class="fg" style="grid-column:1/-1;"><label>Assunto *</label><input id="cfgAssunto" placeholder="Ex.: Memorando nº 30.130/… — abordagem a pessoas"></div>
         <div class="fg" style="grid-column:1/-1;"><label>Responsável pela instrução</label><input id="cfgResp" placeholder="Nome / posto do responsável"></div>
+        <div class="fg" style="grid-column:1/-1;"><label>Link de acesso — reunião online <span style="color:var(--text-hint);font-weight:400;text-transform:none;letter-spacing:0;">(opcional — cole o convite do Teams/Meet/Zoom: link, ID e senha)</span></label><textarea id="cfgLink" rows="3" placeholder="Ex.: Ingressar: https://teams.microsoft.com/meet/… — ID: 254 670 246 792 296 — Senha: 5hs2cH3o"></textarea></div>
         <div class="fg" style="grid-column:1/-1;"><label>Detalhes da Instrução <span style="color:var(--text-hint);font-weight:400;text-transform:none;letter-spacing:0;">(preencher após a instrução)</span></label><textarea id="cfgObs" rows="3" placeholder="Constatações, assuntos tratados, dúvidas, sugestões…"></textarea></div>
       </div>
       <div class="fg" style="margin-top:12px;">
@@ -314,6 +315,17 @@ let toastTimer;
 function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),3200); }
 function fmtData(d){ if(!d) return '—'; const p=String(d).slice(0,10).split('-'); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d; }
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+/* Extrai a 1ª URL do texto do convite (Teams/Meet/Zoom). */
+function primeiraUrl(txt){ const m=String(txt||'').match(/https?:\/\/[^\s<>"')]+/i); return m?m[0]:''; }
+/* Bloco de acesso à reunião online. compacto=true → só o botão Ingressar. */
+function linkReuniaoHtml(txt, compacto){
+  const raw=(txt||'').trim(); if(!raw) return '';
+  const url=primeiraUrl(raw);
+  const btn=url?`<a href="${esc(url)}" target="_blank" rel="noopener" class="btn-gold" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;font-size:12.5px;padding:7px 14px;">🔗 Ingressar na reunião</a>`:'';
+  if(compacto) return btn||`<span style="font-size:12px;color:var(--gold-light);white-space:pre-wrap;">${esc(raw)}</span>`;
+  const detalhe=`<div style="font-size:12px;color:var(--text-muted);white-space:pre-wrap;margin-top:8px;">${esc(raw)}</div>`;
+  return `<div class="rel-grp" style="margin-top:14px;"><div class="rel-grp-head"><span class="rgt">Reunião online — acesso</span></div><div style="padding:10px 12px;">${btn}${detalhe}</div></div>`;
+}
 
 /* ── estado ── */
 let INSTRUCAO=null;      // instrução selecionada (default: ativa)
@@ -379,6 +391,7 @@ function renderBand(){
   band.innerHTML=`<div class="ib-ic">📖</div><div class="ib-main">
     <div class="ib-assunto">${esc(INSTRUCAO.assunto)}</div>
     <div class="ib-meta">Instrução de ${fmtData(INSTRUCAO.data)}${INSTRUCAO.responsavel_instrucao?' · Resp.: '+esc(INSTRUCAO.responsavel_instrucao):''} · Participantes: ${esc(grupamentosLabel(INSTRUCAO.grupamentos))}</div>
+    ${INSTRUCAO.link_reuniao?`<div style="margin-top:9px;">${linkReuniaoHtml(INSTRUCAO.link_reuniao,true)}</div>`:''}
     ${seletor}
   </div>`;
 }
@@ -599,6 +612,7 @@ async function montarRelatorio(){
         <div style="font-size:12.5px;color:var(--text-muted);margin-top:4px;">Presentes: <b>${p}</b> · Ausentes: <b>${a}</b> · Total marcado: <b>${rows.length}</b></div>
       </div>
       ${blocos||'<div class="ci-msg">Sem presenças lançadas.</div>'}
+      ${inst.link_reuniao?linkReuniaoHtml(inst.link_reuniao,false):''}
       ${inst.observacao?`<div class="rel-grp" style="margin-top:14px;"><div class="rel-grp-head"><span class="rgt">Detalhes da Instrução</span></div><div style="padding:10px 12px;font-size:12.5px;color:var(--text-muted);white-space:pre-wrap;">${esc(inst.observacao)}</div></div>`:''}`;
   }catch(e){ area.innerHTML='<div class="ci-msg err">Erro: '+esc(e.message)+'</div>'; }
 }
@@ -673,6 +687,7 @@ function novaInstrucao(){
   document.getElementById('cfgData').value=new Date().toISOString().slice(0,10);
   document.getElementById('cfgAssunto').value='';
   document.getElementById('cfgResp').value='';
+  document.getElementById('cfgLink').value='';
   document.getElementById('cfgObs').value='';
   document.getElementById('cfgAtiva').checked=true;
   document.getElementById('cfgTitulo').textContent='Nova instrução';
@@ -691,6 +706,7 @@ async function salvarInstrucao(){
     data:document.getElementById('cfgData').value||null,
     assunto:document.getElementById('cfgAssunto').value.trim(),
     responsavel_instrucao:document.getElementById('cfgResp').value.trim(),
+    link_reuniao:document.getElementById('cfgLink').value.trim(),
     observacao:document.getElementById('cfgObs').value.trim(),
     ativa:document.getElementById('cfgAtiva').checked,
     grupamentos };
@@ -723,6 +739,7 @@ async function editarInstrucao(js){
   document.getElementById('cfgData').value=(i.data||'').slice(0,10);
   document.getElementById('cfgAssunto').value=i.assunto||'';
   document.getElementById('cfgResp').value=i.responsavel_instrucao||'';
+  document.getElementById('cfgLink').value=i.link_reuniao||'';
   document.getElementById('cfgObs').value=i.observacao||'';
   document.getElementById('cfgAtiva').checked=!!i.ativa;
   const grps=Array.isArray(i.grupamentos)?i.grupamentos:[];
