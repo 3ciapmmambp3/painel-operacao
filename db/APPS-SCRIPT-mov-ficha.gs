@@ -22,7 +22,8 @@ var CABECALHO = [
   'Abasteceu?', 'Abastecimentos (resumo)',
   'Acidente?', 'Manutencao?', 'Avaria?', 'Higienizou?', 'TAQ/Embarcacao?', 'Aeronave?',
   'Observacoes', 'GP responsavel', 'Grupamento', 'Registrado por',
-  'Qtd. comprovantes', 'Comprovantes (links)'
+  'Qtd. comprovantes', 'Comprovantes (links)',
+  'DSP?', 'DSP - Saida', 'DSP - Destinos', 'DSP - Observacao', 'DSP - Deslocamento diario'
 ];
 
 function _prop(k, def){
@@ -63,8 +64,26 @@ function _resumoAbastecimento(dados){
   }catch(e){ return ''; }
 }
 
+function _dataDia(s){
+  s = String(s || '');
+  var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? (m[3] + '/' + m[2] + '/' + m[1]) : s;
+}
+function _resumoDspDias(dsp){
+  try{
+    var dias = (dsp && dsp.dias) || [];
+    if (!dias.length) return '';
+    return dias.map(function(x){
+      var t = _dataDia(x.data) + ': ' + (x.de || '?') + ' -> ' + (x.para || '?');
+      if (x.obs) t += ' (' + x.obs + ')';
+      return t;
+    }).join('  |  ');
+  }catch(e){ return ''; }
+}
+
 function _montarLinha(d){
   var dados = d.dados || {};
+  var dsp = dados.dsp || null;
   var anexos = d.anexos || [];
   var links = anexos.map(function(a){ return a.link || a.web_view_link || a.path || ''; })
                     .filter(function(x){ return x; });
@@ -84,7 +103,12 @@ function _montarLinha(d){
     _sn(d.tem_limpeza), _sn(d.tem_taq), _sn(d.tem_aeronave),
     d.observacoes || '', d.gp_responsavel || '', d.grupamento_completo || '',
     d.criado_por_nome || '',
-    links.length, links.join('\n')
+    links.length, links.join('\n'),
+    dsp ? 'Sim' : 'Nao',
+    (dsp && dsp.municipio_saida) || '',
+    (dsp && dsp.destinos && dsp.destinos.join) ? dsp.destinos.join(', ') : '',
+    (dsp && dsp.observacao) || '',
+    _resumoDspDias(dsp)
   ];
 }
 
@@ -96,6 +120,12 @@ function _aba(){
     sh.appendRow(CABECALHO);
     sh.getRange(1, 1, 1, CABECALHO.length).setFontWeight('bold');
     sh.setFrozenRows(1);
+  } else {
+    // planilha já existe: garante que o cabeçalho tenha as colunas novas (DSP)
+    var atualCols = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].length;
+    if (atualCols < CABECALHO.length){
+      sh.getRange(1, 1, 1, CABECALHO.length).setValues([CABECALHO]).setFontWeight('bold');
+    }
   }
   return sh;
 }
