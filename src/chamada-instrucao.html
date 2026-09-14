@@ -208,6 +208,14 @@
 
   <!-- DASHBOARD -->
   <div class="ci-pane" id="pane-dashboard">
+    <div class="ci-actbar" id="dashFiltros" style="display:none;">
+      <div class="fg" style="min-width:170px;"><label>Pelotão</label>
+        <select id="dashPel" class="ci-search" onchange="onDashPelChange()"><option value="">Todos os pelotões</option></select></div>
+      <div class="fg" style="min-width:220px;"><label>Grupamento</label>
+        <select id="dashGrp" class="ci-search" onchange="renderDashboard()"><option value="">Todos os grupamentos</option></select></div>
+      <span class="grow"></span>
+      <button class="ci-chipbtn" onclick="limparDashFiltros()">Limpar filtros</button>
+    </div>
     <div class="kpis" id="dashKpis"></div>
     <div class="tblwrap"><table class="ci-tbl" id="dashTbl">
       <thead><tr><th>Grupamento</th><th>Efetivo marcado</th><th>Presentes</th><th>Ausentes</th><th style="width:160px;">%</th><th>Status</th></tr></thead>
@@ -583,9 +591,14 @@ async function salvarChamada(){
 }
 
 /* ══ DASHBOARD ══════════════════════════════════════════════════════ */
+let DASH_ROWS=[], DASH_ROSTER=[];   // dados da instrução (já ∩ escopo do usuário)
+/* Nº do pelotão a partir do grupamento_id (mesma regra do db/45: "2 PEL"). */
+function pelDe(g){ const m=String(g||'').toUpperCase().match(/(\d+)\s*PEL/); return m?m[1]:''; }
+
 async function carregarDashboard(){
   const tb=document.querySelector('#dashTbl tbody'), msg=document.getElementById('dashMsg');
   const kpis=document.getElementById('dashKpis');
+  document.getElementById('dashFiltros').style.display='none';
   if(!INSTRUCAO){ kpis.innerHTML=''; tb.innerHTML=''; msg.style.display=''; msg.textContent='Sem instrução selecionada.'; return; }
   msg.style.display='none'; tb.innerHTML='<tr><td colspan="6" class="ci-msg">Carregando…</td></tr>';
   try{
@@ -594,32 +607,87 @@ async function carregarDashboard(){
       rpc('militares_roster_escopo',{p_token:sessao.token})   /* efetivo ESCOPADO: GP→grupamento, PEL→pelotão, Comando→Cia */
     ]);
     // efetivo esperado = escopo do usuário ∩ grupamentos participantes da instrução
-    const roster = filtrarPorGrupamentosDaInstrucao(rosterAll||[]);
+    DASH_ROSTER = filtrarPorGrupamentosDaInstrucao(rosterAll||[]);
     // grupamentos do escopo do usuário — recorta as presenças pra bater com o efetivo mostrado
     const escopoGrps = new Set((rosterAll||[]).map(m=>(m.grupamento_id||'').trim()).filter(Boolean));
-    const rows = (rowsAll||[]).filter(r=> !escopoGrps.size || escopoGrps.has((r.grupamento_id||'').trim()));
-    const efetivoPorGrupo={}; (roster||[]).forEach(m=>{ const g=(m.grupamento_id||'Sem grupamento').trim(); efetivoPorGrupo[g]=(efetivoPorGrupo[g]||0)+1; });
-    const grp={};
-    (rows||[]).forEach(r=>{ const g=(r.grupamento_id||'Sem grupamento').trim(); const o=grp[g]=grp[g]||{p:0,a:0,tot:0}; o.tot++; if(r.status==='presente')o.p++; else o.a++; });
-    let tp=0,ta=0,tm=0;
-    (rows||[]).forEach(r=>{ tm++; if(r.status==='presente')tp++; else ta++; });
-    const efetivoTotal=(roster||[]).length;
-    kpis.innerHTML=`
-      <div class="kpi"><div class="lab">Efetivo total</div><div class="val">${efetivoTotal}</div></div>
-      <div class="kpi green"><div class="lab">Presentes</div><div class="val">${tp}</div></div>
-      <div class="kpi red"><div class="lab">Ausentes</div><div class="val">${ta}</div></div>
-      <div class="kpi blue"><div class="lab">Marcados</div><div class="val">${tm} <small>/ ${efetivoTotal}</small></div></div>`;
-    const gs=Object.keys(grp).sort();
-    if(!gs.length){ tb.innerHTML=''; msg.style.display=''; msg.textContent='Nenhuma presença lançada ainda para esta instrução.'; return; }
-    tb.innerHTML=gs.map(g=>{
-      const o=grp[g]; const efet=efetivoPorGrupo[g]||o.tot; const pct=o.tot?Math.round(o.p/o.tot*100):0;
-      const concl = o.tot>=efet;
-      return `<tr><td class="cst">${esc(g)}</td><td>${o.tot} <small style="color:var(--text-hint)">/ ${efet}</small></td>
-        <td style="color:var(--success);font-weight:700;">${o.p}</td><td style="color:var(--danger);font-weight:700;">${o.a}</td>
-        <td><div style="display:flex;align-items:center;gap:8px;"><div class="bar"><i style="width:${pct}%"></i></div><span>${pct}%</span></div></td>
-        <td><span class="st-pill ${concl?'ok':'pend'}">${concl?'CONCLUÍDO':'PENDENTE'}</span></td></tr>`;
-    }).join('');
+    DASH_ROWS = (rowsAll||[]).filter(r=> !escopoGrps.size || escopoGrps.has((r.grupamento_id||'').trim()));
+    popularFiltrosDash();
+    renderDashboard();
   }catch(e){ tb.innerHTML=''; msg.style.display=''; msg.className='ci-msg err'; msg.textContent='Erro: '+e.message; }
+}
+
+/* Monta os selects de Pelotão/Grupamento a partir dos dados carregados.
+   Só exibe a barra quando há mais de um pelotão ou grupamento (senão não ajuda). */
+function popularFiltrosDash(){
+  const pelSet=new Set(), grpSet=new Set();
+  DASH_ROSTER.concat(DASH_ROWS).forEach(x=>{
+    const g=(x.grupamento_id||'').trim(); if(!g) return;
+    grpSet.add(g); const p=pelDe(g); if(p) pelSet.add(p);
+  });
+  const pels=Array.from(pelSet).sort((a,b)=>(+a)-(+b));
+  const grps=Array.from(grpSet).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const pelSel=document.getElementById('dashPel');
+  pelSel.innerHTML='<option value="">Todos os pelotões</option>'+pels.map(p=>`<option value="${esc(p)}">${esc(p)}º Pelotão</option>`).join('');
+  // o pelotão só faz sentido se houver mais de um; senão esconde só esse select
+  pelSel.closest('.fg').style.display = pels.length>1 ? '' : 'none';
+  popularGrupamentosDash();
+  document.getElementById('dashFiltros').style.display = (grps.length>1) ? 'flex' : 'none';
+}
+/* Opções de grupamento, restritas ao pelotão selecionado (se houver). */
+function popularGrupamentosDash(){
+  const pel=document.getElementById('dashPel').value;
+  const atual=document.getElementById('dashGrp').value;
+  const grpSet=new Set();
+  DASH_ROSTER.concat(DASH_ROWS).forEach(x=>{
+    const g=(x.grupamento_id||'').trim(); if(!g) return;
+    if(pel && pelDe(g)!==pel) return;
+    grpSet.add(g);
+  });
+  const grps=Array.from(grpSet).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const grpSel=document.getElementById('dashGrp');
+  grpSel.innerHTML='<option value="">Todos os grupamentos</option>'+grps.map(g=>`<option value="${esc(g)}" ${g===atual?'selected':''}>${esc(g)}</option>`).join('');
+  if(grpSel.value!==atual) grpSel.value='';   // grupamento saiu do pelotão → volta a "Todos"
+}
+function onDashPelChange(){ popularGrupamentosDash(); renderDashboard(); }
+function limparDashFiltros(){
+  document.getElementById('dashPel').value='';
+  popularGrupamentosDash();
+  document.getElementById('dashGrp').value='';
+  renderDashboard();
+}
+
+/* Renderiza KPIs + tabela aplicando os filtros de Pelotão/Grupamento. */
+function renderDashboard(){
+  const tb=document.querySelector('#dashTbl tbody'), msg=document.getElementById('dashMsg');
+  const kpis=document.getElementById('dashKpis');
+  const pel=document.getElementById('dashPel').value;
+  const grp=document.getElementById('dashGrp').value;
+  const passa=x=>{ const g=(x.grupamento_id||'').trim(); if(grp) return g===grp; if(pel) return pelDe(g)===pel; return true; };
+  const rows=DASH_ROWS.filter(passa);
+  const roster=DASH_ROSTER.filter(passa);
+
+  const efetivoPorGrupo={}; roster.forEach(m=>{ const g=(m.grupamento_id||'Sem grupamento').trim(); efetivoPorGrupo[g]=(efetivoPorGrupo[g]||0)+1; });
+  const grpAgg={};
+  rows.forEach(r=>{ const g=(r.grupamento_id||'Sem grupamento').trim(); const o=grpAgg[g]=grpAgg[g]||{p:0,a:0,tot:0}; o.tot++; if(r.status==='presente')o.p++; else o.a++; });
+  let tp=0,ta=0,tm=0;
+  rows.forEach(r=>{ tm++; if(r.status==='presente')tp++; else ta++; });
+  const efetivoTotal=roster.length;
+  kpis.innerHTML=`
+    <div class="kpi"><div class="lab">Efetivo total</div><div class="val">${efetivoTotal}</div></div>
+    <div class="kpi green"><div class="lab">Presentes</div><div class="val">${tp}</div></div>
+    <div class="kpi red"><div class="lab">Ausentes</div><div class="val">${ta}</div></div>
+    <div class="kpi blue"><div class="lab">Marcados</div><div class="val">${tm} <small>/ ${efetivoTotal}</small></div></div>`;
+  const gs=Object.keys(grpAgg).sort();
+  if(!gs.length){ tb.innerHTML=''; msg.style.display=''; msg.className='ci-msg'; msg.textContent=(pel||grp)?'Nenhuma presença lançada para o filtro selecionado.':'Nenhuma presença lançada ainda para esta instrução.'; return; }
+  msg.style.display='none';
+  tb.innerHTML=gs.map(g=>{
+    const o=grpAgg[g]; const efet=efetivoPorGrupo[g]||o.tot; const pct=o.tot?Math.round(o.p/o.tot*100):0;
+    const concl = o.tot>=efet;
+    return `<tr><td class="cst">${esc(g)}</td><td>${o.tot} <small style="color:var(--text-hint)">/ ${efet}</small></td>
+      <td style="color:var(--success);font-weight:700;">${o.p}</td><td style="color:var(--danger);font-weight:700;">${o.a}</td>
+      <td><div style="display:flex;align-items:center;gap:8px;"><div class="bar"><i style="width:${pct}%"></i></div><span>${pct}%</span></div></td>
+      <td><span class="st-pill ${concl?'ok':'pend'}">${concl?'CONCLUÍDO':'PENDENTE'}</span></td></tr>`;
+  }).join('');
 }
 
 /* ══ CONSULTAS / RELATÓRIOS (histórico) ═════════════════════════════ */
