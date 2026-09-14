@@ -190,14 +190,14 @@
       <h2>🧭 DSP — Deslocamento de Serviço</h2>
       <div class="grid">
         <div class="f col2"><label>Município de saída</label>
-          <input id="dsp-saida" placeholder="Cidade de onde a viatura partiu"></div>
+          <input id="dsp-saida" placeholder="Cidade de onde a viatura partiu" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>
         <div class="f col2">
           <label>Município(s) de destino <button type="button" class="linkbtn" style="margin-left:8px" onclick="addDspDestino()">+ adicionar destino</button></label>
           <div id="dsp-destinos"></div>
           <span class="hint">Pode ser qualquer cidade, mesmo fora da 3ª Cia PM MAmb — digite o nome.</span>
         </div>
         <div class="f col2"><label>Observação / motivo do deslocamento</label>
-          <textarea id="dsp-obs" rows="2" placeholder="Ex.: supervisão, participação em evento, diligência…"></textarea></div>
+          <textarea id="dsp-obs" rows="2" placeholder="Ex.: supervisão, participação em evento, diligência…" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></textarea></div>
       </div>
       <h3 style="margin-top:14px">Deslocamento diário <button type="button" class="linkbtn" style="margin-left:8px" onclick="addDspDia()">+ adicionar dia</button></h3>
       <div id="dsp-dias"></div>
@@ -643,10 +643,6 @@ function _resumoSecoes(f){
   if(f.tem_avaria) parts.push('🩹 Avaria de uso');
   if(f.tem_taq) parts.push('🚤 Embarcação / Motor / TAQ');
   if(f.tem_aeronave) parts.push('🚁 Aeronave / Drone');
-  if(d.dsp && (d.dsp.municipio_saida||(Array.isArray(d.dsp.destinos)&&d.dsp.destinos.length))){
-    const dst=(Array.isArray(d.dsp.destinos)?d.dsp.destinos:[]).filter(Boolean).join(', ');
-    parts.push('🧭 DSP: '+[d.dsp.municipio_saida,dst].filter(Boolean).join(' → '));
-  }
   const anx=Array.isArray(f.anexos)?f.anexos.length:0;
   parts.push('📎 Anexos: '+(anx?anx:'nenhum'));
   return '<ul style="margin:8px 0 0 18px;font-size:13px;line-height:1.9;color:var(--text-white)">'+parts.map(p=>'<li>'+p+'</li>').join('')+'</ul>';
@@ -685,6 +681,7 @@ async function abrirEditarFicha(id){
   setK('comb_armar', f.comb_armar);
   setK('comb_devolver', f.comb_devolver);
   document.getElementById('obs-geral').value=f.observacoes||'';
+  preencherDsp(f.dados && f.dados.dsp);   // DSP é editável na edição
   try{ syncDatas(); calc(); }catch(e){}
   ultimoKmFinal=null; kmiConfirmadoMaior=true;   // edição não é barrada pelo hodômetro da última devolução
 
@@ -725,6 +722,10 @@ async function salvarEdicao(){
   }
 
   const o=EDIT_ORIG||{};
+  // preserva as demais seções e atualiza SÓ a DSP conforme os campos da tela
+  const dadosEdit=Object.assign({}, o.dados||{});
+  const dspEdit=coletarDsp();
+  if(dspEdit) dadosEdit.dsp=dspEdit; else delete dadosEdit.dsp;
   const p_dados=Object.assign({}, base, {
     motorista_nome: document.getElementById('mot-nome').value||'',
     motorista_matricula: document.getElementById('mot-mat').value||'',
@@ -733,7 +734,7 @@ async function salvarEdicao(){
     inicio:  base.inicio  ? new Date(base.inicio).toISOString()  : null,
     termino: base.termino ? new Date(base.termino).toISOString() : null,
     km_inicial: kmI, km_final: kmF,
-    dados:  o.dados  || {},   anexos: o.anexos || [],
+    dados:  dadosEdit,   anexos: o.anexos || [],
     tem_abastecimento:!!o.tem_abastecimento, tem_acidente:!!o.tem_acidente,
     tem_manutencao:!!o.tem_manutencao, tem_avaria:!!o.tem_avaria,
     tem_limpeza:!!o.tem_limpeza, tem_taq:!!o.tem_taq, tem_aeronave:!!o.tem_aeronave
@@ -1084,17 +1085,55 @@ function toggleDsp(){
 function addDspDestino(){
   const div=document.createElement('div'); div.className='dsp-dest-row';
   div.style.cssText='display:grid;grid-template-columns:1fr auto;gap:9px;margin-bottom:9px;align-items:end';
-  div.innerHTML='<div class="f"><input class="dsp-dest" placeholder="Cidade de destino"></div>'+linhaRemover();
+  div.innerHTML='<div class="f"><input class="dsp-dest" placeholder="Cidade de destino" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>'+linhaRemover();
   document.getElementById('dsp-destinos').appendChild(div);
 }
 function addDspDia(){
   const div=document.createElement('div'); div.className='dsp-dia-row';
   div.style.cssText='display:grid;grid-template-columns:.9fr 1fr 1fr 1.2fr auto;gap:9px;margin-bottom:9px;align-items:end';
   div.innerHTML='<div class="f"><label>Data</label><input class="dsp-dia-data" type="date"></div>'
-    +'<div class="f"><label>De (município)</label><input class="dsp-dia-de"></div>'
-    +'<div class="f"><label>Para (município)</label><input class="dsp-dia-para"></div>'
-    +'<div class="f"><label>Observação</label><input class="dsp-dia-obs"></div>'+linhaRemover();
+    +'<div class="f"><label>De (município)</label><input class="dsp-dia-de" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>'
+    +'<div class="f"><label>Para (município)</label><input class="dsp-dia-para" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>'
+    +'<div class="f"><label>Observação</label><input class="dsp-dia-obs" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>'+linhaRemover();
   document.getElementById('dsp-dias').appendChild(div);
+}
+/* Coleta a DSP (ou null). Padroniza textos em CAIXA ALTA. */
+function coletarDsp(){
+  const el=document.getElementById('dsp-sel');
+  if(!el || el.value!=='Sim') return null;
+  const up=s=>String(s||'').trim().toUpperCase();
+  const destinos=[...document.querySelectorAll('#dsp-destinos .dsp-dest')].map(i=>up(i.value)).filter(Boolean);
+  const dias=[...document.querySelectorAll('#dsp-dias .dsp-dia-row')].map(r=>({
+    data:(r.querySelector('.dsp-dia-data').value||'').trim(),
+    de:up(r.querySelector('.dsp-dia-de').value),
+    para:up(r.querySelector('.dsp-dia-para').value),
+    obs:up(r.querySelector('.dsp-dia-obs').value)
+  })).filter(d=>d.data||d.de||d.para||d.obs);
+  const dsp={ municipio_saida:up(document.getElementById('dsp-saida').value), destinos,
+    observacao:up(document.getElementById('dsp-obs').value), dias };
+  return (dsp.municipio_saida||dsp.destinos.length||dsp.observacao||dsp.dias.length)?dsp:null;
+}
+/* Prefill da DSP na edição a partir de dados.dsp. */
+function preencherDsp(dsp){
+  const sel=document.getElementById('dsp-sel'); if(!sel) return;
+  document.getElementById('dsp-destinos').innerHTML='';
+  document.getElementById('dsp-dias').innerHTML='';
+  document.getElementById('dsp-saida').value='';
+  document.getElementById('dsp-obs').value='';
+  if(!dsp || typeof dsp!=='object'){ sel.value='Não'; toggleDsp(); return; }
+  sel.value='Sim';
+  document.getElementById('s-dsp').style.display='';
+  document.getElementById('dsp-saida').value=dsp.municipio_saida||'';
+  document.getElementById('dsp-obs').value=dsp.observacao||'';
+  const dests=(Array.isArray(dsp.destinos)?dsp.destinos:[]).filter(Boolean);
+  (dests.length?dests:['']).forEach(v=>{ addDspDestino(); const rows=document.querySelectorAll('#dsp-destinos .dsp-dest'); rows[rows.length-1].value=v; });
+  (Array.isArray(dsp.dias)?dsp.dias:[]).forEach(d=>{
+    addDspDia(); const r=document.querySelector('#dsp-dias .dsp-dia-row:last-child');
+    r.querySelector('.dsp-dia-data').value=d.data||'';
+    r.querySelector('.dsp-dia-de').value=d.de||'';
+    r.querySelector('.dsp-dia-para').value=d.para||'';
+    r.querySelector('.dsp-dia-obs').value=d.obs||'';
+  });
 }
 function addCarretinha(){
   const div=document.createElement('div'); div.className='carr-row';
@@ -1454,23 +1493,7 @@ async function salvar(){
   }
 
   // ── DSP (deslocamento / viagem de serviço) ──
-  const dspEl=document.getElementById('dsp-sel');
-  if(dspEl && dspEl.value==='Sim'){
-    const destinos=[...document.querySelectorAll('#dsp-destinos .dsp-dest')].map(i=>(i.value||'').trim()).filter(Boolean);
-    const dias=[...document.querySelectorAll('#dsp-dias .dsp-dia-row')].map(r=>({
-      data:(r.querySelector('.dsp-dia-data').value||'').trim(),
-      de:(r.querySelector('.dsp-dia-de').value||'').trim(),
-      para:(r.querySelector('.dsp-dia-para').value||'').trim(),
-      obs:(r.querySelector('.dsp-dia-obs').value||'').trim()
-    })).filter(d=>d.data||d.de||d.para||d.obs);
-    const dsp={
-      municipio_saida:(document.getElementById('dsp-saida').value||'').trim(),
-      destinos,
-      observacao:(document.getElementById('dsp-obs').value||'').trim(),
-      dias
-    };
-    if(dsp.municipio_saida||dsp.destinos.length||dsp.observacao||dsp.dias.length) dados.dsp=dsp;
-  }
+  { const dsp=coletarDsp(); if(dsp) dados.dsp=dsp; }
 
   btn.disabled=true; btn.textContent='Salvando…';
   let anexos;
