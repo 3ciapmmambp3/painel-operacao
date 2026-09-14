@@ -721,6 +721,7 @@ async function salvarEdicao(){
     if(tFim>tIni+DIA)   return foco('termino','O término não pode ser mais de 24h após o início.');
   }
 
+  if(!validarDspOuAvisar()) return;
   const o=EDIT_ORIG||{};
   // preserva as demais seções e atualiza SÓ a DSP conforme os campos da tela
   const dadosEdit=Object.assign({}, o.dados||{});
@@ -1113,6 +1114,20 @@ function coletarDsp(){
     observacao:up(document.getElementById('dsp-obs').value), dias };
   return (dsp.municipio_saida||dsp.destinos.length||dsp.observacao||dsp.dias.length)?dsp:null;
 }
+/* Valida a DSP quando "Sim": exige município de saída + ao menos 1 destino. */
+function validarDspOuAvisar(){
+  const el=document.getElementById('dsp-sel');
+  if(!el || el.value!=='Sim') return true;
+  if(!(document.getElementById('dsp-saida').value||'').trim()){ foco('dsp-saida','DSP: informe o município de saída.'); return false; }
+  const dests=[...document.querySelectorAll('#dsp-destinos .dsp-dest')].map(i=>(i.value||'').trim()).filter(Boolean);
+  if(!dests.length){
+    toast('DSP: informe ao menos um município de destino.');
+    const first=document.querySelector('#dsp-destinos .dsp-dest');
+    if(first){ first.scrollIntoView({behavior:'smooth',block:'center'}); setTimeout(()=>{try{first.focus()}catch(e){}},250); }
+    return false;
+  }
+  return true;
+}
 /* Prefill da DSP na edição a partir de dados.dsp. */
 function preencherDsp(dsp){
   const sel=document.getElementById('dsp-sel'); if(!sel) return;
@@ -1493,6 +1508,7 @@ async function salvar(){
   }
 
   // ── DSP (deslocamento / viagem de serviço) ──
+  if(!validarDspOuAvisar()) return;
   { const dsp=coletarDsp(); if(dsp) dados.dsp=dsp; }
 
   btn.disabled=true; btn.textContent='Salvando…';
