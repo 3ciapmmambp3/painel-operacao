@@ -1997,10 +1997,20 @@ async function preencherEquipeDoTTA(chamadaId){
         setF('apoioViatura', eq.prefixo_viatura || '');
       });
 
-      const ops = [...new Set(equipes.filter(naEquipe).map(e=>e.operacao).filter(Boolean))];
+      // Operações comuns (card "Operação") x PAF (card "PAF"). Chamadas antigas
+      // não têm operacao_tipo → tratadas como operação comum (compatível).
+      const minhasEq = equipes.filter(naEquipe);
+      const ops = [...new Set(minhasEq.filter(e => (e.operacao_tipo||'') !== 'paf').map(e=>e.operacao).filter(Boolean))];
+      const pafs = []; const _pafSeen = new Set();
+      minhasEq.filter(e => (e.operacao_tipo||'') === 'paf' && e.operacao_paf_id).forEach(e => {
+        if (_pafSeen.has(e.operacao_paf_id)) return;
+        _pafSeen.add(e.operacao_paf_id);
+        pafs.push({ id: e.operacao_paf_id, nome: e.operacao_paf_nome || e.operacao || '' });
+      });
       const lembr = [];
       if (minha.prefixo_viatura && !vpVinculada) lembr.push('Viatura <b>'+minha.prefixo_viatura+'</b> (confira em "Recursos Empregados")');
       if (ops.length){ preencherOperacoesDoTTA(ops); lembr.push('Operação <b>'+ops.join(', ')+'</b> já lançada no card "Operação" (confira)'); }
+      if (pafs.length){ preencherPafDoTTA(pafs); lembr.push('PAF <b>'+pafs.map(p=>p.nome||p.id).join(', ')+'</b> já lançado no card "PAF" (confira)'); }
       let _diaTTA=''; try{ if(chamada.data_hora_chamada) _diaTTA = new Date(chamada.data_hora_chamada).toLocaleDateString('pt-BR'); }catch(e){}
       mostrarAvisoTTA('Equipe preenchida a partir do TTA'+(_diaTTA?(' de '+_diaTTA):'')+'.' + (lembr.length ? ' Lembre: ' + lembr.join('; ') + '.' : ' Confira e complete.'));
       return;
@@ -3107,6 +3117,30 @@ function preencherOperacoesDoTTA(ops){
     renderQuesitosNaEntrada(entry);
   });
   renderGrid(); // atualiza a contagem no card "Operação"
+}
+
+// Pré-preenche o card "PAF" a partir do PAF escolhido no TTA de hoje.
+// As pre-fields do PAF (ID + Nome) são ÚNICAS por painel → 1 PAF por relatório;
+// usamos o primeiro (o da equipe do militar). Fração e Data já foram setadas
+// acima, então o filtro por pelotão/vigência funciona; se ele excluir o PAF
+// (pelotão/data), a opção é injetada mesmo assim pra não perder o vínculo.
+function preencherPafDoTTA(pafs){
+  if (!pafs || !pafs.length) return;
+  if (typeof getOrCreatePanelNode !== 'function') return;
+  const node = getOrCreatePanelNode('paf');
+  const idSel   = node.querySelector('.pre-fields [data-field="pafId"]');
+  const nomeInp = node.querySelector('.pre-fields [data-field="pafNome"]');
+  if (!idSel) return;
+  if (typeof populateOpSelect === 'function') populateOpSelect(idSel, 'PAF');
+  const paf = pafs[0];
+  if (!Array.from(idSel.options).some(o => o.value === paf.id)){
+    const nome = paf.nome ? ' - ' + paf.nome : '';
+    idSel.insertAdjacentHTML('beforeend', '<option value="'+paf.id+'">'+paf.id+nome+'</option>');
+  }
+  idSel.value = paf.id;
+  idSel.dispatchEvent(new Event('change', { bubbles: true }));   // preenche o Nome via smart filter
+  if (nomeInp && !nomeInp.value) nomeInp.value = paf.nome || '';
+  renderGrid(); // atualiza a contagem no card "PAF"
 }
 
 // ---------- Exemplo completo: PRODUTIVIDADE (dinâmico) ----------
