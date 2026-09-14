@@ -68,6 +68,10 @@
     .pa-btn{padding:6px 14px;font-size:11.5px;font-weight:800;border-radius:6px;cursor:pointer;border:1px solid var(--border-hover);background:var(--bg-input);color:var(--text-muted);letter-spacing:.3px;}
     .pa-btn.p.on{background:rgba(102,187,106,.16);border-color:var(--success);color:var(--success);}
     .pa-btn.a.on{background:rgba(239,83,80,.14);border-color:var(--danger);color:var(--danger);}
+    /* registro travado (não é o dono / passou o dia da instrução) */
+    .pa-toggle.locked{opacity:.55;}
+    .pa-toggle.locked .pa-btn{cursor:not-allowed;}
+    .mil-lock{flex-basis:100%;margin-top:3px;font-size:11px;color:#ffa726;display:flex;align-items:center;gap:5px;}
     .just{flex-basis:100%;margin-top:2px;display:none;}
     .just.show{display:block;}
     .just input{width:100%;padding:7px 10px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:6px;color:var(--text-white);font-size:12px;outline:none;}
@@ -429,7 +433,8 @@ async function carregarLancar(){
     ]);
     ROSTER = filtrarPorGrupamentosDaInstrucao(roster||[]);
     MARCAS = new Map();
-    (existentes||[]).forEach(r=>MARCAS.set(r.matricula,{status:r.status,justificativa:r.justificativa||''}));
+    (existentes||[]).forEach(r=>MARCAS.set(r.matricula,{status:r.status,justificativa:r.justificativa||'',
+      dono:soDigitos(r.registrado_por_matricula), donoNome:r.registrado_por_nome||''}));
     document.getElementById('lancarBar').style.display='flex';
     renderRoster();
   }catch(e){
@@ -437,6 +442,29 @@ async function carregarLancar(){
   }
 }
 function grupamentoDe(m){ return (m.grupamento_id||'Sem grupamento').trim(); }
+
+/* ── regras de alteração da chamada (espelham o backend db/65) ──
+   • Admin Geral altera sempre.
+   • Do dia seguinte ao da instrução em diante, só o Admin Geral.
+   • Depois de salvo, só quem lançou (o "dono") altera aquele registro. */
+function soDigitos(s){ return String(s||'').replace(/\D/g,''); }
+function minhaMatriculaDig(){ return soDigitos(sessao.matricula); }
+function instrucaoExpirada(){
+  if(!INSTRUCAO) return false;
+  const hoje=new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD no fuso local
+  return String(INSTRUCAO.data||'').slice(0,10) < hoje;
+}
+/* '' = pode editar; texto = motivo do bloqueio (vira tooltip/toast). */
+function motivoBloqueio(mat){
+  if(EH_ADMIN_GERAL) return '';
+  if(instrucaoExpirada()) return 'Após o dia da instrução, apenas o Admin Geral pode alterar.';
+  const mk=MARCAS.get(mat);
+  if(mk && mk.dono && mk.dono!==minhaMatriculaDig())
+    return 'Lançado por '+(mk.donoNome||'outro usuário')+' — somente essa pessoa (ou o Admin Geral) pode alterar.';
+  return '';
+}
+function podeEditar(mat){ return motivoBloqueio(mat)===''; }
+
 function renderRoster(){
   const wrap=document.getElementById('rosterWrap');
   const busca=(document.getElementById('buscaMil').value||'').toLowerCase().trim();
@@ -457,14 +485,17 @@ function renderRoster(){
     mils.forEach(m=>{
       const mk=MARCAS.get(m.matricula)||{};
       const isP=mk.status==='presente', isA=mk.status==='ausente';
+      const motivo=motivoBloqueio(m.matricula), travado=!!motivo;
+      const titAttr=travado?` title="${esc(motivo)}"`:'';
       html+=`<div class="mil-row" data-mat="${esc(m.matricula)}">
         <div class="mn"><div class="nm">${esc(m.nome_guerra||m.nome_completo)}</div>
           <div class="mt">${esc(m.posto_graduacao||'')} · ${esc(m.matricula)}${m.nome_guerra?' · '+esc(m.nome_completo):''}</div></div>
-        <div class="pa-toggle">
+        <div class="pa-toggle${travado?' locked':''}"${titAttr}>
           <button class="pa-btn p ${isP?'on':''}" onclick="marcar('${esc(m.matricula)}','presente')">PRESENTE</button>
           <button class="pa-btn a ${isA?'on':''}" onclick="marcar('${esc(m.matricula)}','ausente')">AUSENTE</button>
         </div>
-        <div class="just ${isA?'show':''}"><input placeholder="Justificativa da ausência" value="${esc(mk.justificativa||'')}" oninput="setJust('${esc(m.matricula)}',this.value)"></div>
+        <div class="just ${isA?'show':''}"><input placeholder="Justificativa da ausência" value="${esc(mk.justificativa||'')}"${travado?' disabled':''} oninput="setJust('${esc(m.matricula)}',this.value)"></div>
+        ${travado?`<div class="mil-lock"${titAttr}>🔒 ${esc(motivo)}</div>`:''}
       </div>`;
     });
     html+='</div>';
@@ -474,8 +505,10 @@ function renderRoster(){
 function filtrarRoster(){ renderRoster(); }
 function marcar(mat,status){
   const m=ROSTER.find(x=>x.matricula===mat); if(!m) return;
+  const motivo=motivoBloqueio(mat);
+  if(motivo){ toast(motivo); return; }
   const cur=MARCAS.get(mat)||{};
-  MARCAS.set(mat,{status,justificativa:cur.justificativa||'',
+  MARCAS.set(mat,{status,justificativa:cur.justificativa||'',dono:cur.dono,donoNome:cur.donoNome,
     militar:{militar_id:m.id,matricula:m.matricula,posto_graduacao:m.posto_graduacao,nome_completo:m.nome_completo,nome_guerra:m.nome_guerra,grupamento_id:m.grupamento_id}});
   // atualiza a linha sem re-render total (preserva foco/scroll)
   const row=document.querySelector(`.mil-row[data-mat="${CSS.escape(mat)}"]`); if(!row) return;
@@ -483,22 +516,37 @@ function marcar(mat,status){
   row.querySelector('.pa-btn.a').classList.toggle('on',status==='ausente');
   row.querySelector('.just').classList.toggle('show',status==='ausente');
 }
-function setJust(mat,val){ const cur=MARCAS.get(mat)||{status:'ausente'}; cur.justificativa=val; MARCAS.set(mat,cur); }
+function setJust(mat,val){ if(!podeEditar(mat)) return; const cur=MARCAS.get(mat)||{status:'ausente'}; cur.justificativa=val; MARCAS.set(mat,cur); }
 function marcarGrupo(g,status){
-  ROSTER.filter(m=>grupamentoDe(m)===g).forEach(m=>marcar(m.matricula,status));
+  const alvos=ROSTER.filter(m=>grupamentoDe(m)===g);
+  const livres=alvos.filter(m=>podeEditar(m.matricula));
+  livres.forEach(m=>marcar(m.matricula,status));
+  const travados=alvos.length-livres.length;
+  if(travados) toast(`${travados} registro(s) não alterado(s) — travados por autoria/data.`);
 }
-function marcarTodos(status){ ROSTER.forEach(m=>marcar(m.matricula,status)); }
+function marcarTodos(status){
+  const livres=ROSTER.filter(m=>podeEditar(m.matricula));
+  livres.forEach(m=>marcar(m.matricula,status));
+  const travados=ROSTER.length-livres.length;
+  if(travados) toast(`${travados} registro(s) não alterado(s) — travados por autoria/data.`);
+}
 async function salvarChamada(){
   if(!INSTRUCAO){ toast('Sem instrução ativa.'); return; }
   const registros=[];
   MARCAS.forEach((v,mat)=>{
     if(!v.status) return;
+    if(!podeEditar(mat)) return;   // não reenvia registro travado (autoria/data)
     const m=ROSTER.find(x=>x.matricula===mat)||v.militar||{};
     registros.push({militar_id:m.id||v.militar?.militar_id||null, matricula:mat,
       posto_graduacao:m.posto_graduacao, nome_completo:m.nome_completo, nome_guerra:m.nome_guerra,
       grupamento_id:m.grupamento_id, status:v.status, justificativa:v.justificativa||''});
   });
-  if(!registros.length){ toast('Marque ao menos um militar.'); return; }
+  if(!registros.length){
+    toast(instrucaoExpirada()&&!EH_ADMIN_GERAL
+      ? 'Após o dia da instrução, apenas o Admin Geral pode alterar a chamada.'
+      : 'Marque ao menos um militar que você possa alterar.');
+    return;
+  }
   const btn=document.getElementById('btnSalvarChamada'); btn.disabled=true; const old=btn.textContent; btn.textContent='Salvando…';
   try{
     const r=await rpc('chamada_instrucao_lancar',{p_token:sessao.token,p_instrucao_id:INSTRUCAO.id,p_registros:registros});
