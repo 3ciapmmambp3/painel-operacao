@@ -536,7 +536,7 @@ function renderRoster(){
     if(busca){ const hay=(m.nome_completo+' '+(m.nome_guerra||'')+' '+m.matricula).toLowerCase(); if(!hay.includes(busca)) return; }
     const g=grupamentoDe(m); (grupos[g]=grupos[g]||[]).push(m);
   });
-  const chaves=Object.keys(grupos).sort();
+  const chaves=Object.keys(grupos).sort(cmpGrp);
   if(!chaves.length){ wrap.innerHTML='<div class="ci-msg">Nenhum militar encontrado.</div>'; return; }
   let html='';
   chaves.forEach(g=>{
@@ -651,6 +651,21 @@ let DASH_ROWS=[], DASH_ROSTER=[];   // dados da instrução (já ∩ escopo do u
 /* Nº do pelotão a partir do grupamento_id (mesma regra do db/45: "2 PEL"). */
 function pelDe(g){ const m=String(g||'').toUpperCase().match(/(\d+)\s*PEL/); return m?m[1]:''; }
 
+/* Ordem dos grupamentos: por pelotão e, dentro do pelotão, o COMANDANTE DO
+   PELOTÃO (lotação sem "N GP") primeiro, depois GP 1, 2, 3… */
+function _grpSortKey(g){
+  const pel=parseInt(pelDe(g)||'999',10);
+  const mGp=String(g||'').match(/^\s*(\d+)\s*GP\b/i);
+  const gpNum=mGp?parseInt(mGp[1],10):-1;   // -1 = CMT do pelotão → vem antes dos GPs
+  return {pel,gpNum};
+}
+function cmpGrp(a,b){
+  const ka=_grpSortKey(a), kb=_grpSortKey(b);
+  if(ka.pel!==kb.pel) return ka.pel-kb.pel;
+  if(ka.gpNum!==kb.gpNum) return ka.gpNum-kb.gpNum;
+  return String(a).localeCompare(String(b),'pt-BR');
+}
+
 /* ── grupamentos do CADASTRO (para listar até os que não têm ninguém marcado,
       inclusive o COMANDANTE DO PELOTÃO) ──
    O militares.grupamento_id (lotação) é a MESMA string do cadastro:
@@ -699,7 +714,7 @@ function grupamentosDisponiveis(baseItems, pel){
   const set=new Set();
   baseItems.forEach(x=>{ const g=(x.grupamento_id||'').trim(); if(!g) return; if(pel&&pelDe(g)!==pel) return; set.add(g); });
   lotacoesDoEscopo().forEach(l=>{ const g=l.trim(); if(!g) return; if(pel&&pelDe(g)!==pel) return; if(!grupamentoParticipa(g)) return; set.add(g); });
-  return Array.from(set).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  return Array.from(set).sort(cmpGrp);
 }
 
 async function carregarDashboard(){
@@ -775,7 +790,7 @@ function renderDashboard(){
     <div class="kpi green"><div class="lab">Presentes</div><div class="val">${tp}</div></div>
     <div class="kpi red"><div class="lab">Ausentes</div><div class="val">${ta}</div></div>
     <div class="kpi blue"><div class="lab">Marcados</div><div class="val">${tm} <small>/ ${efetivoTotal}</small></div></div>`;
-  const gs=Object.keys(grpAgg).sort();
+  const gs=Object.keys(grpAgg).sort(cmpGrp);
   if(!gs.length){ tb.innerHTML=''; msg.style.display=''; msg.className='ci-msg'; msg.textContent=(pel||grp)?'Nenhuma presença lançada para o filtro selecionado.':'Nenhuma presença lançada ainda para esta instrução.'; return; }
   msg.style.display='none';
   tb.innerHTML=gs.map(g=>{
@@ -835,7 +850,7 @@ async function montarRelatorio(){
     // agrupa por grupamento — um bloco por grupamento (com contagem própria)
     const porGrupo={};
     rows.forEach(r=>{ const g=(r.grupamento_id||'Sem grupamento').trim(); (porGrupo[g]=porGrupo[g]||[]).push(r); });
-    const chaves=Object.keys(porGrupo).sort((x,y)=>x.localeCompare(y,'pt-BR'));
+    const chaves=Object.keys(porGrupo).sort(cmpGrp);
     const blocos=chaves.map(g=>{
       const lista=porGrupo[g];
       const pres=lista.filter(r=>r.status==='presente');
