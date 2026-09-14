@@ -441,6 +441,9 @@ document.addEventListener('click', () => {
             <option value="pendente">1º Acesso Pendente</option>
             <option value="ativo">Ativo</option>
           </select>
+          <select class="filter-sel" id="filtro-lotacao" onchange="renderTabela()">
+            <option value="">Todas as lotações</option>
+          </select>
         </div>
       </div>
       <div class="sec-body" style="padding:0;">
@@ -2812,6 +2815,7 @@ async function carregarUsuarios() {
     const agora = new Date().toLocaleTimeString('pt-BR');
     _atualizarBarraSync('ok', `✔ Carregado às ${agora}`, `${_cachedUsers.length} militares`);
     renderStats();
+    popularFiltroLotacao();
     renderTabela();
   } catch(e) {
     _atualizarBarraSync('erro', `✗ Erro: ${e.message}`, 'verifique a conexão');
@@ -2850,12 +2854,38 @@ function renderStats() {
   if (tl) tl.textContent = `${total} usuário${total!==1?'s':''} cadastrado${total!==1?'s':''}`;
 }
 
+/* ══ FILTRO POR LOTAÇÃO ══ */
+/* Chave de ordem das lotações (mesma lógica da tabela: ADM, depois Cmt
+   Pelotão e GPs por pelotão). */
+function _lotSortKey(lot){
+  const L=(lot||'').trim();
+  if(!L || L.toUpperCase()==='ADM') return '00|00|00';
+  const pel=(L.match(/(\d+)\s*PEL/i)||[])[1]||'99';
+  const isPelOnly = !L.match(/\d+\s*GP/i) && L.match(/^(\d+)\s*PEL/i);
+  if(isPelOnly) return `${pel.padStart(2,'0')}|00|00`;
+  const gp=(L.match(/(\d+)\s*GP/i)||[])[1]||'99';
+  return `${pel.padStart(2,'0')}|${gp.padStart(2,'0')}|${L}`;
+}
+function popularFiltroLotacao(){
+  const sel=document.getElementById('filtro-lotacao'); if(!sel) return;
+  const atual=sel.value;
+  const set=new Set(); let temVazio=false;
+  _cachedUsers.forEach(u=>{ const lot=(u.grupamento_id||'').trim(); if(lot) set.add(lot); else temVazio=true; });
+  const lots=Array.from(set).sort((a,b)=>_lotSortKey(a).localeCompare(_lotSortKey(b)));
+  let html='<option value="">Todas as lotações</option>'
+    + lots.map(l=>`<option value="${qEsc(l)}">${qEsc(l)}</option>`).join('');
+  if(temVazio) html+='<option value="__vazio__">(sem lotação)</option>';
+  sel.innerHTML=html;
+  if(atual && (atual==='__vazio__' ? temVazio : set.has(atual))) sel.value=atual;
+}
+
 /* ══ TABELA ══ */
 function renderTabela() {
   const meuNivel  = SbAuth.NIVEIS.indexOf(sessao?.nivel_acesso ?? '');
   const busca     = (document.getElementById('busca')?.value || '').toLowerCase();
   const filNivel  = document.getElementById('filtro-perfil')?.value || '';
   const filStatus = document.getElementById('filtro-status')?.value || '';
+  const filLot    = document.getElementById('filtro-lotacao')?.value || '';
   let lista = [..._cachedUsers];
 
   /* ── Ordenação: ADM → Cmt Pelotão + GPs por pelotão ── */
@@ -2909,6 +2939,7 @@ function renderTabela() {
   if (filNivel)  lista = lista.filter(u => u.nivel_acesso === filNivel);
   if (filStatus === 'pendente') lista = lista.filter(u => u.primeiro_acesso);
   if (filStatus === 'ativo')    lista = lista.filter(u => !u.primeiro_acesso);
+  if (filLot) lista = lista.filter(u => { const lot=(u.grupamento_id||'').trim(); return filLot==='__vazio__' ? !lot : lot===filLot; });
 
   const tbody = document.getElementById('tabela-body');
   if (!lista.length) {
