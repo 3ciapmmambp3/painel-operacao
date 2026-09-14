@@ -450,6 +450,7 @@ async function carregarLancar(){
       rpc('chamada_instrucao_listar',{p_token:sessao.token,p_instrucao_id:INSTRUCAO.id})
     ]);
     ROSTER = filtrarPorGrupamentosDaInstrucao(roster||[]);
+    registrarNiveis(roster);
     MARCAS = new Map();
     (existentes||[]).forEach(r=>MARCAS.set(r.matricula,{status:r.status,justificativa:r.justificativa||'',
       dono:soDigitos(r.registrado_por_matricula), donoNome:r.registrado_por_nome||''}));
@@ -685,8 +686,22 @@ function postoRank(pg){
   return 99;   // desconhecido → por último
 }
 function _milDig(m){ return String((m&&(m.matricula_clean||m.matricula))||'').replace(/\D/g,''); }
-/* Ordena militares por antiguidade: posto, depois matrícula (asc), depois nome. */
+/* Mapa matrícula→nível (p/ saber quem é admin_gp em telas que não trazem o
+   nível na linha, como Consultas/Relatórios). Alimentado pelo roster. */
+let NIVEL_POR_MAT=new Map();
+function registrarNiveis(lista){ (lista||[]).forEach(m=>{ const d=_milDig(m); if(d && m.nivel_acesso) NIVEL_POR_MAT.set(d,m.nivel_acesso); }); }
+async function garantirNiveis(){
+  if(NIVEL_POR_MAT.size) return;
+  try{ const r=await rpc('militares_roster_escopo',{p_token:sessao.token}); registrarNiveis(r||[]); }catch(e){}
+}
+function nivelDe(m){ return (m&&m.nivel_acesso) || NIVEL_POR_MAT.get(_milDig(m)) || ''; }
+function ehCmtGp(m){ return nivelDe(m)==='admin_gp'; }   // comandante do grupamento
+
+/* Ordena militares: COMANDANTE do grupamento (admin_gp) primeiro; depois por
+   antiguidade de posto; depois matrícula (asc); depois nome. */
 function cmpMil(a,b){
+  const ca=ehCmtGp(a)?0:1, cb=ehCmtGp(b)?0:1;
+  if(ca!==cb) return ca-cb;
   const ra=postoRank(a&&a.posto_graduacao), rb=postoRank(b&&b.posto_graduacao);
   if(ra!==rb) return ra-rb;
   const da=_milDig(a), db=_milDig(b);
@@ -757,6 +772,7 @@ async function carregarDashboard(){
       rpc('militares_roster_escopo',{p_token:sessao.token})   /* efetivo ESCOPADO: GP→grupamento, PEL→pelotão, Comando→Cia */
     ]);
     // efetivo esperado = escopo do usuário ∩ grupamentos participantes da instrução
+    registrarNiveis(rosterAll);
     DASH_ROSTER = filtrarPorGrupamentosDaInstrucao(rosterAll||[]);
     // grupamentos do escopo do usuário — recorta as presenças pra bater com o efetivo mostrado
     const escopoGrps = new Set((rosterAll||[]).map(m=>(m.grupamento_id||'').trim()).filter(Boolean));
@@ -853,6 +869,7 @@ async function carregarConsulta(){
   try{
     const rows=await rpc('chamada_instrucao_listar',{p_token:sessao.token,p_instrucao_id:id});
     if(!rows||!rows.length){ tb.innerHTML=''; msg.style.display=''; msg.textContent='Nenhuma presença lançada.'; return; }
+    await garantirNiveis();
     rows.sort((a,b)=>cmpGrp(a.grupamento_id||'',b.grupamento_id||'')||cmpMil(a,b));
     tb.innerHTML=rows.map(r=>`<tr>
       <td class="nowrap">${esc(r.matricula)}</td><td class="nowrap">${esc(r.posto_graduacao||'')}</td>
@@ -875,6 +892,7 @@ async function montarRelatorio(){
   area.innerHTML='<div class="ci-msg">Carregando…</div>';
   try{
     const rows=await rpc('chamada_instrucao_listar',{p_token:sessao.token,p_instrucao_id:id})||[];
+    await garantirNiveis();
     const p=rows.filter(r=>r.status==='presente').length, a=rows.length-p;
     // agrupa por grupamento — um bloco por grupamento (com contagem própria)
     const porGrupo={};
