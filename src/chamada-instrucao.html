@@ -72,6 +72,7 @@
     .pa-toggle.locked{opacity:.55;}
     .pa-toggle.locked .pa-btn{cursor:not-allowed;}
     .mil-lock{flex-basis:100%;margin-top:3px;font-size:11px;color:#ffa726;display:flex;align-items:center;gap:5px;}
+    .mil-lock.info{color:var(--info);}
     .just{flex-basis:100%;margin-top:2px;display:none;}
     .just.show{display:block;}
     .just input{width:100%;padding:7px 10px;background:var(--bg-input);border:1px solid var(--border-hover);border-radius:6px;color:var(--text-white);font-size:12px;outline:none;}
@@ -486,7 +487,14 @@ function renderRoster(){
       const mk=MARCAS.get(m.matricula)||{};
       const isP=mk.status==='presente', isA=mk.status==='ausente';
       const motivo=motivoBloqueio(m.matricula), travado=!!motivo;
-      const titAttr=travado?` title="${esc(motivo)}"`:'';
+      // Admin Geral não trava, mas vê quem lançou (para ter ciência da autoria)
+      const infoDono=(!travado && EH_ADMIN_GERAL && mk.status && mk.dono && mk.dono!==minhaMatriculaDig())
+        ? 'Lançado por '+(mk.donoNome||'outro usuário') : '';
+      const tip=motivo||infoDono;
+      const titAttr=tip?` title="${esc(tip)}"`:'';
+      const nota=travado
+        ? `<div class="mil-lock"${titAttr}>🔒 ${esc(motivo)}</div>`
+        : (infoDono?`<div class="mil-lock info"${titAttr}>ℹ️ ${esc(infoDono)}</div>`:'');
       html+=`<div class="mil-row" data-mat="${esc(m.matricula)}">
         <div class="mn"><div class="nm">${esc(m.nome_guerra||m.nome_completo)}</div>
           <div class="mt">${esc(m.posto_graduacao||'')} · ${esc(m.matricula)}${m.nome_guerra?' · '+esc(m.nome_completo):''}</div></div>
@@ -495,7 +503,7 @@ function renderRoster(){
           <button class="pa-btn a ${isA?'on':''}" onclick="marcar('${esc(m.matricula)}','ausente')">AUSENTE</button>
         </div>
         <div class="just ${isA?'show':''}"><input placeholder="Justificativa da ausência" value="${esc(mk.justificativa||'')}"${travado?' disabled':''} oninput="setJust('${esc(m.matricula)}',this.value)"></div>
-        ${travado?`<div class="mil-lock"${titAttr}>🔒 ${esc(motivo)}</div>`:''}
+        ${nota}
       </div>`;
     });
     html+='</div>';
