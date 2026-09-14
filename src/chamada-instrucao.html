@@ -197,6 +197,15 @@
 
   <!-- LANÇAR -->
   <div class="ci-pane active" id="pane-lancar">
+    <div class="ci-actbar" id="lancarFiltros" style="display:none;">
+      <div class="fg" style="min-width:170px;"><label>Pelotão</label>
+        <select id="lanPel" class="ci-search" onchange="onLanPelChange()"><option value="">Todos os pelotões</option></select></div>
+      <div class="fg" style="min-width:220px;"><label>Grupamento</label>
+        <select id="lanGrp" class="ci-search" onchange="onLanGrpChange()"><option value="">Todos os grupamentos</option></select></div>
+      <span class="grow"></span>
+      <button class="ci-chipbtn" onclick="limparLanFiltros()">Limpar filtros</button>
+    </div>
+    <div class="kpis" id="lancarKpis" style="display:none;"></div>
     <div class="ci-actbar" id="lancarBar" style="display:none;">
       <input class="ci-search" id="buscaMil" placeholder="Buscar por nome ou nº PM…" oninput="filtrarRoster()">
       <span class="grow"></span>
@@ -445,10 +454,58 @@ async function carregarLancar(){
     (existentes||[]).forEach(r=>MARCAS.set(r.matricula,{status:r.status,justificativa:r.justificativa||'',
       dono:soDigitos(r.registrado_por_matricula), donoNome:r.registrado_por_nome||''}));
     document.getElementById('lancarBar').style.display='flex';
+    popularFiltrosLancar();
     renderRoster();
+    atualizarKpisLancar();
   }catch(e){
     wrap.innerHTML='<div class="ci-msg err">Erro ao carregar: '+esc(e.message)+'</div>';
   }
+}
+
+/* ── filtro Pelotão/Grupamento + KPIs do Lançar (espelham o Dashboard) ── */
+function popularFiltrosLancar(){
+  const pelSet=new Set(), grpSet=new Set();
+  ROSTER.forEach(m=>{ const g=(m.grupamento_id||'').trim(); if(!g) return; grpSet.add(g); const p=pelDe(g); if(p) pelSet.add(p); });
+  const pels=Array.from(pelSet).sort((a,b)=>(+a)-(+b));
+  const grps=Array.from(grpSet).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const pelSel=document.getElementById('lanPel');
+  pelSel.innerHTML='<option value="">Todos os pelotões</option>'+pels.map(p=>`<option value="${esc(p)}">${esc(p)}º Pelotão</option>`).join('');
+  pelSel.closest('.fg').style.display = pels.length>1 ? '' : 'none';
+  popularGrupamentosLancar();
+  document.getElementById('lancarFiltros').style.display = (grps.length>1) ? 'flex' : 'none';
+}
+function popularGrupamentosLancar(){
+  const pel=document.getElementById('lanPel').value;
+  const atual=document.getElementById('lanGrp').value;
+  const grpSet=new Set();
+  ROSTER.forEach(m=>{ const g=(m.grupamento_id||'').trim(); if(!g) return; if(pel && pelDe(g)!==pel) return; grpSet.add(g); });
+  const grps=Array.from(grpSet).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const grpSel=document.getElementById('lanGrp');
+  grpSel.innerHTML='<option value="">Todos os grupamentos</option>'+grps.map(g=>`<option value="${esc(g)}" ${g===atual?'selected':''}>${esc(g)}</option>`).join('');
+  if(grpSel.value!==atual) grpSel.value='';
+}
+function onLanPelChange(){ popularGrupamentosLancar(); renderRoster(); atualizarKpisLancar(); }
+function onLanGrpChange(){ renderRoster(); atualizarKpisLancar(); }
+function limparLanFiltros(){ document.getElementById('lanPel').value=''; popularGrupamentosLancar(); document.getElementById('lanGrp').value=''; renderRoster(); atualizarKpisLancar(); }
+/* Recorte do roster pelo filtro Pelotão/Grupamento (NÃO aplica a busca por texto). */
+function rosterVisivelLancar(){
+  const pel=document.getElementById('lanPel').value;
+  const grp=document.getElementById('lanGrp').value;
+  return ROSTER.filter(m=>{ const g=(m.grupamento_id||'').trim(); if(grp) return g===grp; if(pel) return pelDe(g)===pel; return true; });
+}
+/* KPIs ao vivo do Lançar — refletem as marcações atuais (MARCAS) do recorte. */
+function atualizarKpisLancar(){
+  const box=document.getElementById('lancarKpis');
+  const base=rosterVisivelLancar();
+  let p=0,a=0;
+  base.forEach(m=>{ const s=(MARCAS.get(m.matricula)||{}).status; if(s==='presente')p++; else if(s==='ausente')a++; });
+  const tot=base.length, marc=p+a;
+  box.style.display = tot ? '' : 'none';
+  box.innerHTML=`
+    <div class="kpi"><div class="lab">Efetivo total</div><div class="val">${tot}</div></div>
+    <div class="kpi green"><div class="lab">Presentes</div><div class="val">${p}</div></div>
+    <div class="kpi red"><div class="lab">Ausentes</div><div class="val">${a}</div></div>
+    <div class="kpi blue"><div class="lab">Marcados</div><div class="val">${marc} <small>/ ${tot}</small></div></div>`;
 }
 function grupamentoDe(m){ return (m.grupamento_id||'Sem grupamento').trim(); }
 
@@ -478,7 +535,7 @@ function renderRoster(){
   const wrap=document.getElementById('rosterWrap');
   const busca=(document.getElementById('buscaMil').value||'').toLowerCase().trim();
   const grupos={};
-  ROSTER.forEach(m=>{
+  rosterVisivelLancar().forEach(m=>{
     if(busca){ const hay=(m.nome_completo+' '+(m.nome_guerra||'')+' '+m.matricula).toLowerCase(); if(!hay.includes(busca)) return; }
     const g=grupamentoDe(m); (grupos[g]=grupos[g]||[]).push(m);
   });
@@ -534,6 +591,7 @@ function marcar(mat,status,forcar){
   row.querySelector('.pa-btn.p').classList.toggle('on',novo==='presente');
   row.querySelector('.pa-btn.a').classList.toggle('on',novo==='ausente');
   row.querySelector('.just').classList.toggle('show',novo==='ausente');
+  atualizarKpisLancar();
 }
 function setJust(mat,val){ if(!podeEditar(mat)) return; const cur=MARCAS.get(mat)||{status:'ausente'}; cur.justificativa=val; MARCAS.set(mat,cur); }
 function marcarGrupo(g,status){
@@ -544,9 +602,10 @@ function marcarGrupo(g,status){
   if(travados) toast(`${travados} registro(s) não alterado(s) — travados por autoria/data.`);
 }
 function marcarTodos(status){
-  const livres=ROSTER.filter(m=>podeEditar(m.matricula));
+  const alvos=rosterVisivelLancar();   // respeita o filtro Pelotão/Grupamento
+  const livres=alvos.filter(m=>podeEditar(m.matricula));
   livres.forEach(m=>marcar(m.matricula,status,true));
-  const travados=ROSTER.length-livres.length;
+  const travados=alvos.length-livres.length;
   if(travados) toast(`${travados} registro(s) não alterado(s) — travados por autoria/data.`);
 }
 async function salvarChamada(){
