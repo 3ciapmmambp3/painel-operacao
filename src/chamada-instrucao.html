@@ -454,6 +454,7 @@ async function carregarLancar(){
     (existentes||[]).forEach(r=>MARCAS.set(r.matricula,{status:r.status,justificativa:r.justificativa||'',
       dono:soDigitos(r.registrado_por_matricula), donoNome:r.registrado_por_nome||''}));
     document.getElementById('lancarBar').style.display='flex';
+    await carregarLotacoesCadastro();
     popularFiltrosLancar();
     renderRoster();
     atualizarKpisLancar();
@@ -464,10 +465,8 @@ async function carregarLancar(){
 
 /* ── filtro Pelotão/Grupamento + KPIs do Lançar (espelham o Dashboard) ── */
 function popularFiltrosLancar(){
-  const pelSet=new Set(), grpSet=new Set();
-  ROSTER.forEach(m=>{ const g=(m.grupamento_id||'').trim(); if(!g) return; grpSet.add(g); const p=pelDe(g); if(p) pelSet.add(p); });
-  const pels=Array.from(pelSet).sort((a,b)=>(+a)-(+b));
-  const grps=Array.from(grpSet).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const pels=pelotoesDisponiveis(ROSTER);
+  const grps=grupamentosDisponiveis(ROSTER,'');
   const pelSel=document.getElementById('lanPel');
   pelSel.innerHTML='<option value="">Todos os pelotões</option>'+pels.map(p=>`<option value="${esc(p)}">${esc(p)}º Pelotão</option>`).join('');
   pelSel.closest('.fg').style.display = pels.length>1 ? '' : 'none';
@@ -477,9 +476,7 @@ function popularFiltrosLancar(){
 function popularGrupamentosLancar(){
   const pel=document.getElementById('lanPel').value;
   const atual=document.getElementById('lanGrp').value;
-  const grpSet=new Set();
-  ROSTER.forEach(m=>{ const g=(m.grupamento_id||'').trim(); if(!g) return; if(pel && pelDe(g)!==pel) return; grpSet.add(g); });
-  const grps=Array.from(grpSet).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const grps=grupamentosDisponiveis(ROSTER,pel);
   const grpSel=document.getElementById('lanGrp');
   grpSel.innerHTML='<option value="">Todos os grupamentos</option>'+grps.map(g=>`<option value="${esc(g)}" ${g===atual?'selected':''}>${esc(g)}</option>`).join('');
   if(grpSel.value!==atual) grpSel.value='';
@@ -654,6 +651,57 @@ let DASH_ROWS=[], DASH_ROSTER=[];   // dados da instrução (já ∩ escopo do u
 /* Nº do pelotão a partir do grupamento_id (mesma regra do db/45: "2 PEL"). */
 function pelDe(g){ const m=String(g||'').toUpperCase().match(/(\d+)\s*PEL/); return m?m[1]:''; }
 
+/* ── grupamentos do CADASTRO (para listar até os que não têm ninguém marcado,
+      inclusive o COMANDANTE DO PELOTÃO) ──
+   O militares.grupamento_id (lotação) é a MESMA string do cadastro:
+     • GP           = grupamento_completo (ex.: "1 GP / 1 PEL / 3 CIA PM MAMB / GOVERNADOR VALADARES")
+     • CMT do PEL   = a lotação do 1º GP sem o prefixo "1 GP / "
+                      (ex.: "1 PEL / 3 CIA PM MAMB / GOVERNADOR VALADARES")
+   Casa exatamente com o que o filtro compara (igualdade de grupamento_id). */
+let LOTACOES_CADASTRO=null;
+async function carregarLotacoesCadastro(){
+  if(LOTACOES_CADASTRO) return LOTACOES_CADASTRO;
+  let grupos=[];
+  try{ grupos = await rpc('grupamentos_listar',{}) || []; }
+  catch(e){ console.error('grupamentos_listar',e); grupos=[]; }
+  const set=new Set();
+  grupos.forEach(g=>{ const gc=(g.grupamento_completo||'').trim(); if(!gc) return;
+    set.add(gc);                                   // lotação de GP
+    const m=gc.match(/^1\s*GP\s*\/\s*(.+)$/i);     // CMT do pelotão = 1º GP sem "1 GP / "
+    if(m) set.add(m[1].trim());
+  });
+  LOTACOES_CADASTRO=Array.from(set);
+  return LOTACOES_CADASTRO;
+}
+/* Recorte do cadastro pelo escopo do usuário (mesma lógica do db/45). */
+function lotacoesDoEscopo(){
+  const all=LOTACOES_CADASTRO||[];
+  if(EH_ESCOPO_TOTAL) return all;                  // Admin Geral/Admin/CMT Cia: já veem tudo
+  const meuPel=pelDe(sessao.grupamento_id||'');
+  if(sessao.nivel_acesso==='admin_pelotao' && meuPel) return all.filter(l=>pelDe(l)===meuPel);
+  return [];                                       // GP/operacional: só o que vier do efetivo
+}
+/* O grupamento participa da instrução selecionada? (toda a Cia → sempre). */
+function grupamentoParticipa(g){
+  const grps=INSTRUCAO && INSTRUCAO.grupamentos;
+  if(!Array.isArray(grps) || !grps.length) return true;
+  return new Set(grps.map(x=>(x||'').trim())).has((g||'').trim());
+}
+/* Fontes de Pelotão/Grupamento = efetivo carregado ∪ cadastro do escopo
+   (só grupamentos que participam da instrução). */
+function pelotoesDisponiveis(baseItems){
+  const set=new Set();
+  baseItems.forEach(x=>{ const p=pelDe(x.grupamento_id||''); if(p) set.add(p); });
+  lotacoesDoEscopo().forEach(l=>{ if(!grupamentoParticipa(l)) return; const p=pelDe(l); if(p) set.add(p); });
+  return Array.from(set).sort((a,b)=>(+a)-(+b));
+}
+function grupamentosDisponiveis(baseItems, pel){
+  const set=new Set();
+  baseItems.forEach(x=>{ const g=(x.grupamento_id||'').trim(); if(!g) return; if(pel&&pelDe(g)!==pel) return; set.add(g); });
+  lotacoesDoEscopo().forEach(l=>{ const g=l.trim(); if(!g) return; if(pel&&pelDe(g)!==pel) return; if(!grupamentoParticipa(g)) return; set.add(g); });
+  return Array.from(set).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+}
+
 async function carregarDashboard(){
   const tb=document.querySelector('#dashTbl tbody'), msg=document.getElementById('dashMsg');
   const kpis=document.getElementById('dashKpis');
@@ -670,6 +718,7 @@ async function carregarDashboard(){
     // grupamentos do escopo do usuário — recorta as presenças pra bater com o efetivo mostrado
     const escopoGrps = new Set((rosterAll||[]).map(m=>(m.grupamento_id||'').trim()).filter(Boolean));
     DASH_ROWS = (rowsAll||[]).filter(r=> !escopoGrps.size || escopoGrps.has((r.grupamento_id||'').trim()));
+    await carregarLotacoesCadastro();
     popularFiltrosDash();
     renderDashboard();
   }catch(e){ tb.innerHTML=''; msg.style.display=''; msg.className='ci-msg err'; msg.textContent='Erro: '+e.message; }
@@ -678,13 +727,9 @@ async function carregarDashboard(){
 /* Monta os selects de Pelotão/Grupamento a partir dos dados carregados.
    Só exibe a barra quando há mais de um pelotão ou grupamento (senão não ajuda). */
 function popularFiltrosDash(){
-  const pelSet=new Set(), grpSet=new Set();
-  DASH_ROSTER.concat(DASH_ROWS).forEach(x=>{
-    const g=(x.grupamento_id||'').trim(); if(!g) return;
-    grpSet.add(g); const p=pelDe(g); if(p) pelSet.add(p);
-  });
-  const pels=Array.from(pelSet).sort((a,b)=>(+a)-(+b));
-  const grps=Array.from(grpSet).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const base=DASH_ROSTER.concat(DASH_ROWS);
+  const pels=pelotoesDisponiveis(base);
+  const grps=grupamentosDisponiveis(base,'');
   const pelSel=document.getElementById('dashPel');
   pelSel.innerHTML='<option value="">Todos os pelotões</option>'+pels.map(p=>`<option value="${esc(p)}">${esc(p)}º Pelotão</option>`).join('');
   // o pelotão só faz sentido se houver mais de um; senão esconde só esse select
@@ -696,13 +741,7 @@ function popularFiltrosDash(){
 function popularGrupamentosDash(){
   const pel=document.getElementById('dashPel').value;
   const atual=document.getElementById('dashGrp').value;
-  const grpSet=new Set();
-  DASH_ROSTER.concat(DASH_ROWS).forEach(x=>{
-    const g=(x.grupamento_id||'').trim(); if(!g) return;
-    if(pel && pelDe(g)!==pel) return;
-    grpSet.add(g);
-  });
-  const grps=Array.from(grpSet).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  const grps=grupamentosDisponiveis(DASH_ROSTER.concat(DASH_ROWS),pel);
   const grpSel=document.getElementById('dashGrp');
   grpSel.innerHTML='<option value="">Todos os grupamentos</option>'+grps.map(g=>`<option value="${esc(g)}" ${g===atual?'selected':''}>${esc(g)}</option>`).join('');
   if(grpSel.value!==atual) grpSel.value='';   // grupamento saiu do pelotão → volta a "Todos"
