@@ -154,6 +154,11 @@
           <input data-k="local_utilizacao" placeholder="Município / área de emprego">
         </div>
         <div class="f col2">
+          <label>É uma DSP (deslocamento / viagem de serviço)?</label>
+          <select id="dsp-sel" onchange="toggleDsp()"><option value="Não">Não</option><option value="Sim">Sim</option></select>
+          <span class="hint">Se sim, abre os campos de saída, destino(s) e deslocamento diário.</span>
+        </div>
+        <div class="f col2">
           <label>Lotação do motorista</label>
           <input data-k="lotacao_motorista" id="lotacao">
         </div>
@@ -178,6 +183,25 @@
           <select data-k="comb_devolver"><option>Cheio</option><option>3/4</option><option>1/2</option><option>1/4</option><option>Reserva</option></select></div>
       </div>
       <div class="vtr-status" id="vtr-status"></div>
+    </div>
+
+    <!-- DSP (deslocamento / viagem de serviço) -->
+    <div class="card" id="s-dsp" style="display:none">
+      <h2>🧭 DSP — Deslocamento de Serviço</h2>
+      <div class="grid">
+        <div class="f col2"><label>Município de saída</label>
+          <input id="dsp-saida" placeholder="Cidade de onde a viatura partiu"></div>
+        <div class="f col2">
+          <label>Município(s) de destino <button type="button" class="linkbtn" style="margin-left:8px" onclick="addDspDestino()">+ adicionar destino</button></label>
+          <div id="dsp-destinos"></div>
+          <span class="hint">Pode ser qualquer cidade, mesmo fora da 3ª Cia PM MAmb — digite o nome.</span>
+        </div>
+        <div class="f col2"><label>Observação / motivo do deslocamento</label>
+          <textarea id="dsp-obs" rows="2" placeholder="Ex.: supervisão, participação em evento, diligência…"></textarea></div>
+      </div>
+      <h3 style="margin-top:14px">Deslocamento diário <button type="button" class="linkbtn" style="margin-left:8px" onclick="addDspDia()">+ adicionar dia</button></h3>
+      <div id="dsp-dias"></div>
+      <span class="hint">Opcional — use quando a DSP durar vários dias (lance o trajeto de cada dia).</span>
     </div>
 
     <!-- OPTIONAL TOGGLES -->
@@ -577,6 +601,7 @@ function _vsecoes(dados){
   };
   let out='';
   Object.keys(dados).forEach(k=>{
+    if(k==='dsp') return;   // DSP tem render dedicado (_vdsp), fora do genérico
     const v=dados[k]; if(v==null || (typeof v==='object' && !Array.isArray(v) && !Object.keys(v).length) || (Array.isArray(v) && !v.length)) return;
     out += `<h3 class="vsec">${_vesc(rotulo[k]||pretty(k))}</h3>`;
     if(Array.isArray(v)) v.forEach(it => out += (it&&typeof it==='object') ? renderObj(it) : `<table class="vt">${_vrow(pretty(k), it)}</table>`);
@@ -584,6 +609,24 @@ function _vsecoes(dados){
     else out += `<table class="vt">${_vrow(pretty(k), v)}</table>`;
   });
   return out;
+}
+function _vdsp(d){
+  if(!d || typeof d!=='object') return '';
+  const destinos=Array.isArray(d.destinos)?d.destinos.filter(Boolean):[];
+  const dias=Array.isArray(d.dias)?d.dias:[];
+  if(!(d.municipio_saida||d.observacao||destinos.length||dias.length)) return '';
+  const fdata=s=>{ const p=String(s||'').slice(0,10).split('-'); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:(s||'—'); };
+  let html='<h3 class="vsec">DSP — Deslocamento de Serviço</h3><table class="vt">'
+    + _vrow('Município de saída', _grafiaCidade(d.municipio_saida||''))
+    + _vrow('Destino(s)', destinos.map(_grafiaCidade).join(', '))
+    + _vrow('Observação / motivo', d.observacao||'')
+    + '</table>';
+  if(dias.length){
+    html+='<div class="vsub">Deslocamento diário</div><table class="vt"><tr><td class="vl">Data</td><td class="vl">De</td><td class="vl">Para</td><td class="vl">Observação</td></tr>';
+    dias.forEach(x=>{ html+=`<tr><td class="vv">${_vesc(fdata(x.data))}</td><td class="vv">${_vesc(_grafiaCidade(x.de||'—'))}</td><td class="vv">${_vesc(_grafiaCidade(x.para||'—'))}</td><td class="vv">${_vesc(x.obs||'—')}</td></tr>`; });
+    html+='</table>';
+  }
+  return html;
 }
 function _vanexos(anexos){
   if(!Array.isArray(anexos) || !anexos.length) return '';
@@ -600,6 +643,10 @@ function _resumoSecoes(f){
   if(f.tem_avaria) parts.push('🩹 Avaria de uso');
   if(f.tem_taq) parts.push('🚤 Embarcação / Motor / TAQ');
   if(f.tem_aeronave) parts.push('🚁 Aeronave / Drone');
+  if(d.dsp && (d.dsp.municipio_saida||(Array.isArray(d.dsp.destinos)&&d.dsp.destinos.length))){
+    const dst=(Array.isArray(d.dsp.destinos)?d.dsp.destinos:[]).filter(Boolean).join(', ');
+    parts.push('🧭 DSP: '+[d.dsp.municipio_saida,dst].filter(Boolean).join(' → '));
+  }
   const anx=Array.isArray(f.anexos)?f.anexos.length:0;
   parts.push('📎 Anexos: '+(anx?anx:'nenhum'));
   return '<ul style="margin:8px 0 0 18px;font-size:13px;line-height:1.9;color:var(--text-white)">'+parts.map(p=>'<li>'+p+'</li>').join('')+'</ul>';
@@ -757,6 +804,7 @@ async function abrirVerFicha(id){
       ${_vrow('Km inicial', f.km_inicial)}${_vrow('Km final', f.km_final)}${_vrow('Km rodados', km)}
       ${_vrow('Combustível ao armar', f.comb_armar)}${_vrow('Combustível ao devolver', f.comb_devolver)}
     </table>
+    ${_vdsp(f.dados&&f.dados.dsp)}
     ${_vsecoes(f.dados)}
     ${(f.observacoes)?`<h3 class="vsec">Observações</h3><p class="vobs">${_vesc(f.observacoes)}</p>`:''}
     ${_vanexos(f.anexos)}
@@ -1027,6 +1075,27 @@ function tog(el,id){ el.classList.toggle('active'); const sec=document.getElemen
 }
 function tShow(id,cb){ document.getElementById(id).classList.toggle('show', cb.checked); }
 function linhaRemover(){ return '<button type="button" class="linkbtn" style="color:var(--danger);padding-bottom:9px" onclick="this.parentNode.remove()">remover</button>'; }
+/* ── DSP (deslocamento / viagem de serviço) ── */
+function toggleDsp(){
+  const on=document.getElementById('dsp-sel').value==='Sim';
+  document.getElementById('s-dsp').style.display=on?'':'none';
+  if(on && !document.querySelectorAll('#dsp-destinos .dsp-dest-row').length) addDspDestino();
+}
+function addDspDestino(){
+  const div=document.createElement('div'); div.className='dsp-dest-row';
+  div.style.cssText='display:grid;grid-template-columns:1fr auto;gap:9px;margin-bottom:9px;align-items:end';
+  div.innerHTML='<div class="f"><input class="dsp-dest" placeholder="Cidade de destino"></div>'+linhaRemover();
+  document.getElementById('dsp-destinos').appendChild(div);
+}
+function addDspDia(){
+  const div=document.createElement('div'); div.className='dsp-dia-row';
+  div.style.cssText='display:grid;grid-template-columns:.9fr 1fr 1fr 1.2fr auto;gap:9px;margin-bottom:9px;align-items:end';
+  div.innerHTML='<div class="f"><label>Data</label><input class="dsp-dia-data" type="date"></div>'
+    +'<div class="f"><label>De (município)</label><input class="dsp-dia-de"></div>'
+    +'<div class="f"><label>Para (município)</label><input class="dsp-dia-para"></div>'
+    +'<div class="f"><label>Observação</label><input class="dsp-dia-obs"></div>'+linhaRemover();
+  document.getElementById('dsp-dias').appendChild(div);
+}
 function addCarretinha(){
   const div=document.createElement('div'); div.className='carr-row';
   div.style.cssText='display:grid;grid-template-columns:1fr auto;gap:9px;margin-bottom:9px;align-items:end';
@@ -1384,6 +1453,24 @@ async function salvar(){
     dados.taq = Object.assign(dados.taq||{}, { embarcacoes, carretinhas, abastecimento: ab });
   }
 
+  // ── DSP (deslocamento / viagem de serviço) ──
+  const dspEl=document.getElementById('dsp-sel');
+  if(dspEl && dspEl.value==='Sim'){
+    const destinos=[...document.querySelectorAll('#dsp-destinos .dsp-dest')].map(i=>(i.value||'').trim()).filter(Boolean);
+    const dias=[...document.querySelectorAll('#dsp-dias .dsp-dia-row')].map(r=>({
+      data:(r.querySelector('.dsp-dia-data').value||'').trim(),
+      de:(r.querySelector('.dsp-dia-de').value||'').trim(),
+      para:(r.querySelector('.dsp-dia-para').value||'').trim(),
+      obs:(r.querySelector('.dsp-dia-obs').value||'').trim()
+    })).filter(d=>d.data||d.de||d.para||d.obs);
+    const dsp={
+      municipio_saida:(document.getElementById('dsp-saida').value||'').trim(),
+      destinos,
+      observacao:(document.getElementById('dsp-obs').value||'').trim(),
+      dias
+    };
+    if(dsp.municipio_saida||dsp.destinos.length||dsp.observacao||dsp.dias.length) dados.dsp=dsp;
+  }
 
   btn.disabled=true; btn.textContent='Salvando…';
   let anexos;
