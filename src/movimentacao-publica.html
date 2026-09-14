@@ -146,6 +146,9 @@
     <div class="grid">
       <div class="f col2"><label>Onde a viatura será utilizada</label>
         <input id="local" placeholder="Município / área de emprego"></div>
+      <div class="f col2"><label>É uma DSP (deslocamento / viagem de serviço)?</label>
+        <select id="dsp-sel" onchange="toggleDsp()"><option value="Não">Não</option><option value="Sim">Sim</option></select>
+        <span class="hint">Se sim, abre os campos de saída, destino(s) e deslocamento diário.</span></div>
       <div class="f"><label>Tipo de empenho</label>
         <select id="empenho"><option>Ordinária</option><option>Operação</option><option>Apoio</option><option>Administrativa</option></select></div>
       <div class="f"><label>Km inicial * <span class="hint" id="kmi-chip"></span></label>
@@ -160,6 +163,28 @@
       <div class="f"><label>Combustível ao DEVOLVER</label>
         <select id="comb-d"><option>Cheio</option><option>3/4</option><option>1/2</option><option>1/4</option><option>Reserva</option></select></div>
     </div>
+  </div>
+
+  <!-- DSP (deslocamento / viagem de serviço) -->
+  <div class="card" id="s-dsp" style="display:none">
+    <h2>🧭 DSP — Deslocamento de Serviço</h2>
+    <div class="grid">
+      <div class="f col2"><label>Município de saída</label>
+        <input id="dsp-saida" placeholder="Cidade de onde a viatura partiu" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>
+      <div class="f col2">
+        <label>Município(s) de destino <button type="button" class="linkbtn" style="margin-left:8px" onclick="addDspDestino()">+ adicionar destino</button></label>
+        <div id="dsp-destinos"></div>
+        <span class="hint">Pode ser qualquer cidade — digite o nome.</span>
+      </div>
+      <div class="f col2"><label>Observação / motivo do deslocamento</label>
+        <textarea id="dsp-obs" rows="2" placeholder="Ex.: supervisão, participação em evento, diligência…" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></textarea></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0 6px">
+      <b style="font-size:11px;color:var(--text-white);text-transform:uppercase;letter-spacing:.3px">Deslocamento diário</b>
+      <button type="button" class="linkbtn" onclick="addDspDia()">+ adicionar dia</button>
+    </div>
+    <div id="dsp-dias"></div>
+    <span class="hint">Opcional — use quando a DSP durar vários dias (lance o trajeto de cada dia).</span>
   </div>
 
   <!-- SEÇÕES OPCIONAIS -->
@@ -442,6 +467,42 @@ function addAbast(){
     +'</div>';
   document.getElementById('abast-rows').appendChild(div);
 }
+/* ── DSP (deslocamento / viagem de serviço) ── */
+function _dspRemover(cls){ return '<button type="button" class="linkbtn" style="color:var(--danger);padding-bottom:9px" onclick="this.closest(\''+cls+'\').remove()">remover</button>'; }
+function toggleDsp(){
+  const on=$('dsp-sel').value==='Sim';
+  $('s-dsp').style.display=on?'':'none';
+  if(on && !document.querySelectorAll('#dsp-destinos .dsp-dest-row').length) addDspDestino();
+}
+function addDspDestino(){
+  const div=document.createElement('div'); div.className='dsp-dest-row';
+  div.style.cssText='display:grid;grid-template-columns:1fr auto;gap:9px;margin-bottom:9px;align-items:end';
+  div.innerHTML='<div class="f"><input class="dsp-dest" placeholder="Cidade de destino" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>'+_dspRemover('.dsp-dest-row');
+  $('dsp-destinos').appendChild(div);
+}
+function addDspDia(){
+  const div=document.createElement('div'); div.className='dsp-dia-row';
+  div.style.cssText='display:grid;grid-template-columns:.9fr 1fr 1fr 1.2fr auto;gap:9px;margin-bottom:9px;align-items:end';
+  div.innerHTML='<div class="f"><label>Data</label><input class="dsp-dia-data" type="date"></div>'
+    +'<div class="f"><label>De (município)</label><input class="dsp-dia-de" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>'
+    +'<div class="f"><label>Para (município)</label><input class="dsp-dia-para" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>'
+    +'<div class="f"><label>Observação</label><input class="dsp-dia-obs" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>'+_dspRemover('.dsp-dia-row');
+  $('dsp-dias').appendChild(div);
+}
+function coletarDsp(){
+  const el=$('dsp-sel');
+  if(!el || el.value!=='Sim') return null;
+  const up=s=>String(s||'').trim().toUpperCase();
+  const destinos=[...document.querySelectorAll('#dsp-destinos .dsp-dest')].map(i=>up(i.value)).filter(Boolean);
+  const dias=[...document.querySelectorAll('#dsp-dias .dsp-dia-row')].map(r=>({
+    data:(r.querySelector('.dsp-dia-data').value||'').trim(),
+    de:up(r.querySelector('.dsp-dia-de').value),
+    para:up(r.querySelector('.dsp-dia-para').value),
+    obs:up(r.querySelector('.dsp-dia-obs').value)
+  })).filter(d=>d.data||d.de||d.para||d.obs);
+  const dsp={ municipio_saida:up($('dsp-saida').value), destinos, observacao:up($('dsp-obs').value), dias };
+  return (dsp.municipio_saida||dsp.destinos.length||dsp.observacao||dsp.dias.length)?dsp:null;
+}
 function coletarAbast(){
   return [...document.querySelectorAll('#abast-rows .abast-row')].map(r=>({
     fonte:(r.querySelector('.ab-fonte')||{}).value||'',
@@ -497,6 +558,7 @@ async function salvar(){
     if(temAvaria) dados.avaria={ descricao:$('av-desc').value.trim() };
     if(temAcid) dados.acidente={ reds:$('ac-reds').value.trim(), odometro:$('ac-odo').value, data_hora:$('ac-dh').value,
       pericia:$('ac-per').value, vitimas:$('ac-vit').value, guincho:$('ac-gui').value, obs:$('ac-obs').value.trim() };
+    { const dsp=coletarDsp(); if(dsp) dados.dsp=dsp; }
 
     const payload={
       // viatura (o servidor reconfirma pelo token)
