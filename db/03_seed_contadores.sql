@@ -20,26 +20,26 @@
 
 -- ── DENÚNCIA (balcão) ──  próxima => ultimo + 1
 insert into public.contadores (ano, tipo, ultimo) values
-  (2026, 'denuncia', 742)                 -- << último da planilha (próxima = 743/2026)
+  (2026, 'denuncia', 926)                 -- << último da planilha (próxima = 927/2026)
 on conflict (ano, tipo) do update set ultimo = excluded.ultimo;
 
 -- ── REQUISIÇÃO ──  próxima => ultimo + 1
 insert into public.contadores (ano, tipo, ultimo) values
-  (2026, 'requisicao', 524)               -- << último da planilha (próxima = 525/2026)
+  (2026, 'requisicao', 659)               -- << último da planilha (próxima = 660/2026)
 on conflict (ano, tipo) do update set ultimo = excluded.ultimo;
 
 -- ── OFÍCIO (saída) ──  próxima => ultimo + 1
 -- ⚠️ AJUSTE o número abaixo com o ÚLTIMO ofício de SAÍDA já usado no formulário
 --    Google deste ano, e SÓ ENTÃO execute esta linha.
 insert into public.contadores (ano, tipo, ultimo) values
-  (2026, 'oficio', 0)                     -- << TROCAR pelo último ofício de saída (ex.: 276 → próxima 277/2026)
+  (2026, 'oficio', 687)                   -- << último ofício de saída (próxima = 688/2026)
 on conflict (ano, tipo) do update set ultimo = excluded.ultimo;
 
 -- ── REQUISIÇÃO JUDICIAL ──  próxima => ultimo + 1
 -- ⚠️ AJUSTE o número abaixo com a ÚLTIMA requisição judicial já usada no
 --    formulário Google deste ano, e SÓ ENTÃO execute esta linha.
 insert into public.contadores (ano, tipo, ultimo) values
-  (2026, 'req_judicial', 0)               -- << TROCAR pela última requisição judicial (ex.: 40 → próxima 41/2026)
+  (2026, 'req_judicial', 423)             -- << 423 requisições em 2026 sem numeração (próxima = 424/2026)
 on conflict (ano, tipo) do update set ultimo = excluded.ultimo;
 
 -- Conferência:
