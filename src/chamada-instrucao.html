@@ -540,7 +540,7 @@ function renderRoster(){
   if(!chaves.length){ wrap.innerHTML='<div class="ci-msg">Nenhum militar encontrado.</div>'; return; }
   let html='';
   chaves.forEach(g=>{
-    const mils=grupos[g];
+    const mils=grupos[g].slice().sort(cmpMil);   // por antiguidade de posto
     html+=`<div class="grp-block"><div class="grp-head"><span class="gt">${esc(g)}</span>
       <span class="gbtns"><button onclick="marcarGrupo('${esc(g).replace(/'/g,"")}','presente')">Todos P</button>
       <button onclick="marcarGrupo('${esc(g).replace(/'/g,"")}','ausente')">Todos A</button></span>
@@ -664,6 +664,34 @@ function cmpGrp(a,b){
   if(ka.pel!==kb.pel) return ka.pel-kb.pel;
   if(ka.gpNum!==kb.gpNum) return ka.gpNum-kb.gpNum;
   return String(a).localeCompare(String(b),'pt-BR');
+}
+
+/* Antiguidade por posto/graduação: CAP, 1 TEN, 2 TEN, SUB TEN, 1 SGT,
+   2 SGT, 3 SGT, CB, SD (oficiais acima de CAP entram antes, por garantia).
+   Menor rank = mais antigo. */
+function postoRank(pg){
+  let s=String(pg||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  s=s.replace(/\bPM\b/g,' ').replace(/[ºª°.]/g,' ').replace(/\s+/g,' ').trim();
+  const tab=[
+    [/\bTEN\s*CEL\b/,1],[/\bCEL\b/,0],[/\bMAJ\b/,2],   // acima de CAP
+    [/\bCAP\b/,10],
+    [/\b1\s*TEN\b/,11],[/\b2\s*TEN\b/,12],
+    [/\bSUB\s*TEN\b/,13],[/\bS\s*TEN\b/,13],[/\bST\b/,13],
+    [/\b1\s*SGT\b/,14],[/\b2\s*SGT\b/,15],[/\b3\s*SGT\b/,16],
+    [/\bCB\b/,17],
+    [/\bSD\b/,18],[/\bSOLDADO\b/,18]
+  ];
+  for(const [re,v] of tab){ if(re.test(s)) return v; }
+  return 99;   // desconhecido → por último
+}
+function _milDig(m){ return String((m&&(m.matricula_clean||m.matricula))||'').replace(/\D/g,''); }
+/* Ordena militares por antiguidade: posto, depois matrícula (asc), depois nome. */
+function cmpMil(a,b){
+  const ra=postoRank(a&&a.posto_graduacao), rb=postoRank(b&&b.posto_graduacao);
+  if(ra!==rb) return ra-rb;
+  const da=_milDig(a), db=_milDig(b);
+  if(da && db && da!==db) return (+da)-(+db);
+  return String((a&&(a.nome_guerra||a.nome_completo))||'').localeCompare(String((b&&(b.nome_guerra||b.nome_completo))||''),'pt-BR');
 }
 
 /* ── grupamentos do CADASTRO (para listar até os que não têm ninguém marcado,
@@ -825,6 +853,7 @@ async function carregarConsulta(){
   try{
     const rows=await rpc('chamada_instrucao_listar',{p_token:sessao.token,p_instrucao_id:id});
     if(!rows||!rows.length){ tb.innerHTML=''; msg.style.display=''; msg.textContent='Nenhuma presença lançada.'; return; }
+    rows.sort((a,b)=>cmpGrp(a.grupamento_id||'',b.grupamento_id||'')||cmpMil(a,b));
     tb.innerHTML=rows.map(r=>`<tr>
       <td class="nowrap">${esc(r.matricula)}</td><td class="nowrap">${esc(r.posto_graduacao||'')}</td>
       <td>${esc(r.nome_guerra||r.nome_completo||'')}</td><td>${esc(r.grupamento_id||'')}</td>
@@ -853,8 +882,8 @@ async function montarRelatorio(){
     const chaves=Object.keys(porGrupo).sort(cmpGrp);
     const blocos=chaves.map(g=>{
       const lista=porGrupo[g];
-      const pres=lista.filter(r=>r.status==='presente');
-      const aus =lista.filter(r=>r.status!=='presente');
+      const pres=lista.filter(r=>r.status==='presente').sort(cmpMil);
+      const aus =lista.filter(r=>r.status!=='presente').sort(cmpMil);
       // Presentes: sem status nem justificativa (economiza espaço no PDF)
       const tabPres = pres.length ? `
         <div class="rel-sub rel-sub-p">Presentes — ${pres.length}</div>
