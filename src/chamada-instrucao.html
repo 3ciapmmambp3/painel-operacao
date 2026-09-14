@@ -503,45 +503,51 @@ function renderRoster(){
   wrap.innerHTML=html;
 }
 function filtrarRoster(){ renderRoster(); }
-function marcar(mat,status){
+function marcar(mat,status,forcar){
   const m=ROSTER.find(x=>x.matricula===mat); if(!m) return;
   const motivo=motivoBloqueio(mat);
   if(motivo){ toast(motivo); return; }
   const cur=MARCAS.get(mat)||{};
-  MARCAS.set(mat,{status,justificativa:cur.justificativa||'',dono:cur.dono,donoNome:cur.donoNome,
+  // toggle: clicar de novo no status que já está aceso DESMARCA (fica sem marcação).
+  // forcar=true (botões "Todos P/A") sempre define o status, nunca desmarca.
+  const novo=(!forcar && cur.status===status) ? null : status;
+  MARCAS.set(mat,{status:novo,justificativa:cur.justificativa||'',dono:cur.dono,donoNome:cur.donoNome,
     militar:{militar_id:m.id,matricula:m.matricula,posto_graduacao:m.posto_graduacao,nome_completo:m.nome_completo,nome_guerra:m.nome_guerra,grupamento_id:m.grupamento_id}});
   // atualiza a linha sem re-render total (preserva foco/scroll)
   const row=document.querySelector(`.mil-row[data-mat="${CSS.escape(mat)}"]`); if(!row) return;
-  row.querySelector('.pa-btn.p').classList.toggle('on',status==='presente');
-  row.querySelector('.pa-btn.a').classList.toggle('on',status==='ausente');
-  row.querySelector('.just').classList.toggle('show',status==='ausente');
+  row.querySelector('.pa-btn.p').classList.toggle('on',novo==='presente');
+  row.querySelector('.pa-btn.a').classList.toggle('on',novo==='ausente');
+  row.querySelector('.just').classList.toggle('show',novo==='ausente');
 }
 function setJust(mat,val){ if(!podeEditar(mat)) return; const cur=MARCAS.get(mat)||{status:'ausente'}; cur.justificativa=val; MARCAS.set(mat,cur); }
 function marcarGrupo(g,status){
   const alvos=ROSTER.filter(m=>grupamentoDe(m)===g);
   const livres=alvos.filter(m=>podeEditar(m.matricula));
-  livres.forEach(m=>marcar(m.matricula,status));
+  livres.forEach(m=>marcar(m.matricula,status,true));
   const travados=alvos.length-livres.length;
   if(travados) toast(`${travados} registro(s) não alterado(s) — travados por autoria/data.`);
 }
 function marcarTodos(status){
   const livres=ROSTER.filter(m=>podeEditar(m.matricula));
-  livres.forEach(m=>marcar(m.matricula,status));
+  livres.forEach(m=>marcar(m.matricula,status,true));
   const travados=ROSTER.length-livres.length;
   if(travados) toast(`${travados} registro(s) não alterado(s) — travados por autoria/data.`);
 }
 async function salvarChamada(){
   if(!INSTRUCAO){ toast('Sem instrução ativa.'); return; }
-  const registros=[];
+  const registros=[], remover=[];
   MARCAS.forEach((v,mat)=>{
-    if(!v.status) return;
-    if(!podeEditar(mat)) return;   // não reenvia registro travado (autoria/data)
-    const m=ROSTER.find(x=>x.matricula===mat)||v.militar||{};
-    registros.push({militar_id:m.id||v.militar?.militar_id||null, matricula:mat,
-      posto_graduacao:m.posto_graduacao, nome_completo:m.nome_completo, nome_guerra:m.nome_guerra,
-      grupamento_id:m.grupamento_id, status:v.status, justificativa:v.justificativa||''});
+    if(!podeEditar(mat)) return;   // não mexe em registro travado (autoria/data)
+    if(v.status==='presente'||v.status==='ausente'){
+      const m=ROSTER.find(x=>x.matricula===mat)||v.militar||{};
+      registros.push({militar_id:m.id||v.militar?.militar_id||null, matricula:mat,
+        posto_graduacao:m.posto_graduacao, nome_completo:m.nome_completo, nome_guerra:m.nome_guerra,
+        grupamento_id:m.grupamento_id, status:v.status, justificativa:v.justificativa||''});
+    } else if(v.dono){
+      remover.push(mat);            // estava salvo e foi DESMARCADO → apagar no banco
+    }
   });
-  if(!registros.length){
+  if(!registros.length && !remover.length){
     toast(instrucaoExpirada()&&!EH_ADMIN_GERAL
       ? 'Após o dia da instrução, apenas o Admin Geral pode alterar a chamada.'
       : 'Marque ao menos um militar que você possa alterar.');
@@ -549,8 +555,21 @@ async function salvarChamada(){
   }
   const btn=document.getElementById('btnSalvarChamada'); btn.disabled=true; const old=btn.textContent; btn.textContent='Salvando…';
   try{
-    const r=await rpc('chamada_instrucao_lancar',{p_token:sessao.token,p_instrucao_id:INSTRUCAO.id,p_registros:registros});
-    toast(`Chamada salva — ${r&&r.gravados||registros.length} militar(es).`);
+    let g=0, rem=0;
+    if(registros.length){
+      const r=await rpc('chamada_instrucao_lancar',{p_token:sessao.token,p_instrucao_id:INSTRUCAO.id,p_registros:registros});
+      g=(r&&r.gravados)||registros.length;
+      // marca localmente como meus (para um futuro desmarcar+salvar apagar de verdade)
+      const meuDig=minhaMatriculaDig();
+      registros.forEach(x=>{ const mk=MARCAS.get(x.matricula); if(mk){ mk.dono=meuDig; mk.donoNome=sessao.nome||sessao.matricula; } });
+    }
+    if(remover.length){
+      const r=await rpc('chamada_instrucao_remover',{p_token:sessao.token,p_instrucao_id:INSTRUCAO.id,p_matriculas:remover});
+      rem=(r&&r.removidos)||remover.length;
+      remover.forEach(mat=>MARCAS.delete(mat));   // já não é mais salvo
+    }
+    const partes=[]; if(g)partes.push(`${g} lançado(s)`); if(rem)partes.push(`${rem} desmarcado(s)`);
+    toast('Chamada salva — '+(partes.join(', ')||'sem alterações')+'.');
   }catch(e){ toast('Erro ao salvar: '+e.message); }
   finally{ btn.disabled=false; btn.textContent=old; }
 }
