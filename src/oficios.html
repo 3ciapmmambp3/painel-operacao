@@ -40,6 +40,15 @@
   .b-entrada{color:var(--info);background:var(--info-bg)}
   .s-REGISTRADO{color:var(--success);background:var(--success-bg)}
   .s-ARQUIVADO{color:var(--text-hint);background:rgba(255,255,255,.06)}
+  .s-EXCLUIDO{color:var(--danger);background:rgba(239,83,80,.14)}
+  tr.row-excluido .num{text-decoration:line-through;opacity:.7}
+  tr.row-excluido td{opacity:.85}
+  .excl-banner{background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.4);color:var(--danger);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.5}
+  .excl-banner b{color:var(--danger)}
+  .excl-box{border:1px solid rgba(239,83,80,.4);background:rgba(239,83,80,.06);border-radius:8px;padding:12px;margin:0 0 4px}
+  .excl-box label{display:block;font-size:11.5px;font-weight:700;color:var(--danger);margin-bottom:6px}
+  .excl-box textarea{width:100%;min-height:64px;resize:vertical;font-family:inherit;font-size:13px;padding:8px;border-radius:6px;border:1px solid var(--border-mid);background:var(--bg-input,#151515);color:var(--text-white)}
+  .excl-box .excl-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
   .flow{color:var(--text-white)} .flow small{color:var(--text-hint);display:block;font-size:10.5px}
   .tbtn{background:none;border:1px solid var(--border-mid);color:var(--text-muted);padding:6px 11px;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap}
   .tbtn:hover{border-color:var(--gold);color:var(--gold)}
@@ -151,6 +160,7 @@
       <option value="">Todas as situações</option>
       <option value="REGISTRADO">Registrado</option>
       <option value="ARQUIVADO">Arquivado</option>
+      <option value="EXCLUIDO">Excluído</option>
     </select>
     <button class="btn-outline" onclick="exportar()" title="Exportar a lista filtrada para planilha (.csv)">📥 Exportar planilha</button>
   </div>
@@ -171,11 +181,19 @@
     <div class="p-head"><span class="pn" id="pn">—</span><button class="x" onclick="fechar()">✕</button></div>
     <div class="pmsg" id="pmsg"></div>
     <div class="p-body" id="pbody"></div>
+    <div class="excl-box" id="excl-box" style="display:none">
+      <label>Justificativa da exclusão</label>
+      <textarea id="excl-motivo" placeholder="Motivo da exclusão. Obrigatório quando o próximo número já foi gerado — nesse caso o ofício fica registrado como EXCLUÍDO para controle da P1."></textarea>
+      <div class="excl-actions">
+        <button class="tbtn" onclick="cancelarExcluir()">Cancelar</button>
+        <button class="tbtn" style="color:var(--danger);border-color:rgba(239,83,80,.4)" onclick="confirmarExcluir()">Confirmar exclusão</button>
+      </div>
+    </div>
     <div class="p-actions">
-      <button class="tbtn" id="btn-excluir" onclick="excluir()" style="margin-right:auto;color:var(--danger);border-color:rgba(239,83,80,.4);display:none">Excluir</button>
+      <button class="tbtn" id="btn-excluir" onclick="pedirExcluir()" style="margin-right:auto;color:var(--danger);border-color:rgba(239,83,80,.4);display:none">Excluir</button>
       <button class="tbtn" id="btn-pdf" onclick="gerarPdf()" style="display:none">🖨 Gerar PDF</button>
       <button class="tbtn" onclick="fechar()">Fechar</button>
-      <button class="btn-gold" onclick="salvarControle()">Salvar controle</button>
+      <button class="btn-gold" id="btn-salvar-ctrl" onclick="salvarControle()">Salvar controle</button>
     </div>
   </div>
 </div>
@@ -283,7 +301,8 @@ async function carregar(){
 }
 function kpis(){
   const ano=new Date().getFullYear();
-  const doAno=DADOS.filter(r=>(r.ano||ano)===ano);
+  // KPIs contam só ofícios válidos (EXCLUIDO fica fora das contagens)
+  const doAno=DADOS.filter(r=>(r.ano||ano)===ano && r.situacao!=='EXCLUIDO');
   document.getElementById('k-total').textContent=doAno.length;
   document.getElementById('k-saida').textContent=doAno.filter(r=>r.tipo==='Saída').length;
   document.getElementById('k-entrada').textContent=doAno.filter(r=>r.tipo==='Entrada').length;
@@ -311,8 +330,9 @@ function render(){
     const tp=r.tipo==='Saída'?'<span class="badge b-saida">Saída</span>':'<span class="badge b-entrada">Entrada</span>';
     const nn=r.tipo==='Saída'?(r.numero||'—'):(r.num_externo?('ext. '+r.num_externo):'—');
     const sitCls='s-'+(r.situacao||'REGISTRADO');
-    const sitTxt=({REGISTRADO:'Registrado',ARQUIVADO:'Arquivado'})[r.situacao]||r.situacao;
-    return `<tr>
+    const sitTxt=({REGISTRADO:'Registrado',ARQUIVADO:'Arquivado',EXCLUIDO:'Excluído'})[r.situacao]||r.situacao;
+    const rowCls=r.situacao==='EXCLUIDO'?' class="row-excluido"':'';
+    return `<tr${rowCls}>
       <td><div class="num">${_esc(nn)}</div>${tp}</td>
       <td>${dBR(r.data_doc)}</td>
       <td>${_esc(r.assunto||'—')}</td>
@@ -366,7 +386,18 @@ function abrir(id){
     </div>
     ${r.controlado_por_nome?`<div style="font-size:11px;color:var(--text-hint);margin-top:4px">Último controle por ${_esc(r.controlado_por_nome)} · ${_esc(dBR(r.updated_at))}</div>`:''}
   `;
-  document.getElementById('btn-excluir').style.display = isAG ? '' : 'none';
+  const excl = r.situacao==='EXCLUIDO';
+  if(excl){
+    const dt = r.excluido_em ? dBR(r.excluido_em) : '';
+    document.getElementById('pbody').insertAdjacentHTML('afterbegin',
+      `<div class="excl-banner"><b>⛔ Ofício EXCLUÍDO</b> — mantido apenas para controle da P1.
+       ${r.excluido_motivo?`<br><b>Justificativa:</b> ${_esc(r.excluido_motivo)}`:''}
+       ${(r.excluido_por_nome||dt)?`<br><span style="opacity:.85">Por ${_esc(r.excluido_por_nome||'—')}${dt?` · ${dt}`:''}</span>`:''}</div>`);
+  }
+  // num excluído já não pode ser re-excluído; controle não se edita
+  document.getElementById('btn-excluir').style.display = (isAG && !excl) ? '' : 'none';
+  document.getElementById('btn-salvar-ctrl').style.display = excl ? 'none' : '';
+  cancelarExcluir();
   document.getElementById('btn-pdf').style.display = (r.tipo==='Saída' && r.of_corpo) ? '' : 'none';
   renderCtrlAnx();
   document.getElementById('ov').classList.add('show');
@@ -391,14 +422,43 @@ async function salvarControle(){
     setTimeout(fechar, 700);
   }catch(e){ console.error('controle:', e); pmsg('err','Erro ao salvar: '+e.message); }
 }
-async function excluir(){
+function pedirExcluir(){
   if(!atual || !isAG) return;
-  if(!confirm(`Excluir este ofício? Esta ação não pode ser desfeita.`)) return;
+  const box=document.getElementById('excl-box');
+  document.getElementById('excl-motivo').value='';
+  box.style.display='block';
+  document.getElementById('excl-motivo').focus();
+  box.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+function cancelarExcluir(){ const b=document.getElementById('excl-box'); if(b) b.style.display='none'; }
+async function confirmarExcluir(){
+  if(!atual || !isAG) return;
+  const motivo=(document.getElementById('excl-motivo').value||'').trim();
   try{
-    const r=await fetch(`${API}/rest/v1/rpc/oficio_excluir`,{method:'POST',headers:H,body:JSON.stringify({p_token:sessao.token,p_id:atual.id})});
-    if(!r.ok) throw new Error(await r.text());
-    DADOS=DADOS.filter(x=>x.id!==atual.id); kpis(); render(); fechar();
-  }catch(e){ console.error('excluir:', e); pmsg('err','Erro ao excluir: '+e.message); }
+    const r=await fetch(`${API}/rest/v1/rpc/oficio_excluir`,{method:'POST',headers:H,body:JSON.stringify({p_token:sessao.token,p_id:atual.id,p_motivo:motivo})});
+    const txt=await r.text();
+    if(!r.ok) throw new Error(txt);
+    let res={}; try{ res=JSON.parse(txt); }catch(_){}
+    cancelarExcluir();
+    if(res.acao==='reaproveitado'){
+      pmsg('ok', `✓ Excluído. Número ${_esc(res.numero||'')} liberado — o próximo ofício reutilizará este número.`);
+    } else if(res.acao==='excluido_registro'){
+      pmsg('ok', `✓ Registrado como EXCLUÍDO. Como o próximo número já foi gerado, o ${_esc(res.numero||'ofício')} fica guardado para controle da P1.`);
+    } else {
+      pmsg('ok', '✓ Ofício excluído.');
+    }
+    await carregar();
+    setTimeout(fechar, 1300);
+  }catch(e){
+    const m=String(e.message||e);
+    if(/justificativa/i.test(m)){
+      document.getElementById('excl-box').style.display='block';
+      pmsg('err','Justificativa obrigatória: o próximo número já foi gerado, então este ofício ficará registrado como EXCLUÍDO.');
+      document.getElementById('excl-motivo').focus();
+      return;
+    }
+    console.error('excluir:', e); pmsg('err','Erro ao excluir: '+m);
+  }
 }
 
 /* ── Documento do ofício (impressão / PDF) ───────────────────────── */
@@ -446,7 +506,8 @@ function exportar(){
   if(!lst.length){ alert('Nada para exportar com os filtros atuais.'); return; }
   const cols=['Data','Tipo','Número','Nº externo','Assunto','Origem (emitente)','Destino',
               'Grupamento','Em resposta a','Responsável','Situação','Observações',
-              'Obs. do controle','Registrado por','Registrado em','Controlado por','Anexos'];
+              'Obs. do controle','Registrado por','Registrado em','Controlado por','Anexos',
+              'Excluído por','Excluído em','Justificativa da exclusão'];
   const cell=v=>{ let s=(v==null?'':String(v)); if(/[";\n\r]/.test(s)) s='"'+s.replace(/"/g,'""')+'"'; return s; };
   const linhas=lst.map(r=>{
     const origem  = r.tipo==='Saída' ? (r.emitente||'')     : (r.emitente_ext||'');
@@ -455,9 +516,10 @@ function exportar(){
     return [
       dBR(r.data_doc), r.tipo, r.numero||'', r.num_externo||'', r.assunto||'',
       origem, destino, r.grupamento_id||'', r.em_resposta||'', r.responsavel||'',
-      ({REGISTRADO:'Registrado',ARQUIVADO:'Arquivado'})[r.situacao]||r.situacao||'',
+      ({REGISTRADO:'Registrado',ARQUIVADO:'Arquivado',EXCLUIDO:'Excluído'})[r.situacao]||r.situacao||'',
       r.observacoes||'', r.observacoes_controle||'', r.registrado_por_nome||'',
-      r.created_at?new Date(r.created_at).toLocaleString('pt-BR'):'', r.controlado_por_nome||'', anexos
+      r.created_at?new Date(r.created_at).toLocaleString('pt-BR'):'', r.controlado_por_nome||'', anexos,
+      r.excluido_por_nome||'', r.excluido_em?new Date(r.excluido_em).toLocaleString('pt-BR'):'', r.excluido_motivo||''
     ].map(cell).join(';');
   });
   const csv='﻿'+[cols.map(cell).join(';')].concat(linhas).join('\r\n');
