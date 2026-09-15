@@ -1979,7 +1979,9 @@ async function preencherEquipeDoTTA(chamadaId){
         const recNode = getOrCreatePanelNode('recursos');
         const vp = recNode && recNode.querySelector('[data-field="viaturaPrincipal"]');
         if (vp && !vp.value){
-          vp.value = minha.prefixo_viatura;
+          // Já entra com o rótulo COMPLETO ("28145 - Toyota / Hilux - QMV1116"),
+          // mas a ficha é vinculada pelo prefixo (prefixoViatura) — não duplica.
+          vp.value = viaturaLabelCompleto(minha.prefixo_viatura);
           vp.dispatchEvent(new Event('change', { bubbles: true }));   // puxa hodômetro da ficha do dia
           vpVinculada = true;
         }
@@ -1994,7 +1996,7 @@ async function preencherEquipeDoTTA(chamadaId){
         const setF = (field, val) => { const el = entry.querySelector('[data-field="'+field+'"]'); if (el && val && !el.value) el.value = val; };
         setF('apoioComandante', acharRef(eq.comandante && eq.comandante.matricula));
         setF('apoioMotorista',  acharRef(eq.motorista  && eq.motorista.matricula));
-        setF('apoioViatura', eq.prefixo_viatura || '');
+        setF('apoioViatura', viaturaLabelCompleto(eq.prefixo_viatura || ''));
       });
 
       // Operações comuns (card "Operação") x PAF (card "PAF"). Chamadas antigas
@@ -2247,7 +2249,7 @@ function bindHodometroFromMov(entry){
   const notaDefault = nota ? nota.textContent : '';
   const trava = (ro) => { [hodIni, hodFim].forEach(el => { el.readOnly = ro; el.classList.toggle('input-readonly', ro); }); };
   const puxar = async () => {
-    const pref = (principal.value || '').trim();
+    const pref = prefixoViatura(principal.value);   // chave da ficha = só o prefixo
     if (!pref){ trava(false); if (nota) nota.textContent = notaDefault; return; }
     const mov = await buscarMovimentacaoHoje(pref);
     if (mov && mov.km_inicial != null && mov.km_final != null){
@@ -2270,6 +2272,20 @@ function getViaturaPrincipal(){
   if (!node) return '';
   const input = node.querySelector('[data-field="viaturaPrincipal"]');
   return input ? input.value.trim() : '';
+}
+
+// Só o PREFIXO da viatura ("28145 - Toyota / Hilux - QMV1116" → "28145").
+// É a CHAVE da Ficha de Movimentação. Idempotente ("28145" → "28145"), então
+// tanto faz o campo estar com o prefixo puro ou com o rótulo completo: a ficha
+// é sempre a mesma (não duplica).
+function prefixoViatura(v){ return ((v || '').split(/\s[-–—]\s/)[0] || '').trim(); }
+
+// Rótulo completo a partir do prefixo, usando a fonte VIATURAS ("28145" →
+// "28145 - Toyota / Hilux - QMV1116"). Sem correspondência → devolve o prefixo.
+function viaturaLabelCompleto(pref){
+  const p = (pref || '').trim(); if (!p) return '';
+  const list = (referenceCache['VIATURAS'] || []).map(optionValueOf_);
+  return list.find(x => prefixoViatura(x) === p) || p;
 }
 
 function refreshViaturaTotalsFromApoio(){
@@ -4161,13 +4177,13 @@ async function criarPendenciasMovimentacao(faltando){
       body: JSON.stringify({ p_token: sess.token, p_prefixo: prefixo, p_mot_mat: matDe(motValue), p_mot_nome: motValue || '' })
     }).catch(()=>{});
     const jobs = [];
-    const principal = getViaturaPrincipal();
+    const principal = prefixoViatura(getViaturaPrincipal());   // pendência pela chave = prefixo
     if (principal && faltando.includes(principal)){
       const mot = (document.querySelector('[name="motorista"]') || {}).value || '';
       jobs.push(call(principal, mot));
     }
     document.querySelectorAll('#apoioList [data-apoio-entry]').forEach(entry => {
-      const v = ((entry.querySelector('[data-field="apoioViatura"]') || {}).value || '').trim();
+      const v = prefixoViatura((entry.querySelector('[data-field="apoioViatura"]') || {}).value || '');
       if (v && faltando.includes(v)){
         const mot = (entry.querySelector('[data-field="apoioMotorista"]') || {}).value || '';
         jobs.push(call(v, mot));
@@ -4180,10 +4196,10 @@ async function criarPendenciasMovimentacao(faltando){
 // Todas as viaturas informadas no relatório: principal (Recursos Empregados) + apoio (Bloco 1).
 function getTodasViaturasInformadas(){
   const set = new Set();
-  const p = getViaturaPrincipal();
+  const p = prefixoViatura(getViaturaPrincipal());   // sempre pelo PREFIXO (chave da ficha)
   if (p) set.add(p);
   document.querySelectorAll('#apoioList [data-field="apoioViatura"]').forEach(inp => {
-    const v = (inp.value || '').trim();
+    const v = prefixoViatura(inp.value);
     if (v) set.add(v);
   });
   return [...set];
@@ -4207,6 +4223,7 @@ function _diaRangeUTC(dataISO){
 // Assim não trava quando a ficha é lançada no dia da movimentação e o relatório é
 // finalizado em outro dia (nem vice-versa).
 function _fichaNoDiaFilter(prefixo, rg){
+  prefixo = prefixoViatura(prefixo);   // aceita "28145" ou "28145 - Toyota…"; casa sempre a MESMA ficha
   const orExpr = `or=(and(inicio.gte.${rg.gte},inicio.lte.${rg.lte}),and(criado_em.gte.${rg.gte},criado_em.lte.${rg.lte}))`;
   return `&prefixo=eq.${encodeURIComponent(prefixo)}&${orExpr}`;
 }
