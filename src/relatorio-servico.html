@@ -2265,6 +2265,31 @@ function bindHodometroFromMov(entry){
   };
   principal.addEventListener('change', puxar);
   if (principal.value) puxar();   // caso a viatura já venha preenchida (ex.: do TTA)
+
+  // ── Robustez (à prova de falha) ──────────────────────────────────────
+  // Re-tenta puxar a ficha SEM depender de trocar a viatura — cobre o caso
+  // de a Ficha ter sido lançada DEPOIS de a viatura já estar selecionada
+  // (ex.: motorista lança a ficha no meio do preenchimento do relatório).
+  // Dispara ao focar um campo de hodômetro ainda vazio/editável, ao mudar a
+  // Data do relatório, e (via garantirHodometroDaFicha) na hora de salvar.
+  const reCheck = () => {
+    if (principal.value && !hodIni.readOnly && !hodFim.readOnly && !hodIni.value && !hodFim.value) puxar();
+  };
+  [hodIni, hodFim].forEach(el => el.addEventListener('focus', reCheck));
+  const campoData = document.querySelector('[data-label="Data"]');
+  if (campoData) campoData.addEventListener('change', () => { if (principal.value) puxar(); });
+  entry._puxarHod = puxar;   // usado por garantirHodometroDaFicha() no submit
+}
+
+// Antes de salvar: re-puxa a ficha de cada bloco de Recursos cujo hodômetro
+// ainda esteja vazio/editável (a validação de submit já garantiu que a viatura
+// TEM ficha do dia). Assim o relatório sai com o hodômetro preenchido mesmo que
+// a ficha só tenha sido lançada depois de a viatura ter sido escolhida.
+async function garantirHodometroDaFicha(){
+  const entries = document.querySelectorAll('[data-repeat-list="recursos"] [data-repeat-entry]');
+  for (const entry of entries){
+    if (typeof entry._puxarHod === 'function') { try { await entry._puxarHod(); } catch(e){} }
+  }
 }
 
 function getViaturaPrincipal(){
@@ -4160,6 +4185,7 @@ document.getElementById('relatorioForm').addEventListener('submit', async (e) =>
   }
 
   // Todas com ficha — ou não foi possível verificar (fallback antes do módulo ir ao ar): segue.
+  await garantirHodometroDaFicha();   // preenche o hodômetro da ficha se ainda estiver vazio
   openReview();
 });
 
