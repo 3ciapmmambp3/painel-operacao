@@ -244,6 +244,28 @@
               <button class="btn-outline btn-sm" onclick="exportarCsvChamadas()">⬇ Exportar CSV</button>
             </span>
           </h3>
+          <style>
+            .f-lanc{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px;margin:2px 0 16px;padding:12px 14px;
+              background:var(--bg-input,rgba(255,255,255,.03));border:1px solid var(--border);border-radius:10px;}
+            .f-lanc .fg{display:flex;flex-direction:column;gap:5px;}
+            .f-lanc label{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);}
+            .f-lanc select,.f-lanc input[type=date]{background:var(--bg-input);border:1px solid var(--border);color:var(--text-white);
+              border-radius:7px;padding:8px 10px;font-size:13px;font-family:inherit;min-width:150px;}
+            .f-lanc select:focus,.f-lanc input:focus{outline:none;border-color:var(--gold);}
+            .f-lanc .fg-btn{margin-left:auto;}
+            @media(max-width:640px){ .f-lanc{flex-direction:column;align-items:stretch;} .f-lanc select,.f-lanc input{min-width:0;width:100%;} .f-lanc .fg-btn{margin-left:0;} }
+          </style>
+          <div class="f-lanc" id="filtrosLanc">
+            <div class="fg"><label>Pelotão</label>
+              <select id="fPelotao" onchange="onFiltroPelotao()"><option value="">Todos os pelotões</option></select></div>
+            <div class="fg"><label>Grupamento</label>
+              <select id="fGrupamento" onchange="aplicarFiltrosChamadas()"><option value="">Todos os grupamentos</option></select></div>
+            <div class="fg"><label>De</label>
+              <input type="date" id="fDe" onchange="aplicarFiltrosChamadas()"></div>
+            <div class="fg"><label>Até</label>
+              <input type="date" id="fAte" onchange="aplicarFiltrosChamadas()"></div>
+            <div class="fg fg-btn"><button class="btn-outline btn-sm" onclick="limparFiltrosChamadas()">Limpar filtros</button></div>
+          </div>
           <div style="overflow-x:auto">
             <table class="temas" style="min-width:900px">
               <thead><tr>
@@ -642,7 +664,8 @@ async function uploadArquivo(file){
 }
 
 /* ── Lançamentos do mês + exportar CSV ────────────────────────────── */
-let CHAMADAS_MES = [];
+let CHAMADAS_MES = [];      // tudo do mês (fonte)
+let CHAMADAS_VIEW = [];     // após filtros (o que a tabela/pager/CSV mostram)
 let porPaginaChamadas = 15;
 let paginaChamadas = 1;
 
@@ -651,13 +674,76 @@ async function carregarChamadasAdmin(){
   corpo.innerHTML = '<tr><td colspan="10" class="hint">Carregando…</td></tr>';
   try{
     CHAMADAS_MES = await rpc('tta_listar_chamadas', { p_token: sessao.token, p_ano: admAno, p_mes: admMes }) || [];
-    paginaChamadas = 1;
-    renderChamadasPage();
+    popularFiltrosChamadas();
+    aplicarFiltrosChamadas();
   }catch(e){
     corpo.innerHTML = '<tr><td colspan="10" class="hint">Erro ao carregar lançamentos.</td></tr>';
     document.getElementById('contadorChamadas').textContent = '';
     document.getElementById('pagerChamadas').style.display = 'none';
   }
+}
+
+/* ── Filtros dos lançamentos: pelotão / grupamento / período ─────────────
+   Só front-end, derivados do próprio mês carregado (sem RPC nova). O nº do
+   pelotão sai do texto do grupamento ("N PEL"), igual ao ttaPelotaoDoGp do
+   TTA. O grupamento é casado por gp_responsavel (exato). Datas comparadas em
+   America/Sao_Paulo (sv-SE => YYYY-MM-DD, ordem lexicográfica = cronológica). */
+function ttaPelotaoDoTexto(gc){ const m = String(gc||'').match(/(\d+)\s*PEL/i); return m ? +m[1] : null; }
+function _gpsDoMes(){
+  const map = new Map(); // gp_responsavel -> {gp, gc, pel}
+  (CHAMADAS_MES||[]).forEach(c=>{
+    const gp = c.gp_responsavel || c.grupamento_completo || '';
+    if(!gp || map.has(gp)) return;
+    map.set(gp, { gp, gc: c.grupamento_completo || gp, pel: ttaPelotaoDoTexto(c.grupamento_completo) });
+  });
+  return [...map.values()];
+}
+function popularFiltrosChamadas(){
+  const selPel = document.getElementById('fPelotao');
+  const selGrp = document.getElementById('fGrupamento');
+  if(!selPel || !selGrp) return;
+  const pelAtual = selPel.value, grpAtual = selGrp.value;
+  const pels = [...new Set(_gpsDoMes().map(g=>g.pel).filter(p=>p!=null))].sort((a,b)=>a-b);
+  selPel.innerHTML = '<option value="">Todos os pelotões</option>' +
+    pels.map(p=>`<option value="${p}">${p}º Pelotão</option>`).join('');
+  if(pels.map(String).includes(pelAtual)) selPel.value = pelAtual;
+  preencherGrupamentos(grpAtual);
+}
+function preencherGrupamentos(manter){
+  const selPel = document.getElementById('fPelotao');
+  const selGrp = document.getElementById('fGrupamento');
+  if(!selPel || !selGrp) return;
+  const pel = selPel.value ? +selPel.value : null;
+  let gps = _gpsDoMes();
+  if(pel!=null) gps = gps.filter(g=>g.pel===pel);
+  gps.sort((a,b)=>String(a.gc).localeCompare(String(b.gc),'pt'));
+  selGrp.innerHTML = '<option value="">Todos os grupamentos</option>' +
+    gps.map(g=>`<option value="${_escG(g.gp)}">${_escG(g.gc)}</option>`).join('');
+  selGrp.value = (manter && gps.some(g=>g.gp===manter)) ? manter : '';
+}
+function onFiltroPelotao(){ preencherGrupamentos(document.getElementById('fGrupamento').value); aplicarFiltrosChamadas(); }
+function aplicarFiltrosChamadas(){
+  const pel = (document.getElementById('fPelotao')||{}).value || '';
+  const gp  = (document.getElementById('fGrupamento')||{}).value || '';
+  const de  = (document.getElementById('fDe')||{}).value || '';
+  const ate = (document.getElementById('fAte')||{}).value || '';
+  CHAMADAS_VIEW = (CHAMADAS_MES||[]).filter(c=>{
+    if(gp && (c.gp_responsavel||c.grupamento_completo) !== gp) return false;
+    if(pel && String(ttaPelotaoDoTexto(c.grupamento_completo)) !== pel) return false;
+    if(de || ate){
+      const ds = c.data_hora_chamada ? new Date(c.data_hora_chamada).toLocaleDateString('sv-SE') : '';
+      if(de && ds < de) return false;
+      if(ate && ds > ate) return false;
+    }
+    return true;
+  });
+  paginaChamadas = 1;
+  renderChamadasPage();
+}
+function limparFiltrosChamadas(){
+  ['fPelotao','fGrupamento','fDe','fAte'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  preencherGrupamentos('');
+  aplicarFiltrosChamadas();
 }
 
 // ── Excluir TTA (Aux P1/Admin — a própria página já é restrita) ──
@@ -742,12 +828,14 @@ function irParaPaginaChamadas(p){
 function renderChamadasPage(){
   const corpo = document.getElementById('corpoChamadas');
   const pager = document.getElementById('pagerChamadas');
-  const total = CHAMADAS_MES.length;
-  document.getElementById('contadorChamadas').textContent = `— ${total} lançamento(s)`;
-  document.getElementById('badgeLancamentos').textContent = total;
+  const total = CHAMADAS_VIEW.length;
+  const totalMes = CHAMADAS_MES.length;
+  document.getElementById('contadorChamadas').textContent =
+    total === totalMes ? `— ${total} lançamento(s)` : `— ${total} de ${totalMes} lançamento(s)`;
+  document.getElementById('badgeLancamentos').textContent = totalMes;
 
   if (!total){
-    corpo.innerHTML = '<tr><td colspan="10" class="hint">Nenhuma chamada registrada neste mês.</td></tr>';
+    corpo.innerHTML = `<tr><td colspan="10" class="hint">${totalMes ? 'Nenhum lançamento para os filtros selecionados.' : 'Nenhuma chamada registrada neste mês.'}</td></tr>`;
     pager.style.display = 'none';
     return;
   }
@@ -755,7 +843,7 @@ function renderChamadasPage(){
   const totalPaginas = Math.max(1, Math.ceil(total / porPaginaChamadas));
   if (paginaChamadas > totalPaginas) paginaChamadas = totalPaginas;
   const inicio = (paginaChamadas - 1) * porPaginaChamadas;
-  const pagina = CHAMADAS_MES.slice(inicio, inicio + porPaginaChamadas);
+  const pagina = CHAMADAS_VIEW.slice(inicio, inicio + porPaginaChamadas);
 
   corpo.innerHTML = pagina.map(c => `
     <tr>
@@ -796,11 +884,11 @@ function csvCampo(v){
   return `"${s}"`;
 }
 function exportarCsvChamadas(){
-  if (!CHAMADAS_MES.length) return toast('Nada pra exportar neste mês.');
+  if (!CHAMADAS_VIEW.length) return toast('Nada pra exportar com os filtros atuais.');
   const cab = ['Grupamento de Atuação','Responsável pela Chamada','Matrícula do Responsável','Data/Hora da Chamada',
     'Militares Presentes','Assunto','Referência','Início Turno','Fim Turno','Prefixo Viatura',
     'Tipo de Patrulha','Município(s)','Observações','Registrado em'];
-  const linhas = CHAMADAS_MES.map(c => [
+  const linhas = CHAMADAS_VIEW.map(c => [
     c.grupamento_completo, c.militar_resp_nome, c.militar_resp_matricula, fmtDataHoraCompleta(c.data_hora_chamada),
     (c.militares_presentes||[]).map(m=>[m.matricula,(m.pg||'').toUpperCase(),m.nome].filter(Boolean).join(' - ')).join('; '), c.tema_assunto, c.tema_referencia,
     (c.inicio_turno||'').slice(0,5), (c.final_turno||'').slice(0,5), c.prefixo_viatura,
