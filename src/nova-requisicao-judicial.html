@@ -203,7 +203,12 @@
 /* ── Sessão / guarda ─────────────────────────────────────────────── */
 const S = (typeof sessaoLer === 'function') ? sessaoLer() : null;
 if (!S) { location.href = 'index.html'; }
-const MILITAR_LINHA = S ? `${S.matricula} — ${S.pg || ''} ${S.guerra || S.nome || ''}`.replace(/\s+/g,' ').trim() : '';
+// Máscara-padrão de PM (reaproveita _formatarMatricula do auth.js → "000.000-0").
+const fmtPM = v => { const d=(v||'').toString().replace(/\D/g,''); return d ? ((typeof _formatarMatricula==='function') ? _formatarMatricula(d) : d) : ''; };
+// Máscara PROGRESSIVA (enquanto digita) do Nº PM: 1→"1", 1234→"123.4", 1234567→"123.456-7".
+const _maskPMlive = v => { const d=(v||'').toString().replace(/\D/g,'').slice(0,7); if(d.length<=3) return d; if(d.length<=6) return d.slice(0,3)+'.'+d.slice(3); return d.slice(0,3)+'.'+d.slice(3,6)+'-'+d.slice(6); };
+// "Registrado por" / cabeçalho: posto/graduação + nome completo + Nº PM mascarado.
+const MILITAR_LINHA = S ? `${S.pg || ''} ${S.nome || S.guerra || ''} — Nº PM ${fmtPM(S.matricula)}`.replace(/\s+/g,' ').trim() : '';
 
 const API  = (typeof SB_AUTH_URL !== 'undefined') ? SB_AUTH_URL : '';
 const AKEY = (typeof SB_AUTH_KEY !== 'undefined') ? SB_AUTH_KEY : '';
@@ -306,17 +311,27 @@ const _norm = s => (s||'').toString().toUpperCase().normalize('NFD').replace(/[�
 function nomeMil(m){ return `${m.posto_graduacao||''} ${m.nome_completo||m.nome_guerra||''}`.replace(/\s+/g,' ').trim(); }
 
 function filtrarMil(){
-  const q = _norm(document.getElementById('mil-search').value.trim());
+  const inp = document.getElementById('mil-search');
+  // Máscara viva do Nº PM: se está digitando SÓ números, formata como 000.000-0;
+  // se tem letra, é busca por nome — não mexe no texto.
+  if(inp.value && !/[a-zA-ZÀ-ÿ]/.test(inp.value)){
+    const masked = _maskPMlive(inp.value);
+    if(masked !== inp.value) inp.value = masked;
+  }
+  const q = _norm(inp.value.trim());
   const drop = document.getElementById('mil-drop');
   const jaSel = new Set(selecionados.map(s=>s.id));
   let lista = EFETIVO.filter(m=>!jaSel.has(m.id));
-  if(q) lista = lista.filter(m=> _norm(nomeMil(m)).includes(q) || (m.matricula||'').replace(/\D/g,'').includes(q.replace(/\D/g,'')) );
+  if(q){
+    const qd = q.replace(/\D/g,'');   // só compara por matrícula quando o termo TEM dígitos
+    lista = lista.filter(m=> _norm(nomeMil(m)).includes(q) || (qd && (m.matricula||'').replace(/\D/g,'').includes(qd)) );
+  }
   lista = lista.slice(0, 30);
   milHi = -1;
   if(!EFETIVO.length){ drop.innerHTML = `<div class="mil-opt empty">Carregando efetivo…</div>`; drop.classList.add('open'); return; }
   if(!lista.length){ drop.innerHTML = `<div class="mil-opt empty">Nenhum militar encontrado.</div>`; drop.classList.add('open'); return; }
   drop.innerHTML = lista.map((m,i)=>
-    `<div class="mil-opt" data-id="${m.id}" onclick="addMil('${m.id}')">${_esc(nomeMil(m))}<small>Nº PM ${_esc(m.matricula||'')} · ${_esc((m.grupamento_id||'').split('/').pop().trim()||'—')}</small></div>`).join('');
+    `<div class="mil-opt" data-id="${m.id}" onclick="addMil('${m.id}')">${_esc(nomeMil(m))}<small>Nº PM ${_esc(fmtPM(m.matricula))} · ${_esc((m.grupamento_id||'').split('/').pop().trim()||'—')}</small></div>`).join('');
   drop.classList.add('open');
 }
 function milKey(e){

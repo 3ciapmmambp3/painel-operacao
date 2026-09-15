@@ -39,6 +39,15 @@
   .tipo-toggle button.on{background:var(--gold);color:#1a1000}
   .tipo-toggle button+button{border-left:1px solid var(--border-mid)}
 
+  /* picker de busca (responsável) — mesmo visual dos "Militares requisitados" */
+  .milbox{position:relative}
+  .mil-drop{position:absolute;z-index:30;left:0;right:0;top:100%;margin-top:4px;max-height:240px;overflow:auto;background:var(--bg-card);border:1px solid var(--border-mid);border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,.5);display:none}
+  .mil-drop.open{display:block}
+  .mil-opt{padding:9px 13px;font-size:12.5px;color:var(--text-white);cursor:pointer;border-bottom:1px solid var(--border)}
+  .mil-opt:hover,.mil-opt.hi{background:var(--bg-hover)}
+  .mil-opt small{color:var(--text-hint);display:block;font-size:10.5px;margin-top:2px}
+  .mil-opt.empty{color:var(--text-hint);cursor:default}
+
   .drop{grid-column:1/-1;border:1.5px dashed var(--border-mid);border-radius:10px;padding:22px;text-align:center;cursor:pointer;transition:.18s;background:var(--bg-input)}
   .drop:hover{border-color:var(--gold);background:var(--gold-bg)}
   .drop .dic{width:30px;height:30px;stroke:var(--gold);fill:none;stroke-width:1.6;margin-bottom:8px}
@@ -174,9 +183,12 @@
         <div class="f full"><label>Em resposta a ofício anterior?</label>
           <input type="text" id="em_resposta" placeholder="Nº / data / emitente / assunto do ofício respondido (se houver)"></div>
         <div class="f full"><label>Militar / servidor responsável</label>
-          <input type="text" id="responsavel" list="efetivo" placeholder="Nº PM - posto e nome (ou nome do servidor)"></div>
+          <div class="milbox">
+            <input type="text" id="responsavel" autocomplete="off" placeholder="Buscar por nome ou nº PM… (ou digite o nome do servidor)"
+                   oninput="filtrarResp()" onfocus="filtrarResp()" onkeydown="respKey(event)">
+            <div class="mil-drop" id="resp-drop"></div>
+          </div></div>
       </div>
-      <datalist id="efetivo"></datalist>
 
       <!-- ── CORPO DO OFÍCIO (saída) ── -->
       <div id="blk-corpo" style="display:none">
@@ -243,7 +255,10 @@
 /* ── Sessão / guarda ─────────────────────────────────────────────── */
 const S = (typeof sessaoLer === 'function') ? sessaoLer() : null;
 if (!S) { location.href = 'index.html'; }
-const MILITAR_LINHA = S ? `${S.matricula} — ${S.pg || ''} ${S.guerra || S.nome || ''}`.replace(/\s+/g,' ').trim() : '';
+// Máscara-padrão de PM (reaproveita _formatarMatricula do auth.js → "000.000-0").
+const fmtPM = v => { const d=(v||'').toString().replace(/\D/g,''); return d ? ((typeof _formatarMatricula==='function') ? _formatarMatricula(d) : d) : ''; };
+// "Registrado por" / cabeçalho: posto/graduação + nome completo + Nº PM mascarado.
+const MILITAR_LINHA = S ? `${S.pg || ''} ${S.nome || S.guerra || ''} — Nº PM ${fmtPM(S.matricula)}`.replace(/\s+/g,' ').trim() : '';
 
 const API  = (typeof SB_AUTH_URL !== 'undefined') ? SB_AUTH_URL : '';
 const AKEY = (typeof SB_AUTH_KEY !== 'undefined') ? SB_AUTH_KEY : '';
@@ -286,17 +301,61 @@ document.getElementById('of_fecho').value = DEF_FECHO;   // assinante/cargo fica
   }catch(e){ console.error('grupamentos:', e); }
 })();
 
-/* efetivo p/ o datalist do responsável */
+/* efetivo p/ o picker de busca do responsável (busca por NOME e por NÚMERO, com
+   máscara 000.000-0 — mesmo comportamento dos "Militares requisitados"). O campo
+   segue aceitando texto livre (servidor fora do efetivo). */
+let RESP_EFETIVO = [];   // [{id,matricula,posto_graduacao,nome_completo,nome_guerra,grupamento_id}]
+let respHi = -1;         // índice destacado no dropdown
+const _normO = s => (s||'').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+const _maskPMlive = v => { const d=(v||'').toString().replace(/\D/g,'').slice(0,7); if(d.length<=3) return d; if(d.length<=6) return d.slice(0,3)+'.'+d.slice(3); return d.slice(0,3)+'.'+d.slice(3,6)+'-'+d.slice(6); };
+const _nomeRespMil = m => `${m.posto_graduacao||''} ${m.nome_completo||m.nome_guerra||''}`.replace(/\s+/g,' ').trim();
 (async function carregarEfetivo(){
   try{
     const r = await fetch(`${API}/rest/v1/rpc/tta_listar_militares`, { method:'POST', headers:H, body:JSON.stringify({p_token:S.token}) });
     if(!r.ok) throw new Error(await r.text());
-    const rows = await r.json() || [];
-    const dl = document.getElementById('efetivo');
-    rows.forEach(m=>{ const o=document.createElement('option');
-      o.value = `${m.matricula||''} - ${m.posto_graduacao||''} ${m.nome_completo||m.nome_guerra||''}`.replace(/\s+/g,' ').trim(); dl.appendChild(o); });
+    RESP_EFETIVO = await r.json() || [];
   }catch(e){ /* opcional */ }
 })();
+
+function filtrarResp(){
+  const inp = document.getElementById('responsavel');
+  const drop = document.getElementById('resp-drop');
+  // Máscara viva do Nº PM: digitando SÓ números, formata como 000.000-0; se tem
+  // letra, é nome/servidor — não mexe no texto.
+  if(inp.value && !/[a-zA-ZÀ-ÿ]/.test(inp.value)){
+    const masked = _maskPMlive(inp.value);
+    if(masked !== inp.value) inp.value = masked;
+  }
+  const q = _normO(inp.value.trim());
+  respHi = -1;
+  let lista = RESP_EFETIVO;
+  if(q){
+    const qd = q.replace(/\D/g,'');   // só compara por matrícula quando o termo TEM dígitos
+    lista = lista.filter(m => _normO(_nomeRespMil(m)).includes(q) || (qd && (m.matricula||'').replace(/\D/g,'').includes(qd)) );
+  }
+  lista = lista.slice(0, 30);
+  if(!RESP_EFETIVO.length){ drop.innerHTML = `<div class="mil-opt empty">Carregando efetivo…</div>`; drop.classList.add('open'); return; }
+  if(!lista.length){ drop.classList.remove('open'); drop.innerHTML=''; return; }   // sem match: texto livre (servidor)
+  drop.innerHTML = lista.map(m=>
+    `<div class="mil-opt" data-mat="${_esc(m.matricula||'')}" data-nome="${_esc(_nomeRespMil(m))}" onclick="selecionarResp(this)">${_esc(_nomeRespMil(m))}<small>Nº PM ${_esc(fmtPM(m.matricula))} · ${_esc((m.grupamento_id||'').split('/').pop().trim()||'—')}</small></div>`).join('');
+  drop.classList.add('open');
+}
+function respKey(e){
+  const drop=document.getElementById('resp-drop'); const opts=[...drop.querySelectorAll('.mil-opt:not(.empty)')];
+  if(e.key==='ArrowDown'){ e.preventDefault(); respHi=Math.min(respHi+1,opts.length-1); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); respHi=Math.max(respHi-1,0); }
+  else if(e.key==='Enter'){ if(opts[respHi]){ e.preventDefault(); opts[respHi].click(); } return; }
+  else if(e.key==='Escape'){ drop.classList.remove('open'); return; }
+  else return;
+  opts.forEach((o,i)=>o.classList.toggle('hi',i===respHi)); if(opts[respHi]) opts[respHi].scrollIntoView({block:'nearest'});
+}
+function selecionarResp(el){
+  const mat = fmtPM(el.getAttribute('data-mat'));
+  const nome = el.getAttribute('data-nome') || '';
+  document.getElementById('responsavel').value = `${mat}${mat?' - ':''}${nome}`.trim();
+  document.getElementById('resp-drop').classList.remove('open');
+}
+document.addEventListener('click', e=>{ if(!e.target.closest('.milbox')){ const d=document.getElementById('resp-drop'); if(d) d.classList.remove('open'); } });
 
 /* ── Tipo (toggle) ───────────────────────────────────────────────── */
 function setTipo(t){
