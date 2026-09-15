@@ -29,6 +29,31 @@
     .md-hero .stamp{margin-left:auto;text-align:right;font-size:12px;color:var(--text-hint);}
     .md-hero .stamp b{display:block;color:var(--text-muted);font-size:13px;}
 
+    /* Busca universal (abaixo do nome, no topo do Meu Dia) */
+    .md-busca{position:relative;margin:-4px 2px 22px;}
+    .md-busca .mb-ic{position:absolute;left:14px;top:23px;transform:translateY(-50%);font-size:15px;pointer-events:none;opacity:.85;}
+    #mb-input{width:100%;background:var(--bg-card);border:1px solid var(--gold-border);border-radius:12px;
+      color:var(--text-white);font-size:14px;font-family:inherit;padding:13px 40px;outline:none;transition:border-color .15s,box-shadow .15s;}
+    #mb-input:focus{border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-bg);}
+    #mb-input::placeholder{color:var(--text-hint);}
+    .mb-clear{position:absolute;right:10px;top:23px;transform:translateY(-50%);width:24px;height:24px;border-radius:50%;
+      border:none;background:var(--bg-hover);color:var(--text-muted);cursor:pointer;font-size:12px;line-height:1;}
+    .mb-clear:hover{color:var(--text-white);}
+    .mb-res{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:50;background:var(--bg-dark,#151515);
+      border:1px solid var(--gold-border);border-radius:12px;overflow:hidden;box-shadow:0 16px 40px rgba(0,0,0,.5);display:none;max-height:60vh;overflow-y:auto;}
+    .mb-res.show{display:block;}
+    .mb-item{display:flex;align-items:center;gap:12px;padding:11px 14px;text-decoration:none;border-bottom:1px solid var(--border);cursor:pointer;}
+    .mb-item:last-child{border-bottom:0;}
+    .mb-item:hover,.mb-item.sel{background:var(--bg-hover);}
+    .mb-item .mi-ic{font-size:18px;width:22px;text-align:center;flex-shrink:0;}
+    .mb-item .mi-b{flex:1;min-width:0;}
+    .mb-item .mi-t{font-size:13.5px;font-weight:700;color:var(--text-white);}
+    .mb-item .mi-d{font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .mb-item .mi-tag{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:2px 7px;border-radius:5px;flex-shrink:0;
+      border:1px solid var(--gold-border);color:var(--gold-light);background:var(--gold-bg);}
+    .mb-item .mi-tag.nav{border-color:var(--border);color:var(--text-muted);background:transparent;}
+    .mb-empty{padding:16px 14px;color:var(--text-muted);font-size:12.5px;text-align:center;}
+
     .sec-title{font-size:11px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:.8px;margin:6px 2px 12px;}
 
     .quick{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-bottom:26px;}
@@ -143,6 +168,19 @@
       <div class="sub" id="md-sub">—</div>
     </div>
     <div class="stamp"><b id="hoje-data">—</b><span id="hoje-dia">—</span></div>
+  </div>
+
+  <!-- Busca universal: digite uma ação/assunto e vá direto ao local (formulário ou
+       módulo). Reaproveita os helpers de permissão do Acesso Rápido — cada resultado
+       respeita o ok() do usuário. Índice + lógica no bloco BUSCA UNIVERSAL, mais abaixo. -->
+  <div class="md-busca" id="md-busca">
+    <span class="mb-ic">🔍</span>
+    <input id="mb-input" type="text" autocomplete="off" spellcheck="false"
+      role="combobox" aria-expanded="false" aria-controls="mb-res" aria-autocomplete="list"
+      placeholder="O que você quer fazer? (ex.: denúncia de balcão, ofício, TTA…)"
+      oninput="mbBuscar()" onkeydown="mbTecla(event)" onfocus="mbBuscar()">
+    <button class="mb-clear" id="mb-clear" type="button" onclick="mbLimpar()" aria-label="Limpar" style="display:none">✕</button>
+    <div class="mb-res" id="mb-res" role="listbox"></div>
   </div>
 
   <div id="md-avisos" style="margin-bottom:22px;"></div>
@@ -859,6 +897,136 @@ async function qrCarregar(){
   qrRender();
 }
 if(sessao){ qrRender(); qrCarregar(); }
+
+/* ══════════════════════ BUSCA UNIVERSAL (Meu Dia) ══════════════════════
+   Barra "O que você quer fazer?": digita ação/assunto e vai direto ao local.
+   Casa por SINÔNIMOS (kw), não só pelo título — ex.: "balcão" acha o formulário
+   de Denúncia. Cada item tem ok(): respeita a permissão (mesmos helpers QR_*).
+   tag 'lançar'/'novo' = vai ao FORMULÁRIO; 'nav' = vai à LISTA/módulo.
+   Fonte única: para novo destino, basta acrescentar uma linha aqui.          */
+const MB_REQJUD = QR_NIVEL==='admin_geral' || /aux\s*p?\s*1/.test(QR_FUNC)
+  || (/(cmt|comandante)/.test(QR_FUNC) && /\bcia\b/.test(QR_FUNC));
+const MB_IDX = [
+  // ——— AÇÕES (abrem o formulário direto) ———
+  {ic:'📋', t:'Lançar Denúncia de Balcão', d:'Registrar denúncia recebida no balcão.', h:'nova-denuncia.html?tipo=denuncia', tag:'lançar',
+    kw:'balcao denuncia queixa reclamacao registro registrar ocorrencia populacao cidadao atendimento', ok:()=>true},
+  {ic:'⚖️', t:'Nova Requisição (MP / órgão)', d:'Requisição de órgão externo (MP, PJ…).', h:'nova-denuncia.html?tipo=requisicao', tag:'lançar',
+    kw:'requisicao ministerio publico mp promotoria orgao externo demanda solicitacao', ok:()=>true},
+  {ic:'✉️', t:'Novo Ofício', d:'Registrar entrada/saída de ofício.', h:'nova-oficio.html', tag:'lançar',
+    kw:'oficio expediente documento correspondencia entrada saida numeracao', ok:()=>true},
+  {ic:'⚖️', t:'Nova Requisição Judicial', d:'Cadastrar requisição vinda da Justiça.', h:'nova-requisicao-judicial.html', tag:'lançar',
+    kw:'requisicao judicial justica processo mandado juiz vara comarca', ok:()=>true},
+  {ic:'🗓️', t:'Lançar TTA (Pré-turno)', d:'Treinamento Tático e equipe do serviço.', h:'tta.html', tag:'lançar',
+    kw:'tta treinamento tatico pre turno preturno equipe escala servico', ok:()=>true},
+  {ic:'📄', t:'Novo Relatório de Serviço', d:'Relatório do serviço do turno.', h:'relatorio-servico.html', tag:'lançar',
+    kw:'relatorio servico turno rat producao autos reds resultado', ok:()=>true},
+  {ic:'📝', t:'Ficha de Movimentação de Viatura', d:'Movimentação da viatura do dia.', h:'movimentacao-viaturas.html', tag:'lançar',
+    kw:'viatura movimentacao ficha km hodometro deslocamento dsp saida chegada abastecimento', ok:()=>true},
+  {ic:'📣', t:'Lançar Chamada de Instrução', d:'Presença na instrução prevista.', h:'chamada-instrucao.html', tag:'lançar',
+    kw:'chamada instrucao presenca falta presente ausente reuniao', ok:()=>true},
+  {ic:'🗒️', t:'Nova tarefa pessoal', d:'Criar um lembrete/afazer pessoal.', h:'#minhas-tarefas', tag:'novo', fn:'mtAbrir',
+    kw:'tarefa lembrete pessoal afazer todo anotacao', ok:()=>true},
+  // ——— MÓDULOS / LISTAS (navegação) ———
+  {ic:'📋', t:'Controle de Denúncias', d:'Denúncias, requisições e materiais.', h:'denuncias.html', tag:'nav',
+    kw:'demandas denuncias requisicoes materiais controle lista balcao', ok:()=>true},
+  {ic:'📦', t:'Materiais Acautelados — TCO', d:'Acompanhamento dos materiais do TCO.', h:'materiais-tco-semad.html?aba=TCO', tag:'nav',
+    kw:'tco material materiais acautelado acautelados apreendido apreendidos apreensao acautelamento reds destruicao restituicao', ok:()=>true},
+  {ic:'📦', t:'Materiais Acautelados — SEMAD', d:'Acompanhamento dos materiais da SEMAD.', h:'materiais-tco-semad.html?aba=SEMAD', tag:'nav',
+    kw:'semad material materiais acautelado acautelados apreendido apreendidos apreensao acautelamento encaminhamento destruicao', ok:()=>true},
+  {ic:'✉️', t:'Controle de Ofícios', d:'Entradas e saídas de ofícios.', h:'oficios.html', tag:'nav',
+    kw:'oficios controle lista entrada saida', ok:()=>true},
+  {ic:'⚖️', t:'Controle de Requisições Judiciais', d:'Requisições judiciais da P1.', h:'requisicoes-judiciais.html', tag:'nav',
+    kw:'requisicao judicial controle lista justica', ok:()=>MB_REQJUD},
+  {ic:'📄', t:'Meus Relatórios', d:'Relatórios de serviço lançados.', h:'meus-relatorios.html', tag:'nav',
+    kw:'relatorios meus lista servico', ok:()=>true},
+  {ic:'🗂️', t:'Meus TTA', d:'Seus TTA lançados.', h:'meus-tta.html', tag:'nav',
+    kw:'tta meus lista treinamento', ok:()=>true},
+  {ic:'📋', t:'Minhas Movimentações', d:'Fichas de viatura suas e da equipe.', h:'minhas-movimentacoes.html', tag:'nav',
+    kw:'movimentacoes minhas viatura fichas equipe', ok:()=>true},
+  {ic:'📊', t:'Produtividade', d:'Autos, REDS e indicadores.', h:'produtividade.html', tag:'nav',
+    kw:'produtividade indicadores autos reds consolidado numeros', ok:()=>true},
+  {ic:'🔴', t:'Análise Criminal', d:'Manchas, mapas e prioridade.', h:'analise-criminal.html', tag:'nav',
+    kw:'analise criminal mancha mapa ocorrencia crime georreferenciamento inteligencia', ok:()=>true},
+  {ic:'🛡️', t:'Operações POE', d:'Acompanhamento das operações do POE.', h:'painel.html?tab=operacoes', tag:'nav',
+    kw:'operacoes poe acompanhamento', ok:()=>true},
+  {ic:'🌿', t:'Operações GDO Rural', d:'Acompanhamento da GDO Rural.', h:'painel.html?tab=gdo-rural', tag:'nav',
+    kw:'gdo rural operacoes campo', ok:()=>true},
+  {ic:'🔎', t:'Consulta urbano/rural', d:'Classificação de endereços (IBGE).', h:'painel.html?tab=consulta', tag:'nav',
+    kw:'consulta urbano rural endereco ibge classificacao', ok:()=>true},
+  {ic:'👤', t:'Meu Perfil', d:'Seus dados e troca de senha.', h:'perfil.html', tag:'nav',
+    kw:'perfil senha dados trocar conta', ok:()=>true},
+  {ic:'🚔', t:'Gestão de Viaturas', d:'Frota, baixas/manutenção e QR.', h:'viaturas-gestao.html', tag:'nav',
+    kw:'frota viaturas gestao manutencao baixa qr', ok:()=>QR_ADMIN||QR_FUNC.indexOf('aux p4')===0},
+  {ic:'⚙️', t:'Gestão do TTA', d:'Chamadas e relatórios do TTA.', h:'tta-gestao.html', tag:'nav',
+    kw:'tta gestao chamada relatorio tema', ok:()=>QR_NIVEL==='admin_geral'||QR_FUNC==='aux p1'},
+  {ic:'🎛️', t:'Gestão Operacional', d:'Supervisão e Chamada de Instrução.', h:'hub-go.html', tag:'nav',
+    kw:'gestao operacional supervisao controle chamada instrucao', ok:()=>['admin_geral','admin','admin_pelotao'].includes(QR_NIVEL)},
+  {ic:'📊', t:'Metas', d:'Cadastro de metas por grupamento.', h:'admin.html?tab=metas', tag:'nav', kw:'metas cadastro grupamento', ok:QR_CAD3},
+  {ic:'🎯', t:'Cadastro de Operações', d:'Operações do Relatório.', h:'admin.html?tab=operacoes', tag:'nav', kw:'cadastro operacoes nome periodo', ok:QR_CAD3},
+  {ic:'🌲', t:'PAF', d:'Plano Anual de Fiscalização.', h:'admin.html?tab=paf', tag:'nav', kw:'paf plano anual fiscalizacao', ok:QR_CAD3},
+  {ic:'🏭', t:'FAPI', d:'Fiscalização Preventiva na Indústria.', h:'admin.html?tab=fapi', tag:'nav', kw:'fapi fiscalizacao industria', ok:QR_CAD3},
+  {ic:'📝', t:'Campos & Quesitos', d:'Campos e quesitos do Relatório.', h:'admin.html?tab=quesitos', tag:'nav', kw:'campos quesitos relatorio', ok:QR_CAD3},
+  {ic:'👥', t:'Administração', d:'Usuários e grupamentos.', h:'admin.html', tag:'nav', kw:'administracao usuarios grupamentos admin cadastro', ok:()=>QR_NIVEL==='admin_geral'},
+];
+// remove acentos/caixa p/ casar "denuncia" com "denúncia"
+const _mbNorm = s => (s==null?'':String(s)).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+let MB_SEL = -1, MB_ATUAL = [];
+function mbBuscar(){
+  const inp = document.getElementById('mb-input'), box = document.getElementById('mb-res');
+  const clr = document.getElementById('mb-clear');
+  if(!inp || !box) return;
+  const raw = inp.value.trim();
+  clr.style.display = raw ? 'flex' : 'none';
+  if(!raw){ box.classList.remove('show'); box.innerHTML=''; inp.setAttribute('aria-expanded','false'); MB_ATUAL=[]; MB_SEL=-1; return; }
+  const termos = _mbNorm(raw).split(/\s+/).filter(Boolean);
+  const res = MB_IDX.filter(a=>a.ok()).map(a=>{
+    const t=_mbNorm(a.t), kw=_mbNorm(a.kw||''), d=_mbNorm(a.d||''), alvo=t+' '+kw+' '+d;
+    // todos os termos precisam aparecer em algum campo
+    if(!termos.every(w=>alvo.indexOf(w)>=0)) return null;
+    // pontuação: título > palavra-chave > descrição; ação ganha leve bônus
+    let s=0; termos.forEach(w=>{ if(t.indexOf(w)>=0) s+=6; else if(kw.indexOf(w)>=0) s+=3; else s+=1; });
+    if(t.startsWith(termos[0])) s+=4;
+    if(a.tag!=='nav') s+=1;
+    return {a, s};
+  }).filter(Boolean).sort((x,y)=>y.s-x.s).slice(0,8);
+  MB_ATUAL = res.map(r=>r.a); MB_SEL = res.length ? 0 : -1;
+  if(!res.length){ box.innerHTML = '<div class="mb-empty">Nada encontrado. Tente outra palavra (ex.: ofício, viatura, TTA).</div>'; }
+  else {
+    box.innerHTML = res.map((r,i)=>{
+      const a=r.a, isAcao=a.tag!=='nav';
+      const tag = isAcao ? '<span class="mi-tag">'+_qesc(a.tag)+'</span>' : '<span class="mi-tag nav">abrir</span>';
+      return '<a class="mb-item'+(i===0?' sel':'')+'" role="option" data-i="'+i+'" href="'+a.h+'" onclick="return mbClick(event,'+i+')">'
+        + '<span class="mi-ic">'+a.ic+'</span>'
+        + '<span class="mi-b"><span class="mi-t">'+_qesc(a.t)+'</span><span class="mi-d">'+_qesc(a.d)+'</span></span>'
+        + tag + '</a>';
+    }).join('');
+  }
+  box.classList.add('show'); inp.setAttribute('aria-expanded','true');
+}
+function mbAbrir(a){
+  if(!a) return;
+  if(a.fn && typeof window[a.fn]==='function'){ mbLimpar(); window[a.fn](); return; }
+  if(a.h && a.h.charAt(0)==='#'){ mbLimpar(); const el=document.querySelector(a.h)||document.getElementById(a.h.slice(1)); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); return; }
+  location.href = a.h;
+}
+function mbClick(e,i){ e.preventDefault(); mbAbrir(MB_ATUAL[i]); return false; }
+function mbLimpar(){ const inp=document.getElementById('mb-input'); if(inp){ inp.value=''; } mbBuscar(); }
+function mbTecla(e){
+  const box=document.getElementById('mb-res'); if(!box) return;
+  if(e.key==='Escape'){ mbLimpar(); e.target.blur(); return; }
+  if(!MB_ATUAL.length) return;
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+    e.preventDefault();
+    MB_SEL += e.key==='ArrowDown'?1:-1;
+    if(MB_SEL<0) MB_SEL=MB_ATUAL.length-1; if(MB_SEL>=MB_ATUAL.length) MB_SEL=0;
+    box.querySelectorAll('.mb-item').forEach((el,i)=>el.classList.toggle('sel',i===MB_SEL));
+    const sel=box.querySelector('.mb-item.sel'); if(sel) sel.scrollIntoView({block:'nearest'});
+  } else if(e.key==='Enter'){
+    e.preventDefault(); if(MB_SEL>=0) mbAbrir(MB_ATUAL[MB_SEL]);
+  }
+}
+// fecha ao clicar fora
+document.addEventListener('click', e=>{ const w=document.getElementById('md-busca'); if(w && !w.contains(e.target)){ const b=document.getElementById('mb-res'); if(b) b.classList.remove('show'); } });
 
 /* ══════════════ LINKS ÚTEIS (gerenciados na Administração) ══════════════ */
 async function carregarLinksUteis(){
