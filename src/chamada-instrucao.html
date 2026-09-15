@@ -459,7 +459,8 @@ async function carregarLancar(){
     registrarNiveis(roster);
     MARCAS = new Map();
     (existentes||[]).forEach(r=>MARCAS.set(r.matricula,{status:r.status,justificativa:r.justificativa||'',
-      dono:soDigitos(r.registrado_por_matricula), donoNome:r.registrado_por_nome||''}));
+      dono:soDigitos(r.registrado_por_matricula), donoNome:r.registrado_por_nome||'',
+      orig:{status:r.status, justificativa:r.justificativa||''}}));   // estado salvo → só reenvia se mudar
     document.getElementById('lancarBar').style.display='flex';
     await carregarLotacoesCadastro();
     popularFiltrosLancar();
@@ -588,7 +589,7 @@ function marcar(mat,status,forcar){
   // toggle: clicar de novo no status que já está aceso DESMARCA (fica sem marcação).
   // forcar=true (botões "Todos P/A") sempre define o status, nunca desmarca.
   const novo=(!forcar && cur.status===status) ? null : status;
-  MARCAS.set(mat,{status:novo,justificativa:cur.justificativa||'',dono:cur.dono,donoNome:cur.donoNome,
+  MARCAS.set(mat,{status:novo,justificativa:cur.justificativa||'',dono:cur.dono,donoNome:cur.donoNome,orig:cur.orig,
     militar:{militar_id:m.id,matricula:m.matricula,posto_graduacao:m.posto_graduacao,nome_completo:m.nome_completo,nome_guerra:m.nome_guerra,grupamento_id:m.grupamento_id}});
   // atualiza a linha sem re-render total (preserva foco/scroll)
   const row=document.querySelector(`.mil-row[data-mat="${CSS.escape(mat)}"]`); if(!row) return;
@@ -615,9 +616,13 @@ function marcarTodos(status){
 async function salvarChamada(){
   if(!INSTRUCAO){ toast('Sem instrução ativa.'); return; }
   const registros=[], remover=[];
+  // só envia o que MUDOU (novo ou alterado) — assim salvar um registro não
+  // re-carimba a autoria dos demais que já estavam lançados.
+  const mudou=(v)=>!v.orig || v.orig.status!==v.status || (v.orig.justificativa||'')!==(v.justificativa||'');
   MARCAS.forEach((v,mat)=>{
     if(!podeEditar(mat)) return;   // não mexe em registro travado (autoria/data)
     if(v.status==='presente'||v.status==='ausente'){
+      if(!mudou(v)) return;        // já estava salvo com o mesmo valor → não reenvia
       const m=ROSTER.find(x=>x.matricula===mat)||v.militar||{};
       registros.push({militar_id:m.id||v.militar?.militar_id||null, matricula:mat,
         posto_graduacao:m.posto_graduacao, nome_completo:m.nome_completo, nome_guerra:m.nome_guerra,
@@ -638,9 +643,10 @@ async function salvarChamada(){
     if(registros.length){
       const r=await rpc('chamada_instrucao_lancar',{p_token:sessao.token,p_instrucao_id:INSTRUCAO.id,p_registros:registros});
       g=(r&&r.gravados)||registros.length;
-      // marca localmente como meus (para um futuro desmarcar+salvar apagar de verdade)
+      // marca localmente como meus (só os que EU alterei) e fixa o novo estado salvo
       const meuDig=minhaMatriculaDig();
-      registros.forEach(x=>{ const mk=MARCAS.get(x.matricula); if(mk){ mk.dono=meuDig; mk.donoNome=sessao.nome||sessao.matricula; } });
+      registros.forEach(x=>{ const mk=MARCAS.get(x.matricula); if(mk){ mk.dono=meuDig; mk.donoNome=sessao.nome||sessao.matricula;
+        mk.orig={status:mk.status, justificativa:mk.justificativa||''}; } });
     }
     if(remover.length){
       const r=await rpc('chamada_instrucao_remover',{p_token:sessao.token,p_instrucao_id:INSTRUCAO.id,p_matriculas:remover});
