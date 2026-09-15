@@ -140,6 +140,7 @@
     <div class="p-body" id="pbody"></div>
     <div class="p-actions">
       <button class="tbtn" id="btn-excluir" onclick="excluir()" style="margin-right:auto;color:var(--danger);border-color:rgba(239,83,80,.4);display:none">Excluir</button>
+      <button class="tbtn" id="btn-editar" onclick="editarReq()" style="display:none">✏️ Editar dados</button>
       <button class="tbtn" onclick="fechar()">Fechar</button>
       <button class="btn-gold" onclick="salvarControle()">Salvar controle</button>
     </div>
@@ -152,7 +153,9 @@ if(!sessao){ location.href='index.html'; }
 const API=(typeof SB_AUTH_URL!=='undefined')?SB_AUTH_URL:'';
 const AKEY=(typeof SB_AUTH_KEY!=='undefined')?SB_AUTH_KEY:'';
 const H={ 'apikey':AKEY,'Authorization':`Bearer ${AKEY}`,'Content-Type':'application/json' };
-const isAG = sessao && sessao.nivel_acesso==='admin_geral';
+// Editar/Excluir = Aux P1 + Admin Geral (espelha _reqjud_pode_editar do db/71)
+const _fn = (sessao && sessao.funcao) || '';
+const podeEditar = !!sessao && (sessao.nivel_acesso==='admin_geral' || (/aux/i.test(_fn) && /p\s*1/i.test(_fn)));
 document.getElementById('who').textContent = sessao ? `${sessao.matricula} — ${sessao.pg||''} ${sessao.guerra||sessao.nome||''}`.replace(/\s+/g,' ').trim() : '';
 
 let DADOS=[]; let atual=null;
@@ -282,7 +285,8 @@ function abrir(id){
     </div>
     ${r.controlado_por_nome?`<div style="font-size:11px;color:var(--text-hint);margin-top:4px">Último controle por ${_esc(r.controlado_por_nome)} · ${_esc(dBR(r.updated_at))}</div>`:''}
   `;
-  document.getElementById('btn-excluir').style.display = isAG ? '' : 'none';
+  document.getElementById('btn-excluir').style.display = podeEditar ? '' : 'none';
+  document.getElementById('btn-editar').style.display  = podeEditar ? '' : 'none';
   document.getElementById('ov').classList.add('show');
 }
 function fechar(){ document.getElementById('ov').classList.remove('show'); atual=null; }
@@ -307,8 +311,12 @@ async function salvarControle(){
     setTimeout(fechar, 700);
   }catch(e){ console.error('controle:', e); pmsg('err','Erro ao salvar: '+e.message); }
 }
+function editarReq(){
+  if(!atual || !podeEditar) return;
+  location.href = `nova-requisicao-judicial.html?id=${encodeURIComponent(atual.id)}`;
+}
 async function excluir(){
-  if(!atual || !isAG) return;
+  if(!atual || !podeEditar) return;
   if(!confirm(`Excluir a requisição ${atual.numero}? Esta ação não pode ser desfeita.`)) return;
   try{
     const r=await fetch(`${API}/rest/v1/rpc/requisicao_judicial_excluir`,{method:'POST',headers:H,body:JSON.stringify({p_token:sessao.token,p_id:atual.id})});

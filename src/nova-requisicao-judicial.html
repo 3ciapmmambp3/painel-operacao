@@ -192,7 +192,7 @@
 
       <div class="msg" id="msg"></div>
       <div class="actions">
-        <button class="btn-ghost" type="button" onclick="location.href='hub-p1.html'">← Voltar</button>
+        <button class="btn-ghost" type="button" id="btn-voltar" onclick="location.href='hub-p1.html'">← Voltar</button>
         <button class="btn-primary" type="button" id="btn-salvar" onclick="salvar()">Registrar</button>
       </div>
     </form>
@@ -209,6 +209,13 @@ const API  = (typeof SB_AUTH_URL !== 'undefined') ? SB_AUTH_URL : '';
 const AKEY = (typeof SB_AUTH_KEY !== 'undefined') ? SB_AUTH_KEY : '';
 const H = { 'apikey': AKEY, 'Authorization': `Bearer ${AKEY}`, 'Content-Type': 'application/json' };
 const VIEW_MUNICIPIOS = 'vw_municipio_grupamento';
+
+/* ── Modo edição (?id=…) — restrito a Aux P1 / Admin Geral ────────── */
+const EDIT_ID = new URLSearchParams(location.search).get('id');
+const _fn = (S && S.funcao) || '';
+const PODE_EDITAR = !!S && (S.nivel_acesso === 'admin_geral' || (/aux/i.test(_fn) && /p\s*1/i.test(_fn)));
+let EDIT_ROW = null;
+if (EDIT_ID && !PODE_EDITAR) { alert('Edição restrita ao Aux P1 / Admin Geral.'); location.href = 'requisicoes-judiciais.html'; }
 
 /* Anexos → Google Drive via Apps Script (se OFICIOS_DRIVE_URL) ou Supabase Storage */
 const DRIVE_URL = (typeof OFICIOS_DRIVE_URL !== 'undefined') ? OFICIOS_DRIVE_URL : '';
@@ -244,6 +251,54 @@ document.getElementById('militar').value = MILITAR_LINHA;
     if(!r.ok) throw new Error(await r.text());
     EFETIVO = await r.json() || [];
   }catch(e){ console.error('efetivo:', e); }
+})();
+
+/* ── Carrega a requisição p/ edição e preenche o formulário ──────── */
+const LOCAIS_PADRAO = ['Fórum da Comarca','Delegacia de Polícia Civil','Promotoria Pública','Justiça Federal'];
+if (EDIT_ID && PODE_EDITAR) (async function carregarParaEdicao(){
+  try{
+    const r = await fetch(`${API}/rest/v1/rpc/requisicao_judicial_get`, { method:'POST', headers:H, body:JSON.stringify({p_token:S.token, p_id:EDIT_ID}) });
+    if(!r.ok) throw new Error(await r.text());
+    const row = await r.json(); EDIT_ROW = Array.isArray(row)?row[0]:row;
+    if(!EDIT_ROW){ throw new Error('Requisição não encontrada.'); }
+    const g = id => document.getElementById(id);
+    // cabeçalho / textos do modo edição
+    document.title = `Editar ${EDIT_ROW.numero||'Requisição'} — 3ª Cia PM MAmb`;
+    document.querySelector('.crumbs b').textContent = `Editar ${EDIT_ROW.numero||'Requisição'}`;
+    document.querySelector('.card-head h2').textContent = 'Editar Requisição Judicial';
+    document.querySelector('.card-head p').innerHTML = 'Correção dos dados lançados. O <b>número</b> da requisição não muda. Restrito a Aux P1 / Admin Geral.';
+    document.querySelector('.numbadge span').textContent = 'Nº da requisição';
+    document.querySelector('.numbadge b').textContent = EDIT_ROW.numero || '—';
+    g('btn-salvar').textContent = 'Salvar alterações';
+    g('btn-voltar').setAttribute('onclick', "location.href='requisicoes-judiciais.html'");
+    // dados
+    g('data_audiencia').value = EDIT_ROW.data_audiencia || '';
+    g('horario').value        = EDIT_ROW.horario || '';
+    g('processo').value       = EDIT_ROW.processo || '';
+    g('documento_origem').value = EDIT_ROW.documento_origem || '';
+    g('tipo_envolvimento').value = EDIT_ROW.tipo_envolvimento || '';
+    checkTipoOutro(); if(EDIT_ROW.tipo_envolvimento==='Outro'){ g('tipo_outro').value = EDIT_ROW.tipo_envolvimento_outro||''; }
+    g('metodo').value = EDIT_ROW.metodo || ''; checkMetodo();
+    g('municipio_lotacao').value = EDIT_ROW.municipio_lotacao || '';
+    g('municipio_requisicao').value = EDIT_ROW.municipio_requisicao || '';
+    // local: padrão vs "Outro"
+    const loc = EDIT_ROW.local_audiencia || '';
+    if(loc && !LOCAIS_PADRAO.includes(loc)){ g('local_audiencia').value='Outro'; checkLocal(); g('local_outro').value=loc; }
+    else { g('local_audiencia').value = loc; checkLocal(); }
+    if(EDIT_ROW.autoridade_solicitante) g('autoridade').value = EDIT_ROW.autoridade_solicitante;
+    g('endereco').value = EDIT_ROW.endereco || '';
+    g('observacoes').value = EDIT_ROW.observacoes || '';
+    g('militares_extra').value = EDIT_ROW.militares_extra || '';
+    // militares selecionados (zip militares + militares_ids por índice)
+    const mils = Array.isArray(EDIT_ROW.militares)?EDIT_ROW.militares:[];
+    const ids  = Array.isArray(EDIT_ROW.militares_ids)?EDIT_ROW.militares_ids:[];
+    selecionados = mils.map((m,i)=>({ id:ids[i]||m.id||'', matricula:m.matricula, nome:m.nome, pg:m.pg, guerra:m.guerra, grupamento:m.grupamento }));
+    renderChips();
+    // anexos existentes
+    anexos = (Array.isArray(EDIT_ROW.anexos)?EDIT_ROW.anexos:[]).map(a=>({ path:a.path, nome:a.nome, tamanho:a.tamanho, mime:a.mime, link:a.link, status:'ok' }));
+    renderAnexos();
+    g('militar').value = EDIT_ROW.registrado_por_nome || MILITAR_LINHA;
+  }catch(e){ console.error('carregar edição:', e); erro('Não foi possível carregar a requisição para edição: '+e.message); }
 })();
 
 /* ── Militares requisitados (busca + chips) ──────────────────────── */
@@ -429,7 +484,26 @@ async function salvar(){
     anexos: anexos.filter(a=>a.status==='ok').map(a=>({ path:a.path, nome:a.nome, tamanho:a.tamanho, mime:a.mime, link:a.link }))
   };
 
-  const btn=document.getElementById('btn-salvar'); btn.disabled=true; btn.textContent='Registrando…';
+  const btn=document.getElementById('btn-salvar'); btn.disabled=true;
+
+  // ── MODO EDIÇÃO ──
+  if(EDIT_ID){
+    btn.textContent='Salvando…';
+    try{
+      const r=await fetch(`${API}/rest/v1/rpc/requisicao_judicial_editar`, { method:'POST', headers:{...H,'Prefer':'return=representation'}, body:JSON.stringify({p_token:S.token, p_id:EDIT_ID, p_dados:dados}) });
+      if(!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+      const row=await r.json(); const numero=(Array.isArray(row)?row[0]:row)?.numero || (EDIT_ROW&&EDIT_ROW.numero) || '';
+      ok(`✓ Alterações salvas em <b>${_esc(numero)}</b>. Redirecionando ao controle…`);
+      setTimeout(()=>{ location.href='requisicoes-judiciais.html'; }, 1100);
+    }catch(e){
+      console.error('editar_requisicao_judicial:', e);
+      erro('Não foi possível salvar as alterações: ' + e.message);
+      btn.disabled=false; btn.textContent='Salvar alterações';
+    }
+    return;
+  }
+
+  btn.textContent='Registrando…';
   try{
     const r=await fetch(`${API}/rest/v1/rpc/criar_requisicao_judicial`, { method:'POST', headers:{...H,'Prefer':'return=representation'}, body:JSON.stringify({p_token:S.token, dados}) });
     if(!r.ok) throw new Error(`${r.status} ${await r.text()}`);
