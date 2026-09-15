@@ -213,7 +213,13 @@ if(!sessao){ location.href='index.html'; }
 const API=(typeof SB_AUTH_URL!=='undefined')?SB_AUTH_URL:'';
 const AKEY=(typeof SB_AUTH_KEY!=='undefined')?SB_AUTH_KEY:'';
 const H={ 'apikey':AKEY,'Authorization':`Bearer ${AKEY}`,'Content-Type':'application/json' };
-const isAG = sessao && sessao.nivel_acesso==='admin_geral';
+// Pode excluir = VISÃO TOTAL (Aux P1 / Admin / Admin Geral / CMT Cia) — espelha _oficio_escopo_total (db/63)
+const _fn = (sessao && sessao.funcao) || '';
+const podeExcluir = !!sessao && (
+  ['admin_geral','admin'].includes(sessao.nivel_acesso) ||
+  (/aux/i.test(_fn) && /p\s*1/i.test(_fn)) ||
+  (/(cmt|comandante)/i.test(_fn) && /\bcia\b/i.test(_fn))
+);
 document.getElementById('who').textContent = sessao ? `${sessao.matricula} — ${sessao.pg||''} ${sessao.guerra||sessao.nome||''}`.replace(/\s+/g,' ').trim() : '';
 
 const DEF_CIDADE='Governador Valadares/MG', DEF_FECHO='Atenciosamente';
@@ -395,7 +401,7 @@ function abrir(id){
        ${(r.excluido_por_nome||dt)?`<br><span style="opacity:.85">Por ${_esc(r.excluido_por_nome||'—')}${dt?` · ${dt}`:''}</span>`:''}</div>`);
   }
   // num excluído já não pode ser re-excluído; controle não se edita
-  document.getElementById('btn-excluir').style.display = (isAG && !excl) ? '' : 'none';
+  document.getElementById('btn-excluir').style.display = (podeExcluir && !excl) ? '' : 'none';
   document.getElementById('btn-salvar-ctrl').style.display = excl ? 'none' : '';
   cancelarExcluir();
   document.getElementById('btn-pdf').style.display = (r.tipo==='Saída' && r.of_corpo) ? '' : 'none';
@@ -423,7 +429,7 @@ async function salvarControle(){
   }catch(e){ console.error('controle:', e); pmsg('err','Erro ao salvar: '+e.message); }
 }
 function pedirExcluir(){
-  if(!atual || !isAG) return;
+  if(!atual || !podeExcluir) return;
   const box=document.getElementById('excl-box');
   document.getElementById('excl-motivo').value='';
   box.style.display='block';
@@ -432,7 +438,7 @@ function pedirExcluir(){
 }
 function cancelarExcluir(){ const b=document.getElementById('excl-box'); if(b) b.style.display='none'; }
 async function confirmarExcluir(){
-  if(!atual || !isAG) return;
+  if(!atual || !podeExcluir) return;
   const motivo=(document.getElementById('excl-motivo').value||'').trim();
   try{
     const r=await fetch(`${API}/rest/v1/rpc/oficio_excluir`,{method:'POST',headers:H,body:JSON.stringify({p_token:sessao.token,p_id:atual.id,p_motivo:motivo})});

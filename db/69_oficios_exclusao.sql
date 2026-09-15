@@ -14,6 +14,7 @@
 --      lista dos demais militares.
 --   • A justificativa é OBRIGATÓRIA no caso (2).
 --   • ENTRADA (sem número) e saídas sem numero_seq → exclusão física direta.
+--   • Quem pode excluir: VISÃO TOTAL (Aux P1 / Admin / Admin Geral / CMT Cia).
 --
 --  Depende de: 63 (oficios, oficio_listar, oficio_excluir), 01 (contadores),
 --  04 (_sessao_militar). Idempotente. Rodar no SQL Editor.
@@ -83,8 +84,9 @@ declare
 begin
   select * into v_me from public._sessao_militar(p_token);
   if v_me.id is null then raise exception 'Sessão expirada. Faça login novamente.'; end if;
-  if coalesce(v_me.nivel_acesso,'') <> 'admin_geral' then
-    raise exception 'Exclusão restrita ao Admin Geral.';
+  -- Exclusão liberada a quem tem VISÃO TOTAL: Aux P1 / Admin / Admin Geral / CMT Cia
+  if not public._oficio_escopo_total(v_me.nivel_acesso, v_me.funcao) then
+    raise exception 'Exclusão restrita à P1 / Comando.';
   end if;
 
   select * into v_row from public.oficios where id = p_id;
