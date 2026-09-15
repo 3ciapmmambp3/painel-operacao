@@ -500,7 +500,7 @@ function addEquipe(){
     '<div class="eqhead"><div class="eqtag"><span class="n"></span> Equipe</div>'+
       '<button type="button" class="eq-rm" onclick="removeEquipe(this)">remover</button></div>'+
     '<div class="f full" style="margin-bottom:10px"><label>Grupamento de Atuação <span class="req">*</span> <span class="hint">— onde ESTA equipe vai atuar (pode diferir entre equipes)</span></label>'+
-      '<select class="eq-grup" onchange="carregarMunisEquipe(this.closest(\'.equipe\'))">'+grupamentoOptionsHTML()+'</select></div>'+
+      '<select class="eq-grup" onchange="carregarMunisEquipe(this.closest(\'.equipe\'));ttaFillOperSelect(this.closest(\'.equipe\').querySelector(\'.eq-oper-sel\'))">'+grupamentoOptionsHTML()+'</select></div>'+
     '<div class="eq-g3">'+
       '<div class="f"><label>Comandante da equipe <span class="req">*</span></label><input class="eq-com" list="militares-dl" placeholder="nº ou nome…" oninput="mascaraPM(this);ttaSyncComMot(this);atualizarPresentesAuto()"></div>'+
       '<div class="f eq-vtr-wrap"><label>Viatura (prefixo) <span class="req">*</span></label><input class="eq-vtr" list="viaturas-dl" placeholder="ex: 36685" oninput="atualizarPend()"></div>'+
@@ -794,24 +794,50 @@ async function carregarOperacoesTTA(){
     const rows = await rpc('paf_fapi_listar', {});
     PAF_VIGENTES = (Array.isArray(rows)?rows:[])
       .filter(o => o.tipo === 'PAF')
-      .map(o => ({ id:o.id_operacao, nome:o.nome||'', inicio:dia(o.inicio), final:dia(o.final) }))
+      .map(o => ({ id:o.id_operacao, nome:o.nome||'', inicio:dia(o.inicio), final:dia(o.final),
+                   pelotoes: Array.isArray(o.pelotoes)?o.pelotoes.map(Number):[],
+                   grupamentos: Array.isArray(o.grupamentos)?o.grupamentos:[] }))
       .filter(o => o.id && vigente(o));
   }catch(e){ PAF_VIGENTES = []; }
   // (re)popula os selects que já estão na tela — cobre a corrida com addEquipe()
   document.querySelectorAll('#equipesTTA .equipe .eq-oper-sel').forEach(sel => ttaFillOperSelect(sel));
 }
 
+// Normaliza gp_responsavel p/ comparar (mesmos apelidos do Relatório).
+function ttaNormGp(s){ return (s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').replace(/JOAO MONLEVADE/g,'JOAO MOLEVADE').replace(/MARLIERIA/g,'MARILIERIA').trim(); }
+// Nº do pelotão de um gp_responsavel (via grupamento_completo do cadastro).
+function ttaPelotaoDoGp(gpr){
+  const g = (GRUPOS||[]).find(x => x.gp_responsavel === gpr);
+  const m = String((g && g.grupamento_completo) || '').match(/(\d+)\s*PEL/i);
+  return m ? +m[1] : null;
+}
+// PAF vale p/ este Grupamento de Atuação? Mesma regra do Relatório: cada critério
+// (pelotões / grupamentos) só restringe se estiver preenchido no cadastro do PAF.
+function ttaPafValidoNoGp(paf, gpr){
+  if(!gpr) return true;   // sem grupamento escolhido ainda → não restringe
+  const pels = Array.isArray(paf.pelotoes) ? paf.pelotoes : [];
+  if(pels.length){ const pn = ttaPelotaoDoGp(gpr); if(pn == null || !pels.includes(pn)) return false; }
+  const gps = Array.isArray(paf.grupamentos) ? paf.grupamentos : [];
+  if(gps.length && !gps.map(ttaNormGp).includes(ttaNormGp(gpr))) return false;
+  return true;
+}
+
 // Preenche um <select> de operação preservando a seleção atual.
+// Operações do Cadastro aparecem p/ todos; o PAF é filtrado pelo Grupamento de
+// Atuação DESTA equipe (pelotão + grupamento), como o Relatório faz por fração.
 function ttaFillOperSelect(sel){
   if(!sel) return;
   const cur = sel.value;
+  const eq  = sel.closest('.equipe');
+  const gpr = eq ? ((eq.querySelector('.eq-grup')||{}).value || '') : '';
+  const pafDoGp = PAF_VIGENTES.filter(o => ttaPafValidoNoGp(o, gpr));
   let html = '<option value="">Nenhuma / não se aplica</option>';
   if(OPERACOES_ATIVAS.length){
     html += '<optgroup label="Operações cadastradas">' + OPERACOES_ATIVAS.map(o =>
       `<option value="OP::${ttaEsc(o.nome)}" data-tipo="operacao" data-nome="${ttaEsc(o.nome)}">${ttaEsc(o.nome)}</option>`).join('') + '</optgroup>';
   }
-  if(PAF_VIGENTES.length){
-    html += '<optgroup label="🌲 PAF — Plano Anual de Fiscalização">' + PAF_VIGENTES.map(o =>
+  if(pafDoGp.length){
+    html += '<optgroup label="🌲 PAF — Plano Anual de Fiscalização">' + pafDoGp.map(o =>
       `<option value="PAF::${ttaEsc(o.id)}" data-tipo="paf" data-paf-id="${ttaEsc(o.id)}" data-nome="${ttaEsc(o.nome)}">${ttaEsc(o.id)}${o.nome?' — '+ttaEsc(o.nome):''}</option>`).join('') + '</optgroup>';
   }
   html += '<option value="__OUTRA__">Outra (digitar)…</option>';
