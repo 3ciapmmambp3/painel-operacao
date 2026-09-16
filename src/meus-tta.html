@@ -21,6 +21,11 @@
   .search{flex:1;min-width:180px}
   .search input{background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 12px;color:var(--text-white);font-size:13px;width:100%;outline:none}
   .search input:focus{border-color:var(--gold)}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 0}
+  .chip{background:var(--bg-card);border:1px solid var(--border);color:var(--text-muted);font-size:12px;font-weight:700;padding:7px 14px;border-radius:20px;cursor:pointer;white-space:nowrap}
+  .chip:hover{color:var(--text-white)}
+  .chip.active{background:var(--gold-bg);border-color:var(--gold-border);color:var(--gold-light)}
+  .chip .n{opacity:.7;font-weight:800;margin-left:5px}
   .tablecard{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;margin-top:12px;overflow:hidden}
   .tablecard .thead{display:flex;justify-content:space-between;align-items:center;padding:13px 18px;border-bottom:1px solid var(--border)}
   .tablecard .thead h2{font-size:13px;font-weight:800;color:var(--gold-light);letter-spacing:.4px;text-transform:uppercase}
@@ -77,6 +82,12 @@
         <select id="ano" onchange="carregar()"></select>
         <div class="search"><input id="busca" type="text" placeholder="Buscar por grupamento, viatura, militar…" oninput="render()"></div>
       </div>
+      <div class="chips" id="chips">
+        <span class="chip active" data-f="todas">Minhas + equipe <span class="n" id="n-todas">0</span></span>
+        <span class="chip" data-f="minhas">Só as minhas <span class="n" id="n-minhas">0</span></span>
+        <span class="chip" data-f="equipe">Da equipe <span class="n" id="n-equipe">0</span></span>
+        <span class="chip" data-f="gestao" id="chip-gestao" style="display:none">Todas (gestão) <span class="n" id="n-gestao">0</span></span>
+      </div>
       <div class="tablecard">
         <div class="thead"><h2>Chamadas do TTA</h2><span class="sub" id="cnt">—</span></div>
         <div class="tblscroll">
@@ -109,8 +120,12 @@ const GRUP  = (S && S.grupamento_id || '').toUpperCase().trim();
 const NIVEL = (S && S.nivel_acesso || '');
 // Gestor do TTA (pode excluir / editar qualquer dia) = mesma regra do backend.
 const EH_GESTOR = NIVEL==='admin_geral' || (FUNC==='aux p1' && GRUP==='ADM');
+// Quem enxerga além dos próprios TTAs (Admin/CMT Cia/Admin Pelotão/GP/ADM) → mostra "Todas (gestão)".
+const EH_ESCOPO = ['admin_geral','admin','admin_pelotao','admin_gp'].includes(NIVEL)
+               || FUNC==='cmt cia' || /^ADM/.test(GRUP);
 
 let ROWS = [];
+let filtroChip = 'todas';   // todas | minhas | equipe | gestao
 const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const dig = s => (s||'').toString().replace(/\D/g,'');
 
@@ -140,6 +155,11 @@ function fmtData(c){
   return `<div class="vtr" style="font-weight:600">${dia}</div>${turno?`<div class="sub">${turno}</div>`:''}`;
 }
 function souResp(c){ return dig(c.militar_resp_matricula)===MAT; }
+// "Sou eu": responsável OU presente na equipe da chamada.
+function souEu(c){
+  if (souResp(c)) return true;
+  return (c.militares_presentes||[]).some(m=>dig(m&&m.matricula)===MAT);
+}
 function ehHoje(c){
   const d = c.data_hora_chamada ? new Date(c.data_hora_chamada) : null; if(!d||isNaN(d)) return false;
   const h = new Date();
@@ -147,9 +167,22 @@ function ehHoje(c){
 }
 function podeEditar(c){ return EH_GESTOR || (souResp(c) && ehHoje(c)); }
 
+// Contadores das abas — sobre TODOS os TTAs carregados (independem da busca).
+function atualizarContadoresChips(){
+  const nMinhas = ROWS.filter(souEu).length;
+  document.getElementById('n-minhas').textContent = nMinhas;
+  document.getElementById('n-equipe').textContent = ROWS.length - nMinhas;
+  document.getElementById('n-todas').textContent  = ROWS.length;
+  if (EH_ESCOPO){
+    const g=document.getElementById('chip-gestao'); if(g) g.style.display='';
+    const ng=document.getElementById('n-gestao'); if(ng) ng.textContent = ROWS.length;
+  }
+}
 function render(){
   const q = (document.getElementById('busca').value||'').toLowerCase().trim();
   const lista = ROWS.filter(c=>{
+    if (filtroChip==='minhas' && !souEu(c)) return false;
+    if (filtroChip==='equipe' &&  souEu(c)) return false;
     if(!q) return true;
     const hay = [c.grupamento_completo, c.militar_resp_nome,
       (c.viaturas||[]).map(v=>v.prefixo).join(' '),
@@ -188,6 +221,7 @@ async function carregar(){
   try{
     const r = await rpc('tta_listar_meus', { p_token: S.token, p_ano: ano, p_mes: mes?+mes:null });
     ROWS = Array.isArray(r) ? r : [];
+    atualizarContadoresChips();
     render();
   }catch(e){
     document.getElementById('tbody').innerHTML = `<tr><td colspan="5"><div class="empty">Não foi possível carregar: ${esc(e.message)}</div></td></tr>`;
@@ -276,6 +310,15 @@ function ttaImprimir(idx){
   if(!w){ alert('Permita pop-ups para imprimir.'); return; }
   w.document.open(); w.document.write(html); w.document.close();
 }
+
+// Abas (chips): Minhas + equipe / Só as minhas / Da equipe / Todas (gestão)
+document.getElementById('chips').addEventListener('click', (ev)=>{
+  const c = ev.target.closest('.chip'); if(!c) return;
+  document.querySelectorAll('.chip').forEach(x=>x.classList.remove('active'));
+  c.classList.add('active');
+  filtroChip = c.dataset.f;
+  render();
+});
 
 carregar();
 </script>
