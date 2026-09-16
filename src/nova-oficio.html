@@ -289,15 +289,34 @@ document.getElementById('who').textContent = MILITAR_LINHA;
 document.getElementById('militar').value = MILITAR_LINHA;
 document.getElementById('of_fecho').value = DEF_FECHO;   // assinante/cargo ficam em branco (preencher no ato)
 
-/* grupamentos p/ os selects de Emitente / Destino */
+/* grupamentos p/ os selects de Emitente / Destino.
+   Além dos GP, oferecemos o nível PELOTÃO (o CMT do Pel emite/recebe em nome de
+   todo o pelotão) e o nível COMPANHIA ("3 CIA PM MAMB", para a ADM e o CMT Cia).
+   A cidade-sede do pelotão é a do seu 1º GP (ex.: 1 PEL → GOVERNADOR VALADARES). */
 (async function carregarGrupamentos(){
   try{
     const r = await fetch(`${API}/rest/v1/rpc/grupamentos_listar`, { method:'POST', headers:H, body:'{}' });
     if(!r.ok) throw new Error(await r.text());
     const rows = await r.json() || [];
-    const opts = rows.map(g=>`<option value="${_esc(g.grupamento_completo)}">${_esc(g.grupamento_completo)}</option>`).join('');
-    document.getElementById('emitente').insertAdjacentHTML('beforeend', opts);
-    document.getElementById('destino_int').insertAdjacentHTML('beforeend', opts);
+    const gpOpts = rows.map(g=>`<option value="${_esc(g.grupamento_completo)}">${_esc(g.grupamento_completo)}</option>`).join('');
+    // deriva Pelotões (sede = cidade do 1º GP) + a Cia, a partir de "N GP / N PEL / CIA / CIDADE"
+    const pel = {}; let cia = '';
+    rows.forEach(g=>{
+      const m = /^(\d+)\s*GP\s*\/\s*(\d+)\s*PEL\s*\/\s*(.+?)\s*\/\s*(.+)$/i.exec(g.grupamento_completo||'');
+      if(!m) return;
+      const gpNum=+m[1], pelNum=+m[2], ciaTxt=m[3].trim(), cidade=m[4].trim();
+      if(!cia) cia = ciaTxt;
+      if(!pel[pelNum] || gpNum < pel[pelNum].gp) pel[pelNum] = { gp:gpNum, label:`${pelNum} PEL / ${ciaTxt} / ${cidade}` };
+    });
+    const pelOpts = Object.keys(pel).map(Number).sort((a,b)=>a-b)
+      .map(n=>`<option value="${_esc(pel[n].label)}">${_esc(pel[n].label)}</option>`).join('');
+    const ciaOpt = cia ? `<option value="${_esc(cia)}">${_esc(cia)}</option>` : '';
+    const html =
+      (ciaOpt ? `<optgroup label="Companhia (ADM / CMT Cia)">${ciaOpt}</optgroup>` : '')
+      + (pelOpts ? `<optgroup label="Pelotões">${pelOpts}</optgroup>` : '')
+      + `<optgroup label="Grupamentos (GP)">${gpOpts}</optgroup>`;
+    document.getElementById('emitente').insertAdjacentHTML('beforeend', html);
+    document.getElementById('destino_int').insertAdjacentHTML('beforeend', html);
   }catch(e){ console.error('grupamentos:', e); }
 })();
 
