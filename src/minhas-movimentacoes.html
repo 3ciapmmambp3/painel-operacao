@@ -30,6 +30,11 @@
   .search input{background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 12px;
         color:var(--text-white);font-size:13px;width:100%;outline:none}
   .search input:focus{border-color:var(--gold)}
+  .gfiltros{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin:8px 0 0}
+  .gf{display:flex;flex-direction:column;gap:4px;font-size:10.5px;font-weight:700;color:var(--text-hint);text-transform:uppercase;letter-spacing:.3px}
+  .gf select,.gf input{background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:8px 10px;color:var(--text-white);font-size:12.5px;outline:none;text-transform:none;font-weight:400}
+  .gf select:focus,.gf input:focus{border-color:var(--gold)}
+  .gf select{max-width:280px}
 
   .tablecard{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;margin-top:12px;overflow:hidden}
   .tablecard .thead{display:flex;justify-content:space-between;align-items:center;padding:13px 18px;border-bottom:1px solid var(--border)}
@@ -107,6 +112,16 @@
         <div class="search"><input id="busca" type="text" placeholder="Buscar por prefixo, placa, motorista ou local…"></div>
       </div>
 
+      <!-- Filtros de gestão (só p/ quem vê toda a 3ª Cia): grupamento + período -->
+      <div class="gfiltros" id="gfiltros" style="display:none">
+        <label class="gf">Grupamento
+          <select id="f-grup" onchange="render()"><option value="">Todos os grupamentos</option></select>
+        </label>
+        <label class="gf">De <input type="date" id="f-de" onchange="render()"></label>
+        <label class="gf">Até <input type="date" id="f-ate" onchange="render()"></label>
+        <button type="button" class="chip" onclick="limparFiltrosGestor()">Limpar filtros</button>
+      </div>
+
       <div class="errbox" id="errbox"></div>
 
       <div class="tablecard">
@@ -156,6 +171,8 @@ const VE_TUDO = NIVEL==='admin_geral' || /^ADM/.test(GRUP) ||
                 (/CMT|COMANDANTE/.test(FUNC.toUpperCase()) && /\bCIA\b/.test(FUNC.toUpperCase()));
 const NIVEL_PEL = NIVEL==='admin_pelotao' ||
                 (/CMT|COMANDANTE/.test(FUNC.toUpperCase()) && /\bPEL\b/.test(FUNC.toUpperCase()));
+// Quem enxerga toda a 3ª Cia (ganha os filtros por grupamento + período).
+const VE_CIA = VE_TUDO || PODE_GERIR;
 
 function daMinhaEquipe(r){
   if (VE_TUDO) return true;
@@ -191,15 +208,49 @@ function fmtData(r){
 }
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
+/* ── Filtros de gestão (grupamento + período) ─────────────────────────── */
+function _grupKey(r){ return (r.grupamento_completo || r.gp_responsavel || '').trim(); }
+function _fichaDataISO(r){
+  const d = r.inicio ? new Date(r.inicio) : (r.criado_em ? new Date(r.criado_em) : null);
+  if (!d || isNaN(d)) return '';
+  const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+function popularGrupamentos(){
+  const sel=document.getElementById('f-grup'); if(!sel) return;
+  const cur=sel.value;
+  const keys=[...new Set(ROWS.map(x=>_grupKey(x.r)).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  sel.innerHTML='<option value="">Todos os grupamentos</option>'+keys.map(k=>{
+    const disp=k.replace(/\s*\/\s*3 CIA PM MAMB\s*\/\s*/i,' / ');   // enxuga o rótulo
+    return `<option value="${esc(k)}">${esc(disp)}</option>`;
+  }).join('');
+  sel.value=cur;                                   // preserva seleção ao recarregar
+}
+function limparFiltrosGestor(){
+  ['f-grup','f-de','f-ate'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  render();
+}
+
 function render(){
   const q = (document.getElementById('busca').value||'').toLowerCase().trim();
+  const fg  = VE_CIA ? ((document.getElementById('f-grup')||{}).value||'') : '';
+  const fde = VE_CIA ? ((document.getElementById('f-de') ||{}).value||'') : '';
+  const fate= VE_CIA ? ((document.getElementById('f-ate')||{}).value||'') : '';
   const lista = ROWS.filter(x=>{
     if (FILTRO==='minhas' && !x.mine) return false;
     if (FILTRO==='equipe' && !(x.team && !x.mine)) return false;
     if (FILTRO==='todas' && !(x.mine || x.team)) return false;
     // 'gestao' (só Aux P4/Admin): mostra TODAS as fichas, sem recorte de equipe.
+    const r=x.r;
+    if (fg && _grupKey(r)!==fg) return false;
+    if (fde || fate){
+      const di=_fichaDataISO(r);
+      if (!di) return false;
+      if (fde && di<fde) return false;
+      if (fate && di>fate) return false;
+    }
     if (q){
-      const r=x.r;
       const hay = [r.prefixo,r.placa,r.motorista_nome,r.local_utilizacao,r.grupamento_completo].join(' ').toLowerCase();
       if (hay.indexOf(q)<0) return false;
     }
@@ -317,6 +368,7 @@ async function carregar(){
     // Não-gestor só enxerga mine/team; o gestor (Aux P4/Admin) tem o chip "Todas (gestão)".
     ROWS = (Array.isArray(data)?data:[]).map(r=>({ r, mine: ehMinha(r), team: daMinhaEquipe(r) }));
     atualizaContadores();
+    if (VE_CIA){ const gf=document.getElementById('gfiltros'); if(gf) gf.style.display='flex'; popularGrupamentos(); }
     render();
   }catch(e){
     document.getElementById('loading') && (document.getElementById('tbody').innerHTML='');
