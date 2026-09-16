@@ -166,25 +166,55 @@ const PODE_GERIR = NIVEL==='admin_geral' || FUNC.indexOf('aux p4')===0;  // vê 
 //  • pelotão: admin_pelotao / função CMT+PEL  → mesmo nº de pelotão
 //  • demais: mesmo grupamento_id
 const _pel = (s)=>{ const m=(s||'').match(/(\d+)\s*PEL/i); return m?m[1]:''; };
+const _gp  = (s)=>{ const m=(s||'').match(/(\d+)\s*GP/i);  return m?m[1]:''; };
 const MEU_PEL = _pel(GRUP);
+const MEU_GP  = _gp(GRUP);
 const VE_TUDO = NIVEL==='admin_geral' || /^ADM/.test(GRUP) ||
                 (/CMT|COMANDANTE/.test(FUNC.toUpperCase()) && /\bCIA\b/.test(FUNC.toUpperCase()));
 const NIVEL_PEL = NIVEL==='admin_pelotao' ||
                 (/CMT|COMANDANTE/.test(FUNC.toUpperCase()) && /\bPEL\b/.test(FUNC.toUpperCase()));
+const NIVEL_GP  = NIVEL==='admin_gp';
 // Quem enxerga toda a 3ª Cia (ganha os filtros por grupamento + período).
 const VE_CIA = VE_TUDO || PODE_GERIR;
 
+// Equipes que EU comandei (via TTA): conjuntos {viatura|dia} e {matrícula|dia}.
+// Um militar comum vê a Ficha da equipe que comandou casando por viatura ou
+// motorista + data. (mesma regra do RPC mov_ficha_completa — db/81)
+let TEAM_VTR_DAY = new Set();
+let TEAM_MOT_DAY = new Set();
+const _pfxKey = s => (s||'').toString().trim().toUpperCase().split(/[\s\-\/]/)[0];
+async function carregarMinhasEquipesTTA(){
+  if (VE_TUDO || NIVEL_PEL || NIVEL_GP) return;   // esses têm escopo próprio, não precisam
+  const H = { apikey: SB_AUTH_KEY, Authorization:'Bearer '+SB_AUTH_KEY, 'Content-Type':'application/json' };
+  const anoAtual = new Date().getFullYear();
+  for (const ano of [anoAtual, anoAtual-1]){
+    try{
+      const res = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/tta_listar_meus`, {
+        method:'POST', headers:H, body: JSON.stringify({ p_token:S.token, p_ano:ano, p_mes:null }) });
+      if(!res.ok) continue;
+      const lista = await res.json();
+      (Array.isArray(lista)?lista:[]).forEach(c=>{
+        if ((c.militar_resp_matricula||'').replace(/\D/g,'') !== MAT) return;   // só o que EU comandei
+        const d = _fichaDataISO({ inicio: c.data_hora_chamada });
+        if (!d) return;
+        (Array.isArray(c.viaturas)?c.viaturas:[]).forEach(v=>{ const k=_pfxKey(v&&v.prefixo); if(k) TEAM_VTR_DAY.add(k+'|'+d); });
+        if (c.prefixo_viatura){ const k=_pfxKey(c.prefixo_viatura); if(k) TEAM_VTR_DAY.add(k+'|'+d); }
+        (Array.isArray(c.militares_presentes)?c.militares_presentes:[]).forEach(e=>{ const m=(e&&e.matricula||'').replace(/\D/g,''); if(m) TEAM_MOT_DAY.add(m+'|'+d); });
+      });
+    }catch(e){ /* segue sem esse ano */ }
+  }
+}
+
 function daMinhaEquipe(r){
   if (VE_TUDO) return true;
-  const g = (r.grupamento_completo || '').toUpperCase();
-  const gp = (r.gp_responsavel || '').toUpperCase();
-  const lot = (r.lotacao_motorista || '').toUpperCase();
-  if (NIVEL_PEL){
-    if (!MEU_PEL) return false;
-    return _pel(g)===MEU_PEL || _pel(gp)===MEU_PEL || _pel(lot)===MEU_PEL;
-  }
-  // nível grupamento: casa a lotação completa
-  return (g && g===GRUP) || (lot && lot===GRUP);
+  const g = (r.grupamento_completo || r.gp_responsavel || r.lotacao_motorista || '');
+  if (NIVEL_PEL) return !!MEU_PEL && _pel(g)===MEU_PEL;
+  if (NIVEL_GP)  return !!MEU_GP && !!MEU_PEL && _gp(g)===MEU_GP && _pel(g)===MEU_PEL;
+  // militar comum → só a equipe que ele COMANDOU (casada pelo TTA do dia)
+  const d = _fichaDataISO(r); if (!d) return false;
+  const pfx = _pfxKey(r.prefixo);
+  const mot = (r.motorista_matricula||'').replace(/\D/g,'');
+  return (pfx && TEAM_VTR_DAY.has(pfx+'|'+d)) || (mot && TEAM_MOT_DAY.has(mot+'|'+d));
 }
 function ehMinha(r){
   const mm=(r.motorista_matricula||'').replace(/\D/g,'');
@@ -364,6 +394,7 @@ async function carregar(){
     const res = await fetch(url,{headers:H});
     if (!res.ok) throw new Error('HTTP '+res.status);
     const data = await res.json();
+    await carregarMinhasEquipesTTA();   // prepara os conjuntos da "equipe que comandei" (militar comum)
     // Mantém TODAS as fichas ativas em memória (o recorte por chip é feito no render).
     // Não-gestor só enxerga mine/team; o gestor (Aux P4/Admin) tem o chip "Todas (gestão)".
     ROWS = (Array.isArray(data)?data:[]).map(r=>({ r, mine: ehMinha(r), team: daMinhaEquipe(r) }));
