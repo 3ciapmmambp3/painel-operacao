@@ -185,6 +185,14 @@ function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.
 const _re=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 // Força o download (Content-Disposition: attachment) na signed URL do Storage.
 const _dlUrl=f=>{ const l=(f&&f.link)||''; return l ? l + (l.includes('?')?'&':'?') + 'download=' + encodeURIComponent((f&&f.nome)||'comprovante') : '#'; };
+// Célula de link p/ Excel: 1 anexo → =HYPERLINK clicável (pt-BR usa ; nos args);
+// vários → nº na etiqueta; nenhum → vazio. (Excel-BR: separador de lista é ";".)
+function _linkExcel(arr,rotulo){
+  const links=(Array.isArray(arr)?arr:[]).map(f=>(f&&f.link)||'').filter(Boolean);
+  if(!links.length) return '';
+  if(links.length===1) return `=HYPERLINK("${links[0]}";"Ver ${rotulo}")`;
+  return links.join(' ');   // vários: URLs cruas (uma fórmula por célula só aceita 1 link)
+}
 
 let AB=[], AB_TOT={};
 const AB_MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -305,14 +313,13 @@ function abLinhas(){
 }
 function _comprovCel(comps){
   if(!Array.isArray(comps) || !comps.length) return '<span class="sub">—</span>';
-  return '<div style="display:flex;flex-wrap:wrap;gap:6px">'+comps.map((f,i)=>{
+  return '<span style="display:inline-flex;flex-wrap:wrap;gap:8px;align-items:center">'+comps.map((f,i)=>{
     const isImg=/\.(jpe?g|png|gif|webp|bmp)$/i.test(f.nome||'');
     const link=_re(f.link||'#'), dl=_re(_dlUrl(f)), nome=_re(f.nome||('comprovante '+(i+1)));
-    const view=isImg
-      ? `<a href="${link}" target="_blank" title="${nome}" style="display:block;width:44px;height:34px;border:1px solid var(--border);border-radius:5px;overflow:hidden;background:#111"><img src="${link}" alt="${nome}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block"></a>`
-      : `<a href="${link}" target="_blank" title="${nome}" style="font-size:16px;text-decoration:none">📄</a>`;
-    return `<span style="display:inline-flex;flex-direction:column;align-items:center;gap:2px">${view}<a href="${dl}" title="Baixar ${nome}" style="font-size:11px;color:var(--gold-light);text-decoration:none">⬇</a></span>`;
-  }).join('')+'</div>';
+    return `<span style="display:inline-flex;align-items:center;gap:3px;font-size:12.5px;white-space:nowrap">`
+      +`<a href="${link}" target="_blank" title="Ver ${nome}" style="text-decoration:none">${isImg?'📷':'📄'}</a>`
+      +`<a href="${dl}" title="Baixar ${nome}" style="color:var(--gold-light);text-decoration:none">⬇</a></span>`;
+  }).join('')+'</span>';
 }
 function abRender(){
   const tb=document.getElementById('ab-tb'); const lst=abLinhas();
@@ -351,7 +358,7 @@ function abExportar(){
     r.data_ficha?new Date(r.data_ficha).toLocaleDateString('pt-BR'):'', r.prefixo, r.placa, r.fonte, r.tipo,
     r.combustivel, r.litros, r.valor_total, r.km_rodados, r.convenio, r.doador,
     r.vai_siad?'Sim':'Não', r.siad_lancado?'Sim':'Não', r.motorista_nome, r.gp_responsavel,
-    (Array.isArray(r.comprovantes)?r.comprovantes:[]).map(_dlUrl).join('\n')
+    _linkExcel(r.comprovantes,'comprovante')
   ].map(cell).join(';'));
   const csv='﻿'+[cols.map(cell).join(';')].concat(linhas).join('\r\n');
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
