@@ -270,7 +270,7 @@
         <div class="f"><label>Responsável definido?</label><select data-k="responsavel"><option>Sim</option><option>Não</option></select></div>
         <div class="f"><label>Bafômetro realizado?</label><select data-k="bafometro"><option>Sim</option><option>Não</option></select></div>
         <div class="f"><label>Necessitou guincho?</label><select data-k="guincho"><option>Não</option><option>Sim</option></select></div>
-        <div class="f col2"><label>Fotos dos veículos</label><input type="file" data-anexo="acidente-fotos" accept="image/*" multiple></div>
+        <div class="f col2"><label>Fotos dos veículos</label><input type="file" data-anexo="acidente-fotos" accept="image/*,application/pdf" multiple></div>
       </div>
       <div class="f" style="margin-top:12px"><label>Observações do acidente</label><textarea rows="2" data-k="obs"></textarea></div>
     </div>
@@ -329,7 +329,7 @@
     <div class="card sec" id="s-avaria" data-sec="avaria">
       <h2>🩹 Avarias de uso</h2>
       <div class="grid"><div class="f col2"><label>Qual avaria foi detectada?</label><input data-k="descricao"></div>
-        <div class="f col2"><label>Fotos das avarias</label><input type="file" data-anexo="avarias-fotos" accept="image/*" multiple></div></div>
+        <div class="f col2"><label>Fotos das avarias</label><input type="file" data-anexo="avarias-fotos" accept="image/*,application/pdf" multiple></div></div>
     </div>
 
     <!-- TAQ -->
@@ -628,10 +628,31 @@ function _vdsp(d){
   }
   return html;
 }
+function _vehImg(a){ return /^image\//i.test(a.mime||'') || /\.(jpe?g|png|gif|webp|bmp)$/i.test(a.nome||''); }
+function _vdl(a){ const l=a.link||''; return l ? l + (l.includes('?')?'&':'?') + 'download=' + encodeURIComponent(a.nome||'anexo') : '#'; }
 function _vanexos(anexos){
   if(!Array.isArray(anexos) || !anexos.length) return '';
-  const li = anexos.map(a => `<li><a href="${_vesc(a.link||'#')}" target="_blank">${_vesc(a.nome||a.categoria||'anexo')}</a>${a.categoria?` <span style="color:#888">(${_vesc(a.categoria)})</span>`:''}</li>`).join('');
-  return `<h3 class="vsec">Anexos</h3><ul class="vanex">${li}</ul>`;
+  const cat = a => a.categoria ? ` <span style="color:#888;font-size:11px">(${_vesc(a.categoria)})</span>` : '';
+  const items = anexos.map(a => {
+    const link=_vesc(a.link||'#'), dl=_vesc(_vdl(a));
+    if(_vehImg(a)){
+      // Imagem: miniatura clicável (abre em tamanho real) + baixar
+      return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:4px;width:136px;vertical-align:top">
+        <a href="${link}" target="_blank" style="display:block;width:136px;height:100px;border:1px solid var(--border,#333);border-radius:8px;overflow:hidden;background:#111">
+          <img src="${link}" alt="${_vesc(a.nome||'foto')}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block">
+        </a>
+        <div style="font-size:11px;text-align:center;line-height:1.3;max-width:136px;word-break:break-word">
+          <a href="${dl}" style="color:var(--gold,#c9a227);text-decoration:none" title="Baixar">⬇ baixar</a>${cat(a)}
+        </div>
+      </div>`;
+    }
+    // PDF / documento: link + baixar
+    return `<div style="display:inline-flex;align-items:center;gap:6px;padding:9px 11px;border:1px solid var(--border,#333);border-radius:8px;vertical-align:top">
+      📄 <a href="${link}" target="_blank">${_vesc(a.nome||a.categoria||'documento')}</a>${cat(a)}
+      <a href="${dl}" style="color:var(--gold,#c9a227);text-decoration:none" title="Baixar">⬇</a>
+    </div>`;
+  }).join('');
+  return `<h3 class="vsec">Anexos</h3><div class="vanex" style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start;margin-top:8px">${items}</div>`;
 }
 function _resumoSecoes(f){
   const d=f.dados||{}; const parts=[];
@@ -1175,7 +1196,7 @@ function taqAbFonte(sel){
       +'<div class="f"><label>Combustível</label>'+comb+'</div>'
       +'<div class="f"><label>Nº do cartão utilizado</label><input class="tab-cartao"></div>'
       +'<div class="f"><label>Horímetro/odômetro no abastecimento</label><input class="tab-horimetro" type="number"></div>'
-      +'<div class="f col2"><label>Comprovante</label><input class="tab-foto" data-anexo="taq-comprovante" type="file" accept="image/*"></div></div>'
+      +'<div class="f col2"><label>Comprovante</label><input class="tab-foto" data-anexo="taq-comprovante" type="file" accept="image/*,application/pdf"></div></div>'
       +'<div class="grid" style="margin-top:10px"><div class="f"><label>O cartão foi devolvido ou ficou na viatura?</label>'
       +'<select class="tab-devolvido" onchange="taqCartaoDev(this)"><option>Devolvido</option><option>Ficou na viatura</option></select></div>'
       +'<div class="f tab-recebeu-wrap"><label>Militar que recebeu o cartão</label><input class="tab-recebeu" list="militares-dl" placeholder="nº ou nome…"></div></div>';
@@ -1188,7 +1209,7 @@ function taqAbFonte(sel){
       +'<div class="f"><label>Litros</label><input class="tab-litros" type="number" step="0.001"></div>'
       +'<div class="f"><label>Valor p/ litro</label><input class="tab-vunit" type="number" step="0.001"></div>'
       +'<div class="f"><label>Valor total</label><input class="tab-vtotal" type="number" step="0.01"></div>'
-      +'<div class="f"><label>Comprovante</label><input class="tab-foto" data-anexo="taq-comprovante" type="file" accept="image/*"></div></div>'
+      +'<div class="f"><label>Comprovante</label><input class="tab-foto" data-anexo="taq-comprovante" type="file" accept="image/*,application/pdf"></div></div>'
       +'<div class="tab-tipo-fields" style="margin-top:10px"></div>'
       +'<div class="grid" style="margin-top:10px"><div class="f"><label>Cidade</label><input class="tab-cidade"></div><div class="f"><label>Observações</label><input class="tab-obs"></div></div>';
     taqAbTipo(box.querySelector('.tab-tipo'));
@@ -1248,7 +1269,7 @@ function camposPrimeComuns(kind){
     +'<div class="f"><label>Valor p/ litro</label><input class="ab-vunit" type="number" step="0.001" oninput="abValorCalc(this,\'unit\')"></div>'
     +'<div class="f"><label>Valor total</label><input class="ab-vtotal" type="number" step="0.01" oninput="abValorCalc(this,\'total\')"></div>'
     +'<div class="f"><label>Combustível</label><select class="ab-comb">'+optList(COMBUSTIVEIS)+'</select></div>'
-    +'<div class="f col2"><label>Comprovante</label><input class="ab-foto" data-anexo="abastecimento-comprovante" type="file" accept="image/*"></div></div>';
+    +'<div class="f col2"><label>Comprovante</label><input class="ab-foto" data-anexo="abastecimento-comprovante" type="file" accept="image/*,application/pdf"></div></div>';
 }
 function abFonte(sel){
   const box=sel.closest('.abast-row').querySelector('.ab-fields'); const f=sel.value;
@@ -1257,7 +1278,7 @@ function abFonte(sel){
       box.innerHTML='<div class="grid three">'
         +'<div class="f"><label>Litros abastecidos'+abLimiteHint('poc')+'</label><input class="ab-litros" type="number" step="0.001" oninput="abCheckLimite(this,\'poc\')"></div>'
         +'<div class="f"><label>Combustível</label><select class="ab-comb">'+optList(COMBUSTIVEIS)+'</select></div>'
-        +'<div class="f"><label>Comprovante <span class="hint">(opcional)</span></label><input class="ab-foto" data-anexo="abastecimento-comprovante" type="file" accept="image/*"></div></div>'
+        +'<div class="f"><label>Comprovante <span class="hint">(opcional)</span></label><input class="ab-foto" data-anexo="abastecimento-comprovante" type="file" accept="image/*,application/pdf"></div></div>'
         +abOverBlock();
     } else {
       box.innerHTML='<p class="hint" style="padding:8px 0">POC: sem controle de limite configurado — não é necessário informar litros. (o Aux P4 / Admin Geral pode ativar o limite na Gestão de Viaturas; aí passa a pedir litros e, se acima do limite, quem autorizou e por quê.)</p>';
@@ -1274,7 +1295,7 @@ function abFonte(sel){
       +'<div class="f"><label>Litros</label><input class="ab-litros" type="number" step="0.001" oninput="abValorCalc(this,\'litros\')"></div>'
       +'<div class="f"><label>Valor p/ litro</label><input class="ab-vunit" type="number" step="0.001" oninput="abValorCalc(this,\'unit\')"></div>'
       +'<div class="f"><label>Valor total</label><input class="ab-vtotal" type="number" step="0.01" oninput="abValorCalc(this,\'total\')"></div>'
-      +'<div class="f"><label>Comprovante</label><input class="ab-foto" data-anexo="abastecimento-comprovante" type="file" accept="image/*"></div></div>'
+      +'<div class="f"><label>Comprovante</label><input class="ab-foto" data-anexo="abastecimento-comprovante" type="file" accept="image/*,application/pdf"></div></div>'
       +'<div class="ab-tipo-fields" style="margin-top:10px"></div>'
       +'<div class="f" style="margin-top:8px"><label>Justificativa do odômetro <span class="hint">(obrigatória se ficar fora do Km inicial/final)</span></label><input class="ab-odo-just" placeholder="só se o odômetro estiver fora do intervalo da utilização"></div>'
       +'<div class="grid" style="margin-top:10px"><div class="f"><label>Cidade do abastecimento</label><input class="ab-cidade"></div>'

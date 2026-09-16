@@ -69,8 +69,8 @@
       </div>
       <div class="totais" id="ac-totais"></div>
       <div class="tablewrap"><table>
-        <thead><tr><th>Data</th><th>VTR</th><th>REDS</th><th>Odômetro</th><th>Vítimas</th><th>Perícia</th><th>Guincho</th><th>Motorista</th><th>Grupamento</th></tr></thead>
-        <tbody id="ac-tb"><tr><td colspan="9" class="empty">Carregando…</td></tr></tbody>
+        <thead><tr><th>Data</th><th>VTR</th><th>REDS</th><th>Odômetro</th><th>Vítimas</th><th>Perícia</th><th>Guincho</th><th>Motorista</th><th>Grupamento</th><th>Fotos</th></tr></thead>
+        <tbody id="ac-tb"><tr><td colspan="10" class="empty">Carregando…</td></tr></tbody>
       </table></div>
     </div>
     <div class="noperm" id="noperm" style="display:none">Acesso restrito ao setor responsável (Aux P4) e ao Admin Geral.</div>
@@ -89,6 +89,8 @@ const podeGerir=(S&&(S.nivel_acesso==='admin_geral'||(S.funcao||'').toLowerCase(
 async function rpc(fn,body){ const r=await fetch(`${API}/rest/v1/rpc/${fn}`,{method:'POST',headers:H,body:JSON.stringify(body||{})}); const t=await r.text(); let j; try{j=t?JSON.parse(t):null}catch{j=t} if(!r.ok) throw new Error((j&&j.message)||('HTTP '+r.status)); return j; }
 function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 const _re=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// Força o download (Content-Disposition: attachment) na signed URL do Storage.
+const _dlUrl=f=>{ const l=(f&&f.link)||''; return l ? l + (l.includes('?')?'&':'?') + 'download=' + encodeURIComponent((f&&f.nome)||'foto') : '#'; };
 
 let AC=[];
 const AC_MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -112,12 +114,12 @@ async function acCarregar(){
   const mesRaw=document.getElementById('ac-mes').value;
   const mes = mesRaw==='' ? null : +mesRaw;
   const tb=document.getElementById('ac-tb');
-  tb.innerHTML='<tr><td colspan="9" class="empty">Carregando…</td></tr>';
+  tb.innerHTML='<tr><td colspan="10" class="empty">Carregando…</td></tr>';
   try{
     AC = await rpc('frota_acidentes_listar',{p_token:S.token,p_ano:ano,p_mes:mes}) || [];
     if(!Array.isArray(AC)) AC=[];
     acRenderTotais(); acRender();
-  }catch(e){ tb.innerHTML=`<tr><td colspan="9" class="empty">Erro: ${_re(e.message)}</td></tr>`; }
+  }catch(e){ tb.innerHTML=`<tr><td colspan="10" class="empty">Erro: ${_re(e.message)}</td></tr>`; }
 }
 function acRenderTotais(){
   const box=document.getElementById('ac-totais');
@@ -125,9 +127,22 @@ function acRenderTotais(){
   box.innerHTML = `<span><b>${AC.length}</b> acidente(s) no período</span><span><b>${comVitima}</b> com vítima(s)</span>`;
 }
 function _simnao(v){ return /sim/i.test(v||'') ? '<span class="pill sim">Sim</span>' : (v?`<span class="pill nao">${_re(v)}</span>`:'—'); }
+// Fotos do acidente: miniatura clicável (abre em tamanho real) + ⬇ baixar.
+function _fotosCel(fotos){
+  if(!Array.isArray(fotos) || !fotos.length) return '<span class="sub">—</span>';
+  return '<div style="display:flex;flex-wrap:wrap;gap:6px">'+fotos.map((f,i)=>{
+    const link=_re(f.link||'#'), dl=_re(_dlUrl(f)), nome=_re(f.nome||('foto '+(i+1)));
+    return `<span style="display:inline-flex;flex-direction:column;align-items:center;gap:2px">
+      <a href="${link}" target="_blank" title="${nome}" style="display:block;width:52px;height:40px;border:1px solid var(--border);border-radius:5px;overflow:hidden;background:#111">
+        <img src="${link}" alt="${nome}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block">
+      </a>
+      <a href="${dl}" title="Baixar ${nome}" style="font-size:11px;color:var(--gold,#c9a227);text-decoration:none">⬇</a>
+    </span>`;
+  }).join('')+'</div>';
+}
 function acRender(){
   const tb=document.getElementById('ac-tb');
-  if(!AC.length){ tb.innerHTML='<tr><td colspan="9" class="empty">Nenhum acidente registrado no período.</td></tr>'; return; }
+  if(!AC.length){ tb.innerHTML='<tr><td colspan="10" class="empty">Nenhum acidente registrado no período.</td></tr>'; return; }
   tb.innerHTML=AC.map(a=>{
     const dt=a.data_ficha?new Date(a.data_ficha).toLocaleDateString('pt-BR'):'—';
     const odo=a.odometro?(+String(a.odometro).replace(/\D/g,'')||a.odometro).toLocaleString?.('pt-BR'):null;
@@ -141,6 +156,7 @@ function acRender(){
       <td>${_simnao(a.guincho)}</td>
       <td>${_re(a.motorista_nome||'—')}<div class="sub">${_re(a.motorista_matricula||'')}</div></td>
       <td>${_re((a.gp_responsavel||'—'))}</td>
+      <td>${_fotosCel(a.fotos)}</td>
     </tr>`;
   }).join('');
 }
@@ -149,11 +165,12 @@ function acExportar(){
   const mesRaw=document.getElementById('ac-mes').value;
   const mesNome=mesRaw===''?'Ano-todo':AC_MESES[(+mesRaw)-1], ano=document.getElementById('ac-ano').value;
   const cell=v=>{ let s=(v==null?'':String(v)); if(/[";\n\r]/.test(s)) s='"'+s.replace(/"/g,'""')+'"'; return s; };
-  const cols=['Data','VTR','Placa','REDS','Odômetro','Data/hora acidente','Vítimas','Perícia','CPU','Bafômetro','Guincho','Mesmo motorista','Responsável definido','Km rodados','Motorista','Matrícula','Grupamento'];
+  const cols=['Data','VTR','Placa','REDS','Odômetro','Data/hora acidente','Vítimas','Perícia','CPU','Bafômetro','Guincho','Mesmo motorista','Responsável definido','Km rodados','Motorista','Matrícula','Grupamento','Fotos (links)'];
   const linhas=AC.map(a=>[
     a.data_ficha?new Date(a.data_ficha).toLocaleDateString('pt-BR'):'', a.prefixo, a.placa, a.reds, a.odometro, a.data_hora,
     a.vitimas, a.pericia, a.cpu, a.bafometro, a.guincho, a.mesmo_motorista, a.responsavel,
-    a.km_rodados, a.motorista_nome, a.motorista_matricula, a.gp_responsavel
+    a.km_rodados, a.motorista_nome, a.motorista_matricula, a.gp_responsavel,
+    (Array.isArray(a.fotos)?a.fotos:[]).map(_dlUrl).join('\n')
   ].map(cell).join(';'));
   const csv='﻿'+[cols.map(cell).join(';')].concat(linhas).join('\r\n');
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
