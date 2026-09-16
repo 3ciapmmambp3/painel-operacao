@@ -135,6 +135,7 @@
         <select id="ab-fonte-f" onchange="abRender()">
           <option value="">Todas as fontes</option><option>POC</option><option>Cartão PRIME</option><option>Convênio ou Doação</option>
         </select>
+        <select id="ab-grup" onchange="abRender()"><option value="">Todos os grupamentos</option></select>
         <label><input type="checkbox" id="ab-so-siad" onchange="abRender()"> só SIAD pendente</label>
         <button class="btn-gold" style="padding:8px 14px;font-size:12px;margin-left:auto" onclick="abExportar()">⬇ Exportar Excel</button>
       </div>
@@ -283,7 +284,7 @@ async function abCarregar(){
     AB = await rpc('frota_abast_listar',{p_token:S.token,p_ano:ano,p_mes:mes}) || [];
     if(!Array.isArray(AB)) AB=[];
     AB_TOT = await rpc('frota_abast_totais',{p_token:S.token,p_ano:ano,p_mes:mes}) || {};
-    abRenderTotais(); abRender();
+    popularGrupAB(); abRenderTotais(); abRender();
   }catch(e){ tb.innerHTML=`<tr><td colspan="11" class="empty">Erro: ${_re(e.message)}</td></tr>`; }
 }
 function abRenderTotais(){
@@ -297,20 +298,29 @@ function abRenderTotais(){
 }
 function abLinhas(){
   const ff=document.getElementById('ab-fonte-f').value;
+  const fg=((document.getElementById('ab-grup')||{}).value||'');
   const soSiad=document.getElementById('ab-so-siad').checked;
   return AB.filter(r=>{
     if(ff && r.fonte!==ff) return false;
+    if(fg && (r.gp_responsavel||'')!==fg) return false;
     if(soSiad && r.siad_lancado) return false;   // pendente = ainda não lançado
     return true;
   });
+}
+function popularGrupAB(){
+  const sel=document.getElementById('ab-grup'); if(!sel) return;
+  const cur=sel.value;
+  const keys=[...new Set(AB.map(r=>(r.gp_responsavel||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  sel.innerHTML='<option value="">Todos os grupamentos</option>'+keys.map(k=>`<option value="${_re(k)}">${_re(k)}</option>`).join('');
+  sel.value=cur;
 }
 function _comprovCel(comps){
   if(!Array.isArray(comps) || !comps.length) return '<span class="sub">—</span>';
   return '<span style="display:inline-flex;flex-wrap:wrap;gap:10px;align-items:center">'+comps.map((f,i)=>{
     const link=_re(f.link||'#'), dl=_re(_dlUrl(f)), nome=_re(f.nome||('comprovante '+(i+1)));
-    return `<span style="display:inline-flex;align-items:center;gap:7px;font-size:15px;white-space:nowrap">`
-      +`<a href="${link}" target="_blank" title="Abrir ${nome}" style="text-decoration:none">👁️</a>`
-      +`<a href="${dl}" title="Baixar ${nome}" style="text-decoration:none">⬇️</a></span>`;
+    return `<span style="display:inline-flex;align-items:center;gap:8px;white-space:nowrap">`
+      +`<a href="${link}" target="_blank" title="Ver/Imprimir ${nome}" style="text-decoration:none;font-size:12px;font-weight:700">👁 Ver/Imprimir</a>`
+      +`<a href="${dl}" title="Baixar ${nome}" style="text-decoration:none;font-size:15px">⬇️</a></span>`;
   }).join('')+'</span>';
 }
 function abRender(){

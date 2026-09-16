@@ -127,6 +127,7 @@
         <option value="BAIXADA">Baixadas</option>
         <option value="EM_MANUTENCAO">Em manutenção</option>
       </select>
+      <select class="fsel" id="fgrup" onchange="render()" style="max-width:260px"><option value="">Todos os grupamentos</option></select>
     </div>
 
     <div class="tablewrap">
@@ -257,6 +258,9 @@ function popularListasFrota(){
   fill('pel-dl', uniq('pel'));
   fill('gp-dl', uniq('gp'));
   fill('muni-dl', uniq('municipio'));
+  // filtro por grupamento (mantém a seleção atual)
+  const fs=document.getElementById('fgrup');
+  if(fs){ const cur=fs.value; fs.innerHTML='<option value="">Todos os grupamentos</option>'+uniq('gp').map(x=>`<option value="${av(x)}">${av(x)}</option>`).join(''); fs.value=cur; }
 }
 
 function kpis(){
@@ -271,13 +275,15 @@ function irPagina(p){ PAGE=p; render(); }
 function render(){
   const q=(document.getElementById('busca').value||'').toLowerCase();
   const fs=document.getElementById('fstatus').value;
+  const fg=(document.getElementById('fgrup')||{}).value||'';
   const rows=VIA.filter(v=>{
     const s=(v.situacao_operacional||'DISPONIVEL');
     if(fs && s!==fs) return false;
+    if(fg && (v.gp||'')!==fg) return false;
     if(q){ const blob=`${v.prefixo} ${v.placa||''} ${v.marca_modelo||''} ${v.municipio||''} ${v.gp||''}`.toLowerCase(); if(!blob.includes(q)) return false; }
     return true;
   });
-  const sig=q+'|'+fs; if(sig!==_sig){ PAGE=1; _sig=sig; }  // filtro mudou → volta pra 1ª página
+  const sig=q+'|'+fs+'|'+fg; if(sig!==_sig){ PAGE=1; _sig=sig; }  // filtro mudou → volta pra 1ª página
   const tb=document.getElementById('tb'); const pager=document.getElementById('pager');
   if(!rows.length){ tb.innerHTML='<tr><td colspan="6" class="empty">Nenhuma viatura.</td></tr>'; pager.innerHTML=''; return; }
   const totalPag=Math.ceil(rows.length/PAGE_SIZE);

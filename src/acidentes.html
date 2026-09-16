@@ -81,6 +81,7 @@
       <div class="tools">
         <select id="ac-mes" onchange="acCarregar()"></select>
         <select id="ac-ano" onchange="acCarregar()"></select>
+        <select id="ac-grup" onchange="acRender()"><option value="">Todos os grupamentos</option></select>
         <button class="btn-gold" style="padding:8px 14px;font-size:12px;margin-left:auto" onclick="acExportar()">⬇ Exportar Excel</button>
       </div>
       <div class="totais" id="ac-totais"></div>
@@ -158,13 +159,25 @@ async function acCarregar(){
   try{
     AC = await rpc('frota_acidentes_listar',{p_token:S.token,p_ano:ano,p_mes:mes}) || [];
     if(!Array.isArray(AC)) AC=[];
-    acRenderTotais(); acRender();
+    popularGrupAC(); acRenderTotais(); acRender();
   }catch(e){ tb.innerHTML=`<tr><td colspan="11" class="empty">Erro: ${_re(e.message)}</td></tr>`; }
 }
+// Filtro por grupamento (gp_responsavel) — client-side, aplicado à tabela/totais/export.
+function acLinhas(){
+  const fg=((document.getElementById('ac-grup')||{}).value||'');
+  return AC.filter(a=> !fg || (a.gp_responsavel||'')===fg);
+}
+function popularGrupAC(){
+  const sel=document.getElementById('ac-grup'); if(!sel) return;
+  const cur=sel.value;
+  const keys=[...new Set(AC.map(a=>(a.gp_responsavel||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  sel.innerHTML='<option value="">Todos os grupamentos</option>'+keys.map(k=>`<option value="${_re(k)}">${_re(k)}</option>`).join('');
+  sel.value=cur;
+}
 function acRenderTotais(){
-  const box=document.getElementById('ac-totais');
-  const comVitima=AC.filter(a=>/sim/i.test(a.vitimas||'')).length;
-  box.innerHTML = `<span><b>${AC.length}</b> acidente(s) no período</span><span><b>${comVitima}</b> com vítima(s)</span>`;
+  const box=document.getElementById('ac-totais'); const lst=acLinhas();
+  const comVitima=lst.filter(a=>/sim/i.test(a.vitimas||'')).length;
+  box.innerHTML = `<span><b>${lst.length}</b> acidente(s)</span><span><b>${comVitima}</b> com vítima(s)</span>`;
 }
 function _simnao(v){ return /sim/i.test(v||'') ? '<span class="pill sim">Sim</span>' : (v?`<span class="pill nao">${_re(v)}</span>`:'—'); }
 // Fotos do acidente: ícones 👁️ (abre foto/PDF) e ⬇️ (baixar).
@@ -172,15 +185,16 @@ function _fotosCel(fotos){
   if(!Array.isArray(fotos) || !fotos.length) return '<span class="sub">—</span>';
   return '<span style="display:inline-flex;flex-wrap:wrap;gap:10px;align-items:center">'+fotos.map((f,i)=>{
     const link=_re(f.link||'#'), dl=_re(_dlUrl(f)), nome=_re(f.nome||('foto '+(i+1)));
-    return `<span style="display:inline-flex;align-items:center;gap:7px;font-size:15px;white-space:nowrap">`
-      +`<a href="${link}" target="_blank" title="Abrir ${nome}" style="text-decoration:none">👁️</a>`
-      +`<a href="${dl}" title="Baixar ${nome}" style="text-decoration:none">⬇️</a></span>`;
+    return `<span style="display:inline-flex;align-items:center;gap:8px;white-space:nowrap">`
+      +`<a href="${link}" target="_blank" title="Ver/Imprimir ${nome}" style="text-decoration:none;font-size:12px;font-weight:700">👁 Ver/Imprimir</a>`
+      +`<a href="${dl}" title="Baixar ${nome}" style="text-decoration:none;font-size:15px">⬇️</a></span>`;
   }).join('')+'</span>';
 }
 function acRender(){
-  const tb=document.getElementById('ac-tb');
-  if(!AC.length){ tb.innerHTML='<tr><td colspan="11" class="empty">Nenhum acidente registrado no período.</td></tr>'; return; }
-  tb.innerHTML=AC.map((a,i)=>{
+  const tb=document.getElementById('ac-tb'); acRenderTotais();
+  const lst=acLinhas();
+  if(!lst.length){ tb.innerHTML='<tr><td colspan="11" class="empty">Nenhum acidente encontrado.</td></tr>'; return; }
+  tb.innerHTML=lst.map(a=>{
     const dt=a.data_ficha?new Date(a.data_ficha).toLocaleDateString('pt-BR'):'—';
     const odo=a.odometro?(+String(a.odometro).replace(/\D/g,'')||a.odometro).toLocaleString?.('pt-BR'):null;
     return `<tr>
@@ -195,20 +209,20 @@ function acRender(){
       <td>${_re((a.gp_responsavel||'—'))}</td>
       <td>${_fotosCel(a.fotos)}</td>
       <td style="white-space:nowrap">
-        <button class="btn-mini" onclick="acEditar(${i})" title="Editar">✏️</button>
-        <button class="btn-mini danger" onclick="acExcluir(${i})" title="Excluir">🗑</button>
+        <button class="btn-mini" onclick="acEditar('${a.mov_id}')" title="Editar">✏️</button>
+        <button class="btn-mini danger" onclick="acExcluir('${a.mov_id}')" title="Excluir">🗑</button>
       </td>
     </tr>`;
   }).join('');
 }
 function acExportar(){
-  if(!AC.length){ toast('Nada para exportar.'); return; }
+  if(!acLinhas().length){ toast('Nada para exportar.'); return; }
   if(typeof XLSX==='undefined'){ toast('Componente do Excel ainda carregando — tente de novo em 1s.'); return; }
   const mesRaw=document.getElementById('ac-mes').value;
   const mesNome=mesRaw===''?'Ano-todo':AC_MESES[(+mesRaw)-1], ano=document.getElementById('ac-ano').value;
   const cols=['Data','VTR','Placa','REDS','Odômetro','Data/hora acidente','Vítimas','Perícia','CPU','Bafômetro','Guincho','Mesmo motorista','Responsável definido','Km rodados','Motorista','Matrícula','Grupamento','Fotos'];
   const aoa=[cols], links=[];   // links: {r,c,url} → hyperlink nativo no .xlsx
-  AC.forEach((a,i)=>{
+  acLinhas().forEach((a,i)=>{
     const fotos=(Array.isArray(a.fotos)?a.fotos:[]).filter(f=>f&&f.link);
     aoa.push([
       a.data_ficha?new Date(a.data_ficha).toLocaleDateString('pt-BR'):'', a.prefixo, a.placa, a.reds, a.odometro, a.data_hora,
@@ -228,8 +242,8 @@ function acExportar(){
 // ── Editar / excluir acidente (só gestor de viaturas — Aux P4 / Admin Geral) ──
 let AC_EDIT_ID=null;
 const _acCampos=['reds','odometro','data_hora','vitimas','pericia','cpu','bafometro','guincho','mesmo_motorista','responsavel','obs'];
-function acEditar(i){
-  const a=AC[i]; if(!a) return;
+function acEditar(movId){
+  const a=AC.find(x=>x.mov_id===movId); if(!a) return;
   AC_EDIT_ID=a.mov_id;
   _acCampos.forEach(k=>{ const el=document.getElementById('acm-'+k); if(!el) return;
     const v=a[k]; if(el.tagName==='SELECT'){ el.value=(v||el.options[0].value); } else { el.value=(v==null?'':v); } });
@@ -248,8 +262,8 @@ async function acSalvarEdicao(){
   }catch(e){ toast('Erro: '+e.message); }
   finally{ btn.disabled=false; }
 }
-async function acExcluir(i){
-  const a=AC[i]; if(!a) return;
+async function acExcluir(movId){
+  const a=AC.find(x=>x.mov_id===movId); if(!a) return;
   const temFoto=Array.isArray(a.fotos)&&a.fotos.length;
   if(!confirm(`Excluir o acidente da VTR ${a.prefixo||''}${a.reds?` (REDS ${a.reds})`:''}?`
     +(temFoto?`\n\nAs ${a.fotos.length} foto(s) anexada(s) também serão removidas.`:'')

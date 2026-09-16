@@ -81,6 +81,7 @@
       <div class="rf-pane ativo" id="pane-rev">
         <div class="tools">
           <input type="text" id="rev-busca" placeholder="Buscar por prefixo, placa…" oninput="revRender()">
+          <select id="rev-grup" onchange="revRender()" style="background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:12.5px;outline:none;max-width:260px"><option value="">Todos os grupamentos</option></select>
           <label><input type="checkbox" id="rev-so-alerta" onchange="revRender()"> só alertas</label>
         </div>
         <div class="tablewrap"><table>
@@ -93,6 +94,7 @@
         <p style="font-size:12.5px;color:var(--text-muted);margin:14px 0 0;line-height:1.5">Defeitos reportados pelo botão 🔧 e pelas fichas de movimentação (seção Manutenção). O gestor marca como <b>resolvido</b> após providenciar.</p>
         <div class="tools">
           <label><input type="checkbox" id="def-so-abertos" checked onchange="defRender()"> só em aberto</label>
+          <select id="def-grup" onchange="defRender()" style="background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:12.5px;outline:none;max-width:260px"><option value="">Todos os grupamentos</option></select>
           <button class="btn-gold" style="padding:8px 14px;font-size:12px;margin-left:auto" onclick="defExportar()">⬇ Exportar Excel</button>
         </div>
         <div class="tablewrap"><table>
@@ -216,14 +218,24 @@ async function revCarregar(){
     if(!podeGerir && MEU_MUNI){ REV = REV.filter(r=> _norm(r.municipio)===MEU_MUNI || _norm(r.gp).indexOf(MEU_MUNI)>=0); }
     const n = REV.filter(r=>r.status==='vencida'||r.status==='proxima').length;
     rfCnt('tabcnt-rev', n);
+    popularGrupREV();
     revRender();
   }catch(e){ tb.innerHTML=`<tr><td colspan="7" class="empty">Erro: ${_re(e.message)}</td></tr>`; }
 }
+function popularGrupREV(){
+  const sel=document.getElementById('rev-grup'); if(!sel) return;
+  const cur=sel.value;
+  const keys=[...new Set(REV.map(r=>(r.gp||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  sel.innerHTML='<option value="">Todos os grupamentos</option>'+keys.map(k=>`<option value="${_re(k)}">${_re(k)}</option>`).join('');
+  sel.value=cur;
+}
 function revRender(){
   const q=(document.getElementById('rev-busca').value||'').toLowerCase().trim();
+  const fg=((document.getElementById('rev-grup')||{}).value||'');
   const soAlerta=document.getElementById('rev-so-alerta').checked;
   let lst = REV.filter(r=>{
     if(soAlerta && !(r.status==='vencida'||r.status==='proxima')) return false;
+    if(fg && (r.gp||'')!==fg) return false;
     if(q && (r.prefixo+' '+(r.placa||'')).toLowerCase().indexOf(q)<0) return false;
     return true;
   });
@@ -358,12 +370,29 @@ async function defCarregar(){
     if(!Array.isArray(DEF)) DEF=[];
     const ab=DEF.filter(d=>d.status==='aberto').length;
     rfCnt('tabcnt-def', ab);
+    popularGrupDEF();
     defRender();
   }catch(e){ tb.innerHTML=`<tr><td colspan="12" class="empty">Erro: ${_re(e.message)}</td></tr>`; }
 }
-function defRender(){
+function _defGrupKey(d){ return (d.vtr_gp||d.gp||'').trim(); }
+function popularGrupDEF(){
+  const sel=document.getElementById('def-grup'); if(!sel) return;
+  const cur=sel.value;
+  const keys=[...new Set(DEF.map(_defGrupKey).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  sel.innerHTML='<option value="">Todos os grupamentos</option>'+keys.map(k=>`<option value="${_re(k)}">${_re(k)}</option>`).join('');
+  sel.value=cur;
+}
+function defLinhas(){
   const soAb=document.getElementById('def-so-abertos').checked;
-  const lst=DEF.filter(d=>!soAb || d.status==='aberto');
+  const fg=((document.getElementById('def-grup')||{}).value||'');
+  return DEF.filter(d=>{
+    if(soAb && d.status!=='aberto') return false;
+    if(fg && _defGrupKey(d)!==fg) return false;
+    return true;
+  });
+}
+function defRender(){
+  const lst=defLinhas();
   const tb=document.getElementById('def-tb');
   if(!lst.length){ tb.innerHTML='<tr><td colspan="12" class="empty">Nenhum defeito reportado.</td></tr>'; return; }
   tb.innerHTML=lst.map(d=>{
@@ -408,8 +437,7 @@ async function defResolver(origem, ref){
   catch(e){ toast('Erro: '+e.message); }
 }
 function defExportar(){
-  const soAb=document.getElementById('def-so-abertos').checked;
-  const lst=DEF.filter(d=>!soAb || d.status==='aberto');
+  const lst=defLinhas();
   if(!lst.length){ toast('Nada para exportar.'); return; }
   const cell=v=>{ let s=(v==null?'':String(v)); if(/[";\n\r]/.test(s)) s='"'+s.replace(/"/g,'""')+'"'; return s; };
   const cols=['Data','VTR','Placa','Lotação VTR (Gp)','Lotação VTR (Pel)','Lotação VTR (Município)','Grupamento (uso)','Tipo','Urgência','Situação','Defeito','Serviços solicitados','Impede uso','Endereço (imobilizada)','Observações','Status','Reportado por','Origem'];
