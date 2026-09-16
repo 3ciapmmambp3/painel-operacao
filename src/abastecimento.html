@@ -33,6 +33,21 @@
   .noperm{padding:60px 20px;text-align:center;color:var(--text-muted)}
   .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111;border:1px solid var(--border);color:var(--text-white);padding:12px 20px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:300}
   .toast.show{opacity:1}
+  .btn-mini{background:var(--bg-input);border:1px solid var(--border-mid);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:13px;line-height:1;color:var(--text-white)}
+  .btn-mini:hover{border-color:var(--gold-light)}
+  .btn-mini.danger:hover{border-color:var(--danger);color:#ef9a9a}
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-start;justify-content:center;z-index:400;overflow-y:auto;padding:40px 16px}
+  .modal-bg.show{display:flex}
+  .modal{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;max-width:640px;width:100%;padding:20px 22px}
+  .modal h2{font-size:16px;font-weight:800;margin-bottom:4px}
+  .modal .msub{font-size:12px;color:var(--text-muted);margin-bottom:14px}
+  .modal .mgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .modal .mf{display:flex;flex-direction:column;gap:4px}
+  .modal .mf.col2{grid-column:1/-1}
+  .modal label{font-size:11px;font-weight:700;color:var(--text-muted)}
+  .modal input,.modal select,.modal textarea{background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:8px 10px;color:var(--text-white);font-size:13px;outline:none;width:100%}
+  .modal .macts{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+  @media(max-width:560px){.modal .mgrid{grid-template-columns:1fr}}
 </style>
 <script src="pwa.js" defer></script>
 </head>
@@ -124,11 +139,35 @@
       </div>
       <div class="totais" id="ab-totais"></div>
       <div class="tablewrap"><table>
-        <thead><tr><th>Data</th><th>VTR</th><th>Fonte</th><th>Comb.</th><th>Litros</th><th>Valor</th><th>Km rod.</th><th>Convênio/Doador</th><th>SIAD</th></tr></thead>
-        <tbody id="ab-tb"><tr><td colspan="9" class="empty">Carregando…</td></tr></tbody>
+        <thead><tr><th>Data</th><th>VTR</th><th>Fonte</th><th>Comb.</th><th>Litros</th><th>Valor</th><th>Km rod.</th><th>Convênio/Doador</th><th>Comprov.</th><th>SIAD</th><th>Ações</th></tr></thead>
+        <tbody id="ab-tb"><tr><td colspan="11" class="empty">Carregando…</td></tr></tbody>
       </table></div>
     </div>
     <div class="noperm" id="noperm" style="display:none">Acesso restrito ao setor responsável (Aux P4) e ao Admin Geral.</div>
+  </div>
+</div>
+
+<div class="modal-bg" id="ab-modal">
+  <div class="modal">
+    <h2>✏️ Editar abastecimento</h2>
+    <div class="msub" id="ab-m-sub">—</div>
+    <div class="mgrid">
+      <div class="mf"><label>Fonte</label><select id="abm-fonte"><option>POC</option><option>Cartão PRIME</option><option>Convênio ou Doação</option></select></div>
+      <div class="mf"><label>Tipo (só Convênio/Doação)</label><select id="abm-tipo"><option value="">—</option><option>Convênio</option><option>Doação esporádica</option></select></div>
+      <div class="mf"><label>Combustível</label><input id="abm-combustivel" list="abm-combs"><datalist id="abm-combs"></datalist></div>
+      <div class="mf"><label>Litros</label><input id="abm-litros" type="number" step="0.001"></div>
+      <div class="mf"><label>Valor unitário (R$)</label><input id="abm-valor_unit" type="number" step="0.01"></div>
+      <div class="mf"><label>Valor total (R$)</label><input id="abm-valor_total" type="number" step="0.01"></div>
+      <div class="mf"><label>Odômetro</label><input id="abm-odometro" type="number"></div>
+      <div class="mf"><label>Cidade</label><input id="abm-cidade"></div>
+      <div class="mf"><label>Convênio</label><input id="abm-convenio" list="abm-convs"><datalist id="abm-convs"></datalist></div>
+      <div class="mf"><label>Doador</label><input id="abm-doador"></div>
+      <div class="mf col2"><label>Observações</label><textarea id="abm-obs" rows="2"></textarea></div>
+    </div>
+    <div class="macts">
+      <button class="btn-outline" onclick="abFecharModal()">Cancelar</button>
+      <button class="btn-gold" id="abm-salvar" onclick="abSalvarEdicao()">Salvar</button>
+    </div>
   </div>
 </div>
 
@@ -144,6 +183,8 @@ const podeGerir=(S&&(S.nivel_acesso==='admin_geral'||(S.funcao||'').toLowerCase(
 async function rpc(fn,body){ const r=await fetch(`${API}/rest/v1/rpc/${fn}`,{method:'POST',headers:H,body:JSON.stringify(body||{})}); const t=await r.text(); let j; try{j=t?JSON.parse(t):null}catch{j=t} if(!r.ok) throw new Error((j&&j.message)||('HTTP '+r.status)); return j; }
 function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 const _re=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// Força o download (Content-Disposition: attachment) na signed URL do Storage.
+const _dlUrl=f=>{ const l=(f&&f.link)||''; return l ? l + (l.includes('?')?'&':'?') + 'download=' + encodeURIComponent((f&&f.nome)||'comprovante') : '#'; };
 
 let AB=[], AB_TOT={};
 const AB_MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -236,13 +277,13 @@ async function abCarregar(){
   const mesRaw=document.getElementById('ab-mes').value;
   const mes = mesRaw==='' ? null : +mesRaw;   // null = todos os meses do ano
   const tb=document.getElementById('ab-tb');
-  tb.innerHTML='<tr><td colspan="9" class="empty">Carregando…</td></tr>';
+  tb.innerHTML='<tr><td colspan="11" class="empty">Carregando…</td></tr>';
   try{
     AB = await rpc('frota_abast_listar',{p_token:S.token,p_ano:ano,p_mes:mes}) || [];
     if(!Array.isArray(AB)) AB=[];
     AB_TOT = await rpc('frota_abast_totais',{p_token:S.token,p_ano:ano,p_mes:mes}) || {};
     abRenderTotais(); abRender();
-  }catch(e){ tb.innerHTML=`<tr><td colspan="9" class="empty">Erro: ${_re(e.message)}</td></tr>`; }
+  }catch(e){ tb.innerHTML=`<tr><td colspan="11" class="empty">Erro: ${_re(e.message)}</td></tr>`; }
 }
 function abRenderTotais(){
   const t=AB_TOT||{}; const box=document.getElementById('ab-totais');
@@ -262,9 +303,20 @@ function abLinhas(){
     return true;
   });
 }
+function _comprovCel(comps){
+  if(!Array.isArray(comps) || !comps.length) return '<span class="sub">—</span>';
+  return '<div style="display:flex;flex-wrap:wrap;gap:6px">'+comps.map((f,i)=>{
+    const isImg=/\.(jpe?g|png|gif|webp|bmp)$/i.test(f.nome||'');
+    const link=_re(f.link||'#'), dl=_re(_dlUrl(f)), nome=_re(f.nome||('comprovante '+(i+1)));
+    const view=isImg
+      ? `<a href="${link}" target="_blank" title="${nome}" style="display:block;width:44px;height:34px;border:1px solid var(--border);border-radius:5px;overflow:hidden;background:#111"><img src="${link}" alt="${nome}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block"></a>`
+      : `<a href="${link}" target="_blank" title="${nome}" style="font-size:16px;text-decoration:none">📄</a>`;
+    return `<span style="display:inline-flex;flex-direction:column;align-items:center;gap:2px">${view}<a href="${dl}" title="Baixar ${nome}" style="font-size:11px;color:var(--gold-light);text-decoration:none">⬇</a></span>`;
+  }).join('')+'</div>';
+}
 function abRender(){
   const tb=document.getElementById('ab-tb'); const lst=abLinhas();
-  if(!lst.length){ tb.innerHTML='<tr><td colspan="9" class="empty">Nenhum abastecimento.</td></tr>'; return; }
+  if(!lst.length){ tb.innerHTML='<tr><td colspan="11" class="empty">Nenhum abastecimento.</td></tr>'; return; }
   tb.innerHTML=lst.map(r=>{
     const dt=r.data_ficha?new Date(r.data_ficha).toLocaleDateString('pt-BR'):'—';
     const litros=r.litros!=null?(+r.litros).toLocaleString('pt-BR',{maximumFractionDigits:3}):'—';
@@ -273,10 +325,11 @@ function abRender(){
     const cd=[r.convenio,r.doador].filter(Boolean).join(' / ')||'—';
     // Todos os abastecimentos podem ser marcados como lançados no SIAD.
     const siad=`<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;${r.siad_lancado?'color:var(--success)':'color:#ffcc80'}"><input type="checkbox" ${r.siad_lancado?'checked':''} onchange="abSiad('${r.mov_id}',${r.idx},this.checked)">${r.siad_lancado?'Lançado':'Pendente'}</label>`;
+    const acoes=`<span style="white-space:nowrap"><button class="btn-mini" onclick="abEditar('${r.mov_id}',${r.idx})" title="Editar">✏️</button> <button class="btn-mini danger" onclick="abExcluir('${r.mov_id}',${r.idx})" title="Excluir">🗑</button></span>`;
     return `<tr>
       <td>${dt}</td><td><b>${_re(r.prefixo)}</b></td><td>${_re(r.fonte||'—')}</td>
       <td>${_re(r.combustivel||'—')}</td><td class="km" style="color:var(--gold-light)">${litros}</td>
-      <td>${valor}</td><td>${km}</td><td>${_re(cd)}</td><td>${siad}</td>
+      <td>${valor}</td><td>${km}</td><td>${_re(cd)}</td><td>${_comprovCel(r.comprovantes)}</td><td>${siad}</td><td>${acoes}</td>
     </tr>`;
   }).join('');
 }
@@ -292,18 +345,57 @@ function abExportar(){
   const mesRaw=document.getElementById('ab-mes').value;
   const mesNome=mesRaw===''?'Ano-todo':AB_MESES[(+mesRaw)-1], ano=document.getElementById('ab-ano').value;
   // CSV com ; (padrão Excel pt-BR) + BOM (acentos). Evita o aviso de "arquivo adulterado" do .xls-HTML.
-  const cols=['Data','VTR','Placa','Fonte','Tipo','Combustível','Litros','Valor total','Km rodados','Convênio','Doador','Vai p/ SIAD','Lançado no SIAD','Motorista','Grupamento'];
+  const cols=['Data','VTR','Placa','Fonte','Tipo','Combustível','Litros','Valor total','Km rodados','Convênio','Doador','Vai p/ SIAD','Lançado no SIAD','Motorista','Grupamento','Comprovante (links)'];
   const cell=v=>{ let s=(v==null?'':String(v)); if(/[";\n\r]/.test(s)) s='"'+s.replace(/"/g,'""')+'"'; return s; };
   const linhas=lst.map(r=>[
     r.data_ficha?new Date(r.data_ficha).toLocaleDateString('pt-BR'):'', r.prefixo, r.placa, r.fonte, r.tipo,
     r.combustivel, r.litros, r.valor_total, r.km_rodados, r.convenio, r.doador,
-    r.vai_siad?'Sim':'Não', r.siad_lancado?'Sim':'Não', r.motorista_nome, r.gp_responsavel
+    r.vai_siad?'Sim':'Não', r.siad_lancado?'Sim':'Não', r.motorista_nome, r.gp_responsavel,
+    (Array.isArray(r.comprovantes)?r.comprovantes:[]).map(_dlUrl).join('\n')
   ].map(cell).join(';'));
   const csv='﻿'+[cols.map(cell).join(';')].concat(linhas).join('\r\n');
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download=`Abastecimento_${mesNome}_${ano}.csv`; document.body.appendChild(a); a.click(); a.remove();
   toast('Arquivo CSV gerado (abre no Excel).');
+}
+
+// ── Editar / excluir abastecimento (só gestor — Aux P4 / Admin Geral) ──────
+let AB_EDIT_MOV=null, AB_EDIT_IDX=null;
+const _abCampos=['fonte','tipo','combustivel','litros','valor_unit','valor_total','odometro','cidade','convenio','doador','obs'];
+function _abFillDatalist(id,arr){ const dl=document.getElementById(id); if(dl) dl.innerHTML=(arr||[]).map(x=>`<option value="${_re(x)}">`).join(''); }
+function abEditar(movId, idx){
+  const r=AB.find(x=>x.mov_id===movId && x.idx===idx); if(!r) return;
+  AB_EDIT_MOV=movId; AB_EDIT_IDX=idx;
+  _abFillDatalist('abm-combs', LISTAS.combustiveis);
+  _abFillDatalist('abm-convs', LISTAS.convenios);
+  _abCampos.forEach(k=>{ const el=document.getElementById('abm-'+k); if(!el) return;
+    const v=r[k]; if(el.tagName==='SELECT'){ el.value=(v||el.options[0].value); } else { el.value=(v==null?'':v); } });
+  const dt=r.data_ficha?new Date(r.data_ficha).toLocaleDateString('pt-BR'):'—';
+  document.getElementById('ab-m-sub').textContent=`VTR ${r.prefixo||'—'} · ${dt} · ${r.fonte||''}`;
+  document.getElementById('ab-modal').classList.add('show');
+}
+function abFecharModal(){ document.getElementById('ab-modal').classList.remove('show'); AB_EDIT_MOV=null; AB_EDIT_IDX=null; }
+async function abSalvarEdicao(){
+  if(AB_EDIT_MOV==null || AB_EDIT_IDX==null) return;
+  const item={}; _abCampos.forEach(k=>{ item[k]=(document.getElementById('abm-'+k).value||''); });
+  const btn=document.getElementById('abm-salvar'); btn.disabled=true;
+  try{
+    await rpc('frota_abast_editar',{p_token:S.token,p_mov_id:AB_EDIT_MOV,p_idx:AB_EDIT_IDX,p_item:item});
+    toast('Abastecimento atualizado.'); abFecharModal(); abCarregar();
+  }catch(e){ toast('Erro: '+e.message); }
+  finally{ btn.disabled=false; }
+}
+async function abExcluir(movId, idx){
+  const r=AB.find(x=>x.mov_id===movId && x.idx===idx); if(!r) return;
+  const litros=r.litros!=null?(+r.litros).toLocaleString('pt-BR',{maximumFractionDigits:3})+' L':'';
+  if(!confirm(`Excluir este lançamento de abastecimento da VTR ${r.prefixo||''}?`
+    +`\n${[r.fonte,litros,r.combustivel].filter(Boolean).join(' · ')}`
+    +`\n\nA ficha de movimentação continua existindo — só este lançamento é apagado.`)) return;
+  try{
+    await rpc('frota_abast_excluir',{p_token:S.token,p_mov_id:movId,p_idx:idx});
+    toast('Abastecimento excluído.'); abCarregar();
+  }catch(e){ toast('Erro: '+e.message); }
 }
 </script>
 </body>

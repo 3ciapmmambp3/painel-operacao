@@ -34,6 +34,21 @@
   .noperm{padding:60px 20px;text-align:center;color:var(--text-muted)}
   .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#111;border:1px solid var(--border);color:var(--text-white);padding:12px 20px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:300}
   .toast.show{opacity:1}
+  .btn-mini{background:var(--bg-input);border:1px solid var(--border-mid);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:13px;line-height:1;color:var(--text-white)}
+  .btn-mini:hover{border-color:var(--gold-light)}
+  .btn-mini.danger:hover{border-color:var(--danger);color:#ef9a9a}
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-start;justify-content:center;z-index:400;overflow-y:auto;padding:40px 16px}
+  .modal-bg.show{display:flex}
+  .modal{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;max-width:640px;width:100%;padding:20px 22px}
+  .modal h2{font-size:16px;font-weight:800;margin-bottom:4px}
+  .modal .sub{font-size:12px;color:var(--text-muted);margin-bottom:14px}
+  .modal .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .modal .f{display:flex;flex-direction:column;gap:4px}
+  .modal .f.col2{grid-column:1/-1}
+  .modal label{font-size:11px;font-weight:700;color:var(--text-muted)}
+  .modal input,.modal select,.modal textarea{background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:8px 10px;color:var(--text-white);font-size:13px;outline:none;width:100%}
+  .modal .acts{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+  @media(max-width:560px){.modal .grid{grid-template-columns:1fr}}
 </style>
 <script src="pwa.js" defer></script>
 </head>
@@ -69,11 +84,35 @@
       </div>
       <div class="totais" id="ac-totais"></div>
       <div class="tablewrap"><table>
-        <thead><tr><th>Data</th><th>VTR</th><th>REDS</th><th>Odômetro</th><th>Vítimas</th><th>Perícia</th><th>Guincho</th><th>Motorista</th><th>Grupamento</th><th>Fotos</th></tr></thead>
-        <tbody id="ac-tb"><tr><td colspan="10" class="empty">Carregando…</td></tr></tbody>
+        <thead><tr><th>Data</th><th>VTR</th><th>REDS</th><th>Odômetro</th><th>Vítimas</th><th>Perícia</th><th>Guincho</th><th>Motorista</th><th>Grupamento</th><th>Fotos</th><th>Ações</th></tr></thead>
+        <tbody id="ac-tb"><tr><td colspan="11" class="empty">Carregando…</td></tr></tbody>
       </table></div>
     </div>
     <div class="noperm" id="noperm" style="display:none">Acesso restrito ao setor responsável (Aux P4) e ao Admin Geral.</div>
+  </div>
+</div>
+
+<div class="modal-bg" id="ac-modal">
+  <div class="modal">
+    <h2>✏️ Editar acidente</h2>
+    <div class="sub" id="ac-m-sub">—</div>
+    <div class="grid">
+      <div class="f col2"><label>Nº REDS</label><input id="acm-reds" placeholder="2026-000000000-001"></div>
+      <div class="f"><label>Odômetro no acidente</label><input id="acm-odometro" type="number"></div>
+      <div class="f"><label>Data/hora</label><input id="acm-data_hora" type="datetime-local"></div>
+      <div class="f"><label>Motorista é o que armou?</label><select id="acm-mesmo_motorista"><option>Sim</option><option>Não</option></select></div>
+      <div class="f"><label>Perícia acionada?</label><select id="acm-pericia"><option>Sim</option><option>Não</option></select></div>
+      <div class="f"><label>CPU compareceu?</label><select id="acm-cpu"><option>Sim</option><option>Não</option></select></div>
+      <div class="f"><label>Houve vítimas?</label><select id="acm-vitimas"><option>Não</option><option>Sim</option></select></div>
+      <div class="f"><label>Responsável definido?</label><select id="acm-responsavel"><option>Sim</option><option>Não</option></select></div>
+      <div class="f"><label>Bafômetro realizado?</label><select id="acm-bafometro"><option>Sim</option><option>Não</option></select></div>
+      <div class="f"><label>Necessitou guincho?</label><select id="acm-guincho"><option>Não</option><option>Sim</option></select></div>
+      <div class="f col2"><label>Observações do acidente</label><textarea id="acm-obs" rows="2"></textarea></div>
+    </div>
+    <div class="acts">
+      <button class="btn-outline" onclick="acFecharModal()">Cancelar</button>
+      <button class="btn-gold" id="acm-salvar" onclick="acSalvarEdicao()">Salvar</button>
+    </div>
   </div>
 </div>
 
@@ -114,12 +153,12 @@ async function acCarregar(){
   const mesRaw=document.getElementById('ac-mes').value;
   const mes = mesRaw==='' ? null : +mesRaw;
   const tb=document.getElementById('ac-tb');
-  tb.innerHTML='<tr><td colspan="10" class="empty">Carregando…</td></tr>';
+  tb.innerHTML='<tr><td colspan="11" class="empty">Carregando…</td></tr>';
   try{
     AC = await rpc('frota_acidentes_listar',{p_token:S.token,p_ano:ano,p_mes:mes}) || [];
     if(!Array.isArray(AC)) AC=[];
     acRenderTotais(); acRender();
-  }catch(e){ tb.innerHTML=`<tr><td colspan="10" class="empty">Erro: ${_re(e.message)}</td></tr>`; }
+  }catch(e){ tb.innerHTML=`<tr><td colspan="11" class="empty">Erro: ${_re(e.message)}</td></tr>`; }
 }
 function acRenderTotais(){
   const box=document.getElementById('ac-totais');
@@ -142,8 +181,8 @@ function _fotosCel(fotos){
 }
 function acRender(){
   const tb=document.getElementById('ac-tb');
-  if(!AC.length){ tb.innerHTML='<tr><td colspan="10" class="empty">Nenhum acidente registrado no período.</td></tr>'; return; }
-  tb.innerHTML=AC.map(a=>{
+  if(!AC.length){ tb.innerHTML='<tr><td colspan="11" class="empty">Nenhum acidente registrado no período.</td></tr>'; return; }
+  tb.innerHTML=AC.map((a,i)=>{
     const dt=a.data_ficha?new Date(a.data_ficha).toLocaleDateString('pt-BR'):'—';
     const odo=a.odometro?(+String(a.odometro).replace(/\D/g,'')||a.odometro).toLocaleString?.('pt-BR'):null;
     return `<tr>
@@ -157,6 +196,10 @@ function acRender(){
       <td>${_re(a.motorista_nome||'—')}<div class="sub">${_re(a.motorista_matricula||'')}</div></td>
       <td>${_re((a.gp_responsavel||'—'))}</td>
       <td>${_fotosCel(a.fotos)}</td>
+      <td style="white-space:nowrap">
+        <button class="btn-mini" onclick="acEditar(${i})" title="Editar">✏️</button>
+        <button class="btn-mini danger" onclick="acExcluir(${i})" title="Excluir">🗑</button>
+      </td>
     </tr>`;
   }).join('');
 }
@@ -177,6 +220,41 @@ function acExportar(){
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download=`Acidentes_${mesNome}_${ano}.csv`; document.body.appendChild(a); a.click(); a.remove();
   toast('Arquivo CSV gerado (abre no Excel).');
+}
+
+// ── Editar / excluir acidente (só gestor de viaturas — Aux P4 / Admin Geral) ──
+let AC_EDIT_ID=null;
+const _acCampos=['reds','odometro','data_hora','vitimas','pericia','cpu','bafometro','guincho','mesmo_motorista','responsavel','obs'];
+function acEditar(i){
+  const a=AC[i]; if(!a) return;
+  AC_EDIT_ID=a.mov_id;
+  _acCampos.forEach(k=>{ const el=document.getElementById('acm-'+k); if(!el) return;
+    const v=a[k]; if(el.tagName==='SELECT'){ el.value=(v||el.options[0].value); } else { el.value=(v==null?'':v); } });
+  const dt=a.data_ficha?new Date(a.data_ficha).toLocaleDateString('pt-BR'):'—';
+  document.getElementById('ac-m-sub').textContent=`VTR ${a.prefixo||'—'} · ${dt} · motorista ${a.motorista_nome||'—'}`;
+  document.getElementById('ac-modal').classList.add('show');
+}
+function acFecharModal(){ document.getElementById('ac-modal').classList.remove('show'); AC_EDIT_ID=null; }
+async function acSalvarEdicao(){
+  if(!AC_EDIT_ID) return;
+  const dados={}; _acCampos.forEach(k=>{ dados[k]=(document.getElementById('acm-'+k).value||''); });
+  const btn=document.getElementById('acm-salvar'); btn.disabled=true;
+  try{
+    await rpc('frota_acidente_editar',{p_token:S.token,p_mov_id:AC_EDIT_ID,p_dados:dados});
+    toast('Acidente atualizado.'); acFecharModal(); acCarregar();
+  }catch(e){ toast('Erro: '+e.message); }
+  finally{ btn.disabled=false; }
+}
+async function acExcluir(i){
+  const a=AC[i]; if(!a) return;
+  const temFoto=Array.isArray(a.fotos)&&a.fotos.length;
+  if(!confirm(`Excluir o acidente da VTR ${a.prefixo||''}${a.reds?` (REDS ${a.reds})`:''}?`
+    +(temFoto?`\n\nAs ${a.fotos.length} foto(s) anexada(s) também serão removidas.`:'')
+    +`\n\nA ficha de movimentação continua existindo — só a seção de acidente é apagada.`)) return;
+  try{
+    await rpc('frota_acidente_excluir',{p_token:S.token,p_mov_id:a.mov_id});
+    toast('Acidente excluído.'); acCarregar();
+  }catch(e){ toast('Erro: '+e.message); }
 }
 </script>
 </body>
