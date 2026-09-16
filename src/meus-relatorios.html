@@ -33,6 +33,11 @@
     .mr-btn-editar.disabled:hover .mr-tip{display:block;}
     .mr-filtros{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
     .mr-filtro-input{background:var(--bg-dark);color:var(--text-white);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;}
+    .mr-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
+    .mr-chip{background:var(--bg-card);border:1px solid var(--border);color:var(--text-muted);font-size:12px;font-weight:700;padding:7px 14px;border-radius:20px;cursor:pointer;white-space:nowrap;}
+    .mr-chip:hover{color:var(--text-white);}
+    .mr-chip.active{background:var(--gold-bg);border-color:var(--gold-border);color:var(--gold-light);}
+    .mr-chip .n{opacity:.7;font-weight:800;margin-left:5px;}
     .mr-paginacao{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:16px;}
     .mr-paginacao button:disabled{opacity:.4;cursor:not-allowed;}
 
@@ -109,6 +114,12 @@
     <div class="mr-toolbar">
       <h2>Meus relatórios</h2>
       <button class="btn-gold" onclick="window.location.href='relatorio-servico.html'">+ Lançar relatório</button>
+    </div>
+    <div class="mr-chips" id="mrChips">
+      <span class="mr-chip active" data-f="todas">Minhas + equipe <span class="n" id="n-todas">0</span></span>
+      <span class="mr-chip" data-f="minhas">Só as minhas <span class="n" id="n-minhas">0</span></span>
+      <span class="mr-chip" data-f="equipe">Da equipe <span class="n" id="n-equipe">0</span></span>
+      <span class="mr-chip" data-f="gestao" id="mr-chip-gestao" style="display:none">Todas (gestão) <span class="n" id="n-gestao">0</span></span>
     </div>
     <div class="mr-filtros" id="mr-filtros">
       <select id="filtroFracao" class="mr-filtro-input"><option value="">Todas as Frações</option></select>
@@ -202,6 +213,11 @@ function formatarDataBR(iso){
 const ITENS_POR_PAGINA = 15;
 let todosOsRelatorios = [];
 let paginaAtual = 1;
+let filtroChip = 'todas';   // todas | minhas | equipe | gestao
+// Quem enxerga além dos próprios relatórios (mesmo escopo do relatorio_meus):
+// Admin Geral/Admin, CMT Cia, Admin de Pelotão, Admin de GP → mostra "Todas (gestão)".
+const ehGestor = ['admin_geral','admin','admin_pelotao','admin_gp'].includes((sessao&&sessao.nivel_acesso)||'')
+              || ((sessao&&sessao.funcao||'').toUpperCase().trim() === 'CMT CIA');
 
 // Preenche o filtro de Fração de Atuação com as frações que de fato aparecem
 // nos relatórios carregados (não precisa de outra chamada ao backend).
@@ -217,11 +233,29 @@ function aplicarFiltros(relatorios){
   const dataInicio = document.getElementById('filtroDataInicio').value; // yyyy-mm-dd
   const dataFim = document.getElementById('filtroDataFim').value;
   return relatorios.filter(r => {
+    // Chip: minhas (apareço) / equipe (não apareço) / todas|gestão (tudo visível)
+    if (filtroChip === 'minhas' && !r.sou_eu) return false;
+    if (filtroChip === 'equipe' && r.sou_eu) return false;
     if (fracao && r['Fração de Atuação'] !== fracao) return false;
     if (dataInicio && (!r['Data'] || r['Data'] < dataInicio)) return false;
     if (dataFim && (!r['Data'] || r['Data'] > dataFim)) return false;
     return true;
   });
+}
+
+// Contadores das abas (chips) — sobre TODOS os relatórios carregados (como nas
+// Minhas Movimentações: independem dos filtros de Fração/data).
+function atualizarContadoresChips(){
+  const rs = todosOsRelatorios || [];
+  const nMinhas = rs.filter(r => r.sou_eu).length;
+  const nEquipe = rs.filter(r => !r.sou_eu).length;
+  document.getElementById('n-minhas').textContent = nMinhas;
+  document.getElementById('n-equipe').textContent = nEquipe;
+  document.getElementById('n-todas').textContent  = rs.length;
+  if (ehGestor){
+    const g = document.getElementById('mr-chip-gestao'); if (g) g.style.display = '';
+    const ng = document.getElementById('n-gestao'); if (ng) ng.textContent = rs.length;
+  }
 }
 
 function renderizarTabela(){
@@ -312,6 +346,16 @@ document.getElementById('btnLimparFiltros').addEventListener('click', () => {
   renderizarTabela();
 });
 
+// Abas (chips): Minhas + equipe / Só as minhas / Da equipe / Todas (gestão)
+document.getElementById('mrChips').addEventListener('click', (ev) => {
+  const c = ev.target.closest('.mr-chip'); if (!c) return;
+  document.querySelectorAll('.mr-chip').forEach(x => x.classList.remove('active'));
+  c.classList.add('active');
+  filtroChip = c.dataset.f;
+  paginaAtual = 1;
+  renderizarTabela();
+});
+
 async function carregarMeusRelatorios(){
   const status = document.getElementById('mr-status');
   if (!sessao || !sessao.matricula){
@@ -335,6 +379,7 @@ async function carregarMeusRelatorios(){
     todosOsRelatorios = lista;
     paginaAtual = 1;
     popularFiltroFracao(todosOsRelatorios);
+    atualizarContadoresChips();
     renderizarTabela();
   } catch(err){
     console.error('Erro ao buscar Meus Relatórios:', err);
