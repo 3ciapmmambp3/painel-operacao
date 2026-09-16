@@ -8,6 +8,7 @@
 <script src="auth.js"></script>
 <script src="topnav.js" data-ativo="p4"></script>
 <script src="secnav.js" data-secao="p4"></script>
+<script src="frota-grupamentos.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   body{padding-bottom:60px}
@@ -191,7 +192,7 @@ const _dlUrl=f=>{ const l=(f&&f.link)||''; return l ? l + (l.includes('?')?'&':'
 let AB=[], AB_TOT={};
 const AB_MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
-(function init(){
+(async function init(){
   if(S) document.getElementById('user-nome').textContent = S.nome_guerra || S.nome_completo || S.nome || '—';
   if(!podeGerir){ document.getElementById('wrap').style.display='none'; document.getElementById('noperm').style.display='block'; return; }
   const hoje=new Date();
@@ -201,6 +202,8 @@ const AB_MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','A
   const anos=[]; for(let a=hoje.getFullYear();a>=hoje.getFullYear()-2;a--) anos.push(a);
   selA.innerHTML=anos.map(a=>`<option value="${a}">${a}</option>`).join('');
   selA.value=hoje.getFullYear();
+  await FrotaGrup.carregar(API, AKEY);   // lista oficial de grupamentos (tabela grupos)
+  popularGrupAB();
   abCarregar();
   carregarCfgLimites(); carregarListas();
 })();
@@ -302,16 +305,15 @@ function abLinhas(){
   const soSiad=document.getElementById('ab-so-siad').checked;
   return AB.filter(r=>{
     if(ff && r.fonte!==ff) return false;
-    if(fg && (r.gp_responsavel||'')!==fg) return false;
+    if(fg && !FrotaGrup.mesmoGpr(r.gp_responsavel, fg)) return false;
     if(soSiad && r.siad_lancado) return false;   // pendente = ainda não lançado
     return true;
   });
 }
 function popularGrupAB(){
-  const sel=document.getElementById('ab-grup'); if(!sel) return;
+  const sel=document.getElementById('ab-grup'); if(!sel || !FrotaGrup.lista.length) return;
   const cur=sel.value;
-  const keys=[...new Set(AB.map(r=>(r.gp_responsavel||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
-  sel.innerHTML='<option value="">Todos os grupamentos</option>'+keys.map(k=>`<option value="${_re(k)}">${_re(k)}</option>`).join('');
+  sel.innerHTML='<option value="">Todos os grupamentos</option>'+FrotaGrup.options();
   sel.value=cur;
 }
 function _comprovCel(comps){

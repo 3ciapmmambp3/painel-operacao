@@ -8,6 +8,7 @@
 <script src="auth.js"></script>
 <script src="topnav.js" data-ativo="p4"></script>
 <script src="secnav.js" data-secao="p4"></script>
+<script src="frota-grupamentos.js"></script>
 <style>
   body{padding-bottom:60px}
   .rd-shell{display:flex;align-items:flex-start}
@@ -194,9 +195,10 @@ const _re=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;
 const _norm = s => (s||'').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[ºª°]/g,'').replace(/\s+/g,' ').trim();
 const MEU_MUNI = _norm((S&&S.grupamento_id||'').split('/').pop());
 
-(function init(){
+(async function init(){
   if(S) document.getElementById('user-nome').textContent = S.nome_guerra || S.nome_completo || S.nome || '—';
   if(!S){ document.getElementById('wrap').style.display='none'; document.getElementById('noperm').style.display='block'; return; }
+  await FrotaGrup.carregar(API, AKEY);   // lista oficial de grupamentos (tabela grupos)
   revCarregar();
   defCarregar();
 })();
@@ -223,10 +225,9 @@ async function revCarregar(){
   }catch(e){ tb.innerHTML=`<tr><td colspan="7" class="empty">Erro: ${_re(e.message)}</td></tr>`; }
 }
 function popularGrupREV(){
-  const sel=document.getElementById('rev-grup'); if(!sel) return;
+  const sel=document.getElementById('rev-grup'); if(!sel || !FrotaGrup.lista.length) return;
   const cur=sel.value;
-  const keys=[...new Set(REV.map(r=>(r.gp||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
-  sel.innerHTML='<option value="">Todos os grupamentos</option>'+keys.map(k=>`<option value="${_re(k)}">${_re(k)}</option>`).join('');
+  sel.innerHTML='<option value="">Todos os grupamentos</option>'+FrotaGrup.options();
   sel.value=cur;
 }
 function revRender(){
@@ -235,7 +236,7 @@ function revRender(){
   const soAlerta=document.getElementById('rev-so-alerta').checked;
   let lst = REV.filter(r=>{
     if(soAlerta && !(r.status==='vencida'||r.status==='proxima')) return false;
-    if(fg && (r.gp||'')!==fg) return false;
+    if(fg && FrotaGrup.gprDeMunicipio(r.municipio)!==fg) return false;
     if(q && (r.prefixo+' '+(r.placa||'')).toLowerCase().indexOf(q)<0) return false;
     return true;
   });
@@ -374,12 +375,10 @@ async function defCarregar(){
     defRender();
   }catch(e){ tb.innerHTML=`<tr><td colspan="12" class="empty">Erro: ${_re(e.message)}</td></tr>`; }
 }
-function _defGrupKey(d){ return (d.vtr_gp||d.gp||'').trim(); }
 function popularGrupDEF(){
-  const sel=document.getElementById('def-grup'); if(!sel) return;
+  const sel=document.getElementById('def-grup'); if(!sel || !FrotaGrup.lista.length) return;
   const cur=sel.value;
-  const keys=[...new Set(DEF.map(_defGrupKey).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
-  sel.innerHTML='<option value="">Todos os grupamentos</option>'+keys.map(k=>`<option value="${_re(k)}">${_re(k)}</option>`).join('');
+  sel.innerHTML='<option value="">Todos os grupamentos</option>'+FrotaGrup.options();
   sel.value=cur;
 }
 function defLinhas(){
@@ -387,7 +386,7 @@ function defLinhas(){
   const fg=((document.getElementById('def-grup')||{}).value||'');
   return DEF.filter(d=>{
     if(soAb && d.status!=='aberto') return false;
-    if(fg && _defGrupKey(d)!==fg) return false;
+    if(fg && FrotaGrup.gprDeMunicipio(d.vtr_municipio)!==fg) return false;
     return true;
   });
 }

@@ -8,6 +8,7 @@
 <script src="auth.js"></script>
 <script src="topnav.js" data-ativo="p4"></script>
 <script src="secnav.js" data-secao="p4"></script>
+<script src="frota-grupamentos.js"></script>
 <script src="assets/qrcode.min.js"></script>
 <style>
   body{padding-bottom:60px}
@@ -173,6 +174,7 @@ let VIA=[], atual=null;
     const r=await fetch(`${API}/rest/v1/viaturas?select=prefixo,placa,marca_modelo,ano,tracao,tipo_bem,pel,gp,municipio,situacao_viatura,situacao_operacional,qr_token&ativo=eq.true&order=prefixo`,{headers:H});
     VIA=await r.json(); if(!Array.isArray(VIA)) VIA=[];
   }catch(e){ console.error(e); VIA=[]; }
+  await FrotaGrup.carregar(API, AKEY);   // lista oficial de grupamentos (tabela grupos)
   kpis(); render(); popularListasFrota();
 })();
 /* (removido: bloco desativado)
@@ -258,9 +260,9 @@ function popularListasFrota(){
   fill('pel-dl', uniq('pel'));
   fill('gp-dl', uniq('gp'));
   fill('muni-dl', uniq('municipio'));
-  // filtro por grupamento (mantém a seleção atual)
+  // filtro por grupamento — lista oficial (tabela grupos), por pelotão
   const fs=document.getElementById('fgrup');
-  if(fs){ const cur=fs.value; fs.innerHTML='<option value="">Todos os grupamentos</option>'+uniq('gp').map(x=>`<option value="${av(x)}">${av(x)}</option>`).join(''); fs.value=cur; }
+  if(fs && FrotaGrup.lista.length){ const cur=fs.value; fs.innerHTML='<option value="">Todos os grupamentos</option>'+FrotaGrup.options(); fs.value=cur; }
 }
 
 function kpis(){
@@ -279,7 +281,7 @@ function render(){
   const rows=VIA.filter(v=>{
     const s=(v.situacao_operacional||'DISPONIVEL');
     if(fs && s!==fs) return false;
-    if(fg && (v.gp||'')!==fg) return false;
+    if(fg && FrotaGrup.gprDeMunicipio(v.municipio)!==fg) return false;
     if(q){ const blob=`${v.prefixo} ${v.placa||''} ${v.marca_modelo||''} ${v.municipio||''} ${v.gp||''}`.toLowerCase(); if(!blob.includes(q)) return false; }
     return true;
   });
