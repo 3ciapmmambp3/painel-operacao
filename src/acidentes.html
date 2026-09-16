@@ -8,6 +8,7 @@
 <script src="auth.js"></script>
 <script src="topnav.js" data-ativo="p4"></script>
 <script src="secnav.js" data-secao="p4"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   body{padding-bottom:60px}
   .rd-shell{display:flex;align-items:flex-start}
@@ -130,14 +131,6 @@ function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.
 const _re=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 // Força o download (Content-Disposition: attachment) na signed URL do Storage.
 const _dlUrl=f=>{ const l=(f&&f.link)||''; return l ? l + (l.includes('?')?'&':'?') + 'download=' + encodeURIComponent((f&&f.nome)||'foto') : '#'; };
-// Célula de link p/ Excel: 1 anexo → =HYPERLINK clicável (Excel-BR usa ; nos args);
-// vários → URLs cruas; nenhum → vazio.
-function _linkExcel(arr,rotulo){
-  const links=(Array.isArray(arr)?arr:[]).map(f=>(f&&f.link)||'').filter(Boolean);
-  if(!links.length) return '';
-  if(links.length===1) return `=HYPERLINK("${links[0]}";"Ver ${rotulo}")`;
-  return links.join(' ');
-}
 
 let AC=[];
 const AC_MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -174,15 +167,17 @@ function acRenderTotais(){
   box.innerHTML = `<span><b>${AC.length}</b> acidente(s) no período</span><span><b>${comVitima}</b> com vítima(s)</span>`;
 }
 function _simnao(v){ return /sim/i.test(v||'') ? '<span class="pill sim">Sim</span>' : (v?`<span class="pill nao">${_re(v)}</span>`:'—'); }
-// Fotos do acidente: ícone compacto (abre em nova aba) + ⬇ baixar.
+// Fotos do acidente: links compactos Ver (abre) · Baixar (download).
 function _fotosCel(fotos){
   if(!Array.isArray(fotos) || !fotos.length) return '<span class="sub">—</span>';
-  return '<span style="display:inline-flex;flex-wrap:wrap;gap:8px;align-items:center">'+fotos.map((f,i)=>{
+  return '<span style="display:inline-flex;flex-wrap:wrap;gap:10px;align-items:center">'+fotos.map((f,i)=>{
     const isImg=/\.(jpe?g|png|gif|webp|bmp)$/i.test(f.nome||'');
     const link=_re(f.link||'#'), dl=_re(_dlUrl(f)), nome=_re(f.nome||('foto '+(i+1)));
-    return `<span style="display:inline-flex;align-items:center;gap:3px;font-size:12.5px;white-space:nowrap">`
-      +`<a href="${link}" target="_blank" title="Ver ${nome}" style="text-decoration:none">${isImg?'📷':'📄'}</a>`
-      +`<a href="${dl}" title="Baixar ${nome}" style="color:var(--gold-light);text-decoration:none">⬇</a></span>`;
+    return `<span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap">`
+      +`<span title="${nome}">${isImg?'📷':'📄'}</span>`
+      +`<a href="${link}" target="_blank" title="Abrir ${nome}" style="text-decoration:none">Ver</a>`
+      +`<span style="color:var(--text-hint)">·</span>`
+      +`<a href="${dl}" title="Baixar ${nome}" style="color:var(--gold-light);text-decoration:none">Baixar</a></span>`;
   }).join('')+'</span>';
 }
 function acRender(){
@@ -211,21 +206,26 @@ function acRender(){
 }
 function acExportar(){
   if(!AC.length){ toast('Nada para exportar.'); return; }
+  if(typeof XLSX==='undefined'){ toast('Componente do Excel ainda carregando — tente de novo em 1s.'); return; }
   const mesRaw=document.getElementById('ac-mes').value;
   const mesNome=mesRaw===''?'Ano-todo':AC_MESES[(+mesRaw)-1], ano=document.getElementById('ac-ano').value;
-  const cell=v=>{ let s=(v==null?'':String(v)); if(/[";\n\r]/.test(s)) s='"'+s.replace(/"/g,'""')+'"'; return s; };
-  const cols=['Data','VTR','Placa','REDS','Odômetro','Data/hora acidente','Vítimas','Perícia','CPU','Bafômetro','Guincho','Mesmo motorista','Responsável definido','Km rodados','Motorista','Matrícula','Grupamento','Fotos (links)'];
-  const linhas=AC.map(a=>[
-    a.data_ficha?new Date(a.data_ficha).toLocaleDateString('pt-BR'):'', a.prefixo, a.placa, a.reds, a.odometro, a.data_hora,
-    a.vitimas, a.pericia, a.cpu, a.bafometro, a.guincho, a.mesmo_motorista, a.responsavel,
-    a.km_rodados, a.motorista_nome, a.motorista_matricula, a.gp_responsavel,
-    _linkExcel(a.fotos,'foto')
-  ].map(cell).join(';'));
-  const csv='﻿'+[cols.map(cell).join(';')].concat(linhas).join('\r\n');
-  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download=`Acidentes_${mesNome}_${ano}.csv`; document.body.appendChild(a); a.click(); a.remove();
-  toast('Arquivo CSV gerado (abre no Excel).');
+  const cols=['Data','VTR','Placa','REDS','Odômetro','Data/hora acidente','Vítimas','Perícia','CPU','Bafômetro','Guincho','Mesmo motorista','Responsável definido','Km rodados','Motorista','Matrícula','Grupamento','Fotos'];
+  const aoa=[cols], links=[];   // links: {r,c,url} → hyperlink nativo no .xlsx
+  AC.forEach((a,i)=>{
+    const fotos=(Array.isArray(a.fotos)?a.fotos:[]).filter(f=>f&&f.link);
+    aoa.push([
+      a.data_ficha?new Date(a.data_ficha).toLocaleDateString('pt-BR'):'', a.prefixo, a.placa, a.reds, a.odometro, a.data_hora,
+      a.vitimas, a.pericia, a.cpu, a.bafometro, a.guincho, a.mesmo_motorista, a.responsavel,
+      a.km_rodados, a.motorista_nome, a.motorista_matricula, a.gp_responsavel,
+      fotos.length?(fotos.length===1?'Ver foto':`Ver fotos (${fotos.length})`):''
+    ]);
+    if(fotos.length) links.push({r:i+1, c:cols.length-1, url:fotos[0].link});
+  });
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  links.forEach(l=>{ const ref=XLSX.utils.encode_cell({r:l.r,c:l.c}); if(ws[ref]) ws[ref].l={Target:l.url, Tooltip:'Abrir foto'}; });
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Acidentes');
+  XLSX.writeFile(wb, `Acidentes_${mesNome}_${ano}.xlsx`);
+  toast('Excel gerado (link da foto clicável).');
 }
 
 // ── Editar / excluir acidente (só gestor de viaturas — Aux P4 / Admin Geral) ──

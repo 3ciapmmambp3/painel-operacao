@@ -8,6 +8,7 @@
 <script src="auth.js"></script>
 <script src="topnav.js" data-ativo="p4"></script>
 <script src="secnav.js" data-secao="p4"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   body{padding-bottom:60px}
   .rd-shell{display:flex;align-items:flex-start}
@@ -185,14 +186,6 @@ function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.
 const _re=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 // Força o download (Content-Disposition: attachment) na signed URL do Storage.
 const _dlUrl=f=>{ const l=(f&&f.link)||''; return l ? l + (l.includes('?')?'&':'?') + 'download=' + encodeURIComponent((f&&f.nome)||'comprovante') : '#'; };
-// Célula de link p/ Excel: 1 anexo → =HYPERLINK clicável (pt-BR usa ; nos args);
-// vários → nº na etiqueta; nenhum → vazio. (Excel-BR: separador de lista é ";".)
-function _linkExcel(arr,rotulo){
-  const links=(Array.isArray(arr)?arr:[]).map(f=>(f&&f.link)||'').filter(Boolean);
-  if(!links.length) return '';
-  if(links.length===1) return `=HYPERLINK("${links[0]}";"Ver ${rotulo}")`;
-  return links.join(' ');   // vários: URLs cruas (uma fórmula por célula só aceita 1 link)
-}
 
 let AB=[], AB_TOT={};
 const AB_MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -313,12 +306,14 @@ function abLinhas(){
 }
 function _comprovCel(comps){
   if(!Array.isArray(comps) || !comps.length) return '<span class="sub">—</span>';
-  return '<span style="display:inline-flex;flex-wrap:wrap;gap:8px;align-items:center">'+comps.map((f,i)=>{
+  return '<span style="display:inline-flex;flex-wrap:wrap;gap:10px;align-items:center">'+comps.map((f,i)=>{
     const isImg=/\.(jpe?g|png|gif|webp|bmp)$/i.test(f.nome||'');
     const link=_re(f.link||'#'), dl=_re(_dlUrl(f)), nome=_re(f.nome||('comprovante '+(i+1)));
-    return `<span style="display:inline-flex;align-items:center;gap:3px;font-size:12.5px;white-space:nowrap">`
-      +`<a href="${link}" target="_blank" title="Ver ${nome}" style="text-decoration:none">${isImg?'📷':'📄'}</a>`
-      +`<a href="${dl}" title="Baixar ${nome}" style="color:var(--gold-light);text-decoration:none">⬇</a></span>`;
+    return `<span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap">`
+      +`<span title="${nome}">${isImg?'📷':'📄'}</span>`
+      +`<a href="${link}" target="_blank" title="Abrir ${nome}" style="text-decoration:none">Ver</a>`
+      +`<span style="color:var(--text-hint)">·</span>`
+      +`<a href="${dl}" title="Baixar ${nome}" style="color:var(--gold-light);text-decoration:none">Baixar</a></span>`;
   }).join('')+'</span>';
 }
 function abRender(){
@@ -349,22 +344,26 @@ async function abSiad(movId, idx, lancado){
 function abExportar(){
   const lst=abLinhas();
   if(!lst.length){ toast('Nada para exportar.'); return; }
+  if(typeof XLSX==='undefined'){ toast('Componente do Excel ainda carregando — tente de novo em 1s.'); return; }
   const mesRaw=document.getElementById('ab-mes').value;
   const mesNome=mesRaw===''?'Ano-todo':AB_MESES[(+mesRaw)-1], ano=document.getElementById('ab-ano').value;
-  // CSV com ; (padrão Excel pt-BR) + BOM (acentos). Evita o aviso de "arquivo adulterado" do .xls-HTML.
-  const cols=['Data','VTR','Placa','Fonte','Tipo','Combustível','Litros','Valor total','Km rodados','Convênio','Doador','Vai p/ SIAD','Lançado no SIAD','Motorista','Grupamento','Comprovante (links)'];
-  const cell=v=>{ let s=(v==null?'':String(v)); if(/[";\n\r]/.test(s)) s='"'+s.replace(/"/g,'""')+'"'; return s; };
-  const linhas=lst.map(r=>[
-    r.data_ficha?new Date(r.data_ficha).toLocaleDateString('pt-BR'):'', r.prefixo, r.placa, r.fonte, r.tipo,
-    r.combustivel, r.litros, r.valor_total, r.km_rodados, r.convenio, r.doador,
-    r.vai_siad?'Sim':'Não', r.siad_lancado?'Sim':'Não', r.motorista_nome, r.gp_responsavel,
-    _linkExcel(r.comprovantes,'comprovante')
-  ].map(cell).join(';'));
-  const csv='﻿'+[cols.map(cell).join(';')].concat(linhas).join('\r\n');
-  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download=`Abastecimento_${mesNome}_${ano}.csv`; document.body.appendChild(a); a.click(); a.remove();
-  toast('Arquivo CSV gerado (abre no Excel).');
+  const cols=['Data','VTR','Placa','Fonte','Tipo','Combustível','Litros','Valor total','Km rodados','Convênio','Doador','Vai p/ SIAD','Lançado no SIAD','Motorista','Grupamento','Comprovante'];
+  const aoa=[cols], links=[];   // links: {r,c,url} → vira hyperlink nativo no .xlsx
+  lst.forEach((r,i)=>{
+    const comps=(Array.isArray(r.comprovantes)?r.comprovantes:[]).filter(f=>f&&f.link);
+    aoa.push([
+      r.data_ficha?new Date(r.data_ficha).toLocaleDateString('pt-BR'):'', r.prefixo, r.placa, r.fonte, r.tipo,
+      r.combustivel, r.litros!=null?+r.litros:'', r.valor_total!=null?+r.valor_total:'', r.km_rodados!=null?+r.km_rodados:'',
+      r.convenio, r.doador, r.vai_siad?'Sim':'Não', r.siad_lancado?'Sim':'Não', r.motorista_nome, r.gp_responsavel,
+      comps.length?(comps.length===1?'Ver comprovante':`Ver comprovante (${comps.length})`):''
+    ]);
+    if(comps.length) links.push({r:i+1, c:cols.length-1, url:comps[0].link});
+  });
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  links.forEach(l=>{ const ref=XLSX.utils.encode_cell({r:l.r,c:l.c}); if(ws[ref]) ws[ref].l={Target:l.url, Tooltip:'Abrir comprovante'}; });
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Abastecimento');
+  XLSX.writeFile(wb, `Abastecimento_${mesNome}_${ano}.xlsx`);
+  toast('Excel gerado (link do comprovante clicável).');
 }
 
 // ── Editar / excluir abastecimento (só gestor — Aux P4 / Admin Geral) ──────
