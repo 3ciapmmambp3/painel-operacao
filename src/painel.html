@@ -5766,13 +5766,21 @@ async function carregarAvisosInicio(){
   const _esc  = s => (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const avisos = [];
   try {
-    /* 1) Ficha de movimentação de viatura pendente (motorista OU comandante da equipe) */
+    /* 1) Ficha de movimentação: PENDENTE (sem ficha) ou JÁ LANÇADA (ver/alterar),
+          onde eu sou o motorista OU o comandante da equipe (do dia). */
     if(mat){
-      const r = await fetch(`${SB_URL}/rest/v1/mov_pendencias?select=prefixo&atendida=eq.false&or=(motorista_matricula.eq.${mat},comandante_matricula.eq.${mat})`, {headers:H});
+      const _h=new Date(); const hojeISO=`${_h.getFullYear()}-${String(_h.getMonth()+1).padStart(2,'0')}-${String(_h.getDate()).padStart(2,'0')}`;
+      const r = await fetch(`${SB_URL}/rest/v1/mov_pendencias?select=prefixo,atendida,mov_id&dia=eq.${hojeISO}&or=(motorista_matricula.eq.${mat},comandante_matricula.eq.${mat})`, {headers:H});
       if(r.ok){ const pend = await r.json();
-        if(pend.length){
-          const prefs = [...new Set(pend.map(p=>p.prefixo).filter(Boolean))];
-          avisos.push({ic:'🚨', txt:`Você tem <b>${pend.length} ficha(s) de movimentação de viatura pendente(s)</b>${prefs.length?` — VTR ${prefs.join(', ')}`:''}`, lk:'movimentacao-viaturas.html', lkTxt:'Preencher →'});
+        const abertas=pend.filter(p=>!p.atendida);
+        const feitas =pend.filter(p=>p.atendida && p.mov_id);
+        if(abertas.length){
+          const prefs = [...new Set(abertas.map(p=>p.prefixo).filter(Boolean))];
+          avisos.push({ic:'🚨', txt:`Você tem <b>${abertas.length} ficha(s) de movimentação de viatura pendente(s)</b>${prefs.length?` — VTR ${prefs.join(', ')}`:''}`, lk:'movimentacao-viaturas.html', lkTxt:'Preencher →'});
+        }
+        if(feitas.length){
+          const prefs = [...new Set(feitas.map(p=>p.prefixo).filter(Boolean))];
+          avisos.push({ic:'✅', txt:`Ficha de Movimentação <b>já lançada</b>${prefs.length?` — VTR ${prefs.join(', ')}`:''}. Deseja fazer alguma alteração?`, lk:'movimentacao-viaturas.html?editar='+encodeURIComponent(feitas[0].mov_id), lkTxt:'Ver / alterar →'});
         }
       }
     }
