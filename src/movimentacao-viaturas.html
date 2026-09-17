@@ -953,6 +953,15 @@ async function preencherFichaDoTTA(dataISO){
             || equipes.find(e=>e.motorista && soDig(e.motorista.matricula)===meu)
             || equipes.find(naEquipe);
     if(!eq) return;
+    // Motorista da ficha = motorista da equipe do TTA. Essencial quando quem
+    // lança é o COMANDANTE (o boot preenche o logado; aqui corrige para o
+    // motorista lançado no TTA — a ficha fica "Registrada por" quem lançou).
+    if(eq.motorista){
+      const mn=document.getElementById('mot-nome'), mm=document.getElementById('mot-mat');
+      const nomeMot=[eq.motorista.pg, eq.motorista.nome].filter(Boolean).join(' ').replace(/\s+/g,' ').trim() || (eq.motorista.matricula||'');
+      if(mn) mn.value=nomeMot;
+      if(mm) mm.value=eq.motorista.matricula||'';
+    }
     // Viatura + placa (a placa vem do cadastro via onVtr)
     if(selEl && !selEl.value && eq.prefixo_viatura){
       if(![...selEl.options].some(o=>o.value===eq.prefixo_viatura)){ const o=document.createElement('option'); o.value=eq.prefixo_viatura; o.textContent=eq.prefixo_viatura; selEl.appendChild(o); }
@@ -982,7 +991,7 @@ async function carregarPendencias(){
   try{
     const mat=(S.matricula||'').replace(/\D/g,'');
     if(!mat) return false;
-    const r=await fetch(`${API}/rest/v1/mov_pendencias?select=prefixo,dia,motorista_nome,solicitado_por_nome&atendida=eq.false&motorista_matricula=eq.${mat}&order=dia.desc`,{headers:H});
+    const r=await fetch(`${API}/rest/v1/mov_pendencias?select=prefixo,dia,motorista_nome,solicitado_por_nome&atendida=eq.false&or=(motorista_matricula.eq.${mat},comandante_matricula.eq.${mat})&order=dia.desc`,{headers:H});
     if(!r.ok) return false;
     const lista=await r.json(); if(!Array.isArray(lista)||!lista.length) return false;
     const box=document.getElementById('pend-banner');
