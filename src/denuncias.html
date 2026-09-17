@@ -9,6 +9,7 @@
 <script src="topnav.js" data-ativo="p3"></script>
 <script src="demandas-sidebar.js"></script>
 <script src="assets/ficha-brasoes.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   body{padding-bottom:40px}
   .shell{display:flex;align-items:flex-start}
@@ -204,6 +205,7 @@
     <button class="fbtn" data-f="PENDENTE" onclick="setFiltro(this)">Pendentes</button>
     <button class="fbtn" data-f="atendidas" onclick="setFiltro(this)">Atendidas</button>
     <button class="fbtn" data-f="inativadas" id="fbtn-inativas" onclick="setFiltro(this)" style="display:none">Inativadas</button>
+    <button class="btn-gold btn-sm" style="margin-left:auto" onclick="exportarExcel()"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Exportar Excel</button>
   </div>
 
   <div class="tablewrap">
@@ -487,6 +489,39 @@ function kpis(){
   document.getElementById('k-and').textContent =c(d=>d.situacao==='EM ANDAMENTO');
   document.getElementById('k-ok').textContent  =c(atendida);
   document.getElementById('k-late').textContent=c(d=>!atendida(d)&&d.prazo&&new Date(d.prazo+'T00:00:00')<new Date(new Date().toDateString()));
+}
+
+/* ── Exportar Excel (respeita a aba + filtros/busca atuais) ──────────── */
+function exportarExcel(){
+  if(typeof XLSX==='undefined'){ alert('Componente do Excel ainda carregando — tente de novo em 1s.'); return; }
+  const rows = DADOS.filter(passa);
+  if(!rows.length){ alert('Nenhuma ocorrência neste filtro para exportar.'); return; }
+  const _d  = v => { if(!v) return ''; const s=String(v).slice(0,10).split('-'); return s.length===3?`${s[2]}/${s[1]}/${s[0]}`:String(v); };
+  const _dt = v => { if(!v) return ''; const d=new Date(v); return isNaN(d)?String(v):d.toLocaleString('pt-BR'); };
+  const anx = a => Array.isArray(a)?a.length:'';
+  const cols = ['Nº','Tipo','Situação','Ano','Origem','Esfera','Nº ofício/processo',
+    'Município','Grupamento','Tema','Objeto','Denunciante','Denunciado',
+    'Data do fato','Prazo','Histórico/Descrição','Endereço','Roteiro/Referência','Observações',
+    'Registrado por','Recebido em','Anexos (qtd)',
+    'Data resposta','Nº REDS','Auto de infração','Ato de fiscalização','Obs. resposta','Atendido por',
+    'Ativo','Motivo inativação','Inativado por'];
+  const tl = d => d.tipo==='denuncia' ? 'Denúncia de Balcão' : 'Requisição';
+  const aoa=[cols];
+  rows.forEach(d=>aoa.push([
+    d.numero||'', tl(d), (SIT_LBL[d.situacao]||d.situacao||''), d.ano||'',
+    d.origem||'', d.origem_esfera||'', d.numero_oficio||'',
+    d.municipio||'', d.grupamento_completo||d.gp_responsavel||'', d.tema||'', d.objeto||'',
+    d.denunciante||'', d.denunciado||'',
+    _d(d.data_fato), _d(d.prazo), d.descricao||'', d.endereco||'', d.referencia||'', d.observacoes||'',
+    d.registrado_por_nome||'', _dt(d.created_at), anx(d.anexos),
+    _d(d.data_resposta), d.numero_reds||'', d.numero_auto_infracao||'', d.numero_ato_fiscalizacao||'', d.observacoes_resposta||'', d.atendido_por_nome||'',
+    (d.ativo===false?'Não (inativada)':'Sim'), d.motivo_inativacao||'', d.inativado_por_nome||''
+  ]));
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, TIPO_ABA==='requisicao'?'Requisições':'Denúncias');
+  const nome=(TIPO_ABA==='requisicao'?'Requisicoes':'Denuncias_Balcao')+'_'+new Date().toISOString().slice(0,10)+'.xlsx';
+  XLSX.writeFile(wb, nome);
 }
 
 /* ── detalhe ─────────────────────────────────────────────────────── */

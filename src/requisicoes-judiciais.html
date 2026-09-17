@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="styles/global.css">
 <script src="auth.js"></script>
 <script src="topnav.js" data-ativo="p1"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   body{padding-bottom:40px}
   .wrap{max-width:1180px;margin:22px auto 0;padding:0 20px}
@@ -120,6 +121,7 @@
       <option value="hoje">Hoje</option>
       <option value="exp">Expirado</option>
     </select>
+    <button class="btn-gold" style="padding:9px 14px;font-size:12.5px;margin-left:auto" onclick="exportarExcel()">⬇ Exportar Excel</button>
   </div>
 
   <div class="tablewrap">
@@ -231,6 +233,45 @@ function render(){
       <td><button class="tbtn" onclick="abrir('${r.id}')">Controlar</button></td>
     </tr>`;
   }).join('');
+}
+
+/* ── Exportar Excel (respeita busca + filtros de situação/prazo) ─────── */
+function exportarExcel(){
+  if(typeof XLSX==='undefined'){ alert('Componente do Excel ainda carregando — tente de novo em 1s.'); return; }
+  const q=(document.getElementById('busca').value||'').toUpperCase().trim();
+  const fs=document.getElementById('f-sit').value;
+  const fp=document.getElementById('f-prazo').value;
+  let lista=DADOS.slice();
+  if(fs) lista=lista.filter(r=>r.situacao===fs);
+  if(fp) lista=lista.filter(r=>prazoInfo(r.data_audiencia).key===fp);
+  if(q) lista=lista.filter(r=>{
+    const arr=Array.isArray(r.militares)?r.militares.map(m=>`${m.pg||''} ${m.guerra||''} ${m.nome||''} ${m.matricula||''}`).join(' '):'';
+    return [r.numero,r.processo,r.local_audiencia,r.autoridade_solicitante,r.municipio_requisicao,r.militares_extra,arr].join(' ').toUpperCase().includes(q);
+  });
+  if(!lista.length){ alert('Nenhuma requisição neste filtro para exportar.'); return; }
+  const _d=v=>{ if(!v) return ''; const s=String(v).slice(0,10).split('-'); return s.length===3?`${s[2]}/${s[1]}/${s[0]}`:String(v); };
+  const _dt=v=>{ if(!v) return ''; const d=new Date(v); return isNaN(d)?String(v):d.toLocaleString('pt-BR'); };
+  const mils=r=>{ const arr=Array.isArray(r.militares)?r.militares:[];
+    let s=arr.map(m=>(`${m.pg||''} ${m.nome||m.guerra||''}`.replace(/\s+/g,' ').trim()+(m.matricula?` (Nº ${m.matricula})`:''))).join('; ');
+    if(r.militares_extra) s+=(s?'; ':'')+'à mão: '+r.militares_extra; return s; };
+  const tipo=r=> r.tipo_envolvimento==='Outro'?(r.tipo_envolvimento_outro||'Outro'):(r.tipo_envolvimento||'');
+  const SIT={PENDENTE:'Pendente','EM CONTROLE':'Em controle',CONCLUIDA:'Concluída'};
+  const cols=['Nº','Situação','Data audiência','Horário','Nº processo','Documento de origem',
+    'Tipo de envolvimento','Método','Militar(es) requisitado(s)',
+    'Município lotação','Município audiência','Local da audiência','Autoridade solicitante','Endereço/link',
+    'Observações gerais','Anexos (qtd)','Registrado por','Recebido em',
+    'Nº grupamento','Cadastrada intranet','Data cadastro','Obs. controle','Último controle por','Atualizado em'];
+  const aoa=[cols];
+  lista.forEach(r=>aoa.push([
+    r.numero||'', SIT[r.situacao]||r.situacao||'Pendente', _d(r.data_audiencia), r.horario||'',
+    r.processo||'', r.documento_origem||'', tipo(r), r.metodo||'', mils(r),
+    r.municipio_lotacao||'', r.municipio_requisicao||'', r.local_audiencia||'', r.autoridade_solicitante||'', r.endereco||'',
+    r.observacoes||'', (Array.isArray(r.anexos)?r.anexos.length:''), r.registrado_por_nome||'', _dt(r.created_at),
+    r.num_grupamento||'', r.cadastrada_intranet||'', _d(r.data_cadastro), r.observacoes_controle||'', r.controlado_por_nome||'', _dt(r.updated_at)
+  ]));
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Requisições Judiciais');
+  XLSX.writeFile(wb, 'Requisicoes_Judiciais_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 
 function abrir(id){
