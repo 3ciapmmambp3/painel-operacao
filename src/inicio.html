@@ -148,6 +148,12 @@
     .mt-share-lista .it small{color:var(--text-muted);}
     .mt-share-none{padding:8px 11px;font-size:12px;color:var(--text-muted);}
     .mt-share-ro{font-size:12px;color:var(--text-muted);background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:8px 11px;}
+    /* andamento / anotações da tarefa */
+    .mt-hist{margin-top:8px;display:flex;flex-direction:column;gap:6px;}
+    .mt-nota{font-size:11.5px;color:var(--text-muted);background:var(--bg-card);border:1px solid var(--border);border-left:2px solid rgba(66,165,245,.55);border-radius:7px;padding:6px 9px;line-height:1.42;}
+    .mt-nota.conc{border-left-color:rgba(102,187,106,.65);}
+    .mt-nota b{color:var(--text-white);}
+    .mt-nota .qd{opacity:.7;}
   </style>
 </head>
 <body>
@@ -302,6 +308,22 @@
     <div class="mdl-acoes">
       <button class="btn-outline" onclick="mtFechar()">Cancelar</button>
       <button class="btn-gold" id="mt-salvar" onclick="mtSalvar()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: anotação / concluir com observação (tarefa pessoal) -->
+<div class="ov" id="mn-ov" onclick="if(event.target===this)mnFechar()">
+  <div class="mdl" style="max-width:440px">
+    <h2 id="mn-titulo">Adicionar anotação</h2>
+    <div class="mmsg2" id="mn-msg"></div>
+    <input type="hidden" id="mn-id">
+    <input type="hidden" id="mn-status">
+    <div class="mfg2"><label id="mn-label">Anotação</label>
+      <textarea id="mn-texto" placeholder="Escreva a informação/andamento"></textarea></div>
+    <div class="mdl-acoes">
+      <button class="btn-outline" onclick="mnFechar()">Cancelar</button>
+      <button class="btn-gold" id="mn-salvar" onclick="mnSalvar()">Salvar</button>
     </div>
   </div>
 </div>
@@ -817,14 +839,23 @@ function mtCard(t, origem){
     acoes.push(`<button class="mtb" onclick="exAbrir('${t.id}')">📝 Executar</button>`);
   } else {
     if(t.status==='pendente') acoes.push(`<button class="mtb" onclick="mtStatus('${t.id}','em_andamento')">▶ Iniciar</button>`);
-    if(t.status!=='concluida') acoes.push(`<button class="mtb go" onclick="mtStatus('${t.id}','concluida')">✔ Concluir</button>`);
+    if(t.status!=='concluida') acoes.push(`<button class="mtb go" onclick="mnAbrir('${t.id}','concluir')">✔ Concluir</button>`);
     if(t.status==='concluida') acoes.push(`<button class="mtb" onclick="mtStatus('${t.id}','pendente')">↺ Reabrir</button>`);
+    acoes.push(`<button class="mtb" onclick="mnAbrir('${t.id}','nota')">＋ Informar</button>`);
     acoes.push(`<button class="mtb" onclick="mtAbrir('${t.id}')">✎</button>`);
     if(t.sou_dono!==false) acoes.push(`<button class="mtb" onclick="mtExcluir('${t.id}')">🗑</button>`);
   }
   const comp = origem==='secao' ? _ultimoComplemento(t) : null;
   const compHTML = comp
     ? `<div class="mt-comp">＋ <b>Complementar:</b> ${_mtEsc(comp.texto||'')}${comp.por_nome?` <span style="opacity:.75;">— ${_mtEsc(comp.por_nome)}</span>`:''}</div>`
+    : '';
+  // Andamento (anotações) da tarefa pessoal — aparecem para todos os participantes.
+  const hist = (origem!=='secao' && Array.isArray(t.historico)) ? t.historico : [];
+  const histHTML = hist.length
+    ? `<div class="mt-hist">${hist.map(h=>{
+        const q = h.em ? _mtFmt(h.em) : '';
+        return `<div class="mt-nota${h.tipo==='conclusao'?' conc':''}">${h.tipo==='conclusao'?'✔ ':'🗒 '}${_mtEsc(h.texto||'')}<br><span class="qd">— ${_mtEsc(h.por_nome||h.por_matricula||'')}${q?` · ${q}`:''}</span></div>`;
+      }).join('')}</div>`
     : '';
   return `<div class="mt st-${t.status}">
     <div class="mt-b">
@@ -834,6 +865,7 @@ function mtCard(t, origem){
       ${t.descricao?`<div class="mt-m"><span>${_mtEsc(t.descricao)}</span></div>`:''}
       ${compHTML}
       ${t.observacao?`<div class="mt-m"><span>🗒 ${_mtEsc(t.observacao)}</span></div>`:''}
+      ${histHTML}
     </div>
     <div class="mt-acoes">${acoes.join('')}</div>
   </div>`;
@@ -878,6 +910,41 @@ async function mtExcluir(id){
   if(!confirm(`Excluir a tarefa "${t?t.titulo:''}"?`)) return;
   try{ await _mtRpc('agenda_pessoal_excluir', {p_token: sessao.token, p_id: id}); await carregarMinhasTarefas(); }
   catch(e){ alert(e.message); }
+}
+// ── Anotação / concluir com observação (tarefa pessoal, dono ou compartilhado) ──
+function mnAbrir(id, modo){
+  document.getElementById('mn-id').value = id;
+  document.getElementById('mn-texto').value = '';
+  const msg=document.getElementById('mn-msg'); msg.className='mmsg2'; msg.textContent='';
+  if(modo==='concluir'){
+    document.getElementById('mn-status').value = 'concluida';
+    document.getElementById('mn-titulo').textContent = 'Concluir tarefa';
+    document.getElementById('mn-label').textContent = 'Observação ao concluir (opcional)';
+    document.getElementById('mn-texto').placeholder = 'Descreva o que foi feito (opcional)';
+    document.getElementById('mn-salvar').textContent = '✔ Concluir';
+  } else {
+    document.getElementById('mn-status').value = '';
+    document.getElementById('mn-titulo').textContent = 'Adicionar anotação';
+    document.getElementById('mn-label').textContent = 'Anotação';
+    document.getElementById('mn-texto').placeholder = 'Escreva a informação/andamento';
+    document.getElementById('mn-salvar').textContent = 'Salvar';
+  }
+  document.getElementById('mn-ov').classList.add('show');
+  setTimeout(()=>document.getElementById('mn-texto').focus(), 40);
+}
+function mnFechar(){ document.getElementById('mn-ov').classList.remove('show'); }
+async function mnSalvar(){
+  const id=document.getElementById('mn-id').value;
+  const status=document.getElementById('mn-status').value;
+  const texto=document.getElementById('mn-texto').value.trim();
+  const msg=document.getElementById('mn-msg');
+  if(!status && !texto){ msg.className='mmsg2 show'; msg.textContent='Escreva a anotação.'; return; }
+  const btn=document.getElementById('mn-salvar'); const lbl=btn.textContent; btn.disabled=true; btn.textContent='Salvando…';
+  try{
+    await _mtRpc('agenda_pessoal_andamento', {p_token: sessao.token, p_id: id, p_texto: texto, p_status: status||null});
+    mnFechar(); await carregarMinhasTarefas();
+  }catch(e){ msg.className='mmsg2 show'; msg.textContent=e.message; }
+  finally{ btn.disabled=false; btn.textContent=lbl; }
 }
 function mtAbrir(id){
   const t = id ? MT_PESSOAIS.find(x=>x.id===id) : null;
