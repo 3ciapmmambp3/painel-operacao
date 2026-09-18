@@ -321,7 +321,6 @@ const isAdminGeral = nivel==='admin_geral';
 let GRUPOS = [];       // [{gpr, comp, gp, pel}]
 let ALLOWED = [];      // grupos que este militar pode ver (escopo máximo)
 let DADOS = [];
-let ROSTER = [];   // efetivo (matrícula→posto/graduação), carregado sob demanda p/ a ficha
 let filtro = 'todas';
 
 /* ── boot ────────────────────────────────────────────────────────── */
@@ -724,28 +723,27 @@ async function salvarAtendimento(){
 }
 
 /* ── PDF: Ficha — réplica fiel do modelo DENUNCIA (MODELO).pdf ───── */
-async function gerarPDF(d){
+function gerarPDF(d){
   d = d || atual;
   if(!d) return;
-  // Abre a janela já (dentro do gesto do clique) p/ não ser bloqueada; enche depois.
-  const w=window.open('', '_blank');
-  if(!w){ toast('Permita pop-ups para gerar o PDF.'); return; }
-  try{ w.document.write('<!doctype html><meta charset="utf-8"><title>Gerando ficha…</title><body style="font-family:Arial;padding:28px;color:#333">Gerando ficha…</body>'); }catch(e){}
   const E = v => (v==null?'':String(v)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const denuncia = d.tipo==='denuncia';
   const titulo = denuncia ? 'FICHA DE DENÚNCIA' : 'FICHA DE REQUISIÇÃO';
   const nrTexto = (denuncia ? 'DENÚNCIA' : 'REQUISIÇÃO') + ' Nº ' + d.numero + ' — 3ª CIA PM MAmb';
-  // Posto/graduação não é gravado na ficha — resolve pela matrícula no efetivo.
   const _dig = s => (s==null?'':s).toString().replace(/\D/g,'');
-  const _regMat = _dig(d.registrado_por_matricula), _atMat = _dig(d.atendido_por_matricula);
-  if((_regMat || _atMat) && !ROSTER.length){
-    try{ ROSTER = await rpc('tta_listar_militares', { p_token:S.token }) || []; }catch(e){}
-  }
-  const _pgDe = mat => { const k=_dig(mat); if(!k) return ''; const m=(ROSTER||[]).find(x=>_dig(x.matricula)===k); return m?(m.posto_graduacao||''):''; };
-  // "Nº PM 000.000-0 — POSTO — NOME COMPLETO" (posto quando encontrado no efetivo).
-  const _ident = (mat, nome) => { const pg=_pgDe(mat); const p=[]; if(mat) p.push('Nº PM '+E(mat)); if(pg) p.push(E(pg.toUpperCase())); p.push(E((nome||'—').toUpperCase())); return p.join(' — '); };
+  // registrado_por_nome / atendido_por_nome já são gravados como
+  // "matrícula — posto nome" (ver db/05,60 e nova-denuncia MILITAR_LINHA);
+  // então só rotula com "Nº PM" e NÃO repete o número/posto.
+  const _ident = (mat, nome) => {
+    const n = (nome==null?'':String(nome)).trim();
+    if(!n && !mat) return '—';
+    if(mat && _dig(n).includes(_dig(mat))) return 'Nº PM ' + E(n.toUpperCase());
+    return (mat ? 'Nº PM ' + E(mat) + ' — ' : '') + E((n||'—').toUpperCase());
+  };
   const row = (lbl,val) => `<tr><td class="l">${E(lbl)}</td><td>${(val==null||val==='')?'—':E(val)}</td></tr>`;
   const rowH = (lbl,htmlVal) => `<tr><td class="l">${E(lbl)}</td><td>${htmlVal||'—'}</td></tr>`;
+  // Bloco de largura total p/ campos de texto livre (podem ficar grandes).
+  const rowBlk = (lbl,val) => `<tr><td class="bl" colspan="2"><span class="bl-l">${E(lbl)}</span><div class="bl-v">${(val==null||val==='')?'—':E(val)}</div></td></tr>`;
   // Linha ANEXO com links clicáveis: o militar que recebe o PDF abre cada
   // documento anexado direto pela ficha (o Chrome preserva os hiperlinks no PDF).
   const anexosArr = (d.anexos||[]);
@@ -759,16 +757,16 @@ async function gerarPDF(d){
       }).join('<br>')
     : '';
   const corpo = denuncia
-    ? row('Infração', d.tema)+row('Município', d.municipio)+row('Endereço', d.endereco)+
+    ? row('Infração', d.tema)+row('Município', d.municipio)+rowBlk('Endereço', d.endereco)+
       row('Denunciante', d.denunciante)+row('Denunciado', d.denunciado)+
-      row('Histórico', d.descricao)+row('Roteiro', d.referencia)+
+      rowBlk('Histórico', d.descricao)+rowBlk('Roteiro', d.referencia)+
       rowH('PM que recebeu', _ident(d.registrado_por_matricula, d.registrado_por_nome))+row('Data de recebimento', fmtData(d.created_at))+
-      rowH('Anexo', anexoCell)+row('Observações', d.observacoes)
+      rowH('Anexo', anexoCell)+rowBlk('Observações', d.observacoes)
     : row('Origem', d.origem)+row('Nº ofício/processo', d.numero_oficio)+row('Infração', d.tema)+
-      row('Município', d.municipio)+row('Endereço', d.endereco)+row('Objeto', d.objeto)+
-      row('Histórico', d.descricao)+row('Roteiro', d.referencia)+
+      row('Município', d.municipio)+rowBlk('Endereço', d.endereco)+rowBlk('Objeto', d.objeto)+
+      rowBlk('Histórico', d.descricao)+rowBlk('Roteiro', d.referencia)+
       rowH('PM que recebeu', _ident(d.registrado_por_matricula, d.registrado_por_nome))+row('Data de recebimento', fmtData(d.created_at))+
-      row('Prazo', fmtData(d.prazo))+rowH('Anexo', anexoCell)+row('Observações', d.observacoes);
+      row('Prazo', fmtData(d.prazo))+rowH('Anexo', anexoCell)+rowBlk('Observações', d.observacoes);
   // Bloco RESPOSTA / ATENDIMENTO — aparece quando a demanda foi respondida
   // (dados espelhados do relatório de serviço via denuncia_baixa_automatica).
   const respondida = d.situacao==='RESPONDIDA' || d.situacao==='CONCLUIDA';
@@ -780,7 +778,7 @@ async function gerarPDF(d){
       + row('Nº REDS (BO/BOS/RAT)', d.numero_reds)
       + row('Nº Auto de Infração', d.numero_auto_infracao)
       + row('Nº Ato de Fiscalização', d.numero_ato_fiscalizacao)
-      + (d.observacoes_resposta ? row('Observações da resposta', d.observacoes_resposta) : '')
+      + (d.observacoes_resposta ? rowBlk('Observações da resposta', d.observacoes_resposta) : '')
       + rowH('Atendido por', _ident(d.atendido_por_matricula, d.atendido_por_nome))
     : '';
   const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>${E(d.numero)} — ${titulo}</title>
@@ -807,6 +805,10 @@ async function gerarPDF(d){
     table.t td{padding:6px 10px;font-size:14px;line-height:1.45;border:0;border-bottom:1px solid #ddd;vertical-align:top;word-wrap:break-word}
     table.t td.l{width:38%;color:#666;font-weight:600}
     table.t td a{color:#0645ad;text-decoration:underline;word-break:break-all}
+    /* bloco de largura total p/ texto livre (Endereço, Histórico, Roteiro, Objeto, Observações) */
+    table.t td.bl{padding:8px 10px}
+    table.t td.bl .bl-l{display:block;color:#666;font-weight:600;font-size:13px;margin-bottom:3px}
+    table.t td.bl .bl-v{white-space:pre-wrap;word-wrap:break-word;line-height:1.5}
     /* Margem vem do padding do corpo (sempre respeitado na impressão),
        não do @page — que é sobrescrito quando "Margens: Nenhuma" na caixa de impressão. */
     @media print{@page{margin:0} body{background:#fff} .vbar{display:none!important} .doc{max-width:none;margin:0;padding:16mm;border-radius:0;box-shadow:none}}
@@ -833,7 +835,9 @@ async function gerarPDF(d){
       ${respondida?`<h4 class="sec">Resposta / Atendimento <small>— conforme lançado no relatório de serviço</small></h4><table class="t">${respostaRows}</table>`:''}
     </div>
   </body></html>`;
-  try{ w.document.open(); w.document.write(html); w.document.close(); }catch(e){}
+  const w=window.open('', '_blank');
+  if(!w){ toast('Permita pop-ups para gerar o PDF.'); return; }
+  w.document.write(html); w.document.close();
 }
 
 let _tt; function toast(m){ clearTimeout(_tt); const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); _tt=setTimeout(()=>t.classList.remove('show'),2600); }
