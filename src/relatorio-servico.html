@@ -1987,13 +1987,21 @@ async function preencherEquipeDoTTA(chamadaId){
         }
       }
 
-      // Equipes que APOIAM a minha → Equipe de Apoio do relatório
+      // Equipes que APOIAM a minha → Equipe de Apoio do relatório.
+      // Apoio LANÇADO NO TTA é apoio estrutural: sai um único relatório p/ as
+      // duas equipes, então a viatura de apoio EXIGE Ficha de Movimentação
+      // (marcada com data-apoio-tta="1"). Apoio adicionado à mão no relatório
+      // não recebe essa marca e não bloqueia o fechamento.
       equipes.filter(eq => eq.vinculo === ('apoio:' + minha.ordem)).forEach(eq => {
         if (typeof addApoioEntry !== 'function') return;
         addApoioEntry();
         const entries = document.querySelectorAll('#apoioList [data-apoio-entry]');
         const entry = entries[entries.length - 1]; if (!entry) return;
-        const setF = (field, val) => { const el = entry.querySelector('[data-field="'+field+'"]'); if (el && val && !el.value) el.value = val; };
+        entry.dataset.apoioTta = '1';
+        // Apoio do TTA é da própria 3ª Cia → marca "Sim" e renderiza os campos próprios.
+        const radioSim = entry.querySelector('.apoio-propria[value="Sim"]');
+        if (radioSim && !radioSim.checked){ radioSim.checked = true; radioSim.dispatchEvent(new Event('change', { bubbles: true })); }
+        const setF = (field, val) => { const el = entry.querySelector('[data-field="'+field+'"]'); if (el && val && !el.value){ el.value = val; el.dispatchEvent(new Event('change', { bubbles: true })); } };
         setF('apoioComandante', acharRef(eq.comandante && eq.comandante.matricula));
         setF('apoioMotorista',  acharRef(eq.motorista  && eq.motorista.matricula));
         setF('apoioViatura', viaturaLabelCompleto(eq.prefixo_viatura || ''));
@@ -4179,9 +4187,12 @@ document.getElementById('relatorioForm').addEventListener('submit', async (e) =>
     return;
   }
 
-  // Cada viatura utilizada (principal + apoio) precisa da Ficha de Movimentação de hoje.
+  // Só a viatura principal e as viaturas de apoio lançadas no TTA (apoio estrutural)
+  // precisam da Ficha. Apoio adicionado à mão não bloqueia (a outra equipe responde
+  // pela sua viatura no próprio relatório/ficha).
+  const viaturasFicha = getViaturasQueExigemFicha();
   const faltando = [];
-  for (const p of viaturas){
+  for (const p of viaturasFicha){
     const tem = await viaturaTemMovimentacaoHoje(p);
     if (tem === false) faltando.push(p);   // null (não verificável) não bloqueia
   }
@@ -4239,6 +4250,24 @@ function getTodasViaturasInformadas(){
   if (p) set.add(p);
   document.querySelectorAll('#apoioList [data-field="apoioViatura"]').forEach(inp => {
     const v = prefixoViatura(inp.value);
+    if (v) set.add(v);
+  });
+  return [...set];
+}
+
+// Viaturas que EXIGEM Ficha de Movimentação para o relatório fechar:
+// a viatura principal + as viaturas de apoio LANÇADAS NO TTA (apoio estrutural,
+// data-apoio-tta="1", pois nesse caso sai um único relatório p/ as duas equipes).
+// Apoio adicionado à mão no relatório (as duas são principais, cada uma com o seu
+// próprio relatório/ficha) NÃO entra aqui e não bloqueia o fechamento.
+function getViaturasQueExigemFicha(){
+  const set = new Set();
+  const p = prefixoViatura(getViaturaPrincipal());
+  if (p) set.add(p);
+  document.querySelectorAll('#apoioList [data-apoio-entry]').forEach(entry => {
+    if (entry.dataset.apoioTta !== '1') return;   // só apoio do TTA exige ficha
+    const el = entry.querySelector('[data-field="apoioViatura"]');
+    const v = prefixoViatura(el ? el.value : '');
     if (v) set.add(v);
   });
   return [...set];
