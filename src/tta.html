@@ -491,6 +491,18 @@ async function criarPendenciasTTA(viaturas){
     catch(e){ /* módulo de viaturas pode não estar no ar ainda */ }
   }
 }
+// Na EDIÇÃO: cancela a pendência de ficha das viaturas que SAÍRAM do TTA
+// (estavam ao abrir e não estão mais) — equipe ficou a pé ou trocou de viatura.
+async function cancelarPendenciasRemovidas(viaturas){
+  try{
+    const atuais = new Set(viaturas.map(v=>String(v.prefixo||'').trim()).filter(Boolean));
+    const removidas = [...PEND_PREFIXOS_ORIG].filter(p=>p && !atuais.has(p));
+    for (const pref of removidas){
+      try{ await rpc('mov_pendencia_cancelar', { p_token: sessao.token, p_prefixo: pref }); }
+      catch(e){ /* pendência pode já ter sido atendida/cancelada */ }
+    }
+  }catch(e){ /* silencioso */ }
+}
 
 /* ── Equipes de serviço ──────────────────────────────────────────────── */
 function addEquipe(){
@@ -627,6 +639,7 @@ function coletarEquipes(){
 /* ── Correção da chamada de hoje (só no mesmo dia) ────────────────────── */
 let CHAMADA_HOJE = null;      // chamada de hoje do autor logado, se houver
 let CHAMADA_EDIT_ID = null;   // id quando em modo correção
+let PEND_PREFIXOS_ORIG = new Set();  // viaturas do TTA ao ABRIR p/ editar (p/ cancelar pendência das removidas)
 function milToInput(m){ return m ? `${m.matricula} - ${(m.pg||'').toUpperCase()} - ${(m.nome||'').toUpperCase()}` : ''; }
 
 async function checarChamadaHoje(){
@@ -642,6 +655,9 @@ async function checarChamadaHoje(){
 function corrigirChamadaHoje(){ return carregarChamadaParaEdicao(CHAMADA_HOJE); }
 async function carregarChamadaParaEdicao(c){
   if(!c) return;
+  // guarda as viaturas ORIGINAIS da chamada — se alguma sair na edição (equipe a
+  // pé ou troca de viatura), sua pendência de ficha é cancelada ao salvar.
+  PEND_PREFIXOS_ORIG = new Set((c.equipes||[]).map(e=>String(e.prefixo_viatura||'').trim()).filter(Boolean));
   // turno → observações (o Grupamento de Atuação agora é POR EQUIPE, no loop abaixo)
   document.getElementById('inicioTurno').value = (c.inicio_turno||'').slice(0,5);
   document.getElementById('fimTurno').value    = (c.final_turno||'').slice(0,5);
@@ -744,6 +760,9 @@ async function registrarChamada(){
     if (editando){
       await rpc('tta_editar_chamada', { p_token: sessao.token, p_id: CHAMADA_EDIT_ID, p_dados: payload });
       await criarPendenciasTTA(viaturas);
+      await cancelarPendenciasRemovidas(viaturas);
+      // a chamada foi salva: as viaturas atuais viram a nova base para próximas edições
+      PEND_PREFIXOS_ORIG = new Set(viaturas.map(v=>String(v.prefixo||'').trim()).filter(Boolean));
       toast('✔ Correção salva.');
       btn.textContent = '✔ Correção salva';
     } else {
