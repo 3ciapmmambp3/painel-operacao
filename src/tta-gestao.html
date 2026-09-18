@@ -762,6 +762,13 @@ function imprimirChamadaTTA(id){
   const c = (CHAMADAS_MES||[]).find(x=>x.id===id); if(!c) return;
   const dia = c.data_hora_chamada ? new Date(c.data_hora_chamada).toLocaleDateString('pt-BR') : '—';
   const turno = `${(c.inicio_turno||'—').slice(0,5)} às ${(c.final_turno||'—').slice(0,5)}`;
+  // Posto/graduação não é gravado p/ responsável/registrado_por — resolve pela
+  // matrícula na lista de militares presentes / equipes (que carregam o pg).
+  const _digG = s => (s==null?'':s).toString().replace(/\D/g,'');
+  const _pgMapG = {};
+  (c.militares_presentes||[]).forEach(m=>{ const k=_digG(m&&m.matricula); if(k && m && m.pg && !_pgMapG[k]) _pgMapG[k]=m.pg; });
+  (c.equipes||[]).forEach(e=>{ [e&&e.comandante, e&&e.motorista].concat((e&&e.patrulheiros)||[]).forEach(m=>{ const k=_digG(m&&m.matricula); if(k && m && m.pg && !_pgMapG[k]) _pgMapG[k]=m.pg; }); });
+  const _identG = (mat, nome) => { const pg=_pgMapG[_digG(mat)]||''; const p=[]; if(mat) p.push('Nº PM '+_escG(mat)); if(pg) p.push(_escG(pg.toUpperCase())); p.push(_escG((nome||'—').toUpperCase())); return p.join(' — '); };
   const eqsHtml = (c.equipes||[]).map((e,i)=>{
     const pats=(e.patrulheiros||[]).map(p=>`<div>${_milG(p)}</div>`).join('')||'<div>—</div>';
     const munis=(e.municipios||[]).join(', ')||'—';
@@ -813,13 +820,13 @@ function imprimirChamadaTTA(id){
       <tr><td class="l">Data</td><td>${dia}</td></tr>
       <tr><td class="l">Turno</td><td>${turno}</td></tr>
       <tr><td class="l">Grupamento (Eq. 1)</td><td>${_escG(c.grupamento_completo||'—')}</td></tr>
-      <tr><td class="l">Responsável pela chamada</td><td>${_escG(c.militar_resp_nome||'—')} (Nº ${_escG(c.militar_resp_matricula||'')})</td></tr>
+      <tr><td class="l">Responsável pela chamada</td><td>${_identG(c.militar_resp_matricula, c.militar_resp_nome)}</td></tr>
       ${c.tema_assunto?`<tr><td class="l">Tema</td><td>${_escG(c.tema_assunto)}${c.tema_referencia?' — '+_escG(c.tema_referencia):''}</td></tr>`:''}
     </table>
     <h4>Equipes de serviço</h4>
     ${eqsHtml||'<p>—</p>'}
     ${c.observacoes?`<h4>Observações</h4><p>${_escG(c.observacoes)}</p>`:''}
-    <div class="foot">Registrado por ${_escG(c.registrado_por_nome||c.militar_resp_nome||'—')} em ${c.created_at?new Date(c.created_at).toLocaleString('pt-BR'):'—'}.</div>
+    <div class="foot">Registrado por ${_identG(c.registrado_por_matricula||c.militar_resp_matricula, c.registrado_por_nome||c.militar_resp_nome)} em ${c.created_at?new Date(c.created_at).toLocaleString('pt-BR'):'—'}.</div>
     </div></body></html>`;
   const w = window.open('', '_blank');
   if(!w){ alert('Permita pop-ups para imprimir.'); return; }
