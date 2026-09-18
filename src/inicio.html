@@ -136,6 +136,18 @@
     .mdl-acoes{display:flex;gap:10px;justify-content:flex-end;margin-top:6px;}
     .mmsg2{font-size:12px;color:#ef5350;margin-bottom:8px;display:none;}
     .mmsg2.show{display:block;}
+    .tag-share{background:rgba(102,187,106,.14);color:#66bb6a;border:1px solid rgba(102,187,106,.4);}
+    /* seletor "compartilhar com" */
+    .mt-share-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;}
+    .mt-share-chip{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;background:rgba(66,165,245,.14);color:#90caf9;border:1px solid rgba(66,165,245,.4);border-radius:14px;padding:3px 6px 3px 10px;}
+    .mt-share-chip button{background:none;border:none;color:inherit;cursor:pointer;font-size:15px;line-height:1;padding:0 2px;}
+    .mt-share-lista{border:1px solid var(--border);border-radius:8px;margin-top:4px;max-height:180px;overflow:auto;background:var(--bg-card);}
+    .mt-share-lista .it{padding:8px 11px;font-size:12.5px;color:var(--text-white);cursor:pointer;border-bottom:1px solid var(--border);}
+    .mt-share-lista .it:last-child{border-bottom:none;}
+    .mt-share-lista .it:hover{background:var(--gold-bg);}
+    .mt-share-lista .it small{color:var(--text-muted);}
+    .mt-share-none{padding:8px 11px;font-size:12px;color:var(--text-muted);}
+    .mt-share-ro{font-size:12px;color:var(--text-muted);background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:8px 11px;}
   </style>
 </head>
 <body>
@@ -280,6 +292,13 @@
     </div>
     <div class="mfg2"><label>Status</label><select id="mt-status"><option value="pendente">Pendente</option><option value="em_andamento">Em andamento</option><option value="concluida">Concluída</option></select></div>
     <div class="mfg2"><label>Observação</label><textarea id="mt-observacao" placeholder="Opcional"></textarea></div>
+    <div class="mfg2" id="mt-share-wrap">
+      <label>Compartilhar com <span style="font-weight:400;text-transform:none;color:var(--text-hint)">(opcional — os escolhidos veem e editam; só você exclui)</span></label>
+      <div class="mt-share-chips" id="mt-share-chips"></div>
+      <input id="mt-share-busca" placeholder="Digite o nome ou número do militar" autocomplete="off" oninput="mtShareBuscar()" onfocus="mtShareBuscar()" onblur="setTimeout(mtShareListaFechar,180)">
+      <div class="mt-share-lista" id="mt-share-lista" style="display:none"></div>
+    </div>
+    <div class="mt-share-ro" id="mt-share-ro" style="display:none"></div>
     <div class="mdl-acoes">
       <button class="btn-outline" onclick="mtFechar()">Cancelar</button>
       <button class="btn-gold" id="mt-salvar" onclick="mtSalvar()">Salvar</button>
@@ -688,6 +707,54 @@ const _mtFmt = s => { if(!s) return ''; const d=new Date(s); return isNaN(d)?Str
 const _mtLocalInput = s => { if(!s) return ''; const d=new Date(s); if(isNaN(d)) return ''; return `${d.getFullYear()}-${_mtP2(d.getMonth()+1)}-${_mtP2(d.getDate())}T${_mtP2(d.getHours())}:${_mtP2(d.getMinutes())}`; };
 let MT_PESSOAIS = [];
 let MT_ATRIB = [];   // tarefas de seção atribuídas a mim (p/ o modal Executar)
+let MT_ROSTER = null;   // roster de militares p/ compartilhar (lazy)
+let MT_SHARE  = [];     // compartilhados escolhidos: {matricula, matricula_clean, nome}
+const MT_ME_CLEAN = String((sessao && sessao.matricula) || '').replace(/\D/g,'').padStart(7,'0');
+const _mtClean = s => String(s||'').replace(/\D/g,'').padStart(7,'0');
+
+async function mtRosterLoad(){
+  if(MT_ROSTER) return MT_ROSTER;
+  try{ MT_ROSTER = await _mtRpc('agenda_pessoas_listar', {p_token: sessao.token}) || []; }
+  catch(e){ MT_ROSTER = []; }
+  return MT_ROSTER;
+}
+function mtShareRenderChips(){
+  document.getElementById('mt-share-chips').innerHTML =
+    MT_SHARE.map((x,i)=>`<span class="mt-share-chip">${_mtEsc(x.nome||x.matricula)}<button type="button" title="Remover" onclick="mtShareRemove(${i})">×</button></span>`).join('');
+}
+function mtShareRemove(i){ MT_SHARE.splice(i,1); mtShareRenderChips(); mtShareBuscar(); }
+function mtShareAdd(mat){
+  const r = (MT_ROSTER||[]).find(m=>_mtClean(m.matricula)===_mtClean(mat));
+  if(!r) return;
+  const cl = _mtClean(r.matricula);
+  if(cl===MT_ME_CLEAN || MT_SHARE.some(x=>x.matricula_clean===cl)) return;
+  MT_SHARE.push({matricula:r.matricula, matricula_clean:cl, nome:r.nome_completo||r.nome_guerra||r.matricula});
+  document.getElementById('mt-share-busca').value='';
+  mtShareRenderChips(); mtShareBuscar();
+}
+function mtShareListaFechar(){ document.getElementById('mt-share-lista').style.display='none'; }
+async function mtShareBuscar(){
+  await mtRosterLoad();
+  const q = (document.getElementById('mt-share-busca').value||'').trim().toLowerCase();
+  const qd = q.replace(/\D/g,'');
+  const lista = document.getElementById('mt-share-lista');
+  const sel = new Set(MT_SHARE.map(x=>x.matricula_clean));
+  const itens = (MT_ROSTER||[]).filter(m=>{
+    const cl=_mtClean(m.matricula);
+    if(cl===MT_ME_CLEAN || sel.has(cl)) return false;
+    if(!q) return true;
+    const nome=(m.nome_completo||m.nome_guerra||'').toLowerCase();
+    return nome.includes(q) || (qd && cl.includes(qd));
+  }).slice(0,30);
+  lista.innerHTML = itens.length
+    ? itens.map(m=>{
+        const nome=m.nome_completo||m.nome_guerra||m.matricula;
+        const pg=m.posto_graduacao?`${_mtEsc(m.posto_graduacao)} `:'';
+        return `<div class="it" onclick="mtShareAdd('${_mtEsc(m.matricula)}')">${pg}${_mtEsc(nome)} <small>· ${_mtEsc(m.matricula)}</small></div>`;
+      }).join('')
+    : `<div class="mt-share-none">${q?'Nenhum militar encontrado.':'Digite para buscar militares.'}</div>`;
+  lista.style.display='';
+}
 
 async function _mtRpc(fn, body){
   const H={'apikey':SB_AUTH_KEY,'Authorization':`Bearer ${SB_AUTH_KEY}`,'Content-Type':'application/json'};
@@ -726,9 +793,21 @@ function _ultimoComplemento(t){
 }
 function mtCard(t, origem){
   const atrasada = t.prazo && t.status!=='concluida' && new Date(t.prazo) < new Date();
-  const tag = origem==='secao'
-    ? `<span class="mt-tag tag-sec">Seção ${SEC_SELO[t.secao]||''}</span>`
-    : `<span class="mt-tag tag-pess">Pessoal</span>`;
+  let tag, shareLine='';
+  if(origem==='secao'){
+    tag = `<span class="mt-tag tag-sec">Seção ${SEC_SELO[t.secao]||''}</span>`;
+  } else {
+    const share = Array.isArray(t.compartilhado_com) ? t.compartilhado_com : [];
+    if(t.sou_dono===false){
+      tag = `<span class="mt-tag tag-share">Compartilhada</span>`;
+      shareLine = `<div class="mt-m"><span>👤 Compartilhada por ${_mtEsc(t.criador_nome||t.criador_matricula||'—')}</span></div>`;
+    } else if(share.length){
+      tag = `<span class="mt-tag tag-share">Compartilhada · ${share.length}</span>`;
+      shareLine = `<div class="mt-m"><span>👥 Você compartilhou com: ${share.map(x=>_mtEsc(x.nome||x.matricula)).join(', ')}</span></div>`;
+    } else {
+      tag = `<span class="mt-tag tag-pess">Pessoal</span>`;
+    }
+  }
   const m=[`<span><span class="pdot pd-${t.prioridade}"></span> ${MT_PR[t.prioridade]||t.prioridade}</span>`];
   if(t.prazo) m.push(`<span>📅 <span class="${atrasada?'atras':''}">${_mtFmt(t.prazo)}${atrasada?' (atrasado)':''}</span></span>`);
   const acoes=[];
@@ -741,7 +820,7 @@ function mtCard(t, origem){
     if(t.status!=='concluida') acoes.push(`<button class="mtb go" onclick="mtStatus('${t.id}','concluida')">✔ Concluir</button>`);
     if(t.status==='concluida') acoes.push(`<button class="mtb" onclick="mtStatus('${t.id}','pendente')">↺ Reabrir</button>`);
     acoes.push(`<button class="mtb" onclick="mtAbrir('${t.id}')">✎</button>`);
-    acoes.push(`<button class="mtb" onclick="mtExcluir('${t.id}')">🗑</button>`);
+    if(t.sou_dono!==false) acoes.push(`<button class="mtb" onclick="mtExcluir('${t.id}')">🗑</button>`);
   }
   const comp = origem==='secao' ? _ultimoComplemento(t) : null;
   const compHTML = comp
@@ -751,6 +830,7 @@ function mtCard(t, origem){
     <div class="mt-b">
       <div class="mt-t">${_mtEsc(t.titulo)}</div>
       <div class="mt-m">${tag}${m.join('')}</div>
+      ${shareLine}
       ${t.descricao?`<div class="mt-m"><span>${_mtEsc(t.descricao)}</span></div>`:''}
       ${compHTML}
       ${t.observacao?`<div class="mt-m"><span>🗒 ${_mtEsc(t.observacao)}</span></div>`:''}
@@ -808,6 +888,22 @@ function mtAbrir(id){
   document.getElementById('mt-prazo').value = t?_mtLocalInput(t.prazo):'';
   document.getElementById('mt-status').value = t?(t.status||'pendente'):'pendente';
   document.getElementById('mt-observacao').value = t?(t.observacao||''):'';
+  // ── compartilhamento ──
+  const souDono = t ? (t.sou_dono !== false) : true;
+  MT_SHARE = [];
+  document.getElementById('mt-share-busca').value='';
+  document.getElementById('mt-share-lista').style.display='none';
+  const wrap=document.getElementById('mt-share-wrap'), ro=document.getElementById('mt-share-ro');
+  if(souDono){
+    wrap.style.display=''; ro.style.display='none';
+    if(t && Array.isArray(t.compartilhado_com)){
+      MT_SHARE = t.compartilhado_com.map(x=>({matricula:x.matricula, matricula_clean:x.matricula_clean||_mtClean(x.matricula), nome:x.nome}));
+    }
+    mtShareRenderChips(); mtRosterLoad();
+  } else {
+    wrap.style.display='none'; ro.style.display='';
+    ro.textContent = `Compartilhada por ${t.criador_nome||t.criador_matricula||'—'} — você pode editar e inserir informações; a exclusão é do criador.`;
+  }
   const msg=document.getElementById('mt-msg'); msg.className='mmsg2'; msg.textContent='';
   document.getElementById('mt-ov').classList.add('show');
 }
@@ -822,7 +918,8 @@ async function mtSalvar(){
     prioridade: document.getElementById('mt-prioridade').value,
     status: document.getElementById('mt-status').value,
     prazo: (function(v){ return v ? new Date(v).toISOString() : ''; })(document.getElementById('mt-prazo').value),
-    observacao: document.getElementById('mt-observacao').value.trim()
+    observacao: document.getElementById('mt-observacao').value.trim(),
+    compartilhado_com: MT_SHARE.map(x=>({matricula:x.matricula, nome:x.nome}))
   };
   const btn=document.getElementById('mt-salvar'); btn.disabled=true; btn.textContent='Salvando…';
   try{ await _mtRpc('agenda_pessoal_salvar', {p_token: sessao.token, p_dados: dados}); mtFechar(); await carregarMinhasTarefas(); }
