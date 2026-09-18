@@ -99,8 +99,8 @@
           <button class="btn-gold" style="padding:8px 14px;font-size:12px;margin-left:auto" onclick="defExportar()">⬇ Exportar Excel</button>
         </div>
         <div class="tablewrap"><table>
-          <thead><tr><th>Data</th><th>VTR</th><th>Lotação VTR</th><th>Tipo</th><th>Urgência</th><th>Situação</th><th>Defeito</th><th>Impede uso</th><th>Endereço (imobilizada)</th><th>Reportado por</th><th>Origem</th><th>Ações</th></tr></thead>
-          <tbody id="def-tb"><tr><td colspan="12" class="empty">Carregando…</td></tr></tbody>
+          <thead><tr><th>Data</th><th>VTR</th><th>Lotação VTR</th><th>Tipo</th><th>Urgência</th><th>Situação</th><th>Recurso</th><th>Defeito</th><th>Impede uso</th><th>Endereço (imobilizada)</th><th>Reportado por</th><th>Origem</th><th>Ações</th></tr></thead>
+          <tbody id="def-tb"><tr><td colspan="13" class="empty">Carregando…</td></tr></tbody>
         </table></div>
       </div>
     </div>
@@ -128,6 +128,13 @@
     </div>
     <div id="rep-guincho" class="rep-hide" style="margin-top:12px"><label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Endereço completo onde a viatura está imobilizada *</label>
       <input id="rep-endereco" placeholder="Rua/Av., nº, bairro, cidade, ponto de referência" style="width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;margin-top:4px"></div>
+    <div style="margin-top:12px"><label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Recurso *</label>
+      <select id="rep-recurso" style="width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:13px;margin-top:4px">
+        <option value="">Selecione…</option>
+        <option>1 - Doação Esporádica</option>
+        <option>2 - Convênio</option>
+        <option>3 - Ticket Log</option>
+      </select></div>
     <div style="margin-top:12px"><label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase">Serviços solicitados <span style="font-weight:400;text-transform:none;color:var(--text-hint)">(marque um ou mais)</span></label>
       <div class="rep-checks" id="rep-servicos">
         <label class="rep-pill"><input type="checkbox" value="Revisão periódica">Revisão periódica</label>
@@ -287,6 +294,7 @@ function repAbrir(prefixo){
   document.getElementById('rep-impede').value='Não';
   document.getElementById('rep-defeito').value='';
   document.getElementById('rep-obs').value='';
+  document.getElementById('rep-recurso').value='';
   document.getElementById('rep-situacao').value='';
   document.getElementById('rep-endereco').value='';
   document.getElementById('rep-guincho').classList.add('rep-hide');
@@ -316,6 +324,7 @@ function repEditar(id){
   document.getElementById('rep-impede').value=/sim/i.test(d.impede_uso||'')?'Sim':'Não';
   document.getElementById('rep-defeito').value=d.defeito||'';
   document.getElementById('rep-obs').value=d.observacoes||'';
+  document.getElementById('rep-recurso').value=d.recurso||'';
   document.getElementById('rep-situacao').value=d.situacao||'';
   document.getElementById('rep-endereco').value=d.endereco||'';
   // serviços: marca os fixos; o que não for da lista vai pro "Outro"
@@ -338,6 +347,8 @@ async function repSalvar(){
   const defeito=document.getElementById('rep-defeito').value.trim();
   if(!defeito){ toast('Descreva o defeito.'); return; }
   if(!document.getElementById('rep-odometro').value.trim()){ toast('Informe o odômetro da viatura.'); return; }
+  const recurso=document.getElementById('rep-recurso').value;
+  if(!recurso){ toast('Selecione o Recurso.'); return; }
   const situacao=document.getElementById('rep-situacao').value;
   const endereco=document.getElementById('rep-endereco').value.trim();
   if(situacao==='Imobilizada, necessita de guincho' && !endereco){ toast('Viatura imobilizada: informe o endereço completo onde ela está.'); return; }
@@ -351,7 +362,7 @@ async function repSalvar(){
     odometro: document.getElementById('rep-odometro').value,
     impede_uso: document.getElementById('rep-impede').value,
     defeito, observacoes: document.getElementById('rep-obs').value.trim(),
-    situacao, endereco, servicos_solicitados: servicos
+    recurso, situacao, endereco, servicos_solicitados: servicos
   };
   try{
     if(REP_EDIT_ID){ await rpc('defeito_editar',{p_token:S.token,p_id:REP_EDIT_ID,p_dados:dados}); repFechar(); toast('Defeito atualizado.'); }
@@ -373,7 +384,7 @@ async function defCarregar(){
     rfCnt('tabcnt-def', ab);
     popularGrupDEF();
     defRender();
-  }catch(e){ tb.innerHTML=`<tr><td colspan="12" class="empty">Erro: ${_re(e.message)}</td></tr>`; }
+  }catch(e){ tb.innerHTML=`<tr><td colspan="13" class="empty">Erro: ${_re(e.message)}</td></tr>`; }
 }
 function popularGrupDEF(){
   const sel=document.getElementById('def-grup'); if(!sel || !FrotaGrup.lista.length) return;
@@ -393,7 +404,7 @@ function defLinhas(){
 function defRender(){
   const lst=defLinhas();
   const tb=document.getElementById('def-tb');
-  if(!lst.length){ tb.innerHTML='<tr><td colspan="12" class="empty">Nenhum defeito reportado.</td></tr>'; return; }
+  if(!lst.length){ tb.innerHTML='<tr><td colspan="13" class="empty">Nenhum defeito reportado.</td></tr>'; return; }
   tb.innerHTML=lst.map(d=>{
     const dt=d.criado_em?new Date(d.criado_em).toLocaleDateString('pt-BR'):'—';
     const u=_urg[d.urgencia]||_urg.Baixa;
@@ -407,6 +418,7 @@ function defRender(){
     // Situação da viatura: destaque vermelho quando imobilizada c/ guincho.
     const imob=/imobilizad/i.test(d.situacao||'');
     const sit=d.situacao?`<span style="font-size:11px${imob?';color:#ef9a9a;font-weight:700':''}">${_re(d.situacao)}</span>`:'—';
+    const rec=d.recurso?_re(d.recurso):'—';
     const ende=d.endereco?_re(d.endereco):'—';
     // Serviços solicitados: lista embaixo do defeito.
     const servs=Array.isArray(d.servicos_solicitados)?d.servicos_solicitados:[];
@@ -426,6 +438,7 @@ function defRender(){
     const acao=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${btnResolver}${btnsExtra}</div>`;
     return `<tr${resolvido?' style="opacity:.55"':''}>
       <td>${dt}</td><td><b>${_re(d.prefixo)}</b></td><td style="white-space:nowrap">${lot}</td><td>${_re(d.tipo||'—')}</td><td>${urg}</td><td>${sit}</td>
+      <td style="white-space:nowrap">${rec}</td>
       <td style="max-width:260px">${defCell}</td><td>${impede}</td><td style="max-width:220px">${ende}</td>
       <td>${_re(d.reportado_por_nome||'—')}</td><td>${orig}</td><td style="white-space:nowrap">${acao}</td>
     </tr>`;
@@ -439,10 +452,10 @@ function defExportar(){
   const lst=defLinhas();
   if(!lst.length){ toast('Nada para exportar.'); return; }
   const cell=v=>{ let s=(v==null?'':String(v)); if(/[";\n\r]/.test(s)) s='"'+s.replace(/"/g,'""')+'"'; return s; };
-  const cols=['Data','VTR','Placa','Lotação VTR (Gp)','Lotação VTR (Pel)','Lotação VTR (Município)','Grupamento (uso)','Tipo','Urgência','Situação','Defeito','Serviços solicitados','Impede uso','Endereço (imobilizada)','Observações','Status','Reportado por','Origem'];
+  const cols=['Data','VTR','Placa','Lotação VTR (Gp)','Lotação VTR (Pel)','Lotação VTR (Município)','Grupamento (uso)','Tipo','Urgência','Situação','Recurso','Defeito','Serviços solicitados','Impede uso','Endereço (imobilizada)','Observações','Status','Reportado por','Origem'];
   const linhas=lst.map(d=>[
     d.criado_em?new Date(d.criado_em).toLocaleDateString('pt-BR'):'', d.prefixo, d.placa, d.vtr_gp, d.vtr_pel, d.vtr_municipio, d.gp, d.tipo, d.urgencia,
-    d.situacao, d.defeito, (Array.isArray(d.servicos_solicitados)?d.servicos_solicitados.join(', '):''), d.impede_uso, d.endereco, d.observacoes, d.status, d.reportado_por_nome, d.origem
+    d.situacao, d.recurso, d.defeito, (Array.isArray(d.servicos_solicitados)?d.servicos_solicitados.join(', '):''), d.impede_uso, d.endereco, d.observacoes, d.status, d.reportado_por_nome, d.origem
   ].map(cell).join(';'));
   const csv='﻿'+[cols.map(cell).join(';')].concat(linhas).join('\r\n');
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
