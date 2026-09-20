@@ -395,14 +395,15 @@ function resolveGrp(){
   else { box.classList.add('empty'); txt.textContent = v ? 'Município fora da tabela — verifique a grafia' : 'Selecione o município para definir o grupamento'; }
 }
 
+// Seleção MÚLTIPLA: cada chip alterna (pode marcar mais de um tema).
 document.getElementById('chips').addEventListener('click', e => {
   if (!e.target.classList.contains('chip')) return;
-  document.querySelectorAll('.chip').forEach(c => c.classList.remove('on'));
-  e.target.classList.add('on');
-  temaSel = e.target.textContent.trim();
+  e.target.classList.toggle('on');
+  const outroOn = [...document.querySelectorAll('#chips .chip.on')].some(c => c.textContent.trim() === 'Outro');
   const outroWrap = document.getElementById('tema-outro-wrap');
-  if (temaSel === 'Outro') { outroWrap.style.display = ''; document.getElementById('tema-outro').focus(); }
-  else { outroWrap.style.display = 'none'; document.getElementById('tema-outro').value = ''; }
+  outroWrap.style.display = outroOn ? '' : 'none';
+  if (outroOn) { const el = document.getElementById('tema-outro'); if (document.activeElement !== el) el.focus(); }
+  else { document.getElementById('tema-outro').value = ''; }
 });
 
 /* ── Anexos → Google Drive (via Edge Function) ───────────────────── */
@@ -528,12 +529,14 @@ async function enviar(ev){
   // validações
   if (!origem) return erro('Selecione a origem.');
   if (!muni || !grpOk) return erro('Selecione um município válido (da lista).');
-  if (!temaSel) return erro('Selecione o tema / tipo de infração.');
-  let temaFinal = temaSel;
-  if (temaSel === 'Outro') {
-    temaFinal = document.getElementById('tema-outro').value.trim();
-    if (!temaFinal) return erro('Descreva o tema / situação no campo "Outro".');
+  const temasSel = [...document.querySelectorAll('#chips .chip.on')].map(c => c.textContent.trim());
+  if (!temasSel.length) return erro('Selecione ao menos um tema / tipo de infração.');
+  let outroTxt = '';
+  if (temasSel.includes('Outro')) {
+    outroTxt = document.getElementById('tema-outro').value.trim();
+    if (!outroTxt) return erro('Descreva o tema / situação no campo "Outro".');
   }
+  const temaFinal = temasSel.map(t => t === 'Outro' ? outroTxt : t).join(', ');
   if (!document.getElementById('objeto').value.trim()) return erro('Preencha o objeto / ação solicitada.');
   if (!document.getElementById('descricao').value.trim()) return erro('Preencha a descrição do fato.');
   if (anexos.some(a => a.status === 'up')) return erro('Aguarde o envio dos anexos terminar.');
