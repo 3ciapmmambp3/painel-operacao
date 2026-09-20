@@ -184,7 +184,25 @@ const VE_CIA = VE_TUDO || PODE_GERIR || NIVEL_PEL;
 // motorista + data. (mesma regra do RPC mov_ficha_completa — db/81)
 let TEAM_VTR_DAY = new Set();
 let TEAM_MOT_DAY = new Set();
+let TEAM_CMT_DAY = new Set();   // fichas em que EU sou o comandante da equipe (via pendência do TTA): {viatura|dia}
 const _pfxKey = s => (s||'').toString().trim().toUpperCase().split(/[\s\-\/]/)[0];
+// Carrega as viaturas/dias em que EU sou o COMANDANTE da equipe (mov_pendencias).
+// Serve p/ o comandante VER e EDITAR a ficha lançada pelo motorista (mesma equipe).
+async function carregarPendenciasComandante(){
+  if (!MAT) return;
+  const H = { apikey: SB_AUTH_KEY, Authorization:'Bearer '+SB_AUTH_KEY, 'Content-Type':'application/json' };
+  try{
+    const res = await fetch(`${SB_AUTH_URL}/rest/v1/mov_pendencias?select=prefixo,dia&comandante_matricula=eq.${MAT}`, {headers:H});
+    if(!res.ok) return;
+    const lista = await res.json();
+    (Array.isArray(lista)?lista:[]).forEach(p=>{ const k=_pfxKey(p&&p.prefixo); if(k && p.dia) TEAM_CMT_DAY.add(k+'|'+p.dia); });
+  }catch(e){ /* segue sem o conjunto de comandante */ }
+}
+function souComandanteFicha(r){
+  const d = _fichaDataISO(r); if(!d) return false;
+  const pfx = _pfxKey(r.prefixo);
+  return !!(pfx && TEAM_CMT_DAY.has(pfx+'|'+d));
+}
 async function carregarMinhasEquipesTTA(){
   if (VE_TUDO || NIVEL_PEL || NIVEL_GP) return;   // esses têm escopo próprio, não precisam
   const H = { apikey: SB_AUTH_KEY, Authorization:'Bearer '+SB_AUTH_KEY, 'Content-Type':'application/json' };
@@ -216,7 +234,7 @@ function daMinhaEquipe(r){
   const d = _fichaDataISO(r); if (!d) return false;
   const pfx = _pfxKey(r.prefixo);
   const mot = (r.motorista_matricula||'').replace(/\D/g,'');
-  return (pfx && TEAM_VTR_DAY.has(pfx+'|'+d)) || (mot && TEAM_MOT_DAY.has(mot+'|'+d));
+  return (pfx && TEAM_VTR_DAY.has(pfx+'|'+d)) || (mot && TEAM_MOT_DAY.has(mot+'|'+d)) || souComandanteFicha(r);
 }
 function ehMinha(r){
   const mm=(r.motorista_matricula||'').replace(/\D/g,'');
@@ -337,7 +355,9 @@ function _assumidaPorOutro(r){
 }
 function podeEditar(x){
   if (PODE_GERIR) return true;                 // Aux P4 / Admin Geral: sempre
-  if (!x.mine) return false;                   // só o próprio motorista/criador
+  // motorista/criador OU comandante da equipe (mesma regra do backend db/94),
+  // no mesmo dia e enquanto a viatura não for assumida por outro.
+  if (!x.mine && !souComandanteFicha(x.r)) return false;
   return _mesmoDia(x.r) && !_assumidaPorOutro(x.r);
 }
 function acoesCell(x){
@@ -400,6 +420,7 @@ async function carregar(){
     if (!res.ok) throw new Error('HTTP '+res.status);
     const data = await res.json();
     await carregarMinhasEquipesTTA();   // prepara os conjuntos da "equipe que comandei" (militar comum)
+    await carregarPendenciasComandante();   // fichas em que sou o comandante da equipe (ver + editar)
     // Mantém TODAS as fichas ativas em memória (o recorte por chip é feito no render).
     // Não-gestor só enxerga mine/team; o gestor (Aux P4/Admin) tem o chip "Todas (gestão)".
     ROWS = (Array.isArray(data)?data:[]).map(r=>({ r, mine: ehMinha(r), team: daMinhaEquipe(r) }));
