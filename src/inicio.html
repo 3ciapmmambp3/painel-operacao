@@ -653,6 +653,17 @@ async function carregarAvisosMeuDia(){
     }
   }catch(e){ console.warn('[avisos-meudia]',e); }
 
+  /* Lembrete SEMANAL de backup do banco — APENAS para a matrícula 146.322-3.
+     Cadência via localStorage: aparece até clicar "Feito ✓", some por 7 dias. */
+  try{
+    if(mat === '1463223'){
+      let _ultBkp = 0;
+      try{ _ultBkp = parseInt(localStorage.getItem('backup_semanal_feito')||'0',10)||0; }catch(_){}
+      const _7d = 7*24*60*60*1000;
+      if(!_ultBkp || (Date.now() - _ultBkp) >= _7d){ avisos.push({backup:true, ic:'💾'}); }
+    }
+  }catch(_){}
+
   if(!avisos.length){ box.innerHTML=''; return; }
   box.innerHTML = `<div class="avisos-hdr"><span class="avisos-bell">🔔</span> <span>Avisos para você</span></div><div class="avisos-card">`
     + avisos.map(a=>{
@@ -701,6 +712,15 @@ async function carregarAvisosMeuDia(){
             ${online?`<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 0 0 29px;">${bEntrar}${bCopiar}${bWhats}</div>${lembrete?`<div style="padding:4px 0 0 29px;">${lembrete}</div>`:''}${detalhe?`<div style="padding:2px 0 0 29px;">${detalhe}</div>`:''}`:''}
           </div>`;
         }
+        if(a.backup){
+          return `<div style="padding:12px 16px;border-bottom:1px solid var(--border);">
+            <div style="display:flex;align-items:flex-start;gap:12px;font-size:13px;color:var(--text-white);">
+              <span style="font-size:17px;flex-shrink:0;">💾</span>
+              <span style="flex:1;min-width:0;"><b>Backup semanal do banco</b> — rode o <b>Rodar-Backup.bat</b> (pasta <code>C:\\P3\\backup-painel-operacao</code>) e guarde o <code>.sql</code> no Google Drive.</span>
+              <button type="button" onclick="_backupFeito(this)" style="background:var(--gold);color:#1a1200;border:none;font-weight:800;font-size:12px;padding:7px 12px;border-radius:8px;cursor:pointer;white-space:nowrap;">Feito ✓</button>
+            </div>
+          </div>`;
+        }
         return `<div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border);font-size:13px;color:var(--text-white);">
           <span style="font-size:17px;flex-shrink:0;">${a.ic}</span>
           <span style="flex:1;min-width:0;">${a.txt}</span>
@@ -709,6 +729,15 @@ async function carregarAvisosMeuDia(){
       }).join('')
     + `</div>`;
   const _ac=box.querySelector('.avisos-card'); if(_ac && _ac.lastElementChild) _ac.lastElementChild.style.borderBottom='none';
+}
+/* Marca o backup semanal como feito — esconde o lembrete por 7 dias (matrícula 146.322-3). */
+function _backupFeito(btn){
+  try{ localStorage.setItem('backup_semanal_feito', String(Date.now())); }catch(_){}
+  const row = btn.closest('div[style*="padding:12px 16px"]');
+  if(row){ row.style.borderBottom='none'; row.innerHTML =
+    '<div style="display:flex;align-items:center;gap:12px;font-size:13px;color:var(--text-white);">'
+    + '<span style="font-size:17px;">✅</span>'
+    + '<span>Backup marcado como <b>feito</b>. O lembrete volta na próxima semana.</span></div>'; }
 }
 /* Copia o convite da reunião (link + ID + senha) — para enviar por WhatsApp etc. */
 function _copiarAviso(btn){
