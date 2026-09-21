@@ -5,8 +5,10 @@
 --  tenha esquecido algo ou lançado errado — SEM mexer na numeração já gerada.
 --
 --  Regras:
---    • Só QUEM REGISTROU o ofício pode editar (registrado_por_matricula).
---    • Somente até 24h após o registro (created_at). Depois, bloqueia.
+--    • QUEM REGISTROU pode editar até 24h após o registro (created_at).
+--    • A GESTÃO da P1 (Aux P1 / Admin / Admin Geral / CMT Cia — o mesmo grupo
+--      de _oficio_escopo_total) edita QUALQUER ofício, SEM restrição de prazo
+--      nem de autoria.
 --    • A NUMERAÇÃO NÃO MUDA: numero, numero_seq, ano e tipo são preservados.
 --    • Ofício EXCLUÍDO não pode ser editado.
 --    • grupamento_id (visibilidade) é recalculado do emitente (saída) /
@@ -39,17 +41,20 @@ begin
     raise exception 'Ofício excluído não pode ser editado.';
   end if;
 
-  -- só quem registrou (compara só os dígitos da matrícula, tolerante ao formato)
-  if regexp_replace(coalesce(v_row.registrado_por_matricula,''),'\D','','g')
-       <> regexp_replace(coalesce(v_me.matricula,''),'\D','','g')
-     or coalesce(v_me.matricula,'') = '' then
-    raise exception 'Apenas quem registrou o ofício pode editá-lo.';
-  end if;
-
-  -- janela de 24h a partir do registro
-  v_horas := extract(epoch from (now() - v_row.created_at)) / 3600.0;
-  if v_horas > 24 then
-    raise exception 'Prazo de edição encerrado: alterações só são permitidas em até 24h após o registro.';
+  -- A GESTÃO da P1 (Aux P1 / Admin / Admin Geral / CMT Cia) edita qualquer
+  -- ofício, sem restrição. Os DEMAIS: só quem registrou e só até 24h.
+  if not public._oficio_escopo_total(v_me.nivel_acesso, v_me.funcao) then
+    -- só quem registrou (compara só os dígitos da matrícula, tolerante ao formato)
+    if regexp_replace(coalesce(v_row.registrado_por_matricula,''),'\D','','g')
+         <> regexp_replace(coalesce(v_me.matricula,''),'\D','','g')
+       or coalesce(v_me.matricula,'') = '' then
+      raise exception 'Sem permissão: só quem registrou o ofício (ou a gestão da P1) pode editá-lo.';
+    end if;
+    -- janela de 24h a partir do registro
+    v_horas := extract(epoch from (now() - v_row.created_at)) / 3600.0;
+    if v_horas > 24 then
+      raise exception 'Prazo de edição encerrado: alterações só são permitidas em até 24h após o registro.';
+    end if;
   end if;
 
   -- grupamento p/ visibilidade: emitente (saída) / destino_int (entrada)

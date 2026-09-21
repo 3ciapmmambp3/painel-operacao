@@ -259,6 +259,13 @@ if (!S) { location.href = 'index.html'; }
 const fmtPM = v => { const d=(v||'').toString().replace(/\D/g,''); return d ? ((typeof _formatarMatricula==='function') ? _formatarMatricula(d) : d) : ''; };
 // "Registrado por" / cabeçalho: posto/graduação + nome completo + Nº PM mascarado.
 const MILITAR_LINHA = S ? `${S.pg || ''} ${S.nome || S.guerra || ''} — Nº PM ${fmtPM(S.matricula)}`.replace(/\s+/g,' ').trim() : '';
+// Gestão da P1 (Aux P1 / Admin / Admin Geral / CMT Cia) — edita sem restrição de 24h.
+const _fnGest = (S && S.funcao) || '';
+const PODE_GESTAO = !!S && (
+  ['admin_geral','admin'].includes(S.nivel_acesso) ||
+  (/aux/i.test(_fnGest) && /p\s*1/i.test(_fnGest)) ||
+  (/(cmt|comandante)/i.test(_fnGest) && /\bcia\b/i.test(_fnGest))
+);
 
 const API  = (typeof SB_AUTH_URL !== 'undefined') ? SB_AUTH_URL : '';
 const AKEY = (typeof SB_AUTH_KEY !== 'undefined') ? SB_AUTH_KEY : '';
@@ -526,9 +533,11 @@ function aplicarModoEdicao(r){
   document.getElementById('btn-salvar').textContent='Salvar alterações';
   const bpdf=document.getElementById('btn-pdf'); if(bpdf) bpdf.textContent='Salvar e ver PDF';
   const bmod=document.getElementById('btn-modelo'); if(bmod) bmod.style.display='none';
-  // janela de 24h (o servidor também valida)
+  // janela de 24h (o servidor também valida) — a GESTÃO da P1 não tem essa trava
   const horas = r.created_at ? (Date.now()-new Date(r.created_at).getTime())/3600000 : 0;
-  if(horas > 24){
+  if(PODE_GESTAO){
+    ok(`✏️ Editando <b>${_esc(r.numero||'ofício de entrada')}</b> — gestão da P1, sem limite de prazo. A numeração não muda.`);
+  }else if(horas > 24){
     erro('⛔ Prazo de edição encerrado (mais de 24h após o registro). As alterações não poderão ser salvas.');
     document.getElementById('btn-salvar').disabled=true; if(bpdf) bpdf.disabled=true;
   }else{
