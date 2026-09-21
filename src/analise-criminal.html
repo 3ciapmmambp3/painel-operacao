@@ -12444,6 +12444,16 @@ function _tipoFromNome(nome){
               kml:'application/vnd.google-earth.kml+xml',kmz:'application/vnd.google-earth.kmz'};
   return m[ext]||'application/octet-stream';
 }
+/* Normaliza um link de anexo para uso como IMAGEM (src de <img> ou fetch).
+   Links do Google Drive (/file/d/ID/view ou ?id=ID) apontam para uma PÁGINA,
+   não para a imagem — converte para o endpoint direto lh3.googleusercontent.com,
+   que devolve a imagem com CORS liberado. Demais URLs (Supabase, data:) passam intactas. */
+function _imgSrc(url){
+  const s = String(url||'');
+  if(s.indexOf('drive.google.com')===-1 && s.indexOf('docs.google.com')===-1) return s;
+  const m = s.match(/\/file\/d\/([-\w]{16,})/) || s.match(/[?&]id=([-\w]{16,})/);
+  return m ? 'https://lh3.googleusercontent.com/d/'+m[1] : s;
+}
 
 /* Viewer inline — exibe imagem, PDF ou vídeo dentro da página sem abrir nova aba */
 function _abrirOuBaixar(src, nome, tipo, isBase64){
@@ -12486,7 +12496,7 @@ function _mostrarViewerInline(src, nome, tipo, isBase64){
       blobUrl = URL.createObjectURL(new Blob([bytes],{type:mime}));
     }catch(e){ alert('Erro ao preparar anexo: '+e.message); return; }
   }
-  const viewSrc = blobUrl || src;
+  const viewSrc = blobUrl || (isImg ? _imgSrc(src) : src);
 
   let conteudo = '';
   if(isImg)       conteudo = `<img src="${viewSrc}" style="max-width:100%;max-height:75vh;border-radius:4px;display:block;margin:auto;" alt="${nome}">`;
@@ -13179,7 +13189,7 @@ function abrirFichaExpandida(fichaId){
         const tipo=a.tipo||_tipoFromNome(a.nome||'');
         const isImg=tipo.startsWith('image'); const isVid=tipo.startsWith('video'); const isPdf=tipo.includes('pdf');
         const src=a.storage_url||a.base64||'';
-        const thumb=isImg&&src?`<img src="${src}" style="width:80px;height:60px;object-fit:cover;display:block;border-radius:4px 4px 0 0;">`
+        const thumb=isImg&&src?`<img src="${_imgSrc(src)}" style="width:80px;height:60px;object-fit:cover;display:block;border-radius:4px 4px 0 0;">`
           :`<div style="width:80px;height:60px;display:flex;align-items:center;justify-content:center;background:#1a1a1a;border-radius:4px 4px 0 0;font-size:26px;">${isVid?'🎥':isPdf?'📄':'📎'}</div>`;
         return `<div onclick="_abrirAnexoComp('${a.id}','${fichaId}')" style="border:1px solid var(--border);border-radius:6px;overflow:hidden;cursor:pointer;width:80px;flex-shrink:0;" title="${a.nome}">
           ${thumb}
@@ -13199,7 +13209,7 @@ function abrirFichaExpandida(fichaId){
           const isImg=tipo.startsWith('image'); const isVid=tipo.startsWith('video'); const isPdf=tipo.includes('pdf');
           const src=a.storage_url||a.base64||'';
           const thumb=isImg&&src
-            ?`<img src="${src}" style="width:70px;height:52px;object-fit:cover;display:block;border-radius:4px 4px 0 0;">`
+            ?`<img src="${_imgSrc(src)}" style="width:70px;height:52px;object-fit:cover;display:block;border-radius:4px 4px 0 0;">`
             :`<div style="width:70px;height:52px;display:flex;align-items:center;justify-content:center;background:#1a1a1a;border-radius:4px 4px 0 0;font-size:22px;">${isVid?'🎥':isPdf?'📄':'📎'}</div>`;
           return `<div onclick="_abrirAnexoComp('${a.id}','${fichaId}')" title="Abrir: ${a.nome}"
             style="border:1px solid var(--border);border-radius:6px;overflow:hidden;cursor:pointer;width:70px;flex-shrink:0;transition:opacity .15s;"
@@ -13357,7 +13367,7 @@ function _htmlComplemento(fichaId, c){
     const isPdf = tipo.includes('pdf');
     const src   = a.storage_url || a.base64 || '';
     let thumb = '';
-    if(isImg && src)  thumb = `<img src="${src}" style="width:56px;height:44px;object-fit:cover;display:block;" title="${a.nome}">`;
+    if(isImg && src)  thumb = `<img src="${_imgSrc(src)}" style="width:56px;height:44px;object-fit:cover;display:block;" title="${a.nome}">`;
     else if(isImg)    thumb = `<div style="width:56px;height:44px;display:flex;align-items:center;justify-content:center;background:#1a1a1a;font-size:18px;">🖼</div>`;
     else if(isVid)    thumb = `<div style="width:56px;height:44px;display:flex;align-items:center;justify-content:center;background:#1a1a1a;font-size:18px;">🎥</div>`;
     else if(isPdf)    thumb = `<div style="width:56px;height:44px;display:flex;align-items:center;justify-content:center;background:#1a1a1a;font-size:18px;">📄</div>`;
@@ -14202,7 +14212,7 @@ function idRenderTab(tab){
       const isPdf = tipo.includes('pdf');
       const src   = a.storage_url||a.base64||'';
       const thumb = isImg&&src
-        ? `<img src="${src}" style="width:88px;height:66px;object-fit:cover;display:block;border-radius:4px 4px 0 0;">`
+        ? `<img src="${_imgSrc(src)}" style="width:88px;height:66px;object-fit:cover;display:block;border-radius:4px 4px 0 0;">`
         : `<div style="width:88px;height:66px;display:flex;align-items:center;justify-content:center;background:#1a1a1a;border-radius:4px 4px 0 0;font-size:26px;">${isVid?'🎥':isPdf?'📄':'📎'}</div>`;
       return `<div onclick="_abrirAnexoComp('${a.id}','${f.id}')" style="border:1px solid rgba(255,255,255,.1);border-radius:5px;overflow:hidden;cursor:pointer;width:88px;flex-shrink:0;" title="${a.nome}">
         ${thumb}
@@ -14256,7 +14266,7 @@ async function idExportarPDF(){
     if(!tipo.startsWith('image')) return null;
     const src = a.storage_url||a.base64||'';
     if(!src) return null;
-    const b64 = src.startsWith('data:') ? src : await imgToB64(src);
+    const b64 = src.startsWith('data:') ? src : await imgToB64(_imgSrc(src));
     return b64 ? { b64, nome: a.nome||'', tipo } : null;
   }));
   const fotasOk = fotosImg.filter(Boolean);
@@ -14466,6 +14476,17 @@ async function idExportarPDF(){
         y += LEG_H + 2;
       } catch(e){ /* skip imagem com erro */ }
     }
+    y += 4;
+  }
+
+  /* ── Seção 7b: Arquivos não-imagem (PDF/KML/vídeo) — listados por nome ── */
+  const outrosAnx = (f.fotos||[]).filter(a => !String(a.tipo||_tipoFromNome(a.nome||'')).startsWith('image'));
+  if(outrosAnx.length){
+    sec('ARQUIVOS ANEXADOS (PDF / KML / vídeo)');
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(30,30,30);
+    outrosAnx.forEach(a=>{ chk(5); doc.text('• '+(a.nome||'arquivo'), ML+2, y); y+=5; });
+    doc.setFont('helvetica','italic'); doc.setFontSize(7.5); doc.setTextColor(120,120,120);
+    chk(5); doc.text('(arquivos completos disponíveis na ficha, no sistema)', ML+2, y); y+=5;
     y += 4;
   }
 
@@ -15153,7 +15174,7 @@ function renderMissoes(){
                 const isPdf = tipo.includes('pdf');
                 const src   = a.storage_url||a.base64||'';
                 let thumb='';
-                if(isImg&&src)  thumb=`<img src="${src}" style="width:52px;height:40px;object-fit:cover;display:block;" title="${a.nome}">`;
+                if(isImg&&src)  thumb=`<img src="${_imgSrc(src)}" style="width:52px;height:40px;object-fit:cover;display:block;" title="${a.nome}">`;
                 else if(isImg)  thumb=`<div style="width:52px;height:40px;display:flex;align-items:center;justify-content:center;background:#1a1a1a;font-size:18px;">🖼</div>`;
                 else if(isVid)  thumb=`<div style="width:52px;height:40px;display:flex;align-items:center;justify-content:center;background:#1a1a1a;font-size:18px;">🎥</div>`;
                 else if(isPdf)  thumb=`<div style="width:52px;height:40px;display:flex;align-items:center;justify-content:center;background:#1a1a1a;font-size:18px;">📄</div>`;
