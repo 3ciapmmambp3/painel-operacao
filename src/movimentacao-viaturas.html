@@ -712,7 +712,7 @@ async function abrirEditarFicha(id){
   document.getElementById('obs-geral').value=f.observacoes||'';
   preencherDsp(f.dados && f.dados.dsp);   // DSP é editável na edição
   try{ syncDatas(); calc(); }catch(e){}
-  ultimoKmFinal=null; kmiConfirmadoMaior=true;   // edição não é barrada pelo hodômetro da última devolução
+  ultimoKmFinal=null; kmiConfirmadoMaior=true; kmiConfirmadoMenor=true;   // edição não é barrada pelo hodômetro da última devolução
 
   const opts=document.querySelector('#form-wrap .opts'); if(opts) opts.style.display='none';
   document.querySelectorAll('#form-wrap .card.sec').forEach(el=>el.style.display='none');
@@ -1057,7 +1057,7 @@ async function onVtr(){
   }
   // km inicial: o militar SEMPRE digita (conferindo no hodômetro). Só buscamos a
   // última devolução como referência p/ validar (nunca pré-preenche o campo).
-  ultimoKmFinal=null; kmiConfirmadoMaior=false; kmi.value=''; kmi.style.borderColor='';
+  ultimoKmFinal=null; kmiConfirmadoMaior=false; kmiConfirmadoMenor=false; kmi.value=''; kmi.style.borderColor='';
   const chip=document.getElementById('kmi-chip'); if(chip){ chip.textContent=''; chip.style.color=''; }
   hint.textContent='Buscando último Km…';
   try{
@@ -1084,13 +1084,13 @@ async function checarRevisao(prefixo){
       : `🔧 <b>Revisão próxima</b> — faltam ${Number(falta||0).toLocaleString('pt-BR')} km (próxima em ${(r.km_proxima_revisao||0).toLocaleString('pt-BR')} km). Avise o Aux P4.`;
   }catch(e){ /* silencioso — não atrapalha o lançamento */ }
 }
-let ultimoKmFinal=null, kmiConfirmadoMaior=false;
+let ultimoKmFinal=null, kmiConfirmadoMaior=false, kmiConfirmadoMenor=false;
 
 // Confere o Km inicial digitado contra a última devolução (visual imediato).
 function kmiCheck(){
   calc();
   const inp=document.getElementById('kmi'), hint=document.getElementById('kmi-hint'), chip=document.getElementById('kmi-chip');
-  kmiConfirmadoMaior=false;
+  kmiConfirmadoMaior=false; kmiConfirmadoMenor=false;
   inp.style.borderColor=''; chip.textContent=''; chip.style.color='';
   const v=(inp.value||'').trim();
   if(v===''){ hint.innerHTML = ultimoKmFinal!=null ? `Última devolução: <b>${ultimoKmFinal.toLocaleString('pt-BR')} km</b>.` : 'Informe o Km inicial.'; return; }
@@ -1100,8 +1100,8 @@ function kmiCheck(){
     inp.style.borderColor='var(--success)'; chip.textContent='✓ confere'; chip.style.color='var(--success)';
     hint.innerHTML=`Confere com a última devolução (${ultimoKmFinal.toLocaleString('pt-BR')} km).`;
   } else if(n<ultimoKmFinal){
-    inp.style.borderColor='var(--danger)'; chip.textContent='menor que o anterior'; chip.style.color='var(--danger)';
-    hint.innerHTML=`<span style="color:var(--danger)">Hodômetro menor que o final anterior (${ultimoKmFinal.toLocaleString('pt-BR')} km).</span>`;
+    inp.style.borderColor='#ffb74d'; chip.textContent='menor que o anterior'; chip.style.color='#ffb74d';
+    hint.innerHTML=`Menor que a última devolução (${ultimoKmFinal.toLocaleString('pt-BR')} km) — se for lançamento atrasado/retroativo, será pedida confirmação.`;
   } else {
     inp.style.borderColor='#ffb74d'; chip.textContent='maior que o anterior'; chip.style.color='#ffb74d';
     hint.innerHTML=`Maior que a última devolução (${ultimoKmFinal.toLocaleString('pt-BR')} km) — será pedida confirmação.`;
@@ -1409,8 +1409,11 @@ async function salvar(){
   if (!base.km_inicial) return foco('kmi','Informe o Km inicial.');
   if (!base.km_final)   return foco('kmf','Informe o Km final.');
   const kmI=+base.km_inicial, kmF=+base.km_final;
-  if (ultimoKmFinal!=null && kmI < ultimoKmFinal)
-    return foco('kmi',`Hodômetro menor que o final anterior (${ultimoKmFinal.toLocaleString('pt-BR')} km).`);
+  if (ultimoKmFinal!=null && kmI < ultimoKmFinal && !kmiConfirmadoMenor){
+    if(!confirm(`O Km inicial (${kmI.toLocaleString('pt-BR')}) está MENOR que o último registrado (${ultimoKmFinal.toLocaleString('pt-BR')} km).\n\nIsso costuma acontecer em lançamento ATRASADO/retroativo — a ficha é de um dia anterior a outra que já foi lançada.\n\nConfirma que é o Km correto do hodômetro?`))
+      return foco('kmi','Confira o Km inicial.');
+    kmiConfirmadoMenor=true;
+  }
   if (kmF < kmI) return foco('kmf','Km final não pode ser menor que o inicial.');
   if (ultimoKmFinal!=null && kmI > ultimoKmFinal && !kmiConfirmadoMaior){
     if(!confirm(`Tem certeza que é o hodômetro correto?\n\nO Km inicial (${kmI.toLocaleString('pt-BR')}) está maior que o hodômetro anterior (${ultimoKmFinal.toLocaleString('pt-BR')} km).`))
