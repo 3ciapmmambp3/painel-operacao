@@ -190,6 +190,7 @@
       </div>
     </div>
     <div class="p-actions">
+      <button class="tbtn" id="btn-editar" onclick="irEditar()" style="display:none">✏️ Editar dados</button>
       <button class="tbtn" id="btn-excluir" onclick="pedirExcluir()" style="margin-right:auto;color:var(--danger);border-color:rgba(239,83,80,.4);display:none">Excluir</button>
       <button class="tbtn" id="btn-pdf" onclick="gerarPdf()" style="display:none">🖨 Gerar PDF</button>
       <button class="tbtn" onclick="fechar()">Fechar</button>
@@ -402,11 +403,22 @@ function abrir(id){
   }
   // num excluído já não pode ser re-excluído; controle não se edita
   document.getElementById('btn-excluir').style.display = (podeExcluir && !excl) ? '' : 'none';
+  // "Editar dados": só QUEM REGISTROU, dentro de 24h e não excluído (o servidor também valida)
+  const _dig = s => (s||'').replace(/\D/g,'');
+  const ehCriador = _dig(r.registrado_por_matricula) && _dig(r.registrado_por_matricula) === _dig(sessao.matricula);
+  const dentro24h = r.created_at && (Date.now() - new Date(r.created_at).getTime()) <= 24*3600*1000;
+  document.getElementById('btn-editar').style.display = (ehCriador && dentro24h && !excl) ? '' : 'none';
   document.getElementById('btn-salvar-ctrl').style.display = excl ? 'none' : '';
   cancelarExcluir();
   document.getElementById('btn-pdf').style.display = (r.tipo==='Saída' && r.of_corpo) ? '' : 'none';
   renderCtrlAnx();
   document.getElementById('ov').classList.add('show');
+}
+function irEditar(){
+  if(!atual) return;
+  // leva o ofício p/ o formulário em modo edição (numeração preservada; janela de 24h)
+  try{ sessionStorage.setItem('oficio_editar', JSON.stringify(atual)); }catch(e){}
+  location.href = 'nova-oficio.html?editar=' + encodeURIComponent(atual.id);
 }
 function fechar(){ document.getElementById('ov').classList.remove('show'); atual=null; }
 function pmsg(cls,txt){ const el=document.getElementById('pmsg'); el.className='pmsg '+cls+' show'; el.textContent=txt; }

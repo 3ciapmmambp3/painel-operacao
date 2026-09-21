@@ -284,6 +284,19 @@ const FOOTER_TEL    = 'Governador Valadares/MG · Telefone: (33) 3279-4250 / 327
 let anexos = [];
 let TIPO = '';
 
+/* ── Modo EDIÇÃO (?editar=<id>): corrige um ofício já lançado, sem mexer na
+   numeração, só até 24h e só p/ quem registrou. Os dados chegam via
+   sessionStorage (setados na tela de Controle ao clicar em "Editar dados"). */
+let EDIT_ID = null, EDIT_ROW = null;
+try{
+  const _eid = new URLSearchParams(location.search).get('editar');
+  if(_eid){
+    const _raw = sessionStorage.getItem('oficio_editar');
+    const _row = _raw ? JSON.parse(_raw) : null;
+    if(_row && _row.id === _eid){ EDIT_ID = _eid; EDIT_ROW = _row; }
+  }
+}catch(e){}
+
 /* ── Boot ────────────────────────────────────────────────────────── */
 document.getElementById('who').textContent = MILITAR_LINHA;
 document.getElementById('militar').value = MILITAR_LINHA;
@@ -293,7 +306,7 @@ document.getElementById('of_fecho').value = DEF_FECHO;   // assinante/cargo fica
    Além dos GP, oferecemos o nível PELOTÃO (o CMT do Pel emite/recebe em nome de
    todo o pelotão) e o nível COMPANHIA ("3 CIA PM MAMB", para a ADM e o CMT Cia).
    A cidade-sede do pelotão é a do seu 1º GP (ex.: 1 PEL → GOVERNADOR VALADARES). */
-(async function carregarGrupamentos(){
+const _grupamentosReady = (async function carregarGrupamentos(){
   try{
     const r = await fetch(`${API}/rest/v1/rpc/grupamentos_listar`, { method:'POST', headers:H, body:'{}' });
     if(!r.ok) throw new Error(await r.text());
@@ -319,6 +332,8 @@ document.getElementById('of_fecho').value = DEF_FECHO;   // assinante/cargo fica
     document.getElementById('destino_int').insertAdjacentHTML('beforeend', html);
   }catch(e){ console.error('grupamentos:', e); }
 })();
+/* Modo edição: preenche o form assim que os selects de grupamento estiverem prontos. */
+if(EDIT_ROW){ _grupamentosReady.then(()=>aplicarModoEdicao(EDIT_ROW)).catch(()=>aplicarModoEdicao(EDIT_ROW)); }
 
 /* efetivo p/ o picker de busca do responsável (busca por NOME e por NÚMERO, com
    máscara 000.000-0 — mesmo comportamento dos "Militares requisitados"). O campo
@@ -481,6 +496,46 @@ function ok(m){ const el=document.getElementById('msg'); el.className='msg ok sh
 const MESES=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
 function dataExtenso(iso){ if(!iso) return ''; const d=new Date(String(iso)+'T00:00:00'); if(isNaN(d)) return iso; return `${d.getDate()} de ${MESES[d.getMonth()]} de ${d.getFullYear()}`; }
 
+/* ── Modo edição: preenche o formulário com o ofício já lançado ──── */
+function aplicarModoEdicao(r){
+  const setV=(id,val)=>{ const el=document.getElementById(id); if(el) el.value = (val==null?'':String(val)); };
+  // tipo (travado — não muda porque afeta a numeração)
+  setTipo(r.tipo);
+  ['t-saida','t-entrada'].forEach(id=>{ const b=document.getElementById(id); if(b){ b.disabled=true; b.style.opacity='.5'; b.style.cursor='not-allowed'; } });
+  // cabeçalho
+  const h2=document.querySelector('.card-head h2'); if(h2) h2.textContent='Editar Ofício';
+  const pp=document.querySelector('.card-head p'); if(pp) pp.innerHTML='Corrigindo um ofício já registrado. A <b>numeração não muda</b> e a edição é permitida só até <b>24h</b> após o registro.';
+  document.getElementById('nb').textContent = r.numero || (r.tipo==='Entrada'?'— (entrada)':'—');
+  // comuns
+  setV('data_doc',(r.data_doc||'').slice(0,10));
+  setV('assunto',r.assunto); setV('em_resposta',r.em_resposta);
+  setV('responsavel',r.responsavel); setV('observacoes',r.observacoes);
+  // saída
+  setV('emitente',r.emitente); setV('destino_ext',r.destino_ext);
+  // entrada
+  setV('num_externo',r.num_externo); setV('emitente_ext',r.emitente_ext); setV('destino_int',r.destino_int);
+  // corpo (saída)
+  setV('of_vocativo',r.of_vocativo); setV('of_corpo',r.of_corpo);
+  setV('of_fecho',r.of_fecho||DEF_FECHO); setV('of_cidade',r.of_cidade);
+  setV('of_assinante',r.of_assinante); setV('of_cargo',r.of_cargo);
+  setV('dest_tratamento',r.dest_tratamento); setV('dest_nome',r.dest_nome);
+  setV('dest_orgao',r.dest_orgao); setV('dest_endereco',r.dest_endereco);
+  // anexos ficam a cargo do Controle — escondidos na edição
+  const anx=document.getElementById('blk-anexo'); if(anx) anx.style.display='none';
+  // botões
+  document.getElementById('btn-salvar').textContent='Salvar alterações';
+  const bpdf=document.getElementById('btn-pdf'); if(bpdf) bpdf.textContent='Salvar e ver PDF';
+  const bmod=document.getElementById('btn-modelo'); if(bmod) bmod.style.display='none';
+  // janela de 24h (o servidor também valida)
+  const horas = r.created_at ? (Date.now()-new Date(r.created_at).getTime())/3600000 : 0;
+  if(horas > 24){
+    erro('⛔ Prazo de edição encerrado (mais de 24h após o registro). As alterações não poderão ser salvas.');
+    document.getElementById('btn-salvar').disabled=true; if(bpdf) bpdf.disabled=true;
+  }else{
+    ok(`✏️ Editando <b>${_esc(r.numero||'ofício de entrada')}</b> — restam ~${Math.max(0,Math.floor(24-horas))}h. A numeração não muda.`);
+  }
+}
+
 /* ── Coletar dados do form ───────────────────────────────────────── */
 function coletar(){
   const v  = id => document.getElementById(id).value.trim();
@@ -531,11 +586,23 @@ async function salvar(comPdf){
   if(comPdf && !dados.of_corpo) return erro('Preencha o corpo do ofício para gerar o PDF.');
 
   const btn=document.getElementById('btn-salvar'); const btnp=document.getElementById('btn-pdf');
-  btn.disabled=true; btnp.disabled=true; btn.textContent='Registrando…';
+  btn.disabled=true; btnp.disabled=true; btn.textContent = EDIT_ID?'Salvando…':'Registrando…';
   try{
-    const r=await fetch(`${API}/rest/v1/rpc/criar_oficio`, { method:'POST', headers:{...H,'Prefer':'return=representation'}, body:JSON.stringify({p_token:S.token, dados}) });
+    const endpoint = EDIT_ID ? 'oficio_editar' : 'criar_oficio';
+    const payload  = EDIT_ID ? {p_token:S.token, p_id:EDIT_ID, p_dados:dados} : {p_token:S.token, dados};
+    const r=await fetch(`${API}/rest/v1/rpc/${endpoint}`, { method:'POST', headers:{...H,'Prefer':'return=representation'}, body:JSON.stringify(payload) });
     if(!r.ok) throw new Error(`${r.status} ${await r.text()}`);
     const row=await r.json(); const reg=Array.isArray(row)?row[0]:row; const numero=reg&&reg.numero || (TIPO==='Entrada'?'entrada':'');
+
+    if(EDIT_ID){
+      try{ sessionStorage.removeItem('oficio_editar'); }catch(_e){}
+      if(comPdf) abrirDoc(reg);
+      ok(`✓ Alterações salvas${numero&&numero!=='entrada'?` em <b>${_esc(numero)}</b>`:''}. `
+        + `<a href="oficios.html">Voltar ao controle</a>`);
+      if(!comPdf) setTimeout(()=>{ location.href='oficios.html'; }, 900);
+      return;  // não limpa o formulário na edição
+    }
+
     if(comPdf){
       abrirDoc(reg);
       ok(`✓ Registrado${numero?` como <b>${_esc(numero)}</b>`:''}. Gerando o PDF… use <b>Imprimir / Salvar PDF</b>. `
@@ -549,10 +616,10 @@ async function salvar(comPdf){
     document.getElementById('militar').value=MILITAR_LINHA;
     document.getElementById('of_fecho').value=DEF_FECHO;   // assinante/cargo/cidade voltam em branco
   }catch(e){
-    console.error('criar_oficio:', e);
-    erro('Não foi possível registrar: ' + e.message);
+    console.error(EDIT_ID?'oficio_editar:':'criar_oficio:', e);
+    erro((EDIT_ID?'Não foi possível salvar as alterações: ':'Não foi possível registrar: ') + e.message);
   }finally{
-    btn.disabled=false; btnp.disabled=false; btn.textContent='Registrar';
+    btn.disabled=false; btnp.disabled=false; btn.textContent = EDIT_ID?'Salvar alterações':'Registrar';
   }
 }
 
