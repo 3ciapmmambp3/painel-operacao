@@ -192,6 +192,11 @@
           <input type="date" id="data_fato">
         </div>
         <div class="f">
+          <label>Data de recebimento <span class="auto">conta o prazo</span></label>
+          <input type="date" id="data_recebimento" onchange="recalcPrazoPadrao()">
+          <span class="hint">Padrão: hoje. Ajuste se a denúncia/requisição foi recebida antes de ser lançada.</span>
+        </div>
+        <div class="f">
           <label>Município do fato <span class="req">*</span></label>
           <input list="municipios" id="muni" placeholder="Digite para buscar…" autocomplete="off" oninput="resolveGrp()">
           <datalist id="municipios"></datalist>
@@ -311,6 +316,9 @@ let anexos = [];   // {path,nome,tamanho,mime,link}
 /* ── Boot ────────────────────────────────────────────────────────── */
 document.getElementById('who').textContent = MILITAR_LINHA;
 document.getElementById('militar').value = MILITAR_LINHA;
+// Data de recebimento: padrão = hoje (data local), editável para lançamentos atrasados.
+const _hojeLocal = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0,10); };
+document.getElementById('data_recebimento').value = _hojeLocal();
 // Abre já no tipo vindo da aba (?tipo=denuncia|requisicao); setTipo aplica o prazo padrão.
 setTipo(new URLSearchParams(location.search).get('tipo') === 'requisicao' ? 'requisicao' : 'denuncia');
 
@@ -366,10 +374,16 @@ function addDias(baseISO, n){
   base.setDate(base.getDate() + n);
   return base.toISOString().slice(0,10);
 }
+function _recebISO(){ return document.getElementById('data_recebimento').value || null; }
 function aplicarPrazoPadrao(){
   const el = document.getElementById('prazo');
-  if (document.body.dataset.tipo === 'denuncia') el.value = addDias(null, 45);
+  // prazo conta da DATA DE RECEBIMENTO: denúncia = recebimento + 45 dias.
+  if (document.body.dataset.tipo === 'denuncia') el.value = addDias(_recebISO(), 45);
   else el.value = '';   // requisição: conforme o ofício
+}
+// Ao mudar a data de recebimento, reflete no prazo padrão da denúncia.
+function recalcPrazoPadrao(){
+  if (document.body.dataset.tipo === 'denuncia') document.getElementById('prazo').value = addDias(_recebISO(), 45);
 }
 
 function checkOutroOrgao(){
@@ -546,9 +560,11 @@ async function enviar(ev){
   else if (tipo === 'requisicao' && /Federal/.test(origem)) esfera = 'Federal';
   else if (tipo === 'requisicao' && /Trabalho/.test(origem)) esfera = 'Trabalho';
 
-  // Prazo: se não informado (requisição sem prazo do ofício) → data do fato + 45 dias (ou hoje + 45).
+  // Data de recebimento (base do prazo): padrão hoje se vazio.
+  const dataReceb = document.getElementById('data_recebimento').value || _hojeLocal();
+  // Prazo: se não informado (requisição sem prazo do ofício) → recebimento + 45 dias.
   let prazo = document.getElementById('prazo').value;
-  if (!prazo) prazo = addDias(document.getElementById('data_fato').value || null, 45);
+  if (!prazo) prazo = addDias(dataReceb, 45);
 
   // Padronização: informações em CAIXA ALTA.
   const up = s => (s || '').toString().trim().toUpperCase();
@@ -559,6 +575,7 @@ async function enviar(ev){
     denunciante: up(document.getElementById('denunciante').value),
     denunciado: up(document.getElementById('denunciado').value),
     data_fato: document.getElementById('data_fato').value,
+    data_recebimento: dataReceb,
     municipio: up(muni),
     tema: up(temaFinal),
     objeto: up(document.getElementById('objeto').value),

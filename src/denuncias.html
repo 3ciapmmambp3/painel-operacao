@@ -212,7 +212,7 @@
     <table>
       <thead><tr>
         <th>Nº</th><th>Tipo</th><th>Origem</th><th>Município</th>
-        <th class="colhide">Tema</th><th class="colhide">Grupamento</th><th>Prazo</th><th>Situação</th><th>Ficha</th>
+        <th class="colhide">Tema</th><th class="colhide">Grupamento</th><th>Recebimento</th><th>Prazo</th><th>Situação</th><th>Ficha</th>
       </tr></thead>
       <tbody id="tb"><tr><td colspan="9" class="empty">Carregando…</td></tr></tbody>
     </table>
@@ -408,6 +408,8 @@ function tipoCell(d){ return isBalcao(d)
 const SIT_LBL = { PENDENTE:'Pendente', 'EM ANDAMENTO':'Em andamento', CONCLUIDA:'Concluída', RESPONDIDA:'Respondida', INATIVADA:'Inativada' };
 const sitCls = s => 's-'+String(s||'').replace(/\s/g,'');
 function fmtData(iso){ if(!iso) return '—'; const p=String(iso).slice(0,10).split('-'); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:iso; }
+// Data de recebimento: usa o campo próprio; registros antigos caem no created_at.
+function recebDe(d){ return d.data_recebimento || (d.created_at ? String(d.created_at).slice(0,10) : ''); }
 function prazoInfo(d){
   if (atendida(d)) return {cls:'ok', txt:'atendida'};
   if (!d.prazo) return {cls:'none', txt:'—'};
@@ -468,6 +470,7 @@ function render(){
       `<td class="muni">${d.municipio||'—'}</td>`+
       `<td class="colhide tema">${d.tema||'—'}</td>`+
       `<td class="colhide tema">${d.grupamento_completo||'—'}</td>`+
+      `<td class="prazo" style="font-weight:500">${fmtData(recebDe(d))}</td>`+
       `<td><span class="prazo ${pr.cls}">${pr.txt}</span></td>`+
       `<td><span class="pill ${sitCls(d.situacao)}">${SIT_LBL[d.situacao]||d.situacao}</span>${inativa&&d.situacao!=='INATIVADA'?'<span class="tag-inativa">INATIVADA</span>':''}</td>`+
       `<td><button class="pdf-mini" title="Baixar Ficha (PDF)" onclick="event.stopPropagation();gerarPDF(byId('${d.id}'))"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>PDF</button></td>`;
@@ -501,8 +504,8 @@ function exportarExcel(){
   const anx = a => Array.isArray(a)?a.length:'';
   const cols = ['Nº','Tipo','Situação','Ano','Origem','Esfera','Nº ofício/processo',
     'Município','Grupamento','Tema','Objeto','Denunciante','Denunciado',
-    'Data do fato','Prazo','Histórico/Descrição','Endereço','Roteiro/Referência','Observações',
-    'Registrado por','Recebido em','Anexos (qtd)',
+    'Data do fato','Data de recebimento','Prazo','Histórico/Descrição','Endereço','Roteiro/Referência','Observações',
+    'Registrado por','Registrado em (sistema)','Anexos (qtd)',
     'Data resposta','Nº REDS','Auto de infração','Ato de fiscalização','Obs. resposta','Atendido por',
     'Ativo','Motivo inativação','Inativado por'];
   const tl = d => d.tipo==='denuncia' ? 'Denúncia de Balcão' : 'Requisição';
@@ -512,7 +515,7 @@ function exportarExcel(){
     d.origem||'', d.origem_esfera||'', d.numero_oficio||'',
     d.municipio||'', d.grupamento_completo||d.gp_responsavel||'', d.tema||'', d.objeto||'',
     d.denunciante||'', d.denunciado||'',
-    _d(d.data_fato), _d(d.prazo), d.descricao||'', d.endereco||'', d.referencia||'', d.observacoes||'',
+    _d(d.data_fato), _d(recebDe(d)), _d(d.prazo), d.descricao||'', d.endereco||'', d.referencia||'', d.observacoes||'',
     d.registrado_por_nome||'', _dt(d.created_at), anx(d.anexos),
     _d(d.data_resposta), d.numero_reds||'', d.numero_auto_infracao||'', d.numero_ato_fiscalizacao||'', d.observacoes_resposta||'', d.atendido_por_nome||'',
     (d.ativo===false?'Não (inativada)':'Sim'), d.motivo_inativacao||'', d.inativado_por_nome||''
@@ -624,9 +627,10 @@ function abrir(d){
       di('Origem', d.origem + (d.numero_oficio?` · ${d.numero_oficio}`:''))+
       di('Município', d.municipio)+
       di('Data do fato', fmtData(d.data_fato))+
+      di('Data de recebimento', fmtData(recebDe(d)))+
       di('Tema / infração', d.tema)+
       (d.tipo==='denuncia'?di('Denunciante', d.denunciante):di('Nº ofício/processo', d.numero_oficio))+
-      (d.tipo==='denuncia'?di('Denunciado', d.denunciado):di('Recebido em', fmtData(d.created_at)))+
+      (d.tipo==='denuncia'?di('Denunciado', d.denunciado):di('Registrado no sistema', fmtData(d.created_at)))+
       di('Objeto / ação solicitada', d.objeto, true)+
       `<div class="di full"><dt>Descrição (histórico)</dt><dd class="desc">${d.descricao||'—'}</dd></div>`+
       di('Endereço', d.endereco, true)+
@@ -760,12 +764,12 @@ function gerarPDF(d){
     ? row('Infração', d.tema)+row('Município', d.municipio)+rowBlk('Endereço', d.endereco)+
       row('Denunciante', d.denunciante)+row('Denunciado', d.denunciado)+
       rowBlk('Histórico', d.descricao)+rowBlk('Roteiro', d.referencia)+
-      rowH('PM que recebeu', _ident(d.registrado_por_matricula, d.registrado_por_nome))+row('Data de recebimento', fmtData(d.created_at))+
+      rowH('PM que recebeu', _ident(d.registrado_por_matricula, d.registrado_por_nome))+row('Data de recebimento', fmtData(recebDe(d)))+
       rowH('Anexo', anexoCell)+rowBlk('Observações', d.observacoes)
     : row('Origem', d.origem)+row('Nº ofício/processo', d.numero_oficio)+row('Infração', d.tema)+
       row('Município', d.municipio)+rowBlk('Endereço', d.endereco)+rowBlk('Objeto', d.objeto)+
       rowBlk('Histórico', d.descricao)+rowBlk('Roteiro', d.referencia)+
-      rowH('PM que recebeu', _ident(d.registrado_por_matricula, d.registrado_por_nome))+row('Data de recebimento', fmtData(d.created_at))+
+      rowH('PM que recebeu', _ident(d.registrado_por_matricula, d.registrado_por_nome))+row('Data de recebimento', fmtData(recebDe(d)))+
       row('Prazo', fmtData(d.prazo))+rowH('Anexo', anexoCell)+rowBlk('Observações', d.observacoes);
   // Bloco RESPOSTA / ATENDIMENTO — aparece quando a demanda foi respondida
   // (dados espelhados do relatório de serviço via denuncia_baixa_automatica).
