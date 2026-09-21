@@ -2232,7 +2232,7 @@ document.addEventListener('click', () => {
       </select>
       <input type="text" id="audit-lista-busca" placeholder="Ex: 2026-020361740-001 ou nome" oninput="mascaraBO(this);renderAuditoriasLista()" maxlength="18" style="background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:4px 10px;font-size:11px;width:220px;">
       <button class="btn-outline" onclick="_carregarAuditorias().then(()=>renderAuditoriasLista())" style="font-size:11px;padding:4px 10px;">☰ Atualizar</button>
-      <button class="btn-danger" onclick="limparTodasAuditorias()" style="font-size:11px;padding:4px 10px;">🗑 Limpar todas</button>
+      <button class="btn-danger" id="btn-limpar-auditorias" onclick="limparTodasAuditorias()" style="font-size:11px;padding:4px 10px;">🗑 Limpar todas</button>
     </div>
   </div>
   <!-- Cards resumo -->
@@ -3212,10 +3212,13 @@ window.addEventListener('DOMContentLoaded', async () => {
     /* Prioridade Operacional para todos os admins */
     const tabBtnPrior = document.getElementById('tab-btn-prioridade');
     if(tabBtnPrior) tabBtnPrior.style.display = '';
-    /* Auditorias apenas para Admin Geral */
-    if(sessao.nivel_acesso === 'admin_geral') {
+    /* Auditorias: Admin Geral OU CMT da Cia */
+    if(_podeAuditoria()) {
       const tabBtnAudit = document.getElementById('tab-btn-auditorias');
       if(tabBtnAudit) tabBtnAudit.style.display = '';
+      /* "Limpar todas" (destrutivo) permanece exclusivo do Admin Geral */
+      const _blimp = document.getElementById('btn-limpar-auditorias');
+      if(_blimp) _blimp.style.display = (sessao.nivel_acesso === 'admin_geral') ? '' : 'none';
     }
     /* Relatório de Monitoramento GDO Especializada para Admin Geral e Admin */
     if(['admin_geral','admin'].includes(sessao.nivel_acesso)) {
@@ -10993,11 +10996,19 @@ function verParecer(bo){
   abrirModal('modal-parecer');
 }
 
+/* Quem opera a AUDITORIA (gestão): Admin Geral OU CMT da Cia (por função).
+   O CMT Cia é identificado pela função, igual ao _oficio_escopo_total. */
+function _podeAuditoria(){
+  if(!sessao) return false;
+  if(sessao.nivel_acesso === 'admin_geral') return true;
+  const fn = sessao.funcao || '';
+  return /(cmt|comandante)/i.test(fn) && /\bcia\b/i.test(fn);
+}
 function abrirAuditoria(bo){
   _auditBoAtual = bo;
   const crime   = dadosCrimes.find(d => d.bo === bo || d.rat === bo);
   const saved   = auditoriasMap[bo];
-  const isAdmin = sessao?.nivel_acesso === 'admin_geral';
+  const isAdmin = _podeAuditoria();
 
   /* Limpa imagens anteriores ao abrir */
   limparImgsAuditoria();
@@ -11260,7 +11271,7 @@ function excluirSolicitacaoUsuario(){
   if(!_auditBoAtual) return;
 
   const saved = auditoriasMap[_auditBoAtual];
-  const isAdmin = sessao?.nivel_acesso === 'admin_geral';
+  const isAdmin = _podeAuditoria();
 
   if(!saved){
     alert('Não há solicitação para excluir.');
@@ -11367,7 +11378,7 @@ function _posAvaliacaoAdmin(decisao){
 }
 
 function limparTodasAuditorias(){
-  if(sessao?.perfil !== 'admin') return;
+  if(sessao?.nivel_acesso !== 'admin_geral'){ alert('Apenas o Admin Geral pode limpar todas as auditorias.'); return; }
   const total = Object.keys(auditoriasMap).filter(k => auditoriasMap[k]?.motivo || auditoriasMap[k]?.justificativa).length;
   if(!total){ alert('Não há solicitações para limpar.'); return; }
   if(!confirm(`Limpar TODAS as ${total} solicitações de auditoria?\n\nEsta ação não pode ser desfeita.`)) return;
@@ -11774,7 +11785,7 @@ function excluirSolicitacaoUsuario(){
   if(!_auditBoAtual) return;
 
   const saved = auditoriasMap[_auditBoAtual];
-  const isAdmin = sessao?.nivel_acesso === 'admin_geral';
+  const isAdmin = _podeAuditoria();
 
   if(!saved){
     alert('Não há solicitação para excluir.');
@@ -11815,7 +11826,7 @@ function excluirSolicitacaoUsuario(){
 }
 
 function limparTodasAuditorias(){
-  if(sessao?.perfil !== 'admin') return;
+  if(sessao?.nivel_acesso !== 'admin_geral'){ alert('Apenas o Admin Geral pode limpar todas as auditorias.'); return; }
   const total = Object.keys(auditoriasMap).filter(k => auditoriasMap[k]?.motivo || auditoriasMap[k]?.justificativa).length;
   if(!total){ alert('Não há solicitações para limpar.'); return; }
   if(!confirm(`Limpar TODAS as ${total} solicitações de auditoria?\n\nEsta ação não pode ser desfeita.`)) return;
