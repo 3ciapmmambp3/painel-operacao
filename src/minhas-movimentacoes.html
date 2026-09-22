@@ -260,11 +260,14 @@ function fmtData(r){
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 /* ── Filtros de gestão (grupamento + período) ─────────────────────────── */
-// gp_responsavel canônico da ficha (fallback: deriva do município do grupamento_completo).
+// gp_responsavel canônico da ficha p/ casar com o filtro. ATENÇÃO: em
+// mov_viaturas o campo gp_responsavel é a forma AMBÍGUA ("5º Gp PM MAmb", que se
+// repete nos 5 pelotões), então a chave confiável é o MUNICÍPIO — última parte
+// do grupamento_completo/lotação (igual à Gestão de Viaturas).
 function _rowGpr(r){
-  if(r.gp_responsavel) return r.gp_responsavel;
-  const muni = (r.grupamento_completo||'').split('/').pop();
-  return FrotaGrup.gprDeMunicipio(muni) || r.grupamento_completo || '';
+  const src = r.grupamento_completo || r.lotacao_motorista || '';
+  const g = FrotaGrup.gprDeMunicipio(src.split('/').pop());
+  return g || r.gp_responsavel || '';
 }
 function _fichaDataISO(r){
   const d = r.inicio ? new Date(r.inicio) : (r.criado_em ? new Date(r.criado_em) : null);
@@ -324,7 +327,8 @@ function render(){
     if (r.tem_acidente)      flags.push(_ba('ac','⚠ Acidente', PODE_GERIR?'acidentes.html':''));
     if (r.tem_manutencao)    flags.push(_ba('mn','🔧 Manut.', ''));
     const km = (r.km_rodados!=null) ? `${r.km_rodados} km` : '—';
-    const grupTxt = (r.grupamento_completo||r.gp_responsavel||'—').replace(/\s*\/\s*3 CIA PM MAMB.*/i,'');
+    const grupTxt = (r.grupamento_completo||r.gp_responsavel||'—').replace(/\s*\/\s*3 CIA PM MAMB.*/i,'')
+      .replace(/MARILIERIA/gi,'MARLIERIA').replace(/MOLEVADE/gi,'MONLEVADE');   // grafia de exibição
     return `<tr>
       <td>${fmtData(r)}</td>
       <td><span class="vtr">${esc(r.prefixo||'—')}</span>${x.mine?'<span class="mine-badge">MINHA</span>':''}<div class="sub">${esc(r.placa||'')}</div></td>
