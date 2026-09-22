@@ -6,6 +6,7 @@
 <title>Minhas Movimentações — 3ª Cia PM MAmb</title>
 <link rel="stylesheet" href="styles/global.css">
 <script src="auth.js"></script>
+<script src="frota-grupamentos.js"></script>
 <script src="topnav.js" data-ativo="p4"></script>
 <script src="secnav.js" data-secao="p4"></script>
 <style>
@@ -259,7 +260,12 @@ function fmtData(r){
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 /* ── Filtros de gestão (grupamento + período) ─────────────────────────── */
-function _grupKey(r){ return (r.grupamento_completo || r.gp_responsavel || '').trim(); }
+// gp_responsavel canônico da ficha (fallback: deriva do município do grupamento_completo).
+function _rowGpr(r){
+  if(r.gp_responsavel) return r.gp_responsavel;
+  const muni = (r.grupamento_completo||'').split('/').pop();
+  return FrotaGrup.gprDeMunicipio(muni) || r.grupamento_completo || '';
+}
 function _fichaDataISO(r){
   const d = r.inicio ? new Date(r.inicio) : (r.criado_em ? new Date(r.criado_em) : null);
   if (!d || isNaN(d)) return '';
@@ -269,16 +275,11 @@ function _fichaDataISO(r){
 function popularGrupamentos(){
   const sel=document.getElementById('f-grup'); if(!sel) return;
   const cur=sel.value;
-  // O dropdown mostra só os grupamentos que a pessoa enxerga (gestor vê todos
-  // pela aba "Todas (gestão)"; Admin Pelotão vê os do seu pelotão; etc.)
-  const src = PODE_GERIR ? ROWS : ROWS.filter(x=>x.mine||x.team);
-  const keys=[...new Set(src.map(x=>_grupKey(x.r)).filter(Boolean))]
-    .sort((a,b)=>a.localeCompare(b,'pt-BR'));
-  sel.innerHTML='<option value="">Todos os grupamentos</option>'+keys.map(k=>{
-    const disp=k.replace(/\s*\/\s*3 CIA PM MAMB\s*\/\s*/i,' / ');   // enxuga o rótulo
-    return `<option value="${esc(k)}">${esc(disp)}</option>`;
-  }).join('');
+  // Lista oficial completa (tabela grupos), organizada por pelotão em optgroups
+  // — igual ao filtro da Gestão de Viaturas. value = gp_responsavel.
+  sel.innerHTML='<option value="">Todos os grupamentos</option>'+FrotaGrup.options();
   sel.value=cur;                                   // preserva seleção ao recarregar
+  if(sel.value!==cur) sel.value='';
 }
 function limparFiltrosGestor(){
   ['f-grup','f-de','f-ate'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
@@ -296,7 +297,7 @@ function render(){
     if (FILTRO==='todas' && !(x.mine || x.team)) return false;
     // 'gestao' (só Aux P4/Admin): mostra TODAS as fichas, sem recorte de equipe.
     const r=x.r;
-    if (fg && _grupKey(r)!==fg) return false;
+    if (fg && !FrotaGrup.mesmoGpr(_rowGpr(r), fg)) return false;
     if (fde || fate){
       const di=_fichaDataISO(r);
       if (!di) return false;
@@ -425,7 +426,11 @@ async function carregar(){
     // Não-gestor só enxerga mine/team; o gestor (Aux P4/Admin) tem o chip "Todas (gestão)".
     ROWS = (Array.isArray(data)?data:[]).map(r=>({ r, mine: ehMinha(r), team: daMinhaEquipe(r) }));
     atualizaContadores();
-    if (VE_CIA){ const gf=document.getElementById('gfiltros'); if(gf) gf.style.display='flex'; popularGrupamentos(); }
+    if (VE_CIA){
+      const gf=document.getElementById('gfiltros'); if(gf) gf.style.display='flex';
+      if(!FrotaGrup.lista.length) await FrotaGrup.carregar(SB_AUTH_URL, SB_AUTH_KEY);   // lista oficial (tabela grupos)
+      popularGrupamentos();
+    }
     render();
   }catch(e){
     document.getElementById('loading') && (document.getElementById('tbody').innerHTML='');

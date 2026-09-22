@@ -49,9 +49,11 @@ window.FrotaGrup = (function(){
   }
 
   // <optgroup> por pelotão. value = gp_responsavel; rótulo = "Nº Gp · CIDADE".
-  function options(){
+  // pelFilter (opcional): nº do pelotão para listar só os Gp daquele pelotão.
+  function options(pelFilter){
+    const p = (pelFilter==null || pelFilter==='') ? null : +pelFilter;
     const byPel = {};
-    LISTA.forEach(x=>{ (byPel[x.pel]=byPel[x.pel]||[]).push(x); });
+    LISTA.forEach(x=>{ if(p!=null && x.pel!==p) return; (byPel[x.pel]=byPel[x.pel]||[]).push(x); });
     return Object.keys(byPel).map(Number).sort((a,b)=>a-b).map(p=>{
       const opts = byPel[p].map(x=>
         `<option value="${_esc(x.gpr)}">${_esc((x.gp!=null?x.gp+'º Gp · ':'')+x.cidade)}</option>`).join('');

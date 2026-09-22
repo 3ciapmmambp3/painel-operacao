@@ -14,6 +14,7 @@
   <title>Meus Relatórios — 3ª Cia PM MAmb</title>
   <link rel="stylesheet" href="styles/global.css">
   <script src="auth.js"></script>
+  <script src="frota-grupamentos.js"></script>
   <style>
     body{display:flex;flex-direction:column;min-height:100vh;}
     .mr-card{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:18px 20px;margin:20px;}
@@ -116,7 +117,7 @@
       <button class="btn-gold" onclick="window.location.href='relatorio-servico.html'">+ Lançar relatório</button>
     </div>
     <div class="mr-filtros" id="mr-filtros">
-      <select id="filtroFracao" class="mr-filtro-input"><option value="">Todas as Frações</option></select>
+      <select id="filtroFracao" class="mr-filtro-input"><option value="">Todos os grupamentos</option></select>
       <input type="date" id="filtroDataInicio" class="mr-filtro-input" title="Data início">
       <span style="color:var(--text-muted);font-size:12px;">até</span>
       <input type="date" id="filtroDataFim" class="mr-filtro-input" title="Data final">
@@ -219,13 +220,21 @@ let filtroChip = 'todas';   // todas | minhas | equipe | gestao
 const ehGestor = ['admin_geral','admin','admin_pelotao','admin_gp'].includes((sessao&&sessao.nivel_acesso)||'')
               || ((sessao&&sessao.funcao||'').toUpperCase().trim() === 'CMT CIA');
 
-// Preenche o filtro de Fração de Atuação com as frações que de fato aparecem
-// nos relatórios carregados (não precisa de outra chamada ao backend).
-function popularFiltroFracao(relatorios){
+// Preenche o filtro de grupamento com a lista oficial completa (tabela grupos),
+// organizada por pelotão em optgroups — igual ao filtro da Gestão de Viaturas.
+// value = gp_responsavel.
+function popularFiltroFracao(){
   const select = document.getElementById('filtroFracao');
-  const fracoes = Array.from(new Set(relatorios.map(r => r['Fração de Atuação']).filter(Boolean))).sort();
-  select.innerHTML = '<option value="">Todas as Frações</option>'
-    + fracoes.map(f => `<option value="${f}">${f}</option>`).join('');
+  const cur = select.value;
+  select.innerHTML = '<option value="">Todos os grupamentos</option>' + FrotaGrup.options();
+  select.value = cur;
+  if (select.value !== cur) select.value = '';
+}
+// gp_responsavel do relatório, derivado do município da Fração de Atuação
+// ("... / 3 CIA PM MAMB / CIDADE" → gp_responsavel).
+function _relGpr(r){
+  const fr = r['Fração de Atuação'] || '';
+  return FrotaGrup.gprDeMunicipio(fr.split('/').pop()) || '';
 }
 
 function aplicarFiltros(relatorios){
@@ -236,7 +245,7 @@ function aplicarFiltros(relatorios){
     // Chip: minhas (apareço) / equipe (não apareço) / todas|gestão (tudo visível)
     if (filtroChip === 'minhas' && !r.sou_eu) return false;
     if (filtroChip === 'equipe' && r.sou_eu) return false;
-    if (fracao && r['Fração de Atuação'] !== fracao) return false;
+    if (fracao && !FrotaGrup.mesmoGpr(_relGpr(r), fracao)) return false;
     if (dataInicio && (!r['Data'] || r['Data'] < dataInicio)) return false;
     if (dataFim && (!r['Data'] || r['Data'] > dataFim)) return false;
     return true;
@@ -386,7 +395,8 @@ async function carregarMeusRelatorios(){
 
     todosOsRelatorios = lista;
     paginaAtual = 1;
-    popularFiltroFracao(todosOsRelatorios);
+    if (!FrotaGrup.lista.length) await FrotaGrup.carregar(SB_AUTH_URL, SB_AUTH_KEY);   // lista oficial (tabela grupos)
+    popularFiltroFracao();
     atualizarContadoresChips();
     renderizarTabela();
   } catch(err){

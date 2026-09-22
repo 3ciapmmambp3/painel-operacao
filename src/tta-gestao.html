@@ -14,6 +14,7 @@
   <title>Gestão do TTA — 3ª Cia PM MAmb</title>
   <link rel="stylesheet" href="styles/global.css">
   <script src="auth.js"></script>
+  <script src="frota-grupamentos.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
   <style>
     body{display:flex;flex-direction:column;min-height:100vh;}
@@ -674,6 +675,7 @@ async function carregarChamadasAdmin(){
   corpo.innerHTML = '<tr><td colspan="10" class="hint">Carregando…</td></tr>';
   try{
     CHAMADAS_MES = await rpc('tta_listar_chamadas', { p_token: sessao.token, p_ano: admAno, p_mes: admMes }) || [];
+    if(!FrotaGrup.lista.length) await FrotaGrup.carregar(API, AKEY);   // lista oficial de grupamentos (tabela grupos)
     popularFiltrosChamadas();
     aplicarFiltrosChamadas();
   }catch(e){
@@ -684,26 +686,24 @@ async function carregarChamadasAdmin(){
 }
 
 /* ── Filtros dos lançamentos: pelotão / grupamento / período ─────────────
-   Só front-end, derivados do próprio mês carregado (sem RPC nova). O nº do
-   pelotão sai do texto do grupamento ("N PEL"), igual ao ttaPelotaoDoGp do
-   TTA. O grupamento é casado por gp_responsavel (exato). Datas comparadas em
+   Front-end. Pelotão + Grupamento saem da lista oficial (FrotaGrup / tabela
+   grupos), igual ao filtro da Gestão de Viaturas: o Grupamento é um único
+   select com optgroups por pelotão; o campo Pelotão enxuga essa lista. O
+   grupamento é casado por gp_responsavel (via FrotaGrup.mesmoGpr). Datas em
    America/Sao_Paulo (sv-SE => YYYY-MM-DD, ordem lexicográfica = cronológica). */
 function ttaPelotaoDoTexto(gc){ const m = String(gc||'').match(/(\d+)\s*PEL/i); return m ? +m[1] : null; }
-function _gpsDoMes(){
-  const map = new Map(); // gp_responsavel -> {gp, gc, pel}
-  (CHAMADAS_MES||[]).forEach(c=>{
-    const gp = c.gp_responsavel || c.grupamento_completo || '';
-    if(!gp || map.has(gp)) return;
-    map.set(gp, { gp, gc: c.grupamento_completo || gp, pel: ttaPelotaoDoTexto(c.grupamento_completo) });
-  });
-  return [...map.values()];
+// gp_responsavel canônico da chamada (fallback: deriva do município do grupamento_completo).
+function _chamadaGpr(c){
+  if(c && c.gp_responsavel) return c.gp_responsavel;
+  const muni = (c && c.grupamento_completo || '').split('/').pop();
+  return FrotaGrup.gprDeMunicipio(muni) || (c && c.grupamento_completo) || '';
 }
 function popularFiltrosChamadas(){
   const selPel = document.getElementById('fPelotao');
   const selGrp = document.getElementById('fGrupamento');
   if(!selPel || !selGrp) return;
   const pelAtual = selPel.value, grpAtual = selGrp.value;
-  const pels = [...new Set(_gpsDoMes().map(g=>g.pel).filter(p=>p!=null))].sort((a,b)=>a-b);
+  const pels = [...new Set(FrotaGrup.lista.map(g=>g.pel).filter(p=>p!=null))].sort((a,b)=>a-b);
   selPel.innerHTML = '<option value="">Todos os pelotões</option>' +
     pels.map(p=>`<option value="${p}">${p}º Pelotão</option>`).join('');
   if(pels.map(String).includes(pelAtual)) selPel.value = pelAtual;
@@ -714,12 +714,10 @@ function preencherGrupamentos(manter){
   const selGrp = document.getElementById('fGrupamento');
   if(!selPel || !selGrp) return;
   const pel = selPel.value ? +selPel.value : null;
-  let gps = _gpsDoMes();
-  if(pel!=null) gps = gps.filter(g=>g.pel===pel);
-  gps.sort((a,b)=>String(a.gc).localeCompare(String(b.gc),'pt'));
-  selGrp.innerHTML = '<option value="">Todos os grupamentos</option>' +
-    gps.map(g=>`<option value="${_escG(g.gp)}">${_escG(g.gc)}</option>`).join('');
-  selGrp.value = (manter && gps.some(g=>g.gp===manter)) ? manter : '';
+  selGrp.innerHTML = '<option value="">Todos os grupamentos</option>' + FrotaGrup.options(pel);
+  // preserva a seleção anterior se o Gp continuar na lista do pelotão atual
+  selGrp.value = manter || '';
+  if(selGrp.value !== (manter||'')) selGrp.value = '';
 }
 function onFiltroPelotao(){ preencherGrupamentos(document.getElementById('fGrupamento').value); aplicarFiltrosChamadas(); }
 function aplicarFiltrosChamadas(){
@@ -728,7 +726,7 @@ function aplicarFiltrosChamadas(){
   const de  = (document.getElementById('fDe')||{}).value || '';
   const ate = (document.getElementById('fAte')||{}).value || '';
   CHAMADAS_VIEW = (CHAMADAS_MES||[]).filter(c=>{
-    if(gp && (c.gp_responsavel||c.grupamento_completo) !== gp) return false;
+    if(gp && !FrotaGrup.mesmoGpr(_chamadaGpr(c), gp)) return false;
     if(pel && String(ttaPelotaoDoTexto(c.grupamento_completo)) !== pel) return false;
     if(de || ate){
       const ds = c.data_hora_chamada ? new Date(c.data_hora_chamada).toLocaleDateString('sv-SE') : '';
