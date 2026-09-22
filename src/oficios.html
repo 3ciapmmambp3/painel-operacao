@@ -150,13 +150,13 @@
   </div>
 
   <div class="toolbar">
-    <input type="text" id="busca" placeholder="Buscar por nº, assunto, emitente, destino, responsável…" oninput="render()">
-    <select id="f-tipo" onchange="render()">
+    <input type="text" id="busca" placeholder="Buscar por nº, assunto, emitente, destino, responsável…" oninput="filtrar()">
+    <select id="f-tipo" onchange="filtrar()">
       <option value="">Todos os tipos</option>
       <option value="Saída">Saída</option>
       <option value="Entrada">Entrada</option>
     </select>
-    <select id="f-sit" onchange="render()">
+    <select id="f-sit" onchange="filtrar()">
       <option value="">Todas as situações</option>
       <option value="REGISTRADO">Registrado</option>
       <option value="ARQUIVADO">Arquivado</option>
@@ -173,6 +173,7 @@
       <tbody id="tbody"><tr><td colspan="7" class="empty">Carregando…</td></tr></tbody>
     </table>
   </div>
+  <div id="pager" class="pager" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 2px 2px;font-size:12.5px;color:var(--text-hint,#9a9a9a);"></div>
 </div>
 
 <!-- Painel de detalhe / controle -->
@@ -331,11 +332,33 @@ function listaFiltrada(){
   if(q) lista=lista.filter(r=>[r.numero,r.num_externo,r.assunto,r.emitente,r.destino_ext,r.emitente_ext,r.destino_int,r.responsavel,r.grupamento_id].join(' ').toUpperCase().includes(q));
   return lista;
 }
+/* ── Paginação: 15 por página ────────────────────────────────────────── */
+const POR_PAGINA=15;
+let PAGINA=1;
+function filtrar(){ PAGINA=1; render(); }   // qualquer filtro/busca volta p/ a 1ª página
+function irPagina(n){ PAGINA=n; render(); try{document.querySelector('.tablewrap').scrollIntoView({behavior:'smooth',block:'start'});}catch(_){}}
+function montarPager(total,totalPag,ini,nNaPagina){
+  if(total<=POR_PAGINA) return `<div>${total} registro(s)</div>`;
+  const de=ini+1, ate=ini+nNaPagina;
+  return `<div>Mostrando <b>${de}–${ate}</b> de <b>${total}</b></div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <button class="tbtn" ${PAGINA<=1?'disabled style="opacity:.4;cursor:not-allowed;"':''} onclick="irPagina(${PAGINA-1})">‹ Anterior</button>
+      <span>Página <b>${PAGINA}</b> de <b>${totalPag}</b></span>
+      <button class="tbtn" ${PAGINA>=totalPag?'disabled style="opacity:.4;cursor:not-allowed;"':''} onclick="irPagina(${PAGINA+1})">Próxima ›</button>
+    </div>`;
+}
 function render(){
   const lista=listaFiltrada();
   const tb=document.getElementById('tbody');
-  if(!lista.length){ tb.innerHTML=`<tr><td colspan="7" class="empty">Nenhum ofício encontrado.</td></tr>`; return; }
-  tb.innerHTML=lista.map(r=>{
+  const pager=document.getElementById('pager');
+  if(!lista.length){ tb.innerHTML=`<tr><td colspan="7" class="empty">Nenhum ofício encontrado.</td></tr>`; if(pager) pager.innerHTML=''; return; }
+  const totalPag=Math.max(1,Math.ceil(lista.length/POR_PAGINA));
+  if(PAGINA>totalPag) PAGINA=totalPag;
+  if(PAGINA<1) PAGINA=1;
+  const ini=(PAGINA-1)*POR_PAGINA;
+  const pageItems=lista.slice(ini, ini+POR_PAGINA);
+  if(pager) pager.innerHTML=montarPager(lista.length, totalPag, ini, pageItems.length);
+  tb.innerHTML=pageItems.map(r=>{
     const tp=r.tipo==='Saída'?'<span class="badge b-saida">Saída</span>':'<span class="badge b-entrada">Entrada</span>';
     const nn=r.tipo==='Saída'?(r.numero||'—'):(r.num_externo?('ext. '+r.num_externo):'—');
     const sitCls='s-'+(r.situacao||'REGISTRADO');
