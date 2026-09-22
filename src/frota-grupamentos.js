@@ -25,6 +25,10 @@ window.FrotaGrup = (function(){
     return t.replace('MARILIERIA','MARLIERIA').replace('MOLEVADE','MONLEVADE');
   }
   function _canonGpr(s){ return _canon((s||'').replace(/^GP\s+/i,'')); }
+  // Grafia de EXIBIÇÃO (só o rótulo). A chave de casamento (_canon/gpr) continua
+  // na grafia do cadastro; aqui corrigimos apenas o texto que aparece na tela:
+  // MARILIERIA→MARLIERIA e (JOAO) MOLEVADE→(JOAO) MONLEVADE.
+  function _grafia(s){ return String(s==null?'':s).replace(/MARILIERIA/gi,'MARLIERIA').replace(/MOLEVADE/gi,'MONLEVADE'); }
   const _esc = s => (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
   async function carregar(apiUrl, apiKey){
@@ -56,7 +60,7 @@ window.FrotaGrup = (function(){
     LISTA.forEach(x=>{ if(p!=null && x.pel!==p) return; (byPel[x.pel]=byPel[x.pel]||[]).push(x); });
     return Object.keys(byPel).map(Number).sort((a,b)=>a-b).map(p=>{
       const opts = byPel[p].map(x=>
-        `<option value="${_esc(x.gpr)}">${_esc((x.gp!=null?x.gp+'º Gp · ':'')+x.cidade)}</option>`).join('');
+        `<option value="${_esc(x.gpr)}">${_esc((x.gp!=null?x.gp+'º Gp · ':'')+_grafia(x.cidade))}</option>`).join('');
       return `<optgroup label="${p}º Pelotão">${opts}</optgroup>`;
     }).join('');
   }

@@ -1842,15 +1842,19 @@ async function fetchReferenceData(){
   try{
     const data = await auth_fetchReferencias(SCRIPT_URL);
     gruposList = data.GRUPOS || [];
-    // Grafia de exibição do GP de Marliéria: a planilha (cadastro) foi digitada
-    // como "MARILIERIA" (com um I a mais). Aqui corrigimos APENAS o texto que o
-    // usuário vê/seleciona (nome do município correto). O casamento com as
-    // demandas continua funcionando porque normalizeText/resolveFracaoCanonica
-    // colapsam as duas grafias no mesmo GP. "MARILIERIA" não contém "MARLIERIA",
-    // então o replace é idempotente e nunca corrompe a grafia já correta.
+    // Grafia de exibição dos GP de Marliéria e João Monlevade: a planilha
+    // (cadastro) foi digitada como "MARILIERIA" (com um I a mais) e "JOAO
+    // MOLEVADE" (sem o N). Aqui corrigimos APENAS o texto que o usuário
+    // vê/seleciona (nome do município correto). O casamento com as demandas
+    // continua funcionando porque normalizeText/resolveFracaoCanonica colapsam
+    // as duas grafias no mesmo GP. "MARILIERIA" não contém "MARLIERIA" nem
+    // "MONLEVADE" contém "MOLEVADE", então os replaces são idempotentes e nunca
+    // corrompem a grafia já correta.
+    const _grafiaFracao = v => (typeof v === 'string'
+      ? v.replace(/MARILIERIA/g, 'MARLIERIA').replace(/MOLEVADE/g, 'MONLEVADE') : v);
     gruposList.forEach(g => {
-      if (g && typeof g.principal === 'string') g.principal = g.principal.replace(/MARILIERIA/g, 'MARLIERIA');
-      if (g && Array.isArray(g.variacoes)) g.variacoes = g.variacoes.map(v => (typeof v === 'string' ? v.replace(/MARILIERIA/g, 'MARLIERIA') : v));
+      if (g && typeof g.principal === 'string') g.principal = _grafiaFracao(g.principal);
+      if (g && Array.isArray(g.variacoes)) g.variacoes = g.variacoes.map(_grafiaFracao);
     });
     Object.assign(referenceCache, data);
     // OPERAÇÕES migraram para o painel (Supabase) — sobrescreve o que veio da planilha.

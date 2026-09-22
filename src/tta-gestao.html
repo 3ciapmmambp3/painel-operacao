@@ -746,6 +746,8 @@ function limparFiltrosChamadas(){
 
 // ── Excluir TTA (Aux P1/Admin — a própria página já é restrita) ──
 const _escG = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+// Grafia de exibição (só o texto): MARILIERIA→MARLIERIA, (JOAO) MOLEVADE→(JOAO) MONLEVADE.
+const _grafiaGP = s => String(s==null?'':s).replace(/MARILIERIA/gi,'MARLIERIA').replace(/MOLEVADE/gi,'MONLEVADE');
 const _milG = m => { if(!m) return '—'; return `${_escG(m.matricula||'')} — ${_escG((m.pg||'').toUpperCase())} — ${_escG((m.nome||'').toUpperCase())}`; };
 async function excluirChamadaTTA(id){
   const c = (CHAMADAS_MES||[]).find(x=>x.id===id); if(!c) return;
@@ -771,7 +773,7 @@ function imprimirChamadaTTA(id){
     const pats=(e.patrulheiros||[]).map(p=>`<div>${_milG(p)}</div>`).join('')||'<div>—</div>';
     const munis=(e.municipios||[]).join(', ')||'—';
     return `<div class="eqbox"><div class="eqh">Equipe ${e.ordem||i+1}${e.vinculo?` <span class="vinc">(${_escG(e.vinculo)})</span>`:''}</div>
-      <table class="t"><tr><td class="l">Grupamento de atuação</td><td>${_escG(e.grupamento_completo||c.grupamento_completo||'—')}</td></tr>
+      <table class="t"><tr><td class="l">Grupamento de atuação</td><td>${_escG(_grafiaGP(e.grupamento_completo||c.grupamento_completo)||'—')}</td></tr>
       <tr><td class="l">Comandante</td><td>${_milG(e.comandante)}</td></tr>
       <tr><td class="l">Viatura</td><td>${e.sem_viatura?'<i>Sem viatura (a pé / manutenção)</i>':_escG(e.prefixo_viatura||'—')}</td></tr>
       <tr><td class="l">Motorista</td><td>${e.sem_viatura?'—':_milG(e.motorista)}</td></tr>
@@ -817,7 +819,7 @@ function imprimirChamadaTTA(id){
     <table class="t">
       <tr><td class="l">Data</td><td>${dia}</td></tr>
       <tr><td class="l">Turno</td><td>${turno}</td></tr>
-      <tr><td class="l">Grupamento (Eq. 1)</td><td>${_escG(c.grupamento_completo||'—')}</td></tr>
+      <tr><td class="l">Grupamento (Eq. 1)</td><td>${_escG(_grafiaGP(c.grupamento_completo)||'—')}</td></tr>
       <tr><td class="l">Responsável pela chamada</td><td>${_identG(c.militar_resp_matricula, c.militar_resp_nome)}</td></tr>
       ${c.tema_assunto?`<tr><td class="l">Tema</td><td>${_escG(c.tema_assunto)}${c.tema_referencia?' — '+_escG(c.tema_referencia):''}</td></tr>`:''}
     </table>
@@ -864,7 +866,7 @@ function renderChamadasPage(){
 
   corpo.innerHTML = pagina.map(c => `
     <tr>
-      <td class="desc">${c.grupamento_completo||'—'}</td>
+      <td class="desc">${_grafiaGP(c.grupamento_completo)||'—'}</td>
       <td class="desc">${[c.militar_resp_matricula, c.militar_resp_nome].filter(Boolean).join(' - ')||'—'}</td>
       <td class="desc">${fmtDataHoraCompleta(c.data_hora_chamada)}</td>
       <td class="desc">${(c.militares_presentes||[]).length}</td>
@@ -906,7 +908,7 @@ function exportarCsvChamadas(){
     'Militares Presentes','Assunto','Referência','Início Turno','Fim Turno','Prefixo Viatura',
     'Tipo de Patrulha','Município(s)','Observações','Registrado em'];
   const linhas = CHAMADAS_VIEW.map(c => [
-    c.grupamento_completo, c.militar_resp_nome, c.militar_resp_matricula, fmtDataHoraCompleta(c.data_hora_chamada),
+    _grafiaGP(c.grupamento_completo), c.militar_resp_nome, c.militar_resp_matricula, fmtDataHoraCompleta(c.data_hora_chamada),
     (c.militares_presentes||[]).map(m=>[m.matricula,(m.pg||'').toUpperCase(),m.nome].filter(Boolean).join(' - ')).join('; '), c.tema_assunto, c.tema_referencia,
     (c.inicio_turno||'').slice(0,5), (c.final_turno||'').slice(0,5), c.prefixo_viatura,
     c.tipo_patrulha, (c.municipios_atuacao||[]).join('; '), c.observacoes, fmtDataHoraCompleta(c.created_at)
