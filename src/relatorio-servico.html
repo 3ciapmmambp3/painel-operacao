@@ -1767,27 +1767,70 @@ function quesitosEfetivos(opNome){
   const espec  = QUESITOS_OPERACAO.filter(q => q.escopo === 'especificas' && Array.isArray(q.operacoes) && q.operacoes.includes(opNome));
   return comuns.concat(espec);
 }
-// Campos de escopo 'produtividade' (sem operação) — vão no card "Produtividade".
-// Renderizados com data-prod-field p/ o coletor de produtividade capturá-los.
+// Renderiza UM quesito como campo do card "Produtividade" (data-prod-field, p/
+// o coletor de produtividade capturá-lo). Usado tanto pelos indicadores globais
+// (escopo 'produtividade') quanto pelos quesitos vinculados a uma operação.
+function _quesitoProdFieldHTML(q){
+  const req = q.obrigatorio ? ' data-required="1"' : '';
+  const lab = ` data-label="${_escQ(q.label)}"`;
+  const pf  = ` data-prod-field="${_escQ(q.label)}"`;
+  let ctrl, labelTxt = _escQ(q.label);
+  switch(q.tipo){
+    case 'numero':      ctrl = `<input type="number" step="1" inputmode="numeric" placeholder="0"${pf} data-prod-tipo="Inteiro"${req}${lab}>`; break;
+    case 'decimal':     ctrl = `<input type="number" step="0.01" inputmode="decimal" placeholder="0"${pf} data-prod-tipo="Decimal"${req}${lab}>`; break;
+    case 'moeda':       ctrl = `<input type="number" step="0.01" inputmode="decimal" placeholder="0,00"${pf} data-prod-tipo="Moeda"${req}${lab}>`; labelTxt += ' (R$)'; break;
+    case 'data':        ctrl = `<input type="date"${pf} data-prod-tipo="Texto"${req}${lab}>`; break;
+    case 'texto_longo': ctrl = `<textarea rows="2"${pf} data-prod-tipo="Texto"${req}${lab}></textarea>`; break;
+    case 'sim_nao':     ctrl = `<select${pf} data-prod-tipo="Texto"${req}${lab}><option value="">Selecione...</option><option>Sim</option><option>Não</option></select>`; break;
+    case 'opcoes':      ctrl = `<select${pf} data-prod-tipo="Texto"${req}${lab}><option value="">Selecione...</option>${(q.opcoes||[]).map(o=>`<option>${_escQ(o)}</option>`).join('')}</select>`; break;
+    default:            ctrl = `<input type="text"${pf} data-prod-tipo="Texto"${req}${lab}>`;
+  }
+  return `<div class="field productivity-item"><label>${labelTxt}</label>${ctrl}</div>`;
+}
+// Campos de escopo 'produtividade' (indicadores globais, sem operação) ATIVOS.
 function _prodCatalogFieldsHTML(){
   const items = (QUESITOS_OPERACAO || []).filter(q => q.escopo === 'produtividade' && q.ativo !== false);
-  return items.map(q => {
-    const req = q.obrigatorio ? ' data-required="1"' : '';
-    const lab = ` data-label="${_escQ(q.label)}"`;
-    const pf  = ` data-prod-field="${_escQ(q.label)}"`;
-    let ctrl, labelTxt = _escQ(q.label);
-    switch(q.tipo){
-      case 'numero':      ctrl = `<input type="number" step="1" inputmode="numeric" placeholder="0"${pf} data-prod-tipo="Inteiro"${req}${lab}>`; break;
-      case 'decimal':     ctrl = `<input type="number" step="0.01" inputmode="decimal" placeholder="0"${pf} data-prod-tipo="Decimal"${req}${lab}>`; break;
-      case 'moeda':       ctrl = `<input type="number" step="0.01" inputmode="decimal" placeholder="0,00"${pf} data-prod-tipo="Moeda"${req}${lab}>`; labelTxt += ' (R$)'; break;
-      case 'data':        ctrl = `<input type="date"${pf} data-prod-tipo="Texto"${req}${lab}>`; break;
-      case 'texto_longo': ctrl = `<textarea rows="2"${pf} data-prod-tipo="Texto"${req}${lab}></textarea>`; break;
-      case 'sim_nao':     ctrl = `<select${pf} data-prod-tipo="Texto"${req}${lab}><option value="">Selecione...</option><option>Sim</option><option>Não</option></select>`; break;
-      case 'opcoes':      ctrl = `<select${pf} data-prod-tipo="Texto"${req}${lab}><option value="">Selecione...</option>${(q.opcoes||[]).map(o=>`<option>${_escQ(o)}</option>`).join('')}</select>`; break;
-      default:            ctrl = `<input type="text"${pf} data-prod-tipo="Texto"${req}${lab}>`;
-    }
-    return `<div class="field productivity-item"><label>${labelTxt}</label>${ctrl}</div>`;
-  }).join('');
+  return items.map(_quesitoProdFieldHTML).join('');
+}
+
+// ---- Quesitos vinculados à(s) operação(ões) escolhida(s) → card Produtividade ----
+// Lê os .op-select do card "Operação" (mesmo com o modal fechado, via panelCache).
+function _opSelectsAll(){
+  const node = (typeof panelCache !== 'undefined' && panelCache && panelCache['operacao']) || document;
+  return Array.from(node.querySelectorAll('.op-select'));
+}
+function _temOperacaoSelecionada(){
+  return _opSelectsAll().some(s => (s.value||'').trim() !== '');
+}
+// Quesitos que devem cair no card Produtividade por causa da operação: os comuns
+// ('todas', uma vez, se há qualquer operação) + os específicos de cada operação
+// selecionada. Dedupe por rótulo e ignora os que já são indicador global ativo
+// (senão haveria data-prod-field duplicado).
+function _operacaoQuesitosEfetivos(){
+  const arr = QUESITOS_OPERACAO || [];
+  const globaisAtivos = arr.filter(q => q.escopo === 'produtividade' && q.ativo !== false).map(q => (q.label||'').toLowerCase());
+  const seen = new Set(globaisAtivos);
+  const out = [];
+  const selects = _opSelectsAll();
+  const temAlguma = selects.some(s => (s.value||'').trim() !== '');
+  if (temAlguma){
+    arr.filter(q => q.escopo === 'todas' && q.ativo !== false).forEach(q => {
+      const k = (q.label||'').toLowerCase(); if (!seen.has(k)){ seen.add(k); out.push(q); }
+    });
+  }
+  const opsSel = selects.map(s => (s.value||'').trim()).filter(v => v && v !== 'OUTRA OPERAÇÃO NÃO DESCRITA ACIMA');
+  opsSel.forEach(op => {
+    arr.filter(q => q.escopo === 'especificas' && q.ativo !== false && Array.isArray(q.operacoes) && q.operacoes.includes(op)).forEach(q => {
+      const k = (q.label||'').toLowerCase(); if (!seen.has(k)){ seen.add(k); out.push(q); }
+    });
+  });
+  return out;
+}
+function _operacaoQuesitosProdHTML(){
+  const lista = _operacaoQuesitosEfetivos();
+  if (!lista.length) return '';
+  const header = `<div class="productivity-item" style="grid-column:1/-1;margin:2px 0 -2px;font-size:11px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:#42a5f5;border-top:1px dashed var(--border-mid,#4a4a4a);padding-top:10px">📋 Quesitos da operação</div>`;
+  return header + lista.map(_quesitoProdFieldHTML).join('');
 }
 function _quesitoCtrlHTML(q){
   const a = `${q.obrigatorio ? ' data-required="1"' : ''} data-label="${_escQ(q.label)}"`;
@@ -1803,26 +1846,10 @@ function _quesitoCtrlHTML(q){
   }
 }
 function renderQuesitosNaEntrada(entry){
-  if (!entry) return;
-  entry.querySelectorAll('.op-ques-node').forEach(n => n.remove());
-  const sel = entry.querySelector('.op-select');
-  const op = sel ? sel.value : '';
-  if (!op || op === 'OUTRA OPERAÇÃO NÃO DESCRITA ACIMA'){
-    // "OUTRA" ainda recebe os quesitos comuns (valem para todas as operações)
-  }
-  const lista = quesitosEfetivos(op);
-  if (!lista.length) return;
-  const header = document.createElement('div');
-  header.className = 'op-ques-node op-ques-header';
-  header.textContent = '📋 Quesitos da operação';
-  entry.appendChild(header);
-  lista.forEach(q => {
-    const div = document.createElement('div');
-    div.className = 'field op-ques-node' + (q.obrigatorio ? ' op-ques-req' : '');
-    const tag = q.escopo === 'especificas' ? '<span class="q-tag esp">só nesta</span>' : '<span class="q-tag todas">todas</span>';
-    div.innerHTML = `<label>${_escQ(q.label)}</label>${tag}${_quesitoCtrlHTML(q)}`;
-    entry.appendChild(div);
-  });
+  // Os quesitos da operação agora são preenchidos no card "Produtividade"
+  // (ver _operacaoQuesitosProdHTML / buildProdutividadePanel). O card "Operação"
+  // fica apenas como seletor da operação — aqui só limpamos nós antigos, se houver.
+  if (entry) entry.querySelectorAll('.op-ques-node').forEach(n => n.remove());
 }
 (function ensureQuesitoCss(){
   if (document.getElementById('op-ques-css')) return;
@@ -2783,11 +2810,14 @@ function countForCategory(id){
   return 0;
 }
 
-// Produtividade sem NENHUM indicador ativo no catálogo → card inativo.
+// Card Produtividade inativo (SEM INDICADORES) só quando não há NADA a preencher:
+// nem quesito vindo da operação selecionada, nem indicador global ativo.
 function _produtividadeSemAtivos(){
+  if (_operacaoQuesitosEfetivos().length) return false;   // operação escolhida traz quesitos
   const arr = (typeof QUESITOS_OPERACAO !== 'undefined' && QUESITOS_OPERACAO) || [];
   const prod = arr.filter(q => q.escopo === 'produtividade');
-  return prod.length > 0 && !prod.some(q => q.ativo !== false);   // configurado, mas nenhum ativo
+  if (prod.some(q => q.ativo !== false)) return false;    // há indicador global ativo
+  return prod.length > 0;   // catálogo configurado, mas nada ativo e sem operação com quesito
 }
 function renderGrid(){
   grid.innerHTML = '';
@@ -2865,6 +2895,31 @@ function openModal(id){
 function closeModal(){
   modalOverlay.classList.remove('open');
   currentModalId = null;
+  renderGrid();
+}
+
+// Os quesitos da operação vivem no card "Produtividade"; quando as operações
+// mudam, rebuilda esse card. Preserva valores já digitados casando pelo rótulo
+// (data-prod-field) e, se o modal de Produtividade estiver aberto, o reexibe.
+function refreshProdutividadePanel(){
+  const old = panelCache['produtividade'];
+  const vals = {};
+  if (old){
+    old.querySelectorAll('[data-prod-field]').forEach(inp => {
+      if ((inp.value||'').toString().trim() !== '') vals[inp.dataset.prodField] = inp.value;
+    });
+  }
+  delete panelCache['produtividade'];
+  const node = getOrCreatePanelNode('produtividade');
+  node.querySelectorAll('[data-prod-field]').forEach(inp => {
+    const v = vals[inp.dataset.prodField];
+    if (v !== undefined) inp.value = v;
+  });
+  if (currentModalId === 'produtividade'){
+    modalBody.innerHTML = '';
+    modalBody.appendChild(node);
+    refreshAutoCalcFields(node);
+  }
   renderGrid();
 }
 
@@ -3121,7 +3176,7 @@ function bindOperacaoEvents(panel){
     renderQuesitosNaEntrada(entry);
     select.addEventListener('change', () => {
       outraField.style.display = select.value === 'OUTRA OPERAÇÃO NÃO DESCRITA ACIMA' ? 'block' : 'none';
-      renderQuesitosNaEntrada(entry);
+      refreshProdutividadePanel();   // os quesitos da operação alimentam o card Produtividade
     });
     // Reaplica o filtro se a Data (bloco 1) mudar depois.
     const dataInput = document.getElementById('dataServico');
@@ -3153,7 +3208,7 @@ function bindOperacaoEvents(panel){
     panel.querySelector('#addOperacao').before(div);
     bindEntry(div);
     bindUppercaseIn(div);
-    div.querySelector('.entry-remove').addEventListener('click', () => div.remove());
+    div.querySelector('.entry-remove').addEventListener('click', () => { div.remove(); refreshProdutividadePanel(); });
   });
 }
 
@@ -3184,7 +3239,7 @@ function preencherOperacoesDoTTA(ops){
     }
     renderQuesitosNaEntrada(entry);
   });
-  renderGrid(); // atualiza a contagem no card "Operação"
+  refreshProdutividadePanel(); // operações do TTA → quesitos no card Produtividade + atualiza contagem
 }
 
 // Pré-preenche o card "PAF" a partir do PAF escolhido no TTA de hoje.
@@ -3213,21 +3268,22 @@ function preencherPafDoTTA(pafs){
 
 // ---------- Exemplo completo: PRODUTIVIDADE (dinâmico) ----------
 function buildProdutividadePanel(){
-  const catalogFields = _prodCatalogFieldsHTML();   // campos escopo 'produtividade' ATIVOS (painel)
+  const opFields = _operacaoQuesitosProdHTML();     // quesitos da(s) operação(ões) escolhida(s)
+  const catalogFields = _prodCatalogFieldsHTML();   // indicadores globais 'produtividade' ATIVOS (painel)
   // O catálogo do painel (Campos & Quesitos) é a fonte quando ESTÁ CONFIGURADO
   // (tem ao menos um campo de produtividade, ativo ou não). Só cai no fallback da
   // planilha quando o catálogo ainda NÃO foi semeado.
   const catalogoConfigurado = (QUESITOS_OPERACAO || []).some(q => q.escopo === 'produtividade');
 
-  // Catálogo configurado, mas NENHUM campo ativo → nada a preencher (não usa a planilha).
-  if (catalogoConfigurado && !catalogFields){
-    return `<p class="placeholder-note">Não há indicadores de produtividade ativos para preencher.
-      <br><span style="font-size:11px;color:var(--muted)">O administrador pode ativá-los em <b>Campos &amp; Quesitos</b>.</span></p>`;
+  // Catálogo configurado, sem indicador global ativo E sem quesito de operação → nada a preencher.
+  if (catalogoConfigurado && !catalogFields && !opFields){
+    return `<p class="placeholder-note">Escolha uma operação no card <b>Operação</b> para preencher os quesitos dela.
+      <br><span style="font-size:11px;color:var(--muted)">Sem operação, o card só mostra indicadores globais de produtividade ativos em <b>Campos &amp; Quesitos</b>.</span></p>`;
   }
 
-  const camposReais = catalogFields ? [] : (referenceCache.CAMPOS_PRODUTIVIDADE || []).filter(c => c.status !== 'Inativo');
+  const camposReais = (catalogFields || opFields) ? [] : (referenceCache.CAMPOS_PRODUTIVIDADE || []).filter(c => c.status !== 'Inativo');
 
-  if (!camposReais.length && !catalogFields){
+  if (!camposReais.length && !catalogFields && !opFields){
     return `<p class="placeholder-note">
       Não foi possível carregar os indicadores da aba CAMPOS_PRODUTIVIDADE.
       Recarregue a página e tente novamente.
@@ -3266,7 +3322,7 @@ function buildProdutividadePanel(){
   }).join('');
 
   return `
-    <div class="productivity-grid">${fields}${catalogFields}</div>
+    <div class="productivity-grid">${opFields}${fields}${catalogFields}</div>
   `;
 }
 
@@ -3594,9 +3650,10 @@ function validateRequiredFields(){
     errors.push('Motorista (obrigatório porque há Viatura Principal informada em Recursos Empregados)');
   }
   /* Operação vinculada → o card Produtividade precisa de ao menos 1 campo preenchido */
-  const _temOperacao = Array.from(document.querySelectorAll('.op-select')).some(s => (s.value||'').trim() !== '');
+  const _temOperacao = _temOperacaoSelecionada();
   if (_temOperacao){
-    const _prodOk = Array.from(document.querySelectorAll('[data-prod-field]')).some(el => fieldHasValue(el));
+    const _prodNode = panelCache['produtividade'];
+    const _prodOk = _prodNode ? Array.from(_prodNode.querySelectorAll('[data-prod-field]')).some(el => fieldHasValue(el)) : false;
     if (!_prodOk) errors.push('Produtividade — há operação vinculada; preencha ao menos um campo no card "Produtividade"');
   }
   return errors;
