@@ -1445,10 +1445,33 @@ async function linksRemover(id, nome){
 async function quesitosInit(){
   if(qsIniciado) return; qsIniciado = true;
   document.getElementById('qsList').innerHTML = '<div class="q-empty">Carregando…</div>';
-  // operações (da planilha de referências) p/ o vínculo
+  // operações p/ o vínculo: cadastradas no painel (Supabase, só as vigentes) + planilha (legado)
   try{
-    const ref = await auth_fetchReferencias(QS_SCRIPT_URL);
-    QS_OPERACOES = (ref.OPERACOES||[]).map(o=>o.value).filter(v=>v && v.indexOf('OUTRA')===-1);
+    let doBanco = [];   // linhas com datas (têm situação)
+    try{
+      const rows = await sbRpc('operacoes_listar', {});
+      doBanco = Array.isArray(rows) ? rows : [];
+    }catch(e){ console.warn('operações (banco) p/ quesitos:', e); }
+    let daPlanilha = [];
+    try{
+      const ref = await auth_fetchReferencias(QS_SCRIPT_URL);
+      daPlanilha = (ref.OPERACOES||[]).map(o=>o.value);
+    }catch(e){ console.warn('operações (planilha) p/ quesitos:', e); }
+    // nomes já cadastrados no painel (qualquer situação) — a planilha não repete esses
+    const nomesBanco = new Set(doBanco.map(o=>(o.nome||'').trim().toLowerCase()).filter(Boolean));
+    // do banco: só as que NÃO estão encerradas (ativa, futura ou sem data). Reativar (mudar datas) faz voltar.
+    const bancoNomes = doBanco
+      .filter(o => opSituacao(o)[0] !== 'encerrada')
+      .map(o => (o.nome||'').trim());
+    // da planilha: só nomes legados que não existem no painel (sem data p/ filtrar situação)
+    const planilhaNomes = daPlanilha
+      .map(v => (v||'').trim())
+      .filter(v => v && !nomesBanco.has(v.toLowerCase()));
+    const vistos = new Set();
+    QS_OPERACOES = [...bancoNomes, ...planilhaNomes]
+      .map(v=>(v||'').trim())
+      .filter(v=>v && v.indexOf('OUTRA')===-1)
+      .filter(v=>{ const k=v.toLowerCase(); if(vistos.has(k)) return false; vistos.add(k); return true; });
     document.getElementById('qs-operacoes-dl').innerHTML = QS_OPERACOES.map(o=>`<option value="${o.replace(/"/g,'&quot;')}">`).join('');
   }catch(e){ console.warn('operações p/ quesitos:', e); }
   // catálogo de quesitos
