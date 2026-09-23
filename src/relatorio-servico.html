@@ -2205,7 +2205,7 @@ function calcApoioViaturasCount(){
 function calcTotalViaturas(entry){
   let count = 0;
   const principal = entry.querySelector('[data-field="viaturaPrincipal"]');
-  if (principal && principal.value.trim()) count += 1;
+  if (principal && !_ehSemViatura(principal.value)) count += 1;   // "NÃO HÁ" não conta
   count += calcApoioViaturasCount();
   return count;
 }
@@ -2346,11 +2346,23 @@ async function garantirHodometroDaFicha(){
   }
 }
 
+// "Sem viatura" — equipe trabalhou A PÉ. Cobre o vazio e o marcador "NÃO HÁ"
+// (e variações) escolhido no card Recursos Empregados. Serve p/ NÃO contar como
+// viatura nem exigir Ficha de Movimentação. Normaliza acentos/caixa.
+function _ehSemViatura(v){
+  // Normaliza: tira acentos, traços de formatação ("-- NÃO HÁ - -") e espaços extra.
+  let s = (v || '').toString().normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase();
+  s = s.replace(/[-–—]/g,' ').replace(/\s+/g,' ').trim();
+  if (!s) return true;
+  return s === 'NAO HA' || s === 'NAO HA VIATURA' || s === 'SEM VIATURA' || s === 'A PE';
+}
+
 function getViaturaPrincipal(){
   const node = panelCache['recursos'];
   if (!node) return '';
   const input = node.querySelector('[data-field="viaturaPrincipal"]');
-  return input ? input.value.trim() : '';
+  const v = input ? input.value.trim() : '';
+  return _ehSemViatura(v) ? '' : v;   // "NÃO HÁ" = sem viatura (trabalhou a pé)
 }
 
 // Só o PREFIXO da viatura ("28145 - Toyota / Hilux - QMV1116" → "28145").
