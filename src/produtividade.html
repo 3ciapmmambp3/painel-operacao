@@ -314,7 +314,6 @@ async function carregarTudo(){
     camposNumericos = camposProdutividade.filter(c => c.tipo !== 'Texto');
     tipoPorNome = {};
     camposProdutividade.forEach(c => { tipoPorNome[c.nome] = c.tipo; });
-    const operacoes = refRes.OPERACOES || [];
 
     if (prodRes.result !== 'success'){
       document.getElementById('prod-conteudo').innerHTML = '<div class="mr-empty">Erro ao carregar dados de produtividade.</div>';
@@ -324,7 +323,7 @@ async function carregarTudo(){
     // Escopo de visualização por nível de acesso (mesma regra do resto do sistema).
     todosOsRegistros = (prodRes.produtividade || []).filter(r => auth_podeVerGrupamento(sessao, r['Fração de Atuação']));
 
-    popularFiltroOperacao(operacoes);
+    popularFiltroOperacao(await carregarOperacoesSupabaseProd());
     popularFiltroFracao();
 
     // Por padrão, mostra o dia ANTERIOR (o turno normalmente só termina no
@@ -341,10 +340,36 @@ async function carregarTudo(){
   }
 }
 
-function popularFiltroOperacao(operacoes){
+// Operações do painel (Supabase) — fonte do cadastro (aba "Nova Operação").
+// Traz TODAS (inclusive encerradas), pois este é um filtro de EXTRAÇÃO de dados
+// históricos: pode-se querer filtrar por uma operação já finalizada. Best-effort:
+// se o Supabase falhar, o filtro ainda se monta a partir dos próprios registros.
+async function carregarOperacoesSupabaseProd(){
+  try{
+    if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return [];
+    const H = { apikey: SB_AUTH_KEY, Authorization:`Bearer ${SB_AUTH_KEY}`, 'Content-Type':'application/json' };
+    const r = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/operacoes_listar`, { method:'POST', headers:H, body:'{}' });
+    if (!r.ok) throw new Error('HTTP '+r.status);
+    const rows = await r.json();
+    return Array.isArray(rows) ? rows.map(o => (o.nome||'').trim()).filter(Boolean) : [];
+  }catch(e){ console.warn('[produtividade] operacoes_listar indisponível:', e); return []; }
+}
+
+// Monta o filtro de Operação SEM depender da planilha: une o cadastro do painel
+// (Supabase) com os nomes que realmente aparecem nos registros carregados. Assim,
+// criar/excluir operação no painel reflete aqui na hora e operações legadas (nomes
+// antigos gravados nos registros) continuam filtráveis.
+function popularFiltroOperacao(operacoesSupabase){
   const select = document.getElementById('filtroOperacao');
-  const nomes = Array.from(new Set(operacoes.map(o => o.value).filter(Boolean))).sort();
+  const atual = select.value;
+  const dosRegistros = todosOsRegistros.flatMap(r => Array.isArray(r['Operações']) ? r['Operações'] : []);
+  const nomes = Array.from(new Set(
+      [...(operacoesSupabase||[]), ...dosRegistros]
+        .map(n => (n||'').trim())
+        .filter(n => n && n.indexOf('OUTRA') === -1)
+    )).sort((a,b) => a.localeCompare(b, 'pt-BR'));
   select.innerHTML = '<option value="">Todas</option>' + nomes.map(n => `<option value="${n}">${n}</option>`).join('');
+  if (nomes.includes(atual)) select.value = atual;
 }
 
 function popularFiltroFracao(){
