@@ -618,7 +618,6 @@ function renderizarTudo(){
     <div class="kpi-grid">
       <div class="kpi-card"><div class="kv">${totalTurnos}</div><div class="kl">Turnos com Produtividade</div></div>
       <div class="kpi-card"><div class="kv">${fracoesUnicas.size}</div><div class="kl">Frações Atendidas</div></div>
-      <div class="kpi-card"><div class="kv">${equipesUnicas.size}</div><div class="kl">Equipes Distintas</div></div>
       <div class="kpi-card"><div class="kv">${totalMilitares}</div><div class="kl">Militares Empregados (soma)</div></div>
       <div class="kpi-card"><div class="kv">${totalViaturas}</div><div class="kl">Viaturas Empregadas (soma)</div></div>
     </div>
@@ -640,17 +639,6 @@ function renderizarTudo(){
       </div>`}
     </div>
 
-    <div class="secao-titulo">🏆 Ranking por Equipe</div>
-    <div class="chart-box" id="prod-ranking-equipe">
-      ${!camposRanking.length ? '<div class="mr-empty">Nenhum indicador numérico ativo para esta operação em Campos &amp; Quesitos.</div>' : `
-      <div style="overflow-x:auto;">
-      <table class="prod-table">
-        <thead><tr><th>#</th><th>Fração / Equipe</th><th>Turnos</th>${camposRanking.map(c => `<th>${iconeECor_(c.nome).icone} ${c.nome}</th>`).join('')}</tr></thead>
-        <tbody>${rankingEquipe.map(([f,v],i) => `<tr><td><span class="rank-pos">${i+1}</span></td><td>${f}</td><td>${v.turnos.size}</td>${camposRanking.map(c => `<td>${formatarValorPorTipo_(v.valores[c.nome], c.nome)}</td>`).join('')}</tr>`).join('')}</tbody>
-      </table>
-      </div>`}
-    </div>
-
     <div class="secao-titulo">🎯 Indicadores de Desempenho</div>
     <div class="indicadores-calc">
       ${indicadoresCalc.map(ic => `<div class="indicador-calc"><div class="ic-val">${ic.val}</div><div class="ic-lbl">${ic.lbl}</div></div>`).join('')}
@@ -659,12 +647,12 @@ function renderizarTudo(){
     <div class="secao-titulo">📋 Relatórios do Período</div>
     <div id="prod-lista-tabela">
       <table class="prod-table detalhe">
-        <thead><tr><th>Data</th><th>Fração</th><th>Equipe</th><th>Comandante</th><th>Operação</th>${camposTexto.map(c => `<th>${_escHtml_(c.nome)}</th>`).join('')}</tr></thead>
+        <thead><tr><th>Data</th><th>Fração</th><th>Comandante</th><th>Tipo de Serviço</th><th>Operação</th>${camposTexto.map(c => `<th>${_escHtml_(c.nome)}</th>`).join('')}</tr></thead>
         <tbody>${dados.map(r => `<tr>
           <td>${formatarDataBR_(r['Data'])}</td>
           <td>${r['Fração de Atuação']||'—'}</td>
-          <td>${r['Equipe']||'—'}</td>
           <td>${r['Comandante']||'—'}</td>
+          <td>${_escHtml_(r['Tipo de Serviço'])||'—'}</td>
           <td>${(r['Operações']||[]).join(', ')||'—'}</td>
           ${camposTexto.map(c => `<td>${_escHtml_(r[c.nome]) || '—'}</td>`).join('')}
         </tr>`).join('')}</tbody>
@@ -945,13 +933,14 @@ document.getElementById('btnExportPdf').addEventListener('click', async () => {
       const top = totOrd.slice(0, 6);
       const outros = totOrd.slice(6).reduce((s,[,v]) => s+v, 0);
       const comp = outros > 0 ? [...top, ['Outros', outros]] : top;
+      const totalComp = comp.reduce((s,[,v]) => s+v, 0);
       const g = gerarGrafico_('doughnut', {
-        labels: comp.map(([k]) => truncar_(k, 22)),
+        labels: comp.map(([k,v]) => `${truncar_(k, 18)}: ${formatarNumero_(v)} (${totalComp ? Math.round(v/totalComp*100) : 0}%)`),
         datasets: [{ data: comp.map(([,v]) => v), backgroundColor: PALETA, borderColor:'#fff', borderWidth:2 }],
       }, {
-        plugins:{ legend:{ position:'right', labels:{ color:'#222', font:{ size:17 }, boxWidth:20, padding:11 } } },
+        plugins:{ legend:{ position:'right', labels:{ color:'#222', font:{ size:15 }, boxWidth:18, padding:9 } } },
         cutout:'55%',
-      }, 1000, 560);
+      }, 1150, 560);
       if (g) graf.push({ t:'Composição da Produção', ...g });
     }
     // 3) Linha — Produtividade por dia
