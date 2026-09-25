@@ -582,6 +582,9 @@ function renderizarTudo(){
   const idsUnicos = new Set(dados.map(r => r['ID Relatório']));
   const totalTurnos = idsUnicos.size;
   const fracoesUnicas = new Set(dados.map(r => r['Fração de Atuação']).filter(Boolean));
+  // Equipe = grupo sob um comandante. Conta comandantes distintos (o campo
+  // "Comandante" vem do relatório; um mesmo comandante em vários turnos = 1 equipe).
+  const equipesUnicas = new Set(dados.map(r => (r['Comandante']||'').trim()).filter(Boolean));
   const totalMilitares = dados.reduce((s,r) => s + (parseNum_(r['Total de Militares (Geral)'])||0), 0);
   const totalViaturas = dados.reduce((s,r) => s + (parseNum_(r['Total de Viaturas (Geral)'])||0), 0);
   const datas = dados.map(r => r['Data']).filter(Boolean).sort();
@@ -590,7 +593,7 @@ function renderizarTudo(){
   // ---- Resumo executivo ----
   const topIndicadores = Object.entries(totais).filter(([,v]) => v>0).sort((a,b)=>b[1]-a[1]).slice(0,5);
   const resumoTexto = topIndicadores.length
-    ? `Entre <b>${formatarDataBR_(periodoIni)}</b> e <b>${formatarDataBR_(periodoFim)}</b>, foram empregados <b>${totalTurnos}</b> turno${totalTurnos!==1?'s':''} em <b>${fracoesUnicas.size}</b> fração${fracoesUnicas.size!==1?'ões':''} de atuação, resultando em: `
+    ? `Entre <b>${formatarDataBR_(periodoIni)}</b> e <b>${formatarDataBR_(periodoFim)}</b>, foram empregadas <b>${equipesUnicas.size}</b> equipe${equipesUnicas.size!==1?'s':''} em <b>${fracoesUnicas.size}</b> fração${fracoesUnicas.size!==1?'ões':''} de atuação, resultando em: `
       + topIndicadores.map(([k,v]) => `<b>${formatarNumero_(v)}</b> ${k.toLowerCase()}`).join(' · ') + '.'
     : `Nenhum indicador de Produtividade preenchido no período selecionado.`;
 
@@ -683,6 +686,7 @@ function renderizarTudo(){
     <div class="secao-titulo">📊 Estatísticas do Período</div>
     <div class="kpi-grid">
       <div class="kpi-card"><div class="kv">${totalTurnos}</div><div class="kl">Turnos com Produtividade</div></div>
+      <div class="kpi-card"><div class="kv">${equipesUnicas.size}</div><div class="kl">Equipes (por comandante)</div></div>
       <div class="kpi-card"><div class="kv">${fracoesUnicas.size}</div><div class="kl">Frações Atendidas</div></div>
       <div class="kpi-card"><div class="kv">${totalMilitares}</div><div class="kl">Militares Empregados (soma)</div></div>
       <div class="kpi-card"><div class="kv">${totalViaturas}</div><div class="kl">Viaturas Empregadas (soma)</div></div>
@@ -741,7 +745,7 @@ function renderizarTudo(){
   // Guarda o estado atual pra exportação
   window._prodEstadoAtual = { dados, totais, resumoTexto, periodoIni, periodoFim, rankingFracao, rankingEquipe, indicadoresCalc, camposRanking,
     porDia, diasOrdenados, porDiaInd, seriesStack,
-    stats: { turnos: totalTurnos, fracoes: fracoesUnicas.size, militares: totalMilitares, viaturas: totalViaturas } };
+    stats: { turnos: totalTurnos, equipes: equipesUnicas.size, fracoes: fracoesUnicas.size, militares: totalMilitares, viaturas: totalViaturas } };
 }
 
 function formatarNumero_(v){
@@ -948,7 +952,7 @@ document.getElementById('btnExportPdf').addEventListener('click', async () => {
     // ---- Estatísticas (cards) ----
     const s = estado.stats || {};
     const cards = [
-      ['Turnos', s.turnos], ['Frações', s.fracoes],
+      ['Equipes', s.equipes], ['Frações', s.fracoes],
       ['Militares', s.militares], ['Viaturas', s.viaturas],
     ];
     const nC = cards.length, cw = (contentW - (nC-1)*4) / nC, chh = 16;
