@@ -569,7 +569,6 @@ function renderizarTudo(){
   const idsUnicos = new Set(dados.map(r => r['ID Relatório']));
   const totalTurnos = idsUnicos.size;
   const fracoesUnicas = new Set(dados.map(r => r['Fração de Atuação']).filter(Boolean));
-  const equipesUnicas = new Set(dados.map(r => r['Equipe']).filter(Boolean));
   const totalMilitares = dados.reduce((s,r) => s + (parseNum_(r['Total de Militares (Geral)'])||0), 0);
   const totalViaturas = dados.reduce((s,r) => s + (parseNum_(r['Total de Viaturas (Geral)'])||0), 0);
   const datas = dados.map(r => r['Data']).filter(Boolean).sort();
@@ -578,7 +577,7 @@ function renderizarTudo(){
   // ---- Resumo executivo ----
   const topIndicadores = Object.entries(totais).filter(([,v]) => v>0).sort((a,b)=>b[1]-a[1]).slice(0,5);
   const resumoTexto = topIndicadores.length
-    ? `Entre <b>${formatarDataBR_(periodoIni)}</b> e <b>${formatarDataBR_(periodoFim)}</b>, foram empregados <b>${totalTurnos}</b> turno${totalTurnos!==1?'s':''} em <b>${fracoesUnicas.size}</b> fração${fracoesUnicas.size!==1?'ões':''} de atuação, com <b>${equipesUnicas.size}</b> equipe${equipesUnicas.size!==1?'s':''} distintas, resultando em: `
+    ? `Entre <b>${formatarDataBR_(periodoIni)}</b> e <b>${formatarDataBR_(periodoFim)}</b>, foram empregados <b>${totalTurnos}</b> turno${totalTurnos!==1?'s':''} em <b>${fracoesUnicas.size}</b> fração${fracoesUnicas.size!==1?'ões':''} de atuação, resultando em: `
       + topIndicadores.map(([k,v]) => `<b>${formatarNumero_(v)}</b> ${k.toLowerCase()}`).join(' · ') + '.'
     : `Nenhum indicador de Produtividade preenchido no período selecionado.`;
 
@@ -615,6 +614,25 @@ function renderizarTudo(){
     camposNumericos.forEach(c => { porDia[d] += (parseNum_(r[c.nome])||0); });
   });
   const diasOrdenados = Object.keys(porDia).sort();
+
+  // ---- Produtividade por dia POR INDICADOR (p/ barras empilhadas) ----
+  // Empilhar os indicadores por dia em vez de somar tudo numa linha só: cada
+  // cor mostra a contribuição de um indicador, sem misturar tipos diferentes.
+  const stackTop = Object.entries(totais).filter(([,v]) => v > 0)
+    .sort((a,b) => b[1]-a[1]).slice(0, 6).map(([k]) => k);
+  const porDiaInd = {};
+  diasOrdenados.forEach(d => porDiaInd[d] = {});
+  dados.forEach(r => {
+    const d = r['Data'] || '—';
+    if (!porDiaInd[d]) porDiaInd[d] = {};
+    camposNumericos.forEach(c => {
+      const v = parseNum_(r[c.nome]); if (isNaN(v) || !v) return;
+      const key = stackTop.includes(c.nome) ? c.nome : 'Outros';
+      porDiaInd[d][key] = (porDiaInd[d][key] || 0) + v;
+    });
+  });
+  const temOutros = diasOrdenados.some(d => porDiaInd[d]['Outros']);
+  const seriesStack = temOutros ? [...stackTop, 'Outros'] : stackTop.slice();
 
   // ---- Indicadores de desempenho calculados ----
   // Busca o total por nome tolerando acento/caixa: o rótulo cadastrado no quesito
@@ -705,12 +723,12 @@ function renderizarTudo(){
       }).join('')
     : '<div class="mr-empty">Nenhum indicador com valor no período.</div>';
 
-  desenharGraficos_(topIndicadores, diasOrdenados, porDia);
+  desenharGraficos_(topIndicadores, diasOrdenados, porDiaInd, seriesStack);
 
   // Guarda o estado atual pra exportação
   window._prodEstadoAtual = { dados, totais, resumoTexto, periodoIni, periodoFim, rankingFracao, rankingEquipe, indicadoresCalc, camposRanking,
-    porDia, diasOrdenados,
-    stats: { turnos: totalTurnos, fracoes: fracoesUnicas.size, equipes: equipesUnicas.size, militares: totalMilitares, viaturas: totalViaturas } };
+    porDia, diasOrdenados, porDiaInd, seriesStack,
+    stats: { turnos: totalTurnos, fracoes: fracoesUnicas.size, militares: totalMilitares, viaturas: totalViaturas } };
 }
 
 function formatarNumero_(v){
@@ -727,7 +745,7 @@ function formatarDataBR_(iso){
   return `${d}/${m}/${a}`;
 }
 
-function desenharGraficos_(topIndicadores, diasOrdenados, porDia){
+function desenharGraficos_(topIndicadores, diasOrdenados, porDiaInd, seriesStack){
   if (graficoBarras) graficoBarras.destroy();
   if (graficoLinha) graficoLinha.destroy();
 
@@ -746,15 +764,33 @@ function desenharGraficos_(topIndicadores, diasOrdenados, porDia){
 
   const ctxL = document.getElementById('chartLinha');
   if (ctxL){
+    // Barras empilhadas: cada dia é uma barra, cada cor é um indicador do Top
+    // (+ "Outros"). Mostra o total do dia E de que ele é composto, em vez de
+    // somar indicadores de tipos diferentes numa linha única.
+    const PAL = ['#9b8a5c','#2f5233','#8c3b2f','#3d5a80','#c2953a','#6a4c93','#4e8098','#7a7a7a'];
+    const series = seriesStack || [];
     graficoLinha = new Chart(ctxL, {
-      type: 'line',
+      type: 'bar',
       data: {
         labels: diasOrdenados.map(formatarDataBR_),
-        // pointRadius alto garante que um período de UM único dia (1 ponto, sem
-        // linha) ainda apareça claramente.
-        datasets: [{ data: diasOrdenados.map(d => porDia[d]), borderColor:'#9b8a5c', backgroundColor:'rgba(155,138,92,.15)', fill:true, tension:.3, pointRadius:5, pointHoverRadius:7, pointBackgroundColor:'#d4b968', spanGaps:true }],
+        datasets: series.map((nome, i) => ({
+          label: nome,
+          data: diasOrdenados.map(d => (porDiaInd[d] && porDiaInd[d][nome]) || 0),
+          backgroundColor: nome === 'Outros' ? '#b8b8b8' : PAL[i % PAL.length],
+          stack: 'prod',
+        })),
       },
-      options: { responsive:true, plugins:{legend:{display:false}}, scales:{ x:{ticks:{color:'#999',font:{size:9}}}, y:{beginAtZero:true, ticks:{color:'#999'}} } },
+      options: {
+        responsive:true,
+        plugins:{
+          legend:{ display:true, position:'bottom', labels:{ color:'#bbb', font:{size:9}, boxWidth:10, padding:6 } },
+          tooltip:{ mode:'index', intersect:false },
+        },
+        scales:{
+          x:{ stacked:true, ticks:{color:'#999',font:{size:9}} },
+          y:{ stacked:true, beginAtZero:true, ticks:{color:'#999'} },
+        },
+      },
     });
   }
 }
@@ -899,7 +935,7 @@ document.getElementById('btnExportPdf').addEventListener('click', async () => {
     // ---- Estatísticas (cards) ----
     const s = estado.stats || {};
     const cards = [
-      ['Turnos', s.turnos], ['Frações', s.fracoes], ['Equipes', s.equipes],
+      ['Turnos', s.turnos], ['Frações', s.fracoes],
       ['Militares', s.militares], ['Viaturas', s.viaturas],
     ];
     const nC = cards.length, cw = (contentW - (nC-1)*4) / nC, chh = 16;
@@ -1005,15 +1041,22 @@ document.getElementById('btnExportPdf').addEventListener('click', async () => {
       }, 1150, 560, [rotulosNaFatia]);
       if (g) graf.push({ t:'Composição da Produção', ...g });
     }
-    // 3) Linha — Produtividade por dia
+    // 3) Barras empilhadas — Produtividade por dia por indicador
     if (dias.length) {
-      const g = gerarGrafico_('line', {
+      const series = estado.seriesStack || [];
+      const porDiaInd = estado.porDiaInd || {};
+      const g = gerarGrafico_('bar', {
         labels: dias.map(formatarDataBR_),
-        datasets: [{ data: dias.map(d => porDia[d]||0), borderColor:'#9b8a5c', backgroundColor:'rgba(155,138,92,.15)', fill:true, tension:.3, pointRadius:4, pointBackgroundColor:'#d4b968', borderWidth:2 }],
+        datasets: series.map((nome, i) => ({
+          label: nome,
+          data: dias.map(d => (porDiaInd[d] && porDiaInd[d][nome]) || 0),
+          backgroundColor: nome === 'Outros' ? '#b8b8b8' : PALETA[i % PALETA.length],
+          borderWidth: 0, stack: 'prod',
+        })),
       }, {
-        plugins:{ legend:{ display:false } },
-        scales:{ x:{ ...eixo, ticks:{ color:'#333', font:{ size:11 } } }, y:{ beginAtZero:true, ...eixo } },
-      }, 2050, 560);
+        plugins:{ legend:{ position:'bottom', labels:{ color:'#222', font:{ size:12 }, boxWidth:16, padding:7 } } },
+        scales:{ x:{ ...eixo, stacked:true, ticks:{ color:'#333', font:{ size:11 } } }, y:{ ...eixo, stacked:true, beginAtZero:true } },
+      }, 2050, 620);
       if (g) graf.push({ t:'Produtividade por Dia', full:true, ...g });
     }
 
