@@ -631,24 +631,18 @@ function renderizarTudo(){
   });
   const diasOrdenados = Object.keys(porDia).sort();
 
-  // ---- Produtividade por dia POR INDICADOR (p/ barras empilhadas) ----
-  // Empilhar os indicadores por dia em vez de somar tudo numa linha só: cada
-  // cor mostra a contribuição de um indicador, sem misturar tipos diferentes.
-  const stackTop = Object.entries(totais).filter(([,v]) => v > 0)
-    .sort((a,b) => b[1]-a[1]).slice(0, 6).map(([k]) => k);
-  const porDiaInd = {};
-  diasOrdenados.forEach(d => porDiaInd[d] = {});
+  // ---- Turnos por dia (ritmo operacional) ----
+  // Conta turnos distintos (ID Relatório) por dia. Mostra a dimensão tempo sem
+  // somar indicadores nem repetir a composição da pizza.
+  const turnosPorDia = {};
+  diasOrdenados.forEach(d => turnosPorDia[d] = new Set());
   dados.forEach(r => {
     const d = r['Data'] || '—';
-    if (!porDiaInd[d]) porDiaInd[d] = {};
-    camposNumericos.forEach(c => {
-      const v = parseNum_(r[c.nome]); if (isNaN(v) || !v) return;
-      const key = stackTop.includes(c.nome) ? c.nome : 'Outros';
-      porDiaInd[d][key] = (porDiaInd[d][key] || 0) + v;
-    });
+    if (!turnosPorDia[d]) turnosPorDia[d] = new Set();
+    turnosPorDia[d].add(r['ID Relatório']);
   });
-  const temOutros = diasOrdenados.some(d => porDiaInd[d]['Outros']);
-  const seriesStack = temOutros ? [...stackTop, 'Outros'] : stackTop.slice();
+  const turnosDia = {};
+  diasOrdenados.forEach(d => turnosDia[d] = turnosPorDia[d].size);
 
   // ---- Indicadores de desempenho calculados ----
   // Busca o total por nome tolerando acento/caixa: o rótulo cadastrado no quesito
@@ -695,7 +689,7 @@ function renderizarTudo(){
     <div class="secao-titulo">📈 Gráficos</div>
     <div class="duas-colunas">
       <div class="chart-box"><h4>Top 8 Indicadores (total do período)</h4><canvas id="chartBarras" height="220"></canvas></div>
-      <div class="chart-box"><h4>Produtividade por Dia</h4><canvas id="chartLinha" height="220"></canvas></div>
+      <div class="chart-box"><h4>Turnos por Dia</h4><canvas id="chartLinha" height="220"></canvas></div>
     </div>
 
     <div class="secao-titulo">🏆 Ranking por Fração de Atuação</div>
@@ -740,11 +734,11 @@ function renderizarTudo(){
       }).join('')
     : '<div class="mr-empty">Nenhum indicador com valor no período.</div>';
 
-  desenharGraficos_(topIndicadores, diasOrdenados, porDiaInd, seriesStack);
+  desenharGraficos_(topIndicadores, diasOrdenados, turnosDia);
 
   // Guarda o estado atual pra exportação
   window._prodEstadoAtual = { dados, totais, resumoTexto, periodoIni, periodoFim, rankingFracao, rankingEquipe, indicadoresCalc, camposRanking,
-    porDia, diasOrdenados, porDiaInd, seriesStack,
+    porDia, diasOrdenados, turnosDia,
     stats: { turnos: totalTurnos, equipes: equipesUnicas.size, fracoes: fracoesUnicas.size, militares: totalMilitares, viaturas: totalViaturas } };
 }
 
@@ -762,7 +756,7 @@ function formatarDataBR_(iso){
   return `${d}/${m}/${a}`;
 }
 
-function desenharGraficos_(topIndicadores, diasOrdenados, porDiaInd, seriesStack){
+function desenharGraficos_(topIndicadores, diasOrdenados, turnosDia){
   if (graficoBarras) graficoBarras.destroy();
   if (graficoLinha) graficoLinha.destroy();
 
@@ -781,31 +775,20 @@ function desenharGraficos_(topIndicadores, diasOrdenados, porDiaInd, seriesStack
 
   const ctxL = document.getElementById('chartLinha');
   if (ctxL){
-    // Barras empilhadas: cada dia é uma barra, cada cor é um indicador do Top
-    // (+ "Outros"). Mostra o total do dia E de que ele é composto, em vez de
-    // somar indicadores de tipos diferentes numa linha única.
-    const PAL = ['#9b8a5c','#2f5233','#8c3b2f','#3d5a80','#c2953a','#6a4c93','#4e8098','#7a7a7a'];
-    const series = seriesStack || [];
+    // Turnos por dia: barras simples com o nº de turnos (relatórios) por dia.
+    // Mostra o ritmo operacional ao longo do tempo, sem repetir a pizza.
     graficoLinha = new Chart(ctxL, {
       type: 'bar',
       data: {
         labels: diasOrdenados.map(formatarDataBR_),
-        datasets: series.map((nome, i) => ({
-          label: nome,
-          data: diasOrdenados.map(d => (porDiaInd[d] && porDiaInd[d][nome]) || 0),
-          backgroundColor: nome === 'Outros' ? '#b8b8b8' : PAL[i % PAL.length],
-          stack: 'prod',
-        })),
+        datasets: [{ data: diasOrdenados.map(d => turnosDia[d] || 0), backgroundColor:'#9b8a5c', borderRadius:3 }],
       },
       options: {
         responsive:true,
-        plugins:{
-          legend:{ display:true, position:'bottom', labels:{ color:'#bbb', font:{size:9}, boxWidth:10, padding:6 } },
-          tooltip:{ mode:'index', intersect:false },
-        },
+        plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label: ctx => `${ctx.parsed.y} turno${ctx.parsed.y!==1?'s':''}` } } },
         scales:{
-          x:{ stacked:true, ticks:{color:'#999',font:{size:9}} },
-          y:{ stacked:true, beginAtZero:true, ticks:{color:'#999'} },
+          x:{ ticks:{color:'#999',font:{size:9}} },
+          y:{ beginAtZero:true, ticks:{color:'#999', precision:0, stepSize:1} },
         },
       },
     });
@@ -1058,23 +1041,17 @@ document.getElementById('btnExportPdf').addEventListener('click', async () => {
       }, 1150, 560, [rotulosNaFatia]);
       if (g) graf.push({ t:'Composição da Produção', ...g });
     }
-    // 3) Barras empilhadas — Produtividade por dia por indicador
+    // 3) Barras — Turnos por dia (ritmo operacional)
     if (dias.length) {
-      const series = estado.seriesStack || [];
-      const porDiaInd = estado.porDiaInd || {};
+      const turnosDia = estado.turnosDia || {};
       const g = gerarGrafico_('bar', {
         labels: dias.map(formatarDataBR_),
-        datasets: series.map((nome, i) => ({
-          label: nome,
-          data: dias.map(d => (porDiaInd[d] && porDiaInd[d][nome]) || 0),
-          backgroundColor: nome === 'Outros' ? '#b8b8b8' : PALETA[i % PALETA.length],
-          borderWidth: 0, stack: 'prod',
-        })),
+        datasets: [{ data: dias.map(d => turnosDia[d] || 0), backgroundColor:'#9b8a5c', borderRadius:3 }],
       }, {
-        plugins:{ legend:{ position:'bottom', labels:{ color:'#222', font:{ size:12 }, boxWidth:16, padding:7 } } },
-        scales:{ x:{ ...eixo, stacked:true, ticks:{ color:'#333', font:{ size:11 } } }, y:{ ...eixo, stacked:true, beginAtZero:true } },
-      }, 2050, 620);
-      if (g) graf.push({ t:'Produtividade por Dia', full:true, ...g });
+        plugins:{ legend:{ display:false } },
+        scales:{ x:{ ...eixo, ticks:{ color:'#333', font:{ size:11 } } }, y:{ ...eixo, beginAtZero:true, ticks:{ ...eixo.ticks, precision:0, stepSize:1 } } },
+      }, 2050, 560);
+      if (g) graf.push({ t:'Turnos por Dia', full:true, ...g });
     }
 
     if (graf.length) {
