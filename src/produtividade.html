@@ -547,8 +547,10 @@ function renderizarTudo(){
       + topIndicadores.map(([k,v]) => `<b>${formatarNumero_(v)}</b> ${k.toLowerCase()}`).join(' · ') + '.'
     : `Nenhum indicador de Produtividade preenchido no período selecionado.`;
 
-  // ---- Indicadores marcados pra aparecer no Ranking (coluna "Usar no Ranking") ----
+  // ---- Ranking: todo indicador numérico ativo ----
   const camposRanking = camposProdutividade.filter(c => c.usarRanking);
+  // ---- Quesitos de texto (não somam): viram colunas na tabela de relatórios ----
+  const camposTexto = camposProdutividade.filter(c => c.tipo === 'Texto');
 
   // ---- Ranking por Fração — uma coluna por indicador, sem somar tipos diferentes ----
   const porFracao = {};
@@ -657,13 +659,14 @@ function renderizarTudo(){
     <div class="secao-titulo">📋 Relatórios do Período</div>
     <div id="prod-lista-tabela">
       <table class="prod-table detalhe">
-        <thead><tr><th>Data</th><th>Fração</th><th>Equipe</th><th>Comandante</th><th>Operação</th></tr></thead>
+        <thead><tr><th>Data</th><th>Fração</th><th>Equipe</th><th>Comandante</th><th>Operação</th>${camposTexto.map(c => `<th>${_escHtml_(c.nome)}</th>`).join('')}</tr></thead>
         <tbody>${dados.map(r => `<tr>
           <td>${formatarDataBR_(r['Data'])}</td>
           <td>${r['Fração de Atuação']||'—'}</td>
           <td>${r['Equipe']||'—'}</td>
           <td>${r['Comandante']||'—'}</td>
           <td>${(r['Operações']||[]).join(', ')||'—'}</td>
+          ${camposTexto.map(c => `<td>${_escHtml_(r[c.nome]) || '—'}</td>`).join('')}
         </tr>`).join('')}</tbody>
       </table>
     </div>
@@ -687,6 +690,11 @@ function renderizarTudo(){
 
 function formatarNumero_(v){
   return Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+}
+// Escapa texto livre (valores de quesitos de texto) antes de injetar no HTML.
+function _escHtml_(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 function formatarDataBR_(iso){
   if (!iso) return '—';
@@ -717,9 +725,11 @@ function desenharGraficos_(topIndicadores, diasOrdenados, porDia){
       type: 'line',
       data: {
         labels: diasOrdenados.map(formatarDataBR_),
-        datasets: [{ data: diasOrdenados.map(d => porDia[d]), borderColor:'#9b8a5c', backgroundColor:'rgba(155,138,92,.15)', fill:true, tension:.3 }],
+        // pointRadius alto garante que um período de UM único dia (1 ponto, sem
+        // linha) ainda apareça claramente.
+        datasets: [{ data: diasOrdenados.map(d => porDia[d]), borderColor:'#9b8a5c', backgroundColor:'rgba(155,138,92,.15)', fill:true, tension:.3, pointRadius:5, pointHoverRadius:7, pointBackgroundColor:'#d4b968', spanGaps:true }],
       },
-      options: { responsive:true, plugins:{legend:{display:false}}, scales:{ x:{ticks:{color:'#999',font:{size:9}}}, y:{ticks:{color:'#999'}} } },
+      options: { responsive:true, plugins:{legend:{display:false}}, scales:{ x:{ticks:{color:'#999',font:{size:9}}}, y:{beginAtZero:true, ticks:{color:'#999'}} } },
     });
   }
 }
