@@ -3356,6 +3356,12 @@ async function carregarRelatorioParaEdicao(id){
     }
     supabaseIdEdicao = id;                       // uuid do Supabase (fonte)
     modoEdicaoIdRelatorio = data.sheet_id || ''; // ID na planilha (espelho); vazio = sem vínculo ainda
+    REL_REGISTRO = {                             // p/ o rodapé "Registrado por … em …"
+      mat:   data.criado_por_matricula || '',
+      nome:  data.criado_por_nome || '',
+      posto: data.criado_por_posto || '',
+      em:    data.criado_em || '',
+    };
     preencherBloco1(data.bloco1 || {});
     (data.categorias || []).forEach(cat => preencherCategoria(cat.categoria, cat.itens || []));
     renderGrid();
@@ -3912,6 +3918,25 @@ function collectBloco1(){
 
 // ---------- Modo Visualização (só leitura + imprimir) ----------
 let MODO_VISUALIZACAO = false;
+
+// Dados de quem registrou o relatório (preenchidos ao carregar em ver/edição),
+// exibidos no rodapé do Ver/Imprimir — igual ao rodapé da Ficha de Movimentação.
+let REL_REGISTRO = null; // { mat, nome, posto, em }
+function _fmtDataHoraRel(iso){
+  if(!iso) return '—';
+  const d = new Date(iso);
+  if(isNaN(d.getTime())) return String(iso);
+  const p = n => String(n).padStart(2,'0');
+  return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} às ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function _fmtMatRel(v){ const dg = String(v||'').replace(/\D/g,''); return dg.length===7 ? applyMaskValue(dg,'pm') : (v||''); }
+function _relRodapeRegistro(){
+  if(!REL_REGISTRO || !REL_REGISTRO.em) return '';
+  const mat   = REL_REGISTRO.mat   ? ('Nº PM ' + _escQ(_fmtMatRel(REL_REGISTRO.mat)) + ' — ') : '';
+  const posto = REL_REGISTRO.posto ? (_escQ(String(REL_REGISTRO.posto).toUpperCase()) + ' — ') : '';
+  const nome  = _escQ(String(REL_REGISTRO.nome || '—').toUpperCase());
+  return `Registrado por ${mat}${posto}${nome} em ${_escQ(_fmtDataHoraRel(REL_REGISTRO.em))}.`;
+}
 function aplicarModoVisualizacao(){
   const form = document.getElementById('relatorioForm');
   if(!form) return;
@@ -3959,11 +3984,17 @@ function aplicarModoVisualizacao(){
         </div>
         <img src="assets/brasao-bpmmamb.png" alt="BPM MAmb" onerror="this.style.display='none'">
       </div>
-      <div id="viewReview"></div>`;
+      <div id="viewReview"></div>
+      <div id="viewRegistro" class="view-registro"></div>`;
     (document.querySelector('.container') || document.body).insertBefore(doc, form);
   }
   try { document.getElementById('viewReview').innerHTML = buildReviewHTML(); }
   catch(e){ document.getElementById('viewReview').innerHTML = '<p class="placeholder-note">Não foi possível montar a visualização.</p>'; console.error(e); }
+  // Rodapé "Registrado por … em …" (dados vêm do relatório carregado; só aparece em ver/edição).
+  try {
+    const reg = document.getElementById('viewRegistro');
+    if (reg) reg.innerHTML = _relRodapeRegistro();
+  } catch(e){ console.error(e); }
   // CSS (tela + impressão)
   if(!document.getElementById('viewCss')){
     const st = document.createElement('style');
@@ -3988,6 +4019,8 @@ function aplicarModoVisualizacao(){
       #viewReview .review-count{border:1px solid #000 !important}
       #viewReview .review-missing{font-style:italic}
       #viewReview .review-edit-btn{display:none !important}
+      .view-registro{margin-top:22px;padding-top:12px;border-top:1px solid #000;font-size:12.5px;font-weight:700;text-align:right;font-style:italic}
+      .view-registro:empty{display:none}
       @page{margin:14mm 12mm}
       @page{@bottom-right{content:counter(page) "/" counter(pages);font-family:Arial,sans-serif;font-size:9pt;color:#000}}
       @media print{
