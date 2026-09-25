@@ -576,10 +576,13 @@ function _grafiaCidade(s){ return (s||'').replace(/MARILIERIA/g, 'MARLIERIA').re
   // No modo edição não pré-preenche pela pendência/TTA (a ficha é carregada a seguir).
   if (EDIT_ID) carregarPendencias();
   else carregarPendencias().then(teve => { if(!teve) preencherFichaDoTTA(); });
-  carregarMilitares();
-  carregarCfgAbast();
-  carregarListasAbast();
-  if (EDIT_ID) await abrirEditarFicha(EDIT_ID);
+  const _mil=carregarMilitares(), _cfg=carregarCfgAbast(), _lst=carregarListasAbast();
+  if (EDIT_ID){
+    // o prefill das seções depende da config de limite (POC/PRIME) e das listas
+    // de combustível/convênio — aguarda antes de reconstruir o formulário.
+    try{ await Promise.all([_cfg, _lst, _mil]); }catch(e){}
+    await abrirEditarFicha(EDIT_ID);
+  }
 })();
 
 // ── Ver/Imprimir e Editar (Fase C) — restaurado da versão publicada ───────
@@ -689,7 +692,7 @@ async function abrirEditarFicha(id){
   }
   EDIT_ORIG = f;
   const h1=document.querySelector('#form-wrap .pagehead h1'); if(h1) h1.textContent='✏️ Editar Ficha de Movimentação';
-  const pp=document.querySelector('#form-wrap .pagehead p'); if(pp) pp.innerHTML='Você está editando uma ficha já registrada. <b>Toda alteração fica registrada na auditoria</b> (quem, quando, o que mudou). As seções (abastecimento, TAQ, etc.) e os anexos são mantidos como foram lançados.';
+  const pp=document.querySelector('#form-wrap .pagehead p'); if(pp) pp.innerHTML='Você está editando uma ficha já registrada. <b>Toda alteração fica registrada na auditoria</b> (quem, quando, o que mudou). Você pode corrigir o cabeçalho <b>e também as seções</b> (abastecimento, acidente, TAQ, etc.). Os anexos já enviados são mantidos; novos arquivos escolhidos aqui são acrescentados.';
   const pb=document.getElementById('pend-banner'); if(pb) pb.style.display='none';
 
   const sel=document.getElementById('sel-prefixo');
@@ -715,77 +718,184 @@ async function abrirEditarFicha(id){
   try{ syncDatas(); calc(); }catch(e){}
   ultimoKmFinal=null; kmiConfirmadoMaior=true; kmiConfirmadoMenor=true;   // edição não é barrada pelo hodômetro da última devolução
 
-  const opts=document.querySelector('#form-wrap .opts'); if(opts) opts.style.display='none';
-  document.querySelectorAll('#form-wrap .card.sec').forEach(el=>el.style.display='none');
+  // Seções agora são EDITÁVEIS na edição — preenche cada uma a partir de f.dados.
+  preencherSecoes(f);
+  // Anexos já enviados são mantidos; novos arquivos escolhidos aqui são acrescentados.
   const obsCard=document.getElementById('obs-geral').closest('.card');
   if(obsCard){
-    const box=document.createElement('div'); box.className='card'; box.id='edit-secoes-ro';
-    box.innerHTML='<h2>📎 Seções e anexos (mantidos como no lançamento)</h2>'+_resumoSecoes(f)+'<p style="font-size:12px;color:var(--text-muted);margin-top:10px">Estes itens não são alterados nesta edição. Para corrigir abastecimento/TAQ/anexos, faça um novo lançamento.</p>';
+    const anx=Array.isArray(f.anexos)?f.anexos:[];
+    const lista = anx.length
+      ? '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px">'+anx.map(a=>{
+          const link=_vesc(a.link||'#'), nome=_vesc(a.nome||a.categoria||'arquivo');
+          const cat=a.categoria?(' <span style="color:var(--text-muted,#888)">('+_vesc(a.categoria)+')</span>'):'';
+          return '<a href="'+link+'" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:8px 10px;border:1px solid var(--border,#333);border-radius:8px;font-size:12px;text-decoration:none">📎 '+nome+cat+'</a>';
+        }).join('')+'</div>'
+      : '<p style="font-size:13px;color:var(--text-muted)">Nenhum anexo enviado.</p>';
+    const box=document.createElement('div'); box.className='card'; box.id='edit-anexos-nota';
+    box.innerHTML='<h2>📎 Anexos já enviados ('+anx.length+')</h2>'+lista
+      +'<p style="font-size:12px;color:var(--text-muted);margin-top:10px">Os anexos acima são mantidos. Para <b>acrescentar</b> comprovantes/fotos, use os campos de arquivo dentro de cada seção — os novos são somados aos já enviados.</p>';
     obsCard.parentNode.insertBefore(box, obsCard);
   }
 
   const btn=document.getElementById('btn-salvar');
   btn.textContent='✔ Salvar alterações';
-  btn.setAttribute('onclick','salvarEdicao()');
+  btn.setAttribute('onclick','salvar()');   // salvar() detecta EDIT_ID e grava via mov_ficha_editar
   const sn=document.querySelector('#form-wrap .syncnote'); if(sn) sn.style.display='none';
   const cancelar=document.querySelector('#form-wrap .foot .btn-outline');
   if(cancelar) cancelar.setAttribute('onclick','location.href=VOLTAR_URL');
 }
 
-async function salvarEdicao(){
-  const btn=document.getElementById('btn-salvar');
-  if(btn.disabled) return;
-  const base=collect(document.getElementById('base'));
-  if(!base.prefixo)     return foco('sel-prefixo','Selecione a viatura.');
-  if(!base.km_inicial)  return foco('kmi','Informe o Km inicial.');
-  if(!base.km_final)    return foco('kmf','Informe o Km final.');
-  const kmI=+base.km_inicial, kmF=+base.km_final;
-  if(kmF<kmI) return foco('kmf','Km final não pode ser menor que o inicial.');
-  const AGORA=Date.now(), DIA=86400000, FUT=5*60000;
-  const tIni=base.inicio?new Date(base.inicio).getTime():NaN;
-  const tFim=base.termino?new Date(base.termino).getTime():NaN;
-  if(!base.inicio||isNaN(tIni)) return foco('inicio','Informe o início (armar a viatura).');
-  if(tIni>AGORA+FUT)            return foco('inicio','O início não pode ser uma data/hora futura.');
-  if(!isNaN(tFim)){
-    if(tFim<tIni)       return foco('termino','O término não pode ser antes do início.');
-    if(tFim>tIni+DIA)   return foco('termino','O término não pode ser mais de 24h após o início.');
+// Mantido por compatibilidade: a edição agora passa por salvar() (detecta EDIT_ID).
+async function salvarEdicao(){ return salvar(); }
+
+/* ── Preenche TODAS as seções na edição a partir de f.dados ──────────────
+   Reconstrói o estado do formulário (abastecimento, limpeza, acidente,
+   manutenção, avaria, TAQ, aeronave) para que o militar/gestor possa
+   corrigir ou acrescentar. Depende das listas já carregadas (config de
+   limite POC/PRIME e combustíveis) — o init aguarda isso antes de chamar. */
+function preencherSecoes(f){
+  const d = (f && f.dados) || {};
+  const setDK=(scopeSel,k,v)=>{ const el=document.querySelector(scopeSel+' [data-k="'+k+'"]'); if(el && v!=null && v!=='') el.value=v; };
+  const ativar=(flag,secId)=>{ const o=document.querySelector('.opt[data-flag="'+flag+'"]'); if(o && !o.classList.contains('active')) tog(o,secId); };
+  const setSel=(root,sel,v)=>{ const el=root.querySelector(sel); if(el && v!=null && v!=='') el.value=v; };
+  const temObj=o=>o && typeof o==='object' && Object.keys(o).length;
+
+  // ── Abastecimento (sempre presente) ──
+  ativar('tem_abastecimento','s-abast');
+  const ab=d.abastecimento||{};
+  const abHouveEl=document.getElementById('ab-houve');
+  abHouveEl.value = ab.houve || (f.tem_abastecimento?'Sim':'') || '';
+  abHouve();
+  if(abHouveEl.value==='Não'){ const j=document.getElementById('ab-just'); if(j) j.value=ab.justificativa_nao||''; }
+  if(abHouveEl.value==='Sim'){
+    document.getElementById('abastecimentos').innerHTML='';
+    (Array.isArray(ab.itens)?ab.itens:[]).forEach(it=>{
+      addAbastecimento();
+      const row=document.querySelector('#abastecimentos .abast-row:last-child'); if(!row) return;
+      const fonteSel=row.querySelector('.ab-fonte'); if(it.fonte && fonteSel) fonteSel.value=it.fonte;
+      if(fonteSel) abFonte(fonteSel);   // reconstrói os campos conforme a fonte
+      setSel(row,'.ab-comb',it.combustivel); setSel(row,'.ab-litros',it.litros);
+      setSel(row,'.ab-vunit',it.valor_unit); setSel(row,'.ab-vtotal',it.valor_total);
+      setSel(row,'.ab-odometro',it.odometro); setSel(row,'.ab-dh',it.data_hora);
+      setSel(row,'.ab-cidade',it.cidade); setSel(row,'.ab-obs',it.obs);
+      setSel(row,'.ab-autorizador',it.autorizado_por); setSel(row,'.ab-motivo-lim',it.motivo_acima_limite);
+      setSel(row,'.ab-odo-just',it.odometro_justificativa);
+      // revela o bloco "acima do limite" se POC/PRIME e litros acima
+      const litrosEl=row.querySelector('.ab-litros');
+      if(litrosEl && (it.fonte==='POC'||it.fonte==='Cartão PRIME')) abCheckLimite(litrosEl, it.fonte==='POC'?'poc':'prime');
+      if(it.tipo){
+        const tipoSel=row.querySelector('.ab-tipo');
+        if(tipoSel){ tipoSel.value=it.tipo; abTipo(tipoSel);
+          setSel(row,'.ab-odo-just',it.odometro_justificativa);
+          if(it.tipo==='Convênio'){
+            const cv=row.querySelector('.ab-convenio');
+            if(cv){ const inList=[...cv.options].some(o=>o.value===it.convenio);
+              cv.value = inList ? it.convenio : 'Outro'; convenioOutro(cv);
+              if(!inList){ const o2=row.querySelector('.ab-convenio-outro'); if(o2) o2.value=it.convenio||''; } }
+          } else {
+            setSel(row,'.ab-doador',it.doador); setSel(row,'.ab-doc',it.doc);
+            const tm=row.querySelector('.ab-termo');
+            if(tm){ tm.value=it.fez_termo||'Sim'; abTermo(tm);
+              if(tm.value==='Não'){ const tj=row.querySelector('.ab-termo-just'); if(tj) tj.value=it.termo_justificativa||''; } }
+          }
+        }
+      }
+    });
   }
 
-  if(!validarDspOuAvisar()) return;
-  const o=EDIT_ORIG||{};
-  // preserva as demais seções e atualiza SÓ a DSP conforme os campos da tela
-  const dadosEdit=Object.assign({}, o.dados||{});
-  const dspEdit=coletarDsp();
-  if(dspEdit) dadosEdit.dsp=dspEdit; else delete dadosEdit.dsp;
-  const p_dados=Object.assign({}, base, {
-    motorista_nome: document.getElementById('mot-nome').value||'',
-    motorista_matricula: document.getElementById('mot-mat').value||'',
-    lotacao_motorista: document.getElementById('lotacao').value||'',
-    observacoes: document.getElementById('obs-geral').value||'',
-    inicio:  base.inicio  ? new Date(base.inicio).toISOString()  : null,
-    termino: base.termino ? new Date(base.termino).toISOString() : null,
-    km_inicial: kmI, km_final: kmF,
-    dados:  dadosEdit,   anexos: o.anexos || [],
-    tem_abastecimento:!!o.tem_abastecimento, tem_acidente:!!o.tem_acidente,
-    tem_manutencao:!!o.tem_manutencao, tem_avaria:!!o.tem_avaria,
-    tem_limpeza:!!o.tem_limpeza, tem_taq:!!o.tem_taq, tem_aeronave:!!o.tem_aeronave
-  });
+  // ── Limpeza (sempre presente) ──
+  ativar('tem_limpeza','s-limp');
+  const lp=d.limpeza||{};
+  setDK('#s-limp','recebeu_limpa',lp.recebeu_limpa);
+  const limpDevEl=document.getElementById('limp-dev'); if(limpDevEl){ limpDevEl.value=lp.devolveu_limpa||''; limpDev(); }
+  setDK('#s-limp','detalhes',lp.detalhes);
+  if((lp.devolveu_limpa||'')==='Não'){ const lj=document.getElementById('limp-just'); if(lj) lj.value=lp.justificativa_nao||''; }
 
-  btn.disabled=true; btn.textContent='Salvando…';
-  try{
-    const r=await rpc('mov_ficha_editar', { p_token:S.token, p_id:EDIT_ID, p_dados });
-    const n=(r&&r.alteracoes!=null)?+r.alteracoes:0;
-    document.getElementById('form-wrap').style.display='none';
-    const h2=document.querySelector('#ok-screen h2'); if(h2) h2.textContent='Alterações salvas!';
-    document.getElementById('ok-msg').textContent = n>0
-      ? `${n} alteração${n>1?'ões':''} salva${n>1?'s':''}.`
-      : 'Nenhuma alteração foi detectada nos campos.';
-    const acoes=document.querySelector('#ok-screen div[style*="justify-content"]');
-    const voltarLbl = VOLTAR_URL.indexOf('viaturas-gestao')===0 ? '← Gestão de Viaturas' : '← Minhas movimentações';
-    if(acoes) acoes.innerHTML='<a class="btn-gold" href="'+VOLTAR_URL+'">'+voltarLbl+'</a>';
-    document.getElementById('ok-screen').classList.add('show');
-    window.scrollTo(0,0);
-  }catch(e){ toast('Erro ao salvar: '+e.message); btn.disabled=false; btn.textContent='✔ Salvar alterações'; }
+  // ── Acidente ──
+  if(f.tem_acidente || temObj(d.acidente)){
+    ativar('tem_acidente','s-acid');
+    Object.entries(d.acidente||{}).forEach(([k,v])=>setDK('#s-acid',k,v));
+  }
+
+  // ── Manutenção / defeito ──
+  if(f.tem_manutencao || temObj(d.manutencao)){
+    ativar('tem_manutencao','s-manut');
+    const mn=d.manutencao||{};
+    Object.entries(mn).forEach(([k,v])=>{ if(k==='servicos_solicitados') return; setDK('#s-manut',k,v); });
+    if(document.getElementById('manut-situacao')) manutSituacao();
+    const servs=Array.isArray(mn.servicos_solicitados)?mn.servicos_solicitados:[];
+    const chks=[...document.querySelectorAll('#manut-servicos input[type=checkbox]')];
+    const fixos=chks.map(c=>c.value);
+    servs.forEach(s=>{ const c=chks.find(x=>x.value===s); if(c) c.checked=true; });
+    const outros=servs.filter(s=>!fixos.includes(s));
+    if(outros.length){ const oc=document.getElementById('manut-serv-outro-chk');
+      if(oc){ oc.checked=true; manutServOutro(); const oi=document.getElementById('manut-servico-outro'); if(oi) oi.value=outros.join(', '); } }
+  }
+
+  // ── Avaria ──
+  if(f.tem_avaria || temObj(d.avaria)){
+    ativar('tem_avaria','s-avaria');
+    Object.entries(d.avaria||{}).forEach(([k,v])=>setDK('#s-avaria',k,v));
+  }
+
+  // ── Embarcação / Motor / TAQ ──
+  if(f.tem_taq || temObj(d.taq)){
+    ativar('tem_taq','s-taq');
+    const tq=d.taq||{};
+    Object.entries(tq).forEach(([k,v])=>{ if(['embarcacoes','carretinhas','abastecimento'].includes(k)) return; setDK('#s-taq',k,v); });
+    let el;
+    if((el=document.querySelector('#s-taq [data-k="havia_gasolina"]'))) taqGasolina(el);
+    if((el=document.querySelector('#s-taq [data-k="gas_mistura"]'))) taqMistura(el);
+    if((el=document.querySelector('#s-taq [data-k="gas_utilizavel"]'))) taqUtil(el);
+    if((el=document.querySelector('#s-taq [data-k="usou_tudo"]'))) taqFim(el);
+    // embarcações
+    document.getElementById('embarcs').innerHTML='';
+    (Array.isArray(tq.embarcacoes)?tq.embarcacoes:[]).forEach(e=>{ addEmbarc();
+      const r=document.querySelector('#embarcs .emb-row:last-child'); if(!r) return;
+      setSel(r,'.emb-prefixo',e.prefixo); setSel(r,'.emb-motor',e.motor_serie);
+      setSel(r,'.emb-marca',e.motor_marca); setSel(r,'.emb-horas',e.horas); });
+    // carretinhas
+    document.getElementById('carretinhas').innerHTML='';
+    (Array.isArray(tq.carretinhas)?tq.carretinhas:[]).forEach(c=>{ addCarretinha();
+      const r=document.querySelector('#carretinhas .carr-row:last-child'); if(r){ const cel=r.querySelector('.carr-ref'); if(cel) cel.value=c; } });
+    // abastecimento do TAQ
+    const tab=tq.abastecimento||{};
+    const tabHouve=document.querySelector('#s-taq [data-k="taq_ab_houve"]');
+    if(tabHouve && tq.taq_ab_houve==='Sim'){
+      taqAbHouve(tabHouve);
+      const fonteEl=document.getElementById('taq-ab-fonte');
+      if(fonteEl){ if(tab.fonte) fonteEl.value=tab.fonte; taqAbFonte(fonteEl);
+        const sv=(s,v)=>{ const x=document.querySelector('#taq-ab-fields '+s); if(x && v!=null && v!=='') x.value=v; };
+        sv('.tab-comb',tab.combustivel); sv('.tab-litros',tab.litros); sv('.tab-vunit',tab.valor_unit); sv('.tab-vtotal',tab.valor_total);
+        sv('.tab-cartao',tab.cartao_numero); sv('.tab-horimetro',tab.horimetro);
+        const devEl=document.querySelector('#taq-ab-fields .tab-devolvido'); if(devEl && tab.devolvido){ devEl.value=tab.devolvido; taqCartaoDev(devEl); }
+        sv('.tab-recebeu',tab.recebeu); sv('.tab-dh',tab.data_hora); sv('.tab-odometro',tab.odometro);
+        sv('.tab-cidade',tab.cidade); sv('.tab-obs',tab.obs);
+        if(tab.tipo){ const tsel=document.querySelector('#taq-ab-fields .tab-tipo');
+          if(tsel){ tsel.value=tab.tipo; taqAbTipo(tsel);
+            if(tab.tipo==='Convênio'){ const cv=document.querySelector('#taq-ab-fields .tab-convenio');
+              if(cv){ const inList=[...cv.options].some(o=>o.value===tab.convenio); cv.value=inList?tab.convenio:'Outro'; convenioOutro(cv);
+                if(!inList){ const o2=document.querySelector('#taq-ab-fields .tab-convenio-outro'); if(o2) o2.value=tab.convenio||''; } } }
+            else { sv('.tab-doador',tab.doador); sv('.tab-doc',tab.doc);
+              const tm=document.querySelector('#taq-ab-fields .tab-termo');
+              if(tm){ tm.value=tab.fez_termo||'Sim'; taqAbTermo(tm);
+                if(tm.value==='Não'){ const tj=document.querySelector('#taq-ab-fields .tab-termo-just'); if(tj) tj.value=tab.termo_justificativa||''; } } }
+          } }
+      }
+    }
+  }
+
+  // ── Aeronave / Drone ──
+  if(f.tem_aeronave || temObj(d.aeronave)){
+    ativar('tem_aeronave','s-aero');
+    const ae=d.aeronave||{};
+    Object.entries(ae).forEach(([k,v])=>{ if(k==='pilotos') return; setDK('#s-aero',k,v); });
+    document.getElementById('pilotos').innerHTML='';
+    (Array.isArray(ae.pilotos)?ae.pilotos:[]).forEach(p=>{ addPiloto();
+      const r=document.querySelector('#pilotos .pil-row:last-child'); if(!r) return;
+      const nomeVal = p.matricula ? (p.matricula+' - '+(p.nome||'')) : (p.nome||'');
+      setSel(r,'.pil-nome',nomeVal); setSel(r,'.pil-sarpas',p.sarpas); setSel(r,'.pil-horas',p.horas); });
+  }
 }
 
 async function abrirVerFicha(id){
@@ -1434,10 +1544,10 @@ async function salvar(){
     // só limita a 24h após o início p/ evitar erro de digitação.
     if (tFim > tIni+DIA) return foco('termino','O término não pode ser mais de 24h após o início.');
   }
-  if (AGORA - tIni > 2*DIA){
+  if (!EDIT_ID && AGORA - tIni > 2*DIA){
     if(!confirm('O início tem mais de 2 dias. O lançamento deve ser feito no máximo com 1 dia de atraso. Deseja continuar mesmo assim?')) return foco('inicio','Confira a data de início.');
   }
-  if (!isNaN(tFim) && AGORA - tFim > 2*DIA){
+  if (!EDIT_ID && !isNaN(tFim) && AGORA - tFim > 2*DIA){
     if(!confirm('O término tem mais de 2 dias. O lançamento deve ser feito no máximo com 1 dia de atraso. Deseja continuar mesmo assim?')) return foco('termino','Confira a data de término.');
   }
 
@@ -1569,20 +1679,49 @@ async function salvar(){
   if(!validarDspOuAvisar()) return;
   { const dsp=coletarDsp(); if(dsp) dados.dsp=dsp; }
 
+  const _btnLbl = EDIT_ID ? '✔ Salvar alterações' : '✔ Salvar ficha';
   btn.disabled=true; btn.textContent='Salvando…';
   let anexos;
   try{ anexos = await coletarAnexos(); }
-  catch(e){ toast('Falha ao enviar '+e.message); btn.disabled=false; btn.textContent='✔ Salvar ficha'; return; }
+  catch(e){ toast('Falha ao enviar '+e.message); btn.disabled=false; btn.textContent=_btnLbl; return; }
 
+  // datetime-local (hora local de Brasília) → ISO/UTC.
+  const _iniISO = base.inicio  ? new Date(base.inicio).toISOString()  : null;
+  const _terISO = base.termino ? new Date(base.termino).toISOString() : null;
+  const _obs = document.getElementById('obs-geral').value || '';
+
+  // ── EDIÇÃO: grava via mov_ficha_editar, mesclando anexos já enviados + novos ──
+  if(EDIT_ID){
+    const o=EDIT_ORIG||{};
+    const anexosFull=(Array.isArray(o.anexos)?o.anexos:[]).concat(anexos||[]);
+    const p_dados=Object.assign({}, base, flags, {
+      dados, anexos:anexosFull,
+      motorista_nome: document.getElementById('mot-nome').value||'',
+      motorista_matricula: document.getElementById('mot-mat').value||'',
+      lotacao_motorista: document.getElementById('lotacao').value||'',
+      observacoes:_obs, inicio:_iniISO, termino:_terISO
+    });
+    try{
+      const r=await rpc('mov_ficha_editar', { p_token:S.token, p_id:EDIT_ID, p_dados });
+      const n=(r&&r.alteracoes!=null)?+r.alteracoes:0;
+      document.getElementById('form-wrap').style.display='none';
+      const h2=document.querySelector('#ok-screen h2'); if(h2) h2.textContent='Alterações salvas!';
+      document.getElementById('ok-msg').textContent = n>0
+        ? `${n} alteração${n>1?'ões':''} salva${n>1?'s':''}.`
+        : 'Nenhuma alteração foi detectada.';
+      const acoes=document.querySelector('#ok-screen div[style*="justify-content"]');
+      const voltarLbl = VOLTAR_URL.indexOf('viaturas-gestao')===0 ? '← Gestão de Viaturas' : '← Minhas movimentações';
+      if(acoes) acoes.innerHTML='<a class="btn-gold" href="'+VOLTAR_URL+'">'+voltarLbl+'</a>';
+      document.getElementById('ok-screen').classList.add('show');
+      window.scrollTo(0,0);
+    }catch(e){ toast('Erro ao salvar: '+e.message); btn.disabled=false; btn.textContent=_btnLbl; }
+    return;
+  }
+
+  // ── CRIAÇÃO ──
   const payload = Object.assign({}, base, flags, {
-    dados,
-    anexos,
-    // datetime-local (hora local de Brasília) → ISO/UTC. Sem esta conversão, a
-    // hora digitada era gravada como se fosse UTC e a exibição (−3h) mostrava
-    // o horário ~3h atrasado. A edição (salvarEdicao) já convertia; a criação não.
-    inicio:  base.inicio  ? new Date(base.inicio).toISOString()  : null,
-    termino: base.termino ? new Date(base.termino).toISOString() : null,
-    observacoes: document.getElementById('obs-geral').value || '',
+    dados, anexos,
+    inicio:_iniISO, termino:_terISO, observacoes:_obs,
     gp_responsavel: (VMAP[base.prefixo]||{}).gp || '',
     grupamento_completo: S.grupamento_id || ''
   });
@@ -1595,7 +1734,7 @@ async function salvar(){
     document.getElementById('ok-msg').textContent = `Viatura ${base.prefixo}${km}.` + (espelhou ? ' Sincronizado com a planilha do Google.' : '');
     document.getElementById('ok-screen').classList.add('show');
     window.scrollTo(0,0);
-  }catch(e){ toast('Erro ao salvar: '+e.message); btn.disabled=false; btn.textContent='✔ Salvar ficha'; }
+  }catch(e){ toast('Erro ao salvar: '+e.message); btn.disabled=false; btn.textContent=_btnLbl; }
 }
 </script>
 </body>
