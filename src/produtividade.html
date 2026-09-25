@@ -821,25 +821,42 @@ document.getElementById('btnExportPdf').addEventListener('click', async () => {
       y = doc.lastAutoTable.finalY + 8;
     };
 
-    // ---- Cabeçalho institucional (página 1) ----
-    const brasoes = (await Promise.all(
-      ['assets/escudo-cpe.png','assets/escudo-pmmg.png','assets/brasao-bpmmamb.png'].map(carregarImg_)
-    )).filter(Boolean);
-    const bh = 15;
-    const dims = brasoes.map(b => ({ ...b, mw: bh * (b.w / b.h) }));
-    const totalBW = dims.reduce((s,d) => s + d.mw, 0) + 6 * Math.max(0, dims.length - 1);
-    let bx = (pageW - totalBW) / 2;
-    dims.forEach(d => { doc.addImage(d.dataURL, 'PNG', bx, 8, d.mw, bh); bx += d.mw + 6; });
+    // ---- Filtros selecionados (o PDF reflete exatamente estes) ----
+    const opSel   = (document.getElementById('filtroOperacao')?.value || '').trim();
+    const fracSel = (document.getElementById('filtroFracao')?.value || '').trim();
+    const diSel   = document.getElementById('filtroDataInicio')?.value || estado.periodoIni;
+    const dfSel   = document.getElementById('filtroDataFim')?.value   || estado.periodoFim;
+    const opLabel   = opSel || 'Todas as operações';
+    const fracLabel = fracSel || 'Todas as frações';
 
-    let hy = 8 + bh + 7;
-    doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.setTextColor(30,24,14);
-    doc.text('RELATÓRIO DE PRODUTIVIDADE', pageW/2, hy, { align:'center' }); hy += 6;
-    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...OURO);
-    doc.text('CPE · BPM MAmb · 3ª Cia PM MAmb', pageW/2, hy, { align:'center' }); hy += 5;
-    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...MUTED);
-    doc.text(`Período: ${formatarDataBR_(estado.periodoIni)} a ${formatarDataBR_(estado.periodoFim)}    |    Gerado em: ${new Date().toLocaleString('pt-BR')}`, pageW/2, hy, { align:'center' }); hy += 4;
-    doc.setDrawColor(...OURO); doc.setLineWidth(0.6); doc.line(MARGIN, hy, pageW - MARGIN, hy);
-    y = hy + 8;
+    // ---- Cabeçalho institucional (modelo do Relatório de Serviço) ----
+    const [imgEsq, imgDir] = await Promise.all([
+      carregarImg_('assets/escudo-cpe.png'),
+      carregarImg_('assets/brasao-bpmmamb.png'),
+    ]);
+    const bh = 18;
+    if (imgEsq) doc.addImage(imgEsq.dataURL, 'PNG', MARGIN, 10, bh*(imgEsq.w/imgEsq.h), bh);
+    if (imgDir) { const w = bh*(imgDir.w/imgDir.h); doc.addImage(imgDir.dataURL, 'PNG', pageW - MARGIN - w, 10, w, bh); }
+
+    doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(30,24,14);
+    doc.text('Comando de Policiamento Especializado', pageW/2, 13, { align:'center' });
+    doc.text('Batalhão de Polícia Militar de Meio Ambiente', pageW/2, 17.5, { align:'center' });
+    doc.text('3ª Companhia de Polícia Militar de Meio Ambiente', pageW/2, 22, { align:'center' });
+    doc.setFontSize(17); doc.setTextColor(20,16,8);
+    doc.text('RELATÓRIO DE PRODUTIVIDADE', pageW/2, 30, { align:'center' });
+    doc.setDrawColor(...OURO); doc.setLineWidth(0.7); doc.line(MARGIN, 33, pageW - MARGIN, 33);
+
+    // ---- Operação em destaque + demais filtros ----
+    let hy = 39;
+    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(...OURO);
+    const opLines = doc.splitTextToSize('OPERAÇÃO: ' + opLabel.toUpperCase(), contentW);
+    doc.text(opLines, pageW/2, hy, { align:'center' }); hy += opLines.length*5.5 + 1;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...TXT);
+    doc.text(`Fração de atuação: ${fracLabel}    |    Período: ${formatarDataBR_(diSel)} a ${formatarDataBR_(dfSel)}`, pageW/2, hy, { align:'center' }); hy += 4.5;
+    doc.setFontSize(7.5); doc.setTextColor(...MUTED);
+    doc.text(`Gerado em ${new Date().toLocaleString('pt-BR')}`, pageW/2, hy, { align:'center' }); hy += 3;
+    doc.setDrawColor(...LINHA); doc.setLineWidth(0.2); doc.line(MARGIN, hy, pageW - MARGIN, hy);
+    y = hy + 7;
 
     // ---- Resumo do período ----
     const resumo = stripHtml_(estado.resumoTexto);
@@ -890,7 +907,7 @@ document.getElementById('btnExportPdf').addEventListener('click', async () => {
     });
     if (graf.length) {
       const gw = (contentW - 6) / 2;
-      const ph = graf.map(g => Math.min(gw * g.ratio, 60));
+      const ph = graf.map(g => Math.min(gw * g.ratio, 44));
       const maxH = Math.max(...ph);
       garantir_(maxH + 14);
       doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.setTextColor(...MUTED);
@@ -933,7 +950,7 @@ document.getElementById('btnExportPdf').addEventListener('click', async () => {
       doc.setPage(p);
       if (p > 1) {
         doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...OURO);
-        doc.text('Relatório de Produtividade — 3ª Cia PM MAmb', MARGIN, 12);
+        doc.text('Relatório de Produtividade — ' + opLabel, MARGIN, 12);
         doc.setDrawColor(...OURO_CLARO); doc.setLineWidth(0.3); doc.line(MARGIN, 14, pageW - MARGIN, 14);
       }
       doc.setDrawColor(...LINHA); doc.setLineWidth(0.2); doc.line(MARGIN, pageH - 12, pageW - MARGIN, pageH - 12);
