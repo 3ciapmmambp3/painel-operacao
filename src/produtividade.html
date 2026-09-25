@@ -889,7 +889,7 @@ document.getElementById('btnExportPdf').addEventListener('click', async () => {
     // ---- Gráficos dedicados ao PDF (gerados fora da tela, tema p/ papel branco) ----
     // Gera um gráfico Chart.js num canvas oculto de alta resolução e devolve o PNG.
     const PALETA = ['#9b8a5c','#2f5233','#8c3b2f','#3d5a80','#c2953a','#6a4c93','#4e8098','#7a7a7a'];
-    const gerarGrafico_ = (tipo, data, options, w, h) => {
+    const gerarGrafico_ = (tipo, data, options, w, h, plugins) => {
       const cv = document.createElement('canvas');
       cv.width = w; cv.height = h;
       cv.style.position = 'absolute'; cv.style.left = '-99999px'; cv.style.top = '0';
@@ -899,6 +899,7 @@ document.getElementById('btnExportPdf').addEventListener('click', async () => {
         const ch = new Chart(cv.getContext('2d'), {
           type: tipo, data,
           options: Object.assign({ responsive:false, animation:false, devicePixelRatio:1 }, options),
+          plugins: plugins || [],
         });
         ch.update('none');
         url = cv.toDataURL('image/png', 1.0);
@@ -934,13 +935,41 @@ document.getElementById('btnExportPdf').addEventListener('click', async () => {
       const outros = totOrd.slice(6).reduce((s,[,v]) => s+v, 0);
       const comp = outros > 0 ? [...top, ['Outros', outros]] : top;
       const totalComp = comp.reduce((s,[,v]) => s+v, 0);
+      // Plugin inline: escreve o valor (e %) dentro de cada fatia.
+      const rotulosNaFatia = {
+        id: 'rotulosNaFatia',
+        afterDatasetsDraw(chart){
+          const ctx = chart.ctx;
+          const meta = chart.getDatasetMeta(0);
+          const dados = chart.data.datasets[0].data;
+          const tot = dados.reduce((a,b) => a+(b||0), 0) || 1;
+          ctx.save();
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          meta.data.forEach((arc, i) => {
+            const v = dados[i]; if (!v) return;
+            const pct = Math.round(v/tot*100);
+            if (pct < 4) return; // pula fatias muito pequenas p/ não sobrepor
+            const p = arc.getCenterPoint();
+            const val = formatarNumero_(v);
+            const desenhar = (txt, yy, fonte) => {
+              ctx.font = fonte;
+              ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,.55)';
+              ctx.strokeText(txt, p.x, yy);
+              ctx.fillStyle = '#fff'; ctx.fillText(txt, p.x, yy);
+            };
+            desenhar(val, p.y - 9, 'bold 23px Arial');
+            desenhar(pct + '%', p.y + 13, '15px Arial');
+          });
+          ctx.restore();
+        },
+      };
       const g = gerarGrafico_('doughnut', {
-        labels: comp.map(([k,v]) => `${truncar_(k, 18)}: ${formatarNumero_(v)} (${totalComp ? Math.round(v/totalComp*100) : 0}%)`),
+        labels: comp.map(([k]) => truncar_(k, 20)),
         datasets: [{ data: comp.map(([,v]) => v), backgroundColor: PALETA, borderColor:'#fff', borderWidth:2 }],
       }, {
         plugins:{ legend:{ position:'right', labels:{ color:'#222', font:{ size:15 }, boxWidth:18, padding:9 } } },
-        cutout:'55%',
-      }, 1150, 560);
+        cutout:'50%',
+      }, 1150, 560, [rotulosNaFatia]);
       if (g) graf.push({ t:'Composição da Produção', ...g });
     }
     // 3) Linha — Produtividade por dia
