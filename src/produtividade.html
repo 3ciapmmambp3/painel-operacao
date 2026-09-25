@@ -329,6 +329,18 @@ async function carregarTudo(){
     // Escopo de visualização por nível de acesso (mesma regra do resto do sistema).
     todosOsRegistros = (prodRes.produtividade || []).filter(r => auth_podeVerGrupamento(sessao, r['Fração de Atuação']));
 
+    // "Tipo de Serviço" não vem do listarProdutividade (planilha). Puxa do Supabase
+    // (relatorio_meus) e cruza pelo ID Relatório. Best-effort: se falhar, fica vazio.
+    try {
+      const tipoServMap = await carregarTiposServicoSupabase();
+      if (tipoServMap.size){
+        todosOsRegistros.forEach(r => {
+          const id = (r['ID Relatório'] != null ? r['ID Relatório'] : '').toString().trim();
+          if (id && tipoServMap.has(id)) r['Tipo de Serviço'] = tipoServMap.get(id);
+        });
+      }
+    } catch(e){ console.warn('[produtividade] enriquecimento Tipo de Serviço falhou:', e); }
+
     popularFiltroOperacao(await carregarOperacoesSupabaseProd());
     popularFiltroFracao();
 
@@ -347,6 +359,29 @@ async function carregarTudo(){
     console.error('Erro ao carregar produtividade:', err);
     document.getElementById('prod-conteudo').innerHTML = '<div class="mr-empty">Erro ao carregar. Recarregue a página.</div>';
   }
+}
+
+// Tipos de Serviço dos relatórios (Supabase) — o listarProdutividade (planilha)
+// não traz esse campo, então cruzamos pelo "ID Relatório". Retorna um Map id->tipo.
+// Espelha o "Meus Relatórios": Admin Geral vê todos; demais, seu escopo de gestão.
+async function carregarTiposServicoSupabase(){
+  try{
+    if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return new Map();
+    if (!sessao || !sessao.token) return new Map();
+    const ehAdminGeral = sessao.nivel_acesso === 'admin_geral';
+    const H = { apikey: SB_AUTH_KEY, Authorization:`Bearer ${SB_AUTH_KEY}`, 'Content-Type':'application/json' };
+    const r = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/relatorio_meus`, {
+      method:'POST', headers:H, body: JSON.stringify({ p_token: sessao.token, p_todos: ehAdminGeral })
+    });
+    if (!r.ok) throw new Error('HTTP '+r.status);
+    const rows = await r.json();
+    const mapa = new Map();
+    (Array.isArray(rows) ? rows : []).forEach(row => {
+      const id = (row['ID Relatório'] != null ? row['ID Relatório'] : '').toString().trim();
+      if (id) mapa.set(id, row['Tipo de Serviço'] || '');
+    });
+    return mapa;
+  }catch(e){ console.warn('[produtividade] relatorio_meus indisponível p/ Tipo de Serviço:', e); return new Map(); }
 }
 
 // Operações do painel (Supabase) — fonte do cadastro (aba "Nova Operação").
@@ -953,8 +988,6 @@ document.getElementById('btnExportPdf').addEventListener('click', async () => {
             const val = formatarNumero_(v);
             const desenhar = (txt, yy, fonte) => {
               ctx.font = fonte;
-              ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(255,255,255,.9)';
-              ctx.strokeText(txt, p.x, yy);
               ctx.fillStyle = '#000'; ctx.fillText(txt, p.x, yy);
             };
             desenhar(val, p.y - 9, 'bold 23px Arial');
