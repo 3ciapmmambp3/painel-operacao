@@ -255,8 +255,17 @@ function normalizar_(s){
   return (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim();
 }
 
-// Data de ontem, em hora local (evita o problema de toISOString() converter
+// Data de hoje, em hora local (evita o problema de toISOString() converter
 // pra UTC e "pular" pro dia errado perto da virada da meia-noite).
+function dataHojeISO_(){
+  const d = new Date();
+  const ano = d.getFullYear();
+  const mes = String(d.getMonth() + 1).padStart(2, '0');
+  const dia = String(d.getDate()).padStart(2, '0');
+  return `${ano}-${mes}-${dia}`;
+}
+
+// Data de ontem, em hora local (mesmo cuidado com a virada da meia-noite).
 function dataOntemISO_(){
   const d = new Date();
   d.setDate(d.getDate() - 1);
@@ -483,7 +492,11 @@ function onOperacaoChange(){
   const info = op ? (operacoesComDatas || []).find(o => o.nome === op) : null;
   if (info && (info.inicio || info.final)){
     if (info.inicio) document.getElementById('filtroDataInicio').value = info.inicio;
-    if (info.final)  document.getElementById('filtroDataFim').value  = info.final;
+    // Data-fim = sempre HOJE (a produtividade vai até o dia corrente). Se a
+    // operação já terminou antes de hoje, limita ao final cadastrado dela.
+    const hojeISO = dataHojeISO_();
+    const fim = (info.final && info.final < hojeISO) ? info.final : hojeISO;
+    document.getElementById('filtroDataFim').value = fim;
   }
   aplicarCamposDaOperacao();
   renderizarTudo();
