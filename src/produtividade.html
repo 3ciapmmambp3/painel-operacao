@@ -237,12 +237,19 @@ document.addEventListener('click', () => {
 // =====================================================================
 // DADOS
 // =====================================================================
-let camposProdutividade = [];  // [{nome, tipo}], vêm de CAMPOS_PRODUTIVIDADE
+let camposProdutividade = [];  // [{nome, tipo, usarRanking}] — indicadores da OPERAÇÃO escolhida
 let camposNumericos = [];      // mesma lista, sem os campos tipo "Texto" (não somam)
 let tipoPorNome = {};          // nome -> tipo, pra formatação
 let todosOsRegistros = [];     // cada linha = 1 relatório com Produtividade preenchida
 let graficoBarras = null;
 let graficoLinha = null;
+
+// Catálogo de Campos & Quesitos (Supabase) — fonte dos indicadores de produtividade.
+let QUESITOS_PROD = [];
+// Operações do painel com suas datas (p/ pré-preencher o período do filtro).
+let operacoesComDatas = [];    // [{nome, inicio, final}]
+// Fallback: campos da planilha CAMPOS_PRODUTIVIDADE, usados só se o Supabase falhar.
+let _camposPlanilhaFallback = [];
 
 function normalizar_(s){
   return (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().trim();
@@ -308,12 +315,11 @@ async function carregarTudo(){
     const [refRes, prodRes] = await Promise.all([
       auth_fetchReferencias(SCRIPT_URL),
       fetch(`${SCRIPT_URL}?action=listarProdutividade`).then(r => r.json()),
+      carregarQuesitosProdSupabase(),   // catálogo de indicadores (Campos & Quesitos)
     ]);
 
-    camposProdutividade = refRes.CAMPOS_PRODUTIVIDADE || [];
-    camposNumericos = camposProdutividade.filter(c => c.tipo !== 'Texto');
-    tipoPorNome = {};
-    camposProdutividade.forEach(c => { tipoPorNome[c.nome] = c.tipo; });
+    // Fallback (só se o Supabase falhar): campos ativos da planilha.
+    _camposPlanilhaFallback = (refRes.CAMPOS_PRODUTIVIDADE || []).filter(c => c.status !== 'Inativo');
 
     if (prodRes.result !== 'success'){
       document.getElementById('prod-conteudo').innerHTML = '<div class="mr-empty">Erro ao carregar dados de produtividade.</div>';
@@ -333,6 +339,9 @@ async function carregarTudo(){
     document.getElementById('filtroDataInicio').value = ontemISO;
     document.getElementById('filtroDataFim').value = ontemISO;
 
+    // Indicadores da operação atual do filtro ("Todas" no primeiro carregamento).
+    aplicarCamposDaOperacao();
+
     renderizarTudo();
   } catch(err){
     console.error('Erro ao carregar produtividade:', err);
@@ -351,8 +360,98 @@ async function carregarOperacoesSupabaseProd(){
     const r = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/operacoes_listar`, { method:'POST', headers:H, body:'{}' });
     if (!r.ok) throw new Error('HTTP '+r.status);
     const rows = await r.json();
-    return Array.isArray(rows) ? rows.map(o => (o.nome||'').trim()).filter(Boolean) : [];
+    if (!Array.isArray(rows)) return [];
+    // Guarda início/fim de cada operação p/ pré-preencher o período do filtro.
+    operacoesComDatas = rows.map(o => ({
+      nome:   (o.nome || '').trim(),
+      inicio: o.inicio ? String(o.inicio).slice(0,10) : '',
+      final:  o.final  ? String(o.final ).slice(0,10) : '',
+    })).filter(o => o.nome);
+    return operacoesComDatas.map(o => o.nome);
   }catch(e){ console.warn('[produtividade] operacoes_listar indisponível:', e); return []; }
+}
+
+// Catálogo de Campos & Quesitos (Supabase). Fonte dos indicadores de produtividade:
+// só entram os ATIVOS; desativar em Campos & Quesitos remove a coluna, cadastrar
+// um novo faz aparecer. Best-effort: se falhar, cai no fallback da planilha.
+async function carregarQuesitosProdSupabase(){
+  try{
+    if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
+    const H = { apikey: SB_AUTH_KEY, Authorization:`Bearer ${SB_AUTH_KEY}`, 'Content-Type':'application/json' };
+    const r = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/operacao_quesitos_get`, { method:'POST', headers:H, body:'{}' });
+    if (!r.ok) throw new Error('HTTP '+r.status);
+    const arr = await r.json();
+    QUESITOS_PROD = Array.isArray(arr) ? arr : [];
+  }catch(e){ console.warn('[produtividade] operacao_quesitos_get indisponível:', e); QUESITOS_PROD = []; }
+}
+
+// Traduz o tipo do quesito p/ o vocabulário de produtividade (só numéricos somam).
+function _tipoQuesitoParaProd_(t){
+  switch(t){
+    case 'numero':  return 'Inteiro';
+    case 'decimal': return 'Decimal';
+    case 'moeda':   return 'Moeda';
+    default:        return 'Texto'; // texto_curto/longo, data, sim_nao, opcoes
+  }
+}
+
+// Indicadores (colunas) que valem para a operação escolhida no filtro:
+//  - sempre os globais de escopo 'produtividade' (ativos);
+//  - os 'todas' (ativos), pois são preenchidos em qualquer operação;
+//  - os 'especificas' (ativos) da operação selecionada — ou, em "Todas", de todas
+//    as operações, p/ a visão agregada não esconder nenhum indicador ativo.
+// Ranking: por decisão, TODO indicador numérico ativo entra no ranking.
+function _camposDeQuesitos_(opNome){
+  const arr = QUESITOS_PROD || [];
+  const seen = new Set();
+  const out = [];
+  const push = q => {
+    const nome = (q.label || '').trim();
+    if (!nome) return;
+    const k = nome.toLowerCase();
+    if (seen.has(k)) return;
+    seen.add(k);
+    const tipo = _tipoQuesitoParaProd_(q.tipo);
+    out.push({ nome, tipo, usarRanking: tipo !== 'Texto' });
+  };
+  arr.filter(q => q.escopo === 'produtividade' && q.ativo !== false).forEach(push);
+  arr.filter(q => q.escopo === 'todas' && q.ativo !== false).forEach(push);
+  if (opNome){
+    arr.filter(q => q.escopo === 'especificas' && q.ativo !== false && Array.isArray(q.operacoes) && q.operacoes.includes(opNome)).forEach(push);
+  } else {
+    arr.filter(q => q.escopo === 'especificas' && q.ativo !== false).forEach(push);
+  }
+  return out;
+}
+
+// (Re)define os indicadores conforme a operação atual do filtro e atualiza os
+// derivados (numéricos / tipo por nome). Chamado no load e ao trocar a operação.
+function aplicarCamposDaOperacao(){
+  const op = (document.getElementById('filtroOperacao').value || '').trim();
+  // Catálogo "configurado" = tem ao menos um indicador de produtividade (ativo ou
+  // não). Nesse caso mandamos SÓ o Supabase: se estiver tudo desativado, o painel
+  // fica vazio (fiel à decisão do admin). Só caímos na planilha quando o catálogo
+  // não veio (Supabase indisponível / ainda não semeado).
+  const catalogoConfigurado = (QUESITOS_PROD || []).some(q => q.escopo === 'produtividade');
+  let campos = _camposDeQuesitos_(op);
+  if (!campos.length && !catalogoConfigurado) campos = _camposPlanilhaFallback;
+  camposProdutividade = campos;
+  camposNumericos = camposProdutividade.filter(c => c.tipo !== 'Texto');
+  tipoPorNome = {};
+  camposProdutividade.forEach(c => { tipoPorNome[c.nome] = c.tipo; });
+}
+
+// Troca de operação no filtro: pré-preenche o período com o início/fim cadastrados
+// da operação (editável) e recalcula os indicadores antes de renderizar.
+function onOperacaoChange(){
+  const op = (document.getElementById('filtroOperacao').value || '').trim();
+  const info = op ? (operacoesComDatas || []).find(o => o.nome === op) : null;
+  if (info && (info.inicio || info.final)){
+    if (info.inicio) document.getElementById('filtroDataInicio').value = info.inicio;
+    if (info.final)  document.getElementById('filtroDataFim').value  = info.final;
+  }
+  aplicarCamposDaOperacao();
+  renderizarTudo();
 }
 
 // Monta o filtro de Operação SEM depender da planilha: une o cadastro do painel
@@ -393,7 +492,10 @@ function aplicarFiltros(){
   });
 }
 
-['filtroOperacao','filtroDataInicio','filtroDataFim','filtroFracao'].forEach(id => {
+// Trocar a OPERAÇÃO recalcula os indicadores e pré-preenche o período; os demais
+// filtros só re-renderizam.
+document.getElementById('filtroOperacao').addEventListener('change', onOperacaoChange);
+['filtroDataInicio','filtroDataFim','filtroFracao'].forEach(id => {
   document.getElementById(id).addEventListener('change', renderizarTudo);
 });
 document.getElementById('btnLimparFiltrosProd').addEventListener('click', () => {
@@ -402,6 +504,7 @@ document.getElementById('btnLimparFiltrosProd').addEventListener('click', () => 
   document.getElementById('filtroDataInicio').value = ontemISO;
   document.getElementById('filtroDataFim').value = ontemISO;
   document.getElementById('filtroFracao').value = '';
+  aplicarCamposDaOperacao(); // volta pros indicadores da visão "Todas"
   renderizarTudo();
 });
 
@@ -518,7 +621,7 @@ function renderizarTudo(){
 
     <div class="secao-titulo">🏆 Ranking por Fração de Atuação</div>
     <div class="chart-box" id="prod-ranking-fracao">
-      ${!camposRanking.length ? '<div class="mr-empty">Nenhum indicador marcado com "Usar no Ranking" na planilha CAMPOS_PRODUTIVIDADE.</div>' : `
+      ${!camposRanking.length ? '<div class="mr-empty">Nenhum indicador numérico ativo para esta operação em Campos &amp; Quesitos.</div>' : `
       <div style="overflow-x:auto;">
       <table class="prod-table">
         <thead><tr><th>#</th><th>Fração</th><th>Turnos</th>${camposRanking.map(c => `<th>${iconeECor_(c.nome).icone} ${c.nome}</th>`).join('')}</tr></thead>
@@ -529,7 +632,7 @@ function renderizarTudo(){
 
     <div class="secao-titulo">🏆 Ranking por Equipe</div>
     <div class="chart-box" id="prod-ranking-equipe">
-      ${!camposRanking.length ? '<div class="mr-empty">Nenhum indicador marcado com "Usar no Ranking" na planilha CAMPOS_PRODUTIVIDADE.</div>' : `
+      ${!camposRanking.length ? '<div class="mr-empty">Nenhum indicador numérico ativo para esta operação em Campos &amp; Quesitos.</div>' : `
       <div style="overflow-x:auto;">
       <table class="prod-table">
         <thead><tr><th>#</th><th>Fração / Equipe</th><th>Turnos</th>${camposRanking.map(c => `<th>${iconeECor_(c.nome).icone} ${c.nome}</th>`).join('')}</tr></thead>
