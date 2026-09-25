@@ -686,6 +686,7 @@ function renderizarTudo(){
 
   // Guarda o estado atual pra exportação
   window._prodEstadoAtual = { dados, totais, resumoTexto, periodoIni, periodoFim, rankingFracao, rankingEquipe, indicadoresCalc, camposRanking,
+    porDia, diasOrdenados,
     stats: { turnos: totalTurnos, fracoes: fracoesUnicas.size, equipes: equipesUnicas.size, militares: totalMilitares, viaturas: totalViaturas } };
 }
 
@@ -897,40 +898,109 @@ document.getElementById('btnExportPdf').addEventListener('click', async () => {
       Object.entries(estado.totais).filter(([,v]) => v > 0).map(([k,v]) => [k, formatarNumero_(v)]),
       { columnStyles: { 1: { halign:'right', fontStyle:'bold', cellWidth: 40 } } });
 
-    // ---- Gráficos (capturados dos canvases da tela) ----
+    // ---- Gráficos dedicados ao PDF (gerados fora da tela, tema p/ papel branco) ----
+    // Gera um gráfico Chart.js num canvas oculto de alta resolução e devolve o PNG.
+    const PALETA = ['#9b8a5c','#4e6b4a','#c2ad6e','#7d8a5a','#b08d57','#5c6b7a','#8a6d3b','#a9b18f'];
+    const gerarGrafico_ = (tipo, data, options, w, h) => {
+      const cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      cv.style.position = 'absolute'; cv.style.left = '-99999px'; cv.style.top = '0';
+      document.body.appendChild(cv);
+      let url = null;
+      try {
+        const ch = new Chart(cv.getContext('2d'), {
+          type: tipo, data,
+          options: Object.assign({ responsive:false, animation:false, devicePixelRatio:1 }, options),
+        });
+        ch.update('none');
+        url = cv.toDataURL('image/png', 1.0);
+        ch.destroy();
+      } catch(e){ console.error('grafico PDF', e); }
+      cv.remove();
+      return url ? { url, ratio: h/w } : null;
+    };
+    const truncar_ = (s, n) => { s = String(s); return s.length > n ? s.slice(0, n-1) + '…' : s; };
+
+    const totOrd = Object.entries(estado.totais).filter(([,v]) => v > 0).sort((a,b) => b[1]-a[1]);
+    const dias = estado.diasOrdenados || [];
+    const porDia = estado.porDia || {};
+    const eixo = { ticks:{ color:'#333', font:{ size:12 } }, grid:{ color:'#e8e8e8' } };
+
     const graf = [];
-    [['Top Indicadores (total)', 'chartBarras'], ['Produtividade por Dia', 'chartLinha']].forEach(([t, id]) => {
-      const cv = document.getElementById(id);
-      if (cv && cv.width && cv.height) {
-        try { graf.push({ t, url: cv.toDataURL('image/png', 1.0), ratio: cv.height / cv.width }); } catch(e){}
-      }
-    });
-    if (graf.length) {
-      const gw = (contentW - 6) / 2;
-      const ph = graf.map(g => Math.min(gw * g.ratio, 44));
-      const maxH = Math.max(...ph);
-      garantir_(maxH + 14);
-      doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.setTextColor(...MUTED);
-      doc.text('GRÁFICOS', MARGIN, y);
-      const gy = y + 3;
-      graf.forEach((g, i) => {
-        const x = MARGIN + i*(gw+6);
-        doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(80,70,50);
-        doc.text(g.t, x, gy + 3);
-        doc.addImage(g.url, 'PNG', x, gy + 5, gw, ph[i]);
-      });
-      y = gy + 5 + maxH + 8;
+    // 1) Barra horizontal — Top indicadores
+    if (totOrd.length) {
+      const top = totOrd.slice(0, 8);
+      const g = gerarGrafico_('bar', {
+        labels: top.map(([k]) => truncar_(k, 26)),
+        datasets: [{ data: top.map(([,v]) => v), backgroundColor:'#9b8a5c', borderRadius:3 }],
+      }, {
+        indexAxis:'y',
+        plugins:{ legend:{ display:false } },
+        scales:{ x:{ beginAtZero:true, ...eixo }, y:{ ...eixo, grid:{ display:false } } },
+      }, 1000, 560);
+      if (g) graf.push({ t:'Top Indicadores (total do período)', ...g });
+    }
+    // 2) Rosca — Composição da produção
+    if (totOrd.length >= 2) {
+      const top = totOrd.slice(0, 6);
+      const outros = totOrd.slice(6).reduce((s,[,v]) => s+v, 0);
+      const comp = outros > 0 ? [...top, ['Outros', outros]] : top;
+      const g = gerarGrafico_('doughnut', {
+        labels: comp.map(([k]) => truncar_(k, 22)),
+        datasets: [{ data: comp.map(([,v]) => v), backgroundColor: PALETA, borderColor:'#fff', borderWidth:2 }],
+      }, {
+        plugins:{ legend:{ position:'right', labels:{ color:'#333', font:{ size:12 }, boxWidth:14, padding:8 } } },
+        cutout:'55%',
+      }, 1000, 560);
+      if (g) graf.push({ t:'Composição da Produção', ...g });
+    }
+    // 3) Linha — Produtividade por dia
+    if (dias.length) {
+      const g = gerarGrafico_('line', {
+        labels: dias.map(formatarDataBR_),
+        datasets: [{ data: dias.map(d => porDia[d]||0), borderColor:'#9b8a5c', backgroundColor:'rgba(155,138,92,.15)', fill:true, tension:.3, pointRadius:4, pointBackgroundColor:'#d4b968', borderWidth:2 }],
+      }, {
+        plugins:{ legend:{ display:false } },
+        scales:{ x:{ ...eixo, ticks:{ color:'#333', font:{ size:11 } } }, y:{ beginAtZero:true, ...eixo } },
+      }, 2050, 560);
+      if (g) graf.push({ t:'Produtividade por Dia', full:true, ...g });
     }
 
-    // ---- Rankings ----
-    const cabRank = ['#','Fração','Turnos', ...estado.camposRanking.map(c => c.nome)];
-    const colRank = { 0: { cellWidth: 8, halign:'center' }, 2: { halign:'center' } };
-    tabela_('Ranking por Fração de Atuação', cabRank,
-      estado.rankingFracao.map(([f,v],i) => [i+1, f, v.turnos.size, ...estado.camposRanking.map(c => formatarValorPorTipo_(v.valores[c.nome], c.nome))]),
-      { columnStyles: colRank });
-    tabela_('Ranking por Equipe', ['#','Fração / Equipe','Turnos', ...estado.camposRanking.map(c => c.nome)],
-      estado.rankingEquipe.map(([f,v],i) => [i+1, f, v.turnos.size, ...estado.camposRanking.map(c => formatarValorPorTipo_(v.valores[c.nome], c.nome))]),
-      { columnStyles: colRank });
+    if (graf.length) {
+      garantir_(14);
+      doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.setTextColor(...MUTED);
+      doc.text('GRÁFICOS', MARGIN, y);
+      y += 3;
+      const meia = (contentW - 6) / 2;
+      let i = 0;
+      while (i < graf.length) {
+        const g = graf[i];
+        if (g.full) {
+          const w = contentW, h = Math.min(w * g.ratio, 55);
+          garantir_(h + 8);
+          doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(80,70,50);
+          doc.text(g.t, MARGIN, y + 3);
+          doc.addImage(g.url, 'PNG', MARGIN, y + 5, w, h);
+          y += 5 + h + 8; i += 1;
+        } else {
+          const par = graf[i+1] && !graf[i+1].full ? graf[i+1] : null;
+          const h1 = Math.min(meia * g.ratio, 46);
+          const h2 = par ? Math.min(meia * par.ratio, 46) : 0;
+          const hRow = Math.max(h1, h2);
+          garantir_(hRow + 8);
+          doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(80,70,50);
+          doc.text(g.t, MARGIN, y + 3);
+          doc.addImage(g.url, 'PNG', MARGIN, y + 5, meia, h1);
+          if (par) {
+            doc.text(par.t, MARGIN + meia + 6, y + 3);
+            doc.addImage(par.url, 'PNG', MARGIN + meia + 6, y + 5, meia, h2);
+          }
+          y += 5 + hRow + 8; i += par ? 2 : 1;
+        }
+      }
+    }
+
+    // Ranking (por Fração e por Equipe) fica apenas no Excel, a pedido.
 
     // ---- Indicadores de desempenho (calculados) ----
     tabela_('Indicadores de Desempenho',
