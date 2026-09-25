@@ -3702,17 +3702,30 @@ function validateRequiredFields(){
 // Roda no ENVIO, cobrindo o caso de fechar o card pelo X sem passar pelo modal.
 function validarDemandasObrigatorias(){
   const errors = [];
+  const vistos = new Set();
+  const checar = (entry, catLabel) => {
+    if (!entry || vistos.has(entry)) return;
+    vistos.add(entry);
+    const demSel = entry.querySelector('[data-demanda-obrig="1"]');
+    if (!demSel) return;                                  // categoria sem lista de demanda
+    if (entryIsFilled(entry) && !(demSel.value || '').trim()){
+      errors.push(`${catLabel} — "${demSel.dataset.label || 'Nº da demanda'}" é obrigatório (selecione a demanda atendida)`);
+    }
+  };
+  // 1) Via panelCache (id conhecido → rótulo bonito da categoria).
   Object.keys(panelCache || {}).forEach(id => {
     const node = panelCache[id];
     if (!node) return;
     const catLabel = (CATEGORIES.find(c => c.id === id) || {}).label || id;
-    node.querySelectorAll('[data-repeat-entry]').forEach(entry => {
-      const demSel = entry.querySelector('[data-demanda-obrig="1"]');
-      if (!demSel) return;
-      if (entryIsFilled(entry) && !(demSel.value || '').trim()){
-        errors.push(`${catLabel} — "${demSel.dataset.label || 'Nº da demanda'}" é obrigatório (selecione a demanda atendida)`);
-      }
-    });
+    node.querySelectorAll('[data-repeat-entry]').forEach(entry => checar(entry, catLabel));
+  });
+  // 2) Fallback: qualquer entrada no documento (cobre nós não mapeados pelo cache,
+  //    ex.: card ainda aberto/anexado ao modal). Dedup pelo Set acima.
+  document.querySelectorAll('[data-repeat-entry]').forEach(entry => {
+    const panel = entry.closest('[data-repeat-list]');
+    const id = panel && panel.getAttribute('data-repeat-list');
+    const catLabel = (CATEGORIES.find(c => c.id === id) || {}).label || 'Demanda';
+    checar(entry, catLabel);
   });
   return errors;
 }
@@ -4186,6 +4199,14 @@ document.getElementById('reviewConfirmBtn').addEventListener('click', async () =
   if (!SCRIPT_URL || SCRIPT_URL.indexOf('COLE_AQUI') !== -1){
     closeReview();
     alert('O formulário ainda não está conectado à planilha (SCRIPT_URL não configurada). Veja o README.');
+    return;
+  }
+  // Trava final: nenhuma demanda pode ir sem o Nº selecionado (última barreira
+  // antes do POST — cobre qualquer caminho que não tenha passado pela validação).
+  const demandaErros = validarDemandasObrigatorias();
+  if (demandaErros.length){
+    closeReview();
+    showFormError(demandaErros);
     return;
   }
   const payload = collectAllData();
