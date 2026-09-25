@@ -685,7 +685,8 @@ function renderizarTudo(){
   desenharGraficos_(topIndicadores, diasOrdenados, porDia);
 
   // Guarda o estado atual pra exportação
-  window._prodEstadoAtual = { dados, totais, resumoTexto, periodoIni, periodoFim, rankingFracao, rankingEquipe, indicadoresCalc, camposRanking };
+  window._prodEstadoAtual = { dados, totais, resumoTexto, periodoIni, periodoFim, rankingFracao, rankingEquipe, indicadoresCalc, camposRanking,
+    stats: { turnos: totalTurnos, fracoes: fracoesUnicas.size, equipes: equipesUnicas.size, militares: totalMilitares, viaturas: totalViaturas } };
 }
 
 function formatarNumero_(v){
@@ -776,28 +777,170 @@ document.getElementById('btnExportPdf').addEventListener('click', async () => {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
 
-    doc.setFontSize(14);
-    doc.text('RELATÓRIO DE PRODUTIVIDADE — 3ª CIA PM MAmb', 14, 16);
-    doc.setFontSize(9);
-    doc.text(`Período: ${formatarDataBR_(estado.periodoIni)} a ${formatarDataBR_(estado.periodoFim)}  |  Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 22);
+    // ---- Paleta / geometria ----
+    const pageW = doc.internal.pageSize.getWidth();   // 210
+    const pageH = doc.internal.pageSize.getHeight();  // 297
+    const MARGIN = 14, contentW = pageW - MARGIN*2;
+    const OURO = [155,138,92], OURO_CLARO = [212,185,104], ESCURO = [26,16,0];
+    const TXT = [40,32,20], MUTED = [120,110,90], LINHA = [225,220,205];
+    const TOP_TABELA = 22, BOTTOM = 16;
 
-    const totaisArr = Object.entries(estado.totais).filter(([,v]) => v > 0).map(([k,v]) => [k, formatarNumero_(v)]);
-    doc.autoTable({ startY: 28, head: [['Indicador', 'Total']], body: totaisArr, styles:{fontSize:8}, headStyles:{fillColor:[26,16,0]} });
+    // ---- Helpers ----
+    const carregarImg_ = (src) => new Promise((res) => {
+      const img = new Image();
+      img.onload = () => { try {
+        const c = document.createElement('canvas');
+        c.width = img.naturalWidth; c.height = img.naturalHeight;
+        c.getContext('2d').drawImage(img, 0, 0);
+        res({ dataURL: c.toDataURL('image/png'), w: img.naturalWidth, h: img.naturalHeight });
+      } catch(e){ res(null); } };
+      img.onerror = () => res(null);
+      img.src = src;
+    });
+    const stripHtml_ = (s) => String(s||'').replace(/<[^>]+>/g,'').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"');
 
-    let y = doc.lastAutoTable.finalY + 10;
-    doc.setFontSize(11);
-    doc.text('Ranking por Fração de Atuação', 14, y);
-    doc.autoTable({ startY: y+3, head: [['#','Fração','Turnos', ...estado.camposRanking.map(c => c.nome)]],
-      body: estado.rankingFracao.map(([f,v],i) => [i+1, f, v.turnos.size, ...estado.camposRanking.map(c => formatarValorPorTipo_(v.valores[c.nome], c.nome))]),
-      styles:{fontSize:7}, headStyles:{fillColor:[26,16,0]} });
+    let y = 0;
+    const novaPagina_ = () => { doc.addPage(); y = TOP_TABELA; };
+    const garantir_ = (h) => { if (y + h > pageH - BOTTOM) novaPagina_(); };
 
-    y = doc.lastAutoTable.finalY + 10;
-    if (y > 250){ doc.addPage(); y = 16; }
-    doc.setFontSize(11);
-    doc.text('Relatórios do Período', 14, y);
-    doc.autoTable({ startY: y+3, head: [['Data','Fração','Equipe','Comandante']],
-      body: estado.dados.map(r => [formatarDataBR_(r['Data']), r['Fração de Atuação']||'—', r['Equipe']||'—', r['Comandante']||'—']),
-      styles:{fontSize:7}, headStyles:{fillColor:[26,16,0]} });
+    // Tabela padronizada (título dourado + estilo listrado)
+    const tabela_ = (titulo, head, body, extra) => {
+      if (!body.length) return;
+      garantir_(16);
+      doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.setTextColor(...MUTED);
+      doc.text(titulo.toUpperCase(), MARGIN, y);
+      doc.autoTable(Object.assign({
+        startY: y + 3,
+        head: [head], body,
+        theme: 'striped',
+        styles: { fontSize: 7.5, cellPadding: 2, textColor: TXT, lineColor: LINHA, lineWidth: 0.1, overflow: 'linebreak' },
+        headStyles: { fillColor: ESCURO, textColor: OURO_CLARO, fontStyle: 'bold', fontSize: 7.5 },
+        alternateRowStyles: { fillColor: [247,244,235] },
+        margin: { top: TOP_TABELA, bottom: BOTTOM, left: MARGIN, right: MARGIN },
+      }, extra||{}));
+      y = doc.lastAutoTable.finalY + 8;
+    };
+
+    // ---- Cabeçalho institucional (página 1) ----
+    const brasoes = (await Promise.all(
+      ['assets/escudo-cpe.png','assets/escudo-pmmg.png','assets/brasao-bpmmamb.png'].map(carregarImg_)
+    )).filter(Boolean);
+    const bh = 15;
+    const dims = brasoes.map(b => ({ ...b, mw: bh * (b.w / b.h) }));
+    const totalBW = dims.reduce((s,d) => s + d.mw, 0) + 6 * Math.max(0, dims.length - 1);
+    let bx = (pageW - totalBW) / 2;
+    dims.forEach(d => { doc.addImage(d.dataURL, 'PNG', bx, 8, d.mw, bh); bx += d.mw + 6; });
+
+    let hy = 8 + bh + 7;
+    doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.setTextColor(30,24,14);
+    doc.text('RELATÓRIO DE PRODUTIVIDADE', pageW/2, hy, { align:'center' }); hy += 6;
+    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...OURO);
+    doc.text('CPE · BPM MAmb · 3ª Cia PM MAmb', pageW/2, hy, { align:'center' }); hy += 5;
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...MUTED);
+    doc.text(`Período: ${formatarDataBR_(estado.periodoIni)} a ${formatarDataBR_(estado.periodoFim)}    |    Gerado em: ${new Date().toLocaleString('pt-BR')}`, pageW/2, hy, { align:'center' }); hy += 4;
+    doc.setDrawColor(...OURO); doc.setLineWidth(0.6); doc.line(MARGIN, hy, pageW - MARGIN, hy);
+    y = hy + 8;
+
+    // ---- Resumo do período ----
+    const resumo = stripHtml_(estado.resumoTexto);
+    doc.setFont('helvetica','normal'); doc.setFontSize(9);
+    const linhasResumo = doc.splitTextToSize(resumo, contentW - 10);
+    const boxH = linhasResumo.length * 4.4 + 12;
+    garantir_(boxH);
+    doc.setFillColor(250,247,238); doc.setDrawColor(...OURO_CLARO); doc.setLineWidth(0.3);
+    doc.roundedRect(MARGIN, y, contentW, boxH, 2, 2, 'FD');
+    doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...OURO);
+    doc.text('RESUMO DO PERÍODO', MARGIN + 5, y + 6);
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...TXT);
+    doc.text(linhasResumo, MARGIN + 5, y + 11);
+    y += boxH + 8;
+
+    // ---- Estatísticas (cards) ----
+    const s = estado.stats || {};
+    const cards = [
+      ['Turnos', s.turnos], ['Frações', s.fracoes], ['Equipes', s.equipes],
+      ['Militares', s.militares], ['Viaturas', s.viaturas],
+    ];
+    const nC = cards.length, cw = (contentW - (nC-1)*4) / nC, chh = 16;
+    garantir_(chh + 4);
+    cards.forEach((c, i) => {
+      const x = MARGIN + i*(cw+4);
+      doc.setFillColor(247,244,235); doc.setDrawColor(...LINHA); doc.setLineWidth(0.1);
+      doc.roundedRect(x, y, cw, chh, 1.5, 1.5, 'FD');
+      doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(30,24,14);
+      doc.text(formatarNumero_(c[1]||0), x + cw/2, y + 8, { align:'center' });
+      doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(...MUTED);
+      doc.text(String(c[0]).toUpperCase(), x + cw/2, y + 12.5, { align:'center' });
+    });
+    y += chh + 8;
+
+    // ---- Produção no período ----
+    tabela_('Produção no Período',
+      ['Indicador', 'Total'],
+      Object.entries(estado.totais).filter(([,v]) => v > 0).map(([k,v]) => [k, formatarNumero_(v)]),
+      { columnStyles: { 1: { halign:'right', fontStyle:'bold', cellWidth: 40 } } });
+
+    // ---- Gráficos (capturados dos canvases da tela) ----
+    const graf = [];
+    [['Top Indicadores (total)', 'chartBarras'], ['Produtividade por Dia', 'chartLinha']].forEach(([t, id]) => {
+      const cv = document.getElementById(id);
+      if (cv && cv.width && cv.height) {
+        try { graf.push({ t, url: cv.toDataURL('image/png', 1.0), ratio: cv.height / cv.width }); } catch(e){}
+      }
+    });
+    if (graf.length) {
+      const gw = (contentW - 6) / 2;
+      const ph = graf.map(g => Math.min(gw * g.ratio, 60));
+      const maxH = Math.max(...ph);
+      garantir_(maxH + 14);
+      doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.setTextColor(...MUTED);
+      doc.text('GRÁFICOS', MARGIN, y);
+      const gy = y + 3;
+      graf.forEach((g, i) => {
+        const x = MARGIN + i*(gw+6);
+        doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(80,70,50);
+        doc.text(g.t, x, gy + 3);
+        doc.addImage(g.url, 'PNG', x, gy + 5, gw, ph[i]);
+      });
+      y = gy + 5 + maxH + 8;
+    }
+
+    // ---- Rankings ----
+    const cabRank = ['#','Fração','Turnos', ...estado.camposRanking.map(c => c.nome)];
+    const colRank = { 0: { cellWidth: 8, halign:'center' }, 2: { halign:'center' } };
+    tabela_('Ranking por Fração de Atuação', cabRank,
+      estado.rankingFracao.map(([f,v],i) => [i+1, f, v.turnos.size, ...estado.camposRanking.map(c => formatarValorPorTipo_(v.valores[c.nome], c.nome))]),
+      { columnStyles: colRank });
+    tabela_('Ranking por Equipe', ['#','Fração / Equipe','Turnos', ...estado.camposRanking.map(c => c.nome)],
+      estado.rankingEquipe.map(([f,v],i) => [i+1, f, v.turnos.size, ...estado.camposRanking.map(c => formatarValorPorTipo_(v.valores[c.nome], c.nome))]),
+      { columnStyles: colRank });
+
+    // ---- Indicadores de desempenho (calculados) ----
+    tabela_('Indicadores de Desempenho',
+      ['Indicador', 'Valor'],
+      (estado.indicadoresCalc||[]).map(ic => [ic.lbl, String(ic.val)]),
+      { columnStyles: { 1: { halign:'right', fontStyle:'bold', cellWidth: 32, textColor: OURO } } });
+
+    // ---- Relatórios do período (detalhe) ----
+    tabela_('Relatórios do Período',
+      ['Data','Fração','Equipe','Comandante'],
+      estado.dados.map(r => [formatarDataBR_(r['Data']), r['Fração de Atuação']||'—', r['Equipe']||'—', r['Comandante']||'—']),
+      { columnStyles: { 0: { cellWidth: 20 } } });
+
+    // ---- Cabeçalho corrido (págs. > 1) + rodapé com paginação ----
+    const totalPg = doc.getNumberOfPages();
+    for (let p = 1; p <= totalPg; p++) {
+      doc.setPage(p);
+      if (p > 1) {
+        doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...OURO);
+        doc.text('Relatório de Produtividade — 3ª Cia PM MAmb', MARGIN, 12);
+        doc.setDrawColor(...OURO_CLARO); doc.setLineWidth(0.3); doc.line(MARGIN, 14, pageW - MARGIN, 14);
+      }
+      doc.setDrawColor(...LINHA); doc.setLineWidth(0.2); doc.line(MARGIN, pageH - 12, pageW - MARGIN, pageH - 12);
+      doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(140,130,110);
+      doc.text('Painel de Gestão Operacional — 3ª Cia PM MAmb', MARGIN, pageH - 8);
+      doc.text(`Página ${p} de ${totalPg}`, pageW - MARGIN, pageH - 8, { align:'right' });
+    }
 
     doc.save(`produtividade_${new Date().toISOString().slice(0,10)}.pdf`);
   } catch(err){
