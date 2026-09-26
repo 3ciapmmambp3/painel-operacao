@@ -265,14 +265,12 @@ function dataHojeISO_(){
   return `${ano}-${mes}-${dia}`;
 }
 
-// Data de ontem, em hora local (mesmo cuidado com a virada da meia-noite).
-function dataOntemISO_(){
+// Primeiro dia do mês corrente, em hora local (YYYY-MM-01).
+function dataPrimeiroDiaMesISO_(){
   const d = new Date();
-  d.setDate(d.getDate() - 1);
   const ano = d.getFullYear();
   const mes = String(d.getMonth() + 1).padStart(2, '0');
-  const dia = String(d.getDate()).padStart(2, '0');
-  return `${ano}-${mes}-${dia}`;
+  return `${ano}-${mes}-01`;
 }
 
 // Converte pra número aceitando tanto "5.9" quanto "5,9" (alguns registros
@@ -353,15 +351,24 @@ async function carregarTudo(){
     popularFiltroOperacao(await carregarOperacoesSupabaseProd());
     popularFiltroFracao();
 
-    // Por padrão: início no dia anterior e FIM em HOJE (a data final do filtro
-    // acompanha o dia corrente). Se quiser ver outro período, é só trocar.
-    document.getElementById('filtroDataInicio').value = dataOntemISO_();
-    document.getElementById('filtroDataFim').value = dataHojeISO_();
-
-    // Indicadores da operação atual do filtro ("Todas" no primeiro carregamento).
-    aplicarCamposDaOperacao();
-
-    renderizarTudo();
+    // Por padrão: abre já na OPERAÇÃO EM VIGÊNCIA hoje, com início = início dela
+    // e fim = hoje. Se houver mais de uma vigente, usa a que começou mais tarde
+    // (a mais recente). Sem operação vigente, cai no 1º dia do mês. Em qualquer
+    // caso, o usuário pode trocar o período/operação à vontade.
+    const hojeISO = dataHojeISO_();
+    const nomesOp = new Set(Array.from(document.getElementById('filtroOperacao').options).map(o => o.value).filter(Boolean));
+    const vigentes = (operacoesComDatas || [])
+      .filter(o => o.inicio && o.inicio <= hojeISO && (!o.final || o.final >= hojeISO) && nomesOp.has(o.nome))
+      .sort((a,b) => (a.inicio < b.inicio ? 1 : -1));
+    if (vigentes.length){
+      document.getElementById('filtroOperacao').value = vigentes[0].nome;
+      onOperacaoChange(); // seta início=op, fim=hoje, indicadores e renderiza
+    } else {
+      document.getElementById('filtroDataInicio').value = dataPrimeiroDiaMesISO_();
+      document.getElementById('filtroDataFim').value = hojeISO;
+      aplicarCamposDaOperacao(); // indicadores da visão "Todas"
+      renderizarTudo();
+    }
   } catch(err){
     console.error('Erro ao carregar produtividade:', err);
     document.getElementById('prod-conteudo').innerHTML = '<div class="mr-empty">Erro ao carregar. Recarregue a página.</div>';
@@ -546,7 +553,7 @@ document.getElementById('filtroOperacao').addEventListener('change', onOperacaoC
 });
 document.getElementById('btnLimparFiltrosProd').addEventListener('click', () => {
   document.getElementById('filtroOperacao').value = '';
-  document.getElementById('filtroDataInicio').value = dataOntemISO_();
+  document.getElementById('filtroDataInicio').value = dataPrimeiroDiaMesISO_();
   document.getElementById('filtroDataFim').value = dataHojeISO_();
   document.getElementById('filtroFracao').value = '';
   aplicarCamposDaOperacao(); // volta pros indicadores da visão "Todas"
