@@ -159,6 +159,31 @@
       <div class="fld"><label>Classificação do curso</label><input id="e-classif"></div>
       <div class="fld"><label>Ordem (antiguidade)</label><input type="number" id="e-ordem"></div>
     </div>
+    <div class="sec">Documentos</div>
+    <div class="grid">
+      <div class="fld"><label>RG</label><input id="e-rg"></div>
+      <div class="fld"><label>CPF</label><input id="e-cpf"></div>
+      <div class="fld"><label>Título de eleitor</label><input id="e-titulo"></div>
+      <div class="fld"><label>Nº CNH</label><input id="e-cnh"></div>
+      <div class="fld"><label>CNH categoria</label><input id="e-cnhcat"></div>
+      <div class="fld"><label>CNH validade</label><input type="date" id="e-cnhval"></div>
+      <div class="fld"><label>Data de nascimento</label><input type="date" id="e-nasc"></div>
+      <div class="fld"><label>Sexo</label><input id="e-sexo"></div>
+    </div>
+    <div class="sec">Contato</div>
+    <div class="grid">
+      <div class="fld"><label>Tel. funcional</label><input id="e-telf"></div>
+      <div class="fld"><label>Tel. pessoal 1</label><input id="e-telp1"></div>
+      <div class="fld"><label>Tel. pessoal 2</label><input id="e-telp2"></div>
+      <div class="fld"><label>E-mail pessoal</label><input id="e-emailp"></div>
+      <div class="fld"><label>E-mail funcional</label><input id="e-emailf"></div>
+    </div>
+    <div class="sec">Endereços</div>
+    <div class="grid">
+      <div class="fld" style="grid-column:1/-1;"><label>Funcional</label><input id="e-endf"></div>
+      <div class="fld" style="grid-column:1/-1;"><label>Residencial 1</label><input id="e-endr1"></div>
+      <div class="fld" style="grid-column:1/-1;"><label>Residencial 2</label><input id="e-endr2"></div>
+    </div>
     <div class="row-actions" style="justify-content:flex-end;margin-top:18px;">
       <button class="btn-outline" onclick="fechar('modal-edit')">Cancelar</button>
       <button class="btn-gold" onclick="salvarEdit()">Salvar</button>
@@ -187,6 +212,21 @@
     <div class="row-actions" style="justify-content:flex-end;margin-top:16px;">
       <button class="btn-outline" onclick="fechar('modal-baixa')">Cancelar</button>
       <button class="btn-gold" onclick="salvarBaixa()">Confirmar baixa</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL FICHA / DETALHE -->
+<div class="modal-bg" id="modal-detalhe">
+  <div class="modal" style="max-width:780px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+      <h2 id="det-titulo" style="margin:0;">Ficha do militar</h2>
+      <button class="minibtn" onclick="fechar('modal-detalhe')">fechar</button>
+    </div>
+    <div id="detalhe-body" style="margin-top:12px;"></div>
+    <div class="row-actions" style="justify-content:flex-end;margin-top:16px;">
+      <button class="btn-outline" onclick="fechar('modal-detalhe');editar(curId)">✏️ Editar</button>
+      <button class="btn-gold" onclick="fechar('modal-detalhe')">OK</button>
     </div>
   </div>
 </div>
@@ -228,14 +268,22 @@ function podeGerir(){
 // ── mapeamento de cabeçalhos (tolerante) p/ importação ──
 const CHAVES = ['matricula','posto_graduacao','nome_completo','nome_guerra','funcao',
   'cod_rpm','nome_rpm','cod_unidade_principal','nome_unidade_principal','cod_unidade','nome_unidade',
-  'cod_siad','tipo_atividade','cod_municipio','ultima_promocao','classificacao_curso','antiguidade_ordem','situacao_efetivo'];
+  'cod_siad','tipo_atividade','cod_municipio','ultima_promocao','classificacao_curso','antiguidade_ordem','situacao_efetivo',
+  'rg','cpf','titulo_eleitor','cnh_numero','cnh_categoria','cnh_validade','data_nascimento',
+  'telefone_funcional','telefone_pessoal1','telefone_pessoal2',
+  'endereco_funcional','endereco_residencial1','endereco_residencial2','email_pessoal','email_funcional','sexo'];
 const HEADERS_MODELO = {
   matricula:'Nº PM', posto_graduacao:'Posto/Graduação', nome_completo:'Nome completo', nome_guerra:'Nome de guerra',
   funcao:'Função', cod_rpm:'COD_RPM', nome_rpm:'NOME_RPM', cod_unidade_principal:'COD_UNIDADE_PRINCIPAL',
   nome_unidade_principal:'NOME_UNIDADE_PRINCIPAL', cod_unidade:'COD_UNIDADE', nome_unidade:'NOME_UNIDADE',
   cod_siad:'COD_SIAD', tipo_atividade:'TIPO_ATIVIDADE', cod_municipio:'COD_MUNICIPIO',
   ultima_promocao:'Última promoção (AAAA-MM-DD)', classificacao_curso:'Classificação do curso',
-  antiguidade_ordem:'Ordem antiguidade', situacao_efetivo:'Situação' };
+  antiguidade_ordem:'Ordem antiguidade', situacao_efetivo:'Situação',
+  rg:'RG', cpf:'CPF', titulo_eleitor:'Título de eleitor', cnh_numero:'Nº CNH', cnh_categoria:'CNH categoria',
+  cnh_validade:'CNH validade (AAAA-MM-DD)', data_nascimento:'Data de nascimento (AAAA-MM-DD)',
+  telefone_funcional:'Telefone funcional', telefone_pessoal1:'Telefone pessoal 1', telefone_pessoal2:'Telefone pessoal 2',
+  endereco_funcional:'Endereço funcional', endereco_residencial1:'Endereço residencial 1', endereco_residencial2:'Endereço residencial 2',
+  email_pessoal:'E-mail pessoal', email_funcional:'E-mail funcional', sexo:'Sexo' };
 function norm(s){ return (s==null?'':String(s)).toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z0-9]/g,''); }
 // sinônimos → chave interna (aceita o modelo E a aba Baliza/FormatoSIGEF)
 const SINON = {
@@ -252,7 +300,14 @@ const SINON = {
   ULTIMAPROMOCAO:'ultima_promocao', ULTIMAPROMOCAOAAAAMMDD:'ultima_promocao',
   CLASSIFICACAODOCURSO:'classificacao_curso', CLASSIFICACAOCURSO:'classificacao_curso',
   ORDEMANTIGUIDADE:'antiguidade_ordem', ORDEM:'antiguidade_ordem', LINHA:'antiguidade_ordem',
-  SITUACAO:'situacao_efetivo', SITUACAOEFETIVO:'situacao_efetivo' };
+  SITUACAO:'situacao_efetivo', SITUACAOEFETIVO:'situacao_efetivo',
+  RG:'rg', CPF:'cpf', TITULODEELEITOR:'titulo_eleitor', TITULOELEITOR:'titulo_eleitor',
+  NCNH:'cnh_numero', CNH:'cnh_numero', CATEG:'cnh_categoria', CATEGORIA:'cnh_categoria', CNHCATEGORIA:'cnh_categoria',
+  VALIDADE:'cnh_validade', CNHVALIDADE:'cnh_validade', CNHVALIDADEAAAAMMDD:'cnh_validade',
+  DATADENASCIMENTO:'data_nascimento', DATANASCIMENTO:'data_nascimento', DATADENASCIMENTOAAAAMMDD:'data_nascimento',
+  TELEFONEFUNCIONAL:'telefone_funcional', TELEFONEPESSOAL1:'telefone_pessoal1', TELEFONEPESSOAL2:'telefone_pessoal2',
+  ENDERECOFUNCIONAL:'endereco_funcional', ENDERECORESIDENCIAL1:'endereco_residencial1', ENDERECORESIDENCIAL2:'endereco_residencial2',
+  EMAILPESSOAL:'email_pessoal', EMAILFUNCIONAL:'email_funcional', SEXO:'sexo' };
 function mapHeader(h){ const n=norm(h); return SINON[n]||(CHAVES.includes(n.toLowerCase())?n.toLowerCase():null); }
 function parseData(v){
   if(v==null||v==='') return null;
@@ -292,7 +347,7 @@ async function importar(inp){
       const r=rows[i]; if(!r || r.every(c=>c===''||c==null)) continue;
       const o={};
       heads.forEach((k,idx)=>{ if(!k) return; let v=r[idx];
-        if(k==='ultima_promocao') v=parseData(v);
+        if(k==='ultima_promocao'||k==='cnh_validade'||k==='data_nascimento') v=parseData(v);
         else v=(v==null?'':String(v).trim());
         if(v!=='' && v!=null) o[k]=v; });
       if(o.matricula) linhas.push(o);
@@ -338,7 +393,7 @@ function render(){
     <td class="miut">${m.antiguidade_ordem??(i+1)}</td>
     <td>${esc(m.matricula||'')}</td>
     <td>${esc(m.posto_graduacao||'')}</td>
-    <td>${esc(m.nome_completo||'')}${m.nome_guerra?`<div class="miut">${esc(m.nome_guerra)}</div>`:''}</td>
+    <td><a href="#" onclick="openDetalhe('${m.id}');return false;" style="color:var(--text-white);text-decoration:none;border-bottom:1px dotted var(--acc);">${esc(m.nome_completo||'')}</a>${m.nome_guerra?`<div class="miut">${esc(m.nome_guerra)}</div>`:''}</td>
     <td>${esc(m.funcao||'—')}</td>
     <td>${esc(m.cod_unidade||'')}${m.nome_unidade?`<div class="miut">${esc(m.nome_unidade)}</div>`:''}</td>
     <td>${fmtBR(m.ultima_promocao)}</td>
@@ -347,6 +402,44 @@ function render(){
       <button class="minibtn" onclick="editar('${m.id}')">editar</button>
       ${m.ativo?`<button class="minibtn del" onclick="abrirBaixa('${m.id}')">baixar</button>`:`<button class="minibtn" onclick="reativar('${m.id}')">reativar</button>`}
     </td></tr>`).join('');
+}
+
+// ── ficha / detalhe ──
+function idade(nasc){ if(!nasc) return ''; const d=new Date(String(nasc).slice(0,10)); if(isNaN(d)) return ''; const t=new Date(); let a=t.getFullYear()-d.getFullYear(); const mo=t.getMonth()-d.getMonth(); if(mo<0||(mo===0&&t.getDate()<d.getDate()))a--; return a+' anos'; }
+function cnhSituacao(val){ if(!val) return ''; const hoje=new Date().toISOString().slice(0,10); return String(val).slice(0,10)>=hoje ? '<span class="tag ativo">Válida</span>' : '<span class="tag transf">Vencida</span>'; }
+function detLinha(label,val){ if(val==null||val==='') return ''; return `<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);"><div style="min-width:160px;color:var(--text-hint);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;">${esc(label)}</div><div style="font-size:13px;color:var(--text-white);flex:1;">${val}</div></div>`; }
+function openDetalhe(id){
+  const m=LISTA.find(x=>x.id===id); if(!m) return; curId=id;
+  document.getElementById('det-titulo').textContent=`${m.posto_graduacao||''} ${m.nome_guerra||m.nome_completo||''}`;
+  const j=v=>esc(v); let h='';
+  h+='<div class="sec">Identificação</div>';
+  h+=detLinha('Nº PM',j(m.matricula))+detLinha('Posto/Graduação',j(m.posto_graduacao))
+    +detLinha('Nome completo',j(m.nome_completo))+detLinha('Nome de guerra',j(m.nome_guerra))
+    +detLinha('Função',j(m.funcao))+detLinha('Sexo',j(m.sexo))+detLinha('Situação',tagSit(m))
+    +detLinha('Nascimento', m.data_nascimento?`${fmtBR(m.data_nascimento)} <span class="miut">(${idade(m.data_nascimento)})</span>`:'');
+  h+='<div class="sec">Lotação</div>';
+  h+=detLinha('Unidade',[m.cod_unidade,m.nome_unidade].filter(Boolean).map(j).join(' — '))
+    +detLinha('Unidade principal',[m.cod_unidade_principal,m.nome_unidade_principal].filter(Boolean).map(j).join(' — '))
+    +detLinha('RPM',[m.cod_rpm,m.nome_rpm].filter(Boolean).map(j).join(' — '))
+    +detLinha('COD SIAD',j(m.cod_siad))+detLinha('Tipo de atividade',j(m.tipo_atividade))+detLinha('Grupamento',j(m.grupamento_id));
+  h+='<div class="sec">Antiguidade</div>';
+  h+=detLinha('Última promoção',fmtBR(m.ultima_promocao))+detLinha('Classificação do curso',j(m.classificacao_curso))+detLinha('Ordem',j(m.antiguidade_ordem));
+  h+='<div class="sec">Documentos</div>';
+  h+=detLinha('RG',j(m.rg))+detLinha('CPF',j(m.cpf))+detLinha('Título de eleitor',j(m.titulo_eleitor))
+    +detLinha('CNH',[m.cnh_numero,m.cnh_categoria].filter(Boolean).map(j).join(' · '))
+    +detLinha('CNH validade', m.cnh_validade?`${fmtBR(m.cnh_validade)} ${cnhSituacao(m.cnh_validade)}`:'');
+  h+='<div class="sec">Contato</div>';
+  h+=detLinha('Tel. funcional',j(m.telefone_funcional))+detLinha('Tel. pessoal 1',j(m.telefone_pessoal1))+detLinha('Tel. pessoal 2',j(m.telefone_pessoal2))
+    +detLinha('E-mail pessoal',j(m.email_pessoal))+detLinha('E-mail funcional',j(m.email_funcional));
+  h+='<div class="sec">Endereços</div>';
+  h+=detLinha('Funcional',j(m.endereco_funcional))+detLinha('Residencial 1',j(m.endereco_residencial1))+detLinha('Residencial 2',j(m.endereco_residencial2));
+  if(!m.ativo){ h+='<div class="sec">Baixa / transferência</div>';
+    h+=detLinha('Situação',j(m.situacao_efetivo))+detLinha('Destino',j(m.transf_destino))
+      +detLinha('Pasta funcional', m.transf_pasta_funcional==null?'':(m.transf_pasta_funcional?'Entregue':'Não entregue'))
+      +detLinha('Data de envio',fmtBR(m.transf_data_envio))+detLinha('Nº do ofício',j(m.transf_oficio_numero))+detLinha('Observações',j(m.transf_obs));
+  }
+  document.getElementById('detalhe-body').innerHTML=h||'<div class="empty">Sem dados.</div>';
+  document.getElementById('modal-detalhe').classList.add('open');
 }
 
 // ── editar ──
@@ -359,6 +452,11 @@ function editar(id){
   S('e-cod_unidade',m.cod_unidade); S('e-nome_unidade',m.nome_unidade); S('e-cod_rpm',m.cod_rpm); S('e-nome_rpm',m.nome_rpm);
   S('e-cod_up',m.cod_unidade_principal); S('e-nome_up',m.nome_unidade_principal); S('e-cod_siad',m.cod_siad); S('e-tipo_atv',m.tipo_atividade); S('e-cod_mun',m.cod_municipio);
   S('e-promo',(m.ultima_promocao||'').slice(0,10)); S('e-classif',m.classificacao_curso); S('e-ordem',m.antiguidade_ordem);
+  S('e-rg',m.rg); S('e-cpf',m.cpf); S('e-titulo',m.titulo_eleitor); S('e-cnh',m.cnh_numero); S('e-cnhcat',m.cnh_categoria);
+  S('e-cnhval',(m.cnh_validade||'').slice(0,10)); S('e-nasc',(m.data_nascimento||'').slice(0,10)); S('e-sexo',m.sexo);
+  S('e-telf',m.telefone_funcional); S('e-telp1',m.telefone_pessoal1); S('e-telp2',m.telefone_pessoal2);
+  S('e-emailp',m.email_pessoal); S('e-emailf',m.email_funcional);
+  S('e-endf',m.endereco_funcional); S('e-endr1',m.endereco_residencial1); S('e-endr2',m.endereco_residencial2);
   document.getElementById('modal-edit').classList.add('open');
 }
 async function salvarEdit(){
@@ -368,7 +466,12 @@ async function salvarEdit(){
       cod_unidade:g('e-cod_unidade'), nome_unidade:g('e-nome_unidade'), cod_rpm:g('e-cod_rpm'), nome_rpm:g('e-nome_rpm'),
       cod_unidade_principal:g('e-cod_up'), nome_unidade_principal:g('e-nome_up'), cod_siad:g('e-cod_siad'),
       tipo_atividade:g('e-tipo_atv'), cod_municipio:g('e-cod_mun'),
-      ultima_promocao:g('e-promo')||null, classificacao_curso:g('e-classif'), antiguidade_ordem:g('e-ordem')||null };
+      ultima_promocao:g('e-promo')||null, classificacao_curso:g('e-classif'), antiguidade_ordem:g('e-ordem')||null,
+      rg:g('e-rg'), cpf:g('e-cpf'), titulo_eleitor:g('e-titulo'), cnh_numero:g('e-cnh'), cnh_categoria:g('e-cnhcat'),
+      cnh_validade:g('e-cnhval')||null, data_nascimento:g('e-nasc')||null, sexo:g('e-sexo'),
+      telefone_funcional:g('e-telf'), telefone_pessoal1:g('e-telp1'), telefone_pessoal2:g('e-telp2'),
+      email_pessoal:g('e-emailp'), email_funcional:g('e-emailf'),
+      endereco_funcional:g('e-endf'), endereco_residencial1:g('e-endr1'), endereco_residencial2:g('e-endr2') };
     await rpc('efetivo_salvar',{p_token:sessao.token,p_id:curId,p_dados:dados});
     fechar('modal-edit'); flash('Salvo.',true); carregar();
   }catch(e){ flash(e.message||'Erro.',false); }
