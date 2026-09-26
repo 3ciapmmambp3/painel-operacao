@@ -200,15 +200,15 @@ begin
     v_me.matricula, v_nome
   )
   on conflict (ano) do update set
-    titulo             = case when p_dados ? 'titulo'        then nullif(p_dados->>'titulo','')             else public.ferias_cronograma.titulo end,
-    situacao           = case when p_dados ? 'situacao'      then coalesce(nullif(p_dados->>'situacao',''),'RASCUNHO') else public.ferias_cronograma.situacao end,
-    data_abertura      = case when p_dados ? 'data_abertura' then nullif(p_dados->>'data_abertura','')::date else public.ferias_cronograma.data_abertura end,
-    data_limite        = case when p_dados ? 'data_limite'   then nullif(p_dados->>'data_limite','')::date   else public.ferias_cronograma.data_limite end,
-    pct_max_cia        = case when p_dados ? 'pct_max_cia'        then nullif(p_dados->>'pct_max_cia','')::numeric        else public.ferias_cronograma.pct_max_cia end,
-    pct_max_pelotao    = case when p_dados ? 'pct_max_pelotao'    then nullif(p_dados->>'pct_max_pelotao','')::numeric    else public.ferias_cronograma.pct_max_pelotao end,
-    pct_max_grupamento = case when p_dados ? 'pct_max_grupamento' then nullif(p_dados->>'pct_max_grupamento','')::numeric else public.ferias_cronograma.pct_max_grupamento end,
-    periodos           = case when p_dados ? 'periodos'  then coalesce(p_dados->'periodos','[]'::jsonb)  else public.ferias_cronograma.periodos end,
-    anexo_pdf          = case when p_dados ? 'anexo_pdf' then coalesce(p_dados->'anexo_pdf','[]'::jsonb) else public.ferias_cronograma.anexo_pdf end
+    titulo             = case when p_dados ? 'titulo'        then nullif(p_dados->>'titulo','')             else ferias_cronograma.titulo end,
+    situacao           = case when p_dados ? 'situacao'      then coalesce(nullif(p_dados->>'situacao',''),'RASCUNHO') else ferias_cronograma.situacao end,
+    data_abertura      = case when p_dados ? 'data_abertura' then nullif(p_dados->>'data_abertura','')::date else ferias_cronograma.data_abertura end,
+    data_limite        = case when p_dados ? 'data_limite'   then nullif(p_dados->>'data_limite','')::date   else ferias_cronograma.data_limite end,
+    pct_max_cia        = case when p_dados ? 'pct_max_cia'        then nullif(p_dados->>'pct_max_cia','')::numeric        else ferias_cronograma.pct_max_cia end,
+    pct_max_pelotao    = case when p_dados ? 'pct_max_pelotao'    then nullif(p_dados->>'pct_max_pelotao','')::numeric    else ferias_cronograma.pct_max_pelotao end,
+    pct_max_grupamento = case when p_dados ? 'pct_max_grupamento' then nullif(p_dados->>'pct_max_grupamento','')::numeric else ferias_cronograma.pct_max_grupamento end,
+    periodos           = case when p_dados ? 'periodos'  then coalesce(p_dados->'periodos','[]'::jsonb)  else ferias_cronograma.periodos end,
+    anexo_pdf          = case when p_dados ? 'anexo_pdf' then coalesce(p_dados->'anexo_pdf','[]'::jsonb) else ferias_cronograma.anexo_pdf end
   returning * into v_row;
 
   return v_row;
