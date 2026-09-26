@@ -160,6 +160,17 @@
         <div class="miut" style="margin-top:8px;">Cada período tem uma janela de <b>25 dias direto</b> e janelas de <b>15</b> e <b>10 dias</b> (fracionado — combinam para cobrir o período). O botão acima preenche automaticamente o <b>cronograma oficial do CPE para 2026</b> (Anexo "B" do Memo 1.1/2025); confira e salve. É a base do formulário de escolha do militar (Fase 2).</div>
       </div>
 
+      <div class="card">
+        <h3>Anexo — PDF do cronograma (CPE)</h3>
+        <div id="anexo-lista" class="miut">Nenhum PDF anexado.</div>
+        <div class="row-actions" style="margin-top:10px;">
+          <label class="btn-outline" style="cursor:pointer;">📎 Anexar / trocar PDF
+            <input type="file" id="anexo-file" accept="application/pdf" style="display:none;" onchange="subirAnexo(this)">
+          </label>
+        </div>
+        <div class="miut" style="margin-top:8px;">O PDF oficial fica registrado no cronograma e visível ao militar na escolha. Máx. 15 MB. Lembre de clicar em <b>Salvar cronograma</b> depois.</div>
+      </div>
+
       <div class="row-actions">
         <button class="btn-gold" onclick="salvarCronograma()">💾 Salvar cronograma</button>
       </div>
@@ -322,6 +333,49 @@ let anoSel = ANO_ATUAL;
 })();
 function trocarAno(){ anoSel=parseInt(document.getElementById('sel-ano').value,10); boot(); }
 
+// ══════════════ ANEXO PDF (reusa o padrão Drive/Storage do projeto) ══════════════
+const DRIVE_URL=(typeof OFICIOS_DRIVE_URL!=='undefined')?OFICIOS_DRIVE_URL:'';
+const STORAGE=`${API}/storage/v1`, BUCKET='anexos', MAX_MB=15, LINK_TTL=315360000;
+let anexoPdf=[];
+function b64f(file){ return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(file);}); }
+function sanit(n){ return (n||'arquivo').normalize('NFD').replace(/[^\x00-\x7F]/g,'').replace(/[^\w.\-]+/g,'_').replace(/_+/g,'_').slice(-80)||'arquivo'; }
+async function subirDrivePdf(f){
+  const payload={nome:f.name,mime:f.type||'application/pdf',ano:anoSel,subpasta:'ferias',base64:await b64f(f)};
+  const r=await fetch(DRIVE_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)});
+  if(!r.ok) throw new Error('Drive '+r.status); const j=await r.json();
+  if(!j||!j.link) throw new Error(j&&j.erro?j.erro:'Drive sem link'); return {path:j.id||null,link:j.link};
+}
+async function subirStoragePdf(f){
+  const path=`ferias/${anoSel}/${crypto.randomUUID()}-${sanit(f.name)}`;
+  const enc=path.split('/').map(encodeURIComponent).join('/');
+  const AH={apikey:SB_AUTH_KEY,Authorization:`Bearer ${SB_AUTH_KEY}`};
+  const up=await fetch(`${STORAGE}/object/${BUCKET}/${enc}`,{method:'POST',headers:{...AH,'Content-Type':f.type||'application/pdf','x-upsert':'true'},body:f});
+  if(!up.ok) throw new Error(up.status+' '+await up.text());
+  const sg=await fetch(`${STORAGE}/object/sign/${BUCKET}/${enc}`,{method:'POST',headers:{...AH,'Content-Type':'application/json'},body:JSON.stringify({expiresIn:LINK_TTL})});
+  if(!sg.ok) throw new Error(sg.status+' '+await sg.text());
+  const sj=await sg.json(); return {path,link:`${STORAGE}${sj.signedURL||sj.signedUrl}`};
+}
+async function subirAnexo(inp){
+  const f=inp.files&&inp.files[0]; inp.value=''; if(!f) return;
+  if(f.type!=='application/pdf'){ flash('Envie um arquivo PDF.',false); return; }
+  if(f.size>MAX_MB*1048576){ flash('PDF acima de '+MAX_MB+' MB.',false); return; }
+  flash('Enviando PDF…',true);
+  try{
+    let res;
+    if(DRIVE_URL){ try{ res=await subirDrivePdf(f); }catch(e){ res=await subirStoragePdf(f); } }
+    else res=await subirStoragePdf(f);
+    anexoPdf=[{path:res.path,nome:f.name,tamanho:f.size,mime:f.type,link:res.link}];
+    renderAnexo(); flash('PDF anexado. Clique em Salvar cronograma para gravar.',true);
+  }catch(e){ flash('Erro no anexo: '+(e.message||e),false); }
+}
+function renderAnexo(){
+  const el=document.getElementById('anexo-lista'); if(!el) return;
+  if(!anexoPdf.length){ el.innerHTML='Nenhum PDF anexado.'; return; }
+  el.innerHTML=anexoPdf.map(a=>`<a href="${esc(a.link)}" target="_blank" rel="noopener" style="color:var(--acc);font-weight:600;">📄 ${esc(a.nome||'cronograma.pdf')}</a>
+    <button class="minibtn del" style="margin-left:8px;" onclick="removerAnexo()">remover</button>`).join('');
+}
+function removerAnexo(){ anexoPdf=[]; renderAnexo(); }
+
 // ══════════════ CRONOGRAMA ══════════════
 let cronograma=null;
 // Cronograma oficial CPE 2026 — Anexo "B" do Memorando 1.1/2025 (10 períodos).
@@ -406,6 +460,7 @@ async function preencherCronograma(c){
   document.getElementById('c-pct-gp').value  = c?.pct_max_grupamento ?? '';
   await carregarPels();
   renderLimitesPel(c?.limites_pelotao||{});
+  anexoPdf = c?.anexo_pdf||[]; renderAnexo();
   document.getElementById('periodos').innerHTML='';
   (c?.periodos||[]).forEach(p=>addPeriodo(p));
 }
@@ -423,6 +478,7 @@ async function salvarCronograma(){
       pct_max_cia:document.getElementById('c-pct-cia').value||null,
       pct_max_grupamento:document.getElementById('c-pct-gp').value||null,
       limites_pelotao:lerLimitesPel(),
+      anexo_pdf:anexoPdf,
       periodos:lerPeriodos() };
     const r=await rpc('ferias_cronograma_salvar',{p_token:sessao.token,p_dados:dados});
     preencherCronograma(r); flash('Cronograma salvo.',true);
