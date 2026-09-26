@@ -66,9 +66,9 @@
     .msg{font-size:12px;padding:9px 12px;border-radius:6px;margin-bottom:12px;display:none;}
     .msg.ok{display:block;background:var(--success-bg);color:var(--success);}
     .msg.err{display:block;background:var(--danger-bg);color:var(--danger);}
-    .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-start;justify-content:center;z-index:60;padding:30px 14px;overflow:auto;}
+    .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-start;justify-content:center;z-index:1000;padding:100px 14px 30px;overflow-y:auto;}
     .modal-bg.open{display:flex;}
-    .modal{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;max-width:640px;width:100%;padding:22px;}
+    .modal{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;max-width:640px;width:100%;padding:22px;max-height:calc(100vh - 130px);overflow-y:auto;}
     .modal h2{font-size:16px;color:var(--text-white);margin-bottom:16px;}
     .minibtn{font-size:11px;padding:3px 9px;border-radius:5px;border:1px solid var(--border);background:var(--bg-dark);color:var(--text-muted);cursor:pointer;}
     .minibtn:hover{border-color:var(--acc);color:var(--text-white);}
@@ -139,10 +139,15 @@
         </div>
         <div class="grid" style="margin-top:12px;">
           <div class="fld"><label>% máx. na Cia</label><input type="number" id="c-pct-cia" min="0" max="100" step="0.5" placeholder="ex.: 20"></div>
-          <div class="fld"><label>% máx. por Pelotão</label><input type="number" id="c-pct-pel" min="0" max="100" step="0.5" placeholder="ex.: 25"></div>
-          <div class="fld"><label>% máx. por Grupamento</label><input type="number" id="c-pct-gp" min="0" max="100" step="0.5" placeholder="ex.: 33"></div>
+          <div class="fld"><label>% máx. por Grupamento (padrão)</label><input type="number" id="c-pct-gp" min="0" max="100" step="0.5" placeholder="ex.: 33"></div>
         </div>
-        <div class="miut" style="margin-top:8px;">Estes limites são a referência para o painel de <b>Percentuais</b>. O Aux P1 pode alterar quando quiser.</div>
+        <div style="margin-top:14px;">
+          <label style="font-size:11px;color:var(--text-hint);text-transform:uppercase;letter-spacing:.4px;">% máx. por Pelotão — um limite para cada</label>
+          <div id="limites-pel" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:8px;">
+            <div class="miut">Carregando pelotões…</div>
+          </div>
+        </div>
+        <div class="miut" style="margin-top:10px;">O <b>percentual</b> é o teto de militares do grupo que podem estar de férias <b>ao mesmo tempo</b> (no mesmo período). Defina aqui e acompanhe na aba <b>Percentuais</b> — que só mostra a situação.</div>
       </div>
 
       <div class="card">
@@ -351,17 +356,39 @@ function lerPeriodos(){
   });
   return out;
 }
-function preencherCronograma(c){
+let PELS=[];               // nomes dos pelotões (para os campos de limite)
+async function carregarPels(){
+  if(PELS.length) return PELS;
+  try{
+    const r=await rpc('ferias_percentuais',{p_token:sessao.token,p_ano:anoSel,p_data:null});
+    PELS=(r.pelotoes||[]).map(p=>p.pelotao).filter(x=>x && x!=='(sem pelotão)');
+  }catch(e){ PELS=[]; }
+  return PELS;
+}
+function renderLimitesPel(mapa){
+  mapa=mapa||{};
+  const box=document.getElementById('limites-pel');
+  if(!PELS.length){ box.innerHTML='<div class="miut">Sem pelotões identificados ainda (dependem da lotação do efetivo).</div>'; return; }
+  box.innerHTML = PELS.map(p=>{ const rot=/^\d+$/.test(String(p))?('Pelotão '+p):p;
+    return `<div class="fld"><label>${esc(rot)}</label>
+    <input type="number" min="0" max="100" step="0.5" data-pel="${esc(p)}" value="${mapa[p]??''}" placeholder="%"></div>`; }).join('');
+}
+async function preencherCronograma(c){
   cronograma=c;
   document.getElementById('c-titulo').value = c?.titulo||'';
   document.getElementById('c-situacao').value = c?.situacao||'RASCUNHO';
   document.getElementById('c-abertura').value = (c?.data_abertura||'').slice(0,10);
   document.getElementById('c-limite').value = (c?.data_limite||'').slice(0,10);
   document.getElementById('c-pct-cia').value = c?.pct_max_cia ?? '';
-  document.getElementById('c-pct-pel').value = c?.pct_max_pelotao ?? '';
   document.getElementById('c-pct-gp').value  = c?.pct_max_grupamento ?? '';
+  await carregarPels();
+  renderLimitesPel(c?.limites_pelotao||{});
   document.getElementById('periodos').innerHTML='';
   (c?.periodos||[]).forEach(p=>addPeriodo(p));
+}
+function lerLimitesPel(){
+  const m={}; document.querySelectorAll('#limites-pel input[data-pel]').forEach(i=>{ if(i.value!=='') m[i.dataset.pel]=Number(i.value); });
+  return m;
 }
 async function salvarCronograma(){
   try{
@@ -371,8 +398,8 @@ async function salvarCronograma(){
       data_abertura:document.getElementById('c-abertura').value||null,
       data_limite:document.getElementById('c-limite').value||null,
       pct_max_cia:document.getElementById('c-pct-cia').value||null,
-      pct_max_pelotao:document.getElementById('c-pct-pel').value||null,
       pct_max_grupamento:document.getElementById('c-pct-gp').value||null,
+      limites_pelotao:lerLimitesPel(),
       periodos:lerPeriodos() };
     const r=await rpc('ferias_cronograma_salvar',{p_token:sessao.token,p_dados:dados});
     preencherCronograma(r); flash('Cronograma salvo.',true);
@@ -384,12 +411,12 @@ async function carregarPct(){
   try{
     const data=document.getElementById('pct-data').value||null;
     const r=await rpc('ferias_percentuais',{p_token:sessao.token,p_ano:anoSel,p_data:data});
-    const lim=r.limites||{};
-    document.getElementById('pct-cia').innerHTML = blocoPct('Companhia (3ª Cia)', r.cia, lim.cia);
+    const c=cronograma||{}; const limPel=c.limites_pelotao||{}; const limGp=c.limites_grupamento||{};
+    document.getElementById('pct-cia').innerHTML = blocoPct('Companhia (3ª Cia)', r.cia, c.pct_max_cia);
     document.getElementById('pct-pel').innerHTML = (r.pelotoes&&r.pelotoes.length)
-      ? r.pelotoes.map(p=>blocoPct(p.pelotao, p, lim.pelotao)).join('') : '<div class="empty">Sem dados.</div>';
+      ? r.pelotoes.map(p=>blocoPct(p.pelotao, p, limPel[p.pelotao] ?? c.pct_max_pelotao)).join('') : '<div class="empty">Sem dados.</div>';
     document.getElementById('pct-gp').innerHTML = (r.grupamentos&&r.grupamentos.length)
-      ? r.grupamentos.map(g=>blocoPct(g.grupamento, g, lim.grupamento)).join('') : '<div class="empty">Sem dados.</div>';
+      ? r.grupamentos.map(g=>blocoPct(g.grupamento, g, limGp[g.grupamento] ?? c.pct_max_grupamento)).join('') : '<div class="empty">Sem dados.</div>';
   }catch(e){ flash(e.message||'Erro.',false); }
 }
 function blocoPct(nome, o, limite){
