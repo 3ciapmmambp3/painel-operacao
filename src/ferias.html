@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<script>
+(function(){
+  var saved;
+  try{ saved=localStorage.getItem('poe_theme'); }catch(e){}
+  if(!saved) saved=window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+})();
+</script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Férias — 3ª Cia PM MAmb</title>
+  <link rel="stylesheet" href="styles/global.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="auth.js"></script>
+  <style>
+    body{display:flex;flex-direction:column;min-height:100vh;}
+    :root{ --acc:#6f97b8; --acc-bg:rgba(111,151,184,.12); }
+    .wrap{width:100%;max-width:1160px;margin:0 auto;padding:20px 22px 48px;flex:1;}
+    .hero{display:flex;align-items:center;gap:14px;background:linear-gradient(180deg,var(--acc-bg),transparent);
+      border:1px solid var(--acc);border-radius:12px;padding:16px 20px;margin-bottom:16px;}
+    .hero .ic{width:48px;height:48px;border-radius:12px;flex-shrink:0;display:grid;place-items:center;
+      background:var(--bg-dark);border:1px solid var(--acc);font-size:22px;}
+    .hero h1{font-size:19px;color:var(--text-white);letter-spacing:.4px;}
+    .hero .sub{font-size:12px;color:var(--text-muted);margin-top:2px;}
+    .hero .yr{margin-left:auto;display:flex;align-items:center;gap:8px;}
+    .hero .yr label{font-size:11px;color:var(--text-hint);text-transform:uppercase;letter-spacing:.5px;}
+    .tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:18px;flex-wrap:wrap;}
+    .tab{padding:9px 15px;font-size:13px;font-weight:600;color:var(--text-muted);cursor:pointer;
+      border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;background:none;}
+    .tab:hover{color:var(--text-white);}
+    .tab.active{color:var(--text-white);background:var(--bg-card);border-color:var(--border);border-bottom:1px solid var(--bg-card);margin-bottom:-1px;}
+    .panel{display:none;} .panel.active{display:block;}
+    .card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:18px 18px;margin-bottom:16px;}
+    .card h3{font-size:13px;color:var(--acc);text-transform:uppercase;letter-spacing:.6px;margin-bottom:14px;}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;}
+    .fld{display:flex;flex-direction:column;gap:4px;}
+    .fld label{font-size:11px;color:var(--text-hint);text-transform:uppercase;letter-spacing:.4px;}
+    .fld input,.fld select,.fld textarea{background:var(--bg-dark);border:1px solid var(--border);border-radius:6px;
+      color:var(--text-white);padding:8px 10px;font-size:13px;font-family:inherit;}
+    .fld input:focus,.fld select:focus,.fld textarea:focus{outline:none;border-color:var(--acc);}
+    .row-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
+    table{width:100%;border-collapse:collapse;font-size:12.5px;}
+    th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:top;}
+    th{font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-hint);}
+    tr:hover td{background:var(--bg-hover);}
+    .tag{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;}
+    .tag.pend{color:#ffb300;background:rgba(255,179,0,.12);}
+    .tag.aprov{color:var(--info);background:var(--info-bg);}
+    .tag.valid{color:var(--success);background:var(--success-bg);}
+    .tag.rej{color:var(--danger);background:var(--danger-bg);}
+    .tag.anual{color:var(--acc);background:var(--acc-bg);}
+    .tag.premio{color:var(--gold-light);background:var(--gold-bg);border:1px solid var(--gold-border);}
+    .pctbar{height:9px;border-radius:5px;background:var(--bg-dark);overflow:hidden;margin-top:5px;}
+    .pctbar>i{display:block;height:100%;border-radius:5px;background:var(--success);}
+    .pctbar.over>i{background:var(--danger);}
+    .per{border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px;background:var(--bg-dark);}
+    .per .perhead{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+    .per .perhead b{font-size:13px;color:var(--text-white);}
+    .win{display:flex;gap:6px;align-items:center;margin:4px 0;font-size:12px;flex-wrap:wrap;}
+    .win input[type=date]{padding:5px 7px;}
+    .miut{font-size:11px;color:var(--text-hint);font-style:italic;}
+    .empty{text-align:center;color:var(--text-hint);padding:34px 10px;font-size:13px;}
+    .msg{font-size:12px;padding:9px 12px;border-radius:6px;margin-bottom:12px;display:none;}
+    .msg.ok{display:block;background:var(--success-bg);color:var(--success);}
+    .msg.err{display:block;background:var(--danger-bg);color:var(--danger);}
+    .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-start;justify-content:center;z-index:60;padding:30px 14px;overflow:auto;}
+    .modal-bg.open{display:flex;}
+    .modal{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;max-width:640px;width:100%;padding:22px;}
+    .modal h2{font-size:16px;color:var(--text-white);margin-bottom:16px;}
+    .minibtn{font-size:11px;padding:3px 9px;border-radius:5px;border:1px solid var(--border);background:var(--bg-dark);color:var(--text-muted);cursor:pointer;}
+    .minibtn:hover{border-color:var(--acc);color:var(--text-white);}
+    .minibtn.del:hover{border-color:var(--danger);color:var(--danger);}
+    @media(max-width:680px){ .hero .yr{margin-left:0;} table{font-size:11.5px;} }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <div class="header-shields"><img src="assets/escudo-cpe.png" alt="CPE" onerror="this.style.display='none'"><img src="assets/escudo-pmmg.png" alt="PMMG" onerror="this.style.display='none'"><img src="assets/brasao-bpmmamb.png" alt="BPM MAMB" onerror="this.style.display='none'"></div><div class="header-div"></div>
+    <div class="header-title"><div class="header-kicker">CPE · BPM MAmb · 3ª Cia PM MAmb</div>
+      <h1>PAINEL DE GESTÃO OPERACIONAL</h1>
+      <p>3ª Cia PM MAmb — Acompanhamento 2026</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <div id="user-info" style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);cursor:pointer;padding:5px 10px;border:1px solid var(--border);border-radius:5px;" onclick="window.location.href='perfil.html'" title="Meu Perfil">
+      <span id="user-avatar" style="width:22px;height:22px;border-radius:50%;background:var(--gold);color:#1a1000;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">?</span>
+      <span id="user-nome">—</span>
+      <span id="user-badge" style="font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;"></span>
+    </div>
+    <button class="btn-outline" onclick="localStorage.removeItem('poe_sessao_v2');sessionStorage.removeItem('poe_sessao_v2');localStorage.removeItem('poe_sessao');window.location.href='index.html'">Sair</button>
+  </div>
+</header>
+
+<script src="topnav.js" data-ativo="p1"></script>
+
+<div class="wrap">
+  <div class="hero">
+    <div class="ic">🏖️</div>
+    <div>
+      <h1>Férias</h1>
+      <div class="sub" id="hero-sub">Escala de férias e afastamentos da seção</div>
+    </div>
+    <div class="yr">
+      <label for="sel-ano">Ano</label>
+      <select id="sel-ano" onchange="trocarAno()"></select>
+    </div>
+  </div>
+
+  <div id="msg" class="msg"></div>
+
+  <!-- ÁREA DE GESTÃO (Aux P1 / Comando) -->
+  <div id="area-p1" style="display:none;">
+    <div class="tabs">
+      <button class="tab active" data-tab="crono" onclick="abrirTab('crono')">📅 Cronograma &amp; Prazos</button>
+      <button class="tab" data-tab="pct" onclick="abrirTab('pct')">📊 Percentuais</button>
+      <button class="tab" data-tab="lanc" onclick="abrirTab('lanc')">📝 Lançamentos</button>
+    </div>
+
+    <!-- ══ TAB CRONOGRAMA ══ -->
+    <div class="panel active" id="panel-crono">
+      <div class="card">
+        <h3>Dados do cronograma anual</h3>
+        <div class="grid">
+          <div class="fld"><label>Título</label><input id="c-titulo" placeholder="Cronograma de Férias Anuais"></div>
+          <div class="fld"><label>Situação</label>
+            <select id="c-situacao">
+              <option value="RASCUNHO">Rascunho (só o P1 vê)</option>
+              <option value="ABERTO">Aberto (militares podem escolher)</option>
+              <option value="ENCERRADO">Encerrado (fora do prazo)</option>
+            </select>
+          </div>
+          <div class="fld"><label>Abertura da escolha</label><input type="date" id="c-abertura"></div>
+          <div class="fld"><label>Limite para escolha</label><input type="date" id="c-limite"></div>
+        </div>
+        <div class="grid" style="margin-top:12px;">
+          <div class="fld"><label>% máx. na Cia</label><input type="number" id="c-pct-cia" min="0" max="100" step="0.5" placeholder="ex.: 20"></div>
+          <div class="fld"><label>% máx. por Pelotão</label><input type="number" id="c-pct-pel" min="0" max="100" step="0.5" placeholder="ex.: 25"></div>
+          <div class="fld"><label>% máx. por Grupamento</label><input type="number" id="c-pct-gp" min="0" max="100" step="0.5" placeholder="ex.: 33"></div>
+        </div>
+        <div class="miut" style="margin-top:8px;">Estes limites são a referência para o painel de <b>Percentuais</b>. O Aux P1 pode alterar quando quiser.</div>
+      </div>
+
+      <div class="card">
+        <h3>Períodos e janelas (25 dias direto · 15 + 10 fracionado)</h3>
+        <div id="periodos"></div>
+        <div class="row-actions">
+          <button class="btn-outline" onclick="addPeriodo()">+ Adicionar período</button>
+        </div>
+        <div class="miut" style="margin-top:8px;">Cada período pode ter uma janela de <b>25 dias direto</b> e/ou janelas de <b>15</b> e <b>10 dias</b> (fracionado). É a base do formulário de escolha do militar (Fase 2).</div>
+      </div>
+
+      <div class="row-actions">
+        <button class="btn-gold" onclick="salvarCronograma()">💾 Salvar cronograma</button>
+      </div>
+    </div>
+
+    <!-- ══ TAB PERCENTUAIS ══ -->
+    <div class="panel" id="panel-pct">
+      <div class="card">
+        <h3>Militares em férias — na data</h3>
+        <div class="row-actions" style="margin-bottom:14px;">
+          <div class="fld" style="max-width:200px;"><label>Data de referência</label><input type="date" id="pct-data"></div>
+          <button class="btn-outline" style="align-self:flex-end;" onclick="carregarPct()">Atualizar</button>
+        </div>
+        <div id="pct-cia"></div>
+      </div>
+      <div class="card">
+        <h3>Por pelotão</h3>
+        <div id="pct-pel"><div class="empty">—</div></div>
+      </div>
+      <div class="card">
+        <h3>Por grupamento</h3>
+        <div id="pct-gp"><div class="empty">—</div></div>
+      </div>
+    </div>
+
+    <!-- ══ TAB LANÇAMENTOS ══ -->
+    <div class="panel" id="panel-lanc">
+      <div class="card">
+        <div class="row-actions" style="justify-content:space-between;margin-bottom:12px;">
+          <div class="row-actions">
+            <button class="btn-gold" onclick="novoPedido()">+ Novo lançamento</button>
+          </div>
+          <div class="row-actions">
+            <button class="btn-outline" onclick="exportarExcel()">⬇ Exportar Excel</button>
+          </div>
+        </div>
+        <div style="overflow-x:auto;">
+          <table id="tbl-ped">
+            <thead><tr>
+              <th>Militar</th><th>Tipo</th><th>Exerc.</th><th>Modalidade</th>
+              <th>Parcelas / datas</th><th>Destino</th><th>Situação</th><th></th>
+            </tr></thead>
+            <tbody id="tbody-ped"><tr><td colspan="8"><div class="empty">Carregando…</div></td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ÁREA DO MILITAR (Fase 2 — placeholder) -->
+  <div id="area-militar" style="display:none;">
+    <div class="card">
+      <div class="empty">
+        <div style="font-size:34px;margin-bottom:10px;">🏖️</div>
+        <div style="font-size:15px;color:var(--text-white);font-weight:600;margin-bottom:6px;">Escolha das suas férias</div>
+        <div>O formulário para você escolher o período das suas férias está em preparação (Fase 2).<br>Assim que o Aux P1 abrir o cronograma do ano, ele aparece aqui.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL PEDIDO -->
+<div class="modal-bg" id="modal-ped">
+  <div class="modal">
+    <h2 id="modal-titulo">Novo lançamento de férias</h2>
+    <div class="grid">
+      <div class="fld" id="fld-militar"><label>Militar</label>
+        <select id="p-militar"></select>
+      </div>
+      <div class="fld"><label>Tipo</label>
+        <select id="p-tipo" onchange="onTipoChange()">
+          <option value="ANUAL">Férias anuais</option>
+          <option value="PREMIO">Férias-prêmio</option>
+        </select>
+      </div>
+      <div class="fld"><label>Exercício (ano de ref.)</label><input type="number" id="p-exercicio" placeholder="ex.: 2026"></div>
+      <div class="fld" id="fld-modalidade"><label>Modalidade</label>
+        <select id="p-modalidade">
+          <option value="25_DIRETO">25 dias direto</option>
+          <option value="15_10_FRACIONADO">15 + 10 dias (fracionado)</option>
+        </select>
+      </div>
+      <div class="fld"><label>Destino / fração</label><input id="p-destino" placeholder="ex.: Teófilo Otoni"></div>
+      <div class="fld"><label>Situação</label>
+        <select id="p-situacao">
+          <option value="VALIDADO">Validado (P1)</option>
+          <option value="PENDENTE">Pendente</option>
+          <option value="APROVADO_PEL">Aprovado pelo Pelotão</option>
+          <option value="REJEITADO">Rejeitado</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px;background:var(--bg-dark);">
+      <h3>Parcelas / datas</h3>
+      <div id="p-parcelas"></div>
+      <div class="row-actions"><button class="minibtn" onclick="addParcela()">+ Adicionar parcela</button></div>
+    </div>
+
+    <div class="fld" style="margin-top:12px;"><label>Observações</label><textarea id="p-obs" rows="2"></textarea></div>
+
+    <div class="row-actions" style="justify-content:flex-end;margin-top:16px;">
+      <button class="btn-outline" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-gold" onclick="salvarPedido()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const sessao = (function(){
+  const raw = sessionStorage.getItem('poe_sessao_v2');
+  if(!raw){ window.location.href='index.html'; return null; }
+  try{ const s = JSON.parse(raw); if(!s || !s.id){ window.location.href='index.html'; return null; } return s; }
+  catch(e){ window.location.href='index.html'; return null; }
+})();
+const H={'apikey':SB_AUTH_KEY,'Authorization':`Bearer ${SB_AUTH_KEY}`,'Content-Type':'application/json'};
+const API=SB_AUTH_URL;
+async function rpc(fn, body){
+  const r=await fetch(`${API}/rest/v1/rpc/${fn}`,{method:'POST',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(body)});
+  const txt=await r.text(); let data=null; try{data=txt?JSON.parse(txt):null;}catch(e){data=txt;}
+  if(!r.ok){ throw new Error((data&&data.message)||(data&&data.hint)||txt||('Erro '+r.status)); }
+  return data;
+}
+function flash(m,ok){ const e=document.getElementById('msg'); e.textContent=m; e.className='msg '+(ok?'ok':'err'); setTimeout(()=>{e.className='msg';},4500); }
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function fmtBR(d){ if(!d) return '—'; const p=String(d).slice(0,10).split('-'); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d; }
+
+// cabeçalho do usuário
+if (sessao){
+  document.getElementById('user-nome').textContent = sessao.nome || sessao.matricula;
+  const initials = (sessao.nome||'U').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+  document.getElementById('user-avatar').textContent = initials;
+  const badge = document.getElementById('user-badge'); const nivel = sessao.nivel_acesso;
+  const mapaBadge = {
+    admin_geral: ['ADMIN GERAL','rgba(155,138,92,.2)','var(--gold)','var(--gold-border)'],
+    admin: ['ADMIN','rgba(155,138,92,.2)','var(--gold)','var(--gold-border)'],
+    admin_pelotao: ['ADMIN PELOTÃO','rgba(255,152,0,.15)','#ffa726','rgba(255,152,0,.4)'],
+    admin_gp: ['ADMIN GP','rgba(255,152,0,.15)','#ffa726','rgba(255,152,0,.4)'],
+  };
+  const info = mapaBadge[nivel] || ['OPERACIONAL','rgba(66,165,245,.15)','var(--info)','rgba(66,165,245,.3)'];
+  badge.textContent = info[0];
+  badge.style.cssText = `font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;background:${info[1]};color:${info[2]};border:1px solid ${info[3]};`;
+}
+
+// quem faz gestão (espelha _ferias_pode_p1 no banco)
+function podeP1(){
+  const fx=(sessao.funcao||'').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  return sessao.nivel_acesso==='admin_geral'
+    || (/AUX/.test(fx) && /P\s*1/.test(fx))
+    || (/(CMT|COMANDANTE)/.test(fx) && /\bCIA\b/.test(fx));
+}
+
+// ── ano ──
+const ANO_ATUAL = new Date().getFullYear();
+let anoSel = ANO_ATUAL;
+(function initAno(){
+  const sel=document.getElementById('sel-ano');
+  for(let a=ANO_ATUAL+1; a>=ANO_ATUAL-3; a--){ const o=document.createElement('option'); o.value=a; o.textContent=a; sel.appendChild(o); }
+  sel.value=ANO_ATUAL;
+})();
+function trocarAno(){ anoSel=parseInt(document.getElementById('sel-ano').value,10); boot(); }
+
+// ══════════════ CRONOGRAMA ══════════════
+let cronograma=null;
+function addPeriodo(p){
+  p = p || {ordem:(document.querySelectorAll('#periodos .per').length+1)};
+  const box=document.getElementById('periodos');
+  const div=document.createElement('div'); div.className='per';
+  const j25 = (p['25']||{}); const l15=(p['15']||[]); const l10=(p['10']||[]);
+  div.innerHTML=`
+    <div class="perhead"><b>Período</b> <input type="number" class="p-ordem" value="${esc(p.ordem||'')}" style="width:60px;padding:5px 7px;">
+      <button class="minibtn del" style="margin-left:auto;" onclick="this.closest('.per').remove()">remover</button></div>
+    <div class="win"><span style="width:78px;">25 dias:</span>
+      <input type="date" class="p25i" value="${esc(j25.ini||'')}"> a <input type="date" class="p25f" value="${esc(j25.fim||'')}"></div>
+    <div class="win15wrap">${l15.map(w=>winRow('15',w)).join('')}</div>
+    <div><button class="minibtn" onclick="this.closest('.per').querySelector('.win15wrap').insertAdjacentHTML('beforeend', winRowJS('15'))">+ janela 15 dias</button></div>
+    <div class="win10wrap" style="margin-top:6px;">${l10.map(w=>winRow('10',w)).join('')}</div>
+    <div><button class="minibtn" onclick="this.closest('.per').querySelector('.win10wrap').insertAdjacentHTML('beforeend', winRowJS('10'))">+ janela 10 dias</button></div>`;
+  box.appendChild(div);
+}
+function winRow(tp,w){ w=w||{}; return `<div class="win"><span style="width:78px;">${tp} dias:</span>
+    <input type="date" class="w${tp}i" value="${esc(w.ini||'')}"> a <input type="date" class="w${tp}f" value="${esc(w.fim||'')}">
+    <button class="minibtn del" onclick="this.closest('.win').remove()">x</button></div>`; }
+function winRowJS(tp){ return winRow(tp,{}); }
+function lerPeriodos(){
+  const out=[];
+  document.querySelectorAll('#periodos .per').forEach(div=>{
+    const o={ ordem: parseInt(div.querySelector('.p-ordem').value,10)||null };
+    const i25=div.querySelector('.p25i').value, f25=div.querySelector('.p25f').value;
+    if(i25||f25) o['25']={ini:i25||null,fim:f25||null};
+    const l15=[]; div.querySelectorAll('.win15wrap .win').forEach(w=>{ const i=w.querySelector('.w15i').value,f=w.querySelector('.w15f').value; if(i||f) l15.push({ini:i||null,fim:f||null}); });
+    const l10=[]; div.querySelectorAll('.win10wrap .win').forEach(w=>{ const i=w.querySelector('.w10i').value,f=w.querySelector('.w10f').value; if(i||f) l10.push({ini:i||null,fim:f||null}); });
+    if(l15.length) o['15']=l15; if(l10.length) o['10']=l10;
+    out.push(o);
+  });
+  return out;
+}
+function preencherCronograma(c){
+  cronograma=c;
+  document.getElementById('c-titulo').value = c?.titulo||'';
+  document.getElementById('c-situacao').value = c?.situacao||'RASCUNHO';
+  document.getElementById('c-abertura').value = (c?.data_abertura||'').slice(0,10);
+  document.getElementById('c-limite').value = (c?.data_limite||'').slice(0,10);
+  document.getElementById('c-pct-cia').value = c?.pct_max_cia ?? '';
+  document.getElementById('c-pct-pel').value = c?.pct_max_pelotao ?? '';
+  document.getElementById('c-pct-gp').value  = c?.pct_max_grupamento ?? '';
+  document.getElementById('periodos').innerHTML='';
+  (c?.periodos||[]).forEach(p=>addPeriodo(p));
+}
+async function salvarCronograma(){
+  try{
+    const dados={ ano:anoSel,
+      titulo:document.getElementById('c-titulo').value.trim(),
+      situacao:document.getElementById('c-situacao').value,
+      data_abertura:document.getElementById('c-abertura').value||null,
+      data_limite:document.getElementById('c-limite').value||null,
+      pct_max_cia:document.getElementById('c-pct-cia').value||null,
+      pct_max_pelotao:document.getElementById('c-pct-pel').value||null,
+      pct_max_grupamento:document.getElementById('c-pct-gp').value||null,
+      periodos:lerPeriodos() };
+    const r=await rpc('ferias_cronograma_salvar',{p_token:sessao.token,p_dados:dados});
+    preencherCronograma(r); flash('Cronograma salvo.',true);
+  }catch(e){ flash(e.message||'Erro ao salvar.',false); }
+}
+
+// ══════════════ PERCENTUAIS ══════════════
+async function carregarPct(){
+  try{
+    const data=document.getElementById('pct-data').value||null;
+    const r=await rpc('ferias_percentuais',{p_token:sessao.token,p_ano:anoSel,p_data:data});
+    const lim=r.limites||{};
+    document.getElementById('pct-cia').innerHTML = blocoPct('Companhia (3ª Cia)', r.cia, lim.cia);
+    document.getElementById('pct-pel').innerHTML = (r.pelotoes&&r.pelotoes.length)
+      ? r.pelotoes.map(p=>blocoPct(p.pelotao, p, lim.pelotao)).join('') : '<div class="empty">Sem dados.</div>';
+    document.getElementById('pct-gp').innerHTML = (r.grupamentos&&r.grupamentos.length)
+      ? r.grupamentos.map(g=>blocoPct(g.grupamento, g, lim.grupamento)).join('') : '<div class="empty">Sem dados.</div>';
+  }catch(e){ flash(e.message||'Erro.',false); }
+}
+function blocoPct(nome, o, limite){
+  o=o||{}; const pct=Number(o.pct||0); const over = limite!=null && pct>Number(limite);
+  const w=Math.min(100,pct);
+  return `<div style="margin-bottom:14px;">
+    <div style="display:flex;justify-content:space-between;font-size:12.5px;">
+      <b style="color:var(--text-white);">${esc(nome)}</b>
+      <span style="color:${over?'var(--danger)':'var(--text-muted)'};">${o.ferias||0}/${o.total||0} · ${pct}%${limite!=null?` <span class="miut">(lim. ${limite}%)</span>`:''}</span>
+    </div>
+    <div class="pctbar${over?' over':''}"><i style="width:${w}%;"></i></div>
+  </div>`;
+}
+
+// ══════════════ LANÇAMENTOS ══════════════
+let pedidos=[]; let efetivo=[]; let editId=null;
+async function carregarPedidos(){
+  try{
+    pedidos = await rpc('ferias_pedidos_listar',{p_token:sessao.token,p_ano:anoSel}) || [];
+    renderPedidos();
+  }catch(e){ document.getElementById('tbody-ped').innerHTML=`<tr><td colspan="8"><div class="empty">${esc(e.message)}</div></td></tr>`; }
+}
+function tagSit(s){ const m={PENDENTE:['pend','Pendente'],APROVADO_PEL:['aprov','Aprov. Pelotão'],VALIDADO:['valid','Validado'],REJEITADO:['rej','Rejeitado']}; const t=m[s]||['','—']; return `<span class="tag ${t[0]}">${t[1]}</span>`; }
+function parcelasTxt(p){
+  const arr=p.parcelas||[]; if(!arr.length) return '—';
+  return arr.map(x=>`${x.parcela||''}: ${fmtBR(x.ini)}–${fmtBR(x.fim)}`).join('<br>');
+}
+function renderPedidos(){
+  const tb=document.getElementById('tbody-ped');
+  if(!pedidos.length){ tb.innerHTML='<tr><td colspan="8"><div class="empty">Nenhum lançamento para '+anoSel+'.</div></td></tr>'; return; }
+  tb.innerHTML = pedidos.map(p=>{
+    const m=p.militar||{};
+    return `<tr>
+      <td><b>${esc(m.pg||'')}</b> ${esc(m.guerra||m.nome||'')}<div class="miut">${esc(m.matricula||'')}${p.pelotao?' · '+esc(p.pelotao):''}</div></td>
+      <td><span class="tag ${p.tipo==='PREMIO'?'premio':'anual'}">${p.tipo==='PREMIO'?'Prêmio':'Anual'}</span></td>
+      <td>${esc(p.exercicio||'—')}</td>
+      <td>${esc(p.modalidade==='25_DIRETO'?'25 direto':p.modalidade==='15_10_FRACIONADO'?'15+10':(p.tipo==='PREMIO'?'—':''))}</td>
+      <td>${parcelasTxt(p)}</td>
+      <td>${esc(p.destino||'—')}</td>
+      <td>${tagSit(p.situacao)}</td>
+      <td style="white-space:nowrap;"><button class="minibtn" onclick="editarPedido('${p.id}')">editar</button>
+        <button class="minibtn del" onclick="excluirPedido('${p.id}')">excluir</button></td>
+    </tr>`;
+  }).join('');
+}
+async function garantirEfetivo(){
+  if(efetivo.length) return;
+  try{ efetivo = await rpc('tta_listar_militares',{p_token:sessao.token}) || []; }catch(e){ efetivo=[]; }
+  const sel=document.getElementById('p-militar');
+  sel.innerHTML='<option value="">— selecione —</option>'+efetivo.map(m=>`<option value="${m.id}">${esc(m.posto_graduacao||'')} ${esc(m.nome_guerra||m.nome_completo)} · ${esc(m.matricula)}</option>`).join('');
+}
+function onTipoChange(){
+  const prem = document.getElementById('p-tipo').value==='PREMIO';
+  document.getElementById('fld-modalidade').style.display = prem?'none':'flex';
+}
+function parcelaRow(x){ x=x||{}; const prem=document.getElementById('p-tipo').value==='PREMIO';
+  const opts = prem ? ['PREMIO'] : ['25','15','10'];
+  return `<div class="win" style="margin-bottom:6px;">
+    <select class="pc-par" style="padding:5px 7px;">${opts.map(o=>`<option value="${o}" ${x.parcela===o?'selected':''}>${o}</option>`).join('')}</select>
+    <input type="date" class="pc-ini" value="${esc(x.ini||'')}"> a <input type="date" class="pc-fim" value="${esc(x.fim||'')}">
+    <button class="minibtn del" onclick="this.closest('.win').remove()">x</button></div>`;
+}
+function addParcela(x){ document.getElementById('p-parcelas').insertAdjacentHTML('beforeend', parcelaRow(x)); }
+function lerParcelas(){ const out=[]; document.querySelectorAll('#p-parcelas .win').forEach(w=>{ const par=w.querySelector('.pc-par').value, i=w.querySelector('.pc-ini').value, f=w.querySelector('.pc-fim').value; if(i||f) out.push({parcela:par,ini:i||null,fim:f||null}); }); return out; }
+
+async function novoPedido(){
+  editId=null; document.getElementById('modal-titulo').textContent='Novo lançamento de férias';
+  await garantirEfetivo();
+  document.getElementById('fld-militar').style.display='flex';
+  document.getElementById('p-militar').value='';
+  document.getElementById('p-tipo').value='ANUAL';
+  document.getElementById('p-exercicio').value=anoSel;
+  document.getElementById('p-modalidade').value='25_DIRETO';
+  document.getElementById('p-destino').value='';
+  document.getElementById('p-situacao').value='VALIDADO';
+  document.getElementById('p-obs').value='';
+  document.getElementById('p-parcelas').innerHTML=''; onTipoChange(); addParcela();
+  document.getElementById('modal-ped').classList.add('open');
+}
+function editarPedido(id){
+  const p=pedidos.find(x=>x.id===id); if(!p) return; editId=id;
+  document.getElementById('modal-titulo').textContent='Editar lançamento';
+  document.getElementById('fld-militar').style.display='none';
+  document.getElementById('p-tipo').value=p.tipo||'ANUAL';
+  document.getElementById('p-exercicio').value=p.exercicio||'';
+  document.getElementById('p-modalidade').value=p.modalidade||'25_DIRETO';
+  document.getElementById('p-destino').value=p.destino||'';
+  document.getElementById('p-situacao').value=p.situacao||'VALIDADO';
+  document.getElementById('p-obs').value=p.observacoes||'';
+  onTipoChange();
+  document.getElementById('p-parcelas').innerHTML=''; (p.parcelas||[]).forEach(x=>addParcela(x)); if(!(p.parcelas||[]).length) addParcela();
+  document.getElementById('modal-ped').classList.add('open');
+}
+function fecharModal(){ document.getElementById('modal-ped').classList.remove('open'); }
+async function salvarPedido(){
+  try{
+    const dados={ ano:anoSel,
+      tipo:document.getElementById('p-tipo').value,
+      exercicio:document.getElementById('p-exercicio').value||null,
+      modalidade:document.getElementById('p-tipo').value==='PREMIO'?null:document.getElementById('p-modalidade').value,
+      destino:document.getElementById('p-destino').value.trim()||null,
+      situacao:document.getElementById('p-situacao').value,
+      observacoes:document.getElementById('p-obs').value.trim()||null,
+      parcelas:lerParcelas() };
+    if(!editId){ dados.militar_id=document.getElementById('p-militar').value; if(!dados.militar_id){ flash('Selecione o militar.',false); return; } }
+    await rpc('ferias_pedido_salvar',{p_token:sessao.token,p_id:editId,p_dados:dados});
+    fecharModal(); flash('Lançamento salvo.',true); carregarPedidos();
+  }catch(e){ flash(e.message||'Erro ao salvar.',false); }
+}
+async function excluirPedido(id){
+  if(!confirm('Excluir este lançamento de férias?')) return;
+  try{ await rpc('ferias_pedido_excluir',{p_token:sessao.token,p_id:id}); flash('Excluído.',true); carregarPedidos(); }
+  catch(e){ flash(e.message||'Erro.',false); }
+}
+function exportarExcel(){
+  const aoa=[['Nº PM','Posto/Grad','Nome','Pelotão','Tipo','Exercício','Modalidade','Parcelas','Destino','Situação']];
+  pedidos.forEach(p=>{ const m=p.militar||{};
+    const parc=(p.parcelas||[]).map(x=>`${x.parcela}:${fmtBR(x.ini)}-${fmtBR(x.fim)}`).join(' | ');
+    aoa.push([m.matricula||'',m.pg||'',m.nome||'',p.pelotao||'',p.tipo,p.exercicio||'',p.modalidade||'',parc,p.destino||'',p.situacao]);
+  });
+  const ws=XLSX.utils.aoa_to_sheet(aoa); const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Férias '+anoSel);
+  XLSX.writeFile(wb, 'Ferias_'+anoSel+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
+
+// ══════════════ TABS / BOOT ══════════════
+function abrirTab(t){
+  document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===t));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById('panel-'+t).classList.add('active');
+  if(t==='pct') carregarPct();
+  if(t==='lanc') carregarPedidos();
+}
+async function boot(){
+  if(!podeP1()){
+    document.getElementById('area-p1').style.display='none';
+    document.getElementById('area-militar').style.display='block';
+    document.getElementById('hero-sub').textContent='Suas férias';
+    return;
+  }
+  document.getElementById('area-militar').style.display='none';
+  document.getElementById('area-p1').style.display='block';
+  document.getElementById('pct-data').value=new Date().toISOString().slice(0,10);
+  try{ const c=await rpc('ferias_cronograma_get',{p_token:sessao.token,p_ano:anoSel}); preencherCronograma(c); }
+  catch(e){ flash(e.message||'Erro ao carregar.',false); preencherCronograma(null); }
+  // se estiver na aba de lançamentos/percentuais já aberta, recarrega
+  const ativa=document.querySelector('.tab.active')?.dataset.tab;
+  if(ativa==='lanc') carregarPedidos(); else if(ativa==='pct') carregarPct();
+}
+boot();
+</script>
+</body>
+</html>
