@@ -631,18 +631,36 @@ function renderizarTudo(){
   });
   const diasOrdenados = Object.keys(porDia).sort();
 
-  // ---- Turnos por dia (ritmo operacional) ----
-  // Conta turnos distintos (ID Relatório) por dia. Mostra a dimensão tempo sem
-  // somar indicadores nem repetir a composição da pizza.
-  const turnosPorDia = {};
-  diasOrdenados.forEach(d => turnosPorDia[d] = new Set());
+  // ---- Séries diárias (gráfico de linhas multi-métrica) ----
+  // X = dias; uma linha por métrica. Equipe = comandantes distintos no dia; as
+  // demais somam o indicador correspondente por dia. Os indicadores são
+  // dinâmicos (quesitos da operação), então casamos por nome normalizado e só
+  // criamos a linha quando o indicador existir no período.
+  const equipesDiaSet = {};
+  diasOrdenados.forEach(d => equipesDiaSet[d] = new Set());
   dados.forEach(r => {
     const d = r['Data'] || '—';
-    if (!turnosPorDia[d]) turnosPorDia[d] = new Set();
-    turnosPorDia[d].add(r['ID Relatório']);
+    const c = (r['Comandante'] || '').trim();
+    if (c) (equipesDiaSet[d] = equipesDiaSet[d] || new Set()).add(c);
   });
-  const turnosDia = {};
-  diasOrdenados.forEach(d => turnosDia[d] = turnosPorDia[d].size);
+  const equipesDia = diasOrdenados.map(d => equipesDiaSet[d] ? equipesDiaSet[d].size : 0);
+
+  const nomesNum = camposNumericos.map(c => c.nome);
+  const achaInd_ = pred => nomesNum.filter(n => pred(normalizar_(n)));
+  const somaDia_ = nomes => {
+    const m = {}; diasOrdenados.forEach(d => m[d] = 0);
+    dados.forEach(r => { const d = r['Data'] || '—'; nomes.forEach(n => { m[d] += (parseNum_(r[n]) || 0); }); });
+    return diasOrdenados.map(d => m[d] || 0);
+  };
+  // normalizar_ devolve em MAIÚSCULAS e sem acento — casar com termos assim.
+  const alvosLinha = [
+    { label: 'Pessoas abordadas',          nomes: achaInd_(n => n.includes('ABORDAD')) },
+    { label: 'Prisões',                    nomes: achaInd_(n => (n.includes('PRISAO') || n.includes('PRISOES')) && !n.includes('MANDADO')) },
+    { label: 'Cumpr. mandado de prisão',   nomes: achaInd_(n => n.includes('MANDADO')) },
+    { label: 'GDO Rural',                  nomes: achaInd_(n => n.includes('RURAL') || n.includes('DESMATE')) },
+  ];
+  const seriesDia = [{ label: 'Equipes', data: equipesDia }];
+  alvosLinha.forEach(a => { if (a.nomes.length) seriesDia.push({ label: a.label, data: somaDia_(a.nomes) }); });
 
   // ---- Indicadores de desempenho calculados ----
   // Busca o total por nome tolerando acento/caixa: o rótulo cadastrado no quesito
@@ -689,7 +707,7 @@ function renderizarTudo(){
     <div class="secao-titulo">📈 Gráficos</div>
     <div class="duas-colunas">
       <div class="chart-box"><h4>Top 8 Indicadores (total do período)</h4><canvas id="chartBarras" height="220"></canvas></div>
-      <div class="chart-box"><h4>Turnos por Dia</h4><canvas id="chartLinha" height="220"></canvas></div>
+      <div class="chart-box"><h4>Evolução Diária</h4><canvas id="chartLinha" height="220"></canvas></div>
     </div>
 
     <div class="secao-titulo">🏆 Ranking por Fração de Atuação</div>
@@ -734,11 +752,11 @@ function renderizarTudo(){
       }).join('')
     : '<div class="mr-empty">Nenhum indicador com valor no período.</div>';
 
-  desenharGraficos_(topIndicadores, diasOrdenados, turnosDia);
+  desenharGraficos_(topIndicadores, diasOrdenados, seriesDia);
 
   // Guarda o estado atual pra exportação
   window._prodEstadoAtual = { dados, totais, resumoTexto, periodoIni, periodoFim, rankingFracao, rankingEquipe, indicadoresCalc, camposRanking,
-    porDia, diasOrdenados, turnosDia,
+    porDia, diasOrdenados, seriesDia,
     stats: { turnos: totalTurnos, equipes: equipesUnicas.size, fracoes: fracoesUnicas.size, militares: totalMilitares, viaturas: totalViaturas } };
 }
 
@@ -756,7 +774,7 @@ function formatarDataBR_(iso){
   return `${d}/${m}/${a}`;
 }
 
-function desenharGraficos_(topIndicadores, diasOrdenados, turnosDia){
+function desenharGraficos_(topIndicadores, diasOrdenados, seriesDia){
   if (graficoBarras) graficoBarras.destroy();
   if (graficoLinha) graficoLinha.destroy();
 
@@ -775,20 +793,27 @@ function desenharGraficos_(topIndicadores, diasOrdenados, turnosDia){
 
   const ctxL = document.getElementById('chartLinha');
   if (ctxL){
-    // Turnos por dia: barras simples com o nº de turnos (relatórios) por dia.
-    // Mostra o ritmo operacional ao longo do tempo, sem repetir a pizza.
+    // Gráfico de linhas multi-métrica: X = dias; uma linha por métrica
+    // (Equipes, Pessoas abordadas, Prisões, Cumpr. mandado de prisão).
+    const CORES = ['#4e8098','#c2953a','#2f5233','#8c3b2f','#6a4c93','#9b8a5c'];
     graficoLinha = new Chart(ctxL, {
-      type: 'bar',
+      type: 'line',
       data: {
         labels: diasOrdenados.map(formatarDataBR_),
-        datasets: [{ data: diasOrdenados.map(d => turnosDia[d] || 0), backgroundColor:'#9b8a5c', borderRadius:3 }],
+        datasets: (seriesDia || []).map((s, i) => ({
+          label: s.label,
+          data: s.data,
+          borderColor: CORES[i % CORES.length],
+          backgroundColor: CORES[i % CORES.length],
+          tension: .25, borderWidth: 2, pointRadius: 3, pointHoverRadius: 5, fill: false, spanGaps: true,
+        })),
       },
       options: {
         responsive:true,
-        plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label: ctx => `${ctx.parsed.y} turno${ctx.parsed.y!==1?'s':''}` } } },
+        plugins:{ legend:{ display:true, position:'bottom', labels:{ color:'#bbb', font:{size:9}, boxWidth:12, padding:6 } }, tooltip:{ mode:'index', intersect:false } },
         scales:{
           x:{ ticks:{color:'#999',font:{size:9}} },
-          y:{ beginAtZero:true, ticks:{color:'#999', precision:0, stepSize:1} },
+          y:{ beginAtZero:true, ticks:{color:'#999', precision:0} },
         },
       },
     });
@@ -1041,17 +1066,24 @@ document.getElementById('btnExportPdf').addEventListener('click', async () => {
       }, 1150, 560, [rotulosNaFatia]);
       if (g) graf.push({ t:'Composição da Produção', ...g });
     }
-    // 3) Barras — Turnos por dia (ritmo operacional)
-    if (dias.length) {
-      const turnosDia = estado.turnosDia || {};
-      const g = gerarGrafico_('bar', {
+    // 3) Linhas — Evolução diária (Equipes, Abordagens, Prisões, Mandados)
+    const seriesDia = estado.seriesDia || [];
+    if (dias.length && seriesDia.length) {
+      const CORES = ['#4e8098','#c2953a','#2f5233','#8c3b2f','#6a4c93','#9b8a5c'];
+      const g = gerarGrafico_('line', {
         labels: dias.map(formatarDataBR_),
-        datasets: [{ data: dias.map(d => turnosDia[d] || 0), backgroundColor:'#9b8a5c', borderRadius:3 }],
+        datasets: seriesDia.map((s, i) => ({
+          label: s.label,
+          data: s.data,
+          borderColor: CORES[i % CORES.length],
+          backgroundColor: CORES[i % CORES.length],
+          tension: .25, borderWidth: 3, pointRadius: 3, fill: false, spanGaps: true,
+        })),
       }, {
-        plugins:{ legend:{ display:false } },
-        scales:{ x:{ ...eixo, ticks:{ color:'#333', font:{ size:11 } } }, y:{ ...eixo, beginAtZero:true, ticks:{ ...eixo.ticks, precision:0, stepSize:1 } } },
+        plugins:{ legend:{ position:'bottom', labels:{ color:'#222', font:{ size:12 }, boxWidth:16, padding:7 } } },
+        scales:{ x:{ ...eixo, ticks:{ color:'#333', font:{ size:11 } } }, y:{ ...eixo, beginAtZero:true, ticks:{ ...eixo.ticks, precision:0 } } },
       }, 2050, 560);
-      if (g) graf.push({ t:'Turnos por Dia', full:true, ...g });
+      if (g) graf.push({ t:'Evolução Diária', full:true, ...g });
     }
 
     if (graf.length) {
