@@ -118,8 +118,26 @@
   <div id="area-p1" style="display:none;">
     <div class="tabs">
       <button class="tab active" data-tab="crono" onclick="abrirTab('crono')">📅 Cronograma &amp; Prazos</button>
+      <button class="tab" data-tab="aprovar" onclick="abrirTab('aprovar')">✅ Aprovar Pelotão</button>
       <button class="tab" data-tab="pct" onclick="abrirTab('pct')">📊 Percentuais</button>
       <button class="tab" data-tab="lanc" onclick="abrirTab('lanc')">📝 Lançamentos</button>
+    </div>
+
+    <!-- ══ TAB APROVAR PELOTÃO ══ -->
+    <div class="panel" id="panel-aprovar">
+      <div class="card">
+        <div class="row-actions" style="align-items:flex-end;gap:12px;margin-bottom:6px;">
+          <div class="fld" style="max-width:220px;"><label>Pelotão</label><select id="ap-pel" onchange="aprovarRender()"></select></div>
+          <div class="miut">Organize os períodos de cada militar (por antiguidade) e acompanhe o percentual do pelotão. Valide quando terminar.</div>
+        </div>
+        <div id="ap-pct"></div>
+      </div>
+      <div class="card" style="overflow-x:auto;">
+        <table>
+          <thead><tr><th>#</th><th>Militar</th><th>Opções escolhidas</th><th>Período definido</th><th>Situação</th><th></th></tr></thead>
+          <tbody id="ap-tbody"><tr><td colspan="6"><div class="empty">Selecione o pelotão.</div></td></tr></tbody>
+        </table>
+      </div>
     </div>
 
     <!-- ══ TAB CRONOGRAMA ══ -->
@@ -713,7 +731,10 @@ async function salvarValidacao(){
     const dados={ ano:anoSel, modalidade:mod, parcelas, situacao:sit };
     if(sit==='REJEITADO') dados.motivo_rejeicao=document.getElementById('val-motivo').value.trim()||null;
     await rpc('ferias_pedido_salvar',{p_token:sessao.token,p_id:valPed.id,p_dados:dados});
-    fechar('modal-validar'); flash('Período definido / situação atualizada.',true); carregarPedidos();
+    fechar('modal-validar'); flash('Período definido / situação atualizada.',true);
+    pedidos=await rpc('ferias_pedidos_listar',{p_token:sessao.token,p_ano:anoSel})||[];
+    const at=document.querySelector('.tab.active')?.dataset.tab;
+    if(at==='aprovar') aprovarRender(); else renderPedidos();
   }catch(e){ flash(e.message||'Erro ao salvar.',false); }
 }
 function exportarExcel(){
@@ -865,6 +886,50 @@ function abrirTab(t){
   document.getElementById('panel-'+t).classList.add('active');
   if(t==='pct') carregarPct();
   if(t==='lanc') carregarPedidos();
+  if(t==='aprovar') aprovarBoot();
+}
+// ══════════════ APROVAR PELOTÃO (organizar + percentual ao vivo) ══════════════
+let apTotals={};
+function apRot(p){ return /^\d+$/.test(String(p))?('Pelotão '+p):p; }
+async function aprovarBoot(){
+  await carregarPels();
+  const sel=document.getElementById('ap-pel');
+  if(!sel.options.length && PELS.length){ sel.innerHTML=PELS.map(p=>`<option value="${esc(p)}">${esc(apRot(p))}</option>`).join(''); }
+  try{ const r=await rpc('ferias_percentuais',{p_token:sessao.token,p_ano:anoSel,p_data:null}); apTotals={}; (r.pelotoes||[]).forEach(x=>apTotals[x.pelotao]=x.total); }catch(e){}
+  try{ pedidos=await rpc('ferias_pedidos_listar',{p_token:sessao.token,p_ano:anoSel})||[]; }catch(e){ pedidos=[]; }
+  aprovarRender();
+}
+function apPeriodoSpans(){
+  return ((cronograma&&cronograma.periodos)||[]).map(p=>{ const ds=[];
+    if(p['25']){ds.push(p['25'].ini,p['25'].fim);} (p['15']||[]).forEach(w=>ds.push(w.ini,w.fim)); (p['10']||[]).forEach(w=>ds.push(w.ini,w.fim));
+    const v=ds.filter(Boolean).map(s=>String(s).slice(0,10)).sort(); return {ordem:p.ordem, ini:v[0], fim:v[v.length-1]}; });
+}
+function apOverlap(aIni,aFim,bIni,bFim){ return String(aIni).slice(0,10)<=String(bFim).slice(0,10) && String(aFim).slice(0,10)>=String(bIni).slice(0,10); }
+function aprovarRender(){
+  const pel=document.getElementById('ap-pel').value;
+  const lista=pedidos.filter(p=>String(p.pelotao)===String(pel));
+  const spans=apPeriodoSpans();
+  const total=apTotals[pel]||lista.length||0;
+  const limPel=(cronograma&&cronograma.limites_pelotao&&cronograma.limites_pelotao[pel])!=null?cronograma.limites_pelotao[pel]:(cronograma&&cronograma.pct_max_pelotao);
+  const pctHtml=spans.map(s=>{
+    const n=lista.filter(p=>p.situacao!=='REJEITADO' && (p.parcelas||[]).some(x=>apOverlap(x.ini,x.fim,s.ini,s.fim))).length;
+    const pct=total>0?Math.round(1000*n/total)/10:0; const over=limPel!=null&&pct>Number(limPel);
+    return `<div style="margin-bottom:7px;"><div style="display:flex;justify-content:space-between;font-size:11.5px;"><span>Período ${s.ordem} <span class="miut">${fmtBR(s.ini)}–${fmtBR(s.fim)}</span></span><span style="color:${over?'var(--danger)':'var(--text-muted)'};">${n}/${total} · ${pct}%${limPel!=null?` <span class="miut">lim ${limPel}%</span>`:''}</span></div><div class="pctbar${over?' over':''}"><i style="width:${Math.min(100,pct)}%"></i></div></div>`;
+  }).join('');
+  document.getElementById('ap-pct').innerHTML=spans.length?('<div class="miut" style="text-transform:uppercase;font-size:10px;letter-spacing:.4px;margin-bottom:8px;">Percentual do pelotão por período — provisório, atualiza ao definir</div>'+pctHtml):'<div class="miut">Cronograma sem períodos cadastrados.</div>';
+  const tb=document.getElementById('ap-tbody');
+  if(!lista.length){ tb.innerHTML='<tr><td colspan="6"><div class="empty">Nenhum pedido neste pelotão.</div></td></tr>'; return; }
+  tb.innerHTML=lista.map((p,i)=>{ const m=p.militar||{};
+    const ops=(p.opcoes&&p.opcoes.length)?p.opcoes:[];
+    const opsTxt=ops.length?ops.map(o=>`${o.ordem}ª ${(o.parcelas||[]).map(x=>x.parcela+'d '+fmtBR(x.ini)+'–'+fmtBR(x.fim)).join('+')}`).join('<br>'):'<span class="miut">—</span>';
+    const fin=(p.parcelas||[]).map(x=>`${x.parcela}d ${fmtBR(x.ini)}–${fmtBR(x.fim)}`).join(' + ')||'<span class="miut">a definir</span>';
+    return `<tr><td class="miut">${i+1}</td>
+      <td><b>${esc(m.pg||'')}</b> ${esc(m.guerra||m.nome||'')}<div class="miut">${esc(m.matricula||'')}</div></td>
+      <td style="font-size:11.5px;">${opsTxt}</td>
+      <td style="font-size:12px;color:var(--text-white);">${fin}</td>
+      <td>${tagSit(p.situacao)}</td>
+      <td><button class="minibtn" onclick="abrirValidar('${p.id}')">definir</button></td></tr>`;
+  }).join('');
 }
 async function boot(){
   if(!podeP1()){
