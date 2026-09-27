@@ -221,14 +221,35 @@
     </div>
   </div>
 
-  <!-- ÁREA DO MILITAR (Fase 2 — placeholder) -->
+  <!-- ÁREA DO MILITAR (Fase 2) -->
   <div id="area-militar" style="display:none;">
-    <div class="card">
-      <div class="empty">
-        <div style="font-size:34px;margin-bottom:10px;">🏖️</div>
-        <div style="font-size:15px;color:var(--text-white);font-weight:600;margin-bottom:6px;">Escolha das suas férias</div>
-        <div>O formulário para você escolher o período das suas férias está em preparação (Fase 2).<br>Assim que o Aux P1 abrir o cronograma do ano, ele aparece aqui.</div>
+    <div id="mil-status"></div>
+    <div id="mil-form-card" class="card" style="display:none;">
+      <h3 id="mil-form-titulo" style="font-size:13px;color:var(--acc);text-transform:uppercase;letter-spacing:.6px;margin-bottom:14px;">Escolha das suas férias</h3>
+      <div class="grid">
+        <div class="fld"><label>Exercício (ano de referência)</label><input type="number" id="mil-exercicio"></div>
+        <div class="fld"><label>Modalidade</label>
+          <select id="mil-modalidade" onchange="milModalidade()">
+            <option value="25_DIRETO">25 dias direto</option>
+            <option value="15_10_FRACIONADO">15 + 10 dias (fracionado)</option>
+          </select>
+        </div>
       </div>
+      <div id="mil-sel-25" class="grid" style="margin-top:10px;">
+        <div class="fld" style="grid-column:1/-1;"><label>Período — 25 dias direto</label><select id="mil-25"></select></div>
+      </div>
+      <div id="mil-sel-1510" class="grid" style="margin-top:10px;display:none;">
+        <div class="fld"><label>1ª parcela — 15 dias</label><select id="mil-15"></select></div>
+        <div class="fld"><label>2ª parcela — 10 dias</label><select id="mil-10"></select></div>
+      </div>
+      <div class="grid" style="margin-top:10px;">
+        <div class="fld" style="grid-column:1/-1;"><label>Destino / onde vai passar as férias</label><input id="mil-destino" placeholder="ex.: Teófilo Otoni"></div>
+      </div>
+      <div class="fld" style="margin-top:10px;"><label>Observações</label><textarea id="mil-obs" rows="2"></textarea></div>
+      <div class="row-actions" style="justify-content:flex-end;margin-top:16px;">
+        <button class="btn-gold" onclick="milEnviar()">Enviar escolha</button>
+      </div>
+      <div class="miut" style="margin-top:10px;">No fracionado você pode escolher o <b>15</b> e o <b>10</b> de períodos diferentes. Prioridade por antiguidade — o comandante do pelotão ajusta se necessário. Enquanto pendente, você pode reenviar.</div>
     </div>
   </div>
 </div>
@@ -622,6 +643,112 @@ function exportarExcel(){
   XLSX.writeFile(wb, 'Ferias_'+anoSel+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 
+// ══════════════ ÁREA DO MILITAR (Fase 2) ══════════════
+let milLists={l25:[],l15:[],l10:[]};
+function milOpts(){
+  const per=(cronograma&&cronograma.periodos)||[]; const l25=[],l15=[],l10=[];
+  per.forEach(p=>{ const ord=p.ordem||'';
+    if(p['25']&&(p['25'].ini||p['25'].fim)) l25.push({periodo:ord,ini:p['25'].ini,fim:p['25'].fim});
+    (p['15']||[]).forEach(w=>{ if(w.ini||w.fim) l15.push({periodo:ord,ini:w.ini,fim:w.fim}); });
+    (p['10']||[]).forEach(w=>{ if(w.ini||w.fim) l10.push({periodo:ord,ini:w.ini,fim:w.fim}); });
+  });
+  return {l25,l15,l10};
+}
+function milOptLabel(w){ return `Período ${w.periodo}: ${fmtBR(w.ini)} a ${fmtBR(w.fim)}`; }
+function milFill(id,list,selIdx){ const s=document.getElementById(id);
+  s.innerHTML='<option value="">— selecione —</option>'+list.map((w,i)=>`<option value="${i}" ${String(i)===String(selIdx)?'selected':''}>${esc(milOptLabel(w))}</option>`).join(''); }
+function milModalidade(){ const frac=document.getElementById('mil-modalidade').value==='15_10_FRACIONADO';
+  document.getElementById('mil-sel-25').style.display=frac?'none':'grid';
+  document.getElementById('mil-sel-1510').style.display=frac?'grid':'none'; }
+function milTag(s){ const m={PENDENTE:['pend','Pendente — aguardando o comandante do pelotão'],APROVADO_PEL:['aprov','Aprovada pelo pelotão — aguardando o Aux P1'],VALIDADO:['valid','Validada pelo Aux P1 ✓'],REJEITADO:['rej','Rejeitada']}; const t=m[s]||['','—']; return `<span class="tag ${t[0]}">${t[1]}</span>`; }
+async function milBoot(){
+  const st=document.getElementById('mil-status'); const form=document.getElementById('mil-form-card');
+  form.style.display='none'; st.innerHTML='<div class="card"><div class="empty">Carregando…</div></div>';
+  try{ cronograma = await rpc('ferias_cronograma_get',{p_token:sessao.token,p_ano:anoSel}); }catch(e){ cronograma=null; }
+  let meu=null;
+  try{ const arr=await rpc('ferias_pedidos_listar',{p_token:sessao.token,p_ano:anoSel})||[]; meu=arr.find(p=>p.tipo==='ANUAL'&&p.militar_id===sessao.id)||arr.find(p=>p.tipo==='ANUAL')||null; }catch(e){}
+
+  const hoje=new Date().toISOString().slice(0,10);
+  const aberto = cronograma && cronograma.situacao==='ABERTO';
+  const antesPrazo = aberto && cronograma.data_abertura && hoje<String(cronograma.data_abertura).slice(0,10);
+  const foraPrazo  = aberto && cronograma.data_limite && hoje>String(cronograma.data_limite).slice(0,10);
+  const podeEscolher = aberto && !antesPrazo && !foraPrazo;
+
+  // Bloco de status
+  let sHtml='<div class="card">';
+  if(!cronograma || cronograma.situacao==='RASCUNHO'){
+    sHtml+='<div class="empty"><div style="font-size:30px;margin-bottom:8px;">🏖️</div>O cronograma de férias de '+anoSel+' ainda não foi liberado. Aguarde o aviso do Aux P1.</div>';
+  } else {
+    sHtml+='<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:center;">'
+      +'<div><b style="color:var(--text-white);">'+esc(cronograma.titulo||('Cronograma '+anoSel))+'</b>'
+      + (cronograma.data_limite?` <span class="miut">· prazo até ${fmtBR(cronograma.data_limite)}</span>`:'')+'</div>';
+    if(cronograma.anexo_pdf && cronograma.anexo_pdf.length) sHtml+=`<a href="${esc(cronograma.anexo_pdf[0].link)}" target="_blank" rel="noopener" style="color:var(--acc);font-size:12px;">📄 Ver cronograma (PDF)</a>`;
+    sHtml+='</div>';
+    if(cronograma.situacao==='ENCERRADO') sHtml+='<div class="miut" style="margin-top:8px;">As escolhas estão encerradas.</div>';
+    else if(antesPrazo) sHtml+='<div class="miut" style="margin-top:8px;">A escolha abre em '+fmtBR(cronograma.data_abertura)+'.</div>';
+    else if(foraPrazo)  sHtml+='<div class="miut" style="margin-top:8px;">O prazo para escolha encerrou em '+fmtBR(cronograma.data_limite)+'.</div>';
+  }
+  // Meu pedido atual
+  if(meu){
+    const parc=(meu.parcelas||[]).map(x=>`${x.parcela} dias: ${fmtBR(x.ini)}–${fmtBR(x.fim)}`).join(' &nbsp;•&nbsp; ');
+    sHtml+='<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">'
+      +'<div style="font-size:11px;color:var(--text-hint);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">Sua escolha atual</div>'
+      +'<div style="margin-bottom:6px;">'+milTag(meu.situacao)+'</div>'
+      +'<div style="font-size:13px;color:var(--text-white);">'+(parc||'—')+(meu.destino?` <span class="miut">· ${esc(meu.destino)}</span>`:'')+'</div>';
+    if(meu.situacao==='REJEITADO'&&meu.motivo_rejeicao) sHtml+='<div class="miut" style="margin-top:6px;color:var(--danger);">Motivo: '+esc(meu.motivo_rejeicao)+'</div>';
+    if(['PENDENTE','REJEITADO'].includes(meu.situacao) && podeEscolher)
+      sHtml+='<div class="row-actions" style="margin-top:10px;"><button class="minibtn del" onclick="milCancelar(\''+meu.id+'\')">Cancelar minha escolha</button></div>';
+    sHtml+='</div>';
+  }
+  sHtml+='</div>';
+  st.innerHTML=sHtml;
+
+  // Formulário (só se pode escolher e ainda não está travado por aprovação)
+  const travado = meu && ['APROVADO_PEL','VALIDADO'].includes(meu.situacao);
+  if(podeEscolher && !travado){
+    milLists=milOpts();
+    const selP = meu&&meu.parcelas||[];
+    const mod = meu&&meu.modalidade || '25_DIRETO';
+    document.getElementById('mil-modalidade').value=mod;
+    document.getElementById('mil-exercicio').value=(meu&&meu.exercicio)||anoSel;
+    document.getElementById('mil-destino').value=(meu&&meu.destino)||'';
+    document.getElementById('mil-obs').value=(meu&&meu.observacoes)||'';
+    // prefill selects se já houver escolha
+    const idxOf=(list,p)=> list.findIndex(w=>String(w.ini).slice(0,10)===String(p.ini).slice(0,10)&&String(w.fim).slice(0,10)===String(p.fim).slice(0,10));
+    const p25=selP.find(x=>x.parcela==='25'), p15=selP.find(x=>x.parcela==='15'), p10=selP.find(x=>x.parcela==='10');
+    milFill('mil-25',milLists.l25, p25?idxOf(milLists.l25,p25):'');
+    milFill('mil-15',milLists.l15, p15?idxOf(milLists.l15,p15):'');
+    milFill('mil-10',milLists.l10, p10?idxOf(milLists.l10,p10):'');
+    milModalidade();
+    document.getElementById('mil-form-titulo').textContent = meu?'Alterar sua escolha':'Escolha das suas férias';
+    document.getElementById('mil-form-card').style.display='block';
+  }
+}
+async function milEnviar(){
+  try{
+    const mod=document.getElementById('mil-modalidade').value; let parcelas=[];
+    if(mod==='25_DIRETO'){ const i=document.getElementById('mil-25').value;
+      if(i==='') return flash('Selecione o período de 25 dias.',false);
+      const w=milLists.l25[i]; parcelas=[{parcela:'25',periodo:w.periodo,ini:w.ini,fim:w.fim}];
+    } else {
+      const i15=document.getElementById('mil-15').value, i10=document.getElementById('mil-10').value;
+      if(i15===''||i10==='') return flash('Selecione as duas parcelas (15 e 10 dias).',false);
+      const w15=milLists.l15[i15], w10=milLists.l10[i10];
+      parcelas=[{parcela:'15',periodo:w15.periodo,ini:w15.ini,fim:w15.fim},{parcela:'10',periodo:w10.periodo,ini:w10.ini,fim:w10.fim}];
+    }
+    const dados={ ano:anoSel, modalidade:mod, exercicio:document.getElementById('mil-exercicio').value||anoSel,
+      destino:document.getElementById('mil-destino').value.trim()||null,
+      observacoes:document.getElementById('mil-obs').value.trim()||null, parcelas };
+    await rpc('ferias_pedido_solicitar',{p_token:sessao.token,p_dados:dados});
+    flash('Escolha enviada! Aguarde a aprovação do comandante do pelotão.',true); milBoot();
+  }catch(e){ flash(e.message||'Erro ao enviar.',false); }
+}
+async function milCancelar(id){
+  if(!confirm('Cancelar a sua escolha de férias?')) return;
+  try{ await rpc('ferias_pedido_cancelar',{p_token:sessao.token,p_id:id}); flash('Escolha cancelada.',true); milBoot(); }
+  catch(e){ flash(e.message||'Erro.',false); }
+}
+
 // ══════════════ TABS / BOOT ══════════════
 function abrirTab(t){
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===t));
@@ -635,6 +762,7 @@ async function boot(){
     document.getElementById('area-p1').style.display='none';
     document.getElementById('area-militar').style.display='block';
     document.getElementById('hero-sub').textContent='Suas férias';
+    milBoot();
     return;
   }
   document.getElementById('area-militar').style.display='none';
