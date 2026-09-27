@@ -41,6 +41,7 @@
     .fld input,.fld select,.fld textarea{background:var(--bg-dark);border:1px solid var(--border);border-radius:6px;
       color:var(--text-white);padding:8px 10px;font-size:13px;font-family:inherit;}
     .fld input:focus,.fld select:focus,.fld textarea:focus{outline:none;border-color:var(--acc);}
+    #tbl-ct.hide-pel .col-pel{display:none;}
     .mil-search{position:relative;}
     .mil-drop{display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;max-height:260px;overflow-y:auto;
       background:var(--bg-card);border:1px solid var(--acc);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.5);z-index:60;}
@@ -248,7 +249,7 @@
         <div style="overflow-x:auto;">
           <table id="tbl-ct">
             <thead><tr>
-              <th>#</th><th>Pelotão</th><th>Fração/GP</th><th>Militar</th><th>Cidade / lotação</th>
+              <th>#</th><th class="col-pel">Pelotão</th><th>Fração/GP</th><th>Militar</th><th>Cidade / lotação</th>
               <th>Exercício (ref.)</th><th>Dias</th><th>Início</th><th>Término</th><th>Situação</th><th></th>
             </tr></thead>
             <tbody id="tbody-ct"><tr><td colspan="11"><div class="empty">Carregando…</div></td></tr></tbody>
@@ -945,12 +946,15 @@ function ctLinhas(){
 function renderControle(){
   const tb=document.getElementById('tbody-ct'); if(!tb) return;
   popularFiltrosCt(); const linhas=ctLinhas();
+  document.getElementById('tbl-ct').classList.toggle('hide-pel', ctModo==='PREMIO');
   if(!linhas.length){ tb.innerHTML='<tr><td colspan="11"><div class="empty">Nenhuma férias'+(CTRL.length?' com esses filtros':' para '+anoSel)+'.</div></td></tr>'; return; }
+  let _seq=0,_lastId=null;
   tb.innerHTML=linhas.map(({r,x,primeira})=>{
     const dias = x?(x.parcela==='PREMIO'?'Prêmio':x.parcela):'—';
+    if(r.id!==_lastId){ _seq++; _lastId=r.id; }
     return `<tr>
-      <td class="miut">${r.ordem??'—'}</td>
-      <td style="white-space:nowrap;">${esc(_pelRot(r.pelotao))}</td>
+      <td class="miut">${primeira?_seq:''}</td>
+      <td class="col-pel" style="white-space:nowrap;">${esc(_pelRot(r.pelotao))}</td>
       <td>${esc(r.fracao||'—')}</td>
       <td><b>${esc(r.pg||'')}</b> ${esc(r.nome||'')}<div class="miut">${esc(r.matricula||'')}</div></td>
       <td>${esc(r.cidade||'—')}</td>
@@ -970,9 +974,12 @@ function exportarControle(){
   const linhas=ctLinhas();
   if(!linhas.length){ flash('Nada para exportar com esses filtros.',false); return; }
   const situ={PENDENTE:'Pendente',APROVADO_PEL:'Aprovado Pelotão',VALIDADO:'Validado',REJEITADO:'Rejeitado'};
-  const aoa=[['Ordem','Pelotão','Fração/GP','Nº PM','Posto/Grad','Nome','Cidade/Lotação','Exercício','Dias','Início','Término','Situação']];
-  linhas.forEach(({r,x})=>aoa.push([r.ordem||'',_pelRot(r.pelotao||''),r.fracao||'',r.matricula||'',r.pg||'',r.nome||'',r.cidade||'',
-    r.exercicio||'',x?(x.parcela==='PREMIO'?'Prêmio':x.parcela):'',x?fmtBR(x.ini):'',x?fmtBR(x.fim):'',situ[r.situacao]||r.situacao]));
+  const semPel = ctModo==='PREMIO';
+  const aoa=[['#'].concat(semPel?[]:['Pelotão']).concat(['Fração/GP','Nº PM','Posto/Grad','Nome','Cidade/Lotação','Exercício','Dias','Início','Término','Situação'])];
+  let _seq=0,_lastId=null;
+  linhas.forEach(({r,x,primeira})=>{ if(r.id!==_lastId){_seq++;_lastId=r.id;}
+    aoa.push([primeira?_seq:''].concat(semPel?[]:[_pelRot(r.pelotao||'')]).concat([r.fracao||'',r.matricula||'',r.pg||'',r.nome||'',r.cidade||'',
+      r.exercicio||'',x?(x.parcela==='PREMIO'?'Prêmio':x.parcela):'',x?fmtBR(x.ini):'',x?fmtBR(x.fim):'',situ[r.situacao]||r.situacao])); });
   const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=aoa[0].map(h=>({wch:Math.max(10,h.length+2)}));
   const nome=ctModo==='PREMIO'?'Ferias-Premio':'Ferias-Anuais';
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, nome.slice(0,28)+' '+anoSel);
