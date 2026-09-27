@@ -325,12 +325,13 @@
           </select></div>
       </div>
       <div id="val-25" class="grid" style="margin-top:8px;">
-        <div class="fld" style="grid-column:1/-1;"><label>25 dias</label><select id="val-25sel"></select></div>
+        <div class="fld" style="grid-column:1/-1;"><label>25 dias</label><select id="val-25sel" onchange="valResumo()"></select></div>
       </div>
       <div id="val-1510" class="grid" style="margin-top:8px;display:none;">
-        <div class="fld"><label>15 dias</label><select id="val-15sel"></select></div>
-        <div class="fld"><label>10 dias</label><select id="val-10sel"></select></div>
+        <div class="fld"><label>15 dias</label><select id="val-15sel" onchange="valResumo()"></select></div>
+        <div class="fld"><label>10 dias</label><select id="val-10sel" onchange="valResumo()"></select></div>
       </div>
+      <div id="val-resumo" style="margin-top:10px;padding:8px 11px;background:var(--acc-bg);border:1px solid var(--acc);border-radius:8px;font-size:12.5px;"></div>
     </div>
     <div class="grid" style="margin-top:10px;">
       <div class="fld"><label>Situação</label>
@@ -719,18 +720,43 @@ function fechar(id){ const e=document.getElementById(id); if(e) e.classList.remo
 let valPed=null, val25=[], val15=[], val10=[];
 function valMod(){ const frac=document.getElementById('val-mod').value==='15_10_FRACIONADO';
   document.getElementById('val-25').style.display=frac?'none':'grid';
-  document.getElementById('val-1510').style.display=frac?'grid':'none'; }
+  document.getElementById('val-1510').style.display=frac?'grid':'none'; valResumo(); }
+function valUsar(tipo, idx){
+  if(tipo==='25'){ document.getElementById('val-mod').value='25_DIRETO'; document.getElementById('val-25').style.display='grid'; document.getElementById('val-1510').style.display='none'; document.getElementById('val-25sel').value=idx; }
+  else { document.getElementById('val-mod').value='15_10_FRACIONADO'; document.getElementById('val-25').style.display='none'; document.getElementById('val-1510').style.display='grid'; document.getElementById('val-'+tipo+'sel').value=idx; }
+  valResumo();
+}
+function valResumo(){
+  const el=document.getElementById('val-resumo'); if(!el) return;
+  const mod=document.getElementById('val-mod').value; let txt='';
+  if(mod==='25_DIRETO'){ const i=document.getElementById('val-25sel').value; if(i!==''){ const x=val25[i]; txt=`25 dias da ${x.opcao}ª escolha (${fmtBR(x.ini)}–${fmtBR(x.fim)})`; } }
+  else { const i15=document.getElementById('val-15sel').value, i10=document.getElementById('val-10sel').value; const parts=[];
+    if(i15!==''){ const a=val15[i15]; parts.push(`15 dias da ${a.opcao}ª escolha (${fmtBR(a.ini)}–${fmtBR(a.fim)})`); }
+    if(i10!==''){ const b=val10[i10]; parts.push(`10 dias da ${b.opcao}ª escolha (${fmtBR(b.ini)}–${fmtBR(b.fim)})`); }
+    txt=parts.join('  +  '); }
+  el.innerHTML = txt ? ('<b style="color:var(--text-white);">Período final:</b> '+esc(txt)) : '<span class="miut">Clique nas opções acima ou use os campos para montar o período final.</span>';
+}
 function valMotivo(){ document.getElementById('val-motivo-fld').style.display=document.getElementById('val-sit').value==='REJEITADO'?'flex':'none'; }
-function valOptHtml(list){ return '<option value="">— selecione —</option>'+list.map((x,i)=>`<option value="${i}">Opção ${x.opcao}: ${fmtBR(x.ini)}–${fmtBR(x.fim)}</option>`).join(''); }
+function valOptHtml(list){ return '<option value="">— selecione —</option>'+list.map((x,i)=>`<option value="${i}">${x.opcao}ª escolha: ${fmtBR(x.ini)}–${fmtBR(x.fim)}</option>`).join(''); }
 function abrirValidar(id){
   const p=pedidos.find(x=>x.id===id); if(!p) return; valPed=p;
   const m=p.militar||{};
   document.getElementById('val-quem').innerHTML=`<b style="color:var(--text-white);">${esc(m.pg||'')} ${esc(m.guerra||m.nome||'')}</b> · ${esc(m.matricula||'')}${p.pelotao?' · Pelotão '+esc(p.pelotao):''}`;
   const ops=(p.opcoes&&p.opcoes.length)?p.opcoes:(p.parcelas&&p.parcelas.length?[{ordem:1,parcelas:p.parcelas}]:[]);
-  document.getElementById('val-opcoes').innerHTML='<div class="miut" style="text-transform:uppercase;font-size:10px;letter-spacing:.4px;margin-bottom:4px;">Opções escolhidas pelo militar</div>'+
-    (ops.length?ops.map(o=>`<div style="font-size:12.5px;color:var(--text-white);padding:1px 0;"><b>${o.ordem}ª:</b> ${(o.parcelas||[]).map(x=>x.parcela+' dias '+fmtBR(x.ini)+'–'+fmtBR(x.fim)).join(' + ')}</div>`).join(''):'<div class="miut">— (lançamento direto)</div>');
+  // monta pools + chips clicáveis (clicar usa a parcela no período final)
   val25=[]; val15=[]; val10=[];
-  ops.forEach(o=>(o.parcelas||[]).forEach(x=>{ const it=Object.assign({},x,{opcao:o.ordem}); if(x.parcela==='25')val25.push(it); else if(x.parcela==='15')val15.push(it); else if(x.parcela==='10')val10.push(it); }));
+  let opsHtml='';
+  ops.forEach(o=>{
+    const chips=(o.parcelas||[]).map(x=>{ let idx;
+      if(x.parcela==='25'){ idx=val25.length; val25.push(Object.assign({},x,{opcao:o.ordem})); }
+      else if(x.parcela==='15'){ idx=val15.length; val15.push(Object.assign({},x,{opcao:o.ordem})); }
+      else { idx=val10.length; val10.push(Object.assign({},x,{opcao:o.ordem})); }
+      return `<a href="#" onclick="valUsar('${x.parcela}',${idx});return false;" style="color:var(--acc);text-decoration:none;border-bottom:1px dashed var(--acc);cursor:pointer;white-space:nowrap;">${x.parcela}d ${fmtBR(x.ini)}–${fmtBR(x.fim)}</a>`;
+    }).join(' <span class="miut">+</span> ');
+    opsHtml+=`<div style="font-size:12.5px;color:var(--text-white);padding:2px 0;"><b>${o.ordem}ª:</b> ${chips||'—'}</div>`;
+  });
+  document.getElementById('val-opcoes').innerHTML='<div class="miut" style="text-transform:uppercase;font-size:10px;letter-spacing:.4px;margin-bottom:4px;">Opções do militar — clique para usar no período final</div>'+
+    (ops.length?opsHtml:'<div class="miut">— (lançamento direto)</div>');
   document.getElementById('val-25sel').innerHTML=valOptHtml(val25);
   document.getElementById('val-15sel').innerHTML=valOptHtml(val15);
   document.getElementById('val-10sel').innerHTML=valOptHtml(val10);
