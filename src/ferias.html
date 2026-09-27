@@ -598,7 +598,7 @@ async function carregarPedidos(){
 }
 function tagSit(s){ const m={PENDENTE:['pend','Pendente — aguarda CMT Pelotão'],APROVADO_PEL:['aprov','Aprov. Pelotão — aguarda Aux P1'],VALIDADO:['valid','Validado ✓'],REJEITADO:['rej','Rejeitado']}; const t=m[s]||['','—']; return `<span class="tag ${t[0]}">${t[1]}</span>`; }
 function _dm(d){ const s=String(d||'').slice(0,10).split('-'); return s.length===3?`${s[2]}/${s[1]}`:(d||''); }
-function _chip(x){ return `<span style="display:inline-block;background:var(--bg-dark);border:1px solid var(--border);border-radius:5px;padding:1px 7px;font-size:11px;white-space:nowrap;"><b style="color:var(--acc);">${x.parcela}d</b> ${_dm(x.ini)}–${_dm(x.fim)}</span>`; }
+function _chip(x){ const per=x.periodo?` <span style="opacity:.8;" title="Período ${x.periodo} do cronograma">Per.${x.periodo}</span>`:''; return `<span style="display:inline-block;background:var(--bg-dark);border:1px solid var(--border);border-radius:5px;padding:1px 7px;font-size:11px;white-space:nowrap;"><b style="color:var(--acc);">${x.parcela}d</b>${per} ${_dm(x.ini)}–${_dm(x.fim)}</span>`; }
 function parcelasTxt(p){
   const ops=(p.opcoes&&p.opcoes.length)?p.opcoes
             :(p.parcelas&&p.parcelas.length?[{ordem:1,parcelas:p.parcelas}]:[]);
@@ -728,15 +728,16 @@ function valUsar(tipo, idx){
 function valResumo(){
   const el=document.getElementById('val-resumo'); if(!el) return;
   const mod=document.getElementById('val-mod').value; let txt='';
-  if(mod==='25_DIRETO'){ const i=document.getElementById('val-25sel').value; if(i!==''){ const x=val25[i]; txt=`25 dias da ${x.opcao}ª escolha (${fmtBR(x.ini)}–${fmtBR(x.fim)})`; } }
+  const pr=x=>x.periodo?` · Período ${x.periodo}`:'';
+  if(mod==='25_DIRETO'){ const i=document.getElementById('val-25sel').value; if(i!==''){ const x=val25[i]; txt=`25 dias da ${x.opcao}ª escolha${pr(x)} (${fmtBR(x.ini)}–${fmtBR(x.fim)})`; } }
   else { const i15=document.getElementById('val-15sel').value, i10=document.getElementById('val-10sel').value; const parts=[];
-    if(i15!==''){ const a=val15[i15]; parts.push(`15 dias da ${a.opcao}ª escolha (${fmtBR(a.ini)}–${fmtBR(a.fim)})`); }
-    if(i10!==''){ const b=val10[i10]; parts.push(`10 dias da ${b.opcao}ª escolha (${fmtBR(b.ini)}–${fmtBR(b.fim)})`); }
+    if(i15!==''){ const a=val15[i15]; parts.push(`15 dias da ${a.opcao}ª escolha${pr(a)} (${fmtBR(a.ini)}–${fmtBR(a.fim)})`); }
+    if(i10!==''){ const b=val10[i10]; parts.push(`10 dias da ${b.opcao}ª escolha${pr(b)} (${fmtBR(b.ini)}–${fmtBR(b.fim)})`); }
     txt=parts.join('  +  '); }
   el.innerHTML = txt ? ('<b style="color:var(--text-white);">Período final:</b> '+esc(txt)) : '<span class="miut">Clique nas opções acima ou use os campos para montar o período final.</span>';
 }
 function valMotivo(){ document.getElementById('val-motivo-fld').style.display=document.getElementById('val-sit').value==='REJEITADO'?'flex':'none'; }
-function valOptHtml(list){ return '<option value="">— selecione —</option>'+list.map((x,i)=>`<option value="${i}">${x.opcao}ª escolha: ${fmtBR(x.ini)}–${fmtBR(x.fim)}</option>`).join(''); }
+function valOptHtml(list){ return '<option value="">— selecione —</option>'+list.map((x,i)=>`<option value="${i}">${x.opcao}ª escolha${x.periodo?' · Período '+x.periodo:''}: ${fmtBR(x.ini)}–${fmtBR(x.fim)}</option>`).join(''); }
 function abrirValidar(id){
   const p=pedidos.find(x=>x.id===id); if(!p) return; valPed=p;
   const m=p.militar||{};
@@ -750,7 +751,8 @@ function abrirValidar(id){
       if(x.parcela==='25'){ idx=val25.length; val25.push(Object.assign({},x,{opcao:o.ordem})); }
       else if(x.parcela==='15'){ idx=val15.length; val15.push(Object.assign({},x,{opcao:o.ordem})); }
       else { idx=val10.length; val10.push(Object.assign({},x,{opcao:o.ordem})); }
-      return `<a href="#" onclick="valUsar('${x.parcela}',${idx});return false;" title="Usar no período final" style="display:inline-block;background:var(--bg-card);border:1px solid var(--acc);border-radius:5px;padding:2px 8px;font-size:11px;text-decoration:none;color:var(--text-white);white-space:nowrap;cursor:pointer;"><b style="color:var(--acc);">${x.parcela}d</b> ${_dm(x.ini)}–${_dm(x.fim)}</a>`;
+      const per=x.periodo?` <span style="opacity:.8;">Per.${x.periodo}</span>`:'';
+      return `<a href="#" onclick="valUsar('${x.parcela}',${idx});return false;" title="Usar no período final" style="display:inline-block;background:var(--bg-card);border:1px solid var(--acc);border-radius:5px;padding:2px 8px;font-size:11px;text-decoration:none;color:var(--text-white);white-space:nowrap;cursor:pointer;"><b style="color:var(--acc);">${x.parcela}d</b>${per} ${_dm(x.ini)}–${_dm(x.fim)}</a>`;
     }).join(' ');
     opsHtml+=`<div style="display:flex;gap:7px;align-items:center;padding:3px 0;"><span style="font-size:10px;font-weight:800;color:var(--acc);min-width:15px;">${o.ordem}ª</span><span style="display:flex;gap:5px;flex-wrap:wrap;">${chips||'—'}</span></div>`;
   });
@@ -804,9 +806,10 @@ function exportarExcel(){
   const situ={PENDENTE:'Pendente (aguarda CMT Pel)',APROVADO_PEL:'Aprovado Pelotão (aguarda Aux P1)',VALIDADO:'Validado',REJEITADO:'Rejeitado'};
   const aoa=[['Nº PM','Posto/Grad','Nome','Pelotão','Grupamento','Tipo','Exercício','Período definido','Opções escolhidas','Situação']];
   lista.forEach(p=>{ const m=p.militar||{};
-    const fin=(p.parcelas||[]).map(x=>`${x.parcela}d ${fmtBR(x.ini)}-${fmtBR(x.fim)}`).join(' + ');
+    const px=x=>`${x.parcela}d${x.periodo?' (Per.'+x.periodo+')':''} ${fmtBR(x.ini)}-${fmtBR(x.fim)}`;
+    const fin=(p.parcelas||[]).map(px).join(' + ');
     const ops=(p.opcoes&&p.opcoes.length)?p.opcoes:[];
-    const opsT=ops.map(o=>`${o.ordem}ª) `+(o.parcelas||[]).map(x=>`${x.parcela}d ${fmtBR(x.ini)}-${fmtBR(x.fim)}`).join(' + ')).join('  |  ');
+    const opsT=ops.map(o=>`${o.ordem}ª) `+(o.parcelas||[]).map(px).join(' + ')).join('  |  ');
     aoa.push([m.matricula||'',m.pg||'',m.nome||'',p.pelotao||'',p.grupamento_id||'',p.tipo,p.exercicio||'',fin,opsT,situ[p.situacao]||p.situacao]);
   });
   const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=aoa[0].map((h,i)=>({wch:i>=7?36:Math.max(12,h.length+2)}));
