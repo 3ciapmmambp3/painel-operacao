@@ -598,14 +598,19 @@ async function carregarPedidos(){
 }
 function tagSit(s){ const m={PENDENTE:['pend','Pendente — aguarda CMT Pelotão'],APROVADO_PEL:['aprov','Aprov. Pelotão — aguarda Aux P1'],VALIDADO:['valid','Validado ✓'],REJEITADO:['rej','Rejeitado']}; const t=m[s]||['','—']; return `<span class="tag ${t[0]}">${t[1]}</span>`; }
 function _dm(d){ const s=String(d||'').slice(0,10).split('-'); return s.length===3?`${s[2]}/${s[1]}`:(d||''); }
-function _chip(x){ const per=x.periodo?` <span style="opacity:.8;" title="Período ${x.periodo} do cronograma">Per.${x.periodo}</span>`:''; return `<span style="display:inline-block;background:var(--bg-dark);border:1px solid var(--border);border-radius:5px;padding:1px 7px;font-size:11px;white-space:nowrap;"><b style="color:var(--acc);">${x.parcela}d</b>${per} ${_dm(x.ini)}–${_dm(x.fim)}</span>`; }
+const _CORESOP=['var(--acc)','var(--gold)','#56a89c'];  // 1ª, 2ª, 3ª escolha
+function _chip(x){ const per=x.periodo?` <span style="opacity:.85;">· Período ${x.periodo}</span>`:''; return `<span style="display:inline-block;background:var(--bg-dark);border:1px solid var(--border);border-radius:5px;padding:1px 7px;font-size:11px;white-space:nowrap;"><b style="color:var(--acc);">${x.parcela} dias</b>${per} · ${_dm(x.ini)}–${_dm(x.fim)}</span>`; }
 function parcelasTxt(p){
   const ops=(p.opcoes&&p.opcoes.length)?p.opcoes
             :(p.parcelas&&p.parcelas.length?[{ordem:1,parcelas:p.parcelas}]:[]);
   if(!ops.length) return '<span class="miut">—</span>';
-  return '<div style="display:flex;flex-direction:column;gap:3px;">'+ops.map(o=>
-    `<div style="display:flex;gap:6px;align-items:center;"><span style="font-size:10px;font-weight:800;color:var(--acc);min-width:15px;">${o.ordem}ª</span><span style="display:flex;gap:4px;flex-wrap:wrap;">${(o.parcelas||[]).map(_chip).join('')}</span></div>`
-  ).join('')+'</div>';
+  return '<div style="display:flex;flex-direction:column;gap:6px;">'+ops.map(o=>{
+    const cor=_CORESOP[(o.ordem-1)%3]||'var(--border)';
+    return `<div style="border-left:3px solid ${cor};padding-left:9px;">
+      <div style="font-size:9.5px;font-weight:800;letter-spacing:.6px;color:${cor};text-transform:uppercase;">${o.ordem}ª escolha</div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:3px;">${(o.parcelas||[]).map(_chip).join('')}</div>
+    </div>`;
+  }).join('')+'</div>';
 }
 function popularFiltros(){
   const selP=document.getElementById('fl-pel'), selG=document.getElementById('fl-gp'); if(!selP) return;
@@ -747,14 +752,17 @@ function abrirValidar(id){
   val25=[]; val15=[]; val10=[];
   let opsHtml='';
   ops.forEach(o=>{
+    const cor=_CORESOP[(o.ordem-1)%3]||'var(--border)';
     const chips=(o.parcelas||[]).map(x=>{ let idx;
       if(x.parcela==='25'){ idx=val25.length; val25.push(Object.assign({},x,{opcao:o.ordem})); }
       else if(x.parcela==='15'){ idx=val15.length; val15.push(Object.assign({},x,{opcao:o.ordem})); }
       else { idx=val10.length; val10.push(Object.assign({},x,{opcao:o.ordem})); }
-      const per=x.periodo?` <span style="opacity:.8;">Per.${x.periodo}</span>`:'';
-      return `<a href="#" onclick="valUsar('${x.parcela}',${idx});return false;" title="Usar no período final" style="display:inline-block;background:var(--bg-card);border:1px solid var(--acc);border-radius:5px;padding:2px 8px;font-size:11px;text-decoration:none;color:var(--text-white);white-space:nowrap;cursor:pointer;"><b style="color:var(--acc);">${x.parcela}d</b>${per} ${_dm(x.ini)}–${_dm(x.fim)}</a>`;
+      const per=x.periodo?` <span style="opacity:.85;">· Período ${x.periodo}</span>`:'';
+      return `<a href="#" onclick="valUsar('${x.parcela}',${idx});return false;" title="Usar no período final" style="display:inline-block;background:var(--bg-card);border:1px solid ${cor};border-radius:5px;padding:2px 8px;font-size:11px;text-decoration:none;color:var(--text-white);white-space:nowrap;cursor:pointer;"><b style="color:${cor};">${x.parcela} dias</b>${per} · ${_dm(x.ini)}–${_dm(x.fim)}</a>`;
     }).join(' ');
-    opsHtml+=`<div style="display:flex;gap:7px;align-items:center;padding:3px 0;"><span style="font-size:10px;font-weight:800;color:var(--acc);min-width:15px;">${o.ordem}ª</span><span style="display:flex;gap:5px;flex-wrap:wrap;">${chips||'—'}</span></div>`;
+    opsHtml+=`<div style="border-left:3px solid ${cor};padding-left:9px;margin-bottom:6px;">
+      <div style="font-size:9.5px;font-weight:800;letter-spacing:.6px;color:${cor};text-transform:uppercase;">${o.ordem}ª escolha — clique para usar</div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:3px;">${chips||'—'}</div></div>`;
   });
   document.getElementById('val-opcoes').innerHTML='<div class="miut" style="text-transform:uppercase;font-size:10px;letter-spacing:.4px;margin-bottom:4px;">Opções do militar — clique para usar no período final</div>'+
     (ops.length?opsHtml:'<div class="miut">— (lançamento direto)</div>');
@@ -806,7 +814,7 @@ function exportarExcel(){
   const situ={PENDENTE:'Pendente (aguarda CMT Pel)',APROVADO_PEL:'Aprovado Pelotão (aguarda Aux P1)',VALIDADO:'Validado',REJEITADO:'Rejeitado'};
   const aoa=[['Nº PM','Posto/Grad','Nome','Pelotão','Grupamento','Tipo','Exercício','Período definido','Opções escolhidas','Situação']];
   lista.forEach(p=>{ const m=p.militar||{};
-    const px=x=>`${x.parcela}d${x.periodo?' (Per.'+x.periodo+')':''} ${fmtBR(x.ini)}-${fmtBR(x.fim)}`;
+    const px=x=>`${x.parcela} dias${x.periodo?' (Período '+x.periodo+')':''}: ${fmtBR(x.ini)}-${fmtBR(x.fim)}`;
     const fin=(p.parcelas||[]).map(px).join(' + ');
     const ops=(p.opcoes&&p.opcoes.length)?p.opcoes:[];
     const opsT=ops.map(o=>`${o.ordem}ª) `+(o.parcelas||[]).map(px).join(' + ')).join('  |  ');
