@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="styles/global.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="auth.js"></script>
+  <script src="frota-grupamentos.js"></script>
   <style>
     body{display:flex;flex-direction:column;min-height:100vh;}
     :root{ --acc:#6f97b8; --acc-bg:rgba(111,151,184,.12); }
@@ -116,9 +117,10 @@
       </label>
       <button class="minibtn" onclick="exportar()">⬇ Exportar Excel</button>
       <button class="minibtn" id="btn-ordenar" onclick="toggleOrdenar()">↕ Ordenar antiguidade</button>
+      <button class="minibtn" id="btn-unidade" onclick="toggleUnidade()">🏛️ Ordenar por Unidade</button>
     </div>
     <div id="ordenar-bar" style="display:none;margin-bottom:10px;padding:9px 13px;background:var(--acc-bg);border:1px solid var(--acc);border-radius:8px;font-size:12px;color:var(--text-white);">
-      Arraste as linhas para ajustar a antiguidade (desempate quando a promoção é na mesma data).
+      <span id="ordenar-bar-txt">Arraste as linhas para ajustar a antiguidade (desempate quando a promoção é na mesma data).</span>
       <button class="minibtn" onclick="salvarOrdem()" style="margin-left:8px;">Salvar ordem</button>
       <button class="minibtn" onclick="toggleOrdenar()">Cancelar</button>
     </div>
@@ -373,6 +375,7 @@ let LISTA=[];
 async function carregar(){
   try{
     LISTA = await rpc('efetivo_listar',{p_token:sessao.token,p_incluir_inativos:true}) || [];
+    LISTA.forEach((m,i)=>{ m.__ord=i; });   // posição = ordem de antiguidade (servidor)
     document.getElementById('k-total').textContent = LISTA.filter(m=>m.integrante_ativo??m.ativo).length;
     render();
   }catch(e){ document.getElementById('tbody').innerHTML=`<tr><td colspan="9"><div class="empty">${esc(e.message)}</div></td></tr>`; }
@@ -386,6 +389,112 @@ function tagSit(m){
   if(!m.ativo) return '<span class="tag transf">Inativo</span>';
   return '<span class="tag transf">'+esc(s||'—')+'</span>';
 }
+// ── ordenação por UNIDADE (Administração → Pelotões, com grupamentos) ──
+// Fonte do mapa grupamento→pelotão: grupamentos_listar (mesma dos painéis de frota).
+let modoUnidade=false, MAPA_GP=null;
+function _fx(m){ return (m.funcao||'').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,''); }
+function _canonGpr(s){ return (s||'').toString().replace(/^GP\s+/i,'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .replace(/[^A-Z ]/g,' ').replace(/\s+/g,' ').trim().replace('MARILIERIA','MARLIERIA').replace('MOLEVADE','MONLEVADE'); }
+function _grafiaCidade(s){ return String(s==null?'':s).replace(/MARILIERIA/gi,'MARLIERIA').replace(/MOLEVADE/gi,'MONLEVADE'); }
+// Cidade em caixa alta ("GOVERNADOR VALADARES") → "Governador Valadares" (conectores minúsculos).
+function _tituloCidade(s){
+  const low=new Set(['de','da','do','das','dos','e']);
+  return _grafiaCidade(s).toLowerCase().replace(/[a-zà-ú]+/g,(w,i)=> (i>0&&low.has(w))?w:w.charAt(0).toUpperCase()+w.slice(1));
+}
+async function carregarMapaGp(){
+  if(MAPA_GP) return MAPA_GP; MAPA_GP={};
+  try{ if(window.FrotaGrup){ await FrotaGrup.carregar(API, SB_AUTH_KEY);
+    FrotaGrup.lista.forEach(x=>{ const k=_canonGpr(x.gpr); if(k) MAPA_GP[k]={pel:x.pel, gp:x.gp, cidade:x.cidade}; }); }
+  }catch(e){ console.warn('carregarMapaGp', e); }
+  return MAPA_GP;
+}
+// Seção da Adm da Cia pela função/lotação → {r: ordem, lbl: rótulo}.
+// Cmt Cia=0, Aux P1..P5 = 1..5, SRAI=6, demais seções da Adm=7. null = não é Adm.
+function _secaoAdm(m){
+  const fx=_fx(m), gu=((m.grupamento_id||'')+' '+(m.nome_unidade||'')).toUpperCase();
+  if(/(CMT|COMANDANTE|CMD|CH)\b/.test(fx) && /(\bCIA\b|COMPANHIA)/.test(fx)) return {r:0, lbl:'Cmt Cia'};
+  const p=fx.match(/\bP\s*([1-5])\b/); if(p) return {r:+p[1], lbl:'Aux P'+p[1]};
+  if(/\bSRAI\b/.test(fx) || /\bSRAI\b/.test(gu)) return {r:6, lbl:'SRAI'};
+  return null;
+}
+function _infoGp(m){ return (MAPA_GP||{})[_canonGpr((m.grupamento_id||'').toString())]||null; }
+// Extrai do grupamento_id (formato "2 GP / 1 PEL / 3 CIA PM MAMB / MANTENA"):
+// nº do pelotão, nº do grupamento e a cidade (último segmento).
+function _parseGid(m){
+  const s=((m.grupamento_id||'')+' / '+(m.nome_unidade||'')).toUpperCase();
+  const pel=(s.match(/(\d+)\s*(?:º|O|ª)?\s*PEL/)||[])[1];
+  const gp =(s.match(/(\d+)\s*(?:º|O|ª)?\s*GP/) ||[])[1];
+  const parts=(m.grupamento_id||'').split('/').map(x=>x.trim()).filter(Boolean);
+  let cidade=''; const last=parts[parts.length-1]||'';
+  if(last && !/\d/.test(last) && !/\b(CIA|PM|MAMB|PEL|GP|ADM)\b/i.test(last)) cidade=last;
+  return { pel: pel?+pel:null, gp: gp?+gp:null, cidade };
+}
+function pelotaoDe(m){
+  const gid=(m.grupamento_id||'').toString().trim();
+  const pg=_parseGid(m); if(pg.pel!=null) return pg.pel;   // nº do pelotão embutido
+  if(/^ADM/i.test(gid)) return 'ADM';                      // administração da Companhia
+  const info=_infoGp(m); if(info&&info.pel!=null) return +info.pel;
+  return null;
+}
+// chave de ordenação: [grupo(0=Adm,1=Pel,2=?), pel/seção, cmtPel, gp, cmtGrupamento]
+function chaveUnidade(m){
+  const fx=_fx(m); const pel=pelotaoDe(m); const sa=_secaoAdm(m);
+  if(pel==='ADM' || (pel==null && sa)) return [0, sa?sa.r:7, 0, 0, 0];  // Administração
+  if(pel==null)  return [2, 99, 1, 99, 1];          // sem unidade → por último
+  const pg=_parseGid(m);
+  const cmtPel=(/(CMT|COMANDANTE|CMD)\b/.test(fx) && /\bPEL/.test(fx))?0:1;
+  const cmtGp =(/(CMT|COMANDANTE|CMD)\b/.test(fx) && /\bGRUP/.test(fx))?0:1;   // "Cmt Grupamento"
+  const gp = cmtPel===0 ? 0 : (pg.gp!=null?pg.gp:99);   // Cmt Pelotão vem antes dos grupamentos
+  return [1, +pel||99, cmtPel, gp, cmtGp];
+}
+function cmpUnidade(a,b){
+  const ka=chaveUnidade(a), kb=chaveUnidade(b), n=Math.max(ka.length,kb.length);
+  for(let i=0;i<n;i++){ const x=ka[i]??999, y=kb[i]??999; if(x!==y) return x-y; }
+  // desempate DENTRO da unidade = ordem de antiguidade da própria página
+  // (LISTA já vem do servidor por ordem manual → posto → última promoção).
+  return (a.__ord??999999)-(b.__ord??999999);
+}
+function grupoHeader(m){ const k=chaveUnidade(m);
+  if(k[0]===0) return 'Administração da Companhia';
+  if(k[0]===1) return (k[1]||'?')+'º Pelotão';
+  return 'Sem unidade definida';
+}
+// subcabeçalho DENTRO do pelotão: Comando do Pelotão / cada grupamento.
+function subUnidade(m){ const k=chaveUnidade(m);
+  if(k[0]!==1) return null;                       // só pelotões têm subdivisão por grupamento
+  if(k[2]===0) return {key:'cmt', lbl:'Comando do Pelotão'};
+  const pg=_parseGid(m);
+  return {key:'gp'+(pg.gp==null?'?':pg.gp), lbl:(pg.gp!=null?pg.gp+'º Grupamento':'Grupamento')+(pg.cidade?' · '+_tituloCidade(pg.cidade):'')};
+}
+// rótulo (coluna Unidade do Excel): Adm sem prefixo ("Cmt Cia", "Aux P1", "SRAI");
+// pelotão: "1º Pel — Comandante", "1º Pel — 2º Gp · CIDADE".
+function rotuloUnidade(m){ const k=chaveUnidade(m);
+  if(k[0]===0){ const sa=_secaoAdm(m); return sa?sa.lbl:'Administração'; }
+  if(k[0]===1){ const r=(k[1]||'?')+'º Pel'; if(k[2]===0) return r+' — Comandante';
+    const pg=_parseGid(m);
+    const g=(pg.gp!=null?pg.gp+'º Gp':'Gp')+(pg.cidade?' · '+_tituloCidade(pg.cidade):'');
+    return r+' — '+g+(k[4]===0?' (Cmt)':''); }
+  return 'Sem unidade';
+}
+// Função para exibir no modo Unidade: tira o prefixo "ADM " ("ADM Aux P1"→"Aux P1",
+// "ADM Aux P2/P3"→"Aux P2/P3") e mostra "SRAI" p/ quem é lotado no SRAI (função genérica).
+function funcaoExibicao(m){
+  let f=(m.funcao||'').toString().replace(/^\s*ADM\s+/i,'').trim();
+  const gu=((m.grupamento_id||'')+' '+(m.nome_unidade||'')).toUpperCase();
+  if(/\bSRAI\b/.test(gu) && /^(OPERACIONAL)?$/i.test(f)) f='SRAI';
+  return f || (m.funcao||'—');
+}
+async function toggleUnidade(){
+  if(!modoUnidade){ await carregarMapaGp(); }
+  modoUnidade=!modoUnidade;
+  document.getElementById('btn-unidade').textContent = modoUnidade?'✓ Por Unidade (voltar à antiguidade)':'🏛️ Ordenar por Unidade';
+  // se o modo arrastar estiver ligado, atualiza a instrução da barra p/ o contexto atual
+  if(modoOrdenar){ document.getElementById('ordenar-bar-txt').textContent = modoUnidade
+      ? 'Arraste para reordenar a antiguidade DENTRO de cada unidade/grupamento (só entre colegas da mesma unidade). O resto da baliza não muda.'
+      : 'Arraste as linhas para ajustar a antiguidade (desempate quando a promoção é na mesma data).'; }
+  render();
+}
+
 function render(){
   const q=norm(document.getElementById('busca').value);
   const f=document.getElementById('f-sit').value;
@@ -398,12 +507,22 @@ function render(){
   });
   const tb=document.getElementById('tbody');
   if(!arr.length){ tb.innerHTML='<tr><td colspan="9"><div class="empty">Nenhum militar.</div></td></tr>'; return; }
-  tb.innerHTML=arr.map((m,i)=>`<tr class="${m.ativo?'':'inativo'}" data-id="${m.id}" ${modoOrdenar?'draggable="true" style="cursor:grab;"':''}>
+  if(modoUnidade) arr=arr.slice().sort(cmpUnidade);
+  let _hdr=null, _sub=null;
+  tb.innerHTML=arr.map((m,i)=>{
+    let head='';
+    if(modoUnidade){
+      const g=grupoHeader(m); if(g!==_hdr){ _hdr=g; _sub=null;
+        head+=`<tr><td colspan="9" style="background:var(--acc-bg);color:var(--text-white);font-weight:700;font-size:12px;letter-spacing:.3px;padding:7px 10px;border-top:2px solid var(--acc);">${esc(g)}</td></tr>`; }
+      const s=subUnidade(m); if(s && s.key!==_sub){ _sub=s.key;
+        head+=`<tr><td colspan="9" style="background:rgba(111,151,184,.06);color:var(--acc);font-weight:600;font-size:11px;padding:5px 10px 5px 26px;border-top:1px solid var(--border);">▸ ${esc(s.lbl)}</td></tr>`; }
+    }
+    return head+`<tr class="${m.ativo?'':'inativo'}" data-id="${m.id}" ${modoOrdenar?'draggable="true" style="cursor:grab;"':''}>
     <td class="miut">${modoOrdenar?'⠿ ':''}${m.antiguidade_ordem??(i+1)}</td>
     <td style="white-space:nowrap;">${esc(m.matricula||'')}</td>
     <td>${esc(m.posto_graduacao||'')}</td>
     <td>${modoOrdenar?esc(m.nome_completo||''):`<a href="#" onclick="openDetalhe('${m.id}');return false;" style="color:var(--text-white);text-decoration:none;border-bottom:1px dotted var(--acc);">${esc(m.nome_completo||'')}</a>`}${m.nome_guerra?`<div class="miut">${esc(m.nome_guerra)}</div>`:''}</td>
-    <td>${esc(m.funcao||'—')}</td>
+    <td>${esc(modoUnidade?funcaoExibicao(m):(m.funcao||'—'))}</td>
     <td>${esc(m.cod_unidade||'')}${m.nome_unidade?`<div class="miut">${esc(m.nome_unidade)}</div>`:''}</td>
     <td>${fmtBR(m.ultima_promocao)}</td>
     <td>${tagSit(m)}${!m.ativo&&m.transf_destino?`<div class="miut">→ ${esc(m.transf_destino)}</div>`:''}</td>
@@ -411,7 +530,8 @@ function render(){
       <button class="minibtn" onclick="editar('${m.id}')">editar</button>
       ${(m.integrante_ativo??m.ativo)?`<button class="minibtn" onclick="abrirBaixa('${m.id}')">inativar</button>`:`<button class="minibtn" onclick="reativar('${m.id}')">reativar</button>`}
       <button class="minibtn del" onclick="excluirDefinitivo('${m.id}')">excluir</button>`}
-    </td></tr>`).join('');
+    </td></tr>`;
+  }).join('');
   if(modoOrdenar) enableDrag();
 }
 let modoOrdenar=false, dragId=null;
@@ -419,31 +539,53 @@ function toggleOrdenar(){
   modoOrdenar=!modoOrdenar;
   document.getElementById('ordenar-bar').style.display=modoOrdenar?'block':'none';
   document.getElementById('btn-ordenar').textContent=modoOrdenar?'✓ Ordenando…':'↕ Ordenar antiguidade';
-  if(modoOrdenar){ document.getElementById('f-sit').value='ativos'; document.getElementById('busca').value=''; }
+  document.getElementById('ordenar-bar-txt').textContent = modoUnidade
+    ? 'Arraste para reordenar a antiguidade DENTRO de cada unidade/grupamento (só entre colegas da mesma unidade). O resto da baliza não muda.'
+    : 'Arraste as linhas para ajustar a antiguidade (desempate quando a promoção é na mesma data).';
   render();
 }
 function enableDrag(){
   const tb=document.getElementById('tbody');
+  const _key=id=>{ const m=LISTA.find(x=>x.id===id); return m?chaveUnidade(m).join('|'):null; };
   tb.querySelectorAll('tr[data-id]').forEach(tr=>{
     tr.ondragstart=e=>{ dragId=tr.dataset.id; e.dataTransfer.effectAllowed='move'; tr.style.opacity='.4'; };
     tr.ondragend=()=>{ tr.style.opacity=''; };
     tr.ondragover=e=>{ e.preventDefault(); e.dataTransfer.dropEffect='move'; };
     tr.ondrop=e=>{ e.preventDefault(); const src=tb.querySelector(`tr[data-id="${dragId}"]`); if(!src||src===tr) return;
+      // no modo Unidade só reordena entre militares da MESMA unidade/grupamento
+      if(modoUnidade && _key(dragId)!==_key(tr.dataset.id)){
+        flash('Só dá para reordenar dentro da mesma unidade/grupamento.',false); return; }
       const r=tr.getBoundingClientRect(); const depois=(e.clientY-r.top)>r.height/2;
       tb.insertBefore(src, depois?tr.nextSibling:tr);
-      // renumera a coluna #
-      [...tb.querySelectorAll('tr[data-id]')].forEach((row,idx)=>{ const c=row.querySelector('td.miut'); if(c) c.textContent='⠿ '+(idx+1); });
+      if(!modoUnidade){ // renumera a coluna # (só na visão plana por antiguidade)
+        [...tb.querySelectorAll('tr[data-id]')].forEach((row,idx)=>{ const c=row.querySelector('td.miut'); if(c) c.textContent='⠿ '+(idx+1); }); }
     };
   });
 }
 async function salvarOrdem(){
-  const ids=[...document.getElementById('tbody').querySelectorAll('tr[data-id]')].map(tr=>tr.dataset.id);
-  if(!ids.length) return;
+  const tb=document.getElementById('tbody');
+  const domIds=[...tb.querySelectorAll('tr[data-id]')].map(tr=>tr.dataset.id);
+  if(!domIds.length) return;
+  let ids;
+  if(modoUnidade){
+    // Opção "arrastar dentro da unidade": preserva a antiguidade global; só permuta
+    // os militares DENTRO de cada subunidade, nas fatias (slots) que já ocupavam.
+    const byId=Object.fromEntries(LISTA.map(m=>[m.id,m]));
+    const vis=domIds.map(id=>byId[id]).filter(Boolean);            // objetos visíveis
+    const pos={}; domIds.forEach((id,i)=>pos[id]=i);               // nova ordem visual
+    const keyOf=m=>chaveUnidade(m).join('|');
+    const cur=vis.slice().sort((a,b)=>(a.__ord??9e9)-(b.__ord??9e9)); // ordem de antiguidade atual
+    const byKey={}; cur.forEach(m=>{ (byKey[keyOf(m)]=byKey[keyOf(m)]||[]).push(m); });
+    Object.values(byKey).forEach(a=>a.sort((x,y)=>(pos[x.id]??0)-(pos[y.id]??0)));
+    const it={}; ids=cur.map(m=>{ const k=keyOf(m); it[k]=it[k]||0; return byKey[k][it[k]++].id; });
+  } else {
+    ids=domIds;
+  }
   try{
     await rpc('efetivo_reordenar',{p_token:sessao.token,p_ids:ids});
     modoOrdenar=false; document.getElementById('ordenar-bar').style.display='none';
     document.getElementById('btn-ordenar').textContent='↕ Ordenar antiguidade';
-    flash('Ordem de antiguidade salva.',true); carregar();
+    flash('Ordem de antiguidade salva.',true); carregar();   // modoUnidade permanece, re-renderiza agrupado
   }catch(e){ flash(e.message||'Erro ao salvar ordem.',false); }
 }
 
@@ -554,19 +696,22 @@ async function excluirDefinitivo(id){
 }
 
 // ── exportar ──
-function exportar(){
-  const hdr=['Ordem','Nº PM','Posto/Grad','Nome completo','Nome de guerra','Função',
+async function exportar(){
+  const porUnid = modoUnidade;
+  if(porUnid) await carregarMapaGp();
+  const lista = porUnid ? LISTA.slice().sort(cmpUnidade) : LISTA;
+  const hdr=(porUnid?['Unidade']:[]).concat(['Ordem','Nº PM','Posto/Grad','Nome completo','Nome de guerra','Função',
     'COD_RPM','NOME_RPM','COD_UNIDADE_PRINCIPAL','NOME_UNIDADE_PRINCIPAL','COD_UNIDADE','NOME_UNIDADE',
     'COD_SIAD','TIPO_ATIVIDADE','COD_MUNICIPIO','Última promoção','Classificação curso','Situação','Ativo',
-    'Transf. destino','Pasta funcional','Data envio','Nº ofício'];
+    'Transf. destino','Pasta funcional','Data envio','Nº ofício']);
   const aoa=[hdr];
-  LISTA.forEach(m=>aoa.push([m.antiguidade_ordem||'',m.matricula||'',m.posto_graduacao||'',m.nome_completo||'',m.nome_guerra||'',m.funcao||'',
+  lista.forEach(m=>aoa.push((porUnid?[rotuloUnidade(m)]:[]).concat([m.antiguidade_ordem||'',m.matricula||'',m.posto_graduacao||'',m.nome_completo||'',m.nome_guerra||'',(porUnid?funcaoExibicao(m):(m.funcao||'')),
     m.cod_rpm||'',m.nome_rpm||'',m.cod_unidade_principal||'',m.nome_unidade_principal||'',m.cod_unidade||'',m.nome_unidade||'',
     m.cod_siad||'',m.tipo_atividade||'',m.cod_municipio||'',fmtBR(m.ultima_promocao),m.classificacao_curso||'',
     m.situacao_efetivo||'',m.ativo?'Sim':'Não',m.transf_destino||'',m.transf_pasta_funcional==null?'':(m.transf_pasta_funcional?'Sim':'Não'),
-    fmtBR(m.transf_data_envio),m.transf_oficio_numero||'']));
+    fmtBR(m.transf_data_envio),m.transf_oficio_numero||''])));
   const ws=XLSX.utils.aoa_to_sheet(aoa); const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Efetivo'); XLSX.writeFile(wb, 'Efetivo_3aCia_'+new Date().toISOString().slice(0,10)+'.xlsx');
+  XLSX.utils.book_append_sheet(wb, ws, 'Efetivo'); XLSX.writeFile(wb, 'Efetivo_3aCia_'+(porUnid?'porUnidade_':'')+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 
 // ── boot ──
