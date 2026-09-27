@@ -115,6 +115,12 @@
         <input type="file" id="imp" accept=".xlsx,.xls,.csv" style="display:none;" onchange="importar(this)">
       </label>
       <button class="minibtn" onclick="exportar()">⬇ Exportar Excel</button>
+      <button class="minibtn" id="btn-ordenar" onclick="toggleOrdenar()">↕ Ordenar antiguidade</button>
+    </div>
+    <div id="ordenar-bar" style="display:none;margin-bottom:10px;padding:9px 13px;background:var(--acc-bg);border:1px solid var(--acc);border-radius:8px;font-size:12px;color:var(--text-white);">
+      Arraste as linhas para ajustar a antiguidade (desempate quando a promoção é na mesma data).
+      <button class="minibtn" onclick="salvarOrdem()" style="margin-left:8px;">Salvar ordem</button>
+      <button class="minibtn" onclick="toggleOrdenar()">Cancelar</button>
     </div>
 
     <div class="card" style="overflow-x:auto;max-height:70vh;overflow-y:auto;">
@@ -392,20 +398,53 @@ function render(){
   });
   const tb=document.getElementById('tbody');
   if(!arr.length){ tb.innerHTML='<tr><td colspan="9"><div class="empty">Nenhum militar.</div></td></tr>'; return; }
-  tb.innerHTML=arr.map((m,i)=>`<tr class="${m.ativo?'':'inativo'}">
-    <td class="miut">${m.antiguidade_ordem??(i+1)}</td>
+  tb.innerHTML=arr.map((m,i)=>`<tr class="${m.ativo?'':'inativo'}" data-id="${m.id}" ${modoOrdenar?'draggable="true" style="cursor:grab;"':''}>
+    <td class="miut">${modoOrdenar?'⠿ ':''}${m.antiguidade_ordem??(i+1)}</td>
     <td style="white-space:nowrap;">${esc(m.matricula||'')}</td>
     <td>${esc(m.posto_graduacao||'')}</td>
-    <td><a href="#" onclick="openDetalhe('${m.id}');return false;" style="color:var(--text-white);text-decoration:none;border-bottom:1px dotted var(--acc);">${esc(m.nome_completo||'')}</a>${m.nome_guerra?`<div class="miut">${esc(m.nome_guerra)}</div>`:''}</td>
+    <td>${modoOrdenar?esc(m.nome_completo||''):`<a href="#" onclick="openDetalhe('${m.id}');return false;" style="color:var(--text-white);text-decoration:none;border-bottom:1px dotted var(--acc);">${esc(m.nome_completo||'')}</a>`}${m.nome_guerra?`<div class="miut">${esc(m.nome_guerra)}</div>`:''}</td>
     <td>${esc(m.funcao||'—')}</td>
     <td>${esc(m.cod_unidade||'')}${m.nome_unidade?`<div class="miut">${esc(m.nome_unidade)}</div>`:''}</td>
     <td>${fmtBR(m.ultima_promocao)}</td>
     <td>${tagSit(m)}${!m.ativo&&m.transf_destino?`<div class="miut">→ ${esc(m.transf_destino)}</div>`:''}</td>
-    <td style="white-space:nowrap;">
+    <td style="white-space:nowrap;">${modoOrdenar?'<span class="miut">arraste ↕</span>':`
       <button class="minibtn" onclick="editar('${m.id}')">editar</button>
       ${(m.integrante_ativo??m.ativo)?`<button class="minibtn" onclick="abrirBaixa('${m.id}')">inativar</button>`:`<button class="minibtn" onclick="reativar('${m.id}')">reativar</button>`}
-      <button class="minibtn del" onclick="excluirDefinitivo('${m.id}')">excluir</button>
+      <button class="minibtn del" onclick="excluirDefinitivo('${m.id}')">excluir</button>`}
     </td></tr>`).join('');
+  if(modoOrdenar) enableDrag();
+}
+let modoOrdenar=false, dragId=null;
+function toggleOrdenar(){
+  modoOrdenar=!modoOrdenar;
+  document.getElementById('ordenar-bar').style.display=modoOrdenar?'block':'none';
+  document.getElementById('btn-ordenar').textContent=modoOrdenar?'✓ Ordenando…':'↕ Ordenar antiguidade';
+  if(modoOrdenar){ document.getElementById('f-sit').value='ativos'; document.getElementById('busca').value=''; }
+  render();
+}
+function enableDrag(){
+  const tb=document.getElementById('tbody');
+  tb.querySelectorAll('tr[data-id]').forEach(tr=>{
+    tr.ondragstart=e=>{ dragId=tr.dataset.id; e.dataTransfer.effectAllowed='move'; tr.style.opacity='.4'; };
+    tr.ondragend=()=>{ tr.style.opacity=''; };
+    tr.ondragover=e=>{ e.preventDefault(); e.dataTransfer.dropEffect='move'; };
+    tr.ondrop=e=>{ e.preventDefault(); const src=tb.querySelector(`tr[data-id="${dragId}"]`); if(!src||src===tr) return;
+      const r=tr.getBoundingClientRect(); const depois=(e.clientY-r.top)>r.height/2;
+      tb.insertBefore(src, depois?tr.nextSibling:tr);
+      // renumera a coluna #
+      [...tb.querySelectorAll('tr[data-id]')].forEach((row,idx)=>{ const c=row.querySelector('td.miut'); if(c) c.textContent='⠿ '+(idx+1); });
+    };
+  });
+}
+async function salvarOrdem(){
+  const ids=[...document.getElementById('tbody').querySelectorAll('tr[data-id]')].map(tr=>tr.dataset.id);
+  if(!ids.length) return;
+  try{
+    await rpc('efetivo_reordenar',{p_token:sessao.token,p_ids:ids});
+    modoOrdenar=false; document.getElementById('ordenar-bar').style.display='none';
+    document.getElementById('btn-ordenar').textContent='↕ Ordenar antiguidade';
+    flash('Ordem de antiguidade salva.',true); carregar();
+  }catch(e){ flash(e.message||'Erro ao salvar ordem.',false); }
 }
 
 // ── ficha / detalhe ──
