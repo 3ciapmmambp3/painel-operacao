@@ -41,6 +41,14 @@
     .fld input,.fld select,.fld textarea{background:var(--bg-dark);border:1px solid var(--border);border-radius:6px;
       color:var(--text-white);padding:8px 10px;font-size:13px;font-family:inherit;}
     .fld input:focus,.fld select:focus,.fld textarea:focus{outline:none;border-color:var(--acc);}
+    .mil-search{position:relative;}
+    .mil-drop{display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;max-height:260px;overflow-y:auto;
+      background:var(--bg-card);border:1px solid var(--acc);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.5);z-index:60;}
+    .mil-drop.open{display:block;}
+    .mil-opt{padding:8px 11px;font-size:13px;color:var(--text-white);cursor:pointer;}
+    .mil-opt:hover,.mil-opt.active{background:var(--acc-bg);}
+    .mil-opt small{color:var(--text-hint);}
+    .mil-empty{padding:9px 11px;font-size:12.5px;color:var(--text-hint);}
     .row-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
     table{width:100%;border-collapse:collapse;font-size:12.5px;}
     th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:top;}
@@ -120,6 +128,7 @@
       <button class="tab active" data-tab="crono" onclick="abrirTab('crono')">📅 Cronograma &amp; Prazos</button>
       <button class="tab" data-tab="aprovar" onclick="abrirTab('aprovar')">✅ Aprovar Pelotão</button>
       <button class="tab" data-tab="pct" onclick="abrirTab('pct')">📊 Percentuais</button>
+      <button class="tab" data-tab="controle" onclick="abrirTab('controle')">📋 Controle</button>
       <button class="tab" data-tab="lanc" onclick="abrirTab('lanc')">📝 Lançamentos</button>
     </div>
 
@@ -215,6 +224,32 @@
       </div>
     </div>
 
+    <!-- ══ TAB CONTROLE (só-leitura, modelo da planilha da P1) ══ -->
+    <div class="panel" id="panel-controle">
+      <div class="card">
+        <div class="row-actions" style="justify-content:space-between;margin-bottom:12px;">
+          <div class="miut">Visão consolidada de todas as férias do ano, por antiguidade — no formato da planilha de controle da P1. Para lançar/editar, use a aba <b>Lançamentos</b>.</div>
+          <button class="btn-outline" onclick="exportarControle()">⬇ Exportar Excel</button>
+        </div>
+        <div class="grid" style="margin-bottom:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
+          <div class="fld"><label>Pelotão</label><select id="ct-pel" onchange="renderControle()"><option value="">Todos</option></select></div>
+          <div class="fld"><label>Fração / GP</label><select id="ct-gp" onchange="renderControle()"><option value="">Todas</option></select></div>
+          <div class="fld"><label>Tipo</label><select id="ct-tipo" onchange="renderControle()"><option value="">Todos</option><option value="ANUAL">Anuais</option><option value="PREMIO">Prêmio</option></select></div>
+          <div class="fld"><label>Situação</label><select id="ct-sit" onchange="renderControle()"><option value="">Todas</option><option value="PENDENTE">Pendente</option><option value="APROVADO_PEL">Aprov. Pelotão</option><option value="VALIDADO">Validado</option><option value="REJEITADO">Rejeitado</option></select></div>
+          <div class="fld"><label>Busca (nome/Nº)</label><input id="ct-busca" placeholder="nome ou matrícula…" oninput="renderControle()"></div>
+        </div>
+        <div style="overflow-x:auto;">
+          <table id="tbl-ct">
+            <thead><tr>
+              <th>#</th><th>Pelotão</th><th>Fração/GP</th><th>Militar</th><th>Cidade / lotação</th>
+              <th>Tipo</th><th>Exerc.</th><th>Dias</th><th>Início</th><th>Término</th><th>Situação</th>
+            </tr></thead>
+            <tbody id="tbody-ct"><tr><td colspan="11"><div class="empty">Carregando…</div></td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <!-- ══ TAB LANÇAMENTOS ══ -->
     <div class="panel" id="panel-lanc">
       <div class="card">
@@ -268,7 +303,12 @@
     <h2 id="modal-titulo">Novo lançamento de férias</h2>
     <div class="grid">
       <div class="fld" id="fld-militar"><label>Militar</label>
-        <select id="p-militar"></select>
+        <div class="mil-search">
+          <input id="p-militar-busca" autocomplete="off" placeholder="Digite o número ou o nome…"
+                 oninput="milBuscaInput()" onfocus="milBuscaInput()" onblur="milBuscaBlur()">
+          <input type="hidden" id="p-militar">
+          <div id="p-militar-drop" class="mil-drop"></div>
+        </div>
       </div>
       <div class="fld"><label>Tipo</label>
         <select id="p-tipo" onchange="onTipoChange()">
@@ -283,7 +323,6 @@
           <option value="15_10_FRACIONADO">15 + 10 dias (fracionado)</option>
         </select>
       </div>
-      <div class="fld"><label>Destino / fração</label><input id="p-destino" placeholder="ex.: Teófilo Otoni"></div>
       <div class="fld"><label>Situação</label>
         <select id="p-situacao">
           <option value="VALIDADO">Validado (P1)</option>
@@ -652,9 +691,34 @@ function renderPedidos(){
 async function garantirEfetivo(){
   if(efetivo.length) return;
   try{ efetivo = await rpc('tta_listar_militares',{p_token:sessao.token}) || []; }catch(e){ efetivo=[]; }
-  const sel=document.getElementById('p-militar');
-  sel.innerHTML='<option value="">— selecione —</option>'+efetivo.map(m=>`<option value="${m.id}">${esc(m.posto_graduacao||'')} ${esc(m.nome_guerra||m.nome_completo)} · ${esc(m.matricula)}</option>`).join('');
 }
+// ── picker de militar pesquisável (nº + nome completo, padrão do Relatório) ──
+function _milLabel(m){ return `${(m.posto_graduacao||'').toUpperCase()} ${(m.nome_completo||m.nome_guerra||'').toUpperCase()} · ${m.matricula||''}`; }
+function _norm(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''); }
+function milBuscaInput(){
+  const inp=document.getElementById('p-militar-busca'), drop=document.getElementById('p-militar-drop');
+  const q=_norm(inp.value.trim());
+  // ao editar o texto, a seleção anterior deixa de valer até escolher de novo
+  document.getElementById('p-militar').value='';
+  const termos=q.split(/\s+/).filter(Boolean);
+  const lista=efetivo.filter(m=>{
+    const alvo=_norm(`${m.matricula||''} ${m.nome_completo||''} ${m.nome_guerra||''} ${m.posto_graduacao||''}`);
+    return termos.every(t=>alvo.includes(t));
+  }).slice(0,40);
+  drop.innerHTML = lista.length
+    ? lista.map(m=>`<div class="mil-opt" data-id="${m.id}" data-lbl="${esc(_milLabel(m))}"><b>${esc((m.posto_graduacao||'').toUpperCase())} ${esc(m.nome_completo||m.nome_guerra||'')}</b><br><small>${esc(m.matricula||'')}${m.grupamento_id?' · '+esc(m.grupamento_id):''}</small></div>`).join('')
+    : '<div class="mil-empty">Nenhum militar encontrado</div>';
+  drop.classList.add('open');
+}
+function milBuscaBlur(){
+  setTimeout(()=>{ const drop=document.getElementById('p-militar-drop'); if(drop) drop.classList.remove('open'); },160);
+}
+function milEscolher(el){
+  document.getElementById('p-militar').value=el.dataset.id;
+  document.getElementById('p-militar-busca').value=el.dataset.lbl;
+  document.getElementById('p-militar-drop').classList.remove('open');
+}
+document.addEventListener('mousedown', e=>{ const o=e.target.closest('.mil-opt'); if(o) milEscolher(o); });
 function onTipoChange(){
   const prem = document.getElementById('p-tipo').value==='PREMIO';
   document.getElementById('fld-modalidade').style.display = prem?'none':'flex';
@@ -674,10 +738,11 @@ async function novoPedido(){
   await garantirEfetivo();
   document.getElementById('fld-militar').style.display='flex';
   document.getElementById('p-militar').value='';
+  document.getElementById('p-militar-busca').value='';
+  document.getElementById('p-militar-drop').classList.remove('open');
   document.getElementById('p-tipo').value='ANUAL';
   document.getElementById('p-exercicio').value=anoSel;
   document.getElementById('p-modalidade').value='25_DIRETO';
-  document.getElementById('p-destino').value='';
   document.getElementById('p-situacao').value='VALIDADO';
   document.getElementById('p-obs').value='';
   document.getElementById('p-parcelas').innerHTML=''; onTipoChange(); addParcela();
@@ -690,7 +755,6 @@ function editarPedido(id){
   document.getElementById('p-tipo').value=p.tipo||'ANUAL';
   document.getElementById('p-exercicio').value=p.exercicio||'';
   document.getElementById('p-modalidade').value=p.modalidade||'25_DIRETO';
-  document.getElementById('p-destino').value=p.destino||'';
   document.getElementById('p-situacao').value=p.situacao||'VALIDADO';
   document.getElementById('p-obs').value=p.observacoes||'';
   onTipoChange();
@@ -704,7 +768,6 @@ async function salvarPedido(){
       tipo:document.getElementById('p-tipo').value,
       exercicio:document.getElementById('p-exercicio').value||null,
       modalidade:document.getElementById('p-tipo').value==='PREMIO'?null:document.getElementById('p-modalidade').value,
-      destino:document.getElementById('p-destino').value.trim()||null,
       situacao:document.getElementById('p-situacao').value,
       observacoes:document.getElementById('p-obs').value.trim()||null,
       parcelas:lerParcelas() };
@@ -823,6 +886,70 @@ function exportarExcel(){
   const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=aoa[0].map((h,i)=>({wch:i>=7?36:Math.max(12,h.length+2)}));
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Férias '+anoSel);
   XLSX.writeFile(wb, 'Ferias_'+anoSel+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
+
+// ══════════════ ABA CONTROLE (só-leitura, modelo da planilha da P1) ══════════════
+let CTRL=[];
+async function carregarControle(){
+  try{ CTRL = await rpc('ferias_controle_listar',{p_token:sessao.token,p_ano:anoSel}) || []; }
+  catch(e){ document.getElementById('tbody-ct').innerHTML=`<tr><td colspan="11"><div class="empty">${esc(e.message)}</div></td></tr>`; return; }
+  popularFiltrosCt(); renderControle();
+}
+function _pelRot(p){ return /^\d+$/.test(String(p))?('Pelotão '+p):(p||'—'); }
+function popularFiltrosCt(){
+  const selP=document.getElementById('ct-pel'), selG=document.getElementById('ct-gp'); if(!selP) return;
+  if(selP.options.length<=1){ const pels=[...new Set(CTRL.map(r=>r.pelotao).filter(Boolean))].sort();
+    selP.innerHTML='<option value="">Todos</option>'+pels.map(p=>`<option value="${esc(p)}">${esc(_pelRot(p))}</option>`).join(''); }
+  if(selG.options.length<=1){ const gps=[...new Set(CTRL.map(r=>r.fracao).filter(Boolean))].sort();
+    selG.innerHTML='<option value="">Todas</option>'+gps.map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join(''); }
+}
+// uma linha por PARCELA (como na planilha: 15+10 fracionado = 2 linhas)
+function ctLinhas(){
+  const v=id=>{const e=document.getElementById(id);return e?e.value:'';};
+  const fp=v('ct-pel'),fg=v('ct-gp'),ft=v('ct-tipo'),fs=v('ct-sit'),fb=_norm(v('ct-busca').trim());
+  const out=[];
+  CTRL.forEach(r=>{
+    if(fp && String(r.pelotao||'')!==fp) return;
+    if(fg && String(r.fracao||'')!==fg) return;
+    if(ft && r.tipo!==ft) return;
+    if(fs && r.situacao!==fs) return;
+    if(fb){ const hay=_norm(`${r.matricula||''} ${r.nome||''} ${r.pg||''}`); if(!hay.includes(fb)) return; }
+    const pcs=Array.isArray(r.parcelas)?r.parcelas:[];
+    if(pcs.length) pcs.forEach(x=>out.push({r,x})); else out.push({r,x:null});
+  });
+  return out;
+}
+function renderControle(){
+  const tb=document.getElementById('tbody-ct'); if(!tb) return;
+  popularFiltrosCt(); const linhas=ctLinhas();
+  if(!linhas.length){ tb.innerHTML='<tr><td colspan="11"><div class="empty">Nenhuma férias'+(CTRL.length?' com esses filtros':' para '+anoSel)+'.</div></td></tr>'; return; }
+  tb.innerHTML=linhas.map(({r,x})=>{
+    const dias = x?(x.parcela==='PREMIO'?'Prêmio':x.parcela):'—';
+    return `<tr>
+      <td class="miut">${r.ordem??'—'}</td>
+      <td style="white-space:nowrap;">${esc(_pelRot(r.pelotao))}</td>
+      <td>${esc(r.fracao||'—')}</td>
+      <td><b>${esc(r.pg||'')}</b> ${esc(r.nome||'')}<div class="miut">${esc(r.matricula||'')}</div></td>
+      <td>${esc(r.cidade||'—')}</td>
+      <td><span class="tag ${r.tipo==='PREMIO'?'premio':'anual'}">${r.tipo==='PREMIO'?'Prêmio':'Anual'}</span></td>
+      <td>${esc(r.exercicio||'—')}</td>
+      <td>${esc(dias)}</td>
+      <td style="white-space:nowrap;">${x?fmtBR(x.ini):'—'}</td>
+      <td style="white-space:nowrap;">${x?fmtBR(x.fim):'—'}</td>
+      <td>${tagSit(r.situacao)}</td>
+    </tr>`;
+  }).join('');
+}
+function exportarControle(){
+  const linhas=ctLinhas();
+  if(!linhas.length){ flash('Nada para exportar com esses filtros.',false); return; }
+  const situ={PENDENTE:'Pendente',APROVADO_PEL:'Aprovado Pelotão',VALIDADO:'Validado',REJEITADO:'Rejeitado'};
+  const aoa=[['Ordem','Pelotão','Fração/GP','Nº PM','Posto/Grad','Nome','Cidade/Lotação','Tipo','Exercício','Dias','Início','Término','Situação']];
+  linhas.forEach(({r,x})=>aoa.push([r.ordem||'',_pelRot(r.pelotao||''),r.fracao||'',r.matricula||'',r.pg||'',r.nome||'',r.cidade||'',
+    r.tipo==='PREMIO'?'Férias-prêmio':'Anuais',r.exercicio||'',x?(x.parcela==='PREMIO'?'Prêmio':x.parcela):'',x?fmtBR(x.ini):'',x?fmtBR(x.fim):'',situ[r.situacao]||r.situacao]));
+  const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=aoa[0].map(h=>({wch:Math.max(10,h.length+2)}));
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Controle '+anoSel);
+  XLSX.writeFile(wb, 'Ferias_Controle_'+anoSel+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 
 // ══════════════ ÁREA DO MILITAR (Fase 2) ══════════════
@@ -970,6 +1097,7 @@ function abrirTab(t){
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   document.getElementById('panel-'+t).classList.add('active');
   if(t==='pct') carregarPct();
+  if(t==='controle') carregarControle();
   if(t==='lanc') carregarPedidos();
   if(t==='aprovar') aprovarBoot();
 }
@@ -1050,6 +1178,7 @@ async function boot(){
   // se estiver na aba de lançamentos/percentuais já aberta, recarrega
   const ativa=document.querySelector('.tab.active')?.dataset.tab;
   if(ativa==='lanc') carregarPedidos(); else if(ativa==='pct') carregarPct();
+  else if(ativa==='controle'){ CTRL=[]; document.getElementById('ct-pel').innerHTML='<option value="">Todos</option>'; document.getElementById('ct-gp').innerHTML='<option value="">Todas</option>'; carregarControle(); }
 }
 boot();
 </script>

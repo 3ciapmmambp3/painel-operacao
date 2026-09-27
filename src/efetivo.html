@@ -24,6 +24,11 @@
     .hero .sub{font-size:12px;color:var(--text-muted);margin-top:2px;}
     .hero .kpi{margin-left:auto;text-align:right;font-size:12px;color:var(--text-hint);}
     .hero .kpi b{display:block;font-size:22px;color:var(--text-white);}
+    .ef-tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:14px;flex-wrap:wrap;}
+    .ef-tab{padding:9px 16px;font-size:13px;font-weight:600;color:var(--text-muted);cursor:pointer;background:none;
+      border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;font-family:inherit;}
+    .ef-tab:hover{color:var(--text-white);}
+    .ef-tab.active{color:var(--text-white);background:var(--bg-card);border-color:var(--border);border-bottom:1px solid var(--bg-card);margin-bottom:-1px;}
     .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;}
     .toolbar input[type=search]{flex:1;min-width:180px;background:var(--bg-dark);border:1px solid var(--border);border-radius:6px;color:var(--text-white);padding:8px 10px;font-size:13px;}
     .toolbar select{background:var(--bg-dark);border:1px solid var(--border);border-radius:6px;color:var(--text-white);padding:8px 10px;font-size:13px;}
@@ -103,22 +108,27 @@
   </div>
 
   <div id="area-p1" style="display:none;">
+    <div class="ef-tabs">
+      <button class="ef-tab active" id="tab-ativos" onclick="mostrarAba('ativos')">Efetivo ativo</button>
+      <button class="ef-tab" id="tab-inativos" onclick="mostrarAba('inativos')">Inativos <span id="tab-inat-n" class="miut"></span></button>
+    </div>
     <div class="toolbar">
       <input type="search" id="busca" placeholder="Buscar por nome, Nº PM, função ou unidade…" oninput="render()">
-      <select id="f-sit" onchange="render()">
-        <option value="ativos">Só ativos na Cia</option>
-        <option value="todos">Todos (inclui inativos)</option>
-        <option value="TRANSFERIDO">Transferidos</option>
+      <select id="f-motivo" style="display:none;" onchange="render()">
+        <option value="">Todos os inativos</option>
+        <option value="TRANSFERIDO">Transferidos (de unidade)</option>
         <option value="RESERVA">Reserva</option>
+        <option value="OUTRO">Outros motivos</option>
       </select>
-      <button class="minibtn" onclick="baixarModelo()">📄 Baixar modelo (Excel)</button>
-      <label class="minibtn" style="cursor:pointer;">⬆ Importar planilha
+      <button class="minibtn ef-only-ativos" onclick="baixarModelo()">📄 Baixar modelo (Excel)</button>
+      <label class="minibtn ef-only-ativos" style="cursor:pointer;">⬆ Importar planilha
         <input type="file" id="imp" accept=".xlsx,.xls,.csv" style="display:none;" onchange="importar(this)">
       </label>
       <button class="minibtn" onclick="exportar()">⬇ Exportar Excel</button>
-      <button class="minibtn" id="btn-ordenar" onclick="toggleOrdenar()">↕ Ordenar antiguidade</button>
-      <button class="minibtn" id="btn-unidade" onclick="toggleUnidade()">🏛️ Ordenar por Unidade</button>
+      <button class="minibtn ef-only-ativos" id="btn-ordenar" onclick="toggleOrdenar()">↕ Ordenar antiguidade</button>
+      <button class="minibtn ef-only-ativos" id="btn-unidade" onclick="toggleUnidade()">🏛️ Ordenar por Unidade</button>
     </div>
+    <div id="inat-aviso" class="miut" style="display:none;margin:-4px 0 12px;">Militares fora do efetivo ativo — <b>não</b> contam nos indicadores e <b>não</b> acessam o painel. Use <b>reativar</b> para trazer de volta (inclusive reconvocação da reserva).</div>
     <div id="ordenar-bar" style="display:none;margin-bottom:10px;padding:9px 13px;background:var(--acc-bg);border:1px solid var(--acc);border-radius:8px;font-size:12px;color:var(--text-white);">
       <span id="ordenar-bar-txt">Arraste as linhas para ajustar a antiguidade (desempate quando a promoção é na mesma data).</span>
       <button class="minibtn" onclick="salvarOrdem()" style="margin-left:8px;">Salvar ordem</button>
@@ -377,6 +387,8 @@ async function carregar(){
     LISTA = await rpc('efetivo_listar',{p_token:sessao.token,p_incluir_inativos:true}) || [];
     LISTA.forEach((m,i)=>{ m.__ord=i; });   // posição = ordem de antiguidade (servidor)
     document.getElementById('k-total').textContent = LISTA.filter(m=>m.integrante_ativo??m.ativo).length;
+    const nInat = LISTA.filter(m=>!(m.integrante_ativo??m.ativo)).length;
+    document.getElementById('tab-inat-n').textContent = nInat?`(${nInat})`:'';
     render();
   }catch(e){ document.getElementById('tbody').innerHTML=`<tr><td colspan="9"><div class="empty">${esc(e.message)}</div></td></tr>`; }
 }
@@ -495,18 +507,38 @@ async function toggleUnidade(){
   render();
 }
 
+// ── abas: Efetivo ativo × Inativos (transferidos/reserva/outros) ──
+let modoInativos=false;
+function mostrarAba(qual){
+  modoInativos = (qual==='inativos');
+  document.getElementById('tab-ativos').classList.toggle('active', !modoInativos);
+  document.getElementById('tab-inativos').classList.toggle('active', modoInativos);
+  document.getElementById('f-motivo').style.display = modoInativos?'':'none';
+  document.getElementById('inat-aviso').style.display = modoInativos?'block':'none';
+  document.querySelectorAll('.ef-only-ativos').forEach(el=>{ el.style.display = modoInativos?'none':''; });
+  if(modoInativos && modoOrdenar) toggleOrdenar();   // ordenação de antiguidade não se aplica a inativos
+  if(modoInativos && modoUnidade) toggleUnidade();   // agrupamento por unidade é da baliza ativa
+  render();
+}
 function render(){
   const q=norm(document.getElementById('busca').value);
-  const f=document.getElementById('f-sit').value;
+  const ehAtivo=m=>(m.integrante_ativo??m.ativo);
+  const fm=document.getElementById('f-motivo').value;
   let arr=LISTA.filter(m=>{
-    if(f==='ativos' && !(m.integrante_ativo??m.ativo)) return false;
-    if(f==='TRANSFERIDO' && (m.situacao_efetivo||'').toUpperCase()!=='TRANSFERIDO') return false;
-    if(f==='RESERVA' && (m.situacao_efetivo||'').toUpperCase()!=='RESERVA') return false;
+    if(modoInativos){
+      if(ehAtivo(m)) return false;
+      const s=(m.situacao_efetivo||'').toUpperCase();
+      if(fm==='TRANSFERIDO' && s!=='TRANSFERIDO') return false;
+      if(fm==='RESERVA'     && s!=='RESERVA')     return false;
+      if(fm==='OUTRO'       && (s==='TRANSFERIDO'||s==='RESERVA')) return false;
+    } else {
+      if(!ehAtivo(m)) return false;
+    }
     if(q){ const hay=norm([m.nome_completo,m.nome_guerra,m.matricula,m.funcao,m.nome_unidade,m.cod_unidade,m.posto_graduacao].join(' ')); if(!hay.includes(q)) return false; }
     return true;
   });
   const tb=document.getElementById('tbody');
-  if(!arr.length){ tb.innerHTML='<tr><td colspan="9"><div class="empty">Nenhum militar.</div></td></tr>'; return; }
+  if(!arr.length){ tb.innerHTML='<tr><td colspan="9"><div class="empty">'+(modoInativos?'Nenhum militar inativo'+(document.getElementById('f-motivo').value?' com esse motivo':'')+'.':'Nenhum militar.')+'</div></td></tr>'; return; }
   if(modoUnidade) arr=arr.slice().sort(cmpUnidade);
   let _hdr=null, _sub=null;
   tb.innerHTML=arr.map((m,i)=>{
