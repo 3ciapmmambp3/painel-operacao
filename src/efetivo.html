@@ -105,10 +105,10 @@
     <div class="toolbar">
       <input type="search" id="busca" placeholder="Buscar por nome, Nº PM, função ou unidade…" oninput="render()">
       <select id="f-sit" onchange="render()">
-        <option value="ativos">Só ativos</option>
-        <option value="todos">Todos (inclui baixados)</option>
+        <option value="ativos">Só ativos na Cia</option>
+        <option value="todos">Todos (inclui inativos)</option>
         <option value="TRANSFERIDO">Transferidos</option>
-        <option value="VETERANO">Veteranos</option>
+        <option value="RESERVA">Reserva</option>
       </select>
       <button class="minibtn" onclick="baixarModelo()">📄 Baixar modelo (Excel)</button>
       <label class="minibtn" style="cursor:pointer;">⬆ Importar planilha
@@ -195,11 +195,11 @@
 <!-- MODAL BAIXA -->
 <div class="modal-bg" id="modal-baixa">
   <div class="modal">
-    <h2>Baixa / transferência</h2>
+    <h2>Inativar / transferir do efetivo</h2>
     <div class="miut" id="baixa-quem" style="margin-bottom:12px;"></div>
     <div class="grid">
       <div class="fld"><label>Situação</label>
-        <select id="b-sit"><option value="TRANSFERIDO">Transferido</option><option value="VETERANO">Veterano (reserva/reforma)</option><option value="OUTRO">Outro</option></select>
+        <select id="b-sit"><option value="TRANSFERIDO">Transferido de unidade</option><option value="RESERVA">Transferido para a Reserva</option><option value="OUTRO">Outro</option></select>
       </div>
       <div class="fld"><label>Destino / para onde foi</label><input id="b-destino" placeholder="ex.: 8ª Cia PM MAmb"></div>
       <div class="fld"><label>Pasta funcional entregue?</label>
@@ -209,10 +209,10 @@
       <div class="fld"><label>Nº do ofício</label><input id="b-oficio" placeholder="ex.: Of. 123/2026"></div>
     </div>
     <div class="fld" style="margin-top:11px;"><label>Observações</label><textarea id="b-obs" rows="2"></textarea></div>
-    <div class="miut" style="margin-top:8px;">O militar sai do efetivo ativo e do login, mas o registro é mantido. (Anexo do ofício de transferência entra na fase de anexos/Drive.)</div>
+    <div class="miut" style="margin-top:8px;">Mantém os dados, mas o militar <b>perde o acesso ao painel</b> (login) e sai do efetivo ativo da Cia (não conta nos indicadores). É <b>reativável</b> — inclusive para reconvocação da reserva. Para apagar o registro de vez, use <b>excluir</b>.</div>
     <div class="row-actions" style="justify-content:flex-end;margin-top:16px;">
       <button class="btn-outline" onclick="fechar('modal-baixa')">Cancelar</button>
-      <button class="btn-gold" onclick="salvarBaixa()">Confirmar baixa</button>
+      <button class="btn-gold" onclick="salvarBaixa()">Confirmar inativação</button>
     </div>
   </div>
 </div>
@@ -367,24 +367,26 @@ let LISTA=[];
 async function carregar(){
   try{
     LISTA = await rpc('efetivo_listar',{p_token:sessao.token,p_incluir_inativos:true}) || [];
-    document.getElementById('k-total').textContent = LISTA.filter(m=>m.ativo).length;
+    document.getElementById('k-total').textContent = LISTA.filter(m=>m.integrante_ativo??m.ativo).length;
     render();
   }catch(e){ document.getElementById('tbody').innerHTML=`<tr><td colspan="9"><div class="empty">${esc(e.message)}</div></td></tr>`; }
 }
 function tagSit(m){
-  if(m.ativo) return '<span class="tag ativo">Ativo</span>';
+  if(m.integrante_ativo??m.ativo) return '<span class="tag ativo">Ativo</span>';
   const s=(m.situacao_efetivo||'').toUpperCase();
   if(s==='TRANSFERIDO') return '<span class="tag transf">Transferido</span>';
+  if(s==='RESERVA') return '<span class="tag vet">Reserva</span>';
   if(s==='VETERANO') return '<span class="tag vet">Veterano</span>';
-  return '<span class="tag transf">Baixado</span>';
+  if(!m.ativo) return '<span class="tag transf">Inativo</span>';
+  return '<span class="tag transf">'+esc(s||'—')+'</span>';
 }
 function render(){
   const q=norm(document.getElementById('busca').value);
   const f=document.getElementById('f-sit').value;
   let arr=LISTA.filter(m=>{
-    if(f==='ativos' && !m.ativo) return false;
+    if(f==='ativos' && !(m.integrante_ativo??m.ativo)) return false;
     if(f==='TRANSFERIDO' && (m.situacao_efetivo||'').toUpperCase()!=='TRANSFERIDO') return false;
-    if(f==='VETERANO' && (m.situacao_efetivo||'').toUpperCase()!=='VETERANO') return false;
+    if(f==='RESERVA' && (m.situacao_efetivo||'').toUpperCase()!=='RESERVA') return false;
     if(q){ const hay=norm([m.nome_completo,m.nome_guerra,m.matricula,m.funcao,m.nome_unidade,m.cod_unidade,m.posto_graduacao].join(' ')); if(!hay.includes(q)) return false; }
     return true;
   });
@@ -392,7 +394,7 @@ function render(){
   if(!arr.length){ tb.innerHTML='<tr><td colspan="9"><div class="empty">Nenhum militar.</div></td></tr>'; return; }
   tb.innerHTML=arr.map((m,i)=>`<tr class="${m.ativo?'':'inativo'}">
     <td class="miut">${m.antiguidade_ordem??(i+1)}</td>
-    <td>${esc(m.matricula||'')}</td>
+    <td style="white-space:nowrap;">${esc(m.matricula||'')}</td>
     <td>${esc(m.posto_graduacao||'')}</td>
     <td><a href="#" onclick="openDetalhe('${m.id}');return false;" style="color:var(--text-white);text-decoration:none;border-bottom:1px dotted var(--acc);">${esc(m.nome_completo||'')}</a>${m.nome_guerra?`<div class="miut">${esc(m.nome_guerra)}</div>`:''}</td>
     <td>${esc(m.funcao||'—')}</td>
@@ -401,7 +403,8 @@ function render(){
     <td>${tagSit(m)}${!m.ativo&&m.transf_destino?`<div class="miut">→ ${esc(m.transf_destino)}</div>`:''}</td>
     <td style="white-space:nowrap;">
       <button class="minibtn" onclick="editar('${m.id}')">editar</button>
-      ${m.ativo?`<button class="minibtn del" onclick="abrirBaixa('${m.id}')">baixar</button>`:`<button class="minibtn" onclick="reativar('${m.id}')">reativar</button>`}
+      ${(m.integrante_ativo??m.ativo)?`<button class="minibtn" onclick="abrirBaixa('${m.id}')">inativar</button>`:`<button class="minibtn" onclick="reativar('${m.id}')">reativar</button>`}
+      <button class="minibtn del" onclick="excluirDefinitivo('${m.id}')">excluir</button>
     </td></tr>`).join('');
 }
 
@@ -499,9 +502,16 @@ async function salvarBaixa(){
   }catch(e){ flash(e.message||'Erro.',false); }
 }
 async function reativar(id){
-  if(!confirm('Reativar este militar no efetivo ativo?')) return;
-  try{ await rpc('efetivo_reativar',{p_token:sessao.token,p_id:id}); flash('Reativado.',true); carregar(); }
+  if(!confirm('Reativar este militar no efetivo ativo da Cia?')) return;
+  try{ await rpc('efetivo_reativar',{p_token:sessao.token,p_id:id}); flash('Reativado no efetivo.',true); carregar(); }
   catch(e){ flash(e.message||'Erro.',false); }
+}
+async function excluirDefinitivo(id){
+  const m=LISTA.find(x=>x.id===id);
+  const nome=m?`${m.posto_graduacao||''} ${m.nome_guerra||m.nome_completo||''} (${m.matricula||''})`:'este militar';
+  if(!confirm(`EXCLUIR DEFINITIVAMENTE ${nome}?\n\nIsto apaga o registro e a conta de acesso de forma permanente — não pode ser desfeito.\nPara transferência ou reserva, use "inativar" (mantém os dados).`)) return;
+  try{ await rpc('efetivo_excluir',{p_token:sessao.token,p_id:id}); flash('Militar excluído definitivamente.',true); carregar(); }
+  catch(e){ flash(e.message||'Erro ao excluir.',false); }
 }
 
 // ── exportar ──
