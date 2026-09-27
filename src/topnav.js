@@ -63,13 +63,13 @@
   // A "Agenda da Seção" NÃO entra aqui (é gated por membro — fica só no hub).
   const MODULOS = {
     p1: [
-      {ic:'👥', t:'Efetivo', soon:true},
+      {ic:'👥', t:'Efetivo', h:'efetivo.html'},
       {ic:'🗓️', t:'TTA — Treinamento Tático', h:'tta.html'},
       {ic:'🗂️', t:'Meus TTA', h:'meus-tta.html'},
       // Aux P1 / Admin Geral / CMT Cia → controle; demais → formulário.
       {ic:'⚖️', t:'Controle de Requisição Judicial', h:'nova-requisicao-judicial.html', hGest:'requisicoes-judiciais.html', reqGest:'reqjud'},
       {ic:'✉️', t:'Controle de Ofícios', h:'oficios.html'},
-      {ic:'🏖️', t:'Férias', soon:true},
+      {ic:'🏖️', t:'Férias', h:'ferias.html'},
       {ic:'📰', t:'Publicações', soon:true},
     ],
     p2: [
