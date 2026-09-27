@@ -284,6 +284,46 @@
   </div>
 </div>
 
+<!-- MODAL VALIDAR / DEFINIR PERÍODO -->
+<div class="modal-bg" id="modal-validar">
+  <div class="modal">
+    <h2>Validar / definir período</h2>
+    <div id="val-quem" class="miut" style="margin-bottom:6px;"></div>
+    <div id="val-opcoes" style="margin-bottom:12px;"></div>
+    <div class="card" style="background:var(--bg-dark);">
+      <h3>Período final (pode combinar as opções)</h3>
+      <div class="grid">
+        <div class="fld"><label>Modalidade</label>
+          <select id="val-mod" onchange="valMod()">
+            <option value="25_DIRETO">25 dias direto</option>
+            <option value="15_10_FRACIONADO">15 + 10 dias (fracionado)</option>
+          </select></div>
+      </div>
+      <div id="val-25" class="grid" style="margin-top:8px;">
+        <div class="fld" style="grid-column:1/-1;"><label>25 dias</label><select id="val-25sel"></select></div>
+      </div>
+      <div id="val-1510" class="grid" style="margin-top:8px;display:none;">
+        <div class="fld"><label>15 dias</label><select id="val-15sel"></select></div>
+        <div class="fld"><label>10 dias</label><select id="val-10sel"></select></div>
+      </div>
+    </div>
+    <div class="grid" style="margin-top:10px;">
+      <div class="fld"><label>Situação</label>
+        <select id="val-sit" onchange="valMotivo()">
+          <option value="VALIDADO">Validado (Aux P1)</option>
+          <option value="APROVADO_PEL">Aprovado pelo Pelotão</option>
+          <option value="PENDENTE">Pendente</option>
+          <option value="REJEITADO">Rejeitado</option>
+        </select></div>
+      <div class="fld" id="val-motivo-fld" style="display:none;"><label>Motivo da rejeição</label><input id="val-motivo"></div>
+    </div>
+    <div class="row-actions" style="justify-content:flex-end;margin-top:16px;">
+      <button class="btn-outline" onclick="fechar('modal-validar')">Cancelar</button>
+      <button class="btn-gold" onclick="salvarValidacao()">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const sessao = (function(){
   const raw = sessionStorage.getItem('poe_sessao_v2');
@@ -551,7 +591,8 @@ function renderPedidos(){
       <td>${parcelasTxt(p)}</td>
       <td>${esc(p.destino||'—')}</td>
       <td>${tagSit(p.situacao)}</td>
-      <td style="white-space:nowrap;"><button class="minibtn" onclick="editarPedido('${p.id}')">editar</button>
+      <td style="white-space:nowrap;"><button class="minibtn" onclick="abrirValidar('${p.id}')">validar</button>
+        <button class="minibtn" onclick="editarPedido('${p.id}')">editar</button>
         <button class="minibtn del" onclick="excluirPedido('${p.id}')">excluir</button></td>
     </tr>`;
   }).join('');
@@ -624,6 +665,56 @@ async function excluirPedido(id){
   if(!confirm('Excluir este lançamento de férias?')) return;
   try{ await rpc('ferias_pedido_excluir',{p_token:sessao.token,p_id:id}); flash('Excluído.',true); carregarPedidos(); }
   catch(e){ flash(e.message||'Erro.',false); }
+}
+
+// ── validar / definir período final (compõe a partir das opções) ──
+function fechar(id){ const e=document.getElementById(id); if(e) e.classList.remove('open'); }
+let valPed=null, val25=[], val15=[], val10=[];
+function valMod(){ const frac=document.getElementById('val-mod').value==='15_10_FRACIONADO';
+  document.getElementById('val-25').style.display=frac?'none':'grid';
+  document.getElementById('val-1510').style.display=frac?'grid':'none'; }
+function valMotivo(){ document.getElementById('val-motivo-fld').style.display=document.getElementById('val-sit').value==='REJEITADO'?'flex':'none'; }
+function valOptHtml(list){ return '<option value="">— selecione —</option>'+list.map((x,i)=>`<option value="${i}">Opção ${x.opcao}: ${fmtBR(x.ini)}–${fmtBR(x.fim)}</option>`).join(''); }
+function abrirValidar(id){
+  const p=pedidos.find(x=>x.id===id); if(!p) return; valPed=p;
+  const m=p.militar||{};
+  document.getElementById('val-quem').innerHTML=`<b style="color:var(--text-white);">${esc(m.pg||'')} ${esc(m.guerra||m.nome||'')}</b> · ${esc(m.matricula||'')}${p.pelotao?' · Pelotão '+esc(p.pelotao):''}`;
+  const ops=(p.opcoes&&p.opcoes.length)?p.opcoes:(p.parcelas&&p.parcelas.length?[{ordem:1,parcelas:p.parcelas}]:[]);
+  document.getElementById('val-opcoes').innerHTML='<div class="miut" style="text-transform:uppercase;font-size:10px;letter-spacing:.4px;margin-bottom:4px;">Opções escolhidas pelo militar</div>'+
+    (ops.length?ops.map(o=>`<div style="font-size:12.5px;color:var(--text-white);padding:1px 0;"><b>${o.ordem}ª:</b> ${(o.parcelas||[]).map(x=>x.parcela+' dias '+fmtBR(x.ini)+'–'+fmtBR(x.fim)).join(' + ')}</div>`).join(''):'<div class="miut">— (lançamento direto)</div>');
+  val25=[]; val15=[]; val10=[];
+  ops.forEach(o=>(o.parcelas||[]).forEach(x=>{ const it=Object.assign({},x,{opcao:o.ordem}); if(x.parcela==='25')val25.push(it); else if(x.parcela==='15')val15.push(it); else if(x.parcela==='10')val10.push(it); }));
+  document.getElementById('val-25sel').innerHTML=valOptHtml(val25);
+  document.getElementById('val-15sel').innerHTML=valOptHtml(val15);
+  document.getElementById('val-10sel').innerHTML=valOptHtml(val10);
+  const cur=p.parcelas||[]; const c25=cur.find(x=>x.parcela==='25'),c15=cur.find(x=>x.parcela==='15'),c10=cur.find(x=>x.parcela==='10');
+  const fi=(list,x)=> x?list.findIndex(w=>String(w.ini).slice(0,10)===String(x.ini).slice(0,10)&&String(w.fim).slice(0,10)===String(x.fim).slice(0,10)):-1;
+  document.getElementById('val-mod').value = c25?'25_DIRETO':((c15||c10)?'15_10_FRACIONADO':(val25.length?'25_DIRETO':'15_10_FRACIONADO'));
+  if(c25){const i=fi(val25,c25); if(i>=0)document.getElementById('val-25sel').value=i;}
+  if(c15){const i=fi(val15,c15); if(i>=0)document.getElementById('val-15sel').value=i;}
+  if(c10){const i=fi(val10,c10); if(i>=0)document.getElementById('val-10sel').value=i;}
+  document.getElementById('val-sit').value=p.situacao||'VALIDADO';
+  valMod(); valMotivo();
+  document.getElementById('modal-validar').classList.add('open');
+}
+async function salvarValidacao(){
+  try{
+    const mod=document.getElementById('val-mod').value; let parcelas=[];
+    if(mod==='25_DIRETO'){ const i=document.getElementById('val-25sel').value;
+      if(i==='') return flash('Selecione o período de 25 dias.',false);
+      const x=val25[i]; parcelas=[{parcela:'25',periodo:x.periodo,ini:x.ini,fim:x.fim}];
+    } else {
+      const i15=document.getElementById('val-15sel').value, i10=document.getElementById('val-10sel').value;
+      if(i15===''||i10==='') return flash('Selecione o 15 e o 10 dias.',false);
+      const a=val15[i15], b=val10[i10];
+      parcelas=[{parcela:'15',periodo:a.periodo,ini:a.ini,fim:a.fim},{parcela:'10',periodo:b.periodo,ini:b.ini,fim:b.fim}];
+    }
+    const sit=document.getElementById('val-sit').value;
+    const dados={ ano:anoSel, modalidade:mod, parcelas, situacao:sit };
+    if(sit==='REJEITADO') dados.motivo_rejeicao=document.getElementById('val-motivo').value.trim()||null;
+    await rpc('ferias_pedido_salvar',{p_token:sessao.token,p_id:valPed.id,p_dados:dados});
+    fechar('modal-validar'); flash('Período definido / situação atualizada.',true); carregarPedidos();
+  }catch(e){ flash(e.message||'Erro ao salvar.',false); }
 }
 function exportarExcel(){
   const aoa=[['Nº PM','Posto/Grad','Nome','Pelotão','Tipo','Exercício','Opções escolhidas','Destino','Situação']];
