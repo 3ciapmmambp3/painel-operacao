@@ -223,8 +223,15 @@
             <button class="btn-gold" onclick="novoPedido()">+ Novo lançamento</button>
           </div>
           <div class="row-actions">
-            <button class="btn-outline" onclick="exportarExcel()">⬇ Exportar Excel</button>
+            <button class="btn-outline" onclick="exportarExcel()">⬇ Exportar Excel (com filtros)</button>
           </div>
+        </div>
+        <div class="grid" style="margin-bottom:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
+          <div class="fld"><label>Pelotão</label><select id="fl-pel" onchange="renderPedidos()"><option value="">Todos</option></select></div>
+          <div class="fld"><label>Grupamento</label><select id="fl-gp" onchange="renderPedidos()"><option value="">Todos</option></select></div>
+          <div class="fld"><label>Situação</label><select id="fl-sit" onchange="renderPedidos()"><option value="">Todas</option><option value="PENDENTE">Pendente</option><option value="APROVADO_PEL">Aprov. Pelotão</option><option value="VALIDADO">Validado</option><option value="REJEITADO">Rejeitado</option></select></div>
+          <div class="fld"><label>Início (a partir de)</label><input type="date" id="fl-ini" onchange="renderPedidos()"></div>
+          <div class="fld"><label>Fim (até)</label><input type="date" id="fl-fim" onchange="renderPedidos()"></div>
         </div>
         <div style="overflow-x:auto;">
           <table id="tbl-ped">
@@ -379,12 +386,15 @@ if (sessao){
 }
 
 // quem faz gestão (espelha _ferias_pode_p1 no banco)
+function _fx(){ return (sessao.funcao||'').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,''); }
 function podeP1(){
-  const fx=(sessao.funcao||'').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  const fx=_fx();
   return sessao.nivel_acesso==='admin_geral'
     || (/AUX/.test(fx) && /P\s*1/.test(fx))
     || (/(CMT|COMANDANTE)/.test(fx) && /\bCIA\b/.test(fx));
 }
+function podeAprovarPel(){ const fx=_fx(); return sessao.nivel_acesso==='admin_pelotao' || (/(CMT|COMANDANTE)/.test(fx) && /PEL/.test(fx)); }
+function podeAprovarGp(){ const fx=_fx(); return sessao.nivel_acesso==='admin_gp' || (/(CMT|COMANDANTE)/.test(fx) && /(GP|GRUPAMENTO)/.test(fx)); }
 
 // ── ano ──
 const ANO_ATUAL = new Date().getFullYear();
@@ -585,7 +595,7 @@ async function carregarPedidos(){
     renderPedidos();
   }catch(e){ document.getElementById('tbody-ped').innerHTML=`<tr><td colspan="8"><div class="empty">${esc(e.message)}</div></td></tr>`; }
 }
-function tagSit(s){ const m={PENDENTE:['pend','Pendente'],APROVADO_PEL:['aprov','Aprov. Pelotão'],VALIDADO:['valid','Validado'],REJEITADO:['rej','Rejeitado']}; const t=m[s]||['','—']; return `<span class="tag ${t[0]}">${t[1]}</span>`; }
+function tagSit(s){ const m={PENDENTE:['pend','Pendente — aguarda CMT Pelotão'],APROVADO_PEL:['aprov','Aprov. Pelotão — aguarda Aux P1'],VALIDADO:['valid','Validado ✓'],REJEITADO:['rej','Rejeitado']}; const t=m[s]||['','—']; return `<span class="tag ${t[0]}">${t[1]}</span>`; }
 function parcelasTxt(p){
   const ops=(p.opcoes&&p.opcoes.length)?p.opcoes
             :(p.parcelas&&p.parcelas.length?[{ordem:1,parcelas:p.parcelas}]:[]);
@@ -596,10 +606,29 @@ function parcelasTxt(p){
   return ops.map(o=>{ const s=(o.parcelas||[]).map(x=>`${x.parcela}d ${fmtBR(x.ini)}–${fmtBR(x.fim)}`).join(' + ');
     return `<b>${o.ordem}ª:</b> ${s}`; }).join('<br>');
 }
+function popularFiltros(){
+  const selP=document.getElementById('fl-pel'), selG=document.getElementById('fl-gp'); if(!selP) return;
+  if(selP.options.length<=1){ const pels=[...new Set(pedidos.map(p=>p.pelotao).filter(Boolean))].sort();
+    selP.innerHTML='<option value="">Todos</option>'+pels.map(p=>`<option value="${esc(p)}">${/^\d+$/.test(String(p))?'Pelotão '+p:esc(p)}</option>`).join(''); }
+  if(selG.options.length<=1){ const gps=[...new Set(pedidos.map(p=>p.grupamento_id).filter(Boolean))].sort();
+    selG.innerHTML='<option value="">Todos</option>'+gps.map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join(''); }
+}
+function filtrarPedidos(){
+  const g=id=>document.getElementById(id)?document.getElementById(id).value:'';
+  const fp=g('fl-pel'),fg=g('fl-gp'),fs=g('fl-sit'),fi=g('fl-ini'),ff=g('fl-fim');
+  return pedidos.filter(p=>{
+    if(fp && String(p.pelotao)!==fp) return false;
+    if(fg && String(p.grupamento_id)!==fg) return false;
+    if(fs && p.situacao!==fs) return false;
+    if(fi||ff){ const ok=(p.parcelas||[]).some(x=>{ const xi=String(x.ini||'').slice(0,10),xf=String(x.fim||'').slice(0,10); if(fi&&xf&&xf<fi) return false; if(ff&&xi&&xi>ff) return false; return !!(xi||xf); }); if(!ok) return false; }
+    return true;
+  });
+}
 function renderPedidos(){
   const tb=document.getElementById('tbody-ped');
-  if(!pedidos.length){ tb.innerHTML='<tr><td colspan="8"><div class="empty">Nenhum lançamento para '+anoSel+'.</div></td></tr>'; return; }
-  tb.innerHTML = pedidos.map(p=>{
+  popularFiltros(); const lista=filtrarPedidos();
+  if(!lista.length){ tb.innerHTML='<tr><td colspan="8"><div class="empty">Nenhum lançamento'+(pedidos.length?' com esses filtros':' para '+anoSel)+'.</div></td></tr>'; return; }
+  tb.innerHTML = lista.map(p=>{
     const m=p.militar||{};
     return `<tr>
       <td><b>${esc(m.pg||'')}</b> ${esc(m.guerra||m.nome||'')}<div class="miut">${esc(m.matricula||'')}${p.pelotao?' · '+esc(p.pelotao):''}</div></td>
@@ -711,7 +740,14 @@ function abrirValidar(id){
   if(c25){const i=fi(val25,c25); if(i>=0)document.getElementById('val-25sel').value=i;}
   if(c15){const i=fi(val15,c15); if(i>=0)document.getElementById('val-15sel').value=i;}
   if(c10){const i=fi(val10,c10); if(i>=0)document.getElementById('val-10sel').value=i;}
-  document.getElementById('val-sit').value=p.situacao||'VALIDADO';
+  const sitSel=document.getElementById('val-sit');
+  if(ehCmtEscopo){
+    sitSel.innerHTML='<option value="APROVADO_PEL">Aprovar (Aprovado pelo Pelotão)</option><option value="PENDENTE">Devolver como Pendente</option><option value="REJEITADO">Rejeitar</option>';
+    sitSel.value=(p.situacao==='REJEITADO'||p.situacao==='PENDENTE')?p.situacao:'APROVADO_PEL';
+  } else {
+    sitSel.innerHTML='<option value="VALIDADO">Validado (Aux P1)</option><option value="APROVADO_PEL">Aprovado pelo Pelotão</option><option value="PENDENTE">Pendente</option><option value="REJEITADO">Rejeitado</option>';
+    sitSel.value=p.situacao||'VALIDADO';
+  }
   valMod(); valMotivo();
   document.getElementById('modal-validar').classList.add('open');
 }
@@ -730,7 +766,7 @@ async function salvarValidacao(){
     const sit=document.getElementById('val-sit').value;
     const dados={ ano:anoSel, modalidade:mod, parcelas, situacao:sit };
     if(sit==='REJEITADO') dados.motivo_rejeicao=document.getElementById('val-motivo').value.trim()||null;
-    await rpc('ferias_pedido_salvar',{p_token:sessao.token,p_id:valPed.id,p_dados:dados});
+    await rpc('ferias_pedido_aprovar',{p_token:sessao.token,p_id:valPed.id,p_dados:dados});
     fechar('modal-validar'); flash('Período definido / situação atualizada.',true);
     pedidos=await rpc('ferias_pedidos_listar',{p_token:sessao.token,p_ano:anoSel})||[];
     const at=document.querySelector('.tab.active')?.dataset.tab;
@@ -738,14 +774,18 @@ async function salvarValidacao(){
   }catch(e){ flash(e.message||'Erro ao salvar.',false); }
 }
 function exportarExcel(){
-  const aoa=[['Nº PM','Posto/Grad','Nome','Pelotão','Tipo','Exercício','Opções escolhidas','Destino','Situação']];
-  pedidos.forEach(p=>{ const m=p.militar||{};
-    const ops=(p.opcoes&&p.opcoes.length)?p.opcoes:(p.parcelas&&p.parcelas.length?[{ordem:1,parcelas:p.parcelas}]:[]);
-    const parc=ops.map(o=>`${o.ordem}ª) `+(o.parcelas||[]).map(x=>`${x.parcela}d ${fmtBR(x.ini)}-${fmtBR(x.fim)}`).join(' + ')).join('  |  ');
-    aoa.push([m.matricula||'',m.pg||'',m.nome||'',p.pelotao||'',p.tipo,p.exercicio||'',parc,p.destino||'',p.situacao]);
+  const lista=filtrarPedidos();
+  if(!lista.length){ flash('Nenhum lançamento com esses filtros para exportar.',false); return; }
+  const situ={PENDENTE:'Pendente (aguarda CMT Pel)',APROVADO_PEL:'Aprovado Pelotão (aguarda Aux P1)',VALIDADO:'Validado',REJEITADO:'Rejeitado'};
+  const aoa=[['Nº PM','Posto/Grad','Nome','Pelotão','Grupamento','Tipo','Exercício','Período definido','Opções escolhidas','Situação']];
+  lista.forEach(p=>{ const m=p.militar||{};
+    const fin=(p.parcelas||[]).map(x=>`${x.parcela}d ${fmtBR(x.ini)}-${fmtBR(x.fim)}`).join(' + ');
+    const ops=(p.opcoes&&p.opcoes.length)?p.opcoes:[];
+    const opsT=ops.map(o=>`${o.ordem}ª) `+(o.parcelas||[]).map(x=>`${x.parcela}d ${fmtBR(x.ini)}-${fmtBR(x.fim)}`).join(' + ')).join('  |  ');
+    aoa.push([m.matricula||'',m.pg||'',m.nome||'',p.pelotao||'',p.grupamento_id||'',p.tipo,p.exercicio||'',fin,opsT,situ[p.situacao]||p.situacao]);
   });
-  const ws=XLSX.utils.aoa_to_sheet(aoa); const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Férias '+anoSel);
+  const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=aoa[0].map((h,i)=>({wch:i>=7?36:Math.max(12,h.length+2)}));
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Férias '+anoSel);
   XLSX.writeFile(wb, 'Ferias_'+anoSel+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 
@@ -892,10 +932,15 @@ function abrirTab(t){
 let apTotals={};
 function apRot(p){ return /^\d+$/.test(String(p))?('Pelotão '+p):p; }
 async function aprovarBoot(){
-  await carregarPels();
   const sel=document.getElementById('ap-pel');
-  if(!sel.options.length && PELS.length){ sel.innerHTML=PELS.map(p=>`<option value="${esc(p)}">${esc(apRot(p))}</option>`).join(''); }
-  try{ const r=await rpc('ferias_percentuais',{p_token:sessao.token,p_ano:anoSel,p_data:null}); apTotals={}; (r.pelotoes||[]).forEach(x=>apTotals[x.pelotao]=x.total); }catch(e){}
+  if(ehCmtEscopo){
+    try{ const info=await rpc('ferias_meu_pelotao_info',{p_token:sessao.token}); apTotals[info.pelotao]=info.total;
+      sel.innerHTML=`<option value="${esc(info.pelotao||'')}">${esc(apRot(info.pelotao||'—'))}</option>`; sel.disabled=true; }catch(e){}
+  } else {
+    await carregarPels();
+    if(!sel.options.length && PELS.length){ sel.innerHTML=PELS.map(p=>`<option value="${esc(p)}">${esc(apRot(p))}</option>`).join(''); }
+    try{ const r=await rpc('ferias_percentuais',{p_token:sessao.token,p_ano:anoSel,p_data:null}); apTotals={}; (r.pelotoes||[]).forEach(x=>apTotals[x.pelotao]=x.total); }catch(e){}
+  }
   try{ pedidos=await rpc('ferias_pedidos_listar',{p_token:sessao.token,p_ano:anoSel})||[]; }catch(e){ pedidos=[]; }
   aprovarRender();
 }
@@ -931,8 +976,21 @@ function aprovarRender(){
       <td><button class="minibtn" onclick="abrirValidar('${p.id}')">definir</button></td></tr>`;
   }).join('');
 }
+let ehCmtEscopo=false;   // CMT Pelotão/Grupamento (não Aux P1)
 async function boot(){
   if(!podeP1()){
+    ehCmtEscopo = podeAprovarPel() || podeAprovarGp();
+    if(ehCmtEscopo){
+      // CMT do Pelotão/Grupamento: aba "Aprovar" (escopo dele) + sua própria escolha
+      document.getElementById('area-p1').style.display='block';
+      document.getElementById('area-militar').style.display='block';
+      ['crono','pct','lanc'].forEach(t=>{ const b=document.querySelector(`.tab[data-tab="${t}"]`); if(b) b.style.display='none'; });
+      document.getElementById('hero-sub').textContent='Aprovar férias do seu pelotão';
+      try{ cronograma=await rpc('ferias_cronograma_get',{p_token:sessao.token,p_ano:anoSel}); }catch(e){ cronograma=null; }
+      abrirTab('aprovar');
+      milBoot();
+      return;
+    }
     document.getElementById('area-p1').style.display='none';
     document.getElementById('area-militar').style.display='block';
     document.getElementById('hero-sub').textContent='Suas férias';
