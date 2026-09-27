@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<script>
+(function(){ var s; try{s=localStorage.getItem('poe_theme');}catch(e){}
+  if(!s) s=window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark';
+  document.documentElement.setAttribute('data-theme', s); })();
+</script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Efetivo — 3ª Cia PM MAmb</title>
+  <link rel="stylesheet" href="styles/global.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="auth.js"></script>
+  <script src="frota-grupamentos.js"></script>
+  <style>
+    body{display:flex;flex-direction:column;min-height:100vh;}
+    :root{ --acc:#6f97b8; --acc-bg:rgba(111,151,184,.12); }
+    .wrap{width:100%;max-width:1240px;margin:0 auto;padding:20px 22px 48px;flex:1;}
+    .hero{display:flex;align-items:center;gap:14px;background:linear-gradient(180deg,var(--acc-bg),transparent);
+      border:1px solid var(--acc);border-radius:12px;padding:16px 20px;margin-bottom:16px;}
+    .hero .ic{width:48px;height:48px;border-radius:12px;flex-shrink:0;display:grid;place-items:center;background:var(--bg-dark);border:1px solid var(--acc);font-size:22px;}
+    .hero h1{font-size:19px;color:var(--text-white);letter-spacing:.4px;}
+    .hero .sub{font-size:12px;color:var(--text-muted);margin-top:2px;}
+    .hero .kpi{margin-left:auto;text-align:right;font-size:12px;color:var(--text-hint);}
+    .hero .kpi b{display:block;font-size:22px;color:var(--text-white);}
+    .ef-tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:14px;flex-wrap:wrap;}
+    .ef-tab{padding:9px 16px;font-size:13px;font-weight:600;color:var(--text-muted);cursor:pointer;background:none;
+      border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;font-family:inherit;}
+    .ef-tab:hover{color:var(--text-white);}
+    .ef-tab.active{color:var(--text-white);background:var(--bg-card);border-color:var(--border);border-bottom:1px solid var(--bg-card);margin-bottom:-1px;}
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px;}
+    .toolbar input[type=search]{flex:1;min-width:180px;background:var(--bg-dark);border:1px solid var(--border);border-radius:6px;color:var(--text-white);padding:8px 10px;font-size:13px;}
+    .toolbar select{background:var(--bg-dark);border:1px solid var(--border);border-radius:6px;color:var(--text-white);padding:8px 10px;font-size:13px;}
+    .card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:6px 6px;}
+    table{width:100%;border-collapse:collapse;font-size:12.5px;}
+    th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--border);vertical-align:middle;}
+    th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-hint);position:sticky;top:0;background:var(--bg-card);}
+    tr:hover td{background:var(--bg-hover);}
+    tr.inativo td{opacity:.6;}
+    .tag{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;}
+    .tag.ativo{color:var(--success);background:var(--success-bg);}
+    .tag.transf{color:#ffb300;background:rgba(255,179,0,.12);}
+    .tag.vet{color:var(--info);background:var(--info-bg);}
+    .miut{font-size:11px;color:var(--text-hint);}
+    .empty{text-align:center;color:var(--text-hint);padding:34px 10px;font-size:13px;}
+    .msg{font-size:12px;padding:9px 12px;border-radius:6px;margin-bottom:12px;display:none;}
+    .msg.ok{display:block;background:var(--success-bg);color:var(--success);}
+    .msg.err{display:block;background:var(--danger-bg);color:var(--danger);}
+    .minibtn{background:none;border:1px solid var(--border-mid,var(--border));color:var(--text-muted);padding:6px 11px;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;}
+    .minibtn:hover{border-color:var(--gold);color:var(--gold);}
+    .minibtn.del{color:var(--danger);border-color:rgba(239,83,80,.4);}
+    .minibtn.del:hover{border-color:var(--danger);color:var(--danger);}
+    .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-start;justify-content:center;z-index:1000;padding:100px 14px 30px;overflow-y:auto;}
+    .modal-bg.open{display:flex;}
+    .modal{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;max-width:680px;width:100%;padding:22px;max-height:calc(100vh - 130px);overflow-y:auto;}
+    .modal h2{font-size:16px;color:var(--text-white);margin-bottom:16px;}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:11px;}
+    .fld{display:flex;flex-direction:column;gap:4px;}
+    .fld label{font-size:11px;color:var(--text-hint);text-transform:uppercase;letter-spacing:.4px;}
+    .fld input,.fld select,.fld textarea{background:var(--bg-dark);border:1px solid var(--border);border-radius:6px;color:var(--text-white);padding:8px 10px;font-size:13px;font-family:inherit;}
+    .fld input:focus,.fld select:focus,.fld textarea:focus{outline:none;border-color:var(--acc);}
+    .sec{font-size:11px;color:var(--acc);text-transform:uppercase;letter-spacing:.6px;margin:16px 0 8px;font-weight:700;}
+    .row-actions{display:flex;gap:8px;flex-wrap:wrap;}
+    @media(max-width:680px){ .hero .kpi{display:none;} table{font-size:11.5px;} }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <div class="header-shields"><img src="assets/escudo-cpe.png" alt="CPE" onerror="this.style.display='none'"><img src="assets/escudo-pmmg.png" alt="PMMG" onerror="this.style.display='none'"><img src="assets/brasao-bpmmamb.png" alt="BPM MAMB" onerror="this.style.display='none'"></div><div class="header-div"></div>
+    <div class="header-title"><div class="header-kicker">CPE · BPM MAmb · 3ª Cia PM MAmb</div>
+      <h1>PAINEL DE GESTÃO OPERACIONAL</h1>
+      <p>3ª Cia PM MAmb — Acompanhamento 2026</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <div id="user-info" style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);cursor:pointer;padding:5px 10px;border:1px solid var(--border);border-radius:5px;" onclick="window.location.href='perfil.html'" title="Meu Perfil">
+      <span id="user-avatar" style="width:22px;height:22px;border-radius:50%;background:var(--gold);color:#1a1000;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">?</span>
+      <span id="user-nome">—</span>
+      <span id="user-badge" style="font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;"></span>
+    </div>
+    <button class="btn-outline" onclick="localStorage.removeItem('poe_sessao_v2');sessionStorage.removeItem('poe_sessao_v2');localStorage.removeItem('poe_sessao');window.location.href='index.html'">Sair</button>
+  </div>
+</header>
+
+<script src="topnav.js" data-ativo="p1"></script>
+
+<div class="wrap">
+  <div class="hero">
+    <div class="ic">👥</div>
+    <div>
+      <h1>Efetivo</h1>
+      <div class="sub">Quadro de pessoal — lotação, antiguidade e baixa/transferência (controle do Aux P1)</div>
+    </div>
+    <div class="kpi"><b id="k-total">—</b><span>no efetivo ativo</span></div>
+  </div>
+
+  <div id="msg" class="msg"></div>
+
+  <div id="area-restrita" style="display:none;">
+    <div class="card"><div class="empty">
+      <div style="font-size:34px;margin-bottom:10px;">🔒</div>
+      <div style="font-size:15px;color:var(--text-white);font-weight:600;margin-bottom:6px;">Acesso restrito</div>
+      <div>O card Efetivo é o controle do Aux P1. Disponível apenas para Aux P1, Admin Geral e Comandante da Cia.</div>
+    </div></div>
+  </div>
+
+  <div id="area-p1" style="display:none;">
+    <div class="ef-tabs">
+      <button class="ef-tab active" id="tab-ativos" onclick="mostrarAba('ativos')">Efetivo ativo</button>
+      <button class="ef-tab" id="tab-inativos" onclick="mostrarAba('inativos')">Inativos <span id="tab-inat-n" class="miut"></span></button>
+    </div>
+    <div class="toolbar">
+      <input type="search" id="busca" placeholder="Buscar por nome, Nº PM, função ou unidade…" oninput="render()">
+      <select id="f-motivo" style="display:none;" onchange="render()">
+        <option value="">Todos os inativos</option>
+        <option value="TRANSFERIDO">Transferidos (de unidade)</option>
+        <option value="RESERVA">Reserva</option>
+        <option value="OUTRO">Outros motivos</option>
+      </select>
+      <button class="minibtn ef-only-ativos" onclick="baixarModelo()">📄 Baixar modelo (Excel)</button>
+      <label class="minibtn ef-only-ativos" style="cursor:pointer;">⬆ Importar planilha
+        <input type="file" id="imp" accept=".xlsx,.xls,.csv" style="display:none;" onchange="importar(this)">
+      </label>
+      <button class="minibtn" onclick="exportar()">⬇ Exportar Excel</button>
+      <button class="minibtn ef-only-ativos" id="btn-ordenar" onclick="toggleOrdenar()">↕ Ordenar antiguidade</button>
+      <button class="minibtn ef-only-ativos" id="btn-unidade" onclick="toggleUnidade()">🏛️ Ordenar por Unidade</button>
+    </div>
+    <div id="inat-aviso" class="miut" style="display:none;margin:-4px 0 12px;">Militares fora do efetivo ativo — <b>não</b> contam nos indicadores e <b>não</b> acessam o painel. Use <b>reativar</b> para trazer de volta (inclusive reconvocação da reserva).</div>
+    <div id="ordenar-bar" style="display:none;margin-bottom:10px;padding:9px 13px;background:var(--acc-bg);border:1px solid var(--acc);border-radius:8px;font-size:12px;color:var(--text-white);">
+      <span id="ordenar-bar-txt">Arraste as linhas para ajustar a antiguidade (desempate quando a promoção é na mesma data).</span>
+      <button class="minibtn" onclick="salvarOrdem()" style="margin-left:8px;">Salvar ordem</button>
+      <button class="minibtn" onclick="toggleOrdenar()">Cancelar</button>
+    </div>
+
+    <div class="card" style="overflow-x:auto;max-height:70vh;overflow-y:auto;">
+      <table>
+        <thead><tr>
+          <th>#</th><th>Nº PM</th><th>Posto/Grad</th><th>Nome (guerra)</th><th>Função</th>
+          <th>Unidade</th><th>Últ. promoção</th><th>Situação</th><th></th>
+        </tr></thead>
+        <tbody id="tbody"><tr><td colspan="9"><div class="empty">Carregando…</div></td></tr></tbody>
+      </table>
+    </div>
+    <div class="miut" style="margin-top:8px;">Ordem = antiguidade (ordem manual → posto → última promoção). O importador casa pela matrícula: existente <b>atualiza</b>, novo é <b>criado</b> (senha padrão <b>Mudar@123</b>, 1º acesso). Não traz dados pessoais sensíveis (RG/CPF/endereços).</div>
+  </div>
+</div>
+
+<!-- MODAL EDITAR -->
+<div class="modal-bg" id="modal-edit">
+  <div class="modal">
+    <h2 id="edit-titulo">Editar militar</h2>
+    <div class="sec">Identificação</div>
+    <div class="grid">
+      <div class="fld"><label>Nº PM</label><input id="e-matricula" disabled></div>
+      <div class="fld"><label>Posto/Graduação</label><input id="e-pg"></div>
+      <div class="fld"><label>Nome completo</label><input id="e-nome"></div>
+      <div class="fld"><label>Nome de guerra</label><input id="e-guerra"></div>
+      <div class="fld"><label>Função</label><input id="e-funcao"></div>
+    </div>
+    <div class="sec">Lotação (SIGEF/CPE)</div>
+    <div class="grid">
+      <div class="fld"><label>COD_UNIDADE</label><input id="e-cod_unidade" placeholder="ex.: 6611"></div>
+      <div class="fld"><label>NOME_UNIDADE</label><input id="e-nome_unidade"></div>
+      <div class="fld"><label>COD_RPM</label><input id="e-cod_rpm"></div>
+      <div class="fld"><label>NOME_RPM</label><input id="e-nome_rpm"></div>
+      <div class="fld"><label>COD_UNIDADE_PRINCIPAL</label><input id="e-cod_up"></div>
+      <div class="fld"><label>NOME_UNIDADE_PRINCIPAL</label><input id="e-nome_up"></div>
+      <div class="fld"><label>COD_SIAD</label><input id="e-cod_siad"></div>
+      <div class="fld"><label>TIPO_ATIVIDADE</label><input id="e-tipo_atv"></div>
+      <div class="fld"><label>COD_MUNICIPIO</label><input id="e-cod_mun"></div>
+    </div>
+    <div class="sec">Antiguidade</div>
+    <div class="grid">
+      <div class="fld"><label>Última promoção</label><input type="date" id="e-promo"></div>
+      <div class="fld"><label>Classificação do curso</label><input id="e-classif"></div>
+      <div class="fld"><label>Ordem (antiguidade)</label><input type="number" id="e-ordem"></div>
+    </div>
+    <div class="sec">Documentos</div>
+    <div class="grid">
+      <div class="fld"><label>RG</label><input id="e-rg"></div>
+      <div class="fld"><label>CPF</label><input id="e-cpf"></div>
+      <div class="fld"><label>Título de eleitor</label><input id="e-titulo"></div>
+      <div class="fld"><label>Nº CNH</label><input id="e-cnh"></div>
+      <div class="fld"><label>CNH categoria</label><input id="e-cnhcat"></div>
+      <div class="fld"><label>CNH validade</label><input type="date" id="e-cnhval"></div>
+      <div class="fld"><label>Data de nascimento</label><input type="date" id="e-nasc"></div>
+      <div class="fld"><label>Sexo</label><input id="e-sexo"></div>
+    </div>
+    <div class="sec">Contato</div>
+    <div class="grid">
+      <div class="fld"><label>Tel. funcional</label><input id="e-telf"></div>
+      <div class="fld"><label>Tel. pessoal 1</label><input id="e-telp1"></div>
+      <div class="fld"><label>Tel. pessoal 2</label><input id="e-telp2"></div>
+      <div class="fld"><label>E-mail pessoal</label><input id="e-emailp"></div>
+      <div class="fld"><label>E-mail funcional</label><input id="e-emailf"></div>
+    </div>
+    <div class="sec">Endereços</div>
+    <div class="grid">
+      <div class="fld" style="grid-column:1/-1;"><label>Funcional</label><input id="e-endf"></div>
+      <div class="fld" style="grid-column:1/-1;"><label>Residencial 1</label><input id="e-endr1"></div>
+      <div class="fld" style="grid-column:1/-1;"><label>Residencial 2</label><input id="e-endr2"></div>
+    </div>
+    <div class="row-actions" style="justify-content:flex-end;margin-top:18px;">
+      <button class="btn-outline" onclick="fechar('modal-edit')">Cancelar</button>
+      <button class="btn-gold" onclick="salvarEdit()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL BAIXA -->
+<div class="modal-bg" id="modal-baixa">
+  <div class="modal">
+    <h2>Inativar / transferir do efetivo</h2>
+    <div class="miut" id="baixa-quem" style="margin-bottom:12px;"></div>
+    <div class="grid">
+      <div class="fld"><label>Situação</label>
+        <select id="b-sit"><option value="TRANSFERIDO">Transferido de unidade</option><option value="RESERVA">Transferido para a Reserva</option><option value="OUTRO">Outro</option></select>
+      </div>
+      <div class="fld"><label>Destino / para onde foi</label><input id="b-destino" placeholder="ex.: 8ª Cia PM MAmb"></div>
+      <div class="fld"><label>Pasta funcional entregue?</label>
+        <select id="b-pasta"><option value="">—</option><option value="true">Sim</option><option value="false">Não</option></select>
+      </div>
+      <div class="fld"><label>Data de envio</label><input type="date" id="b-data"></div>
+      <div class="fld"><label>Nº do ofício</label><input id="b-oficio" placeholder="ex.: Of. 123/2026"></div>
+    </div>
+    <div class="fld" style="margin-top:11px;"><label>Observações</label><textarea id="b-obs" rows="2"></textarea></div>
+    <div class="miut" style="margin-top:8px;">Mantém os dados, mas o militar <b>perde o acesso ao painel</b> (login) e sai do efetivo ativo da Cia (não conta nos indicadores). É <b>reativável</b> — inclusive para reconvocação da reserva. Para apagar o registro de vez, use <b>excluir</b>.</div>
+    <div class="row-actions" style="justify-content:flex-end;margin-top:16px;">
+      <button class="btn-outline" onclick="fechar('modal-baixa')">Cancelar</button>
+      <button class="btn-gold" onclick="salvarBaixa()">Confirmar inativação</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL FICHA / DETALHE -->
+<div class="modal-bg" id="modal-detalhe">
+  <div class="modal" style="max-width:780px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+      <h2 id="det-titulo" style="margin:0;">Ficha do militar</h2>
+      <button class="minibtn" onclick="fechar('modal-detalhe')">fechar</button>
+    </div>
+    <div id="detalhe-body" style="margin-top:12px;"></div>
+    <div class="row-actions" style="justify-content:flex-end;margin-top:16px;">
+      <button class="btn-outline" onclick="fechar('modal-detalhe');editar(curId)">✏️ Editar</button>
+      <button class="btn-gold" onclick="fechar('modal-detalhe')">OK</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const sessao = (function(){
+  const raw = sessionStorage.getItem('poe_sessao_v2');
+  if(!raw){ window.location.href='index.html'; return null; }
+  try{ const s=JSON.parse(raw); if(!s||!s.id){ window.location.href='index.html'; return null; } return s; }
+  catch(e){ window.location.href='index.html'; return null; }
+})();
+const H={'apikey':SB_AUTH_KEY,'Authorization':`Bearer ${SB_AUTH_KEY}`,'Content-Type':'application/json'};
+const API=SB_AUTH_URL;
+async function rpc(fn, body){
+  const r=await fetch(`${API}/rest/v1/rpc/${fn}`,{method:'POST',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(body)});
+  const txt=await r.text(); let d=null; try{d=txt?JSON.parse(txt):null;}catch(e){d=txt;}
+  if(!r.ok){ throw new Error((d&&d.message)||(d&&d.hint)||txt||('Erro '+r.status)); }
+  return d;
+}
+function flash(m,ok){ const e=document.getElementById('msg'); e.textContent=m; e.className='msg '+(ok?'ok':'err'); if(ok) setTimeout(()=>{e.className='msg';},5000); }
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function fmtBR(d){ if(!d) return '—'; const p=String(d).slice(0,10).split('-'); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d; }
+function fechar(id){ document.getElementById(id).classList.remove('open'); }
+
+// cabeçalho usuário
+if(sessao){
+  document.getElementById('user-nome').textContent=sessao.nome||sessao.matricula;
+  document.getElementById('user-avatar').textContent=(sessao.nome||'U').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+  const badge=document.getElementById('user-badge'); const nivel=sessao.nivel_acesso;
+  const mp={admin_geral:['ADMIN GERAL','rgba(155,138,92,.2)','var(--gold)','var(--gold-border)'],admin:['ADMIN','rgba(155,138,92,.2)','var(--gold)','var(--gold-border)'],admin_pelotao:['ADMIN PELOTÃO','rgba(255,152,0,.15)','#ffa726','rgba(255,152,0,.4)'],admin_gp:['ADMIN GP','rgba(255,152,0,.15)','#ffa726','rgba(255,152,0,.4)']};
+  const i=mp[nivel]||['OPERACIONAL','rgba(66,165,245,.15)','var(--info)','rgba(66,165,245,.3)'];
+  badge.textContent=i[0]; badge.style.cssText=`font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;background:${i[1]};color:${i[2]};border:1px solid ${i[3]};`;
+}
+function podeGerir(){
+  const fx=(sessao.funcao||'').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  return sessao.nivel_acesso==='admin_geral' || (/AUX/.test(fx)&&/P\s*1/.test(fx)) || (/(CMT|COMANDANTE)/.test(fx)&&/\bCIA\b/.test(fx));
+}
+
+// ── mapeamento de cabeçalhos (tolerante) p/ importação ──
+const CHAVES = ['matricula','posto_graduacao','nome_completo','nome_guerra','funcao',
+  'cod_rpm','nome_rpm','cod_unidade_principal','nome_unidade_principal','cod_unidade','nome_unidade',
+  'cod_siad','tipo_atividade','cod_municipio','ultima_promocao','classificacao_curso','antiguidade_ordem','situacao_efetivo',
+  'rg','cpf','titulo_eleitor','cnh_numero','cnh_categoria','cnh_validade','data_nascimento',
+  'telefone_funcional','telefone_pessoal1','telefone_pessoal2',
+  'endereco_funcional','endereco_residencial1','endereco_residencial2','email_pessoal','email_funcional','sexo'];
+const HEADERS_MODELO = {
+  matricula:'Nº PM', posto_graduacao:'Posto/Graduação', nome_completo:'Nome completo', nome_guerra:'Nome de guerra',
+  funcao:'Função', cod_rpm:'COD_RPM', nome_rpm:'NOME_RPM', cod_unidade_principal:'COD_UNIDADE_PRINCIPAL',
+  nome_unidade_principal:'NOME_UNIDADE_PRINCIPAL', cod_unidade:'COD_UNIDADE', nome_unidade:'NOME_UNIDADE',
+  cod_siad:'COD_SIAD', tipo_atividade:'TIPO_ATIVIDADE', cod_municipio:'COD_MUNICIPIO',
+  ultima_promocao:'Última promoção (AAAA-MM-DD)', classificacao_curso:'Classificação do curso',
+  antiguidade_ordem:'Ordem antiguidade', situacao_efetivo:'Situação',
+  rg:'RG', cpf:'CPF', titulo_eleitor:'Título de eleitor', cnh_numero:'Nº CNH', cnh_categoria:'CNH categoria',
+  cnh_validade:'CNH validade (AAAA-MM-DD)', data_nascimento:'Data de nascimento (AAAA-MM-DD)',
+  telefone_funcional:'Telefone funcional', telefone_pessoal1:'Telefone pessoal 1', telefone_pessoal2:'Telefone pessoal 2',
+  endereco_funcional:'Endereço funcional', endereco_residencial1:'Endereço residencial 1', endereco_residencial2:'Endereço residencial 2',
+  email_pessoal:'E-mail pessoal', email_funcional:'E-mail funcional', sexo:'Sexo' };
+function norm(s){ return (s==null?'':String(s)).toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z0-9]/g,''); }
+// sinônimos → chave interna (aceita o modelo E a aba Baliza/FormatoSIGEF)
+const SINON = {
+  NPM:'matricula', NPMFORMATADO:'matricula', MATRICULA:'matricula', NPURO:'matricula',
+  PG:'posto_graduacao', POSTOGRADUACAO:'posto_graduacao', POSTOGRAD:'posto_graduacao',
+  NOMECOMPLETO:'nome_completo', NOME:'nome_completo',
+  NOMEDEGUERRA:'nome_guerra', NOMEGUERRA:'nome_guerra',
+  FUNCAO:'funcao',
+  CODRPM:'cod_rpm', NOMERPM:'nome_rpm',
+  CODUNIDADEPRINCIPAL:'cod_unidade_principal', NOMEUNIDADEPRINCIPAL:'nome_unidade_principal',
+  CODUNIDADE:'cod_unidade', CODIGODELOTACAO:'cod_unidade',
+  NOMEUNIDADE:'nome_unidade', LOTACAO:'nome_unidade',
+  CODSIAD:'cod_siad', TIPOATIVIDADE:'tipo_atividade', CODMUNICIPIO:'cod_municipio',
+  ULTIMAPROMOCAO:'ultima_promocao', ULTIMAPROMOCAOAAAAMMDD:'ultima_promocao',
+  CLASSIFICACAODOCURSO:'classificacao_curso', CLASSIFICACAOCURSO:'classificacao_curso',
+  ORDEMANTIGUIDADE:'antiguidade_ordem', ORDEM:'antiguidade_ordem', LINHA:'antiguidade_ordem',
+  SITUACAO:'situacao_efetivo', SITUACAOEFETIVO:'situacao_efetivo',
+  RG:'rg', CPF:'cpf', TITULODEELEITOR:'titulo_eleitor', TITULOELEITOR:'titulo_eleitor',
+  NCNH:'cnh_numero', CNH:'cnh_numero', CATEG:'cnh_categoria', CATEGORIA:'cnh_categoria', CNHCATEGORIA:'cnh_categoria',
+  VALIDADE:'cnh_validade', CNHVALIDADE:'cnh_validade', CNHVALIDADEAAAAMMDD:'cnh_validade',
+  DATADENASCIMENTO:'data_nascimento', DATANASCIMENTO:'data_nascimento', DATADENASCIMENTOAAAAMMDD:'data_nascimento',
+  TELEFONEFUNCIONAL:'telefone_funcional', TELEFONEPESSOAL1:'telefone_pessoal1', TELEFONEPESSOAL2:'telefone_pessoal2',
+  ENDERECOFUNCIONAL:'endereco_funcional', ENDERECORESIDENCIAL1:'endereco_residencial1', ENDERECORESIDENCIAL2:'endereco_residencial2',
+  EMAILPESSOAL:'email_pessoal', EMAILFUNCIONAL:'email_funcional', SEXO:'sexo' };
+function mapHeader(h){ const n=norm(h); return SINON[n]||(CHAVES.includes(n.toLowerCase())?n.toLowerCase():null); }
+function parseData(v){
+  if(v==null||v==='') return null;
+  if(typeof v==='number'){ const d=XLSX.SSF.parse_date_code(v); if(d) return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`; }
+  const s=String(v).trim();
+  let m=s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/); if(m) return `${m[3]}-${m[2]}-${m[1]}`;
+  m=s.match(/^(\d{4})-(\d{2})-(\d{2})/); if(m) return `${m[1]}-${m[2]}-${m[3]}`;
+  return null;
+}
+
+// ── modelo Excel ──
+function baixarModelo(){
+  const hdr = CHAVES.map(k=>HEADERS_MODELO[k]);
+  const exemplo = ['146.322-3','3º Sgt PM','Fulano de Tal da Silva','Fulano','Operacional',
+    '','','','', '6611','AUX P1 / 3 Cia PM MAmb','','','', '2024-02-09','','','ATIVO'];
+  const aoa=[hdr, exemplo];
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols']=hdr.map(h=>({wch:Math.max(12,h.length+2)}));
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Efetivo');
+  XLSX.writeFile(wb, 'Modelo_Efetivo_3aCia.xlsx');
+}
+
+// ── importar ──
+async function importar(inp){
+  const file=inp.files&&inp.files[0]; inp.value='';
+  if(!file) return;
+  try{
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'array'});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:''});
+    if(!rows.length){ flash('Planilha vazia.',false); return; }
+    const heads=rows[0].map(mapHeader);
+    if(!heads.includes('matricula')){ flash('Não achei a coluna de Nº PM/matrícula. Baixe o modelo e use os mesmos cabeçalhos.',false); return; }
+    const linhas=[];
+    for(let i=1;i<rows.length;i++){
+      const r=rows[i]; if(!r || r.every(c=>c===''||c==null)) continue;
+      const o={};
+      heads.forEach((k,idx)=>{ if(!k) return; let v=r[idx];
+        if(k==='ultima_promocao'||k==='cnh_validade'||k==='data_nascimento') v=parseData(v);
+        else v=(v==null?'':String(v).trim());
+        if(v!=='' && v!=null) o[k]=v; });
+      if(o.matricula) linhas.push(o);
+    }
+    if(!linhas.length){ flash('Nenhuma linha válida (precisa de Nº PM).',false); return; }
+    if(!confirm(`Importar ${linhas.length} militar(es)? Existentes serão atualizados; novos serão criados (senha Mudar@123).`)) return;
+    const res=await rpc('efetivo_importar',{p_token:sessao.token,p_linhas:linhas});
+    let msg=`Importação: ${res.criados} criado(s), ${res.atualizados} atualizado(s).`;
+    if(res.qtd_ignorados) msg+=` ${res.qtd_ignorados} ignorado(s) (sem nome).`;
+    flash(msg,true); carregar();
+  }catch(e){ flash('Erro ao importar: '+(e.message||e),false); }
+}
+
+// ── dados / render ──
+let LISTA=[];
+async function carregar(){
+  try{
+    LISTA = await rpc('efetivo_listar',{p_token:sessao.token,p_incluir_inativos:true}) || [];
+    LISTA.forEach((m,i)=>{ m.__ord=i; });   // posição = ordem de antiguidade (servidor)
+    document.getElementById('k-total').textContent = LISTA.filter(m=>m.integrante_ativo??m.ativo).length;
+    const nInat = LISTA.filter(m=>!(m.integrante_ativo??m.ativo)).length;
+    document.getElementById('tab-inat-n').textContent = nInat?`(${nInat})`:'';
+    render();
+  }catch(e){ document.getElementById('tbody').innerHTML=`<tr><td colspan="9"><div class="empty">${esc(e.message)}</div></td></tr>`; }
+}
+function tagSit(m){
+  if(m.integrante_ativo??m.ativo) return '<span class="tag ativo">Ativo</span>';
+  const s=(m.situacao_efetivo||'').toUpperCase();
+  if(s==='TRANSFERIDO') return '<span class="tag transf">Transferido</span>';
+  if(s==='RESERVA') return '<span class="tag vet">Reserva</span>';
+  if(s==='VETERANO') return '<span class="tag vet">Veterano</span>';
+  if(!m.ativo) return '<span class="tag transf">Inativo</span>';
+  return '<span class="tag transf">'+esc(s||'—')+'</span>';
+}
+// ── ordenação por UNIDADE (Administração → Pelotões, com grupamentos) ──
+// Fonte do mapa grupamento→pelotão: grupamentos_listar (mesma dos painéis de frota).
+let modoUnidade=false, MAPA_GP=null;
+function _fx(m){ return (m.funcao||'').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,''); }
+function _canonGpr(s){ return (s||'').toString().replace(/^GP\s+/i,'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .replace(/[^A-Z ]/g,' ').replace(/\s+/g,' ').trim().replace('MARILIERIA','MARLIERIA').replace('MOLEVADE','MONLEVADE'); }
+function _grafiaCidade(s){ return String(s==null?'':s).replace(/MARILIERIA/gi,'MARLIERIA').replace(/MOLEVADE/gi,'MONLEVADE'); }
+// Cidade em caixa alta ("GOVERNADOR VALADARES") → "Governador Valadares" (conectores minúsculos).
+function _tituloCidade(s){
+  const low=new Set(['de','da','do','das','dos','e']);
+  return _grafiaCidade(s).toLowerCase().replace(/[a-zà-ú]+/g,(w,i)=> (i>0&&low.has(w))?w:w.charAt(0).toUpperCase()+w.slice(1));
+}
+async function carregarMapaGp(){
+  if(MAPA_GP) return MAPA_GP; MAPA_GP={};
+  try{ if(window.FrotaGrup){ await FrotaGrup.carregar(API, SB_AUTH_KEY);
+    FrotaGrup.lista.forEach(x=>{ const k=_canonGpr(x.gpr); if(k) MAPA_GP[k]={pel:x.pel, gp:x.gp, cidade:x.cidade}; }); }
+  }catch(e){ console.warn('carregarMapaGp', e); }
+  return MAPA_GP;
+}
+// Seção da Adm da Cia pela função/lotação → {r: ordem, lbl: rótulo}.
+// Cmt Cia=0, Aux P1..P5 = 1..5, SRAI=6, demais seções da Adm=7. null = não é Adm.
+function _secaoAdm(m){
+  const fx=_fx(m), gu=((m.grupamento_id||'')+' '+(m.nome_unidade||'')).toUpperCase();
+  if(/(CMT|COMANDANTE|CMD|CH)\b/.test(fx) && /(\bCIA\b|COMPANHIA)/.test(fx)) return {r:0, lbl:'Cmt Cia'};
+  const p=fx.match(/\bP\s*([1-5])\b/); if(p) return {r:+p[1], lbl:'Aux P'+p[1]};
+  if(/\bSRAI\b/.test(fx) || /\bSRAI\b/.test(gu)) return {r:6, lbl:'SRAI'};
+  return null;
+}
+function _infoGp(m){ return (MAPA_GP||{})[_canonGpr((m.grupamento_id||'').toString())]||null; }
+// Extrai do grupamento_id (formato "2 GP / 1 PEL / 3 CIA PM MAMB / MANTENA"):
+// nº do pelotão, nº do grupamento e a cidade (último segmento).
+function _parseGid(m){
+  const s=((m.grupamento_id||'')+' / '+(m.nome_unidade||'')).toUpperCase();
+  const pel=(s.match(/(\d+)\s*(?:º|O|ª)?\s*PEL/)||[])[1];
+  const gp =(s.match(/(\d+)\s*(?:º|O|ª)?\s*GP/) ||[])[1];
+  const parts=(m.grupamento_id||'').split('/').map(x=>x.trim()).filter(Boolean);
+  let cidade=''; const last=parts[parts.length-1]||'';
+  if(last && !/\d/.test(last) && !/\b(CIA|PM|MAMB|PEL|GP|ADM)\b/i.test(last)) cidade=last;
+  return { pel: pel?+pel:null, gp: gp?+gp:null, cidade };
+}
+function pelotaoDe(m){
+  const gid=(m.grupamento_id||'').toString().trim();
+  const pg=_parseGid(m); if(pg.pel!=null) return pg.pel;   // nº do pelotão embutido
+  if(/^ADM/i.test(gid)) return 'ADM';                      // administração da Companhia
+  const info=_infoGp(m); if(info&&info.pel!=null) return +info.pel;
+  return null;
+}
+// chave de ordenação: [grupo(0=Adm,1=Pel,2=?), pel/seção, cmtPel, gp, cmtGrupamento]
+function chaveUnidade(m){
+  const fx=_fx(m); const pel=pelotaoDe(m); const sa=_secaoAdm(m);
+  if(pel==='ADM' || (pel==null && sa)) return [0, sa?sa.r:7, 0, 0, 0];  // Administração
+  if(pel==null)  return [2, 99, 1, 99, 1];          // sem unidade → por último
+  const pg=_parseGid(m);
+  const cmtPel=(/(CMT|COMANDANTE|CMD)\b/.test(fx) && /\bPEL/.test(fx))?0:1;
+  const cmtGp =(/(CMT|COMANDANTE|CMD)\b/.test(fx) && /\bGRUP/.test(fx))?0:1;   // "Cmt Grupamento"
+  const gp = cmtPel===0 ? 0 : (pg.gp!=null?pg.gp:99);   // Cmt Pelotão vem antes dos grupamentos
+  return [1, +pel||99, cmtPel, gp, cmtGp];
+}
+function cmpUnidade(a,b){
+  const ka=chaveUnidade(a), kb=chaveUnidade(b), n=Math.max(ka.length,kb.length);
+  for(let i=0;i<n;i++){ const x=ka[i]??999, y=kb[i]??999; if(x!==y) return x-y; }
+  // desempate DENTRO da unidade = ordem de antiguidade da própria página
+  // (LISTA já vem do servidor por ordem manual → posto → última promoção).
+  return (a.__ord??999999)-(b.__ord??999999);
+}
+function grupoHeader(m){ const k=chaveUnidade(m);
+  if(k[0]===0) return 'Administração da Companhia';
+  if(k[0]===1) return (k[1]||'?')+'º Pelotão';
+  return 'Sem unidade definida';
+}
+// subcabeçalho DENTRO do pelotão: Comando do Pelotão / cada grupamento.
+function subUnidade(m){ const k=chaveUnidade(m);
+  if(k[0]!==1) return null;                       // só pelotões têm subdivisão por grupamento
+  if(k[2]===0) return {key:'cmt', lbl:'Comando do Pelotão'};
+  const pg=_parseGid(m);
+  return {key:'gp'+(pg.gp==null?'?':pg.gp), lbl:(pg.gp!=null?pg.gp+'º Grupamento':'Grupamento')+(pg.cidade?' · '+_tituloCidade(pg.cidade):'')};
+}
+// rótulo (coluna Unidade do Excel): Adm sem prefixo ("Cmt Cia", "Aux P1", "SRAI");
+// pelotão: "1º Pel — Comandante", "1º Pel — 2º Gp · CIDADE".
+function rotuloUnidade(m){ const k=chaveUnidade(m);
+  if(k[0]===0){ const sa=_secaoAdm(m); return sa?sa.lbl:'Administração'; }
+  if(k[0]===1){ const r=(k[1]||'?')+'º Pel'; if(k[2]===0) return r+' — Comandante';
+    const pg=_parseGid(m);
+    const g=(pg.gp!=null?pg.gp+'º Gp':'Gp')+(pg.cidade?' · '+_tituloCidade(pg.cidade):'');
+    return r+' — '+g+(k[4]===0?' (Cmt)':''); }
+  return 'Sem unidade';
+}
+// Função para exibir no modo Unidade: tira o prefixo "ADM " ("ADM Aux P1"→"Aux P1",
+// "ADM Aux P2/P3"→"Aux P2/P3") e mostra "SRAI" p/ quem é lotado no SRAI (função genérica).
+function funcaoExibicao(m){
+  let f=(m.funcao||'').toString().replace(/^\s*ADM\s+/i,'').trim();
+  const gu=((m.grupamento_id||'')+' '+(m.nome_unidade||'')).toUpperCase();
+  if(/\bSRAI\b/.test(gu) && /^(OPERACIONAL)?$/i.test(f)) f='SRAI';
+  return f || (m.funcao||'—');
+}
+async function toggleUnidade(){
+  if(!modoUnidade){ await carregarMapaGp(); }
+  modoUnidade=!modoUnidade;
+  document.getElementById('btn-unidade').textContent = modoUnidade?'✓ Por Unidade (voltar à antiguidade)':'🏛️ Ordenar por Unidade';
+  // se o modo arrastar estiver ligado, atualiza a instrução da barra p/ o contexto atual
+  if(modoOrdenar){ document.getElementById('ordenar-bar-txt').textContent = modoUnidade
+      ? 'Arraste para reordenar a antiguidade DENTRO de cada unidade/grupamento (só entre colegas da mesma unidade). O resto da baliza não muda.'
+      : 'Arraste as linhas para ajustar a antiguidade (desempate quando a promoção é na mesma data).'; }
+  render();
+}
+
+// ── abas: Efetivo ativo × Inativos (transferidos/reserva/outros) ──
+let modoInativos=false;
+function mostrarAba(qual){
+  modoInativos = (qual==='inativos');
+  document.getElementById('tab-ativos').classList.toggle('active', !modoInativos);
+  document.getElementById('tab-inativos').classList.toggle('active', modoInativos);
+  document.getElementById('f-motivo').style.display = modoInativos?'':'none';
+  document.getElementById('inat-aviso').style.display = modoInativos?'block':'none';
+  document.querySelectorAll('.ef-only-ativos').forEach(el=>{ el.style.display = modoInativos?'none':''; });
+  if(modoInativos && modoOrdenar) toggleOrdenar();   // ordenação de antiguidade não se aplica a inativos
+  if(modoInativos && modoUnidade) toggleUnidade();   // agrupamento por unidade é da baliza ativa
+  render();
+}
+function render(){
+  const q=norm(document.getElementById('busca').value);
+  const ehAtivo=m=>(m.integrante_ativo??m.ativo);
+  const fm=document.getElementById('f-motivo').value;
+  let arr=LISTA.filter(m=>{
+    if(modoInativos){
+      if(ehAtivo(m)) return false;
+      const s=(m.situacao_efetivo||'').toUpperCase();
+      if(fm==='TRANSFERIDO' && s!=='TRANSFERIDO') return false;
+      if(fm==='RESERVA'     && s!=='RESERVA')     return false;
+      if(fm==='OUTRO'       && (s==='TRANSFERIDO'||s==='RESERVA')) return false;
+    } else {
+      if(!ehAtivo(m)) return false;
+    }
+    if(q){ const hay=norm([m.nome_completo,m.nome_guerra,m.matricula,m.funcao,m.nome_unidade,m.cod_unidade,m.posto_graduacao].join(' ')); if(!hay.includes(q)) return false; }
+    return true;
+  });
+  const tb=document.getElementById('tbody');
+  if(!arr.length){ tb.innerHTML='<tr><td colspan="9"><div class="empty">'+(modoInativos?'Nenhum militar inativo'+(document.getElementById('f-motivo').value?' com esse motivo':'')+'.':'Nenhum militar.')+'</div></td></tr>'; return; }
+  if(modoUnidade) arr=arr.slice().sort(cmpUnidade);
+  let _hdr=null, _sub=null;
+  tb.innerHTML=arr.map((m,i)=>{
+    let head='';
+    if(modoUnidade){
+      const g=grupoHeader(m); if(g!==_hdr){ _hdr=g; _sub=null;
+        head+=`<tr><td colspan="9" style="background:var(--acc-bg);color:var(--text-white);font-weight:700;font-size:12px;letter-spacing:.3px;padding:7px 10px;border-top:2px solid var(--acc);">${esc(g)}</td></tr>`; }
+      const s=subUnidade(m); if(s && s.key!==_sub){ _sub=s.key;
+        head+=`<tr><td colspan="9" style="background:rgba(111,151,184,.06);color:var(--acc);font-weight:600;font-size:11px;padding:5px 10px 5px 26px;border-top:1px solid var(--border);">▸ ${esc(s.lbl)}</td></tr>`; }
+    }
+    return head+`<tr class="${m.ativo?'':'inativo'}" data-id="${m.id}" ${modoOrdenar?'draggable="true" style="cursor:grab;"':''}>
+    <td class="miut">${modoOrdenar?'⠿ ':''}${m.antiguidade_ordem??(i+1)}</td>
+    <td style="white-space:nowrap;">${esc(m.matricula||'')}</td>
+    <td>${esc(m.posto_graduacao||'')}</td>
+    <td>${modoOrdenar?esc(m.nome_completo||''):`<a href="#" onclick="openDetalhe('${m.id}');return false;" style="color:var(--text-white);text-decoration:none;border-bottom:1px dotted var(--acc);">${esc(m.nome_completo||'')}</a>`}${m.nome_guerra?`<div class="miut">${esc(m.nome_guerra)}</div>`:''}</td>
+    <td>${esc(modoUnidade?funcaoExibicao(m):(m.funcao||'—'))}</td>
+    <td>${esc(m.cod_unidade||'')}${m.nome_unidade?`<div class="miut">${esc(m.nome_unidade)}</div>`:''}</td>
+    <td>${fmtBR(m.ultima_promocao)}</td>
+    <td>${tagSit(m)}${!m.ativo&&m.transf_destino?`<div class="miut">→ ${esc(m.transf_destino)}</div>`:''}</td>
+    <td style="white-space:nowrap;">${modoOrdenar?'<span class="miut">arraste ↕</span>':`
+      <button class="minibtn" onclick="editar('${m.id}')">editar</button>
+      ${(m.integrante_ativo??m.ativo)?`<button class="minibtn" onclick="abrirBaixa('${m.id}')">inativar</button>`:`<button class="minibtn" onclick="reativar('${m.id}')">reativar</button>`}
+      <button class="minibtn del" onclick="excluirDefinitivo('${m.id}')">excluir</button>`}
+    </td></tr>`;
+  }).join('');
+  if(modoOrdenar) enableDrag();
+}
+let modoOrdenar=false, dragId=null;
+function toggleOrdenar(){
+  modoOrdenar=!modoOrdenar;
+  document.getElementById('ordenar-bar').style.display=modoOrdenar?'block':'none';
+  document.getElementById('btn-ordenar').textContent=modoOrdenar?'✓ Ordenando…':'↕ Ordenar antiguidade';
+  document.getElementById('ordenar-bar-txt').textContent = modoUnidade
+    ? 'Arraste para reordenar a antiguidade DENTRO de cada unidade/grupamento (só entre colegas da mesma unidade). O resto da baliza não muda.'
+    : 'Arraste as linhas para ajustar a antiguidade (desempate quando a promoção é na mesma data).';
+  render();
+}
+function enableDrag(){
+  const tb=document.getElementById('tbody');
+  const _key=id=>{ const m=LISTA.find(x=>x.id===id); return m?chaveUnidade(m).join('|'):null; };
+  tb.querySelectorAll('tr[data-id]').forEach(tr=>{
+    tr.ondragstart=e=>{ dragId=tr.dataset.id; e.dataTransfer.effectAllowed='move'; tr.style.opacity='.4'; };
+    tr.ondragend=()=>{ tr.style.opacity=''; };
+    tr.ondragover=e=>{ e.preventDefault(); e.dataTransfer.dropEffect='move'; };
+    tr.ondrop=e=>{ e.preventDefault(); const src=tb.querySelector(`tr[data-id="${dragId}"]`); if(!src||src===tr) return;
+      // no modo Unidade só reordena entre militares da MESMA unidade/grupamento
+      if(modoUnidade && _key(dragId)!==_key(tr.dataset.id)){
+        flash('Só dá para reordenar dentro da mesma unidade/grupamento.',false); return; }
+      const r=tr.getBoundingClientRect(); const depois=(e.clientY-r.top)>r.height/2;
+      tb.insertBefore(src, depois?tr.nextSibling:tr);
+      if(!modoUnidade){ // renumera a coluna # (só na visão plana por antiguidade)
+        [...tb.querySelectorAll('tr[data-id]')].forEach((row,idx)=>{ const c=row.querySelector('td.miut'); if(c) c.textContent='⠿ '+(idx+1); }); }
+    };
+  });
+}
+async function salvarOrdem(){
+  const tb=document.getElementById('tbody');
+  const domIds=[...tb.querySelectorAll('tr[data-id]')].map(tr=>tr.dataset.id);
+  if(!domIds.length) return;
+  let ids;
+  if(modoUnidade){
+    // Opção "arrastar dentro da unidade": preserva a antiguidade global; só permuta
+    // os militares DENTRO de cada subunidade, nas fatias (slots) que já ocupavam.
+    const byId=Object.fromEntries(LISTA.map(m=>[m.id,m]));
+    const vis=domIds.map(id=>byId[id]).filter(Boolean);            // objetos visíveis
+    const pos={}; domIds.forEach((id,i)=>pos[id]=i);               // nova ordem visual
+    const keyOf=m=>chaveUnidade(m).join('|');
+    const cur=vis.slice().sort((a,b)=>(a.__ord??9e9)-(b.__ord??9e9)); // ordem de antiguidade atual
+    const byKey={}; cur.forEach(m=>{ (byKey[keyOf(m)]=byKey[keyOf(m)]||[]).push(m); });
+    Object.values(byKey).forEach(a=>a.sort((x,y)=>(pos[x.id]??0)-(pos[y.id]??0)));
+    const it={}; ids=cur.map(m=>{ const k=keyOf(m); it[k]=it[k]||0; return byKey[k][it[k]++].id; });
+  } else {
+    ids=domIds;
+  }
+  try{
+    await rpc('efetivo_reordenar',{p_token:sessao.token,p_ids:ids});
+    modoOrdenar=false; document.getElementById('ordenar-bar').style.display='none';
+    document.getElementById('btn-ordenar').textContent='↕ Ordenar antiguidade';
+    flash('Ordem de antiguidade salva.',true); carregar();   // modoUnidade permanece, re-renderiza agrupado
+  }catch(e){ flash(e.message||'Erro ao salvar ordem.',false); }
+}
+
+// ── ficha / detalhe ──
+function idade(nasc){ if(!nasc) return ''; const d=new Date(String(nasc).slice(0,10)); if(isNaN(d)) return ''; const t=new Date(); let a=t.getFullYear()-d.getFullYear(); const mo=t.getMonth()-d.getMonth(); if(mo<0||(mo===0&&t.getDate()<d.getDate()))a--; return a+' anos'; }
+function cnhSituacao(val){ if(!val) return ''; const hoje=new Date().toISOString().slice(0,10); return String(val).slice(0,10)>=hoje ? '<span class="tag ativo">Válida</span>' : '<span class="tag transf">Vencida</span>'; }
+function detLinha(label,val){ if(val==null||val==='') return ''; return `<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);"><div style="min-width:160px;color:var(--text-hint);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;">${esc(label)}</div><div style="font-size:13px;color:var(--text-white);flex:1;">${val}</div></div>`; }
+function openDetalhe(id){
+  const m=LISTA.find(x=>x.id===id); if(!m) return; curId=id;
+  document.getElementById('det-titulo').textContent=`${m.posto_graduacao||''} ${m.nome_guerra||m.nome_completo||''}`;
+  const j=v=>esc(v); let h='';
+  h+='<div class="sec">Identificação</div>';
+  h+=detLinha('Nº PM',j(m.matricula))+detLinha('Posto/Graduação',j(m.posto_graduacao))
+    +detLinha('Nome completo',j(m.nome_completo))+detLinha('Nome de guerra',j(m.nome_guerra))
+    +detLinha('Função',j(m.funcao))+detLinha('Sexo',j(m.sexo))+detLinha('Situação',tagSit(m))
+    +detLinha('Nascimento', m.data_nascimento?`${fmtBR(m.data_nascimento)} <span class="miut">(${idade(m.data_nascimento)})</span>`:'');
+  h+='<div class="sec">Lotação</div>';
+  h+=detLinha('Unidade',[m.cod_unidade,m.nome_unidade].filter(Boolean).map(j).join(' — '))
+    +detLinha('Unidade principal',[m.cod_unidade_principal,m.nome_unidade_principal].filter(Boolean).map(j).join(' — '))
+    +detLinha('RPM',[m.cod_rpm,m.nome_rpm].filter(Boolean).map(j).join(' — '))
+    +detLinha('COD SIAD',j(m.cod_siad))+detLinha('Tipo de atividade',j(m.tipo_atividade))+detLinha('Grupamento',j(m.grupamento_id));
+  h+='<div class="sec">Antiguidade</div>';
+  h+=detLinha('Última promoção',fmtBR(m.ultima_promocao))+detLinha('Classificação do curso',j(m.classificacao_curso))+detLinha('Ordem',j(m.antiguidade_ordem));
+  h+='<div class="sec">Documentos</div>';
+  h+=detLinha('RG',j(m.rg))+detLinha('CPF',j(m.cpf))+detLinha('Título de eleitor',j(m.titulo_eleitor))
+    +detLinha('CNH',[m.cnh_numero,m.cnh_categoria].filter(Boolean).map(j).join(' · '))
+    +detLinha('CNH validade', m.cnh_validade?`${fmtBR(m.cnh_validade)} ${cnhSituacao(m.cnh_validade)}`:'');
+  h+='<div class="sec">Contato</div>';
+  h+=detLinha('Tel. funcional',j(m.telefone_funcional))+detLinha('Tel. pessoal 1',j(m.telefone_pessoal1))+detLinha('Tel. pessoal 2',j(m.telefone_pessoal2))
+    +detLinha('E-mail pessoal',j(m.email_pessoal))+detLinha('E-mail funcional',j(m.email_funcional));
+  h+='<div class="sec">Endereços</div>';
+  h+=detLinha('Funcional',j(m.endereco_funcional))+detLinha('Residencial 1',j(m.endereco_residencial1))+detLinha('Residencial 2',j(m.endereco_residencial2));
+  if(!m.ativo){ h+='<div class="sec">Baixa / transferência</div>';
+    h+=detLinha('Situação',j(m.situacao_efetivo))+detLinha('Destino',j(m.transf_destino))
+      +detLinha('Pasta funcional', m.transf_pasta_funcional==null?'':(m.transf_pasta_funcional?'Entregue':'Não entregue'))
+      +detLinha('Data de envio',fmtBR(m.transf_data_envio))+detLinha('Nº do ofício',j(m.transf_oficio_numero))+detLinha('Observações',j(m.transf_obs));
+  }
+  document.getElementById('detalhe-body').innerHTML=h||'<div class="empty">Sem dados.</div>';
+  document.getElementById('modal-detalhe').classList.add('open');
+}
+
+// ── editar ──
+let curId=null;
+function editar(id){
+  const m=LISTA.find(x=>x.id===id); if(!m) return; curId=id;
+  document.getElementById('edit-titulo').textContent=`Editar — ${m.posto_graduacao||''} ${m.nome_guerra||m.nome_completo||''}`;
+  const S=(k,v)=>document.getElementById(k).value=(v==null?'':v);
+  S('e-matricula',m.matricula); S('e-pg',m.posto_graduacao); S('e-nome',m.nome_completo); S('e-guerra',m.nome_guerra); S('e-funcao',m.funcao);
+  S('e-cod_unidade',m.cod_unidade); S('e-nome_unidade',m.nome_unidade); S('e-cod_rpm',m.cod_rpm); S('e-nome_rpm',m.nome_rpm);
+  S('e-cod_up',m.cod_unidade_principal); S('e-nome_up',m.nome_unidade_principal); S('e-cod_siad',m.cod_siad); S('e-tipo_atv',m.tipo_atividade); S('e-cod_mun',m.cod_municipio);
+  S('e-promo',(m.ultima_promocao||'').slice(0,10)); S('e-classif',m.classificacao_curso); S('e-ordem',m.antiguidade_ordem);
+  S('e-rg',m.rg); S('e-cpf',m.cpf); S('e-titulo',m.titulo_eleitor); S('e-cnh',m.cnh_numero); S('e-cnhcat',m.cnh_categoria);
+  S('e-cnhval',(m.cnh_validade||'').slice(0,10)); S('e-nasc',(m.data_nascimento||'').slice(0,10)); S('e-sexo',m.sexo);
+  S('e-telf',m.telefone_funcional); S('e-telp1',m.telefone_pessoal1); S('e-telp2',m.telefone_pessoal2);
+  S('e-emailp',m.email_pessoal); S('e-emailf',m.email_funcional);
+  S('e-endf',m.endereco_funcional); S('e-endr1',m.endereco_residencial1); S('e-endr2',m.endereco_residencial2);
+  document.getElementById('modal-edit').classList.add('open');
+}
+async function salvarEdit(){
+  try{
+    const g=id=>document.getElementById(id).value.trim();
+    const dados={ posto_graduacao:g('e-pg'), nome_completo:g('e-nome'), nome_guerra:g('e-guerra'), funcao:g('e-funcao'),
+      cod_unidade:g('e-cod_unidade'), nome_unidade:g('e-nome_unidade'), cod_rpm:g('e-cod_rpm'), nome_rpm:g('e-nome_rpm'),
+      cod_unidade_principal:g('e-cod_up'), nome_unidade_principal:g('e-nome_up'), cod_siad:g('e-cod_siad'),
+      tipo_atividade:g('e-tipo_atv'), cod_municipio:g('e-cod_mun'),
+      ultima_promocao:g('e-promo')||null, classificacao_curso:g('e-classif'), antiguidade_ordem:g('e-ordem')||null,
+      rg:g('e-rg'), cpf:g('e-cpf'), titulo_eleitor:g('e-titulo'), cnh_numero:g('e-cnh'), cnh_categoria:g('e-cnhcat'),
+      cnh_validade:g('e-cnhval')||null, data_nascimento:g('e-nasc')||null, sexo:g('e-sexo'),
+      telefone_funcional:g('e-telf'), telefone_pessoal1:g('e-telp1'), telefone_pessoal2:g('e-telp2'),
+      email_pessoal:g('e-emailp'), email_funcional:g('e-emailf'),
+      endereco_funcional:g('e-endf'), endereco_residencial1:g('e-endr1'), endereco_residencial2:g('e-endr2') };
+    await rpc('efetivo_salvar',{p_token:sessao.token,p_id:curId,p_dados:dados});
+    fechar('modal-edit'); flash('Salvo.',true); carregar();
+  }catch(e){ flash(e.message||'Erro.',false); }
+}
+
+// ── baixa / reativar ──
+function abrirBaixa(id){
+  const m=LISTA.find(x=>x.id===id); if(!m) return; curId=id;
+  document.getElementById('baixa-quem').textContent=`${m.posto_graduacao||''} ${m.nome_guerra||m.nome_completo||''} · ${m.matricula||''}`;
+  document.getElementById('b-sit').value='TRANSFERIDO'; document.getElementById('b-destino').value=m.transf_destino||'';
+  document.getElementById('b-pasta').value=m.transf_pasta_funcional==null?'':String(m.transf_pasta_funcional);
+  document.getElementById('b-data').value=(m.transf_data_envio||'').slice(0,10); document.getElementById('b-oficio').value=m.transf_oficio_numero||'';
+  document.getElementById('b-obs').value=m.transf_obs||'';
+  document.getElementById('modal-baixa').classList.add('open');
+}
+async function salvarBaixa(){
+  try{
+    const g=id=>document.getElementById(id).value;
+    const dados={ situacao_efetivo:g('b-sit'), transf_destino:g('b-destino').trim()||null,
+      transf_data_envio:g('b-data')||null, transf_oficio_numero:g('b-oficio').trim()||null, transf_obs:g('b-obs').trim()||null };
+    const pasta=g('b-pasta'); if(pasta!=='') dados.transf_pasta_funcional=(pasta==='true');
+    await rpc('efetivo_baixar',{p_token:sessao.token,p_id:curId,p_dados:dados});
+    fechar('modal-baixa'); flash('Baixa registrada.',true); carregar();
+  }catch(e){ flash(e.message||'Erro.',false); }
+}
+async function reativar(id){
+  if(!confirm('Reativar este militar no efetivo ativo da Cia?')) return;
+  try{ await rpc('efetivo_reativar',{p_token:sessao.token,p_id:id}); flash('Reativado no efetivo.',true); carregar(); }
+  catch(e){ flash(e.message||'Erro.',false); }
+}
+async function excluirDefinitivo(id){
+  const m=LISTA.find(x=>x.id===id);
+  const nome=m?`${m.posto_graduacao||''} ${m.nome_guerra||m.nome_completo||''} (${m.matricula||''})`:'este militar';
+  if(!confirm(`EXCLUIR DEFINITIVAMENTE ${nome}?\n\nIsto apaga o registro e a conta de acesso de forma permanente — não pode ser desfeito.\nPara transferência ou reserva, use "inativar" (mantém os dados).`)) return;
+  try{ await rpc('efetivo_excluir',{p_token:sessao.token,p_id:id}); flash('Militar excluído definitivamente.',true); carregar(); }
+  catch(e){ flash(e.message||'Erro ao excluir.',false); }
+}
+
+// ── exportar ──
+async function exportar(){
+  const porUnid = modoUnidade;
+  if(porUnid) await carregarMapaGp();
+  const lista = porUnid ? LISTA.slice().sort(cmpUnidade) : LISTA;
+  const hdr=(porUnid?['Unidade']:[]).concat(['Ordem','Nº PM','Posto/Grad','Nome completo','Nome de guerra','Função',
+    'COD_RPM','NOME_RPM','COD_UNIDADE_PRINCIPAL','NOME_UNIDADE_PRINCIPAL','COD_UNIDADE','NOME_UNIDADE',
+    'COD_SIAD','TIPO_ATIVIDADE','COD_MUNICIPIO','Última promoção','Classificação curso','Situação','Ativo',
+    'Transf. destino','Pasta funcional','Data envio','Nº ofício']);
+  const aoa=[hdr];
+  lista.forEach(m=>aoa.push((porUnid?[rotuloUnidade(m)]:[]).concat([m.antiguidade_ordem||'',m.matricula||'',m.posto_graduacao||'',m.nome_completo||'',m.nome_guerra||'',(porUnid?funcaoExibicao(m):(m.funcao||'')),
+    m.cod_rpm||'',m.nome_rpm||'',m.cod_unidade_principal||'',m.nome_unidade_principal||'',m.cod_unidade||'',m.nome_unidade||'',
+    m.cod_siad||'',m.tipo_atividade||'',m.cod_municipio||'',fmtBR(m.ultima_promocao),m.classificacao_curso||'',
+    m.situacao_efetivo||'',m.ativo?'Sim':'Não',m.transf_destino||'',m.transf_pasta_funcional==null?'':(m.transf_pasta_funcional?'Sim':'Não'),
+    fmtBR(m.transf_data_envio),m.transf_oficio_numero||''])));
+  const ws=XLSX.utils.aoa_to_sheet(aoa); const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Efetivo'); XLSX.writeFile(wb, 'Efetivo_3aCia_'+(porUnid?'porUnidade_':'')+new Date().toISOString().slice(0,10)+'.xlsx');
+}
+
+// ── boot ──
+if(!podeGerir()){ document.getElementById('area-restrita').style.display='block'; }
+else { document.getElementById('area-p1').style.display='block'; carregar(); }
+</script>
+</body>
+</html>
