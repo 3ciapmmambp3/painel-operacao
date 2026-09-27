@@ -128,7 +128,8 @@
       <button class="tab active" data-tab="crono" onclick="abrirTab('crono')">📅 Cronograma &amp; Prazos</button>
       <button class="tab" data-tab="aprovar" onclick="abrirTab('aprovar')">✅ Aprovar Pelotão</button>
       <button class="tab" data-tab="pct" onclick="abrirTab('pct')">📊 Percentuais</button>
-      <button class="tab" data-tab="controle" onclick="abrirTab('controle')">📋 Controle</button>
+      <button class="tab" data-tab="anuais" onclick="abrirTab('anuais')">🏖️ Férias Anuais</button>
+      <button class="tab" data-tab="premio" onclick="abrirTab('premio')">🎖️ Férias-Prêmio</button>
       <button class="tab" data-tab="lanc" onclick="abrirTab('lanc')">📝 Lançamentos</button>
     </div>
 
@@ -224,17 +225,22 @@
       </div>
     </div>
 
-    <!-- ══ TAB CONTROLE (só-leitura, modelo da planilha da P1) ══ -->
+    <!-- ══ TAB CONTROLE — compartilhada por "Férias Anuais" e "Férias-Prêmio" ══ -->
     <div class="panel" id="panel-controle">
       <div class="card">
-        <div class="row-actions" style="justify-content:space-between;margin-bottom:12px;">
-          <div class="miut">Visão consolidada de todas as férias do ano, por antiguidade — no formato da planilha de controle da P1. Para lançar/editar, use a aba <b>Lançamentos</b>.</div>
-          <button class="btn-outline" onclick="exportarControle()">⬇ Exportar Excel</button>
+        <div class="row-actions" style="justify-content:space-between;margin-bottom:12px;align-items:center;">
+          <div><h3 id="ct-titulo" style="margin:0;">Férias Anuais</h3><div class="miut" id="ct-sub">Lista de controle no formato da planilha da P1 — por antiguidade.</div></div>
+          <div class="row-actions">
+            <button class="btn-gold" onclick="novoPedidoTipo()">+ Novo lançamento</button>
+            <label class="btn-outline" style="cursor:pointer;">⬆ Importar planilha
+              <input type="file" id="ct-imp" accept=".xlsx,.xls" style="display:none;" onchange="importarFerias(this)">
+            </label>
+            <button class="btn-outline" onclick="exportarControle()">⬇ Exportar Excel</button>
+          </div>
         </div>
         <div class="grid" style="margin-bottom:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
           <div class="fld"><label>Pelotão</label><select id="ct-pel" onchange="renderControle()"><option value="">Todos</option></select></div>
           <div class="fld"><label>Fração / GP</label><select id="ct-gp" onchange="renderControle()"><option value="">Todas</option></select></div>
-          <div class="fld"><label>Tipo</label><select id="ct-tipo" onchange="renderControle()"><option value="">Todos</option><option value="ANUAL">Anuais</option><option value="PREMIO">Prêmio</option></select></div>
           <div class="fld"><label>Situação</label><select id="ct-sit" onchange="renderControle()"><option value="">Todas</option><option value="PENDENTE">Pendente</option><option value="APROVADO_PEL">Aprov. Pelotão</option><option value="VALIDADO">Validado</option><option value="REJEITADO">Rejeitado</option></select></div>
           <div class="fld"><label>Busca (nome/Nº)</label><input id="ct-busca" placeholder="nome ou matrícula…" oninput="renderControle()"></div>
         </div>
@@ -242,7 +248,7 @@
           <table id="tbl-ct">
             <thead><tr>
               <th>#</th><th>Pelotão</th><th>Fração/GP</th><th>Militar</th><th>Cidade / lotação</th>
-              <th>Tipo</th><th>Exerc.</th><th>Dias</th><th>Início</th><th>Término</th><th>Situação</th>
+              <th>Exerc.</th><th>Dias</th><th>Início</th><th>Término</th><th>Situação</th><th></th>
             </tr></thead>
             <tbody id="tbody-ct"><tr><td colspan="11"><div class="empty">Carregando…</div></td></tr></tbody>
           </table>
@@ -773,12 +779,19 @@ async function salvarPedido(){
       parcelas:lerParcelas() };
     if(!editId){ dados.militar_id=document.getElementById('p-militar').value; if(!dados.militar_id){ flash('Selecione o militar.',false); return; } }
     await rpc('ferias_pedido_salvar',{p_token:sessao.token,p_id:editId,p_dados:dados});
-    fecharModal(); flash('Lançamento salvo.',true); carregarPedidos();
+    fecharModal(); flash('Lançamento salvo.',true); _recarregarAtivo();
   }catch(e){ flash(e.message||'Erro ao salvar.',false); }
+}
+function _recarregarAtivo(){
+  const t=document.querySelector('.tab.active')?.dataset.tab;
+  if(t==='anuais'||t==='premio') carregarControle();
+  else if(t==='pct') carregarPct();
+  else if(t==='aprovar') aprovarBoot();
+  else carregarPedidos();
 }
 async function excluirPedido(id){
   if(!confirm('Excluir este lançamento de férias?')) return;
-  try{ await rpc('ferias_pedido_excluir',{p_token:sessao.token,p_id:id}); flash('Excluído.',true); carregarPedidos(); }
+  try{ await rpc('ferias_pedido_excluir',{p_token:sessao.token,p_id:id}); flash('Excluído.',true); _recarregarAtivo(); }
   catch(e){ flash(e.message||'Erro.',false); }
 }
 
@@ -866,9 +879,7 @@ async function salvarValidacao(){
     if(sit==='REJEITADO') dados.motivo_rejeicao=document.getElementById('val-motivo').value.trim()||null;
     await rpc('ferias_pedido_aprovar',{p_token:sessao.token,p_id:valPed.id,p_dados:dados});
     fechar('modal-validar'); flash('Período definido / situação atualizada.',true);
-    pedidos=await rpc('ferias_pedidos_listar',{p_token:sessao.token,p_ano:anoSel})||[];
-    const at=document.querySelector('.tab.active')?.dataset.tab;
-    if(at==='aprovar') aprovarRender(); else renderPedidos();
+    _recarregarAtivo();
   }catch(e){ flash(e.message||'Erro ao salvar.',false); }
 }
 function exportarExcel(){
@@ -888,34 +899,41 @@ function exportarExcel(){
   XLSX.writeFile(wb, 'Ferias_'+anoSel+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 
-// ══════════════ ABA CONTROLE (só-leitura, modelo da planilha da P1) ══════════════
-let CTRL=[];
+// ══════════════ ABAS FÉRIAS ANUAIS / FÉRIAS-PRÊMIO (controle da P1) ══════════════
+let CTRL=[], ctModo='ANUAL';
 async function carregarControle(){
-  try{ CTRL = await rpc('ferias_controle_listar',{p_token:sessao.token,p_ano:anoSel}) || []; }
+  try{
+    CTRL = await rpc('ferias_controle_listar',{p_token:sessao.token,p_ano:anoSel}) || [];
+    pedidos = await rpc('ferias_pedidos_listar',{p_token:sessao.token,p_ano:anoSel}) || [];  // p/ editar/excluir
+  }
   catch(e){ document.getElementById('tbody-ct').innerHTML=`<tr><td colspan="11"><div class="empty">${esc(e.message)}</div></td></tr>`; return; }
+  // filtros populam só com o que existe no tipo da aba atual
+  document.getElementById('ct-pel').innerHTML='<option value="">Todos</option>';
+  document.getElementById('ct-gp').innerHTML='<option value="">Todas</option>';
   popularFiltrosCt(); renderControle();
 }
 function _pelRot(p){ return /^\d+$/.test(String(p))?('Pelotão '+p):(p||'—'); }
+function _ctDoModo(){ return CTRL.filter(r=>(r.tipo||'ANUAL')===ctModo); }
 function popularFiltrosCt(){
   const selP=document.getElementById('ct-pel'), selG=document.getElementById('ct-gp'); if(!selP) return;
-  if(selP.options.length<=1){ const pels=[...new Set(CTRL.map(r=>r.pelotao).filter(Boolean))].sort();
+  const base=_ctDoModo();
+  if(selP.options.length<=1){ const pels=[...new Set(base.map(r=>r.pelotao).filter(Boolean))].sort();
     selP.innerHTML='<option value="">Todos</option>'+pels.map(p=>`<option value="${esc(p)}">${esc(_pelRot(p))}</option>`).join(''); }
-  if(selG.options.length<=1){ const gps=[...new Set(CTRL.map(r=>r.fracao).filter(Boolean))].sort();
+  if(selG.options.length<=1){ const gps=[...new Set(base.map(r=>r.fracao).filter(Boolean))].sort();
     selG.innerHTML='<option value="">Todas</option>'+gps.map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join(''); }
 }
 // uma linha por PARCELA (como na planilha: 15+10 fracionado = 2 linhas)
 function ctLinhas(){
   const v=id=>{const e=document.getElementById(id);return e?e.value:'';};
-  const fp=v('ct-pel'),fg=v('ct-gp'),ft=v('ct-tipo'),fs=v('ct-sit'),fb=_norm(v('ct-busca').trim());
+  const fp=v('ct-pel'),fg=v('ct-gp'),fs=v('ct-sit'),fb=_norm(v('ct-busca').trim());
   const out=[];
-  CTRL.forEach(r=>{
+  _ctDoModo().forEach(r=>{
     if(fp && String(r.pelotao||'')!==fp) return;
     if(fg && String(r.fracao||'')!==fg) return;
-    if(ft && r.tipo!==ft) return;
     if(fs && r.situacao!==fs) return;
     if(fb){ const hay=_norm(`${r.matricula||''} ${r.nome||''} ${r.pg||''}`); if(!hay.includes(fb)) return; }
     const pcs=Array.isArray(r.parcelas)?r.parcelas:[];
-    if(pcs.length) pcs.forEach(x=>out.push({r,x})); else out.push({r,x:null});
+    if(pcs.length) pcs.forEach((x,i)=>out.push({r,x,primeira:i===0})); else out.push({r,x:null,primeira:true});
   });
   return out;
 }
@@ -923,7 +941,7 @@ function renderControle(){
   const tb=document.getElementById('tbody-ct'); if(!tb) return;
   popularFiltrosCt(); const linhas=ctLinhas();
   if(!linhas.length){ tb.innerHTML='<tr><td colspan="11"><div class="empty">Nenhuma férias'+(CTRL.length?' com esses filtros':' para '+anoSel)+'.</div></td></tr>'; return; }
-  tb.innerHTML=linhas.map(({r,x})=>{
+  tb.innerHTML=linhas.map(({r,x,primeira})=>{
     const dias = x?(x.parcela==='PREMIO'?'Prêmio':x.parcela):'—';
     return `<tr>
       <td class="miut">${r.ordem??'—'}</td>
@@ -931,25 +949,110 @@ function renderControle(){
       <td>${esc(r.fracao||'—')}</td>
       <td><b>${esc(r.pg||'')}</b> ${esc(r.nome||'')}<div class="miut">${esc(r.matricula||'')}</div></td>
       <td>${esc(r.cidade||'—')}</td>
-      <td><span class="tag ${r.tipo==='PREMIO'?'premio':'anual'}">${r.tipo==='PREMIO'?'Prêmio':'Anual'}</span></td>
       <td>${esc(r.exercicio||'—')}</td>
       <td>${esc(dias)}</td>
       <td style="white-space:nowrap;">${x?fmtBR(x.ini):'—'}</td>
       <td style="white-space:nowrap;">${x?fmtBR(x.fim):'—'}</td>
       <td>${tagSit(r.situacao)}</td>
+      <td style="white-space:nowrap;">${primeira?`<button class="minibtn" onclick="editarPedido('${r.id}')">editar</button>
+        <button class="minibtn" onclick="abrirValidar('${r.id}')">validar</button>
+        <button class="minibtn del" onclick="excluirPedido('${r.id}')">excluir</button>`:''}</td>
     </tr>`;
   }).join('');
 }
+function novoPedidoTipo(){ novoPedido(); document.getElementById('p-tipo').value=ctModo; onTipoChange(); }
 function exportarControle(){
   const linhas=ctLinhas();
   if(!linhas.length){ flash('Nada para exportar com esses filtros.',false); return; }
   const situ={PENDENTE:'Pendente',APROVADO_PEL:'Aprovado Pelotão',VALIDADO:'Validado',REJEITADO:'Rejeitado'};
-  const aoa=[['Ordem','Pelotão','Fração/GP','Nº PM','Posto/Grad','Nome','Cidade/Lotação','Tipo','Exercício','Dias','Início','Término','Situação']];
+  const aoa=[['Ordem','Pelotão','Fração/GP','Nº PM','Posto/Grad','Nome','Cidade/Lotação','Exercício','Dias','Início','Término','Situação']];
   linhas.forEach(({r,x})=>aoa.push([r.ordem||'',_pelRot(r.pelotao||''),r.fracao||'',r.matricula||'',r.pg||'',r.nome||'',r.cidade||'',
-    r.tipo==='PREMIO'?'Férias-prêmio':'Anuais',r.exercicio||'',x?(x.parcela==='PREMIO'?'Prêmio':x.parcela):'',x?fmtBR(x.ini):'',x?fmtBR(x.fim):'',situ[r.situacao]||r.situacao]));
+    r.exercicio||'',x?(x.parcela==='PREMIO'?'Prêmio':x.parcela):'',x?fmtBR(x.ini):'',x?fmtBR(x.fim):'',situ[r.situacao]||r.situacao]));
   const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=aoa[0].map(h=>({wch:Math.max(10,h.length+2)}));
-  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Controle '+anoSel);
-  XLSX.writeFile(wb, 'Ferias_Controle_'+anoSel+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
+  const nome=ctModo==='PREMIO'?'Ferias-Premio':'Ferias-Anuais';
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, nome.slice(0,28)+' '+anoSel);
+  XLSX.writeFile(wb, nome+'_'+anoSel+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
+
+// ── IMPORTADOR da planilha da P1 (abas FERIAS-ANUAIS e FERIAS-PREMIO) ──
+function _s(v){ return v==null?'':String(v).trim(); }
+function _matr(mil){ const m=_s(mil).match(/(\d[\d.\-]*\d)/); return m?m[1].replace(/[.\-]/g,''):''; }
+function _dataISO(v){
+  if(v==null||v==='') return null;
+  if(v instanceof Date) return v.toISOString().slice(0,10);
+  const s=_s(v);
+  let m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/); // dd/mm/aaaa
+  if(m){ let a=m[3]; if(a.length===2) a='20'+a; return `${a}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`; }
+  m=s.match(/^(\d{4})-(\d{2})-(\d{2})/); if(m) return `${m[1]}-${m[2]}-${m[3]}`;
+  // serial do Excel
+  const n=Number(s); if(!isNaN(n)&&n>20000&&n<80000){ const d=new Date(Math.round((n-25569)*86400000)); return d.toISOString().slice(0,10); }
+  return null;
+}
+// dias: 15/10/25 (anuais) ou "PREMIO"
+function _diasDe(v){ const s=_s(v).replace(/\D/g,''); if(s==='25')return'25'; if(s==='15')return'15'; if(s==='10')return'10'; return null; }
+// matrícula = célula com "." ou "-" (nunca "/") e 6-8 dígitos → separa de datas
+function _ehMat(cell){ const s=_s(cell); if(/\//.test(s)) return ''; const d=s.replace(/\D/g,''); return (/[.\-]/.test(s) && d.length>=6 && d.length<=8) ? d : ''; }
+function _linhasDaAba(ws){
+  const aoa=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:''});
+  return aoa;
+}
+function _acharHeader(aoa, chaves){
+  for(let i=0;i<Math.min(aoa.length,6);i++){
+    const row=aoa[i].map(c=>_norm(c));
+    if(chaves.every(k=>row.some(c=>c.includes(_norm(k))))) return i;
+  }
+  return -1;
+}
+function _idxCol(headerRow, ...alts){
+  const H=headerRow.map(c=>_norm(c));
+  for(const a of alts){ const i=H.findIndex(c=>c===_norm(a)||c.includes(_norm(a))); if(i>=0) return i; }
+  return -1;
+}
+async function importarFerias(input){
+  const file=input.files&&input.files[0]; input.value='';
+  if(!file) return;
+  if(!confirm('Importar as férias da planilha para o ano '+anoSel+'?\n\nISSO SUBSTITUI todos os lançamentos de FÉRIAS '+(ctModo==='PREMIO'?'PRÊMIO':'ANUAIS')+' deste ano (inclusive os de teste). Os militares são casados pela MATRÍCULA.')) return;
+  try{
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'array'});
+    // escolhe a aba conforme o modo (ignora abas "Cópia de …")
+    const semCopia = n=>!_norm(n).includes('copia');
+    const alvo = ctModo==='PREMIO'
+      ? (wb.SheetNames.find(n=>_norm(n)==='ferias-premio'&&semCopia(n)) || wb.SheetNames.find(n=>_norm(n).includes('premio')&&semCopia(n)))
+      : (wb.SheetNames.find(n=>_norm(n)==='ferias-anuais'&&semCopia(n)) || wb.SheetNames.find(n=>(_norm(n).includes('anuais')||_norm(n).includes('anual'))&&semCopia(n)));
+    if(!alvo){ flash('Não achei a aba '+(ctModo==='PREMIO'?'FERIAS-PREMIO':'FERIAS-ANUAIS')+' no arquivo.',false); return; }
+    const aoa=_linhasDaAba(wb.Sheets[alvo]);
+    let rows;
+    if(ctModo==='PREMIO'){
+      // aba de prêmio tem rótulos em células mescladas → detecta por conteúdo:
+      // 1ª célula que parece matrícula + as datas da linha (início, término)
+      rows=[];
+      aoa.forEach(r=>{
+        let mat=''; for(const c of r){ const m=_ehMat(c); if(m){ mat=m; break; } }
+        if(!mat) return;
+        const datas=r.map(_dataISO).filter(Boolean);
+        if(!datas.length) return;
+        rows.push({matricula:mat,tipo:'PREMIO',parcelas:[{parcela:'PREMIO',ini:datas[0]||null,fim:datas[1]||datas[0]||null}]});
+      });
+    } else {
+      const h=_acharHeader(aoa,['militar','dias']); if(h<0){ flash('Cabeçalho da aba anual não reconhecido (esperado MILITAR/DIAS/DATA INÍCIO/DATA TÉRMINO).',false); return; }
+      const H=aoa[h]; const cMil=_idxCol(H,'militar'), cDias=_idxCol(H,'dias'), cIni=_idxCol(H,'data inicio','data início','inicio','início'), cFim=_idxCol(H,'data termino','data término','termino','término');
+      const porMat={};
+      for(let i=h+1;i<aoa.length;i++){ const r=aoa[i]; const mat=_matr(r[cMil]); const dias=_diasDe(r[cDias]); const ini=_dataISO(r[cIni]), fim=_dataISO(r[cFim]);
+        if(!mat||!dias||!(ini||fim)) continue;
+        (porMat[mat]=porMat[mat]||{matricula:mat,tipo:'ANUAL',parcelas:[]}).parcelas.push({parcela:dias,ini,fim});
+      }
+      rows=Object.values(porMat).map(p=>{ p.modalidade=(p.parcelas.length>1||p.parcelas.some(x=>x.parcela!=='25'))?'15_10_FRACIONADO':'25_DIRETO';
+        if(p.parcelas.length===1&&p.parcelas[0].parcela==='25') p.modalidade='25_DIRETO'; return p; });
+    }
+    if(!rows.length){ flash('Nenhuma linha válida encontrada na aba.',false); return; }
+    flash('Importando '+rows.length+' lançamento(s)…',true);
+    const res=await rpc('ferias_importar_lote',{p_token:sessao.token,p_ano:anoSel,p_tipo:ctModo,p_rows:rows});
+    const r=res||{};
+    flash(`Importado: ${r.inseridos||0} lançados${r.nao_encontrados&&r.nao_encontrados.length?', '+r.nao_encontrados.length+' sem cadastro (ver console)':''}.`, true);
+    if(r.nao_encontrados&&r.nao_encontrados.length) console.warn('[import férias] matrículas sem militar cadastrado:', r.nao_encontrados);
+    carregarControle();
+  }catch(e){ flash('Erro na importação: '+(e.message||e),false); }
 }
 
 // ══════════════ ÁREA DO MILITAR (Fase 2) ══════════════
@@ -1093,11 +1196,19 @@ async function milCancelar(id){
 
 // ══════════════ TABS / BOOT ══════════════
 function abrirTab(t){
+  const painelId = (t==='anuais'||t==='premio') ? 'controle' : t;
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===t));
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
-  document.getElementById('panel-'+t).classList.add('active');
+  document.getElementById('panel-'+painelId).classList.add('active');
   if(t==='pct') carregarPct();
-  if(t==='controle') carregarControle();
+  if(t==='anuais'||t==='premio'){
+    ctModo = (t==='premio')?'PREMIO':'ANUAL';
+    document.getElementById('ct-titulo').textContent = ctModo==='PREMIO'?'Férias-Prêmio':'Férias Anuais';
+    document.getElementById('ct-sub').textContent = ctModo==='PREMIO'
+      ? 'Férias-prêmio (sem prazo) — lançadas pela P1.'
+      : 'Lista de controle no formato da planilha da P1 — por antiguidade.';
+    carregarControle();
+  }
   if(t==='lanc') carregarPedidos();
   if(t==='aprovar') aprovarBoot();
 }
@@ -1178,7 +1289,7 @@ async function boot(){
   // se estiver na aba de lançamentos/percentuais já aberta, recarrega
   const ativa=document.querySelector('.tab.active')?.dataset.tab;
   if(ativa==='lanc') carregarPedidos(); else if(ativa==='pct') carregarPct();
-  else if(ativa==='controle'){ CTRL=[]; document.getElementById('ct-pel').innerHTML='<option value="">Todos</option>'; document.getElementById('ct-gp').innerHTML='<option value="">Todas</option>'; carregarControle(); }
+  else if(ativa==='anuais'||ativa==='premio'){ CTRL=[]; carregarControle(); }
 }
 boot();
 </script>
