@@ -529,8 +529,14 @@ async function carregarPedidos(){
 }
 function tagSit(s){ const m={PENDENTE:['pend','Pendente'],APROVADO_PEL:['aprov','Aprov. Pelotão'],VALIDADO:['valid','Validado'],REJEITADO:['rej','Rejeitado']}; const t=m[s]||['','—']; return `<span class="tag ${t[0]}">${t[1]}</span>`; }
 function parcelasTxt(p){
-  const arr=p.parcelas||[]; if(!arr.length) return '—';
-  return arr.map(x=>`${x.parcela||''}: ${fmtBR(x.ini)}–${fmtBR(x.fim)}`).join('<br>');
+  const ops=(p.opcoes&&p.opcoes.length)?p.opcoes
+            :(p.parcelas&&p.parcelas.length?[{ordem:1,parcelas:p.parcelas}]:[]);
+  if(!ops.length) return '—';
+  if(ops.length===1){ // lançamento direto do Aux P1 / uma opção só
+    return (ops[0].parcelas||[]).map(x=>`${x.parcela} dias: ${fmtBR(x.ini)}–${fmtBR(x.fim)}`).join('<br>');
+  }
+  return ops.map(o=>{ const s=(o.parcelas||[]).map(x=>`${x.parcela}d ${fmtBR(x.ini)}–${fmtBR(x.fim)}`).join(' + ');
+    return `<b>${o.ordem}ª:</b> ${s}`; }).join('<br>');
 }
 function renderPedidos(){
   const tb=document.getElementById('tbody-ped');
@@ -620,10 +626,11 @@ async function excluirPedido(id){
   catch(e){ flash(e.message||'Erro.',false); }
 }
 function exportarExcel(){
-  const aoa=[['Nº PM','Posto/Grad','Nome','Pelotão','Tipo','Exercício','Modalidade','Parcelas','Destino','Situação']];
+  const aoa=[['Nº PM','Posto/Grad','Nome','Pelotão','Tipo','Exercício','Opções escolhidas','Destino','Situação']];
   pedidos.forEach(p=>{ const m=p.militar||{};
-    const parc=(p.parcelas||[]).map(x=>`${x.parcela}:${fmtBR(x.ini)}-${fmtBR(x.fim)}`).join(' | ');
-    aoa.push([m.matricula||'',m.pg||'',m.nome||'',p.pelotao||'',p.tipo,p.exercicio||'',p.modalidade||'',parc,p.destino||'',p.situacao]);
+    const ops=(p.opcoes&&p.opcoes.length)?p.opcoes:(p.parcelas&&p.parcelas.length?[{ordem:1,parcelas:p.parcelas}]:[]);
+    const parc=ops.map(o=>`${o.ordem}ª) `+(o.parcelas||[]).map(x=>`${x.parcela}d ${fmtBR(x.ini)}-${fmtBR(x.fim)}`).join(' + ')).join('  |  ');
+    aoa.push([m.matricula||'',m.pg||'',m.nome||'',p.pelotao||'',p.tipo,p.exercicio||'',parc,p.destino||'',p.situacao]);
   });
   const ws=XLSX.utils.aoa_to_sheet(aoa); const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Férias '+anoSel);
