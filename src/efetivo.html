@@ -94,7 +94,7 @@
       <h1>Efetivo</h1>
       <div class="sub">Quadro de pessoal — lotação, antiguidade e baixa/transferência (controle do Aux P1)</div>
     </div>
-    <div class="kpi"><b id="k-total">—</b><span>no efetivo ativo</span></div>
+    <div class="kpi"><b id="k-total">—</b><span id="k-sub">no efetivo ativo</span></div>
   </div>
 
   <div id="msg" class="msg"></div>
@@ -386,7 +386,13 @@ async function carregar(){
   try{
     LISTA = await rpc('efetivo_listar',{p_token:sessao.token,p_incluir_inativos:true}) || [];
     LISTA.forEach((m,i)=>{ m.__ord=i; });   // posição = ordem de antiguidade (servidor)
-    document.getElementById('k-total').textContent = LISTA.filter(m=>m.integrante_ativo??m.ativo).length;
+    // total ativo, quebrado em militares × assistentes administrativos (civis/ASPM)
+    const _ativos = LISTA.filter(m=>m.integrante_ativo??m.ativo);
+    const _ehAssist = m => /func|civil|aspm/i.test(((m.posto_graduacao||'')+' '+(m.funcao||'')));
+    const _assist = _ativos.filter(_ehAssist).length;
+    const _mil = _ativos.length - _assist;
+    document.getElementById('k-total').textContent = _ativos.length;
+    document.getElementById('k-sub').innerHTML = `${_mil} militares · ${_assist} assist. adm.`;
     const nInat = LISTA.filter(m=>!(m.integrante_ativo??m.ativo)).length;
     document.getElementById('tab-inat-n').textContent = nInat?`(${nInat})`:'';
     render();
