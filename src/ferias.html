@@ -115,7 +115,7 @@
       <div class="sub" id="hero-sub">Escala de férias e afastamentos da seção</div>
     </div>
     <div class="yr">
-      <label for="sel-ano">Ano</label>
+      <label for="sel-ano">Ano de gozo</label>
       <select id="sel-ano" onchange="trocarAno()"></select>
     </div>
   </div>
@@ -241,6 +241,7 @@
         <div class="grid" style="margin-bottom:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
           <div class="fld"><label>Pelotão</label><select id="ct-pel" onchange="renderControle()"><option value="">Todos</option></select></div>
           <div class="fld"><label>Fração / GP</label><select id="ct-gp" onchange="renderControle()"><option value="">Todas</option></select></div>
+          <div class="fld"><label>Exercício (ref.)</label><select id="ct-exerc" onchange="renderControle()"><option value="">Todos</option></select></div>
           <div class="fld"><label>Situação</label><select id="ct-sit" onchange="renderControle()"><option value="">Todas</option><option value="PENDENTE">Pendente</option><option value="APROVADO_PEL">Aprov. Pelotão</option><option value="VALIDADO">Validado</option><option value="REJEITADO">Rejeitado</option></select></div>
           <div class="fld"><label>Busca (nome/Nº)</label><input id="ct-busca" placeholder="nome ou matrícula…" oninput="renderControle()"></div>
         </div>
@@ -248,7 +249,7 @@
           <table id="tbl-ct">
             <thead><tr>
               <th>#</th><th>Pelotão</th><th>Fração/GP</th><th>Militar</th><th>Cidade / lotação</th>
-              <th>Exerc.</th><th>Dias</th><th>Início</th><th>Término</th><th>Situação</th><th></th>
+              <th>Exercício (ref.)</th><th>Dias</th><th>Início</th><th>Término</th><th>Situação</th><th></th>
             </tr></thead>
             <tbody id="tbody-ct"><tr><td colspan="11"><div class="empty">Carregando…</div></td></tr></tbody>
           </table>
@@ -910,26 +911,30 @@ async function carregarControle(){
   // filtros populam só com o que existe no tipo da aba atual
   document.getElementById('ct-pel').innerHTML='<option value="">Todos</option>';
   document.getElementById('ct-gp').innerHTML='<option value="">Todas</option>';
+  document.getElementById('ct-exerc').innerHTML='<option value="">Todos</option>';
   popularFiltrosCt(); renderControle();
 }
 function _pelRot(p){ return /^\d+$/.test(String(p))?('Pelotão '+p):(p||'—'); }
 function _ctDoModo(){ return CTRL.filter(r=>(r.tipo||'ANUAL')===ctModo); }
 function popularFiltrosCt(){
-  const selP=document.getElementById('ct-pel'), selG=document.getElementById('ct-gp'); if(!selP) return;
+  const selP=document.getElementById('ct-pel'), selG=document.getElementById('ct-gp'), selE=document.getElementById('ct-exerc'); if(!selP) return;
   const base=_ctDoModo();
   if(selP.options.length<=1){ const pels=[...new Set(base.map(r=>r.pelotao).filter(Boolean))].sort();
     selP.innerHTML='<option value="">Todos</option>'+pels.map(p=>`<option value="${esc(p)}">${esc(_pelRot(p))}</option>`).join(''); }
   if(selG.options.length<=1){ const gps=[...new Set(base.map(r=>r.fracao).filter(Boolean))].sort();
     selG.innerHTML='<option value="">Todas</option>'+gps.map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join(''); }
+  if(selE && selE.options.length<=1){ const exs=[...new Set(base.map(r=>r.exercicio).filter(x=>x!=null))].sort((a,b)=>b-a);
+    selE.innerHTML='<option value="">Todos</option>'+exs.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join(''); }
 }
 // uma linha por PARCELA (como na planilha: 15+10 fracionado = 2 linhas)
 function ctLinhas(){
   const v=id=>{const e=document.getElementById(id);return e?e.value:'';};
-  const fp=v('ct-pel'),fg=v('ct-gp'),fs=v('ct-sit'),fb=_norm(v('ct-busca').trim());
+  const fp=v('ct-pel'),fg=v('ct-gp'),fe=v('ct-exerc'),fs=v('ct-sit'),fb=_norm(v('ct-busca').trim());
   const out=[];
   _ctDoModo().forEach(r=>{
     if(fp && String(r.pelotao||'')!==fp) return;
     if(fg && String(r.fracao||'')!==fg) return;
+    if(fe && String(r.exercicio||'')!==fe) return;
     if(fs && r.situacao!==fs) return;
     if(fb){ const hay=_norm(`${r.matricula||''} ${r.nome||''} ${r.pg||''}`); if(!hay.includes(fb)) return; }
     const pcs=Array.isArray(r.parcelas)?r.parcelas:[];
