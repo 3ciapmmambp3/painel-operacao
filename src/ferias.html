@@ -236,10 +236,10 @@
         <div style="overflow-x:auto;">
           <table id="tbl-ped">
             <thead><tr>
-              <th>Militar</th><th>Tipo</th><th>Exerc.</th><th>Modalidade</th>
-              <th>Parcelas / datas</th><th>Destino</th><th>Situação</th><th></th>
+              <th>Militar</th><th>Tipo</th><th>Exerc.</th><th>Modal.</th>
+              <th>Opções escolhidas</th><th>Situação</th><th></th>
             </tr></thead>
-            <tbody id="tbody-ped"><tr><td colspan="8"><div class="empty">Carregando…</div></td></tr></tbody>
+            <tbody id="tbody-ped"><tr><td colspan="7"><div class="empty">Carregando…</div></td></tr></tbody>
           </table>
         </div>
       </div>
@@ -594,18 +594,18 @@ async function carregarPedidos(){
   try{
     pedidos = await rpc('ferias_pedidos_listar',{p_token:sessao.token,p_ano:anoSel}) || [];
     renderPedidos();
-  }catch(e){ document.getElementById('tbody-ped').innerHTML=`<tr><td colspan="8"><div class="empty">${esc(e.message)}</div></td></tr>`; }
+  }catch(e){ document.getElementById('tbody-ped').innerHTML=`<tr><td colspan="7"><div class="empty">${esc(e.message)}</div></td></tr>`; }
 }
 function tagSit(s){ const m={PENDENTE:['pend','Pendente — aguarda CMT Pelotão'],APROVADO_PEL:['aprov','Aprov. Pelotão — aguarda Aux P1'],VALIDADO:['valid','Validado ✓'],REJEITADO:['rej','Rejeitado']}; const t=m[s]||['','—']; return `<span class="tag ${t[0]}">${t[1]}</span>`; }
+function _dm(d){ const s=String(d||'').slice(0,10).split('-'); return s.length===3?`${s[2]}/${s[1]}`:(d||''); }
+function _chip(x){ return `<span style="display:inline-block;background:var(--bg-dark);border:1px solid var(--border);border-radius:5px;padding:1px 7px;font-size:11px;white-space:nowrap;"><b style="color:var(--acc);">${x.parcela}d</b> ${_dm(x.ini)}–${_dm(x.fim)}</span>`; }
 function parcelasTxt(p){
   const ops=(p.opcoes&&p.opcoes.length)?p.opcoes
             :(p.parcelas&&p.parcelas.length?[{ordem:1,parcelas:p.parcelas}]:[]);
-  if(!ops.length) return '—';
-  if(ops.length===1){ // lançamento direto do Aux P1 / uma opção só
-    return (ops[0].parcelas||[]).map(x=>`${x.parcela} dias: ${fmtBR(x.ini)}–${fmtBR(x.fim)}`).join('<br>');
-  }
-  return ops.map(o=>{ const s=(o.parcelas||[]).map(x=>`${x.parcela}d ${fmtBR(x.ini)}–${fmtBR(x.fim)}`).join(' + ');
-    return `<b>${o.ordem}ª:</b> ${s}`; }).join('<br>');
+  if(!ops.length) return '<span class="miut">—</span>';
+  return '<div style="display:flex;flex-direction:column;gap:3px;">'+ops.map(o=>
+    `<div style="display:flex;gap:6px;align-items:center;"><span style="font-size:10px;font-weight:800;color:var(--acc);min-width:15px;">${o.ordem}ª</span><span style="display:flex;gap:4px;flex-wrap:wrap;">${(o.parcelas||[]).map(_chip).join('')}</span></div>`
+  ).join('')+'</div>';
 }
 function popularFiltros(){
   const selP=document.getElementById('fl-pel'), selG=document.getElementById('fl-gp'); if(!selP) return;
@@ -628,7 +628,7 @@ function filtrarPedidos(){
 function renderPedidos(){
   const tb=document.getElementById('tbody-ped');
   popularFiltros(); const lista=filtrarPedidos();
-  if(!lista.length){ tb.innerHTML='<tr><td colspan="8"><div class="empty">Nenhum lançamento'+(pedidos.length?' com esses filtros':' para '+anoSel)+'.</div></td></tr>'; return; }
+  if(!lista.length){ tb.innerHTML='<tr><td colspan="7"><div class="empty">Nenhum lançamento'+(pedidos.length?' com esses filtros':' para '+anoSel)+'.</div></td></tr>'; return; }
   tb.innerHTML = lista.map(p=>{
     const m=p.militar||{};
     return `<tr>
@@ -637,7 +637,6 @@ function renderPedidos(){
       <td>${esc(p.exercicio||'—')}</td>
       <td>${esc(p.modalidade==='25_DIRETO'?'25 direto':p.modalidade==='15_10_FRACIONADO'?'15+10':(p.tipo==='PREMIO'?'—':''))}</td>
       <td>${parcelasTxt(p)}</td>
-      <td>${esc(p.destino||'—')}</td>
       <td>${tagSit(p.situacao)}</td>
       <td style="white-space:nowrap;"><button class="minibtn" onclick="abrirValidar('${p.id}')">validar</button>
         <button class="minibtn" onclick="editarPedido('${p.id}')">editar</button>
@@ -751,9 +750,9 @@ function abrirValidar(id){
       if(x.parcela==='25'){ idx=val25.length; val25.push(Object.assign({},x,{opcao:o.ordem})); }
       else if(x.parcela==='15'){ idx=val15.length; val15.push(Object.assign({},x,{opcao:o.ordem})); }
       else { idx=val10.length; val10.push(Object.assign({},x,{opcao:o.ordem})); }
-      return `<a href="#" onclick="valUsar('${x.parcela}',${idx});return false;" style="color:var(--acc);text-decoration:none;border-bottom:1px dashed var(--acc);cursor:pointer;white-space:nowrap;">${x.parcela}d ${fmtBR(x.ini)}–${fmtBR(x.fim)}</a>`;
-    }).join(' <span class="miut">+</span> ');
-    opsHtml+=`<div style="font-size:12.5px;color:var(--text-white);padding:2px 0;"><b>${o.ordem}ª:</b> ${chips||'—'}</div>`;
+      return `<a href="#" onclick="valUsar('${x.parcela}',${idx});return false;" title="Usar no período final" style="display:inline-block;background:var(--bg-card);border:1px solid var(--acc);border-radius:5px;padding:2px 8px;font-size:11px;text-decoration:none;color:var(--text-white);white-space:nowrap;cursor:pointer;"><b style="color:var(--acc);">${x.parcela}d</b> ${_dm(x.ini)}–${_dm(x.fim)}</a>`;
+    }).join(' ');
+    opsHtml+=`<div style="display:flex;gap:7px;align-items:center;padding:3px 0;"><span style="font-size:10px;font-weight:800;color:var(--acc);min-width:15px;">${o.ordem}ª</span><span style="display:flex;gap:5px;flex-wrap:wrap;">${chips||'—'}</span></div>`;
   });
   document.getElementById('val-opcoes').innerHTML='<div class="miut" style="text-transform:uppercase;font-size:10px;letter-spacing:.4px;margin-bottom:4px;">Opções do militar — clique para usar no período final</div>'+
     (ops.length?opsHtml:'<div class="miut">— (lançamento direto)</div>');
@@ -992,8 +991,8 @@ function aprovarRender(){
   if(!lista.length){ tb.innerHTML='<tr><td colspan="6"><div class="empty">Nenhum pedido neste pelotão.</div></td></tr>'; return; }
   tb.innerHTML=lista.map((p,i)=>{ const m=p.militar||{};
     const ops=(p.opcoes&&p.opcoes.length)?p.opcoes:[];
-    const opsTxt=ops.length?ops.map(o=>`${o.ordem}ª ${(o.parcelas||[]).map(x=>x.parcela+'d '+fmtBR(x.ini)+'–'+fmtBR(x.fim)).join('+')}`).join('<br>'):'<span class="miut">—</span>';
-    const fin=(p.parcelas||[]).map(x=>`${x.parcela}d ${fmtBR(x.ini)}–${fmtBR(x.fim)}`).join(' + ')||'<span class="miut">a definir</span>';
+    const opsTxt=parcelasTxt(p);
+    const fin=(p.parcelas||[]).length?('<span style="display:flex;gap:4px;flex-wrap:wrap;">'+(p.parcelas||[]).map(_chip).join('')+'</span>'):'<span class="miut">a definir</span>';
     return `<tr><td class="miut">${i+1}</td>
       <td><b>${esc(m.pg||'')}</b> ${esc(m.guerra||m.nome||'')}<div class="miut">${esc(m.matricula||'')}</div></td>
       <td style="font-size:11.5px;">${opsTxt}</td>
