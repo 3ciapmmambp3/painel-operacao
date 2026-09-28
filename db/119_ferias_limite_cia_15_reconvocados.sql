@@ -141,31 +141,48 @@ end;
 $$;
 grant execute on function public.ferias_percentuais(uuid, int, date) to anon;
 
--- ─── helper: 1º dia em que as parcelas do candidato estouram os 15% ─────
--- Conta os militares (do efetivo, respeitando o toggle) de férias VALIDADAS ou
--- APROVADAS pelo pelotão em cada dia das parcelas, +1 pelo candidato, e compara
--- com floor(total*limite/100). Ignora o próprio pedido (p_ignora_id).
-create or replace function public._ferias_dia_estoura(p_ano int, p_parcelas jsonb, p_ignora_id uuid)
+-- ─── helper: 1º dia em que as parcelas do candidato estouram o limite ──
+-- DUAS travas: da CIA e do PELOTÃO do militar. Conta os militares (do efetivo,
+-- respeitando o toggle) de férias VALIDADAS ou APROVADAS pelo pelotão em cada
+-- dia das parcelas, +1 pelo candidato, e compara com floor(total*limite/100).
+-- Ignora o próprio pedido. Limite do pelotão = limites_pelotao[pel] → padrão
+-- pct_max_pelotao → pct_max_cia → 15. Retorna o 1º estouro (Cia ou Pelotão).
+create or replace function public._ferias_dia_estoura(p_ano int, p_parcelas jsonb, p_ignora_id uuid, p_pelotao text)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
   v_crono public.ferias_cronograma;
-  v_reconv boolean; v_lim numeric; v_total int; v_max int;
-  v_dia date; v_cnt int; parc jsonb;
+  v_reconv boolean;
+  v_lim_cia numeric; v_tot_cia int; v_max_cia int;
+  v_lim_pel numeric; v_tot_pel int; v_max_pel int;
+  v_dia date; v_cia int; v_pel int; parc jsonb;
 begin
   select * into v_crono from public.ferias_cronograma where ano = p_ano;
-  v_reconv := coalesce(v_crono.contar_reconvocados, false);
-  v_lim    := coalesce(v_crono.pct_max_cia, 15);
+  v_reconv  := coalesce(v_crono.contar_reconvocados, false);
+  v_lim_cia := coalesce(v_crono.pct_max_cia, 15);
+  v_lim_pel := coalesce((v_crono.limites_pelotao->>p_pelotao)::numeric,
+                        v_crono.pct_max_pelotao, v_crono.pct_max_cia, 15);
 
-  select count(*) into v_total from public.militares m
+  select count(*) into v_tot_cia from public.militares m
    where m.ativo = true
      and m.matricula_clean not in ('0000001','0000002','0000003','0000004')
      and upper(coalesce(m.funcao,'')) not like '%ASPM%'
      and upper(public.unaccent_safe(coalesce(m.posto_graduacao,''))) not like '%CIVIL%'
      and (v_reconv or (upper(coalesce(m.posto_graduacao,'')) not like '%QOR%'
                        and upper(coalesce(m.posto_graduacao,'')) not like '%QPR%'));
-  if v_total = 0 then return null; end if;
-  v_max := floor(v_total * v_lim / 100.0);
+  if v_tot_cia = 0 then return null; end if;
+
+  select count(*) into v_tot_pel from public.militares m
+   where m.ativo = true
+     and m.matricula_clean not in ('0000001','0000002','0000003','0000004')
+     and upper(coalesce(m.funcao,'')) not like '%ASPM%'
+     and upper(public.unaccent_safe(coalesce(m.posto_graduacao,''))) not like '%CIVIL%'
+     and (v_reconv or (upper(coalesce(m.posto_graduacao,'')) not like '%QOR%'
+                       and upper(coalesce(m.posto_graduacao,'')) not like '%QPR%'))
+     and public._ferias_pelotao(m.grupamento_id) is not distinct from p_pelotao;
+
+  v_max_cia := floor(v_tot_cia * v_lim_cia / 100.0);
+  v_max_pel := case when v_tot_pel > 0 then floor(v_tot_pel * v_lim_pel / 100.0) else 2147483647 end;
 
   for parc in select * from jsonb_array_elements(coalesce(p_parcelas,'[]'::jsonb))
   loop
@@ -173,7 +190,8 @@ begin
     for v_dia in
       select gs::date from generate_series((parc->>'ini')::date, (parc->>'fim')::date, interval '1 day') as gs
     loop
-      select count(distinct p.militar_id) into v_cnt
+      -- Cia (todos os pelotões)
+      select count(distinct p.militar_id) into v_cia
         from public.ferias_pedidos p
         join public.militares m on m.id = p.militar_id
         cross join lateral jsonb_array_elements(p.parcelas) pp
@@ -188,10 +206,34 @@ begin
                            and upper(coalesce(m.posto_graduacao,'')) not like '%QPR%'))
          and nullif(pp->>'ini','')::date <= v_dia
          and nullif(pp->>'fim','')::date >= v_dia;
-      v_cnt := v_cnt + 1;  -- o próprio candidato
-      if v_cnt > v_max then
-        return jsonb_build_object('dia', v_dia, 'ferias', v_cnt, 'total', v_total,
-                                  'limite', v_lim, 'max', v_max);
+      v_cia := v_cia + 1;  -- o próprio candidato
+      if v_cia > v_max_cia then
+        return jsonb_build_object('nivel','da Cia','dia',v_dia,'ferias',v_cia,'total',v_tot_cia,'limite',v_lim_cia);
+      end if;
+
+      -- Pelotão do candidato
+      if v_tot_pel > 0 then
+        select count(distinct p.militar_id) into v_pel
+          from public.ferias_pedidos p
+          join public.militares m on m.id = p.militar_id
+          cross join lateral jsonb_array_elements(p.parcelas) pp
+         where p.ano = p_ano
+           and p.situacao in ('VALIDADO','APROVADO_PEL')
+           and (p_ignora_id is null or p.id <> p_ignora_id)
+           and p.pelotao is not distinct from p_pelotao
+           and m.ativo = true
+           and m.matricula_clean not in ('0000001','0000002','0000003','0000004')
+           and upper(coalesce(m.funcao,'')) not like '%ASPM%'
+           and upper(public.unaccent_safe(coalesce(m.posto_graduacao,''))) not like '%CIVIL%'
+           and (v_reconv or (upper(coalesce(m.posto_graduacao,'')) not like '%QOR%'
+                             and upper(coalesce(m.posto_graduacao,'')) not like '%QPR%'))
+           and nullif(pp->>'ini','')::date <= v_dia
+           and nullif(pp->>'fim','')::date >= v_dia;
+        v_pel := v_pel + 1;
+        if v_pel > v_max_pel then
+          return jsonb_build_object('nivel','do Pelotão '||coalesce(p_pelotao,'?'),
+                                    'dia',v_dia,'ferias',v_pel,'total',v_tot_pel,'limite',v_lim_pel);
+        end if;
       end if;
     end loop;
   end loop;
@@ -239,13 +281,14 @@ begin
       raise exception 'A validação final é do Aux P1. Você pode aprovar (Aprovado pelo Pelotão).';
     end if;
 
-    -- BLOQUEIO DOS 15% DA CIA (só p/ comandantes; Aux P1 pode estourar)
+    -- BLOQUEIO DOS LIMITES (Cia E Pelotão; só p/ comandantes — Aux P1 estoura)
     if v_sit in ('APROVADO_PEL','VALIDADO') then
       v_parc := coalesce(p_dados->'parcelas', v_row.parcelas);
-      v_estoura := public._ferias_dia_estoura(v_row.ano, v_parc, p_id);
+      v_estoura := public._ferias_dia_estoura(v_row.ano, v_parc, p_id, v_row.pelotao);
       if v_estoura is not null then
-        raise exception 'Excede o limite de % da Cia em % (% de % militares de férias no dia). Ajuste o período — só o Aux P1 pode validar acima do limite.',
+        raise exception 'Excede o limite de % % em % (% de % militares de férias no dia). Ajuste o período — só o Aux P1 pode validar acima do limite.',
           (v_estoura->>'limite')||'%',
+          (v_estoura->>'nivel'),
           to_char((v_estoura->>'dia')::date,'DD/MM/YYYY'),
           (v_estoura->>'ferias'), (v_estoura->>'total');
       end if;
