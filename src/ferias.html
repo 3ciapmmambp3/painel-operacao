@@ -257,7 +257,7 @@
       <div class="card">
         <h3>Militares em férias — na data</h3>
         <div class="row-actions" style="margin-bottom:14px;">
-          <div class="fld" style="max-width:200px;"><label>Data de referência</label><input type="date" id="pct-data"></div>
+          <div class="fld" style="max-width:200px;"><label>Ver ocupação no dia</label><input type="date" id="pct-data"></div>
           <button class="btn-outline" style="align-self:flex-end;" onclick="carregarPct()">Atualizar</button>
         </div>
         <div id="pct-cia"></div>
@@ -1397,8 +1397,8 @@ async function aprovarBoot(){
       sel.innerHTML=`<option value="${esc(info.pelotao||'')}">${esc(apRot(info.pelotao||'—'))}</option>`; sel.disabled=true; }catch(e){}
   } else {
     await carregarPels();
-    if(!sel.options.length && PELS.length){ sel.innerHTML=PELS.map(p=>`<option value="${esc(p)}">${esc(apRot(p))}</option>`).join(''); }
-    try{ const r=await rpc('ferias_percentuais',{p_token:sessao.token,p_ano:anoSel,p_data:null}); apTotals={}; (r.pelotoes||[]).forEach(x=>apTotals[x.pelotao]=x.total); }catch(e){}
+    if(sel.options.length<=1 && PELS.length){ sel.innerHTML='<option value="__CIA__">Toda a Cia</option>'+PELS.map(p=>`<option value="${esc(p)}">${esc(apRot(p))}</option>`).join(''); }
+    try{ const r=await rpc('ferias_percentuais',{p_token:sessao.token,p_ano:anoSel,p_data:null}); apTotals={}; (r.pelotoes||[]).forEach(x=>apTotals[x.pelotao]=x.total); apTotals['__CIA__']=r.cia&&r.cia.total; }catch(e){}
   }
   try{ pedidos=await rpc('ferias_pedidos_listar',{p_token:sessao.token,p_ano:anoSel})||[]; }catch(e){ pedidos=[]; }
   aprovarRender();
@@ -1413,21 +1413,23 @@ let apSit='';
 function apSetSit(s){ apSit=s; document.querySelectorAll('#ap-chips .ct-chip').forEach(b=>b.classList.toggle('active', b.dataset.sit===s)); aprovarRender(); }
 function aprovarRender(){
   const pel=document.getElementById('ap-pel').value;
-  const lista=pedidos.filter(p=>String(p.pelotao)===String(pel));
+  const ehCia = pel==='__CIA__';
+  const lista= ehCia ? pedidos.slice() : pedidos.filter(p=>String(p.pelotao)===String(pel));
   const listaTb = apSit ? lista.filter(p=>p.situacao===apSit) : lista;
   const nPend=lista.filter(p=>p.situacao==='PENDENTE').length;
   const pn=document.getElementById('ap-pend-n'); if(pn) pn.textContent=nPend?`(${nPend})`:'';
   const spans=apPeriodoSpans();
-  const total=apTotals[pel]||lista.length||0;
-  const limPel=(cronograma&&cronograma.limites_pelotao&&cronograma.limites_pelotao[pel])!=null?cronograma.limites_pelotao[pel]:(cronograma&&cronograma.pct_max_pelotao);
+  const total= ehCia ? (apTotals['__CIA__']||lista.length||0) : (apTotals[pel]||lista.length||0);
+  const limPel= ehCia ? (cronograma&&cronograma.pct_max_cia)
+    : ((cronograma&&cronograma.limites_pelotao&&cronograma.limites_pelotao[pel])!=null?cronograma.limites_pelotao[pel]:(cronograma&&cronograma.pct_max_pelotao));
   const pctHtml=spans.map(s=>{
     const n=lista.filter(p=>p.situacao!=='REJEITADO' && (p.parcelas||[]).some(x=>apOverlap(x.ini,x.fim,s.ini,s.fim))).length;
     const pct=total>0?Math.round(1000*n/total)/10:0; const over=limPel!=null&&pct>Number(limPel);
     return `<div style="margin-bottom:7px;"><div style="display:flex;justify-content:space-between;font-size:11.5px;"><span>Período ${s.ordem} <span class="miut">${fmtBR(s.ini)}–${fmtBR(s.fim)}</span></span><span style="color:${over?'var(--danger)':'var(--text-muted)'};">${n}/${total} · ${pct}%${limPel!=null?` <span class="miut">lim ${limPel}%</span>`:''}</span></div><div class="pctbar${over?' over':''}"><i style="width:${Math.min(100,pct)}%"></i></div></div>`;
   }).join('');
-  document.getElementById('ap-pct').innerHTML=spans.length?('<div class="miut" style="text-transform:uppercase;font-size:10px;letter-spacing:.4px;margin-bottom:8px;">Percentual do pelotão por período — provisório, atualiza ao definir</div>'+pctHtml):'<div class="miut">Cronograma sem períodos cadastrados.</div>';
+  document.getElementById('ap-pct').innerHTML=spans.length?('<div class="miut" style="text-transform:uppercase;font-size:10px;letter-spacing:.4px;margin-bottom:8px;">Percentual '+(ehCia?'da Cia':'do pelotão')+' por período — provisório, atualiza ao definir</div>'+pctHtml):'<div class="miut">Cronograma sem períodos cadastrados.</div>';
   const tb=document.getElementById('ap-tbody');
-  if(!listaTb.length){ tb.innerHTML='<tr><td colspan="6"><div class="empty">'+(lista.length?'Nenhum pedido com esse filtro.':'Nenhum pedido neste pelotão.')+'</div></td></tr>'; return; }
+  if(!listaTb.length){ tb.innerHTML='<tr><td colspan="6"><div class="empty">'+(lista.length?'Nenhum pedido com esse filtro.':(ehCia?'Nenhum pedido lançado.':'Nenhum pedido neste pelotão.'))+'</div></td></tr>'; return; }
   tb.innerHTML=listaTb.map((p,i)=>{ const m=p.militar||{};
     const ops=(p.opcoes&&p.opcoes.length)?p.opcoes:[];
     const opsTxt=parcelasTxt(p);
