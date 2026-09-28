@@ -114,6 +114,8 @@
     </div>
     <div class="toolbar">
       <input type="search" id="busca" placeholder="Buscar por nome, Nº PM, função ou unidade…" oninput="render()">
+      <select id="f-pel" onchange="onFiltroPelGp('pel')"><option value="">Todos os pelotões</option></select>
+      <select id="f-gp" onchange="render()"><option value="">Todos os grupamentos</option></select>
       <select id="f-motivo" style="display:none;" onchange="render()">
         <option value="">Todos os inativos</option>
         <option value="TRANSFERIDO">Transferidos (de unidade)</option>
@@ -393,6 +395,7 @@ async function carregar(){
     const _mil = _ativos.length - _assist;
     document.getElementById('k-total').textContent = _ativos.length;
     document.getElementById('k-sub').innerHTML = `${_mil} militares · ${_assist} assist. adm.`;
+    popularPel(); popularGp();
     const nInat = LISTA.filter(m=>!(m.integrante_ativo??m.ativo)).length;
     document.getElementById('tab-inat-n').textContent = nInat?`(${nInat})`:'';
     render();
@@ -526,10 +529,31 @@ function mostrarAba(qual){
   if(modoInativos && modoUnidade) toggleUnidade();   // agrupamento por unidade é da baliza ativa
   render();
 }
+// ── filtros por Pelotão e Grupamento ──
+function _pelDe(m){ const g=String(m.grupamento_id||''); const mm=g.match(/(\d)\s*PEL/i); if(mm) return mm[1]; if(g.trim().toUpperCase()==='ADM') return 'ADM'; return ''; }
+function _pelRotEf(p){ return p==='ADM'?'ADM / Comando':(p+'º Pelotão'); }
+function _gpCurto(g){ const c=String(g||'').split('/').pop().trim(); return c||String(g||'—'); }
+function popularPel(){
+  const sel=document.getElementById('f-pel'); if(!sel) return; const atual=sel.value;
+  const pels=[...new Set(LISTA.map(_pelDe).filter(Boolean))].sort((a,b)=>(a==='ADM'?99:+a)-(b==='ADM'?99:+b));
+  sel.innerHTML='<option value="">Todos os pelotões</option>'+pels.map(p=>`<option value="${esc(p)}">${esc(_pelRotEf(p))}</option>`).join('');
+  sel.value=atual;
+}
+function popularGp(){
+  const sel=document.getElementById('f-gp'); if(!sel) return; const atual=sel.value;
+  const fpel=document.getElementById('f-pel').value;
+  const base=LISTA.filter(m=>!fpel || _pelDe(m)===fpel);
+  const gps=[...new Set(base.map(m=>String(m.grupamento_id||'').trim()).filter(Boolean))].sort();
+  sel.innerHTML='<option value="">Todos os grupamentos</option>'+gps.map(g=>`<option value="${esc(g)}">${esc(_gpCurto(g))}</option>`).join('');
+  if(gps.includes(atual)) sel.value=atual; else sel.value='';
+}
+function onFiltroPelGp(which){ if(which==='pel') popularGp(); render(); }
 function render(){
   const q=norm(document.getElementById('busca').value);
   const ehAtivo=m=>(m.integrante_ativo??m.ativo);
   const fm=document.getElementById('f-motivo').value;
+  const fpel=document.getElementById('f-pel')?document.getElementById('f-pel').value:'';
+  const fgp=document.getElementById('f-gp')?document.getElementById('f-gp').value:'';
   let arr=LISTA.filter(m=>{
     if(modoInativos){
       if(ehAtivo(m)) return false;
@@ -540,6 +564,8 @@ function render(){
     } else {
       if(!ehAtivo(m)) return false;
     }
+    if(fpel && _pelDe(m)!==fpel) return false;
+    if(fgp && String(m.grupamento_id||'').trim()!==fgp) return false;
     if(q){ const hay=norm([m.nome_completo,m.nome_guerra,m.matricula,m.funcao,m.nome_unidade,m.cod_unidade,m.posto_graduacao].join(' ')); if(!hay.includes(q)) return false; }
     return true;
   });
