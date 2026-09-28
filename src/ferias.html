@@ -408,6 +408,7 @@
         <div class="fld"><label>10 dias</label><select id="val-10sel" onchange="valResumo()"></select></div>
       </div>
       <div id="val-resumo" style="margin-top:10px;padding:8px 11px;background:var(--acc-bg);border:1px solid var(--acc);border-radius:8px;font-size:12.5px;"></div>
+      <div id="val-barras" style="margin-top:12px;"></div>
     </div>
     <div class="grid" style="margin-top:10px;">
       <div class="fld"><label>Situação</label>
@@ -861,6 +862,52 @@ function valResumo(){
     if(i10!==''){ const b=val10[i10]; parts.push(`10 dias da ${b.opcao}ª escolha${pr(b)} (${fmtBR(b.ini)}–${fmtBR(b.fim)})`); }
     txt=parts.join('  +  '); }
   el.innerHTML = txt ? ('<b style="color:var(--text-white);">Período final:</b> '+esc(txt)) : '<span class="miut">Clique nas opções acima ou use os campos para montar o período final.</span>';
+  valBarras();
+}
+// monta as parcelas atuais do modal (sem exigir tudo preenchido)
+function valParcelasAtuais(){
+  const mod=document.getElementById('val-mod').value; const parcelas=[];
+  if(mod==='25_DIRETO'){ const i=document.getElementById('val-25sel').value; if(i!==''){ const x=val25[i]; parcelas.push({parcela:'25',ini:x.ini,fim:x.fim}); } }
+  else { const i15=document.getElementById('val-15sel').value, i10=document.getElementById('val-10sel').value;
+    if(i15!==''){ const a=val15[i15]; parcelas.push({parcela:'15',ini:a.ini,fim:a.fim}); }
+    if(i10!==''){ const b=val10[i10]; parcelas.push({parcela:'10',ini:b.ini,fim:b.fim}); } }
+  return parcelas;
+}
+// barra de percentual ao vivo: Cia (só Aux P1) + Pelotão (P1 e CMT), no pico do período
+let _valBarTimer=null, _valBarSeq=0;
+function valBarras(){
+  const box=document.getElementById('val-barras'); if(!box||!valPed) return;
+  const parc=valParcelasAtuais();
+  if(!parc.length){ box.innerHTML=''; return; }
+  clearTimeout(_valBarTimer); const seq=++_valBarSeq;
+  box.innerHTML='<div class="miut">Calculando percentual…</div>';
+  _valBarTimer=setTimeout(async ()=>{
+    try{
+      const r=await rpc('ferias_simular_periodo',{p_token:sessao.token,p_id:valPed.id,p_parcelas:parc});
+      if(seq!==_valBarSeq) return;
+      box.innerHTML=_barrasHtml(r);
+    }catch(e){ if(seq===_valBarSeq) box.innerHTML='<div class="miut">Não foi possível calcular o percentual.</div>'; }
+  },350);
+}
+function _umaBarra(rot,o){
+  if(!o) return '';
+  const pct=Number(o.pct)||0, lim=Number(o.limite)||0, over=pct>lim;
+  return `<div style="margin-bottom:8px;">
+    <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:3px;">
+      <span>${esc(rot)}</span>
+      <span style="color:${over?'var(--danger)':'var(--text-muted)'};">${o.ferias}/${o.total} · <b>${pct}%</b> <span class="miut">lim ${lim}%</span>${over?' ⚠️':''}</span>
+    </div>
+    <div class="pctbar${over?' over':''}"><i style="width:${Math.min(100,pct)}%"></i></div>
+  </div>`;
+}
+function _barrasHtml(r){
+  let h='<div class="miut" style="text-transform:uppercase;font-size:10px;letter-spacing:.4px;margin-bottom:6px;">% no pico deste período (já contando este militar)</div>';
+  if(r.pode_cia) h+=_umaBarra('Companhia (3ª Cia)', r.cia);
+  if(r.pelotao) h+=_umaBarra('Pelotão '+r.pelotao.pelotao, r.pelotao);
+  if(!r.pode_cia && !r.pelotao) h+='<div class="miut">—</div>';
+  const over=(r.pode_cia&&r.cia&&Number(r.cia.pct)>Number(r.cia.limite))||(r.pelotao&&Number(r.pelotao.pct)>Number(r.pelotao.limite));
+  if(over) h+='<div style="font-size:11px;color:var(--danger);margin-top:2px;">⚠️ Acima do limite — só o Aux P1 valida; o CMT precisa ajustar o período.</div>';
+  return h;
 }
 function valMotivo(){ document.getElementById('val-motivo-fld').style.display=document.getElementById('val-sit').value==='REJEITADO'?'flex':'none'; }
 function valOptHtml(list){ return '<option value="">— selecione —</option>'+list.map((x,i)=>`<option value="${i}">${x.opcao}ª escolha${x.periodo?' · Período '+x.periodo:''}: ${fmtBR(x.ini)}–${fmtBR(x.fim)}</option>`).join(''); }
@@ -1337,7 +1384,9 @@ function aprovarRender(){
       <td style="font-size:11.5px;">${opsTxt}</td>
       <td style="font-size:12px;color:var(--text-white);">${fin}</td>
       <td>${tagSit(p.situacao)}</td>
-      <td><button class="minibtn" onclick="abrirValidar('${p.id}')">definir</button></td></tr>`;
+      <td style="white-space:nowrap;"><button class="minibtn" onclick="abrirValidar('${p.id}')">definir</button>${podeP1()?`
+        <button class="minibtn" onclick="editarPedido('${p.id}')">alterar</button>
+        <button class="minibtn del" onclick="excluirPedido('${p.id}')">excluir</button>`:''}</td></tr>`;
   }).join('');
 }
 let ehCmtEscopo=false;   // CMT Pelotão/Grupamento (não Aux P1)
