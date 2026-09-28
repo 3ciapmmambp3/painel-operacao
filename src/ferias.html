@@ -284,6 +284,7 @@
             <tbody id="tbody-ct"><tr><td colspan="9"><div class="empty">Carregando…</div></td></tr></tbody>
           </table>
         </div>
+        <div id="ct-pager" class="row-actions" style="justify-content:center;align-items:center;gap:10px;margin-top:12px;"></div>
       </div>
     </div>
 
@@ -906,7 +907,7 @@ function _barrasHtml(r){
   if(r.pelotao) h+=_umaBarra('Pelotão '+r.pelotao.pelotao, r.pelotao);
   if(!r.pode_cia && !r.pelotao) h+='<div class="miut">—</div>';
   const over=(r.pode_cia&&r.cia&&Number(r.cia.pct)>Number(r.cia.limite))||(r.pelotao&&Number(r.pelotao.pct)>Number(r.pelotao.limite));
-  if(over) h+='<div style="font-size:11px;color:var(--danger);margin-top:2px;">⚠️ Acima do limite — só o Aux P1 valida; o CMT precisa ajustar o período.</div>';
+  if(over) h+='<div style="font-size:11px;color:var(--danger);margin-top:2px;">⚠️ Acima do limite</div>';
   return h;
 }
 function valMotivo(){ document.getElementById('val-motivo-fld').style.display=document.getElementById('val-sit').value==='REJEITADO'?'flex':'none'; }
@@ -1033,12 +1034,25 @@ function ctLinhas(){
   });
   return out;
 }
+let ctPagina=1, _ctSig=''; const CT_POR_PAG=20;
+function ctIrPag(n){ ctPagina=n; renderControle(); }
 function renderControle(){
   const tb=document.getElementById('tbody-ct'); if(!tb) return;
-  popularFiltrosCt(); const linhas=ctLinhas();
+  const pager=document.getElementById('ct-pager'); if(pager) pager.innerHTML='';
+  popularFiltrosCt();
+  // reseta a página quando os filtros/aba mudam (mas não ao navegar)
+  const v=id=>{const e=document.getElementById(id);return e?e.value:'';};
+  const sig=[ctModo,v('ct-pel'),v('ct-gp'),v('ct-exerc'),v('ct-sit'),v('ct-busca')].join('|');
+  if(sig!==_ctSig){ _ctSig=sig; ctPagina=1; }
+  const linhas=ctLinhas();
   if(!linhas.length){ tb.innerHTML='<tr><td colspan="9"><div class="empty">Nenhuma férias'+(CTRL.length?' com esses filtros':' para '+anoSel)+'.</div></td></tr>'; return; }
-  let _seq=0,_lastId=null;
-  tb.innerHTML=linhas.map(({r,x,primeira})=>{
+  // agrupa por militar (pedido) p/ não quebrar as parcelas entre páginas
+  const grupos=[]; linhas.forEach(l=>{ if(l.primeira) grupos.push([]); if(grupos.length) grupos[grupos.length-1].push(l); });
+  const totalPag=Math.max(1,Math.ceil(grupos.length/CT_POR_PAG));
+  if(ctPagina>totalPag) ctPagina=totalPag; if(ctPagina<1) ctPagina=1;
+  const pag=grupos.slice((ctPagina-1)*CT_POR_PAG, ctPagina*CT_POR_PAG).flat();
+  let _seq=(ctPagina-1)*CT_POR_PAG,_lastId=null;
+  tb.innerHTML=pag.map(({r,x,primeira})=>{
     const dias = x?(x.parcela==='PREMIO'?'Prêmio':x.parcela):'—';
     if(r.id!==_lastId){ _seq++; _lastId=r.id; }
     return `<tr>
@@ -1055,6 +1069,12 @@ function renderControle(){
         <button class="minibtn del" onclick="excluirPedido('${r.id}')">excluir</button>`:''}</td>
     </tr>`;
   }).join('');
+  if(pager && grupos.length>CT_POR_PAG){
+    const de=(ctPagina-1)*CT_POR_PAG+1, ate=Math.min(ctPagina*CT_POR_PAG,grupos.length);
+    pager.innerHTML=`<button class="minibtn" ${ctPagina<=1?'disabled':''} onclick="ctIrPag(${ctPagina-1})">◀ Anterior</button>
+      <span class="miut">${de}–${ate} de ${grupos.length} militares · pág. ${ctPagina}/${totalPag}</span>
+      <button class="minibtn" ${ctPagina>=totalPag?'disabled':''} onclick="ctIrPag(${ctPagina+1})">Próxima ▶</button>`;
+  }
 }
 function novoPedidoTipo(){ novoPedido(); document.getElementById('p-tipo').value=ctModo; onTipoChange(); }
 function exportarControle(){
