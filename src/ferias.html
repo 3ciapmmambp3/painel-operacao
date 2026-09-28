@@ -189,8 +189,14 @@
           <div class="fld"><label>Limite para escolha</label><input type="date" id="c-limite"></div>
         </div>
         <div class="grid" style="margin-top:12px;">
-          <div class="fld"><label>% máx. na Cia</label><input type="number" id="c-pct-cia" min="0" max="100" step="0.5" placeholder="ex.: 20"></div>
+          <div class="fld"><label>% máx. na Cia (teto por data)</label><input type="number" id="c-pct-cia" min="0" max="100" step="0.5" placeholder="15"></div>
           <div class="fld"><label>% máx. por Grupamento (padrão)</label><input type="number" id="c-pct-gp" min="0" max="100" step="0.5" placeholder="ex.: 33"></div>
+        </div>
+        <div style="margin-top:12px;display:flex;align-items:flex-start;gap:8px;">
+          <input type="checkbox" id="c-reconv" style="margin-top:2px;width:auto;">
+          <label for="c-reconv" style="font-size:12.5px;color:var(--text-white);cursor:pointer;">Contar <b>reconvocados (QOR/QPR)</b> no percentual
+            <div class="miut">Desmarcado (padrão): reconvocados ficam <b>fora</b> do cálculo dos 15%. Marque para incluí-los.</div>
+          </label>
         </div>
         <div style="margin-top:14px;">
           <label style="font-size:11px;color:var(--text-hint);text-transform:uppercase;letter-spacing:.4px;">% máx. por Pelotão — um limite para cada</label>
@@ -600,6 +606,7 @@ async function preencherCronograma(c){
   document.getElementById('c-limite').value = (c?.data_limite||'').slice(0,10);
   document.getElementById('c-pct-cia').value = c?.pct_max_cia ?? '';
   document.getElementById('c-pct-gp').value  = c?.pct_max_grupamento ?? '';
+  document.getElementById('c-reconv').checked = !!(c?.contar_reconvocados);
   await carregarPels();
   renderLimitesPel(c?.limites_pelotao||{});
   anexoPdf = c?.anexo_pdf||[]; renderAnexo();
@@ -619,6 +626,7 @@ async function salvarCronograma(){
       data_limite:document.getElementById('c-limite').value||null,
       pct_max_cia:document.getElementById('c-pct-cia').value||null,
       pct_max_grupamento:document.getElementById('c-pct-gp').value||null,
+      contar_reconvocados:document.getElementById('c-reconv').checked,
       limites_pelotao:lerLimitesPel(),
       anexo_pdf:anexoPdf,
       periodos:lerPeriodos() };
@@ -1086,10 +1094,15 @@ async function importarFerias(input){
 
 // ══════════════ ÁREA DO MILITAR (Fase 2) ══════════════
 let milLists={l25:[],l15:[],l10:[]};
+// meses em que NÃO se pode tirar 25 dias direto (só fracionado): jan, jul, dez
+const MESES_SEM_25=['01','07','12'];
+function _mesIni(d){ return String(d||'').slice(5,7); }
 function milOpts(){
   const per=(cronograma&&cronograma.periodos)||[]; const l25=[],l15=[],l10=[];
   per.forEach(p=>{ const ord=p.ordem||'';
-    if(p['25']&&(p['25'].ini||p['25'].fim)) l25.push({periodo:ord,ini:p['25'].ini,fim:p['25'].fim});
+    // 25 dias direto NÃO é permitido para períodos que começam em jan/jul/dez
+    if(p['25']&&(p['25'].ini||p['25'].fim) && !MESES_SEM_25.includes(_mesIni(p['25'].ini)))
+      l25.push({periodo:ord,ini:p['25'].ini,fim:p['25'].fim});
     (p['15']||[]).forEach(w=>{ if(w.ini||w.fim) l15.push({periodo:ord,ini:w.ini,fim:w.fim}); });
     (p['10']||[]).forEach(w=>{ if(w.ini||w.fim) l10.push({periodo:ord,ini:w.ini,fim:w.fim}); });
   });
@@ -1213,6 +1226,12 @@ async function milEnviar(){
     });
     if(erro) return flash(erro,false);
     if(!opcoes.length) return flash('Informe ao menos a 1ª opção.',false);
+    // opções não podem repetir o mesmo período — cada uma tem que ser diferente
+    const _sig=o=>(o.parcelas||[]).map(p=>`${p.parcela}:${String(p.ini).slice(0,10)}~${String(p.fim).slice(0,10)}`).sort().join('|');
+    const sigs=opcoes.map(_sig);
+    for(let i=0;i<sigs.length;i++) for(let j=i+1;j<sigs.length;j++){
+      if(sigs[i]===sigs[j]) return flash(`A ${opcoes[i].ordem}ª e a ${opcoes[j].ordem}ª opção estão com o MESMO período. Cada opção precisa ser diferente.`,false);
+    }
     await rpc('ferias_pedido_solicitar',{p_token:sessao.token,p_dados:{ano:anoSel,opcoes,observacoes:document.getElementById('mil-obs').value.trim()||null}});
     flash('Escolha enviada! Aguarde a aprovação do comandante do pelotão.',true); milBoot();
   }catch(e){ flash(e.message||'Erro ao enviar.',false); }
