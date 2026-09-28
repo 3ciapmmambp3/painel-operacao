@@ -38,6 +38,11 @@
       background:var(--bg-card);border:1px solid var(--border);color:var(--text-muted);}
     .asw:hover{color:var(--text-white);}
     .asw.active{background:var(--acc-bg);border-color:var(--acc);color:var(--text-white);}
+    .ct-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
+    .ct-chip{padding:6px 13px;font-size:12.5px;font-weight:600;border-radius:20px;cursor:pointer;font-family:inherit;
+      background:var(--bg-dark);border:1px solid var(--border);color:var(--text-muted);}
+    .ct-chip:hover{color:var(--text-white);}
+    .ct-chip.active{background:var(--acc-bg);border-color:var(--acc);color:var(--text-white);}
     .card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:18px 18px;margin-bottom:16px;}
     .card h3{font-size:13px;color:var(--acc);text-transform:uppercase;letter-spacing:.6px;margin-bottom:14px;}
     .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;}
@@ -268,11 +273,17 @@
             <button class="btn-outline" onclick="exportarControle()">⬇ Exportar Excel</button>
           </div>
         </div>
+        <div class="ct-chips" id="ct-chips">
+          <button class="ct-chip active" data-sit="" onclick="ctSetSit('')">Todas</button>
+          <button class="ct-chip" data-sit="VALIDADO" onclick="ctSetSit('VALIDADO')">Validados</button>
+          <button class="ct-chip" data-sit="PENDENTE" onclick="ctSetSit('PENDENTE')">Pendentes</button>
+          <button class="ct-chip" data-sit="APROVADO_PEL" onclick="ctSetSit('APROVADO_PEL')">Aprov. Pelotão</button>
+          <button class="ct-chip" data-sit="REJEITADO" onclick="ctSetSit('REJEITADO')">Rejeitados</button>
+        </div>
         <div class="grid" style="margin-bottom:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
           <div class="fld"><label>Pelotão</label><select id="ct-pel" onchange="renderControle()"><option value="">Todos</option></select></div>
           <div class="fld"><label>Fração / GP</label><select id="ct-gp" onchange="renderControle()"><option value="">Todas</option></select></div>
           <div class="fld"><label>Exercício (ref.)</label><select id="ct-exerc" onchange="renderControle()"><option value="">Todos</option></select></div>
-          <div class="fld"><label>Situação</label><select id="ct-sit" onchange="renderControle()"><option value="">Todas</option><option value="PENDENTE">Pendente</option><option value="APROVADO_PEL">Aprov. Pelotão</option><option value="VALIDADO">Validado</option><option value="REJEITADO">Rejeitado</option></select></div>
           <div class="fld"><label>Busca (nome/Nº)</label><input id="ct-busca" placeholder="nome ou matrícula…" oninput="renderControle()"></div>
         </div>
         <div style="overflow-x:auto;">
@@ -1021,7 +1032,7 @@ function popularFiltrosCt(){
 // uma linha por PARCELA (como na planilha: 15+10 fracionado = 2 linhas)
 function ctLinhas(){
   const v=id=>{const e=document.getElementById(id);return e?e.value:'';};
-  const fp=v('ct-pel'),fg=v('ct-gp'),fe=v('ct-exerc'),fs=v('ct-sit'),fb=_norm(v('ct-busca').trim());
+  const fp=v('ct-pel'),fg=v('ct-gp'),fe=v('ct-exerc'),fs=ctSit,fb=_norm(v('ct-busca').trim());
   const out=[];
   _ctDoModo().forEach(r=>{
     if(fp && String(r.pelotao||'')!==fp) return;
@@ -1034,15 +1045,16 @@ function ctLinhas(){
   });
   return out;
 }
-let ctPagina=1, _ctSig=''; const CT_POR_PAG=20;
+let ctPagina=1, _ctSig='', ctSit=''; const CT_POR_PAG=20;
 function ctIrPag(n){ ctPagina=n; renderControle(); }
+function ctSetSit(s){ ctSit=s; document.querySelectorAll('#ct-chips .ct-chip').forEach(b=>b.classList.toggle('active', b.dataset.sit===s)); ctPagina=1; renderControle(); }
 function renderControle(){
   const tb=document.getElementById('tbody-ct'); if(!tb) return;
   const pager=document.getElementById('ct-pager'); if(pager) pager.innerHTML='';
   popularFiltrosCt();
   // reseta a página quando os filtros/aba mudam (mas não ao navegar)
   const v=id=>{const e=document.getElementById(id);return e?e.value:'';};
-  const sig=[ctModo,v('ct-pel'),v('ct-gp'),v('ct-exerc'),v('ct-sit'),v('ct-busca')].join('|');
+  const sig=[ctModo,v('ct-pel'),v('ct-gp'),v('ct-exerc'),ctSit,v('ct-busca')].join('|');
   if(sig!==_ctSig){ _ctSig=sig; ctPagina=1; }
   const linhas=ctLinhas();
   if(!linhas.length){ tb.innerHTML='<tr><td colspan="9"><div class="empty">Nenhuma férias'+(CTRL.length?' com esses filtros':' para '+anoSel)+'.</div></td></tr>'; return; }
@@ -1350,6 +1362,7 @@ function abrirTab(t){
   if(t==='pct') carregarPct();
   if(t==='anuais'||t==='premio'){
     ctModo = (t==='premio')?'PREMIO':'ANUAL';
+    ctSit=''; document.querySelectorAll('#ct-chips .ct-chip').forEach(b=>b.classList.toggle('active',b.dataset.sit===''));  // "Todas" ao trocar de aba
     document.getElementById('ct-titulo').textContent = ctModo==='PREMIO'?'Férias-Prêmio':'Férias Anuais';
     document.getElementById('ct-sub').textContent = ctModo==='PREMIO'
       ? 'Férias-prêmio (sem prazo) — lançadas pela P1.'
