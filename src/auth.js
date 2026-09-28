@@ -306,10 +306,11 @@ function auth_podeVerGrupamento(sessao, grupamento_id) {
   const nivel = sessao.nivel_acesso;
   if (nivel === 'admin_geral' || nivel === 'admin') return true;
   if (nivel === 'admin_pelotao') {
-    // admin_pelotao enxerga todos os pelotões do próprio GP (não só o mesmo número de pelotão em qualquer GP)
-    const meuGp = _gpNum(sessao.grupamento_id);
-    if (meuGp === null) return sessao.grupamento_id === grupamento_id; // fallback
-    return _gpNum(grupamento_id) === meuGp;
+    // admin_pelotao enxerga TODOS os grupamentos (GPs) do PRÓPRIO PELOTÃO
+    // (não o mesmo número de GP espalhado por todos os pelotões).
+    const meuPel = _pelotaoNum(sessao.grupamento_id);
+    if (meuPel === null) return sessao.grupamento_id === grupamento_id; // fallback
+    return _pelotaoNum(grupamento_id) === meuPel;
   }
   if (nivel === 'admin_gp') {
     // Escopo isolado: só o próprio grupamento (não o pelotão inteiro)
