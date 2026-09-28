@@ -1,8 +1,8 @@
 -- ══════════════════════════════════════════════════════════════════════
 --  CORREÇÃO PONTUAL — militar DUPLICADO no efetivo
 --  Sd PM Bárbara Borel Satler Pio dos Santos aparecia 2x (GP Manhuaçu):
---    • 192.280-7 (CORRETO)  → id 7ec77c95-1ebc-4d2a-a29c-bcf926de2409  (MANTER)
---    • 191.280-7 (typo)     → id e4a80a2b-fb47-4f56-a517-cfcb62cc0bb0  (REMOVER)
+--    • 191.280-7 (CORRETO)  → id e4a80a2b-fb47-4f56-a517-cfcb62cc0bb0  (MANTER)
+--    • 192.280-7 (typo do import) → id 7ec77c95-1ebc-4d2a-a29c-bcf926de2409 (REMOVER)
 --
 --  O "excluir" do app é hard delete e falha por FK (chamada_instrucao etc.).
 --  Este script MESCLA: reaponta todas as referências (militar_id) do registro
@@ -17,8 +17,8 @@
 
 do $$
 declare
-  v_keep uuid := '7ec77c95-1ebc-4d2a-a29c-bcf926de2409';  -- 192.280-7 (manter)
-  v_dup  uuid := 'e4a80a2b-fb47-4f56-a517-cfcb62cc0bb0';  -- 191.280-7 (remover)
+  v_keep uuid := 'e4a80a2b-fb47-4f56-a517-cfcb62cc0bb0';  -- 191.280-7 (CORRETO, manter)
+  v_dup  uuid := '7ec77c95-1ebc-4d2a-a29c-bcf926de2409';  -- 192.280-7 (typo, remover)
   fk record;
 begin
   if not exists (select 1 from public.militares where id = v_dup) then
@@ -49,5 +49,5 @@ begin
   end loop;
 
   delete from public.militares where id = v_dup;
-  raise notice 'OK: registro 191.280-7 removido; referências reapontadas para 192.280-7.';
+  raise notice 'OK: registro 192.280-7 removido; referências reapontadas para 191.280-7.';
 end $$;
