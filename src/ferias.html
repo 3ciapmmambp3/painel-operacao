@@ -776,9 +776,9 @@ function parcelaRow(x){ x=x||{}; const prem=document.getElementById('p-tipo').va
 function _avisoParcela25(el){
   const w=el.closest('.win'); if(!w) return;
   const par=w.querySelector('.pc-par').value;
-  const mes=String(w.querySelector('.pc-ini').value||'').slice(5,7);
+  const ini=w.querySelector('.pc-ini').value, fim=w.querySelector('.pc-fim').value;
   const av=w.querySelector('.pc-aviso');
-  if(av) av.style.display=(par==='25' && ['01','07','12'].includes(mes))?'block':'none';
+  if(av) av.style.display=(par==='25' && _cobreMesRestrito(ini,fim))?'block':'none';
 }
 function addParcela(x){ document.getElementById('p-parcelas').insertAdjacentHTML('beforeend', parcelaRow(x));
   const rows=document.querySelectorAll('#p-parcelas .win'); const last=rows[rows.length-1]; if(last) _avisoParcela25(last.querySelector('.pc-par')); }
@@ -1110,12 +1110,19 @@ async function importarFerias(input){
 let milLists={l25:[],l15:[],l10:[]};
 // meses em que NÃO se pode tirar 25 dias direto (só fracionado): jan, jul, dez
 const MESES_SEM_25=['01','07','12'];
-function _mesIni(d){ return String(d||'').slice(5,7); }
+// true se a janela [ini,fim] cobre (sobrepõe) algum mês restrito — pega até o
+// 10º período (26/11–30/12), que "começa" em nov mas é a férias de dezembro.
+function _cobreMesRestrito(ini,fim){
+  if(!ini) return false;
+  let dt=new Date(ini+'T00:00'), f=new Date((fim||ini)+'T00:00'), g=0;
+  while(dt<=f && g<400){ if(MESES_SEM_25.includes(('0'+(dt.getMonth()+1)).slice(-2))) return true; dt.setDate(dt.getDate()+1); g++; }
+  return false;
+}
 function milOpts(){
   const per=(cronograma&&cronograma.periodos)||[]; const l25=[],l15=[],l10=[];
   per.forEach(p=>{ const ord=p.ordem||'';
-    // 25 dias direto NÃO é permitido para períodos que começam em jan/jul/dez
-    if(p['25']&&(p['25'].ini||p['25'].fim) && !MESES_SEM_25.includes(_mesIni(p['25'].ini)))
+    // 25 dias direto NÃO é permitido se a janela cair em jan/jul/dez
+    if(p['25']&&(p['25'].ini||p['25'].fim) && !_cobreMesRestrito(p['25'].ini,p['25'].fim))
       l25.push({periodo:ord,ini:p['25'].ini,fim:p['25'].fim});
     (p['15']||[]).forEach(w=>{ if(w.ini||w.fim) l15.push({periodo:ord,ini:w.ini,fim:w.fim}); });
     (p['10']||[]).forEach(w=>{ if(w.ini||w.fim) l10.push({periodo:ord,ini:w.ini,fim:w.fim}); });
