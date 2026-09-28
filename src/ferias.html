@@ -173,11 +173,19 @@
         </div>
         <div id="ap-pct"></div>
       </div>
-      <div class="card" style="overflow-x:auto;">
-        <table>
-          <thead><tr><th>#</th><th>Militar</th><th>Opções escolhidas</th><th>Período definido</th><th>Situação</th><th></th></tr></thead>
-          <tbody id="ap-tbody"><tr><td colspan="6"><div class="empty">Selecione o pelotão.</div></td></tr></tbody>
-        </table>
+      <div class="card">
+        <div class="ct-chips" id="ap-chips">
+          <button class="ct-chip active" data-sit="" onclick="apSetSit('')">Todos</button>
+          <button class="ct-chip" data-sit="PENDENTE" onclick="apSetSit('PENDENTE')">Pendentes de validação <span id="ap-pend-n" class="miut"></span></button>
+          <button class="ct-chip" data-sit="APROVADO_PEL" onclick="apSetSit('APROVADO_PEL')">Aprovados pelo Pelotão</button>
+          <button class="ct-chip" data-sit="VALIDADO" onclick="apSetSit('VALIDADO')">Validados</button>
+        </div>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead><tr><th>#</th><th>Militar</th><th>Opções escolhidas</th><th>Período definido</th><th>Situação</th><th>Ações</th></tr></thead>
+            <tbody id="ap-tbody"><tr><td colspan="6"><div class="empty">Selecione o pelotão.</div></td></tr></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -1401,9 +1409,14 @@ function apPeriodoSpans(){
     const v=ds.filter(Boolean).map(s=>String(s).slice(0,10)).sort(); return {ordem:p.ordem, ini:v[0], fim:v[v.length-1]}; });
 }
 function apOverlap(aIni,aFim,bIni,bFim){ return String(aIni).slice(0,10)<=String(bFim).slice(0,10) && String(aFim).slice(0,10)>=String(bIni).slice(0,10); }
+let apSit='';
+function apSetSit(s){ apSit=s; document.querySelectorAll('#ap-chips .ct-chip').forEach(b=>b.classList.toggle('active', b.dataset.sit===s)); aprovarRender(); }
 function aprovarRender(){
   const pel=document.getElementById('ap-pel').value;
   const lista=pedidos.filter(p=>String(p.pelotao)===String(pel));
+  const listaTb = apSit ? lista.filter(p=>p.situacao===apSit) : lista;
+  const nPend=lista.filter(p=>p.situacao==='PENDENTE').length;
+  const pn=document.getElementById('ap-pend-n'); if(pn) pn.textContent=nPend?`(${nPend})`:'';
   const spans=apPeriodoSpans();
   const total=apTotals[pel]||lista.length||0;
   const limPel=(cronograma&&cronograma.limites_pelotao&&cronograma.limites_pelotao[pel])!=null?cronograma.limites_pelotao[pel]:(cronograma&&cronograma.pct_max_pelotao);
@@ -1414,8 +1427,8 @@ function aprovarRender(){
   }).join('');
   document.getElementById('ap-pct').innerHTML=spans.length?('<div class="miut" style="text-transform:uppercase;font-size:10px;letter-spacing:.4px;margin-bottom:8px;">Percentual do pelotão por período — provisório, atualiza ao definir</div>'+pctHtml):'<div class="miut">Cronograma sem períodos cadastrados.</div>';
   const tb=document.getElementById('ap-tbody');
-  if(!lista.length){ tb.innerHTML='<tr><td colspan="6"><div class="empty">Nenhum pedido neste pelotão.</div></td></tr>'; return; }
-  tb.innerHTML=lista.map((p,i)=>{ const m=p.militar||{};
+  if(!listaTb.length){ tb.innerHTML='<tr><td colspan="6"><div class="empty">'+(lista.length?'Nenhum pedido com esse filtro.':'Nenhum pedido neste pelotão.')+'</div></td></tr>'; return; }
+  tb.innerHTML=listaTb.map((p,i)=>{ const m=p.militar||{};
     const ops=(p.opcoes&&p.opcoes.length)?p.opcoes:[];
     const opsTxt=parcelasTxt(p);
     const fin=(p.parcelas||[]).length?('<span style="display:flex;gap:4px;flex-wrap:wrap;">'+(p.parcelas||[]).map(_chip).join('')+'</span>'):'<span class="miut">a definir</span>';
