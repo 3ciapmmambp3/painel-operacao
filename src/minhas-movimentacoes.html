@@ -187,6 +187,39 @@ let TEAM_VTR_DAY = new Set();
 let TEAM_MOT_DAY = new Set();
 let TEAM_CMT_DAY = new Set();   // fichas em que EU sou o comandante da equipe (via pendência do TTA): {viatura|dia}
 const _pfxKey = s => (s||'').toString().trim().toUpperCase().split(/[\s\-\/]/)[0];
+
+// ── Posto/graduação do motorista ────────────────────────────────────────
+// O posto NÃO é gravado na ficha; o texto do nome foi salvo de dois jeitos ao
+// longo do tempo (uns "CB PM NOME", outros só "NOME"). Aqui carregamos o
+// efetivo uma vez e, na lista, prefixamos o posto pela matrícula quando o nome
+// ainda não traz um posto. Assim acompanha promoções (vem sempre do efetivo).
+const POSTO_BY_MAT = new Map();
+// Detecta se o nome já começa com um posto/graduação.
+const _TEM_POSTO = /^(sd|cb|3.?\s*sgt|2.?\s*sgt|1.?\s*sgt|sub\s*ten|s\.?ten|st|1.?\s*ten|2.?\s*ten|ten\s*cel|ten|cap|maj|cel|asp)\b/i;
+async function carregarPostos(){
+  if (!S || !S.token || POSTO_BY_MAT.size) return;
+  try{
+    const res = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/tta_listar_militares`,{
+      method:'POST', headers:{ apikey:SB_AUTH_KEY, Authorization:'Bearer '+SB_AUTH_KEY, 'Content-Type':'application/json' },
+      body: JSON.stringify({ p_token:S.token }) });
+    if(!res.ok) return;
+    const arr = await res.json();
+    (Array.isArray(arr)?arr:[]).forEach(m=>{
+      const k=(m.matricula||'').replace(/\D/g,'');
+      if(k && m.posto_graduacao) POSTO_BY_MAT.set(k, m.posto_graduacao);
+    });
+  }catch(e){ /* segue sem os postos; mostra o nome como está */ }
+}
+// Nome do motorista para a lista: prefixa o posto (do efetivo) quando faltar.
+function motoristaComPosto(r){
+  const nome=(r.motorista_nome||'').trim();
+  if(!nome) return '—';
+  if(_TEM_POSTO.test(nome)) return nome;                 // já tem posto no texto
+  const mat=(r.motorista_matricula||'').replace(/\D/g,'');
+  const posto=mat && POSTO_BY_MAT.get(mat);
+  return posto ? (posto+' '+nome) : nome;                // sem posto no efetivo → nome cru
+}
+
 // Carrega as viaturas/dias em que EU sou o COMANDANTE da equipe (mov_pendencias).
 // Serve p/ o comandante VER e EDITAR a ficha lançada pelo motorista (mesma equipe).
 async function carregarPendenciasComandante(){
@@ -332,7 +365,7 @@ function render(){
     return `<tr>
       <td>${fmtData(r)}</td>
       <td><span class="vtr">${esc(r.prefixo||'—')}</span>${x.mine?'<span class="mine-badge">MINHA</span>':''}<div class="sub">${esc(r.placa||'')}</div></td>
-      <td>${esc(r.motorista_nome||'—')}<div class="sub">${esc(r.motorista_matricula||'')}</div></td>
+      <td>${esc(motoristaComPosto(r))}<div class="sub">${esc(r.motorista_matricula||'')}</div></td>
       <td class="km">${km}</td>
       <td>${esc(grupTxt)}</td>
       <td><div class="flags">${flags.join('')||'<span class="sub">—</span>'}</div></td>
@@ -426,6 +459,7 @@ async function carregar(){
     const data = await res.json();
     await carregarMinhasEquipesTTA();   // prepara os conjuntos da "equipe que comandei" (militar comum)
     await carregarPendenciasComandante();   // fichas em que sou o comandante da equipe (ver + editar)
+    await carregarPostos();             // mapa matrícula→posto p/ prefixar o nome do motorista
     // Mantém TODAS as fichas ativas em memória (o recorte por chip é feito no render).
     // Não-gestor só enxerga mine/team; o gestor (Aux P4/Admin) tem o chip "Todas (gestão)".
     ROWS = (Array.isArray(data)?data:[]).map(r=>({ r, mine: ehMinha(r), team: daMinhaEquipe(r) }));
