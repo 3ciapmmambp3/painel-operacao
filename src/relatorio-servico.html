@@ -1199,6 +1199,31 @@ function resolveFracaoCanonica(rawText){
   return rawText; // não achou correspondência — devolve como veio, não trava o formulário
 }
 
+/* Grupamentos que COMPARTILHAM demandas: as equipes atendem demandas um do
+   outro (às vezes no mesmo dia), então a Fração de Atuação de QUALQUER um do
+   grupo mostra as demandas de TODOS do grupo. Compara por (nº GP, nº PEL,
+   cidade) pra não depender da grafia exata. Para incluir novos, é só
+   acrescentar outro array de grupamentos. */
+const FRACOES_COMPARTILHADAS = [
+  ['1 GP / 4 PEL / 3 CIA PM MAMB / TEOFILO OTONI', '3 GP / 4 PEL / 3 CIA PM MAMB / ITAMBACURI'],
+];
+function _fracaoKey(s){
+  const t = normalizeText(s);
+  const gp  = (t.match(/(\d+)\s*GP/)  || [])[1] || '';
+  const pel = (t.match(/(\d+)\s*PEL/) || [])[1] || '';
+  const parts = t.split('/').map(x=>x.trim()).filter(Boolean);
+  const cidade = parts[parts.length-1] || '';
+  return gp + '|' + pel + '|' + cidade;
+}
+const _GRUPOS_COMPART_KEYS = FRACOES_COMPARTILHADAS.map(g => g.map(_fracaoKey));
+/* true quando a fração do item e a Fração de Atuação escolhida são o mesmo
+   grupamento OU pertencem ao mesmo grupo de compartilhamento. */
+function _fracaoCasaOuCompartilha(fracaoItemCanon, alvoCanon){
+  const a = _fracaoKey(fracaoItemCanon), b = _fracaoKey(alvoCanon);
+  if (a && a === b) return true;
+  return _GRUPOS_COMPART_KEYS.some(grupo => grupo.includes(a) && grupo.includes(b));
+}
+
 function getFracaoAtualCanonica(){
   const sel = document.querySelector('[name="fracaoAtuacao"]');   // select OU input (busca)
   return sel && sel.value ? resolveFracaoCanonica(sel.value) : '';
@@ -1256,7 +1281,7 @@ function getFilteredItems_(sourceKey, filterFracao, currentEl){
     items = list.filter(it => {
       const val = optionValueOf_(it);
       if (val.trim().toLowerCase() === 'outro:') return true;
-      return it.fracao && alvo && resolveFracaoCanonica(it.fracao) === alvo;
+      return it.fracao && alvo && _fracaoCasaOuCompartilha(resolveFracaoCanonica(it.fracao), alvo);
     });
   }
 
@@ -1610,7 +1635,8 @@ async function carregarDemandasSupabase(){
   let GRUPOS = [];
   const rg = await fetch(`${SB_AUTH_URL}/rest/v1/grupos?select=gp_responsavel,grupamento_completo`, { headers:H });
   if (!rg.ok) throw new Error(`grupos ${rg.status}`);
-  GRUPOS = (await rg.json()).map(g => ({ gpr:g.gp_responsavel, gp:gpN(g.grupamento_completo), pel:pelN(g.grupamento_completo) }));
+  const gruposRaw = await rg.json();
+  GRUPOS = gruposRaw.map(g => ({ gpr:g.gp_responsavel, gp:gpN(g.grupamento_completo), pel:pelN(g.grupamento_completo) }));
 
   const nivel = S.nivel_acesso || 'operacional';
   const meuGp = gpN(S.grupamento_id), meuPel = pelN(S.grupamento_id);
@@ -1621,8 +1647,22 @@ async function carregarDemandasSupabase(){
     ALLOWED = GRUPOS.filter(g => g.gp===meuGp && g.pel===meuPel);
     if (!ALLOWED.length) ALLOWED = GRUPOS.filter(g => (S.grupamento_id||'').toUpperCase().includes((g.gpr||'').replace('GP ','')));
   }
-  const gprs = [...new Set(ALLOWED.map(g=>g.gpr).filter(Boolean))];
+  let gprs = [...new Set(ALLOWED.map(g=>g.gpr).filter(Boolean))];
   if (!gprs.length) return;
+
+  // Grupamentos que COMPARTILHAM demandas: se o militar tem acesso a um deles,
+  // inclui também os demais do mesmo grupo (assim as demandas do "irmão" são
+  // carregadas e ficam disponíveis no filtro por Fração). Ver FRACOES_COMPARTILHADAS.
+  try{
+    const keyToGpr = {};
+    gruposRaw.forEach(g=>{ const k=_fracaoKey(g.grupamento_completo); if(k && g.gp_responsavel) keyToGpr[k]=g.gp_responsavel; });
+    const extra=[];
+    FRACOES_COMPARTILHADAS.forEach(grupo=>{
+      const membros = grupo.map(_fracaoKey).map(k=>keyToGpr[k]).filter(Boolean);
+      if (membros.some(g=>gprs.includes(g))) membros.forEach(g=>extra.push(g));
+    });
+    if (extra.length) gprs = [...new Set([...gprs, ...extra])];
+  }catch(e){ console.warn('frações compartilhadas (carga):', e); }
 
   const inList = '(' + gprs.map(v=>`"${String(v).replace(/"/g,'')}"`).join(',') + ')';
   const sit    = 'in.(' + ['"PENDENTE"','"EM ANDAMENTO"'].join(',') + ')';
