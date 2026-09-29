@@ -337,6 +337,7 @@
             <tbody id="tbody-ped"><tr><td colspan="7"><div class="empty">Carregando…</div></td></tr></tbody>
           </table>
         </div>
+        <div id="ped-pager" class="row-actions" style="justify-content:center;align-items:center;gap:10px;margin-top:12px;"></div>
       </div>
     </div>
   </div>
@@ -760,11 +761,22 @@ function filtrarPedidos(){
     return true;
   });
 }
+let pedPagina=1, _pedSig=''; const PED_POR_PAG=20;
+function pedIrPag(n){ pedPagina=n; renderPedidos(); }
 function renderPedidos(){
   const tb=document.getElementById('tbody-ped');
+  const pager=document.getElementById('ped-pager'); if(pager) pager.innerHTML='';
   popularFiltros(); const lista=filtrarPedidos();
+  // reseta a página quando os filtros mudam (mas não ao navegar)
+  const gv=id=>{const e=document.getElementById(id);return e?e.value:'';};
+  const sig=[gv('fl-pel'),gv('fl-gp'),gv('fl-sit'),gv('fl-ini'),gv('fl-fim'),anoSel].join('|');
+  if(sig!==_pedSig){ _pedSig=sig; pedPagina=1; }
   if(!lista.length){ tb.innerHTML='<tr><td colspan="7"><div class="empty">Nenhum lançamento'+(pedidos.length?' com esses filtros':' para '+anoSel)+'.</div></td></tr>'; return; }
-  tb.innerHTML = lista.map(p=>{
+  const totalPag=Math.max(1,Math.ceil(lista.length/PED_POR_PAG));
+  if(pedPagina>totalPag) pedPagina=totalPag; if(pedPagina<1) pedPagina=1;
+  const ini=(pedPagina-1)*PED_POR_PAG;
+  const pageRows=lista.slice(ini, ini+PED_POR_PAG);
+  tb.innerHTML = pageRows.map(p=>{
     const m=p.militar||{};
     return `<tr>
       <td style="min-width:220px;"><b>${esc(m.pg||'')} ${esc(m.nome||m.guerra||'')}</b><div class="miut">${esc(m.matricula||'')}${p.pelotao?' · '+esc(p.pelotao):''}${m.guerra&&m.guerra!==m.nome?' · '+esc(m.guerra):''}</div></td>
@@ -778,6 +790,12 @@ function renderPedidos(){
         <button class="minibtn ico del" title="Excluir" onclick="excluirPedido('${p.id}')">🗑️</button></td>
     </tr>`;
   }).join('');
+  if(pager && lista.length>PED_POR_PAG){
+    const de=ini+1, ate=Math.min(ini+PED_POR_PAG,lista.length);
+    pager.innerHTML=`<button class="minibtn" ${pedPagina<=1?'disabled':''} onclick="pedIrPag(${pedPagina-1})">◀ Anterior</button>`
+      +`<span class="miut">${de}–${ate} de ${lista.length} lançamentos · pág. ${pedPagina}/${totalPag}</span>`
+      +`<button class="minibtn" ${pedPagina>=totalPag?'disabled':''} onclick="pedIrPag(${pedPagina+1})">Próxima ▶</button>`;
+  }
 }
 async function garantirEfetivo(){
   if(efetivo.length) return;
