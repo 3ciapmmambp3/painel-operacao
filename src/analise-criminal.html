@@ -13001,7 +13001,50 @@ async function salvarIntel(){
   }
 }
 
+/* ── Permissão de EXCLUSÃO de ficha de inteligência ──────────────────
+   • Admin Geral: sempre (pode tudo).
+   • Cmt Si / Agente de Inteligência com Perfil de Admin: a qualquer tempo
+     (reconhecidos pelo campo Função contendo SI, P2 ou INTEL).
+   • Quem lançou (criador): só nas primeiras 48h após a criação da ficha.
+   A EDIÇÃO continua como antes (criador + perfil admin, sem limite de tempo). */
+function _intelFuncaoSI(){
+  const fx = (sessao?.funcao || '').toUpperCase();
+  if(!fx) return false;
+  return /\bSI\b/.test(fx) || /\bP\s?2\b/.test(fx) || /INTEL/.test(fx);
+}
+function _intelSouCriador(f){
+  if(!sessao?.nome || !f || !f.criadoPor) return false;
+  const c = String(f.criadoPor);
+  return c===sessao.nome || c===sessao.guerra ||
+    (sessao.guerra && c.toUpperCase().includes((sessao.guerra||'').toUpperCase()));
+}
+function _intelParseData(s){
+  if(!s) return null;
+  const m = String(s).match(/(\d{2})\/(\d{2})\/(\d{4})[,\s]+(\d{2}):(\d{2})(?::(\d{2}))?/); // pt-BR
+  if(m) return new Date(+m[3], +m[2]-1, +m[1], +m[4], +m[5], +(m[6]||0));
+  const iso = Date.parse(s);
+  return isNaN(iso) ? null : new Date(iso);
+}
+function _intelDentro48h(f){
+  const d = _intelParseData(f && f.criadoEm);
+  if(!d) return false;                                  // sem data confiável → fora da janela
+  return (Date.now() - d.getTime()) <= 48*60*60*1000;
+}
+function _intelPodeExcluir(f){
+  if(!sessao || !f) return false;
+  if(sessao.nivel_acesso === 'admin_geral') return true;                       // pode tudo
+  const perfilAdmin = sessao.perfil==='admin' || sessao.perfil==='comandante';
+  if(perfilAdmin && _intelFuncaoSI()) return true;                             // Cmt Si / Agente Intel Admin
+  if(_intelSouCriador(f) && _intelDentro48h(f)) return true;                   // criador nas 1ªs 48h
+  return false;
+}
+
 async function excluirIntel(id){
+  const f = fichasIntel.find(x=>x.id===id);
+  if(f && !_intelPodeExcluir(f)){
+    alert('Você não tem permissão para excluir esta ficha.\n\nO criador pode excluir apenas nas primeiras 48h. Depois disso, só o Cmt Si / Agente de Inteligência (Perfil de Admin) ou o Admin Geral.');
+    return;
+  }
   if(!confirm('Excluir esta ficha?')) return;
   fichasIntel = fichasIntel.filter(x=>x.id!==id);
   await _excluirFichaSupabase(id);
@@ -14025,7 +14068,7 @@ function abrirDrawerIntel(fichaId){
     (sessao.guerra && f.criadoPor.toUpperCase().includes((sessao.guerra||'').toUpperCase()))
   ));
   document.getElementById('idr-btn-editar').style.display = podeEditar ? '' : 'none';
-  document.getElementById('idr-btn-excluir').style.display = _isAdmin ? '' : 'none';
+  document.getElementById('idr-btn-excluir').style.display = _intelPodeExcluir(f) ? '' : 'none';
 
   /* Render aba inicial */
   idRenderTab('geral');
