@@ -1234,10 +1234,11 @@ function itemMatchesQuery_(texto, consulta){
 // estar em UMA equipe por vez; um alvo do FAPI só pode ser lançado uma vez).
 const FONTES_SEMPRE_SEM_DUPLICATA = ['MILITARES', 'FAPI_ALVO'];
 
-// Fontes cujos itens vêm da tabela `denuncias` do Supabase (pendentes) em vez da
-// planilha. Já chegam escopadas pelo perfil do militar (ver carregarDemandasSupabase),
-// então NÃO passam pelo filtro por Fração da planilha — mas continuam sem duplicata.
-const FONTES_SUPABASE = ['DEN_BALCAO', 'REQUISICAO'];
+// Fontes que NÃO passam pelo filtro por Fração (itens sem grupamento vinculado).
+// DEN_BALCAO/REQUISICAO saíram daqui: agora cada item do Supabase carrega a
+// `fracao` (grupamento), então DEVEM ser escopados pela Fração de Atuação
+// selecionada — senão demandas de outros grupamentos aparecem misturadas.
+const FONTES_SUPABASE = [];
 
 function getFilteredItems_(sourceKey, filterFracao, currentEl){
   const list = referenceCache[sourceKey];
@@ -1625,7 +1626,7 @@ async function carregarDemandasSupabase(){
 
   const inList = '(' + gprs.map(v=>`"${String(v).replace(/"/g,'')}"`).join(',') + ')';
   const sit    = 'in.(' + ['"PENDENTE"','"EM ANDAMENTO"'].join(',') + ')';
-  const cols   = 'numero,tipo,municipio,tema';
+  const cols   = 'numero,tipo,municipio,tema,gp_responsavel,grupamento_completo';
   const url = `${SB_AUTH_URL}/rest/v1/denuncias?select=${cols}`
             + `&gp_responsavel=in.${encodeURIComponent(inList)}`
             + `&situacao=${encodeURIComponent(sit)}`
@@ -1640,8 +1641,11 @@ async function carregarDemandasSupabase(){
     const extras = [d.municipio, d.tema].filter(Boolean).join(' · ');
     return extras ? `${d.numero} — ${extras}` : `${d.numero}`;
   };
-  const supBalcao = rows.filter(d=>d.tipo==='denuncia').map(rotulo);
-  const supReq    = rows.filter(d=>d.tipo==='requisicao').map(rotulo);
+  // Itens com o grupamento embutido (fracao) para o filtro por Fração de Atuação
+  // conseguir escopar — antes vinham como string pura e escapavam do filtro.
+  const _supItem = d => ({ value: rotulo(d), fracao: d.grupamento_completo || d.gp_responsavel || '' });
+  const supBalcao = rows.filter(d=>d.tipo==='denuncia').map(_supItem);
+  const supReq    = rows.filter(d=>d.tipo==='requisicao').map(_supItem);
 
   // MERGE com o que a planilha (BD_atualização, via referências) trouxe — as
   // demandas antigas que ficaram pendentes lá também devem aparecer, ESCOPADAS
