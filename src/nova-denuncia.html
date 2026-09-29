@@ -314,6 +314,9 @@ let MUNI2GRP = {};
 const _grafiaGP = s => String(s==null?'':s).replace(/MARILIERIA/gi,'MARLIERIA').replace(/MOLEVADE/gi,'MONLEVADE');
 let temaSel = '';
 let anexos = [];   // {path,nome,tamanho,mime,link}
+// Modo edição: ?id=<uuid> carrega uma denúncia/requisição existente p/ complementar (até o atendimento).
+const EDIT_ID = new URLSearchParams(location.search).get('id');
+let EDIT_ROW = null;
 
 /* ── Boot ────────────────────────────────────────────────────────── */
 document.getElementById('who').textContent = MILITAR_LINHA;
@@ -343,6 +346,7 @@ setTipo(new URLSearchParams(location.search).get('tipo') === 'requisicao' ? 'req
     });
     document.getElementById('muni-hint').textContent =
       `${vistos.size} municípios — o grupamento é definido pelo município.`;
+    if (EDIT_ID) await carregarParaEdicao();
   } catch (e) {
     console.error('municipios:', e);
     document.getElementById('muni-hint').textContent = 'Erro ao carregar municípios: ' + e.message;
@@ -367,6 +371,85 @@ function setTipo(t){
   const bv = document.getElementById('btn-voltar-lista');
   if (bv){ bv.textContent = '← ' + lbl; bv.onclick = () => location.href = 'denuncias.html?tipo=' + t; }
   aplicarPrazoPadrao();
+}
+
+/* ── Modo edição: carrega a denúncia/requisição e preenche o formulário ── */
+function aplicarTemaChips(temaStr){
+  const chips = [...document.querySelectorAll('#chips .chip')];
+  chips.forEach(c => c.classList.remove('on'));
+  const partes = String(temaStr || '').split(',').map(s => s.trim()).filter(Boolean);
+  const outros = [];
+  partes.forEach(p => {
+    const chip = chips.find(c => c.textContent.trim().toUpperCase() === p.toUpperCase());
+    if (chip) chip.classList.add('on'); else outros.push(p);
+  });
+  if (outros.length){
+    const outroChip = chips.find(c => c.textContent.trim() === 'Outro');
+    if (outroChip) outroChip.classList.add('on');
+    document.getElementById('tema-outro-wrap').style.display = '';
+    document.getElementById('tema-outro').value = outros.join(', ');
+  } else {
+    document.getElementById('tema-outro-wrap').style.display = 'none';
+    document.getElementById('tema-outro').value = '';
+  }
+}
+async function carregarParaEdicao(){
+  try {
+    const r = await fetch(`${API}/rest/v1/denuncias?id=eq.${encodeURIComponent(EDIT_ID)}&select=*`, { headers: H });
+    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+    const d = (await r.json())[0];
+    if (!d){ erro('Registro não encontrado para edição.'); return; }
+    EDIT_ROW = d;
+    setTipo(d.tipo);
+    // Trava o seletor de tipo — a numeração é por tipo, não pode trocar na edição.
+    document.querySelectorAll('.seg button').forEach(b => {
+      b.disabled = true; b.style.cursor = 'not-allowed';
+      if (!b.classList.contains('on')) b.style.opacity = '.45';
+    });
+    // Origem (com os campos "Outro órgão" / "Ministério Público")
+    if (d.tipo === 'requisicao'){
+      const sel = document.getElementById('origem-req');
+      if ([...sel.options].some(o => o.value === d.origem)) sel.value = d.origem;
+      else { sel.value = 'Outro órgão'; document.getElementById('origem-outro').value = d.origem || ''; }
+      checkOutroOrgao();
+      document.getElementById('oficio').value = d.numero_oficio || '';
+    } else {
+      const sel = document.getElementById('origem-den');
+      if ([...sel.options].some(o => o.value === d.origem)) sel.value = d.origem;
+      else { sel.value = 'Ministério Público'; document.getElementById('origem-mp').value = d.origem || ''; }
+      checkMP();
+      document.getElementById('denunciante').value = d.denunciante || '';
+      document.getElementById('denunciado').value  = d.denunciado || '';
+    }
+    document.getElementById('data_fato').value = (d.data_fato || '').slice(0,10);
+    document.getElementById('data_recebimento').value = (d.data_recebimento || '').slice(0,10) || _hojeLocal();
+    document.getElementById('muni').value = d.municipio || '';
+    resolveGrp();
+    aplicarTemaChips(d.tema || '');
+    document.getElementById('objeto').value      = d.objeto || '';
+    document.getElementById('descricao').value   = d.descricao || '';
+    document.getElementById('endereco').value    = d.endereco || '';
+    document.getElementById('referencia').value  = d.referencia || '';
+    document.getElementById('observacoes').value = d.observacoes || '';
+    document.getElementById('prazo').value       = (d.prazo || '').slice(0,10);
+    document.getElementById('militar').value     = d.registrado_por_nome || MILITAR_LINHA;
+    anexos = (d.anexos || []).map(a => ({
+      path: a.path || null, nome: a.nome || 'arquivo', tamanho: a.tamanho || 0,
+      mime: a.mime || '', link: a.link || a.web_view_link || null, status: 'ok'
+    }));
+    renderAnexos();
+    // Ajusta a UI para "edição"
+    const lbl = d.tipo === 'requisicao' ? 'Requisição' : 'Denúncia';
+    document.getElementById('ttl').textContent = `Editar ${lbl} ${d.numero || ''}`.trim();
+    document.getElementById('sub').textContent = 'Complemente ou corrija os dados. A edição é permitida até o atendimento.';
+    const nb = document.querySelector('.numbadge');
+    if (nb) nb.innerHTML = `<span>Número</span><b>${d.numero || '—'}</b><small>edição — o número não muda</small>`;
+    document.getElementById('btn-salvar').textContent = 'Salvar alterações';
+    const crumbB = document.querySelector('.crumbs b'); if (crumbB) crumbB.textContent = 'Editar registro';
+  } catch (e){
+    console.error('carregarParaEdicao:', e);
+    erro('Erro ao carregar para edição: ' + e.message);
+  }
 }
 
 /* Prazo: denúncia = hoje + 45 dias (pré-preenchido); requisição = conforme o
@@ -592,8 +675,19 @@ async function enviar(ev){
   };
 
   const btn = document.getElementById('btn-salvar');
-  btn.disabled = true; btn.textContent = 'Registrando…';
+  btn.disabled = true; btn.textContent = EDIT_ID ? 'Salvando…' : 'Registrando…';
   try {
+    // ── Modo edição: atualiza o registro existente (até o atendimento) ──
+    if (EDIT_ID){
+      const re = await fetch(`${API}/rest/v1/rpc/denuncia_editar`, {
+        method: 'POST', headers: { ...H, 'Prefer':'return=representation' },
+        body: JSON.stringify({ p_token: S.token, p_id: EDIT_ID, dados })
+      });
+      if (!re.ok) throw new Error(`${re.status} ${await re.text()}`);
+      ok(`✓ Alterações salvas em <b>${(EDIT_ROW && EDIT_ROW.numero) || ''}</b>. `
+         + `<a href="denuncias.html?tipo=${tipo}">Voltar para ${tipo==='requisicao'?'Requisições':'Denúncias de Balcão'}</a> · <a href="painel.html">Painel</a>`);
+      return;
+    }
     const r = await fetch(`${API}/rest/v1/rpc/criar_denuncia`, {
       method: 'POST', headers: { ...H, 'Prefer':'return=representation' },
       body: JSON.stringify({ dados })
@@ -612,10 +706,10 @@ async function enviar(ev){
     resolveGrp();
     document.getElementById('militar').value = MILITAR_LINHA;
   } catch (e) {
-    console.error('criar_denuncia:', e);
-    erro('Não foi possível registrar: ' + e.message);
+    console.error(EDIT_ID ? 'denuncia_editar:' : 'criar_denuncia:', e);
+    erro((EDIT_ID ? 'Não foi possível salvar as alterações: ' : 'Não foi possível registrar: ') + e.message);
   } finally {
-    btn.disabled = false; btn.textContent = 'Registrar';
+    btn.disabled = false; btn.textContent = EDIT_ID ? 'Salvar alterações' : 'Registrar';
   }
 }
 </script>
