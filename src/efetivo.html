@@ -544,8 +544,19 @@ function popularGp(){
   const sel=document.getElementById('f-gp'); if(!sel) return; const atual=sel.value;
   const fpel=document.getElementById('f-pel').value;
   const base=LISTA.filter(m=>!fpel || _pelDe(m)===fpel);
-  const gps=[...new Set(base.map(m=>String(m.grupamento_id||'').trim()).filter(Boolean))].sort();
-  sel.innerHTML='<option value="">Todos os grupamentos</option>'+gps.map(g=>`<option value="${esc(g)}">${esc(_gpCurto(g))}</option>`).join('');
+  // grupamento_id -> pelotão (para ordenar/agrupar por pelotão em vez de alfabético)
+  const map={}; base.forEach(m=>{ const g=String(m.grupamento_id||'').trim(); if(g) map[g]=_pelDe(m); });
+  const pelKey=p=>(p==='ADM'?98:(p?+p:99));
+  const gpNum=g=>{ const mm=String(g).match(/(\d)\s*GP/i); return mm?+mm[1]:99; };
+  const gps=Object.keys(map).sort((a,b)=>{
+    const d=pelKey(map[a])-pelKey(map[b]); if(d) return d;
+    return (gpNum(a)-gpNum(b)) || _gpCurto(a).localeCompare(_gpCurto(b),'pt-BR');
+  });
+  const pels=[...new Set(gps.map(g=>map[g]))].sort((a,b)=>pelKey(a)-pelKey(b));
+  let html='<option value="">Todos os grupamentos</option>';
+  pels.forEach(p=>{ const doPel=gps.filter(g=>map[g]===p);
+    html+=`<optgroup label="${esc(_pelRotEf(p))}">`+doPel.map(g=>`<option value="${esc(g)}">${esc(_gpCurto(g))}</option>`).join('')+'</optgroup>'; });
+  sel.innerHTML=html;
   if(gps.includes(atual)) sel.value=atual; else sel.value='';
 }
 function onFiltroPelGp(which){ if(which==='pel') popularGp(); render(); }
