@@ -1872,7 +1872,9 @@ function _operacaoQuesitosEfetivos(){
       const k = (q.label||'').toLowerCase(); if (!seen.has(k)){ seen.add(k); out.push(q); }
     });
   }
-  const opsSel = selects.map(s => (s.value||'').trim()).filter(v => v && v !== 'OUTRA OPERAÇÃO NÃO DESCRITA ACIMA');
+  // Mantém "OUTRA OPERAÇÃO NÃO DESCRITA ACIMA" para casar com quesitos que o admin
+  // vinculou explicitamente a esse caso em Campos & Quesitos (operação avulsa).
+  const opsSel = selects.map(s => (s.value||'').trim()).filter(v => v);
   opsSel.forEach(op => {
     arr.filter(q => q.escopo === 'especificas' && q.ativo !== false && Array.isArray(q.operacoes) && q.operacoes.includes(op)).forEach(q => {
       const k = (q.label||'').toLowerCase(); if (!seen.has(k)){ seen.add(k); out.push(q); }
@@ -3738,7 +3740,12 @@ function validateRequiredFields(){
   const _temOperacao = _temOperacaoSelecionada();
   if (_temOperacao){
     const _prodNode = panelCache['produtividade'];
-    const _prodOk = _prodNode ? Array.from(_prodNode.querySelectorAll('[data-prod-field]')).some(el => fieldHasValue(el)) : false;
+    const _prodFields = _prodNode ? Array.from(_prodNode.querySelectorAll('[data-prod-field]')) : [];
+    // Só exige preenchimento quando a operação REALMENTE traz campos a preencher
+    // (quesitos vinculados ou indicadores globais). Se o Admin/Aux P3 não cadastrou
+    // nenhum quesito para a operação — caso típico de "OUTRA OPERAÇÃO NÃO DESCRITA
+    // ACIMA" — não há o que exigir e o envio segue normalmente.
+    const _prodOk = _prodFields.length === 0 || _prodFields.some(el => fieldHasValue(el));
     if (!_prodOk) errors.push('Produtividade — há operação vinculada; preencha ao menos um campo no card "Produtividade"');
   }
 
