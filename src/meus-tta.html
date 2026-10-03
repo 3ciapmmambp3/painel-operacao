@@ -6,6 +6,7 @@
 <title>Meus TTA — 3ª Cia PM MAmb</title>
 <link rel="stylesheet" href="styles/global.css">
 <script src="auth.js"></script>
+<script src="frota-grupamentos.js"></script>
 <script src="topnav.js" data-ativo="p1"></script>
 <script src="secnav.js" data-secao="p1"></script>
 <style>
@@ -80,6 +81,8 @@
       <div class="toolbar">
         <select id="mes" onchange="carregar()"></select>
         <select id="ano" onchange="carregar()"></select>
+        <select id="tta-pel" onchange="onTtaPelChange()" style="display:none"><option value="">Todos os pelotões</option></select>
+        <select id="tta-grup" onchange="render()" style="display:none"><option value="">Todos os grupamentos</option></select>
         <div class="search"><input id="busca" type="text" placeholder="Buscar por grupamento, viatura, militar…" oninput="render()"></div>
       </div>
       <div class="chips" id="chips">
@@ -180,11 +183,21 @@ function atualizarContadoresChips(){
     const ng=document.getElementById('n-gestao'); if(ng) ng.textContent = ROWS.length;
   }
 }
+// gp_responsavel da chamada, derivado do município do grupamento_completo
+// (fallback: gp_responsavel do registro) — para casar com os filtros.
+function _ttaGpr(c){
+  const comp = c.grupamento_completo || '';
+  return FrotaGrup.gprDeMunicipio(comp.split('/').pop()) || c.gp_responsavel || '';
+}
 function render(){
   const q = (document.getElementById('busca').value||'').toLowerCase().trim();
+  const fp = (document.getElementById('tta-pel')||{}).value || '';
+  const fg = (document.getElementById('tta-grup')||{}).value || '';
   const lista = ROWS.filter(c=>{
     if (filtroChip==='minhas' && !souEu(c)) return false;
     if (filtroChip==='equipe' &&  souEu(c)) return false;
+    if (fp && String(FrotaGrup.pelDeGpr(_ttaGpr(c)))!==fp) return false;
+    if (fg && !FrotaGrup.mesmoGpr(_ttaGpr(c), fg)) return false;
     if(!q) return true;
     const hay = [c.grupamento_completo, c.militar_resp_nome,
       (c.viaturas||[]).map(v=>v.prefixo).join(' '),
@@ -216,6 +229,23 @@ function render(){
   }).join('');
 }
 
+// Filtros de Pelotão + Grupamento — só para quem acessa além dos próprios TTAs
+// (EH_ESCOPO). Grupamento em optgroups por pelotão; pelotão estreita a lista.
+function popularFiltrosTTA(){
+  const selP=document.getElementById('tta-pel'), selG=document.getElementById('tta-grup');
+  if(!selP||!selG||!FrotaGrup.lista.length) return;
+  selP.style.display=''; selG.style.display='';
+  if(selP.options.length<=1) selP.innerHTML='<option value="">Todos os pelotões</option>'+FrotaGrup.pelOptions();
+  const cur=selG.value;
+  selG.innerHTML='<option value="">Todos os grupamentos</option>'+FrotaGrup.options(selP.value);
+  selG.value=cur; if(selG.value!==cur) selG.value='';
+}
+function onTtaPelChange(){
+  const selP=document.getElementById('tta-pel'), selG=document.getElementById('tta-grup');
+  selG.innerHTML='<option value="">Todos os grupamentos</option>'+FrotaGrup.options(selP.value);
+  selG.value='';
+  render();
+}
 async function carregar(){
   const mes = document.getElementById('mes').value;
   const ano = +document.getElementById('ano').value;
@@ -224,6 +254,7 @@ async function carregar(){
     const r = await rpc('tta_listar_meus', { p_token: S.token, p_ano: ano, p_mes: mes?+mes:null });
     ROWS = Array.isArray(r) ? r : [];
     atualizarContadoresChips();
+    if (EH_ESCOPO){ try{ if(!FrotaGrup.lista.length) await FrotaGrup.carregar(SB_AUTH_URL, SB_AUTH_KEY); }catch(e){} popularFiltrosTTA(); }
     render();
   }catch(e){
     document.getElementById('tbody').innerHTML = `<tr><td colspan="5"><div class="empty">Não foi possível carregar: ${esc(e.message)}</div></td></tr>`;
