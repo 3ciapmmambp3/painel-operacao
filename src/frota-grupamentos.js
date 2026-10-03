@@ -68,5 +68,15 @@ window.FrotaGrup = (function(){
   function gprDeMunicipio(muni){ return BY_CIDADE[_canon(muni)] || ''; }
   function mesmoGpr(a, b){ const x=_canonGpr(a); return !!x && x===_canonGpr(b); }
 
-  return { carregar, options, gprDeMunicipio, mesmoGpr, get lista(){ return LISTA; } };
+  // ── Filtro de PELOTÃO (par do filtro de grupamento, padrão TTA Gestão) ──
+  // Pelotões distintos da lista oficial, em ordem.
+  function pels(){ return [...new Set(LISTA.map(x=>x.pel).filter(p=>p!=null))].sort((a,b)=>a-b); }
+  // <option>s para o <select> de pelotão (value = nº; rótulo = "Nº Pelotão").
+  function pelOptions(){ return pels().map(p=>`<option value="${p}">${p}º Pelotão</option>`).join(''); }
+  // Nº do pelotão de um gp_responsavel (casa pela chave canônica). null se não achar.
+  function pelDeGpr(gpr){ const k=_canonGpr(gpr); if(!k) return null; const x=LISTA.find(y=>_canonGpr(y.gpr)===k); return x?x.pel:null; }
+  // Nº do pelotão a partir do MUNICÍPIO (painéis que casam por município).
+  function pelDeMunicipio(muni){ return pelDeGpr(gprDeMunicipio(muni)); }
+
+  return { carregar, options, gprDeMunicipio, mesmoGpr, pels, pelOptions, pelDeGpr, pelDeMunicipio, get lista(){ return LISTA; } };
 })();

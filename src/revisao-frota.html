@@ -82,6 +82,7 @@
       <div class="rf-pane ativo" id="pane-rev">
         <div class="tools">
           <input type="text" id="rev-busca" placeholder="Buscar por prefixo, placa…" oninput="revRender()">
+          <select id="rev-pel" onchange="revPelChange()" style="background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:12.5px;outline:none;max-width:190px"><option value="">Todos os pelotões</option></select>
           <select id="rev-grup" onchange="revRender()" style="background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:12.5px;outline:none;max-width:260px"><option value="">Todos os grupamentos</option></select>
           <label><input type="checkbox" id="rev-so-alerta" onchange="revRender()"> só alertas</label>
         </div>
@@ -95,6 +96,7 @@
         <p style="font-size:12.5px;color:var(--text-muted);margin:14px 0 0;line-height:1.5">Defeitos reportados pelo botão 🔧 e pelas fichas de movimentação (seção Manutenção). O gestor marca como <b>resolvido</b> após providenciar.</p>
         <div class="tools">
           <label><input type="checkbox" id="def-so-abertos" checked onchange="defRender()"> só em aberto</label>
+          <select id="def-pel" onchange="defPelChange()" style="background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:12.5px;outline:none;max-width:190px"><option value="">Todos os pelotões</option></select>
           <select id="def-grup" onchange="defRender()" style="background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:9px 11px;color:var(--text-white);font-size:12.5px;outline:none;max-width:260px"><option value="">Todos os grupamentos</option></select>
           <button class="btn-gold" style="padding:8px 14px;font-size:12px;margin-left:auto" onclick="defExportar()">⬇ Exportar Excel</button>
         </div>
@@ -233,16 +235,25 @@ async function revCarregar(){
 }
 function popularGrupREV(){
   const sel=document.getElementById('rev-grup'); if(!sel || !FrotaGrup.lista.length) return;
+  const selP=document.getElementById('rev-pel');
+  if(selP && selP.options.length<=1){ selP.innerHTML='<option value="">Todos os pelotões</option>'+FrotaGrup.pelOptions(); }
   const cur=sel.value;
-  sel.innerHTML='<option value="">Todos os grupamentos</option>'+FrotaGrup.options();
+  sel.innerHTML='<option value="">Todos os grupamentos</option>'+FrotaGrup.options(selP?selP.value:'');
   sel.value=cur;
+}
+function revPelChange(){
+  const sel=document.getElementById('rev-grup'), selP=document.getElementById('rev-pel');
+  if(sel){ sel.innerHTML='<option value="">Todos os grupamentos</option>'+FrotaGrup.options(selP?selP.value:''); sel.value=''; }
+  revRender();
 }
 function revRender(){
   const q=(document.getElementById('rev-busca').value||'').toLowerCase().trim();
   const fg=((document.getElementById('rev-grup')||{}).value||'');
+  const fp=((document.getElementById('rev-pel')||{}).value||'');
   const soAlerta=document.getElementById('rev-so-alerta').checked;
   let lst = REV.filter(r=>{
     if(soAlerta && !(r.status==='vencida'||r.status==='proxima')) return false;
+    if(fp && String(FrotaGrup.pelDeMunicipio(r.municipio))!==fp) return false;
     if(fg && FrotaGrup.gprDeMunicipio(r.municipio)!==fg) return false;
     if(q && (r.prefixo+' '+(r.placa||'')).toLowerCase().indexOf(q)<0) return false;
     return true;
@@ -388,15 +399,24 @@ async function defCarregar(){
 }
 function popularGrupDEF(){
   const sel=document.getElementById('def-grup'); if(!sel || !FrotaGrup.lista.length) return;
+  const selP=document.getElementById('def-pel');
+  if(selP && selP.options.length<=1){ selP.innerHTML='<option value="">Todos os pelotões</option>'+FrotaGrup.pelOptions(); }
   const cur=sel.value;
-  sel.innerHTML='<option value="">Todos os grupamentos</option>'+FrotaGrup.options();
+  sel.innerHTML='<option value="">Todos os grupamentos</option>'+FrotaGrup.options(selP?selP.value:'');
   sel.value=cur;
+}
+function defPelChange(){
+  const sel=document.getElementById('def-grup'), selP=document.getElementById('def-pel');
+  if(sel){ sel.innerHTML='<option value="">Todos os grupamentos</option>'+FrotaGrup.options(selP?selP.value:''); sel.value=''; }
+  defRender();
 }
 function defLinhas(){
   const soAb=document.getElementById('def-so-abertos').checked;
   const fg=((document.getElementById('def-grup')||{}).value||'');
+  const fp=((document.getElementById('def-pel')||{}).value||'');
   return DEF.filter(d=>{
     if(soAb && d.status!=='aberto') return false;
+    if(fp && String(FrotaGrup.pelDeMunicipio(d.vtr_municipio))!==fp) return false;
     if(fg && FrotaGrup.gprDeMunicipio(d.vtr_municipio)!==fg) return false;
     return true;
   });

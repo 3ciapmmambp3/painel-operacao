@@ -939,7 +939,7 @@ document.addEventListener('click', () => {
       <div class="fg">
         <label>Pelotão</label>
         <select id="f-pel-dash" onchange="renderDashboard()">
-          <option value="">Todos</option>
+          <option value="">Todos os pelotões</option>
           <option value="1">1º Pelotão</option><option value="2">2º Pelotão</option>
           <option value="3">3º Pelotão</option><option value="4">4º Pelotão</option>
           <option value="5">5º Pelotão</option>
@@ -1056,7 +1056,7 @@ document.addEventListener('click', () => {
       <div class="fg">
         <label>Pelotão</label>
         <select id="mapa-pel" onchange="renderMapaCriminal()">
-          <option value="">Todos</option>
+          <option value="">Todos os pelotões</option>
           <option value="1">1º Pelotão</option><option value="2">2º Pelotão</option>
           <option value="3">3º Pelotão</option><option value="4">4º Pelotão</option>
           <option value="5">5º Pelotão</option>
@@ -1171,7 +1171,7 @@ document.addEventListener('click', () => {
         <option value="IF">IF</option>
       </select>
       <select id="fs-pel" onchange="sincFiltrosFS()" style="padding:5px 8px;background:#252525;border:1px solid var(--border-hover);border-radius:4px;color:#fff;font-size:11px;">
-        <option value="">Todos Pelotões</option>
+        <option value="">Todos os pelotões</option>
         <option value="1">1º PEL</option><option value="2">2º PEL</option>
         <option value="3">3º PEL</option><option value="4">4º PEL</option>
         <option value="5">5º PEL</option>
@@ -1432,7 +1432,7 @@ document.addEventListener('click', () => {
       <div class="fg">
         <label>Pelotão</label>
         <select id="cx-pel" onchange="renderCruzamento()">
-          <option value="">Todos</option>
+          <option value="">Todos os pelotões</option>
           <option value="1">1º Pelotão</option><option value="2">2º Pelotão</option>
           <option value="3">3º Pelotão</option><option value="4">4º Pelotão</option>
           <option value="5">5º Pelotão</option>
@@ -1504,7 +1504,7 @@ document.addEventListener('click', () => {
         <div class="fg">
           <label>Pelotão</label>
           <select id="creg-pel" onchange="renderCxRegistrosTab()">
-            <option value="">Todos</option>
+            <option value="">Todos os pelotões</option>
             <option value="1">1º Pelotão</option><option value="2">2º Pelotão</option>
             <option value="3">3º Pelotão</option><option value="4">4º Pelotão</option>
             <option value="5">5º Pelotão</option>
@@ -1637,7 +1637,7 @@ document.addEventListener('click', () => {
       <div class="fg">
         <label>Pelotão</label>
         <select id="vt-pel" onchange="renderVisitas()">
-          <option value="">Todos</option>
+          <option value="">Todos os pelotões</option>
           <option value="1">1º Pelotão</option><option value="2">2º Pelotão</option>
           <option value="3">3º Pelotão</option><option value="4">4º Pelotão</option>
           <option value="5">5º Pelotão</option>
@@ -1805,7 +1805,7 @@ document.addEventListener('click', () => {
       <div class="fg">
         <label>Pelotão</label>
         <select id="rcr-pel" onchange="renderRCR()">
-          <option value="">Todos</option>
+          <option value="">Todos os pelotões</option>
           <option value="1">1º Pelotão</option>
           <option value="2">2º Pelotão</option>
           <option value="3">3º Pelotão</option>
@@ -1948,7 +1948,7 @@ document.addEventListener('click', () => {
       <div class="fg">
         <label>Pelotão</label>
         <select id="pr-pel" onchange="renderPrioridade()">
-          <option value="">Todos</option>
+          <option value="">Todos os pelotões</option>
           <option value="1">1º Pelotão</option><option value="2">2º Pelotão</option>
           <option value="3">3º Pelotão</option><option value="4">4º Pelotão</option>
           <option value="5">5º Pelotão</option>
@@ -4280,23 +4280,37 @@ function popularFiltrosGPs(){
   const _isAdmin = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
   const _meuPel = (!_isAdmin) ? _pelotaoDoUsuario() : '';
 
-  /* Usa coluna K diretamente, ordenada por: pelotão → número do GP */
-  const gpsUnicos = [...new Map(
-    dadosGrupos
-      .filter(r => r.grupamento && (!_meuPel || String(r.pelNum) === _meuPel))
-      .sort((a,b) => {
-        if(a.pelNum !== b.pelNum) return a.pelNum - b.pelNum;
-        return gpNumDoColk(a.grupamento) - gpNumDoColk(b.grupamento);
-      })
-      .map(r => [r.grupamento, r.grupamento])
-  ).values()];
+  /* Usa coluna K diretamente, ordenada por: pelotão → número do GP.
+     Preserva o PELOTÃO de cada grupamento (p/ agrupar em optgroups). */
+  const vistos = new Set(); const lista = [];
+  dadosGrupos
+    .filter(r => r.grupamento && (!_meuPel || String(r.pelNum) === _meuPel))
+    .sort((a,b) => {
+      if(a.pelNum !== b.pelNum) return a.pelNum - b.pelNum;
+      return gpNumDoColk(a.grupamento) - gpNumDoColk(b.grupamento);
+    })
+    .forEach(r => { if(vistos.has(r.grupamento)) return; vistos.add(r.grupamento); lista.push({ g:r.grupamento, pel:r.pelNum }); });
+
+  // Grupamentos agrupados por PELOTÃO (optgroups) — padrão dos demais filtros.
+  const byPel = {};
+  lista.forEach(x => { const k=(x.pel==null||isNaN(x.pel))?'': String(x.pel); (byPel[k]=byPel[k]||[]).push(x.g); });
+  const optgroupsHtml = Object.keys(byPel)
+    .sort((a,b)=>{ const na=a===''?999:+a, nb=b===''?999:+b; return na-nb; })
+    .map(k => {
+      const opts = byPel[k].map(g=>`<option value="${g}">${g}</option>`).join('');
+      return `<optgroup label="${k===''?'Sem pelotão':k+'º Pelotão'}">${opts}</optgroup>`;
+    }).join('');
+  const flatHtml = lista.map(x=>`<option value="${x.g}">${x.g}</option>`).join('');   // p/ o modal de cadastro
 
   ['mis-gp','m-gp','cr-gp','f-gp-dash','mapa-gp','fs-gp','cx-gp','creg-gp','vt-gp','intel-busca-gp'].forEach(id => {
     const el = document.getElementById(id);
     if(!el) return;
+    const cur = el.value;
     const isModal = id === 'm-gp';
-    el.innerHTML = `<option value="">${isModal?'Selecione...':'Todos'}</option>` +
-      gpsUnicos.map(g=>`<option value="${g}">${g}</option>`).join('');
+    el.innerHTML = isModal
+      ? `<option value="">Selecione...</option>` + flatHtml
+      : `<option value="">Todos os grupamentos</option>` + optgroupsHtml;
+    if([...el.options].some(o=>o.value===cur)) el.value = cur;   // preserva a seleção atual
   });
 }
 
@@ -10213,11 +10227,16 @@ async function renderRCR() {
       if(pelA !== pelB) return pelA - pelB;
       return gpNumDoColk(ga) - gpNumDoColk(gb);
     });
-    gps.forEach(g => {
-      const opt = document.createElement('option');
-      opt.value = g; opt.textContent = gpRespParaGrupamento[g];
-      selGp.appendChild(opt);
+    /* Grupamentos agrupados por PELOTÃO (optgroups) — padrão dos demais filtros. */
+    const byPelRcr = {};
+    gps.forEach(g => { const pel = pelDoColk(gpRespParaGrupamento[g]); const k=(pel==null||isNaN(pel))?'':String(pel); (byPelRcr[k]=byPelRcr[k]||[]).push(g); });
+    let htmlRcr = '<option value="">Todos os grupamentos</option>';
+    Object.keys(byPelRcr).sort((a,b)=>{ const na=a===''?999:+a, nb=b===''?999:+b; return na-nb; }).forEach(k=>{
+      htmlRcr += `<optgroup label="${k===''?'Sem pelotão':k+'º Pelotão'}">`
+        + byPelRcr[k].map(g=>`<option value="${g}">${gpRespParaGrupamento[g]}</option>`).join('')
+        + '</optgroup>';
     });
+    selGp.innerHTML = htmlRcr;
   }
 
   /* Filtra dadosVisitas pelas naturezas RCR */
@@ -11427,9 +11446,16 @@ function renderAuditoriasLista(){
   (function(){
     const selGp = document.getElementById('audit-lista-filtro-gp');
     if(selGp){
-      const gps = [...new Set(entradas.map(a=>{const c=_crimeDe(a); return c&&c.grupamento?gpDoColk(c.grupamento):'';}).filter(Boolean))].sort();
+      /* grupamentos (curto) agrupados por PELOTÃO (optgroups) — padrão dos demais filtros.
+         O pelotão vem da ocorrência vinculada (grupamento completo → pelDoColk). */
+      const _pelDeGp = {};
+      entradas.forEach(a=>{ const c=_crimeDe(a); if(c&&c.grupamento){ const sg=gpDoColk(c.grupamento);
+        if(sg && _pelDeGp[sg]==null){ const p=pelDoColk(c.grupamento); _pelDeGp[sg]=(p==null||isNaN(p))?'':String(p); } } });
+      const _byPel = {}; Object.keys(_pelDeGp).sort().forEach(g=>{ const k=_pelDeGp[g]||''; (_byPel[k]=_byPel[k]||[]).push(g); });
       const cur = selGp.value;
-      selGp.innerHTML = '<option value="">Todos os grupamentos</option>' + gps.map(g=>`<option value="${g}">${g}</option>`).join('');
+      selGp.innerHTML = '<option value="">Todos os grupamentos</option>'
+        + Object.keys(_byPel).sort((a,b)=>{ const na=a===''?999:+a, nb=b===''?999:+b; return na-nb; })
+            .map(k=>`<optgroup label="${k===''?'Sem pelotão':k+'º Pelotão'}">`+_byPel[k].map(g=>`<option value="${g}">${g}</option>`).join('')+'</optgroup>').join('');
       if([...selGp.options].some(o=>o.value===cur)) selGp.value = cur;
     }
     const selMes = document.getElementById('audit-lista-filtro-mes');
@@ -11882,9 +11908,16 @@ function renderAuditoriasLista(){
   (function(){
     const selGp = document.getElementById('audit-lista-filtro-gp');
     if(selGp){
-      const gps = [...new Set(entradas.map(a=>{const c=_crimeDe(a); return c&&c.grupamento?gpDoColk(c.grupamento):'';}).filter(Boolean))].sort();
+      /* grupamentos (curto) agrupados por PELOTÃO (optgroups) — padrão dos demais filtros.
+         O pelotão vem da ocorrência vinculada (grupamento completo → pelDoColk). */
+      const _pelDeGp = {};
+      entradas.forEach(a=>{ const c=_crimeDe(a); if(c&&c.grupamento){ const sg=gpDoColk(c.grupamento);
+        if(sg && _pelDeGp[sg]==null){ const p=pelDoColk(c.grupamento); _pelDeGp[sg]=(p==null||isNaN(p))?'':String(p); } } });
+      const _byPel = {}; Object.keys(_pelDeGp).sort().forEach(g=>{ const k=_pelDeGp[g]||''; (_byPel[k]=_byPel[k]||[]).push(g); });
       const cur = selGp.value;
-      selGp.innerHTML = '<option value="">Todos os grupamentos</option>' + gps.map(g=>`<option value="${g}">${g}</option>`).join('');
+      selGp.innerHTML = '<option value="">Todos os grupamentos</option>'
+        + Object.keys(_byPel).sort((a,b)=>{ const na=a===''?999:+a, nb=b===''?999:+b; return na-nb; })
+            .map(k=>`<optgroup label="${k===''?'Sem pelotão':k+'º Pelotão'}">`+_byPel[k].map(g=>`<option value="${g}">${g}</option>`).join('')+'</optgroup>').join('');
       if([...selGp.options].some(o=>o.value===cur)) selGp.value = cur;
     }
     const selMes = document.getElementById('audit-lista-filtro-mes');

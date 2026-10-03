@@ -117,6 +117,7 @@
       <button class="btn-gold" onclick="window.location.href='relatorio-servico.html'">+ Lançar relatório</button>
     </div>
     <div class="mr-filtros" id="mr-filtros">
+      <select id="filtroPelotao" class="mr-filtro-input"><option value="">Todos os pelotões</option></select>
       <select id="filtroFracao" class="mr-filtro-input"><option value="">Todos os grupamentos</option></select>
       <input type="date" id="filtroDataInicio" class="mr-filtro-input" title="Data início">
       <span style="color:var(--text-muted);font-size:12px;">até</span>
@@ -225,8 +226,10 @@ const ehGestor = ['admin_geral','admin','admin_pelotao','admin_gp'].includes((se
 // value = gp_responsavel.
 function popularFiltroFracao(){
   const select = document.getElementById('filtroFracao');
+  const selP = document.getElementById('filtroPelotao');
+  if (selP && selP.options.length<=1){ selP.innerHTML = '<option value="">Todos os pelotões</option>' + FrotaGrup.pelOptions(); }
   const cur = select.value;
-  select.innerHTML = '<option value="">Todos os grupamentos</option>' + FrotaGrup.options();
+  select.innerHTML = '<option value="">Todos os grupamentos</option>' + FrotaGrup.options(selP?selP.value:'');
   select.value = cur;
   if (select.value !== cur) select.value = '';
 }
@@ -241,6 +244,7 @@ function _relGpr(r){
 function _grafiaGP(s){ return String(s==null?'':s).replace(/MARILIERIA/gi,'MARLIERIA').replace(/MOLEVADE/gi,'MONLEVADE'); }
 
 function aplicarFiltros(relatorios){
+  const pelotao = document.getElementById('filtroPelotao').value;
   const fracao = document.getElementById('filtroFracao').value;
   const dataInicio = document.getElementById('filtroDataInicio').value; // yyyy-mm-dd
   const dataFim = document.getElementById('filtroDataFim').value;
@@ -248,6 +252,7 @@ function aplicarFiltros(relatorios){
     // Chip: minhas (apareço) / equipe (não apareço) / todas|gestão (tudo visível)
     if (filtroChip === 'minhas' && !r.sou_eu) return false;
     if (filtroChip === 'equipe' && r.sou_eu) return false;
+    if (pelotao && String(FrotaGrup.pelDeGpr(_relGpr(r))) !== pelotao) return false;
     if (fracao && !FrotaGrup.mesmoGpr(_relGpr(r), fracao)) return false;
     if (dataInicio && (!r['Data'] || r['Data'] < dataInicio)) return false;
     if (dataFim && (!r['Data'] || r['Data'] > dataFim)) return false;
@@ -358,7 +363,18 @@ async function excluirRelatorio(id, dataBR, fracao){
 ['filtroFracao', 'filtroDataInicio', 'filtroDataFim'].forEach(id => {
   document.getElementById(id).addEventListener('change', () => { paginaAtual = 1; renderizarTabela(); });
 });
+// Pelotão estreita o grupamento (reseta a escolha de grupamento) e re-filtra.
+document.getElementById('filtroPelotao').addEventListener('change', () => {
+  const sel = document.getElementById('filtroPelotao');
+  const g = document.getElementById('filtroFracao');
+  g.innerHTML = '<option value="">Todos os grupamentos</option>' + FrotaGrup.options(sel.value);
+  g.value = '';
+  paginaAtual = 1;
+  renderizarTabela();
+});
 document.getElementById('btnLimparFiltros').addEventListener('click', () => {
+  document.getElementById('filtroPelotao').value = '';
+  document.getElementById('filtroFracao').innerHTML = '<option value="">Todos os grupamentos</option>' + FrotaGrup.options();
   document.getElementById('filtroFracao').value = '';
   document.getElementById('filtroDataInicio').value = '';
   document.getElementById('filtroDataFim').value = '';

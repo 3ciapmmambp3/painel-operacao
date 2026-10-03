@@ -115,6 +115,9 @@
 
       <!-- Filtros de gestão (só p/ quem vê toda a 3ª Cia): grupamento + período -->
       <div class="gfiltros" id="gfiltros" style="display:none">
+        <label class="gf">Pelotão
+          <select id="f-pel" onchange="onPelChangeMov()"><option value="">Todos os pelotões</option></select>
+        </label>
         <label class="gf">Grupamento
           <select id="f-grup" onchange="render()"><option value="">Todos os grupamentos</option></select>
         </label>
@@ -310,20 +313,29 @@ function _fichaDataISO(r){
 }
 function popularGrupamentos(){
   const sel=document.getElementById('f-grup'); if(!sel) return;
+  const selP=document.getElementById('f-pel');
+  if(selP && selP.options.length<=1){ selP.innerHTML='<option value="">Todos os pelotões</option>'+FrotaGrup.pelOptions(); }
   const cur=sel.value;
   // Lista oficial completa (tabela grupos), organizada por pelotão em optgroups
   // — igual ao filtro da Gestão de Viaturas. value = gp_responsavel.
-  sel.innerHTML='<option value="">Todos os grupamentos</option>'+FrotaGrup.options();
+  sel.innerHTML='<option value="">Todos os grupamentos</option>'+FrotaGrup.options(selP?selP.value:'');
   sel.value=cur;                                   // preserva seleção ao recarregar
   if(sel.value!==cur) sel.value='';
 }
+// Pelotão estreita o grupamento (reseta a escolha) e re-filtra.
+function onPelChangeMov(){
+  const sel=document.getElementById('f-grup'), selP=document.getElementById('f-pel');
+  if(sel){ sel.innerHTML='<option value="">Todos os grupamentos</option>'+FrotaGrup.options(selP?selP.value:''); sel.value=''; }
+  render();
+}
 function limparFiltrosGestor(){
-  ['f-grup','f-de','f-ate'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  ['f-pel','f-grup','f-de','f-ate'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   render();
 }
 
 function render(){
   const q = (document.getElementById('busca').value||'').toLowerCase().trim();
+  const fp  = VE_CIA ? ((document.getElementById('f-pel') ||{}).value||'') : '';
   const fg  = VE_CIA ? ((document.getElementById('f-grup')||{}).value||'') : '';
   const fde = VE_CIA ? ((document.getElementById('f-de') ||{}).value||'') : '';
   const fate= VE_CIA ? ((document.getElementById('f-ate')||{}).value||'') : '';
@@ -333,6 +345,7 @@ function render(){
     if (FILTRO==='todas' && !(x.mine || x.team)) return false;
     // 'gestao' (só Aux P4/Admin): mostra TODAS as fichas, sem recorte de equipe.
     const r=x.r;
+    if (fp && String(FrotaGrup.pelDeGpr(_rowGpr(r)))!==fp) return false;
     if (fg && !FrotaGrup.mesmoGpr(_rowGpr(r), fg)) return false;
     if (fde || fate){
       const di=_fichaDataISO(r);

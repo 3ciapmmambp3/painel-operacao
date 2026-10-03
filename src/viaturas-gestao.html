@@ -128,6 +128,7 @@
         <option value="BAIXADA">Baixadas</option>
         <option value="EM_MANUTENCAO">Em manutenção</option>
       </select>
+      <select class="fsel" id="fpel" onchange="onPelChangeVia()" style="max-width:190px"><option value="">Todos os pelotões</option></select>
       <select class="fsel" id="fgrup" onchange="render()" style="max-width:260px"><option value="">Todos os grupamentos</option></select>
     </div>
 
@@ -262,7 +263,15 @@ function popularListasFrota(){
   fill('muni-dl', uniq('municipio'));
   // filtro por grupamento — lista oficial (tabela grupos), por pelotão
   const fs=document.getElementById('fgrup');
-  if(fs && FrotaGrup.lista.length){ const cur=fs.value; fs.innerHTML='<option value="">Todos os grupamentos</option>'+FrotaGrup.options(); fs.value=cur; }
+  const fp=document.getElementById('fpel');
+  if(fp && FrotaGrup.lista.length && fp.options.length<=1){ fp.innerHTML='<option value="">Todos os pelotões</option>'+FrotaGrup.pelOptions(); }
+  if(fs && FrotaGrup.lista.length){ const cur=fs.value; fs.innerHTML='<option value="">Todos os grupamentos</option>'+FrotaGrup.options(fp?fp.value:''); fs.value=cur; }
+}
+// Pelotão estreita o grupamento (reseta a escolha) e re-filtra.
+function onPelChangeVia(){
+  const fs=document.getElementById('fgrup'), fp=document.getElementById('fpel');
+  if(fs){ fs.innerHTML='<option value="">Todos os grupamentos</option>'+FrotaGrup.options(fp?fp.value:''); fs.value=''; }
+  render();
 }
 
 function kpis(){
@@ -278,9 +287,11 @@ function render(){
   const q=(document.getElementById('busca').value||'').toLowerCase();
   const fs=document.getElementById('fstatus').value;
   const fg=(document.getElementById('fgrup')||{}).value||'';
+  const fp=(document.getElementById('fpel')||{}).value||'';
   const rows=VIA.filter(v=>{
     const s=(v.situacao_operacional||'DISPONIVEL');
     if(fs && s!==fs) return false;
+    if(fp && String(FrotaGrup.pelDeMunicipio(v.municipio))!==fp) return false;
     if(fg && FrotaGrup.gprDeMunicipio(v.municipio)!==fg) return false;
     if(q){ const blob=`${v.prefixo} ${v.placa||''} ${v.marca_modelo||''} ${v.municipio||''} ${v.gp||''}`.toLowerCase(); if(!blob.includes(q)) return false; }
     return true;

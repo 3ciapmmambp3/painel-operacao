@@ -292,8 +292,8 @@
           <button class="ct-chip" data-sit="APROVADO_PEL" onclick="ctSetSit('APROVADO_PEL')">Aprov. Pelotão</button>
         </div>
         <div class="grid" style="margin-bottom:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
-          <div class="fld"><label>Pelotão</label><select id="ct-pel" onchange="renderControle()"><option value="">Todos</option></select></div>
-          <div class="fld"><label>Fração / GP</label><select id="ct-gp" onchange="renderControle()"><option value="">Todas</option></select></div>
+          <div class="fld"><label>Pelotão</label><select id="ct-pel" onchange="renderControle()"><option value="">Todos os pelotões</option></select></div>
+          <div class="fld"><label>Fração / GP</label><select id="ct-gp" onchange="renderControle()"><option value="">Todos os grupamentos</option></select></div>
           <div class="fld"><label>Exercício (ref.)</label><select id="ct-exerc" onchange="renderControle()"><option value="">Todos</option></select></div>
           <div class="fld"><label>Busca (nome/Nº)</label><input id="ct-busca" placeholder="nome ou 000.000-0" oninput="ctBuscaMask(this)"></div>
         </div>
@@ -322,8 +322,8 @@
           </div>
         </div>
         <div class="grid" style="margin-bottom:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
-          <div class="fld"><label>Pelotão</label><select id="fl-pel" onchange="renderPedidos()"><option value="">Todos</option></select></div>
-          <div class="fld"><label>Grupamento</label><select id="fl-gp" onchange="renderPedidos()"><option value="">Todos</option></select></div>
+          <div class="fld"><label>Pelotão</label><select id="fl-pel" onchange="renderPedidos()"><option value="">Todos os pelotões</option></select></div>
+          <div class="fld"><label>Grupamento</label><select id="fl-gp" onchange="renderPedidos()"><option value="">Todos os grupamentos</option></select></div>
           <div class="fld"><label>Situação</label><select id="fl-sit" onchange="renderPedidos()"><option value="">Todas</option><option value="PENDENTE">Pendente</option><option value="APROVADO_PEL">Aprov. Pelotão</option><option value="VALIDADO">Validado</option><option value="REJEITADO">Rejeitado</option></select></div>
           <div class="fld"><label>Início (a partir de)</label><input type="date" id="fl-ini" onchange="renderPedidos()"></div>
           <div class="fld"><label>Fim (até)</label><input type="date" id="fl-fim" onchange="renderPedidos()"></div>
@@ -743,12 +743,28 @@ function parcelasTxt(p){
     </div>`;
   }).join('')+'</div>';
 }
+// Opções de grupamento agrupadas por PELOTÃO (optgroups), no padrão dos demais
+// filtros do sistema. Deriva o pelotão de cada grupamento a partir das próprias
+// linhas; value = grupamento cru (mantém o casamento por igualdade exata).
+// selPel (opcional): nº do pelotão escolhido — estreita a lista a ele.
+function _grpOptgroups(rows, grpKey, selPel){
+  const byPel={};
+  rows.forEach(r=>{ const g=r[grpKey]; if(!g) return; const p=r.pelotao==null?'':String(r.pelotao);
+    if(selPel && p!==selPel) return; (byPel[p]=byPel[p]||new Set()).add(String(g)); });
+  const pcmp=(a,b)=>{const na=/^\d+$/.test(a)?+a:999,nb=/^\d+$/.test(b)?+b:999;return na-nb||a.localeCompare(b,'pt');};
+  return Object.keys(byPel).sort(pcmp).map(p=>{
+    const gps=[...byPel[p]].sort((a,b)=>a.localeCompare(b,'pt'));
+    return `<optgroup label="${esc(_pelRot(p))}">`+gps.map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('')+'</optgroup>';
+  }).join('');
+}
 function popularFiltros(){
-  const selP=document.getElementById('fl-pel'), selG=document.getElementById('fl-gp'); if(!selP) return;
+  const selP=document.getElementById('fl-pel'), selG=document.getElementById('fl-gp'); if(!selP||!selG) return;
   if(selP.options.length<=1){ const pels=[...new Set(pedidos.map(p=>p.pelotao).filter(Boolean))].sort();
-    selP.innerHTML='<option value="">Todos</option>'+pels.map(p=>`<option value="${esc(p)}">${/^\d+$/.test(String(p))?'Pelotão '+p:esc(p)}</option>`).join(''); }
-  if(selG.options.length<=1){ const gps=[...new Set(pedidos.map(p=>p.grupamento_id).filter(Boolean))].sort();
-    selG.innerHTML='<option value="">Todos</option>'+gps.map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join(''); }
+    selP.innerHTML='<option value="">Todos os pelotões</option>'+pels.map(p=>`<option value="${esc(p)}">${esc(_pelRot(p))}</option>`).join(''); }
+  // grupamento sempre reconstruído conforme o pelotão escolhido (pelotão estreita o grupamento)
+  const curG=selG.value;
+  selG.innerHTML='<option value="">Todos os grupamentos</option>'+_grpOptgroups(pedidos,'grupamento_id',selP.value);
+  selG.value=curG; if(selG.value!==curG) selG.value='';
 }
 function filtrarPedidos(){
   const g=id=>document.getElementById(id)?document.getElementById(id).value:'';
@@ -1067,8 +1083,8 @@ async function carregarControle(){
   }
   catch(e){ document.getElementById('tbody-ct').innerHTML=`<tr><td colspan="9"><div class="empty">${esc(e.message)}</div></td></tr>`; return; }
   // filtros populam só com o que existe no tipo da aba atual
-  document.getElementById('ct-pel').innerHTML='<option value="">Todos</option>';
-  document.getElementById('ct-gp').innerHTML='<option value="">Todas</option>';
+  document.getElementById('ct-pel').innerHTML='<option value="">Todos os pelotões</option>';
+  document.getElementById('ct-gp').innerHTML='<option value="">Todos os grupamentos</option>';
   document.getElementById('ct-exerc').innerHTML='<option value="">Todos</option>';
   popularFiltrosCt(); renderControle();
 }
@@ -1078,9 +1094,11 @@ function popularFiltrosCt(){
   const selP=document.getElementById('ct-pel'), selG=document.getElementById('ct-gp'), selE=document.getElementById('ct-exerc'); if(!selP) return;
   const base=_ctDoModo();
   if(selP.options.length<=1){ const pels=[...new Set(base.map(r=>r.pelotao).filter(Boolean))].sort();
-    selP.innerHTML='<option value="">Todos</option>'+pels.map(p=>`<option value="${esc(p)}">${esc(_pelRot(p))}</option>`).join(''); }
-  if(selG.options.length<=1){ const gps=[...new Set(base.map(r=>r.fracao).filter(Boolean))].sort();
-    selG.innerHTML='<option value="">Todas</option>'+gps.map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join(''); }
+    selP.innerHTML='<option value="">Todos os pelotões</option>'+pels.map(p=>`<option value="${esc(p)}">${esc(_pelRot(p))}</option>`).join(''); }
+  // grupamento (Fração / GP) sempre reconstruído por pelotão (pelotão estreita o grupamento)
+  const curG=selG.value;
+  selG.innerHTML='<option value="">Todos os grupamentos</option>'+_grpOptgroups(base,'fracao',selP.value);
+  selG.value=curG; if(selG.value!==curG) selG.value='';
   if(selE && selE.options.length<=1){ const exs=[...new Set(base.map(r=>r.exercicio).filter(x=>x!=null))].sort((a,b)=>b-a);
     selE.innerHTML='<option value="">Todos</option>'+exs.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join(''); }
 }
