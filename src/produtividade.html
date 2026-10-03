@@ -14,6 +14,7 @@
   <title>Produtividade — 3ª Cia PM MAmb</title>
   <link rel="stylesheet" href="styles/global.css">
   <script src="auth.js"></script>
+  <script src="frota-grupamentos.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
@@ -152,8 +153,12 @@
         <input type="date" id="filtroDataFim" class="prod-filtro-input">
       </div>
       <div class="prod-filtro-grupo">
+        <label>Pelotão</label>
+        <select id="filtroPelotaoProd" class="prod-filtro-input"><option value="">Todos os pelotões</option></select>
+      </div>
+      <div class="prod-filtro-grupo">
         <label>Fração de Atuação</label>
-        <select id="filtroFracao" class="prod-filtro-input"><option value="">Todas</option></select>
+        <select id="filtroFracao" class="prod-filtro-input"><option value="">Todos os grupamentos</option></select>
       </div>
       <button class="btn-outline" id="btnLimparFiltrosProd">Limpar filtros</button>
     </div>
@@ -349,6 +354,7 @@ async function carregarTudo(){
     } catch(e){ console.warn('[produtividade] enriquecimento Tipo de Serviço falhou:', e); }
 
     popularFiltroOperacao(await carregarOperacoesSupabaseProd());
+    try{ if(!FrotaGrup.lista.length) await FrotaGrup.carregar(SB_AUTH_URL, SB_AUTH_KEY); }catch(e){}  // lista oficial (tabela grupos)
     popularFiltroFracao();
 
     // Por padrão: abre já na OPERAÇÃO EM VIGÊNCIA hoje, com início = início dela
@@ -524,23 +530,36 @@ function popularFiltroOperacao(operacoesSupabase){
   if (nomes.includes(atual)) select.value = atual;
 }
 
+// gp_responsavel do registro, derivado do município da Fração de Atuação
+// ("... / 3 CIA PM MAMB / CIDADE" → gp_responsavel) — igual ao Meus Relatórios.
+function _prodGpr(r){
+  const fr = r['Fração de Atuação'] || '';
+  return FrotaGrup.gprDeMunicipio(fr.split('/').pop()) || '';
+}
+// Filtro de grupamento no padrão do sistema: lista oficial (tabela grupos) em
+// optgroups por pelotão; value = gp_responsavel. Pelotão estreita a lista.
 function popularFiltroFracao(){
   const select = document.getElementById('filtroFracao');
-  const fracoes = Array.from(new Set(todosOsRegistros.map(r => r['Fração de Atuação']).filter(Boolean))).sort();
-  select.innerHTML = '<option value="">Todas</option>' + fracoes.map(f => `<option value="${f}">${f}</option>`).join('');
+  const selP = document.getElementById('filtroPelotaoProd');
+  if (selP && selP.options.length<=1){ selP.innerHTML = '<option value="">Todos os pelotões</option>' + FrotaGrup.pelOptions(); }
+  const cur = select.value;
+  select.innerHTML = '<option value="">Todos os grupamentos</option>' + FrotaGrup.options(selP?selP.value:'');
+  select.value = cur; if (select.value !== cur) select.value = '';
 }
 
 function aplicarFiltros(){
   const op = document.getElementById('filtroOperacao').value;
   const dataIni = document.getElementById('filtroDataInicio').value;
   const dataFim = document.getElementById('filtroDataFim').value;
+  const pelotao = document.getElementById('filtroPelotaoProd').value;
   const fracao = document.getElementById('filtroFracao').value;
 
   return todosOsRegistros.filter(r => {
     if (op && !(r['Operações']||[]).includes(op)) return false;
     if (dataIni && (!r['Data'] || r['Data'] < dataIni)) return false;
     if (dataFim && (!r['Data'] || r['Data'] > dataFim)) return false;
-    if (fracao && r['Fração de Atuação'] !== fracao) return false;
+    if (pelotao && String(FrotaGrup.pelDeGpr(_prodGpr(r))) !== pelotao) return false;
+    if (fracao && !FrotaGrup.mesmoGpr(_prodGpr(r), fracao)) return false;
     return true;
   });
 }
@@ -551,10 +570,20 @@ document.getElementById('filtroOperacao').addEventListener('change', onOperacaoC
 ['filtroDataInicio','filtroDataFim','filtroFracao'].forEach(id => {
   document.getElementById(id).addEventListener('change', renderizarTudo);
 });
+// Pelotão estreita o grupamento (reseta a escolha) e re-renderiza.
+document.getElementById('filtroPelotaoProd').addEventListener('change', () => {
+  const selP = document.getElementById('filtroPelotaoProd');
+  const g = document.getElementById('filtroFracao');
+  g.innerHTML = '<option value="">Todos os grupamentos</option>' + FrotaGrup.options(selP.value);
+  g.value = '';
+  renderizarTudo();
+});
 document.getElementById('btnLimparFiltrosProd').addEventListener('click', () => {
   document.getElementById('filtroOperacao').value = '';
   document.getElementById('filtroDataInicio').value = dataPrimeiroDiaMesISO_();
   document.getElementById('filtroDataFim').value = dataHojeISO_();
+  document.getElementById('filtroPelotaoProd').value = '';
+  document.getElementById('filtroFracao').innerHTML = '<option value="">Todos os grupamentos</option>' + FrotaGrup.options();
   document.getElementById('filtroFracao').value = '';
   aplicarCamposDaOperacao(); // volta pros indicadores da visão "Todas"
   renderizarTudo();
@@ -913,10 +942,12 @@ document.getElementById('btnExportPdf').addEventListener('click', async () => {
     // ---- Filtros selecionados (o PDF reflete exatamente estes) ----
     const opSel   = (document.getElementById('filtroOperacao')?.value || '').trim();
     const fracSel = (document.getElementById('filtroFracao')?.value || '').trim();
+    const fracTxt = (document.getElementById('filtroFracao')?.selectedOptions?.[0]?.text || '').trim();
+    const pelSel  = (document.getElementById('filtroPelotaoProd')?.value || '').trim();
     const diSel   = document.getElementById('filtroDataInicio')?.value || estado.periodoIni;
     const dfSel   = document.getElementById('filtroDataFim')?.value   || estado.periodoFim;
     const opLabel   = opSel || 'Todas as operações';
-    const fracLabel = fracSel || 'Todas as frações';
+    const fracLabel = fracSel ? (fracTxt || fracSel) : (pelSel ? `${pelSel}º Pelotão` : 'Todas as frações');
 
     // ---- Cabeçalho institucional (modelo do Relatório de Serviço) ----
     const [imgEsq, imgDir] = await Promise.all([

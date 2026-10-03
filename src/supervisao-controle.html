@@ -115,8 +115,8 @@
   </div>
 
   <div class="sc-filtros" id="sc-filtros" style="display:none;">
-    <div class="fg"><label>Grupamento</label><select id="f-gp" onchange="render()"><option value="">Todos</option></select></div>
-    <div class="fg"><label>Pelotão</label><select id="f-pel" onchange="render()"><option value="">Todos</option></select></div>
+    <div class="fg"><label>Pelotão</label><select id="f-pel" onchange="onFiltroPelSC()"><option value="">Todos os pelotões</option></select></div>
+    <div class="fg"><label>Grupamento</label><select id="f-gp" onchange="render()"><option value="">Todos os grupamentos</option></select></div>
     <button class="btn-outline btn-sm lim" onclick="limparFiltros()">✕ Limpar filtros</button>
   </div>
 
@@ -231,15 +231,45 @@ async function carregar(){
   }
 }
 
+// Rótulo do pelotão: "Nº Pelotão" quando numérico; senão o texto cru.
+function _scPelLabel(p){ return /^\d+$/.test(String(p)) ? p+'º Pelotão' : String(p); }
+// Grupamentos (gp_responsavel) agrupados por PELOTÃO em optgroups — padrão dos
+// demais filtros. selPel estreita a lista ao pelotão escolhido. value = gp_responsavel.
+function _scGrpOptgroups(selPel){
+  const byPel={};
+  EQUIPES.forEach(e=>{ const g=e.gp_responsavel; if(!g) return; const p=e.pelotao==null?'':String(e.pelotao);
+    if(selPel && p!==selPel) return; (byPel[p]=byPel[p]||new Set()).add(g); });
+  const pcmp=(a,b)=>{const na=/^\d+$/.test(a)?+a:999,nb=/^\d+$/.test(b)?+b:999;return na-nb||a.localeCompare(b,'pt');};
+  return Object.keys(byPel).sort(pcmp).map(p=>{
+    const gps=[...byPel[p]].sort((a,b)=>_grafiaGP(a).localeCompare(_grafiaGP(b),'pt'));
+    return `<optgroup label="${esc(_scPelLabel(p))}">`+gps.map(g=>`<option value="${esc(g)}">${esc(_grafiaGP(g))}</option>`).join('')+'</optgroup>';
+  }).join('');
+}
 function montarFiltros(){
-  const gps=[...new Set(EQUIPES.map(e=>e.gp_responsavel).filter(Boolean))].sort();
-  const pels=[...new Set(EQUIPES.map(e=>e.pelotao).filter(Boolean))].sort();
+  const pels=[...new Set(EQUIPES.map(e=>e.pelotao).filter(Boolean))]
+    .sort((a,b)=>{const na=/^\d+$/.test(a)?+a:999,nb=/^\d+$/.test(b)?+b:999;return na-nb||String(a).localeCompare(String(b),'pt');});
   const selGp=document.getElementById('f-gp'), selPel=document.getElementById('f-pel');
-  selGp.innerHTML='<option value="">Todos</option>'+gps.map(g=>`<option value="${esc(g)}">${esc(_grafiaGP(g))}</option>`).join('');
-  selPel.innerHTML='<option value="">Todos</option>'+pels.map(p=>`<option>${esc(p)}</option>`).join('');
+  const curPel=selPel.value, curGp=selGp.value;
+  selPel.innerHTML='<option value="">Todos os pelotões</option>'+pels.map(p=>`<option value="${esc(p)}">${esc(_scPelLabel(p))}</option>`).join('');
+  selPel.value=curPel; if(selPel.value!==curPel) selPel.value='';
+  selGp.innerHTML='<option value="">Todos os grupamentos</option>'+_scGrpOptgroups(selPel.value);
+  selGp.value=curGp; if(selGp.value!==curGp) selGp.value='';
   document.getElementById('sc-filtros').style.display = EQUIPES.length ? 'flex' : 'none';
 }
-function limparFiltros(){ document.getElementById('f-gp').value=''; document.getElementById('f-pel').value=''; render(); }
+// Pelotão estreita o grupamento (reseta a escolha) e re-filtra.
+function onFiltroPelSC(){
+  const selGp=document.getElementById('f-gp'), selPel=document.getElementById('f-pel');
+  selGp.innerHTML='<option value="">Todos os grupamentos</option>'+_scGrpOptgroups(selPel.value);
+  selGp.value='';
+  render();
+}
+function limparFiltros(){
+  const selGp=document.getElementById('f-gp');
+  document.getElementById('f-pel').value='';
+  selGp.innerHTML='<option value="">Todos os grupamentos</option>'+_scGrpOptgroups('');
+  selGp.value='';
+  render();
+}
 
 function render(){
   const dini=document.getElementById('f-ini').value, dfim=document.getElementById('f-fim').value;

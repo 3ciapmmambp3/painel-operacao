@@ -14,6 +14,7 @@
   <title>Materiais TCO/SEMAD — 3ª Cia PM MAmb</title>
   <link rel="stylesheet" href="styles/global.css">
   <script src="auth.js"></script>
+  <script src="frota-grupamentos.js"></script>
   <script src="demandas-sidebar.js"></script>
   <style>
     body{display:flex;flex-direction:column;min-height:100vh;}
@@ -145,6 +146,8 @@
     </div>
 
     <div class="mr-filtros">
+      <select id="filtroPelotao" class="mr-filtro-input"><option value="">Todos os pelotões</option></select>
+      <select id="filtroGrupamento" class="mr-filtro-input"><option value="">Todos os grupamentos</option></select>
       <select id="filtroSituacao" class="mr-filtro-input"><option value="">Todas as situações</option></select>
       <input type="text" id="filtroBusca" class="mr-filtro-input" placeholder="Buscar por REDS ou nome..." style="min-width:220px;">
       <button class="btn-outline" id="btnLimparFiltros">Limpar filtros</button>
@@ -342,15 +345,40 @@ function trocarAba(aba){
   document.getElementById('rdItemSemad')?.classList.toggle('ativo', aba === 'SEMAD');
   document.getElementById('tituloAcompanhamento').textContent = `Materiais Acautelados — ${aba}`;
   document.getElementById('filtroBusca').value = '';
+  const _fp = document.getElementById('filtroPelotao'); if (_fp) _fp.value = '';
+  popularFiltrosGrupMat();
   paginaAtual = 1;
   popularFiltroSituacao();
   carregarMateriais();
 }
 
+// gp_responsavel do item, a partir do campo GRUPAMENTO: tenta casar direto como
+// gp_responsavel; senão deriva do município (último segmento). Lista oficial = FrotaGrup.
+function _matGpr(item){
+  const g = item['GRUPAMENTO'] || '';
+  const direto = FrotaGrup.lista.find(x => FrotaGrup.mesmoGpr(x.gpr, g));
+  if (direto) return direto.gpr;
+  return FrotaGrup.gprDeMunicipio(g.split('/').pop()) || '';
+}
+// Filtros de Pelotão + Grupamento no padrão do sistema (optgroups por pelotão).
+function popularFiltrosGrupMat(){
+  const selP = document.getElementById('filtroPelotao');
+  const selG = document.getElementById('filtroGrupamento');
+  if (!selP || !selG || !FrotaGrup.lista.length) return;
+  if (selP.options.length <= 1) selP.innerHTML = '<option value="">Todos os pelotões</option>' + FrotaGrup.pelOptions();
+  const cur = selG.value;
+  selG.innerHTML = '<option value="">Todos os grupamentos</option>' + FrotaGrup.options(selP.value);
+  selG.value = cur; if (selG.value !== cur) selG.value = '';
+}
+
 function aplicarFiltros(lista){
   const situacao = document.getElementById('filtroSituacao').value;
   const busca = document.getElementById('filtroBusca').value.trim().toUpperCase();
+  const pelotao = (document.getElementById('filtroPelotao')||{}).value || '';
+  const grupamento = (document.getElementById('filtroGrupamento')||{}).value || '';
   return lista.filter(item => {
+    if (pelotao && String(FrotaGrup.pelDeGpr(_matGpr(item))) !== pelotao) return false;
+    if (grupamento && !FrotaGrup.mesmoGpr(_matGpr(item), grupamento)) return false;
     if (situacao && item['SITUAÇÃO DO MATERIAIS APREENDIDOS'] !== situacao) return false;
     if (busca){
       const alvo = `${item['REDS'] || ''} ${item['NOME DO AUTOR / ENVOLVIDO'] || ''}`.toUpperCase();
@@ -443,7 +471,19 @@ async function carregarMateriais(){
 ['filtroSituacao', 'filtroBusca'].forEach(id => {
   document.getElementById(id).addEventListener('input', () => { paginaAtual = 1; renderizarTabela(); });
 });
+document.getElementById('filtroGrupamento').addEventListener('change', () => { paginaAtual = 1; renderizarTabela(); });
+// Pelotão estreita o grupamento (reseta a escolha) e re-filtra.
+document.getElementById('filtroPelotao').addEventListener('change', () => {
+  const selP = document.getElementById('filtroPelotao');
+  const selG = document.getElementById('filtroGrupamento');
+  selG.innerHTML = '<option value="">Todos os grupamentos</option>' + FrotaGrup.options(selP.value);
+  selG.value = '';
+  paginaAtual = 1; renderizarTabela();
+});
 document.getElementById('btnLimparFiltros').addEventListener('click', () => {
+  document.getElementById('filtroPelotao').value = '';
+  document.getElementById('filtroGrupamento').innerHTML = '<option value="">Todos os grupamentos</option>' + FrotaGrup.options();
+  document.getElementById('filtroGrupamento').value = '';
   document.getElementById('filtroSituacao').value = '';
   document.getElementById('filtroBusca').value = '';
   paginaAtual = 1;
@@ -673,6 +713,7 @@ if (sessao){
   document.getElementById('tituloAcompanhamento').textContent = `Materiais Acautelados — ${abaAtual}`;
   popularFiltroSituacao();
   carregarMateriais();
+  (async()=>{ try{ if(!FrotaGrup.lista.length) await FrotaGrup.carregar(SB_AUTH_URL, SB_AUTH_KEY); }catch(e){} popularFiltrosGrupMat(); })();
 }
 </script>
 
