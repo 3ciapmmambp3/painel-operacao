@@ -4328,8 +4328,16 @@ function popularFiltrosGPs(){
 
 /** Extrai o número do pelotão do usuário logado a partir da lotação. */
 /** Extrai o número do pelotão do usuário logado a partir da lotação. */
+// CMT de Cia e CMT de Pelotão (por função): acesso de Cia inteira (todos os
+// pelotões/grupamentos). O CMT de Pelotão assume na falta do CMT de Cia, por
+// isso tem o MESMO escopo. Usado para anular as restrições de pelotão/GP.
+function _ehCmtCiaOuPel(){
+  const fx=(sessao?.funcao||'').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  return /(CMT|COMANDANTE)/.test(fx) && (/\bCIA\b/.test(fx) || /PEL/.test(fx));
+}
 function _pelotaoDoUsuario(){
   if(!sessao) return '';
+  if(_ehCmtCiaOuPel()) return '';   // CMT Cia/Pelotão → sem trava de pelotão
   const lot = (sessao.lotacao || '').toString();
   const m = lot.match(/(\d+)\s*PEL/i);
   return m ? m[1] : '';
@@ -4340,6 +4348,7 @@ function _pelotaoDoUsuario(){
  *  a própria lotação se já estiver no formato esperado. */
 function _grupamentoDoUsuario(){
   if(!sessao) return '';
+  if(_ehCmtCiaOuPel()) return '';   // CMT Cia/Pelotão → sem trava de grupamento
   const lot = (sessao.lotacao || '').toString().trim();
   if(!lot) return '';
   /* Tenta achar correspondência exata em dadosGrupos (mesmo formato longo) */
@@ -13817,7 +13826,7 @@ function _initIntelFiltroGP(){
 
 function _initMissoesFiltroGP(){
   const _isAdmin = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
-  if(_isAdmin) return; /* admin vê todas as missões */
+  if(_isAdmin || _ehCmtCiaOuPel()) return; /* admin e CMT Cia/Pelotão veem todas as missões */
 
   const gpSelect = document.getElementById('mis-gp');
   const badge    = document.getElementById('mis-gp-badge');
@@ -15062,7 +15071,7 @@ function abrirModalMissao(id){
   /* Restringe select de GP para operacional */
   const gpSelect = document.getElementById('m-gp');
   if(gpSelect){
-    if(!_isAdmin && sessao && sessao.lotacao){
+    if(!_isAdmin && !_ehCmtCiaOuPel() && sessao && sessao.lotacao){
       /* Operacional só vê o próprio GP */
       gpSelect.innerHTML = `<option value="${sessao.lotacao}">${sessao.lotacao}</option>`;
       gpSelect.disabled = true;
@@ -15100,7 +15109,7 @@ function abrirModalMissao(id){
     document.getElementById('m-militares-selecionados').innerHTML='';
     _missaoAnexosBuffer = [];
     /* Operacional: pré-seleciona o próprio GP e carrega militares automaticamente */
-    if(!_isAdmin && sessao && sessao.lotacao){
+    if(!_isAdmin && !_ehCmtCiaOuPel() && sessao && sessao.lotacao){
       document.getElementById('m-gp').value = sessao.lotacao;
       carregarMilitaresDoGP([]);
     } else {
