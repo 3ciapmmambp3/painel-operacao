@@ -441,6 +441,26 @@ function _tituloCidade(s){
   const low=new Set(['de','da','do','das','dos','e']);
   return _grafiaCidade(s).toLowerCase().replace(/[a-zà-ú]+/g,(w,i)=> (i>0&&low.has(w))?w:w.charAt(0).toUpperCase()+w.slice(1));
 }
+// Normaliza a ESCRITA (exibição) de campos do efetivo que vêm em CAIXA ALTA do
+// SIGEF (posto, função, unidade, grupamento) → Título, igual aos nomes. Preserva
+// siglas (PM, GP, PEL, RPM…), "MAmb", conectores minúsculos e tokens com número
+// (ordinais 3º, códigos 6611, P1). NÃO altera o dado no banco — só a tela/export.
+const _KEEP_UP = new Set(['PM','GP','PEL','BPM','CPE','RPM','SIAD','SRAI','DDU','TCO','TC','MG','EB','ADM','AIMA','ASPM','QPM','QOPM','PAF','FAPI','GDO','CVPE','CVPA','IMV','IF','UF','II','III','IV']);
+const _CONN_EF = new Set(['de','da','do','das','dos','e']);
+function _titEf(s){
+  if(s==null) return s;
+  if(s==='') return '';
+  return _grafiaCidade(String(s)).split(/(\s+|\/|-)/).map(tok=>{
+    if(/^\s+$/.test(tok) || tok==='/' || tok==='-') return tok;
+    if(/\d/.test(tok)) return tok;                       // 3, 3º, 6611, P1… mantêm
+    const up=tok.toUpperCase();
+    if(up==='MAMB' || up==='MAMBI') return 'MAmb';
+    if(_KEEP_UP.has(up)) return up;
+    const low=tok.toLowerCase();
+    if(_CONN_EF.has(low)) return low;
+    return low.charAt(0).toUpperCase()+low.slice(1);
+  }).join('');
+}
 async function carregarMapaGp(){
   if(MAPA_GP) return MAPA_GP; MAPA_GP={};
   try{ if(window.FrotaGrup){ await FrotaGrup.carregar(API, SB_AUTH_KEY);
@@ -631,10 +651,10 @@ function render(){
     return head+`<tr class="${m.ativo?'':'inativo'}" data-id="${m.id}" ${modoOrdenar?'draggable="true" style="cursor:grab;"':''}>
     <td class="miut">${modoOrdenar?'⠿ ':''}${m.antiguidade_ordem??(i+1)}</td>
     <td style="white-space:nowrap;">${esc(m.matricula||'')}</td>
-    <td>${esc(m.posto_graduacao||'')}</td>
+    <td>${esc(_titEf(m.posto_graduacao||''))}</td>
     <td>${modoOrdenar?esc(m.nome_completo||''):`<a href="#" onclick="openDetalhe('${m.id}');return false;" style="color:var(--text-white);text-decoration:none;border-bottom:1px dotted var(--acc);">${esc(m.nome_completo||'')}</a>`}${m.nome_guerra?`<div class="miut">${esc(m.nome_guerra)}</div>`:''}</td>
-    <td>${esc(modoUnidade?funcaoExibicao(m):(m.funcao||'—'))}</td>
-    <td>${esc(m.cod_unidade||'')}${m.nome_unidade?`<div class="miut">${esc(m.nome_unidade)}</div>`:''}</td>
+    <td>${esc(_titEf(modoUnidade?funcaoExibicao(m):(m.funcao||'—')))}</td>
+    <td>${esc(m.cod_unidade||'')}${m.nome_unidade?`<div class="miut">${esc(_titEf(m.nome_unidade))}</div>`:''}</td>
     <td>${fmtBR(m.ultima_promocao)}</td>
     <td>${tagSit(m)}${!m.ativo&&m.transf_destino?`<div class="miut">→ ${esc(m.transf_destino)}</div>`:''}</td>
     <td style="white-space:nowrap;text-align:right;">${modoOrdenar?'<span class="miut">arraste ↕</span>':`
@@ -710,18 +730,18 @@ function cnhSituacao(val){ if(!val) return ''; const hoje=new Date().toISOString
 function detLinha(label,val){ if(val==null||val==='') return ''; return `<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);"><div style="min-width:160px;color:var(--text-hint);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;">${esc(label)}</div><div style="font-size:13px;color:var(--text-white);flex:1;">${val}</div></div>`; }
 function openDetalhe(id){
   const m=LISTA.find(x=>x.id===id); if(!m) return; curId=id;
-  document.getElementById('det-titulo').textContent=`${m.posto_graduacao||''} ${m.nome_guerra||m.nome_completo||''}`;
+  document.getElementById('det-titulo').textContent=`${_titEf(m.posto_graduacao||'')} ${m.nome_guerra||m.nome_completo||''}`;
   const j=v=>esc(v); let h='';
   h+='<div class="sec">Identificação</div>';
-  h+=detLinha('Nº PM',j(m.matricula))+detLinha('Posto/Graduação',j(m.posto_graduacao))
+  h+=detLinha('Nº PM',j(m.matricula))+detLinha('Posto/Graduação',j(_titEf(m.posto_graduacao)))
     +detLinha('Nome completo',j(m.nome_completo))+detLinha('Nome de guerra',j(m.nome_guerra))
-    +detLinha('Função',j(m.funcao))+detLinha('Sexo',j(m.sexo))+detLinha('Situação',tagSit(m))
+    +detLinha('Função',j(_titEf(m.funcao)))+detLinha('Sexo',j(m.sexo))+detLinha('Situação',tagSit(m))
     +detLinha('Nascimento', m.data_nascimento?`${fmtBR(m.data_nascimento)} <span class="miut">(${idade(m.data_nascimento)})</span>`:'');
   h+='<div class="sec">Lotação</div>';
-  h+=detLinha('Unidade',[m.cod_unidade,m.nome_unidade].filter(Boolean).map(j).join(' — '))
-    +detLinha('Unidade principal',[m.cod_unidade_principal,m.nome_unidade_principal].filter(Boolean).map(j).join(' — '))
-    +detLinha('RPM',[m.cod_rpm,m.nome_rpm].filter(Boolean).map(j).join(' — '))
-    +detLinha('COD SIAD',j(m.cod_siad))+detLinha('Tipo de atividade',j(m.tipo_atividade))+detLinha('Grupamento',j(m.grupamento_id));
+  h+=detLinha('Unidade',[m.cod_unidade,_titEf(m.nome_unidade)].filter(Boolean).map(j).join(' — '))
+    +detLinha('Unidade principal',[m.cod_unidade_principal,_titEf(m.nome_unidade_principal)].filter(Boolean).map(j).join(' — '))
+    +detLinha('RPM',[m.cod_rpm,_titEf(m.nome_rpm)].filter(Boolean).map(j).join(' — '))
+    +detLinha('COD SIAD',j(m.cod_siad))+detLinha('Tipo de atividade',j(_titEf(m.tipo_atividade)))+detLinha('Grupamento',j(_titEf(m.grupamento_id)));
   h+='<div class="sec">Antiguidade</div>';
   h+=detLinha('Última promoção',fmtBR(m.ultima_promocao))+detLinha('Classificação do curso',j(m.classificacao_curso))+detLinha('Ordem',j(m.antiguidade_ordem));
   h+='<div class="sec">Documentos</div>';
@@ -861,9 +881,9 @@ async function exportar(){
     'COD_SIAD','TIPO_ATIVIDADE','COD_MUNICIPIO','Última promoção','Classificação curso','Situação','Ativo',
     'Transf. destino','Pasta funcional','Data envio','Nº ofício']);
   const aoa=[hdr];
-  lista.forEach(m=>aoa.push((porUnid?[rotuloUnidade(m)]:[]).concat([m.antiguidade_ordem||'',m.matricula||'',m.posto_graduacao||'',m.nome_completo||'',m.nome_guerra||'',(porUnid?funcaoExibicao(m):(m.funcao||'')),
-    m.cod_rpm||'',m.nome_rpm||'',m.cod_unidade_principal||'',m.nome_unidade_principal||'',m.cod_unidade||'',m.nome_unidade||'',
-    m.cod_siad||'',m.tipo_atividade||'',m.cod_municipio||'',fmtBR(m.ultima_promocao),m.classificacao_curso||'',
+  lista.forEach(m=>aoa.push((porUnid?[rotuloUnidade(m)]:[]).concat([m.antiguidade_ordem||'',m.matricula||'',_titEf(m.posto_graduacao)||'',m.nome_completo||'',m.nome_guerra||'',_titEf(porUnid?funcaoExibicao(m):(m.funcao||'')),
+    m.cod_rpm||'',_titEf(m.nome_rpm)||'',m.cod_unidade_principal||'',_titEf(m.nome_unidade_principal)||'',m.cod_unidade||'',_titEf(m.nome_unidade)||'',
+    m.cod_siad||'',_titEf(m.tipo_atividade)||'',m.cod_municipio||'',fmtBR(m.ultima_promocao),m.classificacao_curso||'',
     m.situacao_efetivo||'',m.ativo?'Sim':'Não',m.transf_destino||'',m.transf_pasta_funcional==null?'':(m.transf_pasta_funcional?'Sim':'Não'),
     fmtBR(m.transf_data_envio),m.transf_oficio_numero||''])));
   const ws=XLSX.utils.aoa_to_sheet(aoa); const wb=XLSX.utils.book_new();
