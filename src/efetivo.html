@@ -109,9 +109,11 @@
   </div>
 
   <div id="area-p1" style="display:none;">
-    <div class="ef-tabs">
+    <div class="ef-tabs" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
       <button class="ef-tab active" id="tab-ativos" onclick="mostrarAba('ativos')">Efetivo ativo</button>
+      <button class="ef-tab" id="tab-hipotecados" onclick="mostrarAba('hipotecados')">Hipotecados <span id="tab-hip-n" class="miut"></span></button>
       <button class="ef-tab" id="tab-inativos" onclick="mostrarAba('inativos')">Inativos <span id="tab-inat-n" class="miut"></span></button>
+      <button class="btn-gold" style="margin-left:auto;padding:7px 14px;font-size:12px;" onclick="abrirAdicionar()">+ Adicionar militar</button>
     </div>
     <div class="toolbar">
       <input type="search" id="busca" placeholder="Buscar por nome, Nº PM, função ou unidade…" oninput="render()">
@@ -165,6 +167,7 @@
     </div>
     <div class="sec">Lotação (SIGEF/CPE)</div>
     <div class="grid">
+      <div class="fld" style="grid-column:1/-1;"><label>Lotação / Grupamento <span class="miut">(define o GP/Pelotão nos filtros)</span></label><input id="e-grupamento" placeholder="ex.: 3 GP / 1 PEL / 3 Cia PM MAmb"></div>
       <div class="fld"><label>COD_UNIDADE</label><input id="e-cod_unidade" placeholder="ex.: 6611"></div>
       <div class="fld"><label>NOME_UNIDADE</label><input id="e-nome_unidade"></div>
       <div class="fld"><label>COD_RPM</label><input id="e-cod_rpm"></div>
@@ -220,7 +223,13 @@
     <div class="miut" id="baixa-quem" style="margin-bottom:12px;"></div>
     <div class="grid">
       <div class="fld"><label>Situação</label>
-        <select id="b-sit"><option value="TRANSFERIDO">Transferido de unidade</option><option value="RESERVA">Transferido para a Reserva</option><option value="OUTRO">Outro</option></select>
+        <select id="b-sit" onchange="onBsitChange()"><option value="HIPOTECADO">Hipotecado (continua no RH)</option><option value="TRANSFERIDO">Transferido de unidade</option><option value="RESERVA">Transferido para a Reserva</option><option value="OUTRO">Outro</option></select>
+      </div>
+      <div class="fld" id="b-hip-acesso-wrap" style="grid-column:1/-1;display:none;">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400;">
+          <input type="checkbox" id="b-hip-suspender" style="width:auto;"> Suspender o acesso dele ao painel enquanto estiver hipotecado
+        </label>
+        <div class="miut" style="margin-top:4px;">Marcado: ele <b>não consegue logar</b> no painel. Desmarcado: mantém o acesso. Em ambos os casos, <b>continua contando no efetivo (RH)</b>.</div>
       </div>
       <div class="fld"><label>Destino / para onde foi</label><input id="b-destino" placeholder="ex.: 8ª Cia PM MAmb"></div>
       <div class="fld"><label>Pasta funcional entregue?</label>
@@ -230,7 +239,7 @@
       <div class="fld"><label>Nº do ofício</label><input id="b-oficio" placeholder="ex.: Of. 123/2026"></div>
     </div>
     <div class="fld" style="margin-top:11px;"><label>Observações</label><textarea id="b-obs" rows="2"></textarea></div>
-    <div class="miut" style="margin-top:8px;">Mantém os dados, mas o militar <b>perde o acesso ao painel</b> (login) e sai do efetivo ativo da Cia (não conta nos indicadores). É <b>reativável</b> — inclusive para reconvocação da reserva. Para apagar o registro de vez, use <b>excluir</b>.</div>
+    <div class="miut" id="baixa-nota-inativar" style="margin-top:8px;">Mantém os dados, mas o militar <b>perde o acesso ao painel</b> (login) e sai do efetivo ativo da Cia (não conta nos indicadores). É <b>reativável</b> — inclusive para reconvocação da reserva. Para apagar o registro de vez, use <b>excluir</b>.</div>
     <div class="row-actions" style="justify-content:flex-end;margin-top:16px;">
       <button class="btn-outline" onclick="fechar('modal-baixa')">Cancelar</button>
       <button class="btn-gold" onclick="salvarBaixa()">Confirmar inativação</button>
@@ -295,7 +304,8 @@ const CHAVES = ['matricula','posto_graduacao','nome_completo','nome_guerra','fun
   'cod_siad','tipo_atividade','cod_municipio','ultima_promocao','classificacao_curso','antiguidade_ordem','situacao_efetivo',
   'rg','cpf','titulo_eleitor','cnh_numero','cnh_categoria','cnh_validade','data_nascimento',
   'telefone_funcional','telefone_pessoal1','telefone_pessoal2',
-  'endereco_funcional','endereco_residencial1','endereco_residencial2','email_pessoal','email_funcional','sexo'];
+  'endereco_funcional','endereco_residencial1','endereco_residencial2','email_pessoal','email_funcional','sexo',
+  'grupamento_id'];
 const HEADERS_MODELO = {
   matricula:'Nº PM', posto_graduacao:'Posto/Graduação', nome_completo:'Nome completo', nome_guerra:'Nome de guerra',
   funcao:'Função', cod_rpm:'COD_RPM', nome_rpm:'NOME_RPM', cod_unidade_principal:'COD_UNIDADE_PRINCIPAL',
@@ -307,7 +317,8 @@ const HEADERS_MODELO = {
   cnh_validade:'CNH validade (AAAA-MM-DD)', data_nascimento:'Data de nascimento (AAAA-MM-DD)',
   telefone_funcional:'Telefone funcional', telefone_pessoal1:'Telefone pessoal 1', telefone_pessoal2:'Telefone pessoal 2',
   endereco_funcional:'Endereço funcional', endereco_residencial1:'Endereço residencial 1', endereco_residencial2:'Endereço residencial 2',
-  email_pessoal:'E-mail pessoal', email_funcional:'E-mail funcional', sexo:'Sexo' };
+  email_pessoal:'E-mail pessoal', email_funcional:'E-mail funcional', sexo:'Sexo',
+  grupamento_id:'Grupamento / Lotação (ex.: 3 GP / 1 PEL / 3 Cia PM MAmb)' };
 function norm(s){ return (s==null?'':String(s)).toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z0-9]/g,''); }
 // sinônimos → chave interna (aceita o modelo E a aba Baliza/FormatoSIGEF)
 const SINON = {
@@ -331,7 +342,8 @@ const SINON = {
   DATADENASCIMENTO:'data_nascimento', DATANASCIMENTO:'data_nascimento', DATADENASCIMENTOAAAAMMDD:'data_nascimento',
   TELEFONEFUNCIONAL:'telefone_funcional', TELEFONEPESSOAL1:'telefone_pessoal1', TELEFONEPESSOAL2:'telefone_pessoal2',
   ENDERECOFUNCIONAL:'endereco_funcional', ENDERECORESIDENCIAL1:'endereco_residencial1', ENDERECORESIDENCIAL2:'endereco_residencial2',
-  EMAILPESSOAL:'email_pessoal', EMAILFUNCIONAL:'email_funcional', SEXO:'sexo' };
+  EMAILPESSOAL:'email_pessoal', EMAILFUNCIONAL:'email_funcional', SEXO:'sexo',
+  GRUPAMENTO:'grupamento_id', GRUPAMENTOLOTACAO:'grupamento_id', GRUPAMENTOID:'grupamento_id', FRACAO:'grupamento_id', FRACAODEATUACAO:'grupamento_id' };
 function mapHeader(h){ const n=norm(h); return SINON[n]||(CHAVES.includes(n.toLowerCase())?n.toLowerCase():null); }
 function parseData(v){
   if(v==null||v==='') return null;
@@ -391,20 +403,24 @@ async function carregar(){
   try{
     LISTA = await rpc('efetivo_listar',{p_token:sessao.token,p_incluir_inativos:true}) || [];
     LISTA.forEach((m,i)=>{ m.__ord=i; });   // posição = ordem de antiguidade (servidor)
-    // total ativo, quebrado em militares × assistentes administrativos (civis/ASPM)
-    const _ativos = LISTA.filter(m=>m.integrante_ativo??m.ativo);
+    // RH = efetivo ativo operacional + hipotecados (estes contam no RH, mas ficam
+    // à parte do efetivo ativo). Inativos (transferido/reserva) não contam.
+    const _opAtivos = LISTA.filter(m=>(m.integrante_ativo??m.ativo) && !ehHipotecado(m));
+    const _hipot   = LISTA.filter(ehHipotecado);
     const _ehAssist = m => /func|civil|aspm/i.test(((m.posto_graduacao||'')+' '+(m.funcao||'')));
-    const _assist = _ativos.filter(_ehAssist).length;
-    const _mil = _ativos.length - _assist;
-    document.getElementById('k-total').textContent = _ativos.length;
-    document.getElementById('k-sub').innerHTML = `${_mil} militares · ${_assist} assist. adm.`;
+    const _assist = _opAtivos.filter(_ehAssist).length;
+    const _mil = _opAtivos.length - _assist;
+    document.getElementById('k-total').textContent = _opAtivos.length + _hipot.length;
+    document.getElementById('k-sub').innerHTML = `${_mil} militares · ${_assist} assist. adm.${_hipot.length?` · <b style="color:#ffa726">${_hipot.length} hipotecado(s)</b>`:''}`;
     popularPel(); popularGp();
-    const nInat = LISTA.filter(m=>!(m.integrante_ativo??m.ativo)).length;
+    const nInat = LISTA.filter(m=>!(m.integrante_ativo??m.ativo) && !ehHipotecado(m)).length;
     document.getElementById('tab-inat-n').textContent = nInat?`(${nInat})`:'';
+    document.getElementById('tab-hip-n').textContent = _hipot.length?`(${_hipot.length})`:'';
     render();
   }catch(e){ document.getElementById('tbody').innerHTML=`<tr><td colspan="9"><div class="empty">${esc(e.message)}</div></td></tr>`; }
 }
 function tagSit(m){
+  if(ehHipotecado(m)) return '<span class="tag" style="background:rgba(255,152,0,.15);color:#ffa726;border:1px solid rgba(255,152,0,.4)">Hipotecado'+((m.integrante_ativo??m.ativo)?'':' · sem acesso')+'</span>';
   if(m.integrante_ativo??m.ativo) return '<span class="tag ativo">Ativo</span>';
   const s=(m.situacao_efetivo||'').toUpperCase();
   if(s==='TRANSFERIDO') return '<span class="tag transf">Transferido</span>';
@@ -520,16 +536,23 @@ async function toggleUnidade(){
 }
 
 // ── abas: Efetivo ativo × Inativos (transferidos/reserva/outros) ──
+function ehHipotecado(m){ return (m.situacao_efetivo||'').toUpperCase()==='HIPOTECADO'; }
+let ABA='ativos';
 let modoInativos=false;
 function mostrarAba(qual){
+  ABA = qual;
   modoInativos = (qual==='inativos');
-  document.getElementById('tab-ativos').classList.toggle('active', !modoInativos);
-  document.getElementById('tab-inativos').classList.toggle('active', modoInativos);
-  document.getElementById('f-motivo').style.display = modoInativos?'':'none';
-  document.getElementById('inat-aviso').style.display = modoInativos?'block':'none';
-  document.querySelectorAll('.ef-only-ativos').forEach(el=>{ el.style.display = modoInativos?'none':''; });
-  if(modoInativos && modoOrdenar) toggleOrdenar();   // ordenação de antiguidade não se aplica a inativos
-  if(modoInativos && modoUnidade) toggleUnidade();   // agrupamento por unidade é da baliza ativa
+  document.getElementById('tab-ativos').classList.toggle('active', qual==='ativos');
+  document.getElementById('tab-hipotecados').classList.toggle('active', qual==='hipotecados');
+  document.getElementById('tab-inativos').classList.toggle('active', qual==='inativos');
+  document.getElementById('f-motivo').style.display = (qual==='inativos')?'':'none';
+  const av=document.getElementById('inat-aviso');
+  if(qual==='hipotecados'){ av.style.display='block'; av.innerHTML='Militares <b>hipotecados</b> — <b>continuam contando no efetivo (RH)</b>, mas ficam à parte do efetivo ativo operacional. O acesso ao painel pode estar suspenso ou mantido (definido ao hipotecar). Use <b>↩️ reativar</b> para voltar ao efetivo ativo.'; }
+  else if(qual==='inativos'){ av.style.display='block'; av.innerHTML='Militares fora do efetivo ativo — <b>não</b> contam nos indicadores e <b>não</b> acessam o painel. Use <b>reativar</b> para trazer de volta (inclusive reconvocação da reserva).'; }
+  else { av.style.display='none'; }
+  document.querySelectorAll('.ef-only-ativos').forEach(el=>{ el.style.display = (qual==='ativos')?'':'none'; });
+  if(qual!=='ativos' && modoOrdenar) toggleOrdenar();   // ordenação de antiguidade não se aplica fora do ativo
+  if(qual!=='ativos' && modoUnidade) toggleUnidade();   // agrupamento por unidade é da baliza ativa
   render();
 }
 // ── filtros por Pelotão e Grupamento ──
@@ -577,14 +600,16 @@ function render(){
   const fpel=document.getElementById('f-pel')?document.getElementById('f-pel').value:'';
   const fgp=document.getElementById('f-gp')?document.getElementById('f-gp').value:'';
   let arr=LISTA.filter(m=>{
-    if(modoInativos){
-      if(ehAtivo(m)) return false;
+    if(ABA==='hipotecados'){
+      if(!ehHipotecado(m)) return false;
+    } else if(ABA==='inativos'){
+      if(ehAtivo(m) || ehHipotecado(m)) return false;
       const s=(m.situacao_efetivo||'').toUpperCase();
       if(fm==='TRANSFERIDO' && s!=='TRANSFERIDO') return false;
       if(fm==='RESERVA'     && s!=='RESERVA')     return false;
       if(fm==='OUTRO'       && (s==='TRANSFERIDO'||s==='RESERVA')) return false;
-    } else {
-      if(!ehAtivo(m)) return false;
+    } else {   // efetivo ativo operacional (exclui hipotecados)
+      if(!ehAtivo(m) || ehHipotecado(m)) return false;
     }
     if(fpel && _pelDe(m)!==fpel) return false;
     if(fgp && _gpCurto(m.grupamento_id)!==fgp) return false;   // filtra pela CIDADE (dedup de variações)
@@ -592,7 +617,7 @@ function render(){
     return true;
   });
   const tb=document.getElementById('tbody');
-  if(!arr.length){ tb.innerHTML='<tr><td colspan="9"><div class="empty">'+(modoInativos?'Nenhum militar inativo'+(document.getElementById('f-motivo').value?' com esse motivo':'')+'.':'Nenhum militar.')+'</div></td></tr>'; return; }
+  if(!arr.length){ const _msg = ABA==='hipotecados' ? 'Nenhum militar hipotecado.' : (ABA==='inativos' ? 'Nenhum militar inativo'+(document.getElementById('f-motivo').value?' com esse motivo':'')+'.' : 'Nenhum militar.'); tb.innerHTML='<tr><td colspan="9"><div class="empty">'+_msg+'</div></td></tr>'; return; }
   if(modoUnidade) arr=arr.slice().sort(cmpUnidade);
   let _hdr=null, _sub=null;
   tb.innerHTML=arr.map((m,i)=>{
@@ -614,7 +639,11 @@ function render(){
     <td>${tagSit(m)}${!m.ativo&&m.transf_destino?`<div class="miut">→ ${esc(m.transf_destino)}</div>`:''}</td>
     <td style="white-space:nowrap;text-align:right;">${modoOrdenar?'<span class="miut">arraste ↕</span>':`
       <button class="minibtn ico" title="Editar" onclick="editar('${m.id}')">✏️</button>
-      ${(m.integrante_ativo??m.ativo)?`<button class="minibtn ico" title="Inativar / transferir" onclick="abrirBaixa('${m.id}')">⏸️</button>`:`<button class="minibtn ico" title="Reativar" onclick="reativar('${m.id}')">↩️</button>`}
+      ${ehHipotecado(m)
+          ? `<button class="minibtn ico" title="Voltar ao efetivo ativo" onclick="reativar('${m.id}')">↩️</button>`
+          : ((m.integrante_ativo??m.ativo)
+              ? `<button class="minibtn ico" title="Inativar / transferir / hipotecar" onclick="abrirBaixa('${m.id}')">⏸️</button>`
+              : `<button class="minibtn ico" title="Reativar" onclick="reativar('${m.id}')">↩️</button>`)}
       <button class="minibtn ico del" title="Excluir definitivamente" onclick="excluirDefinitivo('${m.id}')">🗑️</button>`}
     </td></tr>`;
   }).join('');
@@ -713,13 +742,15 @@ function openDetalhe(id){
   document.getElementById('modal-detalhe').classList.add('open');
 }
 
-// ── editar ──
-let curId=null;
+// ── editar / adicionar ──
+let curId=null, ADD_MODE=false;
 function editar(id){
-  const m=LISTA.find(x=>x.id===id); if(!m) return; curId=id;
+  const m=LISTA.find(x=>x.id===id); if(!m) return; curId=id; ADD_MODE=false;
   document.getElementById('edit-titulo').textContent=`Editar — ${m.posto_graduacao||''} ${m.nome_guerra||m.nome_completo||''}`;
+  document.getElementById('e-matricula').disabled=true;   // não troca matrícula de quem já existe
   const S=(k,v)=>document.getElementById(k).value=(v==null?'':v);
   S('e-matricula',m.matricula); S('e-pg',m.posto_graduacao); S('e-nome',m.nome_completo); S('e-guerra',m.nome_guerra); S('e-funcao',m.funcao);
+  S('e-grupamento',m.grupamento_id);
   S('e-cod_unidade',m.cod_unidade); S('e-nome_unidade',m.nome_unidade); S('e-cod_rpm',m.cod_rpm); S('e-nome_rpm',m.nome_rpm);
   S('e-cod_up',m.cod_unidade_principal); S('e-nome_up',m.nome_unidade_principal); S('e-cod_siad',m.cod_siad); S('e-tipo_atv',m.tipo_atividade); S('e-cod_mun',m.cod_municipio);
   S('e-promo',(m.ultima_promocao||'').slice(0,10)); S('e-classif',m.classificacao_curso); S('e-ordem',m.antiguidade_ordem);
@@ -734,6 +765,7 @@ async function salvarEdit(){
   try{
     const g=id=>document.getElementById(id).value.trim();
     const dados={ posto_graduacao:g('e-pg'), nome_completo:g('e-nome'), nome_guerra:g('e-guerra'), funcao:g('e-funcao'),
+      grupamento_id:g('e-grupamento'),
       cod_unidade:g('e-cod_unidade'), nome_unidade:g('e-nome_unidade'), cod_rpm:g('e-cod_rpm'), nome_rpm:g('e-nome_rpm'),
       cod_unidade_principal:g('e-cod_up'), nome_unidade_principal:g('e-nome_up'), cod_siad:g('e-cod_siad'),
       tipo_atividade:g('e-tipo_atv'), cod_municipio:g('e-cod_mun'),
@@ -743,24 +775,62 @@ async function salvarEdit(){
       telefone_funcional:g('e-telf'), telefone_pessoal1:g('e-telp1'), telefone_pessoal2:g('e-telp2'),
       email_pessoal:g('e-emailp'), email_funcional:g('e-emailf'),
       endereco_funcional:g('e-endf'), endereco_residencial1:g('e-endr1'), endereco_residencial2:g('e-endr2') };
-    await rpc('efetivo_salvar',{p_token:sessao.token,p_id:curId,p_dados:dados});
-    fechar('modal-edit'); flash('Salvo.',true); carregar();
+    if(ADD_MODE){
+      dados.matricula = g('e-matricula');
+      if(!dados.matricula){ flash('Informe o Nº PM.',false); return; }
+      if(!dados.nome_completo){ flash('Informe o nome completo.',false); return; }
+      await rpc('efetivo_criar',{p_token:sessao.token,p_dados:dados});
+      fechar('modal-edit'); flash('Militar adicionado (senha padrão Mudar@123, 1º acesso).',true); carregar();
+    } else {
+      await rpc('efetivo_salvar',{p_token:sessao.token,p_id:curId,p_dados:dados});
+      fechar('modal-edit'); flash('Salvo.',true); carregar();
+    }
   }catch(e){ flash(e.message||'Erro.',false); }
 }
+// ── adicionar militar (botão "+ Adicionar militar") ──
+function abrirAdicionar(){
+  ADD_MODE=true; curId=null;
+  document.getElementById('edit-titulo').textContent='Adicionar militar ao efetivo';
+  const el=document.getElementById('modal-edit');
+  // limpa todos os campos do modal
+  el.querySelectorAll('input').forEach(i=>i.value='');
+  const mat=document.getElementById('e-matricula');
+  mat.disabled=false; mat.placeholder='Nº PM (000.000-0)'; mat.oninput=function(){ this.value=_maskPM(this.value); };
+  el.classList.add('open');
+  setTimeout(()=>mat.focus(),50);
+}
+// Máscara progressiva do Nº PM no campo de adicionar.
+function _maskPM(v){ const d=String(v||'').replace(/\D/g,'').slice(0,7); if(!d) return ''; let o=d.slice(0,3); if(d.length>3)o+='.'+d.slice(3,6); if(d.length>6)o+='-'+d.slice(6,7); return o; }
 
 // ── baixa / reativar ──
 function abrirBaixa(id){
   const m=LISTA.find(x=>x.id===id); if(!m) return; curId=id;
   document.getElementById('baixa-quem').textContent=`${m.posto_graduacao||''} ${m.nome_guerra||m.nome_completo||''} · ${m.matricula||''}`;
-  document.getElementById('b-sit').value='TRANSFERIDO'; document.getElementById('b-destino').value=m.transf_destino||'';
+  document.getElementById('b-sit').value='HIPOTECADO'; document.getElementById('b-destino').value=m.transf_destino||'';
   document.getElementById('b-pasta').value=m.transf_pasta_funcional==null?'':String(m.transf_pasta_funcional);
   document.getElementById('b-data').value=(m.transf_data_envio||'').slice(0,10); document.getElementById('b-oficio').value=m.transf_oficio_numero||'';
   document.getElementById('b-obs').value=m.transf_obs||'';
+  document.getElementById('b-hip-suspender').checked=false;
+  onBsitChange();
   document.getElementById('modal-baixa').classList.add('open');
+}
+// Mostra o checkbox de suspensão de acesso só quando a situação é HIPOTECADO,
+// e esconde os campos de transferência (destino/ofício etc.) nesse caso.
+function onBsitChange(){
+  const hip = document.getElementById('b-sit').value === 'HIPOTECADO';
+  document.getElementById('b-hip-acesso-wrap').style.display = hip ? '' : 'none';
+  ['b-destino','b-pasta','b-data','b-oficio'].forEach(id=>{ const fld=document.getElementById(id); const wrap=fld&&fld.closest('.fld'); if(wrap) wrap.style.display = hip ? 'none' : ''; });
+  const nota=document.getElementById('baixa-nota-inativar'); if(nota) nota.style.display = hip ? 'none' : '';
 }
 async function salvarBaixa(){
   try{
     const g=id=>document.getElementById(id).value;
+    if(g('b-sit')==='HIPOTECADO'){
+      const suspender = document.getElementById('b-hip-suspender').checked;
+      await rpc('efetivo_hipotecar',{p_token:sessao.token,p_id:curId,p_suspender_acesso:suspender});
+      fechar('modal-baixa'); flash('Militar marcado como hipotecado'+(suspender?' (acesso suspenso)':' (acesso mantido)')+'.',true); carregar();
+      return;
+    }
     const dados={ situacao_efetivo:g('b-sit'), transf_destino:g('b-destino').trim()||null,
       transf_data_envio:g('b-data')||null, transf_oficio_numero:g('b-oficio').trim()||null, transf_obs:g('b-obs').trim()||null };
     const pasta=g('b-pasta'); if(pasta!=='') dados.transf_pasta_funcional=(pasta==='true');
