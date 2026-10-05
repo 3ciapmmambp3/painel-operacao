@@ -1561,8 +1561,11 @@ async function salvar(){
   if (!isNaN(tFim)){
     if (tFim < tIni)     return foco('termino','O término não pode ser antes do início.');
     // término pode ser FUTURO (ex.: lançar às 15h com término previsto às 17h do TTA);
-    // só limita a 24h após o início p/ evitar erro de digitação.
-    if (tFim > tIni+DIA) return foco('termino','O término não pode ser mais de 24h após o início.');
+    // só limita a 24h após o início p/ evitar erro de digitação — EXCETO em DSP
+    // (viagem de serviço / motorista externo), em que a viatura fica vários dias.
+    const _ehDsp = ((document.getElementById('dsp-sel')||{}).value) === 'Sim';
+    if (!_ehDsp && tFim > tIni+DIA)
+      return foco('termino','O término não pode ser mais de 24h após o início. Se a viatura ficou vários dias (viagem de serviço), marque DSP = Sim.');
   }
   if (!EDIT_ID && AGORA - tIni > 2*DIA){
     if(!confirm('O início tem mais de 2 dias. O lançamento deve ser feito no máximo com 1 dia de atraso. Deseja continuar mesmo assim?')) return foco('inicio','Confira a data de início.');
@@ -1578,7 +1581,11 @@ async function salvar(){
   // ── Abastecimento (obrigatório) ──
   abre('tem_abastecimento','s-abast');
   const houve = document.getElementById('ab-houve').value;
-  if (!houve) return foco('ab-houve','Abastecimento é obrigatório: informe se houve.');
+  // Ficha que NÃO nasceu com abastecimento (ex.: lançada pelo condutor externo,
+  // onde abastecimento é opcional e não há Limpeza) não é barrada ao editar — o
+  // dado nunca existiu. No lançamento e nas fichas internas segue obrigatório.
+  const _origSemAbast = !!EDIT_ID && !((EDIT_ORIG&&EDIT_ORIG.dados&&EDIT_ORIG.dados.abastecimento&&EDIT_ORIG.dados.abastecimento.houve)||'');
+  if (!houve && !_origSemAbast) return foco('ab-houve','Abastecimento é obrigatório: informe se houve.');
   if (houve==='Sim' && !document.querySelectorAll('#abastecimentos .abast-row').length)
     return foco('ab-houve','Adicione ao menos um abastecimento.');
   if (houve==='Não' && !document.getElementById('ab-just').value.trim())
@@ -1608,7 +1615,10 @@ async function salvar(){
   // ── Limpeza / higienização (obrigatório) ──
   abre('tem_limpeza','s-limp');
   const devLimpa = document.getElementById('limp-dev').value;
-  if (!devLimpa) return foco('limp-dev','Limpeza é obrigatória: informe se higienizou ao devolver.');
+  // Ficha que nasceu sem Limpeza (condutor externo não tem essa seção) não é
+  // barrada ao editar. No lançamento e nas fichas internas segue obrigatório.
+  const _origSemLimp = !!EDIT_ID && !((EDIT_ORIG&&EDIT_ORIG.dados&&EDIT_ORIG.dados.limpeza&&EDIT_ORIG.dados.limpeza.devolveu_limpa)||'');
+  if (!devLimpa && !_origSemLimp) return foco('limp-dev','Limpeza é obrigatória: informe se higienizou ao devolver.');
   if (devLimpa==='Não' && !document.getElementById('limp-just').value.trim())
     return foco('limp-just','Justifique por que a viatura não foi higienizada.');
 
