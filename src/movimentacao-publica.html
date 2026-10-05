@@ -187,6 +187,25 @@
     <span class="hint">Opcional — use quando a DSP durar vários dias (lance o trajeto de cada dia).</span>
   </div>
 
+  <!-- ABASTECIMENTO (obrigatório) -->
+  <div class="card" id="s-abast">
+    <h2>⛽ Abastecimento *</h2>
+    <p class="hint" style="margin-bottom:8px">🔔 Devolva a viatura <b>abastecida</b> para o próximo serviço.</p>
+    <div class="grid">
+      <div class="f col2"><label>Houve abastecimento nesta utilização? *</label>
+        <select id="ab-houve" onchange="abHouve()"><option value="">Selecione…</option><option>Sim</option><option>Não</option></select></div>
+    </div>
+    <div id="ab-sim" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0 6px">
+        <span class="hint">Adicione um bloco por abastecimento realizado.</span>
+        <button type="button" class="linkbtn" onclick="addAbast()">+ adicionar abastecimento</button>
+      </div>
+      <div id="abast-rows"></div>
+    </div>
+    <div class="f" id="ab-nao" style="display:none;margin-top:10px"><label>Justificativa — por que não abasteceu?</label>
+      <textarea id="ab-just" rows="2" placeholder="Ex.: tanque ainda cheio / POC fechado / etc."></textarea></div>
+  </div>
+
   <!-- LIMPEZA / HIGIENIZAÇÃO (obrigatório) -->
   <div class="card" id="s-limp">
     <h2>🧽 Limpeza / higienização *</h2>
@@ -206,20 +225,9 @@
   <div class="opts">
     <div class="lead">Marque abaixo <b>somente</b> se ocorreu durante a sua utilização:</div>
     <div class="optgrid">
-      <div class="opt" id="opt-abast" onclick="tog(this,'s-abast')"><div class="ic">⛽</div><div class="tx"><b>Abastecimento</b><span>houve? registre</span></div><div class="sw"></div></div>
       <div class="opt" id="opt-avaria" onclick="tog(this,'s-avaria')"><div class="ic">🩹</div><div class="tx"><b>Avarias de uso</b><span>danos detectados</span></div><div class="sw"></div></div>
       <div class="opt" id="opt-acid" onclick="tog(this,'s-acid')"><div class="ic">💥</div><div class="tx"><b>Acidente</b><span>REDS, perícia…</span></div><div class="sw"></div></div>
     </div>
-  </div>
-
-  <!-- ABASTECIMENTO -->
-  <div class="card sec" id="s-abast">
-    <h2>⛽ Abastecimento</h2>
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-      <span class="hint">Adicione um bloco por abastecimento realizado.</span>
-      <button type="button" class="linkbtn" onclick="addAbast()">+ adicionar abastecimento</button>
-    </div>
-    <div id="abast-rows"></div>
   </div>
 
   <!-- AVARIAS -->
@@ -482,6 +490,11 @@ function addAbast(){
     +'</div>';
   document.getElementById('abast-rows').appendChild(div);
 }
+function abHouve(){ const v=$('ab-houve').value;
+  $('ab-sim').style.display=(v==='Sim')?'':'none';
+  $('ab-nao').style.display=(v==='Não')?'':'none';
+  if(v==='Sim' && !document.querySelectorAll('#abast-rows .abast-row').length) addAbast();
+}
 /* ── Limpeza / higienização (obrigatório) ── */
 function limpDev(){ const nao=$('limp-dev').value==='Não'; const box=$('limp-nao'); if(box) box.style.display=nao?'':'none'; }
 
@@ -577,6 +590,11 @@ async function salvar(){
   }
   if(!$('inicio').value) return foco('inicio','Informe o início (armar a VTR).');
   if(!validarDspOuAvisar()) return;
+  // abastecimento (obrigatório)
+  const _abHouve=$('ab-houve').value;
+  if(!_abHouve) return foco('ab-houve','Abastecimento é obrigatório: informe se houve.');
+  if(_abHouve==='Sim' && !document.querySelectorAll('#abast-rows .abast-row').length) return foco('ab-houve','Adicione ao menos um abastecimento.');
+  if(_abHouve==='Não' && !$('ab-just').value.trim()) return foco('ab-just','Justifique por que a viatura não foi abastecida.');
   // limpeza / higienização (obrigatório)
   const _limpDev=$('limp-dev').value;
   if(!_limpDev) return foco('limp-dev','Informe se a viatura foi higienizada ao devolver.');
@@ -586,14 +604,16 @@ async function salvar(){
   try{
     let anexos=[]; try{ anexos=await coletarAnexos(); }catch(e){ toast(e.message); btn.disabled=false; btn.textContent=txt; return; }
 
-    const temAbast=$('opt-abast').classList.contains('active');
+    const temAbast=(_abHouve==='Sim');
     const temAvaria=$('opt-avaria').classList.contains('active');
     const temAcid=$('opt-acid').classList.contains('active');
 
     const dados={};
     dados.limpeza={ recebeu_limpa:$('limp-receb').value, devolveu_limpa:_limpDev,
       detalhes:$('limp-det').value.trim(), justificativa_nao:(_limpDev==='Não'?$('limp-just').value.trim():'') };
-    if(temAbast) dados.abastecimento={ houve:'Sim', itens:coletarAbast() };
+    dados.abastecimento = temAbast
+      ? { houve:'Sim', itens:coletarAbast() }
+      : { houve:'Não', justificativa_nao:$('ab-just').value.trim() };
     if(temAvaria) dados.avaria={ descricao:$('av-desc').value.trim() };
     if(temAcid) dados.acidente={ reds:$('ac-reds').value.trim(), odometro:$('ac-odo').value, data_hora:$('ac-dh').value,
       pericia:$('ac-per').value, vitimas:$('ac-vit').value, guincho:$('ac-gui').value, obs:$('ac-obs').value.trim() };
