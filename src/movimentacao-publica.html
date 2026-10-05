@@ -387,9 +387,12 @@ async function coletarAnexos(){
   $('kmi-hint').innerHTML = (ultimoKmFinal!=null)
     ? `Última devolução: <b>${ultimoKmFinal.toLocaleString('pt-BR')} km</b>.` : 'Informe o Km inicial.';
 
+  // listas de combustível/convênio e limites POC/PRIME (mesmo esquema do interno)
+  await Promise.all([carregarListasAbast(), carregarCfgAbast()]);
+
   $('load-screen').style.display='none';
   $('form-wrap').style.display='';
-  addAbast(); // já deixa um bloco pronto (fica oculto até marcar a seção)
+  addAbast(); // já deixa um bloco pronto (aparece quando "Houve abastecimento? = Sim")
 })();
 
 function mostrarErro(titulo, msg){
@@ -469,26 +472,145 @@ function syncDatas(){
 function tog(el,id){ el.classList.toggle('active'); const sec=$(id); const on=sec.classList.toggle('show');
   if(on && id==='s-abast' && !document.querySelectorAll('#abast-rows .abast-row').length) addAbast(); }
 
-/* ── Abastecimento (bloco repetível, simplificado p/ condutor externo) ── */
-const COMBUSTIVEIS=['Gasolina comum','Gasolina aditivada','Etanol','Diesel','Diesel S10','GNV'];
-const FONTES=['POC','Cartão de Abastecimento (PRIME)','Convênio ou Doação','Posto comum (recibo)'];
+/* ── Abastecimento — MESMO esquema do painel interno (campos por fonte).
+   POC é mínimo: sem limite configurado, não pede litros/valor/odômetro;
+   com limite (Aux P4/Admin), pede litros e, se acima, quem autorizou. ── */
+let COMBUSTIVEIS=['Gasolina comum','Gasolina aditivada','Etanol','Diesel','Diesel S10','GNV'];
+let CONVENIOS=['Vale','Samarco','Vallourec','SEE / Progea','Emenda parlamentar','Outro'];
+let ABAST_CFG={poc_ativo:false,poc_limite:null,prime_ativo:false,prime_limite:null};
 function optList(a){ return a.map(x=>`<option>${x}</option>`).join(''); }
+// listas (combustíveis/convênios) e limites POC/PRIME definidos pelo Aux P4/Admin (anon).
+async function carregarListasAbast(){
+  try{ const rows=await rpc('listas_config_get',{});
+    (Array.isArray(rows)?rows:[]).forEach(r=>{
+      if(r&&r.chave==='combustiveis'&&Array.isArray(r.itens)&&r.itens.length) COMBUSTIVEIS=r.itens;
+      if(r&&r.chave==='convenios'&&Array.isArray(r.itens)&&r.itens.length) CONVENIOS=r.itens;
+    });
+  }catch(e){ console.error('listas abast',e); }
+}
+async function carregarCfgAbast(){
+  try{ const c=await rpc('abastecimento_config_get',{}); const cfg=Array.isArray(c)?c[0]:c;
+    if(cfg) ABAST_CFG={ poc_ativo:!!cfg.poc_ativo, poc_limite:cfg.poc_limite!=null?+cfg.poc_limite:null,
+      prime_ativo:!!cfg.prime_ativo, prime_limite:cfg.prime_limite!=null?+cfg.prime_limite:null };
+  }catch(e){ console.error('cfg abast',e); }
+}
+function abLimiteAtivo(kind){ return kind==='poc' ? (ABAST_CFG.poc_ativo && ABAST_CFG.poc_limite>0)
+                                                  : (ABAST_CFG.prime_ativo && ABAST_CFG.prime_limite>0); }
+function abLimiteVal(kind){ return kind==='poc'?ABAST_CFG.poc_limite:ABAST_CFG.prime_limite; }
+function abLimiteHint(kind){ return abLimiteAtivo(kind) ? ` <span class="hint">(limite: ${abLimiteVal(kind)} L)</span>` : ''; }
+function abOverBlock(){
+  return '<div class="ab-over" style="display:none;margin-top:10px;border-left:3px solid var(--danger);padding-left:10px">'
+    +'<p class="hint" style="color:var(--danger);margin:0 0 6px">Abastecimento acima do limite — informe a autorização.</p>'
+    +'<div class="grid"><div class="f"><label>Quem autorizou?</label><input class="ab-autorizador"></div>'
+    +'<div class="f"><label>Por quê ficou acima do limite?</label><input class="ab-motivo-lim"></div></div></div>';
+}
+function abCheckLimite(inp, kind){
+  const blk=inp.closest('.ab-fields') && inp.closest('.ab-fields').querySelector('.ab-over');
+  if(!blk) return;
+  const over = abLimiteAtivo(kind) && (+inp.value>0) && (+inp.value > abLimiteVal(kind));
+  blk.style.display = over?'block':'none';
+}
+function abValorCalc(inp, campo){
+  const row=inp.closest('.abast-row'); if(!row) return;
+  const L=row.querySelector('.ab-litros'), U=row.querySelector('.ab-vunit'), T=row.querySelector('.ab-vtotal');
+  if(!L||!U||!T) return;
+  const num=el=>{ const n=parseFloat(String(el.value||'').replace(',','.')); return isNaN(n)?null:n; };
+  const l=num(L), u=num(U), t=num(T);
+  if(campo==='total'){ if(l&&l>0 && t!=null) U.value=(t/l).toFixed(3); }
+  else { if(l!=null && u!=null) T.value=(l*u).toFixed(2); }
+}
+function convenioOutro(sel){
+  const f=sel.closest('.f'); if(!f) return;
+  const inp=f.querySelector('.conv-outro'); if(!inp) return;
+  const outro=(sel.value||'').trim().toLowerCase()==='outro';
+  inp.style.display=outro?'':'none'; if(!outro) inp.value='';
+}
+function camposPrimeComuns(kind){
+  kind=kind||'prime';
+  return '<div class="grid three">'
+    +'<div class="f"><label>Litros'+abLimiteHint(kind)+'</label><input class="ab-litros" type="number" step="0.001" oninput="abCheckLimite(this,\''+kind+'\'); abValorCalc(this,\'litros\')"></div>'
+    +'<div class="f"><label>Valor p/ litro</label><input class="ab-vunit" type="number" step="0.001" oninput="abValorCalc(this,\'unit\')"></div>'
+    +'<div class="f"><label>Valor total</label><input class="ab-vtotal" type="number" step="0.01" oninput="abValorCalc(this,\'total\')"></div>'
+    +'<div class="f"><label>Combustível</label><select class="ab-comb">'+optList(COMBUSTIVEIS)+'</select></div>'
+    +'<div class="f col2"><label>Comprovante</label><input class="ab-foto" data-anexo="abastecimento-comprovante" type="file" accept="image/*,application/pdf"></div></div>';
+}
+function abFonte(sel){
+  const box=sel.closest('.abast-row').querySelector('.ab-fields'); const f=sel.value;
+  if(f==='POC'){
+    if(abLimiteAtivo('poc')){
+      box.innerHTML='<div class="grid three">'
+        +'<div class="f"><label>Litros abastecidos'+abLimiteHint('poc')+'</label><input class="ab-litros" type="number" step="0.001" oninput="abCheckLimite(this,\'poc\')"></div>'
+        +'<div class="f"><label>Combustível</label><select class="ab-comb">'+optList(COMBUSTIVEIS)+'</select></div>'
+        +'<div class="f"><label>Comprovante <span class="hint">(opcional)</span></label><input class="ab-foto" data-anexo="abastecimento-comprovante" type="file" accept="image/*,application/pdf"></div></div>'
+        +abOverBlock();
+    } else {
+      box.innerHTML='<p class="hint" style="padding:8px 0">POC: sem controle de limite configurado — não é necessário informar litros, valor ou odômetro.</p>';
+    }
+  } else if(f==='Cartão PRIME'){
+    box.innerHTML=camposPrimeComuns('prime')+abOverBlock();
+  } else { // Convênio ou Doação
+    box.innerHTML=
+      '<div class="grid"><div class="f"><label>Tipo</label><select class="ab-tipo" onchange="abTipo(this)"><option>Convênio</option><option>Doação esporádica</option></select></div>'
+      +'<div class="f"><label>Data/hora do abastecimento</label><input class="ab-dh" type="datetime-local"></div></div>'
+      +'<div class="grid three" style="margin-top:10px">'
+      +'<div class="f"><label>Odômetro no abastecimento</label><input class="ab-odometro" type="number"></div>'
+      +'<div class="f"><label>Combustível</label><select class="ab-comb">'+optList(COMBUSTIVEIS)+'</select></div>'
+      +'<div class="f"><label>Litros</label><input class="ab-litros" type="number" step="0.001" oninput="abValorCalc(this,\'litros\')"></div>'
+      +'<div class="f"><label>Valor p/ litro</label><input class="ab-vunit" type="number" step="0.001" oninput="abValorCalc(this,\'unit\')"></div>'
+      +'<div class="f"><label>Valor total</label><input class="ab-vtotal" type="number" step="0.01" oninput="abValorCalc(this,\'total\')"></div>'
+      +'<div class="f"><label>Comprovante</label><input class="ab-foto" data-anexo="abastecimento-comprovante" type="file" accept="image/*,application/pdf"></div></div>'
+      +'<div class="ab-tipo-fields" style="margin-top:10px"></div>'
+      +'<div class="f" style="margin-top:8px"><label>Justificativa do odômetro <span class="hint">(obrigatória se ficar fora do Km inicial/final)</span></label><input class="ab-odo-just" placeholder="só se o odômetro estiver fora do intervalo da utilização"></div>'
+      +'<div class="grid" style="margin-top:10px"><div class="f"><label>Cidade do abastecimento</label><input class="ab-cidade"></div>'
+      +'<div class="f"><label>Observações</label><input class="ab-obs"></div></div>';
+    abTipo(box.querySelector('.ab-tipo'));
+  }
+}
+function abTipo(sel){
+  const box=sel.closest('.ab-fields').querySelector('.ab-tipo-fields'); const t=sel.value;
+  if(t==='Convênio'){
+    box.innerHTML='<div class="f"><label>Convênio utilizado</label><select class="ab-convenio" onchange="convenioOutro(this)">'+optList(CONVENIOS)+'</select><input class="ab-convenio-outro conv-outro" placeholder="Qual convênio?" style="display:none;margin-top:8px"></div>';
+  } else {
+    box.innerHTML='<div class="grid"><div class="f"><label>Nome do doador</label><input class="ab-doador"></div>'
+      +'<div class="f"><label>CPF/CNPJ do doador</label><input class="ab-doc"></div></div>'
+      +'<div class="grid" style="margin-top:10px;align-items:end"><div class="f"><label>Fez termo de doação?</label><select class="ab-termo" onchange="abTermo(this)"><option>Sim</option><option>Não</option></select></div>'
+      +'<div class="f"><button type="button" class="btn-outline" style="padding:9px 12px" onclick="gerarTermoDoacao(this)">📄 Gerar termo de doação</button></div></div>'
+      +'<div class="ab-termo-fields" style="margin-top:10px"></div>';
+    abTermo(box.querySelector('.ab-termo'));
+  }
+}
+function abTermo(sel){
+  const box=sel.closest('.ab-tipo-fields').querySelector('.ab-termo-fields');
+  box.innerHTML = sel.value==='Sim'
+    ? '<div class="f"><label>Upload do termo de doação (assinado)</label><input class="ab-termo-file" data-anexo="abastecimento-termo-doacao" type="file" accept="image/*,application/pdf"></div>'
+    : '<div class="f"><label>Justificativa — por que não fez o termo de doação?</label><input class="ab-termo-just"></div>';
+}
+function gerarTermoDoacao(btn){
+  const tf=btn.closest('.ab-tipo-fields'); const row=btn.closest('.abast-row');
+  const g=(root,sel)=>{const el=root.querySelector(sel); return el?(el.value||'').trim():'';};
+  const nome=g(tf,'.ab-doador')||'____________________', doc=g(tf,'.ab-doc')||'____________';
+  const litros=g(row,'.ab-litros')||'____', comb=g(row,'.ab-comb')||'____', cidade=g(row,'.ab-cidade')||'____';
+  const hoje=new Date().toLocaleDateString('pt-BR');
+  const w=window.open('','_blank'); if(!w) return toast('Permita pop-ups para gerar o termo.');
+  w.document.write('<html><head><title>Termo de Doação</title><style>body{font-family:Arial;max-width:720px;margin:40px auto;color:#000;line-height:1.75;font-size:14px}h2{text-align:center}.a{margin-top:80px;display:flex;justify-content:space-between;text-align:center}</style></head><body>'
+    +'<h2>TERMO DE DOAÇÃO DE COMBUSTÍVEL</h2>'
+    +'<p>Eu, <b>'+nome+'</b>, portador(a) do documento <b>'+doc+'</b>, declaro para os devidos fins que, de forma espontânea e sem qualquer ônus ou condição, <b>DOO</b> à Polícia Militar de Minas Gerais — 3ª Cia PM MAmb — o combustível abaixo, destinado ao abastecimento de viatura em serviço:</p>'
+    +'<p>• Combustível: <b>'+comb+'</b><br>• Quantidade: <b>'+litros+'</b> litros<br>• Local: <b>'+cidade+'</b><br>• Data: <b>'+hoje+'</b></p>'
+    +'<p>Declaro estar ciente de que a presente doação é livre, incondicionada e irrevogável.</p>'
+    +'<div class="a"><div>_____________________________<br>Doador(a): '+nome+'</div><div>_____________________________<br>Militar responsável</div></div>'
+    +'<scr'+'ipt>window.onload=function(){window.print()}<\/scr'+'ipt></body></html>');
+  w.document.close();
+}
 function addAbast(){
-  const div=document.createElement('div'); div.className='abast-row subsec';
-  div.innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'
+  const div=document.createElement('div'); div.className='abast-row subsec'; div.style.marginTop='10px';
+  div.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
     +'<b style="font-size:11px;color:var(--text-white);text-transform:uppercase;letter-spacing:.3px">Abastecimento</b>'
     +'<button type="button" class="linkbtn" style="color:var(--danger)" onclick="this.closest(\'.abast-row\').remove()">remover</button></div>'
-    +'<div class="grid three">'
-    +'<div class="f"><label>Fonte</label><select class="ab-fonte">'+optList(FONTES)+'</select></div>'
-    +'<div class="f"><label>Combustível</label><select class="ab-comb">'+optList(COMBUSTIVEIS)+'</select></div>'
-    +'<div class="f"><label>Litros</label><input type="number" step="0.001" class="ab-litros" placeholder="0,000"></div>'
-    +'<div class="f"><label>Valor total (R$)</label><input type="number" step="0.01" class="ab-valor" placeholder="0,00"></div>'
-    +'<div class="f"><label>Odômetro no abastecimento</label><input type="number" class="ab-odo"></div>'
-    +'<div class="f"><label>Data/hora</label><input type="datetime-local" class="ab-dh"></div>'
-    +'<div class="f col2"><label>Comprovante (foto)</label><input type="file" class="ab-comp" data-anexo="abastecimento-comprovante" accept="image/*"></div>'
-    +'</div>';
+    +'<div class="grid"><div class="f col2"><label>Fonte do abastecimento</label>'
+    +'<select class="ab-fonte" onchange="abFonte(this)"><option>POC</option><option>Cartão PRIME</option><option>Convênio ou Doação</option></select></div></div>'
+    +'<div class="ab-fields"></div>';
   document.getElementById('abast-rows').appendChild(div);
+  abFonte(div.querySelector('.ab-fonte'));
 }
 function abHouve(){ const v=$('ab-houve').value;
   $('ab-sim').style.display=(v==='Sim')?'':'none';
@@ -549,14 +671,20 @@ function validarDspOuAvisar(){
   return true;
 }
 function coletarAbast(){
-  return [...document.querySelectorAll('#abast-rows .abast-row')].map(r=>({
-    fonte:(r.querySelector('.ab-fonte')||{}).value||'',
-    combustivel:(r.querySelector('.ab-comb')||{}).value||'',
-    litros:(r.querySelector('.ab-litros')||{}).value||'',
-    valor:(r.querySelector('.ab-valor')||{}).value||'',
-    odometro:(r.querySelector('.ab-odo')||{}).value||'',
-    data_hora:(r.querySelector('.ab-dh')||{}).value||''
-  })).filter(x=>x.litros||x.valor||x.odometro||x.data_hora);
+  // mesmas chaves do painel interno (p/ a edição interna repreencher igual)
+  return [...document.querySelectorAll('#abast-rows .abast-row')].map(r=>{
+    const g=sel=>{const el=r.querySelector(sel); return el?(el.value||'').trim():'';};
+    const it={ fonte:g('.ab-fonte'), combustivel:g('.ab-comb'), litros:g('.ab-litros'),
+      valor_unit:g('.ab-vunit'), valor_total:g('.ab-vtotal'), odometro:g('.ab-odometro'),
+      data_hora:g('.ab-dh'), cidade:g('.ab-cidade'), obs:g('.ab-obs'),
+      autorizado_por:g('.ab-autorizador'), motivo_acima_limite:g('.ab-motivo-lim') };
+    const tipo=g('.ab-tipo');
+    if(tipo){ it.tipo=tipo; it.odometro_justificativa=g('.ab-odo-just');
+      if(tipo==='Convênio') it.convenio = (g('.ab-convenio')==='Outro') ? (g('.ab-convenio-outro')||'Outro') : g('.ab-convenio');
+      else { it.doador=g('.ab-doador'); it.doc=g('.ab-doc'); it.fez_termo=g('.ab-termo');
+             it.termo_justificativa=g('.ab-termo-just'); } }
+    return it;
+  });
 }
 
 /* ── salvar ── */
@@ -595,6 +723,26 @@ async function salvar(){
   if(!_abHouve) return foco('ab-houve','Abastecimento é obrigatório: informe se houve.');
   if(_abHouve==='Sim' && !document.querySelectorAll('#abast-rows .abast-row').length) return foco('ab-houve','Adicione ao menos um abastecimento.');
   if(_abHouve==='Não' && !$('ab-just').value.trim()) return foco('ab-just','Justifique por que a viatura não foi abastecida.');
+  if(_abHouve==='Sim'){
+    const _kmI=+kmi, _kmF=(kmf!==''?+kmf:null);
+    for(const r of document.querySelectorAll('#abast-rows .abast-row')){
+      const odoEl=r.querySelector('.ab-odometro'); const odo=odoEl?+odoEl.value:0;
+      const justEl=r.querySelector('.ab-odo-just'); const just=justEl?(justEl.value||'').trim():'';
+      if(odo && _kmI && _kmF && (odo<_kmI || odo>_kmF) && !just){
+        if(justEl){ justEl.scrollIntoView({behavior:'smooth',block:'center'}); setTimeout(()=>{try{justEl.focus()}catch(e){}},250); }
+        return toast('Odômetro de um abastecimento está fora do intervalo de Km da utilização — justifique.');
+      }
+      const over=r.querySelector('.ab-over');
+      if(over && over.style.display!=='none'){
+        const aut=r.querySelector('.ab-autorizador'), mot=r.querySelector('.ab-motivo-lim');
+        if(!aut || !(aut.value||'').trim() || !mot || !(mot.value||'').trim()){
+          const alvo=(aut && !(aut.value||'').trim())?aut:mot;
+          if(alvo){ alvo.scrollIntoView({behavior:'smooth',block:'center'}); setTimeout(()=>{try{alvo.focus()}catch(e){}},250); }
+          return toast('Abastecimento acima do limite: informe quem autorizou e o motivo.');
+        }
+      }
+    }
+  }
   // limpeza / higienização (obrigatório)
   const _limpDev=$('limp-dev').value;
   if(!_limpDev) return foco('limp-dev','Informe se a viatura foi higienizada ao devolver.');
