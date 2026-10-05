@@ -187,6 +187,21 @@
     <span class="hint">Opcional — use quando a DSP durar vários dias (lance o trajeto de cada dia).</span>
   </div>
 
+  <!-- LIMPEZA / HIGIENIZAÇÃO (obrigatório) -->
+  <div class="card" id="s-limp">
+    <h2>🧽 Limpeza / higienização *</h2>
+    <p class="hint" style="margin-bottom:8px">🔔 Devolva a viatura <b>limpa/higienizada</b> para o próximo serviço.</p>
+    <div class="grid">
+      <div class="f"><label>Ao RECEBER estava limpa?</label>
+        <select id="limp-receb"><option value="">—</option><option>Sim</option><option>Não</option></select></div>
+      <div class="f"><label>Ao DEVOLVER foi higienizada? *</label>
+        <select id="limp-dev" onchange="limpDev()"><option value="">Selecione…</option><option>Sim</option><option>Não</option></select></div>
+      <div class="f col2"><label>Detalhes (se necessário)</label><input id="limp-det"></div>
+    </div>
+    <div class="f" id="limp-nao" style="display:none;margin-top:10px"><label>Justificativa — por que não higienizou?</label>
+      <textarea id="limp-just" rows="2" placeholder="Ex.: sem ponto de lavagem disponível / próxima equipe assumiu imediatamente / etc."></textarea></div>
+  </div>
+
   <!-- SEÇÕES OPCIONAIS -->
   <div class="opts">
     <div class="lead">Marque abaixo <b>somente</b> se ocorreu durante a sua utilização:</div>
@@ -467,6 +482,9 @@ function addAbast(){
     +'</div>';
   document.getElementById('abast-rows').appendChild(div);
 }
+/* ── Limpeza / higienização (obrigatório) ── */
+function limpDev(){ const nao=$('limp-dev').value==='Não'; const box=$('limp-nao'); if(box) box.style.display=nao?'':'none'; }
+
 /* ── DSP (deslocamento / viagem de serviço) ── */
 function _dspRemover(cls){ return '<button type="button" class="linkbtn" style="color:var(--danger);padding-bottom:9px" onclick="this.closest(\''+cls+'\').remove()">remover</button>'; }
 function toggleDsp(){
@@ -559,6 +577,10 @@ async function salvar(){
   }
   if(!$('inicio').value) return foco('inicio','Informe o início (armar a VTR).');
   if(!validarDspOuAvisar()) return;
+  // limpeza / higienização (obrigatório)
+  const _limpDev=$('limp-dev').value;
+  if(!_limpDev) return foco('limp-dev','Informe se a viatura foi higienizada ao devolver.');
+  if(_limpDev==='Não' && !$('limp-just').value.trim()) return foco('limp-just','Justifique por que a viatura não foi higienizada.');
 
   const btn=$('btn-salvar'); btn.disabled=true; const txt=btn.textContent; btn.textContent='Salvando…';
   try{
@@ -569,6 +591,8 @@ async function salvar(){
     const temAcid=$('opt-acid').classList.contains('active');
 
     const dados={};
+    dados.limpeza={ recebeu_limpa:$('limp-receb').value, devolveu_limpa:_limpDev,
+      detalhes:$('limp-det').value.trim(), justificativa_nao:(_limpDev==='Não'?$('limp-just').value.trim():'') };
     if(temAbast) dados.abastecimento={ houve:'Sim', itens:coletarAbast() };
     if(temAvaria) dados.avaria={ descricao:$('av-desc').value.trim() };
     if(temAcid) dados.acidente={ reds:$('ac-reds').value.trim(), odometro:$('ac-odo').value, data_hora:$('ac-dh').value,
