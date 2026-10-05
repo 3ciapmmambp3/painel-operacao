@@ -588,6 +588,19 @@ function _grafiaCidade(s){ return (s||'').replace(/MARILIERIA/g, 'MARLIERIA').re
 
 // ── Ver/Imprimir e Editar (Fase C) — restaurado da versão publicada ───────
 function _vesc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+// escrita normal (Título) p/ nomes, preservando siglas de posto e ordinais (ex.: 3º SGT PM Ricardo Aparecido do Carmo)
+function _nomeNormal(s){
+  s=String(s==null?'':s).trim(); if(!s) return s;
+  const low=new Set(['de','da','do','das','dos','e']);
+  const up=new Set(['PM','QPM','SGT','SD','CB','TEN','CAP','MAJ','TC','CEL','ASP','ASPM','SUBTEN','ST','QOR','QOE','BM','MAMB']);
+  return s.toLowerCase().split(/\s+/).map((w,i)=>{
+    const k=w.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+    if(up.has(k)) return k;
+    if(/^\d+[º°ªo]?$/.test(w)) return w;            // 1º, 2º, 3º…
+    if(i>0 && low.has(w)) return w;                 // conectores minúsculos
+    return w.charAt(0).toUpperCase()+w.slice(1);
+  }).join(' ');
+}
 function _pmMask(s){ const d=String(s==null?'':s).replace(/\D/g,''); return d.length>6 ? d.slice(0,3)+'.'+d.slice(3,6)+'-'+d.slice(6) : (s||''); }
 // Máscara do Nº de polícia no campo "Comandante da equipe": só quando o usuário
 // digita NÚMERO (sem letras) — formata 000.000-0 progressivamente p/ casar com a
@@ -951,7 +964,7 @@ async function abrirVerFicha(id){
     const _em = (ROSTER||[]).find(x => (x.matricula||'').replace(/\D/g,'') === _edMat);
     if(_em){ _edPosto = _em.posto_graduacao || ''; _edNome = _em.nome_completo || _edNome; }
   }
-  const editado = f.atualizado_em ? `<div class="vfoot">✏️ Editada em ${_vdh(f.atualizado_em)} por ${f.atualizado_por_matricula?('Nº PM '+_vesc(f.atualizado_por_matricula)+' — '):''}${_edPosto?(_vesc(_edPosto.toUpperCase())+' — '):''}${_vesc((_edNome||'—').toUpperCase())}. (Histórico completo com o gestor de viaturas.)</div>` : '';
+  const editado = f.atualizado_em ? `<div class="vfoot">✏️ Editada em ${_vdh(f.atualizado_em)} por ${f.atualizado_por_matricula?('Nº PM '+_vesc(f.atualizado_por_matricula)+' — '):''}${_edPosto?(_vesc(_nomeNormal(_edPosto))+' — '):''}${_vesc(_nomeNormal(_edNome||'—'))}. (Histórico completo com o gestor de viaturas.)</div>` : '';
   const doc = document.createElement('div');
   doc.className='ver-doc';
   doc.innerHTML = `
@@ -982,7 +995,7 @@ async function abrirVerFicha(id){
     ${_vsecoes(f.dados)}
     ${(f.observacoes)?`<h3 class="vsec">Observações</h3><p class="vobs">${_vesc(f.observacoes)}</p>`:''}
     ${_vanexos(f.anexos)}
-    <div class="vfoot">Registrada por ${f.criado_por_matricula?('Nº PM '+_vesc(f.criado_por_matricula)+' — '):''}${_regPosto?(_vesc(_regPosto.toUpperCase())+' — '):''}${_vesc((f.criado_por_nome||'—').toUpperCase())} em ${_vdh(f.criado_em)}.</div>
+    <div class="vfoot">Registrada por ${f.criado_por_matricula?('Nº PM '+_vesc(f.criado_por_matricula)+' — '):''}${_regPosto?(_vesc(_nomeNormal(_regPosto))+' — '):''}${_vesc(_nomeNormal(f.criado_por_nome||'—'))} em ${_vdh(f.criado_em)}.</div>
     ${editado}`;
   const bar = document.createElement('div');
   bar.className='ver-actions';
