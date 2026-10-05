@@ -937,12 +937,21 @@ async function abrirVerFicha(id){
   // Posto/graduação de quem registrou — também não é gravado na ficha; busca no efetivo pela matrícula.
   let _regPosto = '';
   const _regMat = (f.criado_por_matricula||'').replace(/\D/g,'');
-  if(_regMat){
+  const _edMat  = (f.atualizado_por_matricula||'').replace(/\D/g,'');
+  if(_regMat || _edMat){
     try{ if(!ROSTER.length) ROSTER = await rpc('tta_listar_militares', { p_token:S.token }) || []; }catch(e){}
+  }
+  if(_regMat){
     const _rm = (ROSTER||[]).find(x => (x.matricula||'').replace(/\D/g,'') === _regMat);
     if(_rm) _regPosto = _rm.posto_graduacao || '';
   }
-  const editado = f.atualizado_em ? `<div class="vfoot">✏️ Editada em ${_vdh(f.atualizado_em)} por ${_vesc(f.atualizado_por_nome||'—')}. (Histórico completo com o gestor de viaturas.)</div>` : '';
+  // editor: nome COMPLETO no mesmo padrão do "Registrada por" (atualizado_por_nome guarda só o nome de guerra)
+  let _edPosto = '', _edNome = (f.atualizado_por_nome||'');
+  if(_edMat){
+    const _em = (ROSTER||[]).find(x => (x.matricula||'').replace(/\D/g,'') === _edMat);
+    if(_em){ _edPosto = _em.posto_graduacao || ''; _edNome = _em.nome_completo || _edNome; }
+  }
+  const editado = f.atualizado_em ? `<div class="vfoot">✏️ Editada em ${_vdh(f.atualizado_em)} por ${f.atualizado_por_matricula?('Nº PM '+_vesc(f.atualizado_por_matricula)+' — '):''}${_edPosto?(_vesc(_edPosto.toUpperCase())+' — '):''}${_vesc((_edNome||'—').toUpperCase())}. (Histórico completo com o gestor de viaturas.)</div>` : '';
   const doc = document.createElement('div');
   doc.className='ver-doc';
   doc.innerHTML = `
