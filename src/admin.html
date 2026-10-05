@@ -543,6 +543,14 @@ document.addEventListener('click', () => {
       <!-- POE METAS -->
       <div id="meta-poe-section" style="display:none;">
         <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+          <select id="poe-filtro-pel" onchange="poePopularGp();poeFiltrar()" style="background:#222;border:1px solid var(--border);color:#ccc;padding:6px 10px;border-radius:6px;font-size:12px;min-width:140px;">
+            <option value="">Todos os Pelotões</option>
+            <option value="1">1º Pelotão</option>
+            <option value="2">2º Pelotão</option>
+            <option value="3">3º Pelotão</option>
+            <option value="4">4º Pelotão</option>
+            <option value="5">5º Pelotão</option>
+          </select>
           <select id="poe-filtro-gp" onchange="poeFiltrar()" style="background:#222;border:1px solid var(--border);color:#ccc;padding:6px 10px;border-radius:6px;font-size:12px;min-width:200px;">
             <option value="">Todos os Grupamentos</option>
           </select>
@@ -582,6 +590,19 @@ document.addEventListener('click', () => {
       <div id="meta-gdo-section" style="display:none;">
         <div style="background:var(--bg-card);border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid var(--border);font-size:11px;color:var(--text-muted);">
           Meta anual por grupamento. O painel divide por 12 para obter a meta mensal.
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+          <select id="gdo-filtro-pel" onchange="gdoPopularGp();gdoFiltrar()" style="background:#222;border:1px solid var(--border);color:#ccc;padding:6px 10px;border-radius:6px;font-size:12px;min-width:140px;">
+            <option value="">Todos os Pelotões</option>
+            <option value="1">1º Pelotão</option>
+            <option value="2">2º Pelotão</option>
+            <option value="3">3º Pelotão</option>
+            <option value="4">4º Pelotão</option>
+            <option value="5">5º Pelotão</option>
+          </select>
+          <select id="gdo-filtro-gp" onchange="gdoFiltrar()" style="background:#222;border:1px solid var(--border);color:#ccc;padding:6px 10px;border-radius:6px;font-size:12px;min-width:200px;">
+            <option value="">Todos os Grupamentos</option>
+          </select>
         </div>
         <div style="overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 260px);border:1px solid var(--border);border-radius:8px;">
           <table style="width:100%;border-collapse:collapse;font-size:11px;">
@@ -2107,6 +2128,28 @@ function gpOrdem(nome){
   return 999;
 }
 
+/* ── Filtro Pelotão + Grupamento (padrão dos demais filtros: optgroups por
+   pelotão; o Pelotão estreita a lista de Grupamentos). ─────────────────── */
+function _metaPelDeGpNome(nome){ const g = GRUPAMENTOS.find(x=>x.gp_responsavel===nome); return g ? pfPelOfGp(g) : null; }
+function _metaMontaGpSelect(selEl, nomes, pelFiltro, pelDe){
+  if(!selEl) return;
+  const cur = selEl.value;
+  const byPel = {};
+  [...new Set(nomes)].forEach(n=>{
+    const p = pelDe(n);
+    if(pelFiltro && String(p)!==String(pelFiltro)) return;
+    const k = (p==null||isNaN(p))?'':String(p);
+    (byPel[k]=byPel[k]||[]).push(n);
+  });
+  selEl.innerHTML = '<option value="">Todos os Grupamentos</option>' +
+    Object.keys(byPel).sort((a,b)=>(a===''?999:+a)-(b===''?999:+b)).map(k=>
+      `<optgroup label="${k===''?'Sem pelotão':k+'º Pelotão'}">`+
+      byPel[k].sort((a,b)=>gpOrdem(a)-gpOrdem(b)).map(n=>`<option value="${n}">${n.replace('GP ','')}</option>`).join('')+
+      '</optgroup>'
+    ).join('');
+  selEl.value = [...selEl.options].some(o=>o.value===cur) ? cur : '';
+}
+
 const MESES_ADMIN = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
 const MESES_ABR   = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 let _metaTipo = 'gdo';
@@ -2164,13 +2207,41 @@ async function metasGdoCarregar(ano){
   _gdoDados = data;
   /* Ordenar por GP_ORDEM */
   _gdoDados.sort((a,b)=>gpOrdem(a.gp_responsavel)-gpOrdem(b.gp_responsavel));
+  gdoPopularGp();
+  gdoFiltrar();
+}
+
+/* nº do pelotão de uma linha GDO (vem do grupamento_bpm: "… N PEL …") */
+function _gdoPelDeRow(d){ const m = d && d.grupamento_bpm ? d.grupamento_bpm.match(/(\d+)\s*PEL/i) : null; return m ? +m[1] : null; }
+
+function gdoPopularGp(){
+  const pelF = (document.getElementById('gdo-filtro-pel')||{}).value || '';
+  _metaMontaGpSelect(
+    document.getElementById('gdo-filtro-gp'),
+    _gdoDados.map(d=>d.gp_responsavel),
+    pelF,
+    (nome)=>{ const row=_gdoDados.find(d=>d.gp_responsavel===nome); return row?_gdoPelDeRow(row):null; }
+  );
+}
+
+function gdoFiltrar(){
+  const pelF = (document.getElementById('gdo-filtro-pel')||{}).value || '';
+  const gpF  = (document.getElementById('gdo-filtro-gp')||{}).value || '';
+  const lista = _gdoDados.filter(d =>
+    (!pelF || String(_gdoPelDeRow(d))===pelF) &&
+    (!gpF  || d.gp_responsavel===gpF)
+  );
+  _gdoRender(lista);
+}
+
+function _gdoRender(lista){
   const tbody = document.getElementById('meta-gdo-tbody');
-  if(!_gdoDados.length){
+  if(!lista.length){
     tbody.innerHTML='<tr><td colspan="15" style="padding:20px;text-align:center;color:var(--text-muted);">Nenhum registro.</td></tr>';
     return;
   }
   const MESES_COLS=['meta_jan','meta_fev','meta_mar','meta_abr','meta_mai','meta_jun','meta_jul','meta_ago','meta_set','meta_out','meta_nov','meta_dez'];
-  tbody.innerHTML = _gdoDados.map(d => {
+  tbody.innerHTML = lista.map(d => {
     const pelM = d.grupamento_bpm ? d.grupamento_bpm.match(/(\d+)\s*PEL/i) : null;
     const pel = pelM ? pelM[1]+'º PEL' : '—';
     const mensal = Math.ceil(d.meta_anual/12);
@@ -2243,24 +2314,29 @@ async function metasPoeCarregar(ano){
   /* Usa select=* para evitar problemas com acentos nos nomes das colunas (MARÇO, SETEMBRO) */
   const data = await sbFetch('bd_metaspoe', `select=*&order=GRUPAMENTO,NATUREZA`);
   _poeDados = data;
+  await pfEnsureData();   /* garante GRUPAMENTOS (grupamento → pelotão) */
 
   /* Popula filtros */
-  const gps  = [...new Set(data.map(d=>d.GRUPAMENTO))].sort();
   const nats = [...new Set(data.map(d=>d.NATUREZA))].sort();
-  const selGp  = document.getElementById('poe-filtro-gp');
   const selNat = document.getElementById('poe-filtro-nat');
-  const curGp  = selGp.value;
   const curNat = selNat.value;
-  selGp.innerHTML  = '<option value="">Todos os Grupamentos</option>' + gps.map(g=>`<option value="${g}"${g===curGp?' selected':''}>${g}</option>`).join('');
   selNat.innerHTML = '<option value="">Todas as Naturezas</option>'   + nats.map(n=>`<option value="${n}"${n===curNat?' selected':''}>${n}</option>`).join('');
 
+  poePopularGp();
   poeFiltrar();
 }
 
+function poePopularGp(){
+  const pelF = (document.getElementById('poe-filtro-pel')||{}).value || '';
+  _metaMontaGpSelect(document.getElementById('poe-filtro-gp'), _poeDados.map(d=>d.GRUPAMENTO), pelF, _metaPelDeGpNome);
+}
+
 function poeFiltrar(){
+  const filtroPel = (document.getElementById('poe-filtro-pel')||{}).value || '';
   const filtroGp  = document.getElementById('poe-filtro-gp').value;
   const filtroNat = document.getElementById('poe-filtro-nat').value;
   const lista = _poeDados.filter(d =>
+    (!filtroPel || String(_metaPelDeGpNome(d.GRUPAMENTO))===filtroPel) &&
     (!filtroGp  || d.GRUPAMENTO === filtroGp) &&
     (!filtroNat || d.NATUREZA   === filtroNat)
   );
