@@ -85,8 +85,8 @@
       <div class="f"><label>Turno de serviço</label><input list="dl-turno" id="turno" placeholder="07:00 ÀS 17:00"><datalist id="dl-turno"><option>07:00 ÀS 17:00</option><option>19:00 ÀS 07:00</option><option>07:00 ÀS 19:00</option><option>13:00 ÀS 22:00</option></datalist></div>
       <div class="f"><label>Equipe</label><input id="equipe" maxlength="4" placeholder="A" style="text-transform:uppercase"></div>
       <div class="f"><label>Tipo de serviço</label><input list="dl-tipo" id="tipo_servico" placeholder="PATRULHA RURAL"><datalist id="dl-tipo"><option>PATRULHA RURAL</option><option>PATRULHA URBANA</option><option>OPERAÇÃO</option><option>FISCALIZAÇÃO</option><option>APOIO</option></datalist></div>
-      <div class="f"><label>Operação</label><input id="operacao" placeholder="Nome da operação (se houver)"></div>
-      <div class="f"><label>Descreva a operação (se necessário)</label><input id="operacao_descr" placeholder="Detalhe/fase"></div>
+      <div class="f"><label>Operação</label><select id="operacao_sel" onchange="operacaoChange()"><option value="">Nenhuma / não se aplica</option></select><span class="hint" id="operacao_hint"></span></div>
+      <div class="f" id="box-operacao-outra" style="display:none"><label>Nome da operação</label><input id="operacao_outra" placeholder="Digite o nome da operação"></div>
     </div>
   </div>
 
@@ -198,6 +198,44 @@ const pick={
 };
 document.addEventListener('click',e=>{ if(!e.target.closest('.milbox')) document.querySelectorAll('.mil-drop.open').forEach(d=>d.classList.remove('open')); });
 
+/* ── Operações cadastradas no painel (vigentes na data de empenho) ── */
+let OPERACOES=[];
+const _dia=v=>v?String(v).slice(0,10):'';
+const _opReady=(async function(){
+  try{ const r=await fetch(`${API}/rest/v1/rpc/operacoes_listar`,{method:'POST',headers:H,body:'{}'});
+    const rows=await r.json()||[]; OPERACOES=(Array.isArray(rows)?rows:[]).map(o=>({nome:o.nome,inicio:_dia(o.inicio),final:_dia(o.final)})).filter(o=>o.nome);
+  }catch(e){}
+  fillOperacao();
+})();
+function _opVigente(o,data){ if(!data) return true; if(!o.inicio||!o.final) return true; return data>=o.inicio && data<=o.final; }
+function fillOperacao(){
+  const sel=document.getElementById('operacao_sel'); if(!sel) return;
+  const data=(document.getElementById('data_empenho')||{}).value||'';
+  const cur=sel.value;
+  const vig=OPERACOES.filter(o=>_opVigente(o,data));
+  let html='<option value="">Nenhuma / não se aplica</option>';
+  if(vig.length) html+='<optgroup label="Operações cadastradas">'+vig.map(o=>`<option value="${_esc(o.nome)}">${_esc(o.nome)}</option>`).join('')+'</optgroup>';
+  html+='<option value="__OUTRA__">Outra (digitar)…</option>';
+  sel.innerHTML=html;
+  if([...sel.options].some(o=>o.value===cur)) sel.value=cur;
+  const hint=document.getElementById('operacao_hint');
+  if(hint) hint.textContent = (OPERACOES.length && !vig.length && data) ? 'Nenhuma operação vigente nesta data — use "Outra" se precisar.' : '';
+  operacaoChange();
+}
+function operacaoChange(){
+  const sel=document.getElementById('operacao_sel');
+  const box=document.getElementById('box-operacao-outra');
+  if(box) box.style.display = (sel && sel.value==='__OUTRA__') ? '' : 'none';
+}
+function prefillOperacao(nome){
+  fillOperacao();   // repopula conforme a data já preenchida no prefill
+  const sel=document.getElementById('operacao_sel'); if(!sel) return;
+  if(!nome){ sel.value=''; operacaoChange(); return; }
+  if([...sel.options].some(o=>o.value===nome)){ sel.value=nome; }
+  else { sel.value='__OUTRA__'; const o=document.getElementById('operacao_outra'); if(o) o.value=nome; }
+  operacaoChange();
+}
+
 /* ── Patrulheiros (dinâmicos) ── */
 let patrSeq=0;
 function addPatrulheiro(val){
@@ -287,8 +325,7 @@ function coletar(){
     turno:document.getElementById('turno').value.trim(),
     equipe:document.getElementById('equipe').value.trim().toUpperCase(),
     tipo_servico:document.getElementById('tipo_servico').value.trim(),
-    operacao:document.getElementById('operacao').value.trim(),
-    operacao_descr:document.getElementById('operacao_descr').value.trim(),
+    operacao:(function(){const s=document.getElementById('operacao_sel').value; return s==='__OUTRA__'?document.getElementById('operacao_outra').value.trim():s;})(),
     comandante:cmt, motorista:mot, patrulheiros:patr,
     total_militares:totalInf||totalAuto||'',
     viatura:document.getElementById('viatura').value.trim(),
@@ -323,7 +360,7 @@ function prefill(r){
   const gsel=document.getElementById('grupamento'); const gv=r.grupamento_completo||r.grupamento_id||'';
   [...gsel.options].forEach(o=>{ if(o.value && o.value.toUpperCase()===gv.toUpperCase()) gsel.value=o.value; });
   set('data_empenho',(r.data_empenho||'').slice(0,10)); set('turno',r.turno); set('equipe',r.equipe);
-  set('tipo_servico',r.tipo_servico); set('operacao',r.operacao); set('operacao_descr',r.operacao_descr);
+  set('tipo_servico',r.tipo_servico); prefillOperacao(r.operacao);
   set('comandante',r.comandante); set('motorista',r.motorista); set('viatura',r.viatura); set('total_militares',r.total_militares);
   (Array.isArray(r.patrulheiros)?r.patrulheiros:[]).filter(Boolean).forEach(p=>addPatrulheiro(p));
   if(r.alterou_escala){ document.getElementById('alterou_escala').checked=true; document.getElementById('box-motivo').style.display=''; set('motivo_alteracao',r.motivo_alteracao); }
@@ -337,7 +374,9 @@ function prefill(r){
 
 /* boot */
 document.getElementById('data_empenho').value=new Date().toISOString().slice(0,10);
-if(EDIT_ROW){ _grupReady.then(()=>prefill(EDIT_ROW)).catch(()=>prefill(EDIT_ROW)); }
+document.getElementById('data_empenho').addEventListener('change', fillOperacao);
+fillOperacao();
+if(EDIT_ROW){ Promise.all([_grupReady,_opReady]).then(()=>prefill(EDIT_ROW)).catch(()=>prefill(EDIT_ROW)); }
 else { addDemanda(); }
 </script>
 </body>
