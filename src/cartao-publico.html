@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<script>
+(function(){var s;try{s=localStorage.getItem('poe_theme');}catch(e){}if(!s)s=window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark';document.documentElement.setAttribute('data-theme',s);})();
+</script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cartão Programa — 3ª Cia PM MAmb</title>
+  <link rel="stylesheet" href="styles/global.css">
+  <!-- auth.js só p/ SB_AUTH_URL/KEY (esta página NÃO exige login) -->
+  <script src="auth.js"></script>
+  <script src="cartao-pdf.js"></script>
+  <style>
+    body{background:var(--bg-page);padding-bottom:40px}
+    .wrap{max-width:760px;margin:0 auto;padding:0 16px}
+    .top{background:var(--bg-dark);border-bottom:2px solid var(--gold);padding:16px 18px;display:flex;align-items:center;gap:14px}
+    .top .sh{display:flex;gap:8px}.top .sh img{height:34px}
+    .top .t h1{font-size:15px;font-weight:800;color:var(--gold-light);letter-spacing:.5px}
+    .top .t p{font-size:11px;color:var(--text-muted);margin-top:2px}
+    .num{display:flex;align-items:center;gap:12px;margin:16px 0 6px;flex-wrap:wrap}
+    .num h2{font-size:22px;font-weight:800;color:var(--text-white)}
+    .badge{font-size:11px;font-weight:800;padding:4px 11px;border-radius:20px}
+    .b-EMITIDO{color:var(--info);background:rgba(66,165,245,.14)}
+    .b-EM_ATENDIMENTO{color:#ffb300;background:rgba(255,179,0,.14)}
+    .b-CONCLUIDO{color:var(--success);background:var(--success-bg)}
+    .card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-top:14px}
+    .kv{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+    .kv .i .l{font-size:10px;text-transform:uppercase;color:var(--text-hint);letter-spacing:.3px}
+    .kv .i .v{font-size:13.5px;color:var(--text-white);margin-top:2px;word-break:break-word}
+    .sec{font-size:11px;font-weight:800;color:var(--gold);text-transform:uppercase;letter-spacing:.5px;margin:18px 0 8px}
+    .dem{border:1px solid var(--border-mid);border-radius:10px;padding:13px 15px;margin-bottom:11px;background:var(--bg-card)}
+    .dem .dt{font-size:12.5px;font-weight:800;color:var(--gold-light);margin-bottom:6px}
+    .dem .tx{font-size:13.5px;color:var(--text-white);white-space:pre-wrap;line-height:1.55}
+    .dem .mu{font-size:12px;color:var(--text-muted);margin-top:6px}
+    .dem .anx a{display:inline-block;font-size:12.5px;color:var(--gold-light);margin:7px 10px 0 0;text-decoration:underline}
+    .resp{margin-top:9px;border-top:1px dashed var(--border);padding-top:8px;font-size:12.5px;color:var(--success)}
+    .resp.no{color:var(--text-hint)}
+    .foot{position:sticky;bottom:0;background:linear-gradient(0deg,var(--bg-page) 72%,transparent);padding:14px 0 6px;display:flex;gap:10px;flex-wrap:wrap}
+    .btn{border:none;border-radius:8px;padding:11px 18px;font-size:13px;font-weight:800;cursor:pointer}
+    .btn.gold{background:var(--gold);color:#1a1000}.btn.ghost{background:transparent;border:1px solid var(--border-mid);color:var(--text-white)}
+    .state{text-align:center;color:var(--text-hint);padding:60px 20px;font-size:14px}
+    @media(max-width:680px){.kv{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<div class="top">
+  <div class="sh"><img src="assets/escudo-pmmg.png" onerror="this.style.display='none'"><img src="assets/brasao-bpmmamb.png" onerror="this.style.display='none'"></div>
+  <div class="t"><h1>CARTÃO PROGRAMA</h1><p>3ª Companhia de Polícia Militar de Meio Ambiente</p></div>
+</div>
+<div class="wrap">
+  <div id="conteudo"><div class="state">Carregando cartão…</div></div>
+</div>
+
+<script>
+const API=(typeof SB_AUTH_URL!=='undefined')?SB_AUTH_URL:'';
+const AKEY=(typeof SB_AUTH_KEY!=='undefined')?SB_AUTH_KEY:'';
+const H={'apikey':AKEY,'Authorization':`Bearer ${AKEY}`,'Content-Type':'application/json'};
+function _esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function _grafiaGP(s){return String(s==null?'':s).replace(/MARILIERIA/gi,'MARLIERIA').replace(/MOLEVADE/gi,'MONLEVADE');}
+function _data(iso){ if(!iso) return '—'; const d=new Date(String(iso).slice(0,10)+'T00:00:00'); return isNaN(d)?String(iso):d.toLocaleDateString('pt-BR'); }
+const STLAB={EMITIDO:'Emitido',EM_ATENDIMENTO:'Em atendimento',CONCLUIDO:'Concluído'};
+const ATLAB={TOTAL:'Atendida (total)',PARCIAL:'Atendida (parcial)',NAO:'Não atendida'};
+let CUR=null;
+
+(async function(){
+  const id=new URLSearchParams(location.search).get('id');
+  const box=document.getElementById('conteudo');
+  if(!id){ box.innerHTML='<div class="state">Link inválido (sem identificador do cartão).</div>'; return; }
+  try{
+    const r=await fetch(`${API}/rest/v1/rpc/cartao_publico`,{method:'POST',headers:H,body:JSON.stringify({p_id:id})});
+    if(!r.ok) throw new Error(await r.text());
+    const c=await r.json();
+    if(!c){ box.innerHTML='<div class="state">Cartão não encontrado ou removido.</div>'; return; }
+    CUR=c; render(c);
+  }catch(e){ box.innerHTML='<div class="state">Não foi possível carregar: '+_esc(e.message||e)+'</div>'; }
+})();
+
+function render(c){
+  const patr=(Array.isArray(c.patrulheiros)?c.patrulheiros:[]).filter(Boolean);
+  const dems=(c.demandas||[]).map((d,i)=>({d, r:(c.respostas||{})[String(d.ordem)]||(c.respostas||{})[String(i+1)]||null}));
+  document.getElementById('conteudo').innerHTML=`
+    <div class="num"><h2>Nº ${_esc(c.numero)}</h2><span class="badge b-${c.status}">${STLAB[c.status]||c.status}</span></div>
+    <div class="card"><div class="kv">
+      <div class="i"><div class="l">Grupamento</div><div class="v">${_esc(_grafiaGP(c.grupamento_completo))}</div></div>
+      <div class="i"><div class="l">Data · Turno</div><div class="v">${_data(c.data_empenho)} · ${_esc(c.turno||'—')}</div></div>
+      <div class="i"><div class="l">Equipe</div><div class="v">${_esc(c.equipe||'—')}</div></div>
+      <div class="i"><div class="l">Tipo de serviço</div><div class="v">${_esc(c.tipo_servico||'—')}</div></div>
+      <div class="i"><div class="l">Operação</div><div class="v">${_esc([c.operacao,c.operacao_descr].filter(Boolean).join(' — ')||'—')}</div></div>
+      <div class="i"><div class="l">Viatura</div><div class="v">${_esc(c.viatura||'—')}</div></div>
+      <div class="i"><div class="l">Comandante</div><div class="v">${_esc(c.comandante||'—')}</div></div>
+      <div class="i"><div class="l">Motorista</div><div class="v">${_esc(c.motorista||'—')}</div></div>
+      ${patr.length?`<div class="i" style="grid-column:span 2"><div class="l">Patrulheiros</div><div class="v">${patr.map(_esc).join(' · ')}</div></div>`:''}
+    </div></div>
+    <div class="sec">Demandas para atendimento (${dems.length})</div>
+    ${dems.map((x,i)=>{const d=x.d,r=x.r;const anx=(d.anexos||[]).filter(a=>a&&a.link);
+      return `<div class="dem">
+        <div class="dt">DEMANDA ${_esc(d.ordem||i+1)}${d.municipio?(' — '+_esc(d.municipio)):''}${d.sisfis?' · <span style="color:var(--gold-light)">LANÇAR NO SISFIS</span>':''}</div>
+        <div class="tx">${_esc(d.texto||'—')}</div>
+        ${d.endereco?`<div class="mu">📍 ${_esc(d.endereco)}</div>`:''}
+        ${anx.length?`<div class="anx">${anx.map((a,ai)=>`<a href="${_esc(a.link)}" target="_blank">📎 ${_esc(a.nome||('anexo '+(ai+1)))}</a>`).join('')}</div>`:''}
+        ${r&&r.atendida?`<div class="resp">✔ ${_esc(ATLAB[r.atendida]||r.atendida)}${r.reds?(' · REDS '+_esc(r.reds)):''}${r.auto_infracao?(' · Auto '+_esc(r.auto_infracao)):''}${r.ato_fiscalizacao?(' · Ato '+_esc(r.ato_fiscalizacao)):''}${r.data_atendimento?(' · '+_data(r.data_atendimento)):''}${r.obs?('<br>Obs.: '+_esc(r.obs)):''}</div>`:`<div class="resp no">Pendente de atendimento</div>`}
+      </div>`;}).join('') || '<div class="state">Sem demandas lançadas.</div>'}
+    ${(c.observacoes_equipe||c.alterou_escala)?`<div class="sec">Observações</div><div class="card">
+      ${c.alterou_escala?`<div style="margin-bottom:8px"><b style="color:var(--gold-light);font-size:12px">Alteração de escala:</b> ${_esc(c.motivo_alteracao||'Sim')}</div>`:''}
+      ${c.observacoes_equipe?`<div style="white-space:pre-wrap;font-size:13.5px">${_esc(c.observacoes_equipe)}</div>`:''}</div>`:''}
+    <div style="font-size:11px;color:var(--text-hint);margin:14px 2px 0">Emitido por ${_esc(c.criado_por_posto||'')} ${_esc(c.criado_por_nome||'')} · ${_data(c.criado_em)}</div>
+    <div class="foot"><button class="btn gold" onclick="baixar()">⬇ Baixar PDF</button></div>`;
+}
+async function baixar(){ try{ await CartaoPDF.baixar(CUR); }catch(e){ alert('Falha no PDF: '+(e.message||e)); } }
+</script>
+</body>
+</html>

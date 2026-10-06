@@ -4311,6 +4311,8 @@ hiddenIframeRelatorio.addEventListener('load', async () => {
   // Baixa automática: marca no Supabase as denúncias/requisições atendidas neste relatório.
   // Best-effort: se falhar, não impede o fluxo do relatório.
   await marcarDemandasAtendidas(ultimoPayloadEnviado);
+  // Fecha também o Cartão Programa do dia (se a equipe respondeu demandas no bloco). Best-effort.
+  try{ if (typeof window.marcarCartaoAtendido === 'function') await window.marcarCartaoAtendido(); }catch(e){ console.warn('[cartao] baixa', e); }
   ultimoPayloadEnviado = null;
   try{ if (typeof window.__rsLimparRascunho === 'function') window.__rsLimparRascunho(); }catch(e){}
   alert(ehEdicao ? 'Relatório atualizado com sucesso!' : 'Relatório enviado com sucesso!');
@@ -4730,5 +4732,67 @@ document.addEventListener('click', () => {
 </script>
 
 <script>(function(){try{var s=(typeof sessaoLer==='function')?sessaoLer():null;if(s&&(s.nivel_acesso==='admin_geral'||(s.funcao||'').toLowerCase().indexOf('aux p4')===0)){var l=document.getElementById('linkGestaoVtr');if(l)l.style.display='';}}catch(e){}})();</script>
+
+<!-- ═══ Bloco "Cartão Programa do dia" (fecha o cartão ao enviar o relatório) ═══ -->
+<script>
+(function(){
+  const API=(typeof SB_AUTH_URL!=='undefined')?SB_AUTH_URL:'', AKEY=(typeof SB_AUTH_KEY!=='undefined')?SB_AUTH_KEY:'';
+  if(!API||!AKEY) return;
+  const H={apikey:AKEY,Authorization:`Bearer ${AKEY}`,'Content-Type':'application/json'};
+  const esc=s=>(s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const dfmt=iso=>{if(!iso)return '—';const d=new Date(String(iso).slice(0,10)+'T00:00:00');return isNaN(d)?String(iso):d.toLocaleDateString('pt-BR');};
+  let ABERTOS=[], SELID='';
+  const form=document.getElementById('relatorioForm'); if(!form) return;
+  const sec=document.createElement('div');
+  sec.innerHTML='<div class="section-title"><span class="badge">★</span><h2>Cartão Programa do dia</h2></div><div class="card"><div id="cpInner" style="font-size:13px;color:var(--text-muted)">Informe a data do serviço para carregar o cartão da sua equipe.</div></div>';
+  const b1=form.querySelector('.card');
+  if(b1&&b1.parentNode){ b1.parentNode.insertBefore(sec,b1.nextSibling); } else { form.appendChild(sec); }
+  const dataEl=document.getElementById('dataServico');
+  async function carregar(){
+    const S=(typeof getSessaoAtual==='function')?getSessaoAtual():null; const inner=document.getElementById('cpInner');
+    const data=dataEl?dataEl.value:''; if(!inner) return;
+    if(!S||!S.token){ inner.textContent='Faça login para ver o cartão.'; return; }
+    if(!data){ inner.textContent='Informe a data do serviço para carregar o cartão da sua equipe.'; return; }
+    inner.textContent='Carregando cartão(ões) do dia…';
+    try{ const r=await fetch(`${API}/rest/v1/rpc/cartao_abertos_por_data`,{method:'POST',headers:H,body:JSON.stringify({p_token:S.token,p_data:data})});
+      if(!r.ok) throw new Error(await r.text()); ABERTOS=await r.json()||[]; render();
+    }catch(e){ inner.innerHTML='<span style="color:#ef9a9a">Não foi possível carregar o cartão: '+esc(e.message||e)+'</span>'; }
+  }
+  function render(){
+    const inner=document.getElementById('cpInner'); if(!inner) return;
+    if(!ABERTOS.length){ SELID=''; inner.innerHTML='<span style="color:var(--text-hint)">Nenhum cartão em aberto para esta data no seu grupamento. (Se não usa Cartão Programa, pode ignorar.)</span>'; return; }
+    const opts=ABERTOS.map(c=>`<label style="display:flex;gap:8px;align-items:center;margin:4px 0;cursor:pointer"><input type="radio" name="cpSel" value="${esc(c.id)}" ${SELID===c.id?'checked':''} onchange="window.__cpSel(this.value)"> <span><b>Nº ${esc(c.numero)}</b> · Equipe ${esc(c.equipe||'—')} · ${dfmt(c.data_empenho)} — ${esc(c.grupamento_completo||c.grupamento_id)}</span></label>`).join('');
+    inner.innerHTML='<div style="font-size:12.5px;color:var(--text-muted);margin-bottom:8px">Selecione o cartão da sua equipe e preencha o resultado de cada demanda. Ao enviar o relatório, o cartão é atualizado automaticamente.</div>'+opts+'<div id="cpDems" style="margin-top:12px"></div>';
+    if(SELID&&!ABERTOS.some(c=>c.id===SELID)) SELID='';
+    if(SELID) renderDems();
+  }
+  window.__cpSel=function(id){ SELID=id; renderDems(); };
+  function renderDems(){
+    const c=ABERTOS.find(x=>x.id===SELID); const box=document.getElementById('cpDems'); if(!box) return;
+    if(!c){ box.innerHTML=''; return; } const resp=c.respostas||{};
+    box.innerHTML=(c.demandas||[]).map((d,i)=>{const ord=esc(d.ordem||i+1);const r=resp[String(d.ordem)]||resp[String(i+1)]||{};
+      return '<div style="border:1px solid var(--border-mid);border-radius:8px;padding:10px 12px;margin-bottom:9px" data-ord="'+ord+'">'+
+        '<div style="font-size:12px;font-weight:700;color:var(--gold-light);margin-bottom:6px">DEMANDA '+ord+(d.municipio?(' — '+esc(d.municipio)):'')+'</div>'+
+        '<div style="font-size:12px;color:var(--text-muted);white-space:pre-wrap;margin-bottom:8px">'+esc((d.texto||'').slice(0,220))+((d.texto||'').length>220?'…':'')+'</div>'+
+        '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">'+
+          '<div><label style="font-size:10px;color:var(--text-hint)">Atendida?</label><select data-k="atendida" style="width:100%"><option value="">—</option><option value="TOTAL"'+(r.atendida==='TOTAL'?' selected':'')+'>Total</option><option value="PARCIAL"'+(r.atendida==='PARCIAL'?' selected':'')+'>Parcial</option><option value="NAO"'+(r.atendida==='NAO'?' selected':'')+'>Não</option></select></div>'+
+          '<div><label style="font-size:10px;color:var(--text-hint)">Data</label><input type="date" data-k="data_atendimento" value="'+esc((r.data_atendimento||'').slice(0,10))+'" style="width:100%"></div>'+
+          '<div><label style="font-size:10px;color:var(--text-hint)">Nº REDS</label><input data-k="reds" value="'+esc(r.reds||'')+'" style="width:100%"></div>'+
+          '<div><label style="font-size:10px;color:var(--text-hint)">Nº Auto de Infração</label><input data-k="auto_infracao" value="'+esc(r.auto_infracao||'')+'" style="width:100%"></div>'+
+          '<div><label style="font-size:10px;color:var(--text-hint)">Nº Ato de Fiscalização</label><input data-k="ato_fiscalizacao" value="'+esc(r.ato_fiscalizacao||'')+'" style="width:100%"></div>'+
+          '<div><label style="font-size:10px;color:var(--text-hint)">Observações</label><input data-k="obs" value="'+esc(r.obs||'')+'" style="width:100%"></div>'+
+        '</div></div>';}).join('') || '<span style="color:var(--text-hint)">Este cartão não tem demandas.</span>';
+  }
+  window.marcarCartaoAtendido=async function(){
+    if(!SELID) return; const S=(typeof getSessaoAtual==='function')?getSessaoAtual():null; if(!S||!S.token) return;
+    const box=document.getElementById('cpDems'); if(!box) return; const respostas={};
+    box.querySelectorAll('[data-ord]').forEach(el=>{ const ord=el.getAttribute('data-ord');const o={};el.querySelectorAll('[data-k]').forEach(inp=>{const v=(inp.value||'').trim();if(v)o[inp.getAttribute('data-k')]=v;});if(o.atendida)respostas[ord]=o; });
+    if(!Object.keys(respostas).length) return;
+    try{ await fetch(`${API}/rest/v1/rpc/cartao_atender`,{method:'POST',headers:H,body:JSON.stringify({p_token:S.token,p_id:SELID,p_respostas:respostas})}); }catch(e){ console.warn('[cartao] atender',e); }
+  };
+  if(dataEl) dataEl.addEventListener('change', carregar);
+  setTimeout(carregar, 500);
+})();
+</script>
 </body>
 </html>
