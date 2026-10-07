@@ -24,7 +24,7 @@
     return membros.length ? ('CARTÃO PROGRAMA - '+membros.join(', ')+(data?(' '+data):'')) : ('CARTÃO PROGRAMA '+(cartao.numero||''));
   }
   function nomeArq(cartao){ return tituloArq(cartao).replace(/[\\/:*?"<>|]+/g,' ').replace(/\s+/g,' ').trim()+'.pdf'; }
-  function _fmtTexto(s){ let t=String(s==null?'':s).replace(/\r/g,'').replace(/[ \t]*\n[ \t]*/g,' ').replace(/[ \t]{2,}/g,' ').trim(); t=t.replace(/\s+([A-Z]\)\s)/g,'\n$1').replace(/\s*(\*\*\*)/g,'\n$1').replace(/\s*(\(#{3,})/g,'\n$1'); return t.trim(); }
+  function _fmtTexto(s){ const L=String(s==null?'':s).replace(/\r/g,'').split('\n'); let out=''; for(let i=0;i<L.length;i++){ const ln=L[i].replace(/[ \t]+/g,' ').trim(); if(i===0){ out=ln; continue; } if(ln===''){ out+='\n'; continue; } const marker=/^(-\s|[A-Z]\)\s|\*{2,}|\(?#{2,}|\d+(?:\.\d+)*[.)]?\s)/.test(ln); const prevPunct=/[.;:]\s*$/.test(out); out += (marker||prevPunct)?('\n'+ln):(' '+ln); } return out.replace(/\n{3,}/g,'\n\n').trim(); }
   function mapsRota(coord){
     if(global.Coord) return global.Coord.mapsRota(coord);
     const n=String(coord||'').match(/-?\d+(?:\.\d+)?/g); if(!n||n.length<2) return '';

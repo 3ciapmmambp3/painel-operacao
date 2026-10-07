@@ -333,13 +333,13 @@ const SHEET_SCRIPT_URL="https://script.google.com/macros/s/AKfycbwhyngzhpznhiidO
 // aba = nome da aba na planilha de Grupamento de Atuação; muniIdx = índice da
 // coluna do município (A=0,B=1,C=2,D=3) — C em todas, D só na Requisição.
 const SHEET_TIPOS={
-  MC:{label:'Monitoramento Contínuo (MC)', tipo:'mc', folder:'mc', aba:'MC', muniIdx:2},
-  NUDEN:{label:'NUDEN', tipo:'nuden', folder:'nuden', aba:'NUDEN', muniIdx:2},
-  RI:{label:'Força Tarefa Previncêndio (FTP/RI)', tipo:'ri', folder:'ri', aba:'RI', muniIdx:2},
-  DDU181:{label:'DDU 181', tipo:'ddu181', folder:null, aba:'DDU181', muniIdx:2},
-  EMERGENCIA:{label:'Emergência Ambiental', tipo:'emergencia', folder:'emergencia', aba:'EMERGENCIA', muniIdx:2},
-  DEN_BALCAO:{label:'Denúncia (antiga/Drive)', tipo:'balcao_drive', folder:'den_balcao', aba:'DEN_BALCAO', muniIdx:2},
-  REQUISICAO:{label:'Requisição (antiga/Drive)', tipo:'req_drive', folder:'den_balcao', aba:'REQUISIÇAO', muniIdx:3}
+  MC:{label:'Monitoramento Contínuo (MC)', tipo:'mc', kind:'mc', folder:'mc', aba:'MC', muniIdx:2},
+  NUDEN:{label:'NUDEN', tipo:'nuden', kind:'nuden', folder:'nuden', aba:'NUDEN', muniIdx:2},
+  RI:{label:'Força Tarefa Previncêndio (FTP/RI)', tipo:'ri', kind:'ri', folder:'ri', aba:'RI', muniIdx:2},
+  DDU181:{label:'DDU 181', tipo:'ddu181', kind:'ddu', folder:null, aba:'DDU181', muniIdx:2},
+  EMERGENCIA:{label:'Emergência Ambiental', tipo:'emergencia', kind:'emergencia', folder:'emergencia', aba:'EMERGENCIA', muniIdx:2},
+  DEN_BALCAO:{label:'Denúncia (antiga/Drive)', tipo:'balcao_drive', kind:'denuncia', folder:'den_balcao', aba:'DEN_BALCAO', muniIdx:2},
+  REQUISICAO:{label:'Requisição (antiga/Drive)', tipo:'req_drive', kind:'requisicao', folder:'den_balcao', aba:'REQUISIÇAO', muniIdx:3}
 };
 // Município vem da planilha (coluna C/D) lida direto via Sheets API (a referência
 // do Apps Script só devolve value+fração). Mapa: sourceKey → { norm(value): município }.
@@ -380,7 +380,20 @@ function _muniDoMC(arqs){
 function _tipoLbl(t){ return t==='requisicao'?'Requisição':'Denúncia de Balcão'; }
 function _normGrp(s){ return String(s==null?'':s).toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').replace(/MARILIERIA/g,'MARLIERIA').replace(/MOLEVADE/g,'MONLEVADE').trim(); }
 function gprDe(completo){ const L=(window.FrotaGrup&&FrotaGrup.lista)?FrotaGrup.lista:[]; const x=L.find(y=>String(y.completo).toUpperCase()===String(completo||'').toUpperCase()); return x?x.gpr:''; }
-function textoDaDemanda(p){ let t='['+_tipoLbl(p.tipo)+' nº '+p.numero+'] '; if(p.tema) t+='Infração: '+p.tema+'. '; if(p.objeto) t+='Objeto: '+p.objeto+'. '; if(p.descricao) t+=p.descricao; return t.trim(); }
+// Texto PADRÃO por tipo (o histórico completo fica nos anexos/Ficha).
+function _tplDemanda(kind, N, muni, demandante){
+  N=N||''; const M=muni?(' — '+muni):'';
+  switch(kind){
+    case 'ddu': return `- Atender DDU nº de Controle Nº ${N}${M}\n- Constar o nº da denúncia no histórico do REDS.\n- ID da Demanda: ${N} - Demandante: Demanda Espontânea - Tipo de Demanda: Extraordinária - Denúncia DDU\n(###### LANÇAR NO GAIA ######)`;
+    case 'ri': return `- Atender o Previncêndio nº ${N}${M}\n- O atendimento deve ser cadastrado no GAIA, preenchendo OBRIGATORIAMENTE:\n  1. ABA "INFORMAÇÕES DE CONTROLE":\n  1.1 Núcleo / Demandante: FTP FORÇA TAREFA PREVINCÊNDIO\n  1.4 ID da Demanda: ${N}\n  1.5 Prioridade: URGENTE\n(#### LANÇAR GAIA ####)`;
+    case 'mc': return `- Atender o Monitoramento Contínuo: ID ${N}${M}\n- ID da Demanda: ${N} - Demandante: SEFIS - Tipo de Demanda: Ordinária - Monitoramento Contínuo\n- Conferir as coordenadas (campo Coordenadas) e, ALÉM DO REGISTRO DO ATENDIMENTO, GERAR o RAT.\n(*** LANÇAR NO GAIA ***)`;
+    case 'requisicao': return `- Atender REQUISIÇÃO Nº ${N}${M}\n- Constar o nº no histórico do REDS.\n- ID da Demanda: ${N} - Demandante: ${demandante||'Órgão requisitante'} - Tipo de Demanda: Requisição\n(###### LANÇAR NO GAIA ######)`;
+    case 'nuden': return `- Atender NUDEN nº ${N}${M}\n- Constar o nº no histórico do REDS.\n- ID da Demanda: ${N} - Demandante: NUDEN\n(###### LANÇAR NO GAIA ######)`;
+    case 'emergencia': return `- Atender Emergência Ambiental nº ${N}${M}\n- ID da Demanda: ${N} - Tipo de Demanda: Emergência Ambiental\n(###### LANÇAR NO GAIA ######)`;
+    default: return `- Atender DENÚNCIA Nº ${N} — 3ª CIA PM MAmb${M}\n- Constar o nº da denúncia no histórico do REDS.\n- ID da Demanda: ${N} - Demandante: ${demandante||'Cidadão'} - Tipo de Demanda: Extraordinária - Denúncia\n(###### LANÇAR NO GAIA ######)`;
+  }
+}
+function textoDaDemanda(p){ return _tplDemanda(p.tipo==='requisicao'?'requisicao':'denuncia', p.numero, p.municipio, p.origem); }
 async function carregarPendentes(){
   PEND=[]; const grup=document.getElementById('grupamento').value;
   if(!grup) return {erro:'Selecione primeiro o grupamento (acima) para listar as pendentes dele.'};
@@ -388,7 +401,7 @@ async function carregarPendentes(){
   // 1) Painel (Supabase) — denúncias/requisições pendentes
   const gpr=gprDe(grup);
   if(gpr){ try{
-    const q=`${API}/rest/v1/denuncias?select=id,numero,tipo,tema,objeto,descricao,municipio,endereco,referencia,situacao,anexos&ativo=is.true&gp_responsavel=eq.${encodeURIComponent(gpr)}&situacao=in.(PENDENTE,%22EM%20ANDAMENTO%22)&order=created_at.desc`;
+    const q=`${API}/rest/v1/denuncias?select=id,numero,tipo,origem,tema,objeto,descricao,municipio,endereco,referencia,situacao,anexos&ativo=is.true&gp_responsavel=eq.${encodeURIComponent(gpr)}&situacao=in.(PENDENTE,%22EM%20ANDAMENTO%22)&order=created_at.desc`;
     const r=await fetch(q,{headers:H}); if(!r.ok) throw new Error(await r.text());
     const arr=await r.json();
     (Array.isArray(arr)?arr:[]).forEach(p=>{
@@ -408,7 +421,7 @@ async function carregarPendentes(){
         if(_normGrp(it.fracao||'')!==alvo) return;
         let num=v; if(cfg.tipo==='balcao_drive'||cfg.tipo==='req_drive'){ const mm=v.match(/\d{1,4}\s*\/\s*\d{4}/); if(mm) num=mm[0].replace(/\s/g,''); }
         const muni=(muniMapa[_norm(v)]||'').trim();   // município da coluna C/D da planilha
-        PEND.push({tipo:cfg.tipo, tipoLabel:cfg.label, numero:num, texto:cfg.label+' — '+v, resumo:'', municipio:muni, endereco:'', situacao:'', anexos:[], fonte:'planilha', folder:cfg.folder||null, id:null});
+        PEND.push({tipo:cfg.tipo, tipoLabel:cfg.label, numero:num, texto:_tplDemanda(cfg.kind, num, muni), resumo:'', municipio:muni, endereco:'', situacao:'', anexos:[], fonte:'planilha', folder:cfg.folder||null, id:null});
       }); });
     }
   }catch(e){ if(!PEND.length) erroP=(erroP?erroP+' · ':'')+'Planilha: '+(e.message||e); }
