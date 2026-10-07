@@ -29,6 +29,9 @@
     input:focus,select:focus,textarea:focus{border-color:var(--gold)}
     textarea{resize:vertical;min-height:70px}
     .hint{font-size:10.5px;color:var(--text-hint)}
+    .coordrow{display:flex;gap:6px;align-items:center;margin-bottom:6px;font-size:12px;color:var(--text-muted);flex-wrap:wrap}
+    .coordrow .cx{width:70px}
+    .coordrow select{width:auto}
     /* militar picker */
     .milbox{position:relative}
     .mil-drop{position:absolute;z-index:40;left:0;right:0;top:100%;margin-top:3px;background:var(--bg-card);border:1px solid var(--border-mid);border-radius:8px;max-height:260px;overflow:auto;display:none;box-shadow:0 10px 30px rgba(0,0,0,.35)}
@@ -110,7 +113,7 @@
     <h2>Demandas para atendimento</h2>
     <div id="demandas"></div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
-      <button type="button" class="btn ghost small" onclick="addDemanda()">+ Adicionar demanda (manual)</button>
+      <button type="button" class="btn ghost small" onclick="addDemanda()">+ Adicionar demanda</button>
       <button type="button" class="btn ghost small" onclick="abrirPendentes()">📥 Puxar pendente do painel</button>
     </div>
     <div class="hint" id="anx-hint" style="margin-top:10px"></div>
@@ -320,15 +323,54 @@ async function abrirPendentes(){
   }).join('');
 }
 function fecharPendentes(){ document.getElementById('pmod').style.display='none'; }
+function _demandaVazia(d){ return d && !((d.texto||'').trim()) && !((d.municipio||'').trim()) && !((d.endereco||'').trim()) && !((d.coordenadas||'').trim()) && !d.origem && !(Array.isArray(d.anexos)&&d.anexos.length); }
 function addPendentes(){
   const checks=[...document.querySelectorAll('#plista input[type=checkbox]:checked')];
+  if(!checks.length){ fecharPendentes(); return; }
+  // ocupa as demandas vazias primeiro: remove-as antes de anexar as pendentes
+  DEM = DEM.filter(d=>!_demandaVazia(d));
   checks.forEach(ch=>{ const p=PEND[+ch.getAttribute('data-i')]; if(!p) return;
     DEM.push({texto:textoDaDemanda(p),municipio:p.municipio||'',endereco:p.endereco||p.referencia||'',coordenadas:'',anexos:[],origem:{tipo:p.tipo,numero:p.numero,id:p.id}}); });
-  if(checks.length) renderDemandas();
+  if(!DEM.length) addDemanda();
+  renderDemandas();
   fecharPendentes();
 }
-function attRota(i){ const el=document.getElementById('rota-'+i); if(!el) return; const u=mapsRota((DEM[i]||{}).coordenadas); el.innerHTML = u ? `🧭 <a href="${u}" target="_blank" style="color:var(--gold-light)">Testar rota no Google Maps</a>` : ''; }
+/* ── Coordenadas no padrão da Consulta: formato (Decimal/GMD/GMS) + campos ── */
+function initCoord(d){
+  if(d.coord) return d.coord;
+  const c={fmt:'dec',decLat:'',decLng:'',latG:'',latM:'',latS:'',latH:'S',lngG:'',lngM:'',lngS:'',lngH:'O'};
+  if(d.coordenadas && window.Coord){ const p=Coord.paraDecimal(d.coordenadas); if(p){ c.decLat=String(+p.lat.toFixed(6)); c.decLng=String(+p.lng.toFixed(6)); } }
+  d.coord=c; return c;
+}
+function _compoe(c){
+  if(!c) return '';
+  if(c.fmt==='dec'){ const a=(c.decLat||'').trim(), b=(c.decLng||'').trim(); return (a&&b)?`${a}, ${b}`:''; }
+  if(c.fmt==='gmd'){ if(!(String(c.latG).trim()&&String(c.lngG).trim())) return ''; return `${c.latG}°${c.latM||0}'${c.latH||'S'} ${c.lngG}°${c.lngM||0}'${c.lngH||'O'}`; }
+  if(c.fmt==='gms'){ if(!(String(c.latG).trim()&&String(c.lngG).trim())) return ''; return `${c.latG}°${c.latM||0}'${c.latS||0}"${c.latH||'S'} ${c.lngG}°${c.lngM||0}'${c.lngS||0}"${c.lngH||'O'}`; }
+  return '';
+}
+function attCoord(i){ const c=(DEM[i]||{}).coord; if(!c) return; DEM[i].coordenadas=_compoe(c);
+  const el=document.getElementById('rota-'+i); if(!el) return; const u=mapsRota(DEM[i].coordenadas);
+  el.innerHTML = u ? `🧭 <a href="${u}" target="_blank" style="color:var(--gold-light)">Testar rota no Google Maps</a>`
+    : (DEM[i].coordenadas ? '<span style="color:var(--text-hint)">coordenadas incompletas</span>' : ''); }
+function setFmt(i,v){ DEM[i].coord.fmt=v; document.querySelectorAll('[data-cf="'+i+'"]').forEach(el=>{ el.style.display=(el.getAttribute('data-fmt')===v)?'':'none'; }); attCoord(i); }
+function _axRow(i,ax,c,seg){
+  const hemis = ax==='lat'?['S','N']:['O','E']; const H=c[ax+'H']||hemis[0];
+  const inp=(k,ph)=>`<input class="cx" placeholder="${ph}" value="${_esc(c[ax+k]||'')}" oninput="DEM[${i}].coord.${ax}${k}=this.value;attCoord(${i})">`;
+  return `<div class="coordrow"><b style="width:30px">${ax==='lat'?'Lat':'Lng'}</b>`
+    + inp('G','g')+'°'+inp('M', seg?'m':'m.mmm')+"'"+(seg?(inp('S','s')+'"'):'')
+    + `<select onchange="DEM[${i}].coord.${ax}H=this.value;attCoord(${i})">${hemis.map(h=>`<option ${h===H?'selected':''}>${h}</option>`).join('')}</select></div>`;
+}
+function coordFieldsHTML(i,c){
+  return `<div data-cf="${i}" data-fmt="dec" style="${c.fmt==='dec'?'':'display:none'}">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <input placeholder="Latitude (-17.6125)" value="${_esc(c.decLat)}" oninput="DEM[${i}].coord.decLat=this.value;attCoord(${i})">
+        <input placeholder="Longitude (-41.4913)" value="${_esc(c.decLng)}" oninput="DEM[${i}].coord.decLng=this.value;attCoord(${i})"></div></div>
+    <div data-cf="${i}" data-fmt="gmd" style="${c.fmt==='gmd'?'':'display:none'}">${_axRow(i,'lat',c,false)}${_axRow(i,'lng',c,false)}</div>
+    <div data-cf="${i}" data-fmt="gms" style="${c.fmt==='gms'?'':'display:none'}">${_axRow(i,'lat',c,true)}${_axRow(i,'lng',c,true)}</div>`;
+}
 function renderDemandas(){
+  DEM.forEach(d=>initCoord(d));
   const box=document.getElementById('demandas');
   box.innerHTML=DEM.map((d,i)=>`
     <div class="dem">
@@ -338,8 +380,13 @@ function renderDemandas(){
         <div class="f"><label>Município</label><input value="${_esc(d.municipio)}" oninput="DEM[${i}].municipio=this.value"></div>
         <div class="f"><label>Endereço / referência</label><input value="${_esc(d.endereco)}" oninput="DEM[${i}].endereco=this.value"></div>
       </div>
-      <div class="f" style="margin-top:10px"><label>Coordenadas — vira rota no Google Maps (GMS, GMD ou Decimal)</label>
-        <input value="${_esc(d.coordenadas||'')}" oninput="DEM[${i}].coordenadas=this.value;attRota(${i})" placeholder='Ex.: -17.6125, -41.4913  •  17°36&apos;45.0&quot;S 41°29&apos;28.7&quot;W  •  17°36.750&apos;S 41°29.470&apos;W'>
+      <div class="f" style="margin-top:10px"><label>Coordenadas — rota no Google Maps</label>
+        <select onchange="setFmt(${i},this.value)" style="max-width:250px;margin-bottom:7px">
+          <option value="dec"${DEM[i].coord.fmt==='dec'?' selected':''}>Decimal (GG.GGGGGG)</option>
+          <option value="gmd"${DEM[i].coord.fmt==='gmd'?' selected':''}>GMD — Graus, Min Decimais</option>
+          <option value="gms"${DEM[i].coord.fmt==='gms'?' selected':''}>GMS — Graus, Min, Seg</option>
+        </select>
+        ${coordFieldsHTML(i,DEM[i].coord)}
         <span class="hint" id="rota-${i}"></span></div>
       <div class="anx-zone">
         <div class="anx-row">
@@ -350,7 +397,7 @@ function renderDemandas(){
         <div class="anx-list" id="anx-${i}">${renderAnx(d.anexos,i)}</div>
       </div>
     </div>`).join('');
-  DEM.forEach((_,i)=>attRota(i));
+  DEM.forEach((_,i)=>attCoord(i));
 }
 function renderAnx(anexos,di){
   return (anexos||[]).map((a,ai)=>{
