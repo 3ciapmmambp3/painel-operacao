@@ -136,6 +136,18 @@
   </div>
 </div>
 
+<!-- Enviar WhatsApp -->
+<div class="modal" id="wmod">
+  <div class="mc" style="max-width:470px">
+    <div class="mh">Enviar por WhatsApp<button class="x" onclick="fecharWhats()">✕</button></div>
+    <div class="mb">
+      <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:12px">Escolha para quem enviar — abre o WhatsApp com a mensagem e o link do cartão prontos (basta tocar em Enviar). Os números vêm do telefone pessoal 1 cadastrado no Efetivo.</div>
+      <div id="w-lista"></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn ghost" onclick="fecharWhats()">Fechar</button></div>
+    </div>
+  </div>
+</div>
+
 <script>
 const S=(typeof sessaoLer==='function')?sessaoLer():null;
 if(!S){ location.href='index.html'; }
@@ -259,7 +271,25 @@ function fecharDrawer(){ document.getElementById('ov').classList.remove('show');
 
 /* ── PDF / WhatsApp ── */
 async function baixarPDF(){ try{ await CartaoPDF.baixar(CUR); }catch(e){ alert('Falha no PDF: '+(e.message||e)); } }
-async function enviarWhatsApp(){ const url=location.origin+'/cartao-publico.html?id='+encodeURIComponent(CUR.id); try{ await CartaoPDF.whatsapp(CUR,url); }catch(e){ alert('Falha: '+(e.message||e)); } }
+
+/* ── WhatsApp: abre endereçado ao nº do militar (Efetivo) com msg + link ── */
+function waNum(tel){ let d=(tel||'').replace(/\D/g,''); if(!d) return ''; if(d.length>=12 && d.slice(0,2)==='55') return d; if(d.length===10||d.length===11) return '55'+d; return d; }
+function waMsg(){ const url=location.origin+'/cartao-publico.html?id='+encodeURIComponent(CUR.id);
+  return `*CARTÃO PROGRAMA Nº ${CUR.numero||''}*\n${_grafiaGP(CUR.grupamento_completo||CUR.grupamento_id||'')}\nData: ${_data(CUR.data_empenho)} · Turno: ${CUR.turno||'—'} · Equipe ${CUR.equipe||'—'}\n\nAbra o cartão: ${url}`; }
+function waOpen(num){ window.open('https://wa.me/'+(num||'')+'?text='+encodeURIComponent(waMsg()), '_blank'); }
+function fecharWhats(){ document.getElementById('wmod').classList.remove('show'); }
+async function enviarWhatsApp(){
+  let contatos=[];
+  try{ const r=await fetch(`${API}/rest/v1/rpc/cartao_contatos`,{method:'POST',headers:H,body:JSON.stringify({p_token:S.token,p_id:CUR.id})}); if(r.ok) contatos=await r.json()||[]; }catch(e){}
+  const linhas=(Array.isArray(contatos)?contatos:[]).map(c=>{ const num=waNum(c.telefone);
+    const sub = num ? _esc(c.telefone||'') : 'sem telefone no Efetivo';
+    return `<button class="btn ${num?'gold':'ghost'} small" ${num?'':'disabled'} style="display:flex;width:100%;gap:10px;justify-content:space-between;align-items:center;margin-bottom:8px;${num?'':'opacity:.55;cursor:default'}" ${num?`onclick="waOpen('${num}')"`:''}>
+      <span>${_esc(c.papel||'')}: ${_esc(c.nome||'—')}</span><span style="font-weight:600;white-space:nowrap">${sub}</span></button>`;
+  }).join('');
+  document.getElementById('w-lista').innerHTML = (linhas||'<div style="color:var(--text-hint);font-size:12.5px">Nenhum militar da equipe com telefone cadastrado no Efetivo.</div>')
+    + `<button class="btn ghost small" style="width:100%;margin-top:6px" onclick="waOpen('')">Outro número / só o link…</button>`;
+  document.getElementById('wmod').classList.add('show');
+}
 
 /* ── Excluir / Editar ── */
 async function excluir(){
