@@ -4744,6 +4744,36 @@ document.addEventListener('click', () => {
   const H={apikey:AKEY,Authorization:`Bearer ${AKEY}`,'Content-Type':'application/json'};
   const esc=s=>(s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const dfmt=iso=>{if(!iso)return '—';const d=new Date(String(iso).slice(0,10)+'T00:00:00');return isNaN(d)?String(iso):d.toLocaleDateString('pt-BR');};
+  // Reaproveita as MÁSCARAS do relatório (REDS / Ato de Fiscalização) — são globais
+  // de script clássico. Auto de Infração segue o padrão do relatório: Número + Ano → "N/AAAA".
+  const _fmtMask=(v,k)=>{ try{ return (v&&typeof applyMaskValue==='function')?applyMaskValue(String(v),k):String(v||''); }catch(e){ return String(v||''); } };
+  const _redsPH=(typeof MASKS!=='undefined'&&MASKS.reds)?MASKS.reds.placeholder:'2026-030135292-001';
+  const _atoPH =(typeof MASKS!=='undefined'&&MASKS.ato )?MASKS.ato.placeholder :'2026.07.01.362.0000466';
+  const _splitAuto=v=>{ const s=String(v||'').trim(); if(!s) return {num:'',ano:''}; const m=s.match(/^(\d+)\s*\/\s*(\d{0,4})/); return m?{num:m[1],ano:m[2]||''}:{num:s.replace(/\D/g,''),ano:''}; };
+  function ensureCpStyle(){
+    if(document.getElementById('cpStyleBlock')) return;
+    const st=document.createElement('style'); st.id='cpStyleBlock';
+    st.textContent=`
+      #cpDems .cp-dcard{border:1px solid var(--border-mid);border-radius:10px;padding:12px 14px;margin-bottom:10px;background:var(--bg-card)}
+      #cpDems .cp-dhead{font-size:12px;font-weight:800;color:var(--gold-light);margin-bottom:6px;letter-spacing:.2px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+      #cpDems .cp-match{font-weight:600;color:var(--success);font-size:11px}
+      #cpDems .cp-dtext{font-size:12px;color:var(--text-muted);white-space:pre-wrap;margin-bottom:10px;line-height:1.4}
+      #cpDems .cp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+      #cpDems .cp-f{display:flex;flex-direction:column;gap:3px;min-width:0}
+      #cpDems .cp-f-wide{grid-column:1/-1}
+      #cpDems .cp-f>label{font-size:10px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:var(--text-hint)}
+      #cpDems .cp-f input,#cpDems .cp-f select{width:100%;box-sizing:border-box;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:7px 9px;color:var(--text-white);font-size:12.5px;transition:border-color .15s,box-shadow .15s}
+      #cpDems .cp-f input:focus,#cpDems .cp-f select:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 2px var(--gold-bg)}
+      #cpDems .cp-f input::placeholder{color:var(--text-hint);opacity:.7}
+      #cpDems .cp-auto{display:grid;grid-template-columns:1fr 74px;gap:6px}
+      #cpDems .cp-f select[data-k="atendida"]{font-weight:700}
+      #cpDems .cp-f select[data-k="atendida"][data-v="TOTAL"]{border-color:var(--success);color:var(--success)}
+      #cpDems .cp-f select[data-k="atendida"][data-v="PARCIAL"]{border-color:#e0a106;color:#f0b429}
+      #cpDems .cp-f select[data-k="atendida"][data-v="NAO"]{border-color:var(--danger);color:#ef9a9a}
+      @media(max-width:560px){#cpDems .cp-grid{grid-template-columns:1fr}}
+    `;
+    document.head.appendChild(st);
+  }
   let ABERTOS=[], SELID='', root=null;
   const dataEl=document.getElementById('dataServico');
   function _inner(){ return root?root.querySelector('#cpInner'):null; }
@@ -4773,22 +4803,26 @@ document.addEventListener('click', () => {
   window.__cpSel=function(id){ SELID=id; renderDems(); };
   function renderDems(){
     const c=ABERTOS.find(x=>x.id===SELID); const box=_dems(); if(!box) return;
-    if(!c){ box.innerHTML=''; return; } const resp=c.respostas||{};
+    if(!c){ box.innerHTML=''; return; } const resp=c.respostas||{}; ensureCpStyle();
     const corpo=(c.demandas||[]).map((d,i)=>{const ord=esc(d.ordem||i+1);const r=resp[String(d.ordem)]||resp[String(i+1)]||{};const og=d.origem&&d.origem.numero?(' · '+esc((d.origem.label||'')+' '+d.origem.numero)):'';
-      return '<div style="border:1px solid var(--border-mid);border-radius:8px;padding:10px 12px;margin-bottom:9px" data-ord="'+ord+'">'+
-        '<div style="font-size:12px;font-weight:700;color:var(--gold-light);margin-bottom:6px">DEMANDA '+ord+(d.municipio?(' — '+esc(d.municipio)):'')+og+' <span class="cp-match" style="font-weight:400;color:var(--success)"></span></div>'+
-        '<div style="font-size:12px;color:var(--text-muted);white-space:pre-wrap;margin-bottom:8px">'+esc((d.texto||'').slice(0,220))+((d.texto||'').length>220?'…':'')+'</div>'+
-        '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">'+
-          '<div><label style="font-size:10px;color:var(--text-hint)">Situação</label><select data-k="atendida" style="width:100%"><option value="">—</option><option value="TOTAL"'+(r.atendida==='TOTAL'?' selected':'')+'>✅ Finalizado</option><option value="PARCIAL"'+(r.atendida==='PARCIAL'?' selected':'')+'>🟡 Em andamento (precisa diligência)</option><option value="NAO"'+(r.atendida==='NAO'?' selected':'')+'>⛔ Não atendido</option></select></div>'+
-          '<div><label style="font-size:10px;color:var(--text-hint)">Data</label><input type="date" data-k="data_atendimento" value="'+esc((r.data_atendimento||'').slice(0,10))+'" style="width:100%"></div>'+
-          '<div><label style="font-size:10px;color:var(--text-hint)">Nº REDS</label><input data-k="reds" value="'+esc(r.reds||'')+'" style="width:100%"></div>'+
-          '<div><label style="font-size:10px;color:var(--text-hint)">Nº Auto de Infração</label><input data-k="auto_infracao" value="'+esc(r.auto_infracao||'')+'" style="width:100%"></div>'+
-          '<div><label style="font-size:10px;color:var(--text-hint)">Nº Ato de Fiscalização</label><input data-k="ato_fiscalizacao" value="'+esc(r.ato_fiscalizacao||'')+'" style="width:100%"></div>'+
-          '<div><label style="font-size:10px;color:var(--text-hint)">Observações</label><input data-k="obs" value="'+esc(r.obs||'')+'" style="width:100%"></div>'+
+      const sit=esc(r.atendida||''); const au=_splitAuto(r.auto_infracao);
+      return '<div class="cp-dcard" data-ord="'+ord+'">'+
+        '<div class="cp-dhead">DEMANDA '+ord+(d.municipio?(' — '+esc(d.municipio)):'')+og+' <span class="cp-match"></span></div>'+
+        '<div class="cp-dtext">'+esc((d.texto||'').slice(0,220))+((d.texto||'').length>220?'…':'')+'</div>'+
+        '<div class="cp-grid">'+
+          '<div class="cp-f"><label>Situação</label><select data-k="atendida" data-v="'+sit+'" onchange="this.setAttribute(\'data-v\',this.value)"><option value="">—</option><option value="TOTAL"'+(r.atendida==='TOTAL'?' selected':'')+'>✅ Finalizado</option><option value="PARCIAL"'+(r.atendida==='PARCIAL'?' selected':'')+'>🟡 Em andamento (precisa diligência)</option><option value="NAO"'+(r.atendida==='NAO'?' selected':'')+'>⛔ Não atendido</option></select></div>'+
+          '<div class="cp-f"><label>Data de atendimento</label><input type="date" data-k="data_atendimento" value="'+esc((r.data_atendimento||'').slice(0,10))+'"></div>'+
+          '<div class="cp-f"><label>Nº REDS (BO/BOS/RAT)</label><input data-k="reds" data-mask="reds" inputmode="numeric" placeholder="'+esc(_redsPH)+'" value="'+esc(_fmtMask(r.reds,'reds'))+'"></div>'+
+          '<div class="cp-f"><label>Nº Auto de Infração</label><div class="cp-auto"><input data-k="auto_num" inputmode="numeric" placeholder="Número" value="'+esc(au.num)+'"><input data-k="auto_ano" inputmode="numeric" maxlength="4" placeholder="Ano" value="'+esc(au.ano)+'"></div></div>'+
+          '<div class="cp-f"><label>Nº Ato de Fiscalização</label><input data-k="ato_fiscalizacao" data-mask="ato" inputmode="numeric" placeholder="'+esc(_atoPH)+'" value="'+esc(_fmtMask(r.ato_fiscalizacao,'ato'))+'"></div>'+
+          '<div class="cp-f cp-f-wide"><label>Observações</label><input data-k="obs" value="'+esc(r.obs||'')+'"></div>'+
         '</div></div>';}).join('') || '<span style="color:var(--text-hint)">Este cartão não tem demandas.</span>';
     box.innerHTML='<button type="button" onclick="window.__cpPuxar()" style="margin-bottom:10px;background:var(--gold);color:#1a1000;border:none;font-weight:800;font-size:12px;padding:8px 14px;border-radius:8px;cursor:pointer">🔄 Puxar REDS/Auto/Ato dos cards do relatório</button>'
       +'<div style="font-size:11px;color:var(--text-hint);margin-bottom:8px">Preencha os cards acima (NUDEN/MC/DDU/Balcão…) e clique em Puxar — o cartão casa pela demanda e traz os dados. Confirme a situação de cada uma.</div>'
       +corpo;
+    // máscaras REDS/Ato (mesmas do relatório) + só dígitos no Número/Ano do auto
+    if(typeof bindMasksIn==='function'){ try{ bindMasksIn(box); }catch(e){} }
+    box.querySelectorAll('.cp-auto input').forEach(inp=>{ if(inp._cpNum) return; inp._cpNum=1; inp.setAttribute('inputmode','numeric'); inp.addEventListener('input',()=>{ inp.value=inp.value.replace(/\D/g,''); }); });
     cpPuxarDosCards();   // já tenta puxar com o que estiver preenchido
   }
   const _n2=s=>String(s==null?'':s).toUpperCase().replace(/[^A-Z0-9]/g,'');
@@ -4807,9 +4841,11 @@ document.addEventListener('click', () => {
       const tag=row.querySelector('.cp-match');
       if(!it){ if(tag) tag.textContent=''; return; }
       const set=(k,val)=>{ const el=row.querySelector('[data-k="'+k+'"]'); if(el && val && !(el.value||'').trim()) el.value=val; };
-      set('reds', it['Nº REDS (BO/BOS/RAT)']); set('auto_infracao', it['Nº Auto de Infração']); set('ato_fiscalizacao', it['Nº Ato de Fiscalização']);
+      set('reds', _fmtMask(it['Nº REDS (BO/BOS/RAT)'],'reds'));
+      set('ato_fiscalizacao', _fmtMask(it['Nº Ato de Fiscalização'],'ato'));
+      const au=_splitAuto(it['Nº Auto de Infração']); if(au.num){ set('auto_num', au.num); set('auto_ano', au.ano); }
       set('data_atendimento', _cpData(it['Data de Atendimento']||it['Data da Fiscalização']));
-      const sel=row.querySelector('[data-k="atendida"]'); if(sel && !sel.value && (it['Nº REDS (BO/BOS/RAT)']||'').trim()) sel.value='TOTAL';
+      const sel=row.querySelector('[data-k="atendida"]'); if(sel && !sel.value && (it['Nº REDS (BO/BOS/RAT)']||'').trim()){ sel.value='TOTAL'; sel.setAttribute('data-v','TOTAL'); }
       if(tag) tag.textContent='✓ dados puxados do card';
     });
   }
@@ -4818,7 +4854,10 @@ document.addEventListener('click', () => {
     if(!SELID) return; const S=(typeof getSessaoAtual==='function')?getSessaoAtual():null; if(!S||!S.token) return;
     try{ cpPuxarDosCards(); }catch(e){}   // garante o puxar dos cards no envio
     const box=_dems(); const respostas={};
-    if(box) box.querySelectorAll('[data-ord]').forEach(el=>{ const ord=el.getAttribute('data-ord');const o={};el.querySelectorAll('[data-k]').forEach(inp=>{const v=(inp.value||'').trim();if(v)o[inp.getAttribute('data-k')]=v;});if(o.atendida)respostas[ord]=o; });
+    if(box) box.querySelectorAll('[data-ord]').forEach(el=>{ const ord=el.getAttribute('data-ord');const o={};el.querySelectorAll('[data-k]').forEach(inp=>{const v=(inp.value||'').trim();if(v)o[inp.getAttribute('data-k')]=v;});
+      // Auto de Infração: Número + Ano → "N/AAAA" (padrão do relatório)
+      if(o.auto_num){ o.auto_infracao = o.auto_ano ? (o.auto_num+'/'+o.auto_ano) : o.auto_num; } delete o.auto_num; delete o.auto_ano;
+      if(o.atendida)respostas[ord]=o; });
     // mesmo sem respostas, grava o vínculo do relatório (p/ o botão Ver/Imprimir no cartão).
     // Fallback: se o banco ainda estiver sem o arg p_relatorio (db/131), refaz sem ele.
     const call=(body)=>fetch(`${API}/rest/v1/rpc/cartao_atender`,{method:'POST',headers:H,body:JSON.stringify(body)});
