@@ -47,5 +47,11 @@ window.Coord = (function(){
     if(!c || isNaN(c.lat) || isNaN(c.lng)) return '';
     return 'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(c.lat+','+c.lng);
   }
-  return { paraDecimal, mapsRota };
+  // Rota a partir de um ENDEREÇO em texto (destino que o Google geocodifica).
+  function mapsRotaTexto(txt){
+    const t = String(txt||'').trim();
+    if(!t) return '';
+    return 'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(t);
+  }
+  return { paraDecimal, mapsRota, mapsRotaTexto };
 })();

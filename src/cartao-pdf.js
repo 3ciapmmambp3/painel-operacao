@@ -70,9 +70,12 @@
       const coordCell = d.coordenadas
         ? (rota?`<a href="${rota}" target="_blank" rel="noopener">Rota no Google Maps</a> (${E(d.coordenadas)})`:E(d.coordenadas))
         : '';
+      const endTxt = d.endereco ? (d.municipio && String(d.endereco).toUpperCase().indexOf(String(d.municipio).toUpperCase())===-1 ? (d.endereco+', '+d.municipio) : d.endereco) : '';
+      const endRota = (endTxt && global.Coord && global.Coord.mapsRotaTexto) ? global.Coord.mapsRotaTexto(endTxt) : '';
+      const endCell = d.endereco ? (endRota?`<a href="${endRota}" target="_blank" rel="noopener">${E(d.endereco)}</a>`:E(d.endereco)) : '';
       let corpo = rowBlk('Descrição', d.texto)
         + (d.observacao?rowBlk('Observação', d.observacao):'')
-        + (d.endereco?row('Endereço / referência', d.endereco):'')
+        + (d.endereco?rowH('Endereço / referência', endCell):'')
         + (d.municipio?row('Município', d.municipio):'')
         + (d.coordenadas?rowH('Coordenadas', coordCell):'')
         + (anx.length?rowH('Anexo', anexoCell):'');
