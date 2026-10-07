@@ -29,6 +29,8 @@
     input:focus,select:focus,textarea:focus{border-color:var(--gold)}
     textarea{resize:vertical;min-height:70px}
     .hint{font-size:10.5px;color:var(--text-hint)}
+    .pchip{font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:20px;border:1px solid var(--border-mid);background:transparent;color:var(--text-muted);cursor:pointer}
+    .pchip.on{background:var(--gold-bg);border-color:var(--gold-border);color:var(--gold-light)}
     .coordrow{display:flex;gap:6px;align-items:center;margin-bottom:6px;font-size:12px;color:var(--text-muted);flex-wrap:wrap}
     .coordrow .cx{width:70px}
     .coordrow select{width:auto}
@@ -137,7 +139,7 @@
 </div>
 
 <!-- Modal: demandas pendentes do painel -->
-<div id="pmod" style="position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:100;padding:16px">
+<div id="pmod" style="position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-start;justify-content:center;z-index:10000;padding:40px 16px 16px;overflow:auto">
   <div style="background:var(--bg-page);border:1px solid var(--gold-border);border-radius:12px;max-width:640px;width:100%;max-height:88vh;overflow:auto">
     <div style="padding:15px 18px;border-bottom:1px solid var(--border);font-weight:800;color:var(--gold-light);display:flex;align-items:center;gap:8px">Demandas pendentes do grupamento<button type="button" onclick="fecharPendentes()" style="margin-left:auto;background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer">✕</button></div>
     <div style="padding:14px 18px">
@@ -313,14 +315,27 @@ async function abrirPendentes(){
   const res=await carregarPendentes();
   if(res.erro){ document.getElementById('plista').innerHTML=''; document.getElementById('pmsg').innerHTML='<span style="color:#ef9a9a">'+_esc(res.erro)+'</span>'; return; }
   if(!PEND.length){ document.getElementById('plista').innerHTML='<div class="hint">Nenhuma denúncia/requisição pendente para este grupamento.</div>'; return; }
+  PFILTRO=''; renderPendentes();
+}
+let PFILTRO='';
+function setPFiltro(t){ PFILTRO=t; renderPendentes(); }
+function renderPendentes(){
+  const box=document.getElementById('plista');
   const ja=new Set(DEM.filter(d=>d.origem).map(d=>d.origem.tipo+':'+d.origem.numero));
-  document.getElementById('plista').innerHTML=PEND.map((p,i)=>{ const dup=ja.has(p.tipo+':'+p.numero);
+  const tipos=[...new Set(PEND.map(p=>p.tipo))];
+  const chips = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">`
+    + `<button type="button" class="pchip${PFILTRO===''?' on':''}" onclick="setPFiltro('')">Todas (${PEND.length})</button>`
+    + tipos.map(t=>`<button type="button" class="pchip${PFILTRO===t?' on':''}" onclick="setPFiltro('${t}')">${_esc(_tipoLbl(t))} (${PEND.filter(p=>p.tipo===t).length})</button>`).join('')
+    + `</div>`;
+  const lista=PEND.map((p,i)=>({p,i})).filter(x=>!PFILTRO||x.p.tipo===PFILTRO);
+  const itens = lista.length ? lista.map(({p,i})=>{ const dup=ja.has(p.tipo+':'+p.numero);
     return `<label style="display:flex;gap:10px;align-items:flex-start;border:1px solid var(--border-mid);border-radius:8px;padding:10px 12px;margin-bottom:8px;${dup?'opacity:.5':''}">
       <input type="checkbox" data-i="${i}" ${dup?'disabled':''} style="margin-top:3px;width:auto">
       <span><b style="color:var(--gold-light)">${_esc(_tipoLbl(p.tipo))} nº ${_esc(p.numero)}</b> · ${_esc(p.situacao)}${dup?' · <i>já no cartão</i>':''}<br>
       <span style="font-size:12px;color:var(--text-muted)">${_esc(((p.tema?p.tema+' — ':'')+(p.descricao||p.objeto||'')).slice(0,160))}</span><br>
       <span style="font-size:11px;color:var(--text-hint)">📍 ${_esc(p.municipio||'—')}${p.endereco?(' · '+_esc(p.endereco)):''}</span></span></label>`;
-  }).join('');
+  }).join('') : '<div class="hint">Nenhuma pendente deste tipo.</div>';
+  box.innerHTML = chips + itens;
 }
 function fecharPendentes(){ document.getElementById('pmod').style.display='none'; }
 function _demandaVazia(d){ return d && !((d.texto||'').trim()) && !((d.municipio||'').trim()) && !((d.endereco||'').trim()) && !((d.coordenadas||'').trim()) && !d.origem && !(Array.isArray(d.anexos)&&d.anexos.length); }
