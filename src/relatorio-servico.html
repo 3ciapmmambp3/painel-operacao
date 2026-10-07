@@ -4770,21 +4770,46 @@ document.addEventListener('click', () => {
   function renderDems(){
     const c=ABERTOS.find(x=>x.id===SELID); const box=document.getElementById('cpDems'); if(!box) return;
     if(!c){ box.innerHTML=''; return; } const resp=c.respostas||{};
-    box.innerHTML=(c.demandas||[]).map((d,i)=>{const ord=esc(d.ordem||i+1);const r=resp[String(d.ordem)]||resp[String(i+1)]||{};
+    const corpo=(c.demandas||[]).map((d,i)=>{const ord=esc(d.ordem||i+1);const r=resp[String(d.ordem)]||resp[String(i+1)]||{};const og=d.origem&&d.origem.numero?(' · '+esc((d.origem.label||'')+' '+d.origem.numero)):'';
       return '<div style="border:1px solid var(--border-mid);border-radius:8px;padding:10px 12px;margin-bottom:9px" data-ord="'+ord+'">'+
-        '<div style="font-size:12px;font-weight:700;color:var(--gold-light);margin-bottom:6px">DEMANDA '+ord+(d.municipio?(' — '+esc(d.municipio)):'')+'</div>'+
+        '<div style="font-size:12px;font-weight:700;color:var(--gold-light);margin-bottom:6px">DEMANDA '+ord+(d.municipio?(' — '+esc(d.municipio)):'')+og+' <span class="cp-match" style="font-weight:400;color:var(--success)"></span></div>'+
         '<div style="font-size:12px;color:var(--text-muted);white-space:pre-wrap;margin-bottom:8px">'+esc((d.texto||'').slice(0,220))+((d.texto||'').length>220?'…':'')+'</div>'+
         '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">'+
-          '<div><label style="font-size:10px;color:var(--text-hint)">Atendida?</label><select data-k="atendida" style="width:100%"><option value="">—</option><option value="TOTAL"'+(r.atendida==='TOTAL'?' selected':'')+'>Total</option><option value="PARCIAL"'+(r.atendida==='PARCIAL'?' selected':'')+'>Parcial</option><option value="NAO"'+(r.atendida==='NAO'?' selected':'')+'>Não</option></select></div>'+
+          '<div><label style="font-size:10px;color:var(--text-hint)">Situação</label><select data-k="atendida" style="width:100%"><option value="">—</option><option value="TOTAL"'+(r.atendida==='TOTAL'?' selected':'')+'>✅ Finalizado</option><option value="PARCIAL"'+(r.atendida==='PARCIAL'?' selected':'')+'>🟡 Em andamento (precisa diligência)</option><option value="NAO"'+(r.atendida==='NAO'?' selected':'')+'>⛔ Não atendido</option></select></div>'+
           '<div><label style="font-size:10px;color:var(--text-hint)">Data</label><input type="date" data-k="data_atendimento" value="'+esc((r.data_atendimento||'').slice(0,10))+'" style="width:100%"></div>'+
           '<div><label style="font-size:10px;color:var(--text-hint)">Nº REDS</label><input data-k="reds" value="'+esc(r.reds||'')+'" style="width:100%"></div>'+
           '<div><label style="font-size:10px;color:var(--text-hint)">Nº Auto de Infração</label><input data-k="auto_infracao" value="'+esc(r.auto_infracao||'')+'" style="width:100%"></div>'+
           '<div><label style="font-size:10px;color:var(--text-hint)">Nº Ato de Fiscalização</label><input data-k="ato_fiscalizacao" value="'+esc(r.ato_fiscalizacao||'')+'" style="width:100%"></div>'+
           '<div><label style="font-size:10px;color:var(--text-hint)">Observações</label><input data-k="obs" value="'+esc(r.obs||'')+'" style="width:100%"></div>'+
         '</div></div>';}).join('') || '<span style="color:var(--text-hint)">Este cartão não tem demandas.</span>';
+    box.innerHTML='<button type="button" onclick="window.__cpPuxar()" style="margin-bottom:10px;background:var(--gold);color:#1a1000;border:none;font-weight:800;font-size:12px;padding:8px 14px;border-radius:8px;cursor:pointer">🔄 Puxar REDS/Auto/Ato dos cards do relatório</button>'
+      +'<div style="font-size:11px;color:var(--text-hint);margin-bottom:8px">Preencha os cards acima (NUDEN/MC/DDU/Balcão…) e clique em Puxar — o cartão casa pela demanda e traz os dados. Confirme a situação de cada uma.</div>'
+      +corpo;
+    cpPuxarDosCards();   // já tenta puxar com o que estiver preenchido
   }
+  const _n2=s=>String(s==null?'':s).toUpperCase().replace(/[^A-Z0-9]/g,'');
+  function _cpData(x){ return (typeof _normalizarDataResp==='function')?(_normalizarDataResp(x)||''):(x||''); }
+  function cpPuxarDosCards(){
+    const c=ABERTOS.find(x=>x.id===SELID); const box=document.getElementById('cpDems'); if(!c||!box) return;
+    let payload=null; try{ payload=(typeof collectAllData==='function')?collectAllData():null; }catch(e){}
+    const itens=[]; if(payload&&Array.isArray(payload.categorias)) payload.categorias.forEach(cat=>{ (cat.itens||[]).forEach(it=>itens.push(it)); });
+    (c.demandas||[]).forEach((d,i)=>{
+      const ord=String(d.ordem||(i+1)); const chave=_n2((d.origem||{}).numero); if(chave.length<5) return;
+      const it=itens.find(x=>Object.values(x||{}).some(v=>{ const nv=_n2(v); return nv.length>=5 && nv.indexOf(chave)!==-1; }));
+      const row=box.querySelector('[data-ord="'+ord+'"]'); if(!row) return;
+      const tag=row.querySelector('.cp-match');
+      if(!it){ if(tag) tag.textContent=''; return; }
+      const set=(k,val)=>{ const el=row.querySelector('[data-k="'+k+'"]'); if(el && val && !(el.value||'').trim()) el.value=val; };
+      set('reds', it['Nº REDS (BO/BOS/RAT)']); set('auto_infracao', it['Nº Auto de Infração']); set('ato_fiscalizacao', it['Nº Ato de Fiscalização']);
+      set('data_atendimento', _cpData(it['Data de Atendimento']||it['Data da Fiscalização']));
+      const sel=row.querySelector('[data-k="atendida"]'); if(sel && !sel.value && (it['Nº REDS (BO/BOS/RAT)']||'').trim()) sel.value='TOTAL';
+      if(tag) tag.textContent='✓ dados puxados do card';
+    });
+  }
+  window.__cpPuxar=cpPuxarDosCards;
   window.marcarCartaoAtendido=async function(relId){
     if(!SELID) return; const S=(typeof getSessaoAtual==='function')?getSessaoAtual():null; if(!S||!S.token) return;
+    try{ cpPuxarDosCards(); }catch(e){}   // garante o puxar dos cards no envio
     const box=document.getElementById('cpDems'); const respostas={};
     if(box) box.querySelectorAll('[data-ord]').forEach(el=>{ const ord=el.getAttribute('data-ord');const o={};el.querySelectorAll('[data-k]').forEach(inp=>{const v=(inp.value||'').trim();if(v)o[inp.getAttribute('data-k')]=v;});if(o.atendida)respostas[ord]=o; });
     // mesmo sem respostas, grava o vínculo do relatório (p/ o botão Ver/Imprimir no cartão).

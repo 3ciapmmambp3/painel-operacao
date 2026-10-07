@@ -31,7 +31,7 @@
     return 'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(n[0]+','+n[1]);
   }
   function statusLabel(s){ return STLAB[s]||(s||'—'); }
-  function atendidaLabel(a){ return ATLAB[a]||'—'; }
+  function atendidaLabel(a){ return ({TOTAL:'Finalizado',PARCIAL:'Em andamento (precisa de nova diligência)',NAO:'Não atendido'})[a] || (ATLAB[a]||'—'); }
 
   function _assets(){ try{ return (global.location&&global.location.origin)?global.location.origin:''; }catch(e){ return ''; } }
 
