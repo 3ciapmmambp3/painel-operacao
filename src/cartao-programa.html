@@ -282,10 +282,22 @@ function waNum(tel){ let d=(tel||'').replace(/\D/g,''); if(!d) return ''; if(d.l
 function waMsg(){ const url=location.origin+'/cartao-publico.html?id='+encodeURIComponent(CUR.id);
   return `*CARTÃO PROGRAMA Nº ${CUR.numero||''}*\n${_grafiaGP(CUR.grupamento_completo||CUR.grupamento_id||'')}\nData: ${_data(CUR.data_empenho)} · Turno: ${CUR.turno||'—'} · Equipe ${CUR.equipe||'—'}\n\nAbra o cartão: ${url}`; }
 function waOpen(num){ window.open('https://wa.me/'+(num||'')+'?text='+encodeURIComponent(waMsg()), '_blank'); }
-let WA_NUMS=[];
-function waTodos(){ // abre uma conversa por militar (chamada síncrona = evita bloqueio de pop-up)
-  if(!WA_NUMS.length) return;
-  WA_NUMS.forEach(n=>{ if(n) window.open('https://wa.me/'+n+'?text='+encodeURIComponent(waMsg()), '_blank'); });
+/* Envio "para todos": o navegador só deixa abrir UMA aba por clique, então
+   abrimos um por vez — cada clique no botão é um novo gesto (nunca bloqueado). */
+let WA_LIST=[], WA_FILA=[], WA_FEITOS=0;
+function waIniciarTodos(){ WA_FILA=WA_LIST.slice(); WA_FEITOS=0; waProximo(); }
+function waProximo(){
+  const step=document.getElementById('w-step'); if(!step) return;
+  if(!WA_FILA.length){ step.innerHTML='<div style="font-size:12px;color:var(--success);padding:6px 0">✓ Todas as conversas foram abertas.</div>'; return; }
+  const e=WA_FILA.shift(); waOpen(e.num); WA_FEITOS++;
+  const total=WA_LIST.length;
+  if(WA_FILA.length){
+    const prox=WA_FILA[0];
+    step.innerHTML=`<div style="font-size:12px;color:var(--text-muted);margin:6px 0 4px">Aberta ${WA_FEITOS}/${total}. Confirme o envio na aba e volte.</div>
+      <button class="btn gold small" style="width:100%" onclick="waProximo()">➡️ Abrir próximo: ${_esc(prox.papel)} ${_esc(prox.nome||'')} (${total-WA_FILA.length+1}/${total})</button>`;
+  } else {
+    step.innerHTML='<div style="font-size:12px;color:var(--success);padding:6px 0">✓ Todas as conversas foram abertas. Confirme o envio em cada uma.</div>';
+  }
 }
 async function waCopiar(btn){
   try{ await navigator.clipboard.writeText(waMsg()); const t=btn.textContent; btn.textContent='✓ Copiado! Cole no grupo da equipe'; setTimeout(()=>btn.textContent=t,2200); }
@@ -296,21 +308,22 @@ async function enviarWhatsApp(){
   let contatos=[];
   try{ const r=await fetch(`${API}/rest/v1/rpc/cartao_contatos`,{method:'POST',headers:H,body:JSON.stringify({p_token:S.token,p_id:CUR.id})}); if(r.ok) contatos=await r.json()||[]; }catch(e){}
   contatos = Array.isArray(contatos)?contatos:[];
-  WA_NUMS = contatos.map(c=>waNum(c.telefone)).filter(Boolean);
+  WA_LIST = contatos.map(c=>({num:waNum(c.telefone), nome:c.nome||'', papel:c.papel||''})).filter(x=>x.num);
   const linhas=contatos.map(c=>{ const num=waNum(c.telefone);
     const sub = num ? _esc(c.telefone||'') : 'sem telefone no Efetivo';
     return `<button class="btn ${num?'gold':'ghost'} small" ${num?'':'disabled'} style="display:flex;width:100%;gap:10px;justify-content:space-between;align-items:center;margin-bottom:8px;${num?'':'opacity:.55;cursor:default'}" ${num?`onclick="waOpen('${num}')"`:''}>
       <span>${_esc(c.papel||'')}: ${_esc(c.nome||'—')}</span><span style="font-weight:600;white-space:nowrap">${sub}</span></button>`;
   }).join('');
-  const todos = WA_NUMS.length>=2
-    ? `<button class="btn gold small" style="width:100%;margin-bottom:8px" onclick="waTodos()">📣 Abrir conversa de todos (${WA_NUMS.length})</button>`
+  const todos = WA_LIST.length>=2
+    ? `<button class="btn gold small" style="width:100%;margin-bottom:6px" onclick="waIniciarTodos()">📣 Enviar para todos (${WA_LIST.length}) — um por vez</button>`
     : '';
   const copiar = `<button class="btn ghost small" style="width:100%;margin-top:6px" onclick="waCopiar(this)">📋 Copiar mensagem (p/ colar no grupo da equipe)</button>`;
   document.getElementById('w-lista').innerHTML = todos
+    + `<div id="w-step"></div>`
     + (linhas||'<div style="color:var(--text-hint);font-size:12.5px;margin-bottom:8px">Nenhum militar da equipe com telefone cadastrado no Efetivo.</div>')
     + `<button class="btn ghost small" style="width:100%;margin-top:6px" onclick="waOpen('')">Outro número / só o link…</button>`
     + copiar
-    + `<div style="font-size:11px;color:var(--text-hint);margin-top:10px">“Abrir conversa de todos” abre uma aba por militar — confirme o envio em cada uma. Se o navegador bloquear as abas, use os botões individuais ou “Copiar mensagem”.</div>`;
+    + `<div style="font-size:11px;color:var(--text-hint);margin-top:10px">O navegador só abre uma conversa por clique — por isso “Enviar para todos” abre <b>uma por vez</b> (toque em “Abrir próximo” após cada envio). Para disparo único de verdade, use “Copiar mensagem” no grupo da equipe.</div>`;
   document.getElementById('wmod').classList.add('show');
 }
 
