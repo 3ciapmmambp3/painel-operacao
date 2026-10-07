@@ -97,6 +97,12 @@
   </div>
 
   <div class="filters">
+    <div class="f"><label>Visão</label>
+      <div class="chips" id="f-meus">
+        <button class="chip on" data-m="">Todos (no escopo)</button>
+        <button class="chip" data-m="meus">🪪 Meus cartões</button>
+      </div>
+    </div>
     <div class="f"><label>Ano</label><select id="f-ano"></select></div>
     <div class="f"><label>Grupamento</label><select id="f-grup"><option value="">Todos</option></select></div>
     <div class="f"><label>Data</label><input type="date" id="f-data"></div>
@@ -169,6 +175,7 @@ if(!PODE_EMITIR){ document.getElementById('btn-novo').style.display='none'; }
 
 let TODOS=[], CUR=null;
 let fStatus='';
+let fMeus=false;
 
 // ano selector
 (function(){ const y=new Date().getFullYear(); const sel=document.getElementById('f-ano'); for(let a=y;a>=y-3;a--){ sel.insertAdjacentHTML('beforeend',`<option value="${a}">${a}</option>`); } sel.value=y; })();
@@ -186,7 +193,8 @@ document.getElementById('f-grup').addEventListener('change',render);
 document.getElementById('f-data').addEventListener('change',render);
 document.getElementById('f-equipe').addEventListener('input',render);
 document.querySelectorAll('#f-status .chip').forEach(c=>c.addEventListener('click',()=>{ document.querySelectorAll('#f-status .chip').forEach(x=>x.classList.remove('on')); c.classList.add('on'); fStatus=c.dataset.s; render(); }));
-function limparFiltros(){ document.getElementById('f-grup').value=''; document.getElementById('f-data').value=''; document.getElementById('f-equipe').value=''; fStatus=''; document.querySelectorAll('#f-status .chip').forEach((x,i)=>x.classList.toggle('on',i===0)); render(); }
+document.querySelectorAll('#f-meus .chip').forEach(c=>c.addEventListener('click',()=>{ document.querySelectorAll('#f-meus .chip').forEach(x=>x.classList.remove('on')); c.classList.add('on'); fMeus=(c.dataset.m==='meus'); render(); }));
+function limparFiltros(){ document.getElementById('f-grup').value=''; document.getElementById('f-data').value=''; document.getElementById('f-equipe').value=''; fStatus=''; fMeus=false; document.querySelectorAll('#f-status .chip').forEach((x,i)=>x.classList.toggle('on',i===0)); document.querySelectorAll('#f-meus .chip').forEach((x,i)=>x.classList.toggle('on',i===0)); render(); }
 
 async function carregar(){
   const ano=document.getElementById('f-ano').value;
@@ -200,10 +208,17 @@ async function carregar(){
     if(abrir){ const c=TODOS.find(x=>x.id===abrir); if(c) abrirDrawer(c); }
   }catch(e){ document.getElementById('lista').innerHTML=`<div class="empty">Erro ao carregar: ${_esc(e.message||e)}</div>`; }
 }
+const _meuMat=((S&&S.matricula)||'').replace(/\D/g,'');
+function _souEu(c){
+  if(!_meuMat) return false;
+  if(((c.criado_por_matricula||'').replace(/\D/g,''))===_meuMat) return true;
+  const campos=[c.comandante,c.motorista].concat(Array.isArray(c.patrulheiros)?c.patrulheiros:[]);
+  return campos.some(v=>((v||'').split(' - ')[0]||'').replace(/\D/g,'')===_meuMat);
+}
 function render(){
   const grp=document.getElementById('f-grup').value, data=document.getElementById('f-data').value, eq=document.getElementById('f-equipe').value.trim().toUpperCase();
   let lista=TODOS.filter(c=>
-    (!fStatus||c.status===fStatus) && (!grp||c.grupamento_id===grp) && (!data||String(c.data_empenho).slice(0,10)===data) && (!eq||(c.equipe||'').toUpperCase()===eq));
+    (!fMeus||_souEu(c)) && (!fStatus||c.status===fStatus) && (!grp||c.grupamento_id===grp) && (!data||String(c.data_empenho).slice(0,10)===data) && (!eq||(c.equipe||'').toUpperCase()===eq));
   if(!lista.length){ document.getElementById('lista').innerHTML='<div class="empty">Nenhum cartão encontrado.</div>'; return; }
   document.getElementById('lista').innerHTML=`<table><thead><tr>
     <th>Nº</th><th>Data</th><th>Turno</th><th>Eq.</th><th>Grupamento</th><th>Comandante</th><th>Dem.</th><th>Status</th></tr></thead><tbody>${

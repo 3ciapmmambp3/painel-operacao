@@ -145,6 +145,7 @@
     <div style="padding:15px 18px;border-bottom:1px solid var(--border);font-weight:800;color:var(--gold-light);display:flex;align-items:center;gap:8px">Demandas pendentes do grupamento<button type="button" onclick="fecharPendentes()" style="margin-left:auto;background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer">✕</button></div>
     <div style="padding:14px 18px">
       <div class="hint" id="pmsg" style="margin-bottom:10px"></div>
+      <input id="p-busca" placeholder="🔎 Buscar por número ou texto…" autocomplete="off" oninput="setPBusca(this.value)" style="width:100%;margin-bottom:10px">
       <div id="plista"></div>
       <div style="display:flex;gap:9px;justify-content:flex-end;margin-top:12px">
         <button type="button" class="btn ghost" onclick="fecharPendentes()">Cancelar</button>
@@ -418,9 +419,11 @@ async function abrirPendentes(){
   const res=await carregarPendentes();
   if(res.erro){ document.getElementById('plista').innerHTML=''; document.getElementById('pmsg').innerHTML='<span style="color:#ef9a9a">'+_esc(res.erro)+'</span>'; return; }
   if(!PEND.length){ document.getElementById('plista').innerHTML='<div class="hint">Nenhuma demanda pendente para este grupamento.</div>'; return; }
-  PFILTRO=''; PSEL.clear(); renderPendentes();
+  PFILTRO=''; PBUSCA=''; PSEL.clear(); const bb=document.getElementById('p-busca'); if(bb) bb.value=''; renderPendentes();
 }
 let PFILTRO='';
+let PBUSCA='';
+function setPBusca(v){ PBUSCA=v; renderPendentes(); }
 let PSEL=new Set();   // índices do PEND marcados (persistem ao trocar de aba)
 function togglePSel(i,on){ if(on) PSEL.add(i); else PSEL.delete(i); atualizaBtnAdd(); }
 function atualizaBtnAdd(){ const b=document.getElementById('btn-add-pend'); if(b) b.textContent = PSEL.size ? ('Adicionar selecionadas ('+PSEL.size+')') : 'Adicionar selecionadas'; }
@@ -433,7 +436,8 @@ function renderPendentes(){
     + `<button type="button" class="pchip${PFILTRO===''?' on':''}" onclick="setPFiltro('')">Todas (${PEND.length})</button>`
     + tipos.map(t=>`<button type="button" class="pchip${PFILTRO===t?' on':''}" onclick="setPFiltro('${String(t).replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')">${_esc(t)} (${PEND.filter(p=>p.tipoLabel===t).length})</button>`).join('')
     + `</div>`;
-  const lista=PEND.map((p,i)=>({p,i})).filter(x=>!PFILTRO||x.p.tipoLabel===PFILTRO);
+  const bq=_norm(PBUSCA||'');
+  const lista=PEND.map((p,i)=>({p,i})).filter(x=>(!PFILTRO||x.p.tipoLabel===PFILTRO) && (!bq || _norm((x.p.numero||'')+' '+(x.p.texto||'')+' '+(x.p.municipio||'')).includes(bq)));
   const itens = lista.length ? lista.map(({p,i})=>{ const dup=ja.has(p.tipo+':'+p.numero);
     return `<label style="display:flex;gap:10px;align-items:flex-start;border:1px solid var(--border-mid);border-radius:8px;padding:10px 12px;margin-bottom:8px;${dup?'opacity:.5':''}">
       <input type="checkbox" data-i="${i}" ${dup?'disabled':''} ${PSEL.has(i)?'checked':''} onchange="togglePSel(${i},this.checked)" style="margin-top:3px;width:auto">
@@ -458,25 +462,23 @@ async function addPendentes(){
   if(!DEM.length) addDemanda();
   renderDemandas();
   fecharPendentes();
-  // busca e anexa os arquivos do Drive (P3): planilha (MC/NUDEN/RI/Emergência)
-  // e também a Ficha/PDF da denúncia de balcão do painel (pasta den_balcao).
-  if(P3_URL){
-    for(const nd of novas){
-      const o=nd.origem||{}; const folderKey=o.folder;   // pasta no Drive P3 (planilha/antigas)
-      if(!folderKey || !P3_FOLDERS[folderKey] || !o.numero) continue;
-      const ph={nome:'Buscando arquivos no Drive…',status:'up',link:null}; nd.anexos=(nd.anexos||[]); nd.anexos.push(ph); renderDemandas();
-      const arqs=await buscarArquivosP3(folderKey, o.numero);
-      nd.anexos=nd.anexos.filter(a=>a!==ph);
-      // evita duplicar (mesmo link já presente)
-      const temLink=new Set(nd.anexos.map(a=>a.link));
-      const add=arqs.filter(a=>!temLink.has(a.link));
-      if(add.length) nd.anexos=nd.anexos.concat(add);
-      else if(!nd.anexos.some(a=>a.link)) nd.anexos.push({nome:'Nenhum arquivo localizado no Drive para esta demanda.',status:'err',link:null});
-      // MC: município vem no nome do PDF (ex.: "…_VIRGEM DA LAPA_CROQUI_MC.pdf")
-      if(folderKey==='mc' && !((nd.municipio||'').trim())){ const mm=_muniDoMC(arqs); if(mm) nd.municipio=mm; }
-      renderDemandas();
-    }
-  }
+  // (A busca de arquivos no Drive é MANUAL, por demanda — botão "Buscar arquivos
+  //  no Drive" em cada uma — porque a varredura do Drive é lenta.)
+}
+// Busca sob demanda os arquivos do Drive (P3) da demanda i e anexa.
+async function buscarDriveDemanda(i){
+  const d=DEM[i], o=d&&d.origem; if(!o||!o.folder||!P3_URL||!P3_FOLDERS[o.folder]||!o.numero) return;
+  d.anexos=d.anexos||[];
+  const ph={nome:'Buscando no Drive…',status:'up',link:null}; d.anexos.push(ph); refreshAnx(i);
+  const arqs=await buscarArquivosP3(o.folder, o.numero);
+  d.anexos=d.anexos.filter(a=>a!==ph);
+  const have=new Set(d.anexos.map(a=>a.link));
+  const add=arqs.filter(a=>!have.has(a.link));
+  if(add.length) d.anexos=d.anexos.concat(add);
+  else d.anexos.push({nome:'Nenhum arquivo encontrado no Drive.',status:'err',link:null});
+  // MC: completa o município pelo nome do PDF, se ainda estiver vazio
+  if(o.folder==='mc' && !((d.municipio||'').trim())){ const mm=_muniDoMC(arqs); if(mm){ d.municipio=mm; renderDemandas(); return; } }
+  refreshAnx(i);
 }
 /* ── Coordenadas no padrão da Consulta: formato (Decimal/GMD/GMS) + campos ── */
 function initCoord(d){
@@ -540,6 +542,7 @@ function renderDemandas(){
           <label class="btn ghost small" style="cursor:pointer;margin:0">📎 Anexar arquivo<input type="file" multiple style="display:none" onchange="subirAnexos(${i},this.files)"></label>
           <input id="lk-${i}" placeholder="…ou cole o link do Drive" style="flex:1;min-width:180px">
           <button type="button" class="btn ghost small" onclick="addLink(${i})">Adicionar link</button>
+          ${(d.origem&&d.origem.folder&&P3_URL&&P3_FOLDERS[d.origem.folder])?`<button type="button" class="btn ghost small" onclick="buscarDriveDemanda(${i})" title="Pode demorar — busca no Drive da unidade">🔎 Buscar arquivos no Drive</button>`:''}
         </div>
         <div class="anx-list" id="anx-${i}">${renderAnx(d.anexos,i)}</div>
       </div>

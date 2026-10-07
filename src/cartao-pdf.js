@@ -130,7 +130,7 @@
       .vazio{font-style:italic;color:#666}
       .rodape{margin-top:22px;border-top:1px solid #ddd;padding-top:10px;font-size:11.5px;color:#555}
       @media print{@page{margin:0} body{background:#fff} .vbar{display:none!important} .doc{max-width:none;margin:0;padding:16mm;border-radius:0;box-shadow:none}}
-      ${download?'.vbar{display:none} body{background:#fff} .doc{max-width:none;margin:0;border-radius:0;box-shadow:none;padding:16mm}':''}
+      ${download?'.vbar{display:none} body{background:#fff} .doc{max-width:none;margin:0;border-radius:0;box-shadow:none;padding:2mm}':''}
     </style></head><body>
       ${download?'':'<div class="vbar"><span class="vt">👁 Visualização do cartão — confira e clique em Imprimir / PDF</span><button class="pr" onclick="window.print()">🖨 Imprimir / PDF</button><button onclick="window.close()">Fechar</button></div>'}
       <div class="doc">
@@ -152,7 +152,7 @@
         ${obs?`<h4 class="sec">Observações</h4><table class="t">${obs}</table>`:''}
         <div class="rodape">Emitido por ${E(emitido||'—')} · ${fmtData(cartao.criado_em||cartao.created_at)}</div>
       </div>
-      ${download?`<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js"></script><script>(async function(){try{await (document.fonts?document.fonts.ready:0);}catch(e){}try{await Promise.all([].map.call(document.images,function(i){return i.complete?0:new Promise(function(r){i.onload=i.onerror=r;});}));}catch(e){}var el=document.querySelector('.doc');try{await html2pdf().set({margin:0,filename:${JSON.stringify(nomeArq(cartao))},image:{type:'jpeg',quality:0.98},html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff'},jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},pagebreak:{mode:['css','legacy'],avoid:'.demblock'}}).from(el).save();}catch(e){console.error('html2pdf',e);}try{parent.postMessage('cp-pdf-done','*');}catch(e){}})();</script>`:''}
+      ${download?`<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js"></script><script>(async function(){try{await (document.fonts?document.fonts.ready:0);}catch(e){}try{await Promise.all([].map.call(document.images,function(i){return i.complete?0:new Promise(function(r){i.onload=i.onerror=r;});}));}catch(e){}var el=document.querySelector('.doc');try{await html2pdf().set({margin:[12,10,14,10],filename:${JSON.stringify(nomeArq(cartao))},image:{type:'jpeg',quality:0.98},html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff'},jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},pagebreak:{mode:['css','legacy'],avoid:'.demblock'}}).from(el).save();}catch(e){console.error('html2pdf',e);}try{parent.postMessage('cp-pdf-done','*');}catch(e){}})();</script>`:''}
     </body></html>`;
   }
 
