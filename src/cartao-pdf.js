@@ -57,7 +57,7 @@
       + row('Viatura', cartao.viatura)
       + row('Comandante', cartao.comandante)
       + row('Motorista', cartao.motorista)
-      + (patr.length?rowBlk('Patrulheiro(s)', patr.join('\n')):'');
+      + (patr.length?rowH('Patrulheiro(s)', patr.map(E).join('<br>')):'');
 
     // Demandas (cada uma com sua seção; resposta aparece se atendida)
     const demandas=Array.isArray(cartao.demandas)?cartao.demandas:[];
