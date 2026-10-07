@@ -4750,36 +4750,13 @@ document.addEventListener('click', () => {
   const _redsPH=(typeof MASKS!=='undefined'&&MASKS.reds)?MASKS.reds.placeholder:'2026-030135292-001';
   const _atoPH =(typeof MASKS!=='undefined'&&MASKS.ato )?MASKS.ato.placeholder :'2026.07.01.362.0000466';
   const _splitAuto=v=>{ const s=String(v||'').trim(); if(!s) return {num:'',ano:''}; const m=s.match(/^(\d+)\s*\/\s*(\d{0,4})/); return m?{num:m[1],ano:m[2]||''}:{num:s.replace(/\D/g,''),ano:''}; };
-  function ensureCpStyle(){
-    if(document.getElementById('cpStyleBlock')) return;
-    const st=document.createElement('style'); st.id='cpStyleBlock';
-    st.textContent=`
-      #cpDems .cp-dcard{border:1px solid var(--border-mid);border-radius:10px;padding:12px 14px;margin-bottom:10px;background:var(--bg-card)}
-      #cpDems .cp-dhead{font-size:12px;font-weight:800;color:var(--gold-light);margin-bottom:6px;letter-spacing:.2px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-      #cpDems .cp-match{font-weight:600;color:var(--success);font-size:11px}
-      #cpDems .cp-dtext{font-size:12px;color:var(--text-muted);white-space:pre-wrap;margin-bottom:10px;line-height:1.4}
-      #cpDems .cp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-      #cpDems .cp-f{display:flex;flex-direction:column;gap:3px;min-width:0}
-      #cpDems .cp-f-wide{grid-column:1/-1}
-      #cpDems .cp-f>label{font-size:10px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:var(--text-hint)}
-      #cpDems .cp-f input,#cpDems .cp-f select{width:100%;box-sizing:border-box;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:7px 9px;color:var(--text-white);font-size:12.5px;transition:border-color .15s,box-shadow .15s}
-      #cpDems .cp-f input:focus,#cpDems .cp-f select:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 2px var(--gold-bg)}
-      #cpDems .cp-f input::placeholder{color:var(--text-hint);opacity:.7}
-      #cpDems .cp-auto{display:grid;grid-template-columns:1fr 74px;gap:6px}
-      #cpDems .cp-f select[data-k="atendida"]{font-weight:700}
-      #cpDems .cp-f select[data-k="atendida"][data-v="TOTAL"]{border-color:var(--success);color:var(--success)}
-      #cpDems .cp-f select[data-k="atendida"][data-v="PARCIAL"]{border-color:#e0a106;color:#f0b429}
-      #cpDems .cp-f select[data-k="atendida"][data-v="NAO"]{border-color:var(--danger);color:#ef9a9a}
-      @media(max-width:560px){#cpDems .cp-grid{grid-template-columns:1fr}}
-    `;
-    document.head.appendChild(st);
-  }
+  const _hoje=()=>{ try{ return (typeof hojeISO==='function')?hojeISO():''; }catch(e){ return ''; } };
   let ABERTOS=[], SELID='', root=null;
   const dataEl=document.getElementById('dataServico');
   function _inner(){ return root?root.querySelector('#cpInner'):null; }
   function _dems(){ return root?root.querySelector('#cpDems'):null; }
   // Encaixe no card "Resposta ao Cartão Programa" do relatório (modal de categoria).
-  window.cpBuildHTML=function(){ return '<div id="cpInner" style="font-size:13px;color:var(--text-muted)">Informe a data do serviço (Bloco 1) para carregar o cartão da sua equipe.</div>'; };
+  window.cpBuildHTML=function(){ return '<div id="cpInner" style="font-size:13px;color:var(--muted)">Informe a data do serviço (Bloco 1) para carregar o cartão da sua equipe.</div>'; };
   window.cpBindPanel=function(div){ root=div; carregar(); };
   window.__cpReload=function(){ carregar(); };
   async function carregar(){
@@ -4794,35 +4771,42 @@ document.addEventListener('click', () => {
   }
   function render(){
     const inner=_inner(); if(!inner) return;
-    if(!ABERTOS.length){ SELID=''; inner.innerHTML='<span style="color:var(--text-hint)">Nenhum cartão em aberto para esta data no seu grupamento. (Se não usa Cartão Programa, pode ignorar.)</span>'; return; }
+    if(!ABERTOS.length){ SELID=''; inner.innerHTML='<span style="color:var(--muted)">Nenhum cartão em aberto para esta data no seu grupamento. (Se não usa Cartão Programa, pode ignorar.)</span>'; return; }
     const opts=ABERTOS.map(c=>`<label style="display:flex;gap:8px;align-items:center;margin:4px 0;cursor:pointer"><input type="radio" name="cpSel" value="${esc(c.id)}" ${SELID===c.id?'checked':''} onchange="window.__cpSel(this.value)"> <span><b>Nº ${esc(c.numero)}</b> · Equipe ${esc(c.equipe||'—')} · ${dfmt(c.data_empenho)} — ${esc(c.grupamento_completo||c.grupamento_id)}</span></label>`).join('');
-    inner.innerHTML='<div style="font-size:12.5px;color:var(--text-muted);margin-bottom:8px">Selecione o cartão da sua equipe e preencha o resultado de cada demanda. Ao enviar o relatório, o cartão é atualizado automaticamente.</div>'+opts+'<div id="cpDems" style="margin-top:12px"></div>';
+    inner.innerHTML='<div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">Selecione o cartão da sua equipe e preencha o resultado de cada demanda. Ao enviar o relatório, o cartão é atualizado automaticamente.</div>'+opts+'<div id="cpDems" style="margin-top:12px"></div>';
     if(SELID&&!ABERTOS.some(c=>c.id===SELID)) SELID='';
     if(SELID) renderDems();
   }
   window.__cpSel=function(id){ SELID=id; renderDems(); };
   function renderDems(){
     const c=ABERTOS.find(x=>x.id===SELID); const box=_dems(); if(!box) return;
-    if(!c){ box.innerHTML=''; return; } const resp=c.respostas||{}; ensureCpStyle();
+    if(!c){ box.innerHTML=''; return; } const resp=c.respostas||{};
+    const maxD=_hoje()?(' max="'+_hoje()+'"'):'';
+    // Usa o MARKUP PADRÃO do relatório: .entry-block / .field / .row2 / .mini-list.
     const corpo=(c.demandas||[]).map((d,i)=>{const ord=esc(d.ordem||i+1);const r=resp[String(d.ordem)]||resp[String(i+1)]||{};const og=d.origem&&d.origem.numero?(' · '+esc((d.origem.label||'')+' '+d.origem.numero)):'';
-      const sit=esc(r.atendida||''); const au=_splitAuto(r.auto_infracao);
-      return '<div class="cp-dcard" data-ord="'+ord+'">'+
-        '<div class="cp-dhead">DEMANDA '+ord+(d.municipio?(' — '+esc(d.municipio)):'')+og+' <span class="cp-match"></span></div>'+
-        '<div class="cp-dtext">'+esc((d.texto||'').slice(0,220))+((d.texto||'').length>220?'…':'')+'</div>'+
-        '<div class="cp-grid">'+
-          '<div class="cp-f"><label>Situação</label><select data-k="atendida" data-v="'+sit+'" onchange="this.setAttribute(\'data-v\',this.value)"><option value="">—</option><option value="TOTAL"'+(r.atendida==='TOTAL'?' selected':'')+'>✅ Finalizado</option><option value="PARCIAL"'+(r.atendida==='PARCIAL'?' selected':'')+'>🟡 Em andamento (precisa diligência)</option><option value="NAO"'+(r.atendida==='NAO'?' selected':'')+'>⛔ Não atendido</option></select></div>'+
-          '<div class="cp-f"><label>Data de atendimento</label><input type="date" data-k="data_atendimento" value="'+esc((r.data_atendimento||'').slice(0,10))+'"></div>'+
-          '<div class="cp-f"><label>Nº REDS (BO/BOS/RAT)</label><input data-k="reds" data-mask="reds" inputmode="numeric" placeholder="'+esc(_redsPH)+'" value="'+esc(_fmtMask(r.reds,'reds'))+'"></div>'+
-          '<div class="cp-f"><label>Nº Auto de Infração</label><div class="cp-auto"><input data-k="auto_num" inputmode="numeric" placeholder="Número" value="'+esc(au.num)+'"><input data-k="auto_ano" inputmode="numeric" maxlength="4" placeholder="Ano" value="'+esc(au.ano)+'"></div></div>'+
-          '<div class="cp-f"><label>Nº Ato de Fiscalização</label><input data-k="ato_fiscalizacao" data-mask="ato" inputmode="numeric" placeholder="'+esc(_atoPH)+'" value="'+esc(_fmtMask(r.ato_fiscalizacao,'ato'))+'"></div>'+
-          '<div class="cp-f cp-f-wide"><label>Observações</label><input data-k="obs" value="'+esc(r.obs||'')+'"></div>'+
-        '</div></div>';}).join('') || '<span style="color:var(--text-hint)">Este cartão não tem demandas.</span>';
-    box.innerHTML='<button type="button" onclick="window.__cpPuxar()" style="margin-bottom:10px;background:var(--gold);color:#1a1000;border:none;font-weight:800;font-size:12px;padding:8px 14px;border-radius:8px;cursor:pointer">🔄 Puxar REDS/Auto/Ato dos cards do relatório</button>'
-      +'<div style="font-size:11px;color:var(--text-hint);margin-bottom:8px">Preencha os cards acima (NUDEN/MC/DDU/Balcão…) e clique em Puxar — o cartão casa pela demanda e traz os dados. Confirme a situação de cada uma.</div>'
+      const au=_splitAuto(r.auto_infracao);
+      return '<div class="entry-block" data-ord="'+ord+'">'+
+        '<span class="entry-num">DEMANDA '+ord+(d.municipio?(' — '+esc(d.municipio)):'')+og+'</span>'+
+        '<p class="field-note" style="margin-top:0 !important;margin-bottom:12px">'+esc((d.texto||'').slice(0,220))+((d.texto||'').length>220?'…':'')+' <span class="cp-match" style="font-style:normal;font-weight:700;color:var(--gold-text)"></span></p>'+
+        '<div class="row2">'+
+          '<div class="field"><label>Situação</label><select data-k="atendida"><option value="">—</option><option value="TOTAL"'+(r.atendida==='TOTAL'?' selected':'')+'>✅ Finalizado</option><option value="PARCIAL"'+(r.atendida==='PARCIAL'?' selected':'')+'>🟡 Em andamento (precisa diligência)</option><option value="NAO"'+(r.atendida==='NAO'?' selected':'')+'>⛔ Não atendido</option></select></div>'+
+          '<div class="field"><label>Data de atendimento</label><input type="date" data-k="data_atendimento"'+maxD+' value="'+esc((r.data_atendimento||'').slice(0,10))+'"></div>'+
+        '</div>'+
+        '<div class="row2">'+
+          '<div class="field"><label>Nº REDS (BO/BOS/RAT)</label><input type="text" data-k="reds" data-mask="reds" placeholder="'+esc(_redsPH)+'" value="'+esc(_fmtMask(r.reds,'reds'))+'"></div>'+
+          '<div class="field"><label>Nº Ato de Fiscalização</label><input type="text" data-k="ato_fiscalizacao" data-mask="ato" placeholder="'+esc(_atoPH)+'" value="'+esc(_fmtMask(r.ato_fiscalizacao,'ato'))+'"></div>'+
+        '</div>'+
+        '<div class="row2">'+
+          '<div class="field"><label>Nº Auto de Infração</label><div class="mini-list"><div class="mini-row"><input type="text" data-k="auto_num" placeholder="Número" value="'+esc(au.num)+'"><input type="text" data-k="auto_ano" placeholder="Ano" maxlength="4" value="'+esc(au.ano)+'" style="flex:0 0 90px;max-width:90px"></div></div></div>'+
+          '<div class="field"><label>Observações</label><input type="text" data-k="obs" value="'+esc(r.obs||'')+'"></div>'+
+        '</div>'+
+      '</div>';}).join('') || '<p class="placeholder-note">Este cartão não tem demandas.</p>';
+    box.innerHTML='<button type="button" class="btn-add" onclick="window.__cpPuxar()" style="margin-bottom:10px">🔄 Puxar REDS/Auto/Ato dos cards do relatório</button>'
+      +'<p class="field-note" style="margin-top:0 !important;margin-bottom:12px">Preencha os cards acima (NUDEN/MC/DDU/Balcão…) e clique em Puxar — o cartão casa pela demanda e traz os dados. Confirme a situação de cada uma.</p>'
       +corpo;
     // máscaras REDS/Ato (mesmas do relatório) + só dígitos no Número/Ano do auto
     if(typeof bindMasksIn==='function'){ try{ bindMasksIn(box); }catch(e){} }
-    box.querySelectorAll('.cp-auto input').forEach(inp=>{ if(inp._cpNum) return; inp._cpNum=1; inp.setAttribute('inputmode','numeric'); inp.addEventListener('input',()=>{ inp.value=inp.value.replace(/\D/g,''); }); });
+    box.querySelectorAll('input[data-k="auto_num"],input[data-k="auto_ano"]').forEach(inp=>{ if(inp._cpNum) return; inp._cpNum=1; inp.setAttribute('inputmode','numeric'); inp.addEventListener('input',()=>{ inp.value=inp.value.replace(/\D/g,''); }); });
     cpPuxarDosCards();   // já tenta puxar com o que estiver preenchido
   }
   const _n2=s=>String(s==null?'':s).toUpperCase().replace(/[^A-Z0-9]/g,'');
