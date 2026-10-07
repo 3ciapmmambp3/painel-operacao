@@ -203,7 +203,13 @@ let ROSTER=[];
 const _norm=s=>(s||'').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
 const _maskLive=v=>{const d=(v||'').toString().replace(/\D/g,'').slice(0,7);if(d.length<=3)return d;if(d.length<=6)return d.slice(0,3)+'.'+d.slice(3);return d.slice(0,3)+'.'+d.slice(3,6)+'-'+d.slice(6);};
 const _linha=m=>`${fmtPM(m.matricula)} - ${m.posto_graduacao||''} - ${m.nome_completo||m.nome_guerra||''}`.replace(/\s+-\s+-\s+/g,' - ').replace(/\s+/g,' ').trim();
-(async function(){ try{ const r=await fetch(`${API}/rest/v1/rpc/tta_listar_militares`,{method:'POST',headers:H,body:JSON.stringify({p_token:S.token})}); ROSTER=await r.json()||[]; }catch(e){} })();
+let ROSTER_ERRO='';
+(async function(){ try{
+  const r=await fetch(`${API}/rest/v1/rpc/tta_listar_militares`,{method:'POST',headers:H,body:JSON.stringify({p_token:S.token})});
+  const j=await r.json();
+  ROSTER = Array.isArray(j) ? j : [];
+  if(!Array.isArray(j)){ ROSTER_ERRO = (j && j.message) ? j.message : 'Não foi possível carregar o efetivo.'; console.warn('roster', j); }
+}catch(e){ ROSTER=[]; ROSTER_ERRO='Falha ao carregar o efetivo.'; } })();
 
 const pick={
   _hi:{},
@@ -214,7 +220,7 @@ const pick={
     let lista=ROSTER;
     if(q){ const qd=q.replace(/\D/g,''); lista=lista.filter(m=>_norm(_linha(m)).includes(q)||(qd&&(m.matricula||'').replace(/\D/g,'').includes(qd))); }
     lista=lista.slice(0,30);
-    if(!ROSTER.length){ drop.innerHTML='<div class="mil-opt empty">Carregando efetivo…</div>'; drop.classList.add('open'); return; }
+    if(!ROSTER.length){ drop.innerHTML='<div class="mil-opt empty">'+_esc(ROSTER_ERRO||'Carregando efetivo…')+'</div>'; drop.classList.add('open'); return; }
     if(!lista.length){ drop.classList.remove('open'); drop.innerHTML=''; return; }
     drop.innerHTML=lista.map(m=>`<div class="mil-opt" data-v="${_esc(_linha(m))}" onclick="pick.sel('${id}',this)">${_esc((m.posto_graduacao||'')+' '+(m.nome_completo||m.nome_guerra||''))}<small>Nº PM ${_esc(fmtPM(m.matricula))} · ${_esc((m.grupamento_id||'').split('/').pop().trim()||'—')}</small></div>`).join('');
     drop.classList.add('open');
@@ -319,7 +325,16 @@ function mapsRota(coord){ return (window.Coord?Coord.mapsRota(coord):''); }
 let PEND=[];
 const SHEET_SCRIPT_URL="https://script.google.com/macros/s/AKfycbwhyngzhpznhiidO0D4Dju9-nr8N-3bPR4il683btr_FH0fH8A6HlA7f9oV4nOh-MDj/exec";
 // tipos da planilha (sourceKey → rótulo). DEN_BALCAO/REQUISICAO ficam de fora (já vêm do painel/Supabase).
-const SHEET_TIPOS={ MC:'Monitoramento Contínuo (MC)', NUDEN:'NUDEN', RI:'Força Tarefa Previncêndio (FTP/RI)', DDU181:'DDU 181', EMERGENCIA:'Emergência Ambiental' };
+// sourceKey da planilha → { rótulo, tipo (origem), folder (chave em P3_FOLDERS p/ anexos) }
+const SHEET_TIPOS={
+  MC:{label:'Monitoramento Contínuo (MC)', tipo:'mc', folder:'mc'},
+  NUDEN:{label:'NUDEN', tipo:'nuden', folder:'nuden'},
+  RI:{label:'Força Tarefa Previncêndio (FTP/RI)', tipo:'ri', folder:'ri'},
+  DDU181:{label:'DDU 181', tipo:'ddu181', folder:null},
+  EMERGENCIA:{label:'Emergência Ambiental', tipo:'emergencia', folder:'emergencia'},
+  DEN_BALCAO:{label:'Denúncia (antiga/Drive)', tipo:'balcao_drive', folder:'den_balcao'},
+  REQUISICAO:{label:'Requisição (antiga/Drive)', tipo:'req_drive', folder:'den_balcao'}
+};
 // Pastas por tipo no Drive da conta 3ciapmmamb.p3 (busca de PDF/KML por chave)
 const P3_FOLDERS={ mc:'1vZRSSJQzQrVxDW8fBemqGGG_1B1bdSsV', nuden:'1JO_llTri4rw5pY7bkV3uC1FECQL-zf6s', ri:'1LwYWj4MQF110dOrygv8HWk2DTwKiZwVm', emergencia:'1z0ZceiGhQbyRq2bp2RKP1gmAzCgZmgpN', den_balcao:'14x1aFthJJw_crfg1uz3l_47_djtIFaLE' };
 const P3_URL=(typeof CARTAO_P3_DRIVE_URL!=='undefined')?CARTAO_P3_DRIVE_URL:'';
@@ -343,20 +358,23 @@ async function carregarPendentes(){
   if(gpr){ try{
     const q=`${API}/rest/v1/denuncias?select=id,numero,tipo,tema,objeto,descricao,municipio,endereco,referencia,situacao,anexos&ativo=is.true&gp_responsavel=eq.${encodeURIComponent(gpr)}&situacao=in.(PENDENTE,%22EM%20ANDAMENTO%22)&order=created_at.desc`;
     const r=await fetch(q,{headers:H}); if(!r.ok) throw new Error(await r.text());
-    (await r.json()||[]).forEach(p=>{
+    const arr=await r.json();
+    (Array.isArray(arr)?arr:[]).forEach(p=>{
       const anx=(Array.isArray(p.anexos)?p.anexos:[]).map(a=>({nome:a.nome||'anexo',mime:a.mime||null,tamanho:a.tamanho||null,link:a.link||a.web_view_link||null,id:a.path||a.file_id||null,status:'ok'})).filter(a=>a.link);
-      PEND.push({tipo:p.tipo, tipoLabel:_tipoLbl(p.tipo), numero:p.numero, texto:textoDaDemanda(p), resumo:((p.tema?p.tema+' — ':'')+(p.descricao||p.objeto||'')), municipio:p.municipio||'', endereco:p.endereco||p.referencia||'', situacao:p.situacao||'', anexos:anx, fonte:'painel', id:p.id});
+      // Ficha oficial gerada na hora (link; abre logado no painel)
+      if(p.id) anx.push({nome:'Ficha da demanda (PDF)', link:'denuncias.html?ficha='+p.id, status:'ok'});
+      PEND.push({tipo:p.tipo, tipoLabel:_tipoLbl(p.tipo), numero:p.numero, texto:textoDaDemanda(p), resumo:((p.tema?p.tema+' — ':'')+(p.descricao||p.objeto||'')), municipio:p.municipio||'', endereco:p.endereco||p.referencia||'', situacao:p.situacao||'', anexos:anx, fonte:'painel', folder:null, id:p.id});
     });
   }catch(e){ erroP='Painel: '+(e.message||e); } }
   // 2) Planilha de Grupamento de Atuação — MC/NUDEN/RI/DDU181/Emergência do grupamento
   try{
     const refs=(typeof SbAuth!=='undefined')?await SbAuth.fetchReferencias(SHEET_SCRIPT_URL):null;
     if(refs){ const alvo=_normGrp(grup);
-      Object.keys(SHEET_TIPOS).forEach(key=>{ (refs[key]||[]).forEach(it=>{
+      Object.keys(SHEET_TIPOS).forEach(key=>{ const cfg=SHEET_TIPOS[key]; (refs[key]||[]).forEach(it=>{
         const v=(it.value||'').trim(); if(!v||v==='#N/A'||/nº\s*000\//i.test(v)) return;
         if(_normGrp(it.fracao||'')!==alvo) return;
-        const lbl=SHEET_TIPOS[key];
-        PEND.push({tipo:key.toLowerCase(), tipoLabel:lbl, numero:v, texto:lbl+' — '+v, resumo:'', municipio:(it.fracao||'').split('/').pop().trim(), endereco:'', situacao:'', anexos:[], fonte:'planilha', id:null});
+        let num=v; if(cfg.tipo==='balcao_drive'||cfg.tipo==='req_drive'){ const mm=v.match(/\d{1,4}\s*\/\s*\d{4}/); if(mm) num=mm[0].replace(/\s/g,''); }
+        PEND.push({tipo:cfg.tipo, tipoLabel:cfg.label, numero:num, texto:cfg.label+' — '+v, resumo:'', municipio:(it.fracao||'').split('/').pop().trim(), endereco:'', situacao:'', anexos:[], fonte:'planilha', folder:cfg.folder||null, id:null});
       }); });
     }
   }catch(e){ if(!PEND.length) erroP=(erroP?erroP+' · ':'')+'Planilha: '+(e.message||e); }
@@ -405,7 +423,7 @@ async function addPendentes(){
   DEM = DEM.filter(d=>!_demandaVazia(d));
   const novas=[];
   sel.forEach(i=>{ const p=PEND[i]; if(!p) return;
-    const nd={texto:p.texto, municipio:p.municipio||'', endereco:p.endereco||'', coordenadas:'', observacao:'', anexos:(Array.isArray(p.anexos)?p.anexos.slice():[]), origem:{tipo:p.tipo, numero:p.numero, id:p.id, fonte:p.fonte, label:p.tipoLabel}};
+    const nd={texto:p.texto, municipio:p.municipio||'', endereco:p.endereco||'', coordenadas:'', observacao:'', anexos:(Array.isArray(p.anexos)?p.anexos.slice():[]), origem:{tipo:p.tipo, numero:p.numero, id:p.id, fonte:p.fonte, label:p.tipoLabel, folder:p.folder||null}};
     DEM.push(nd); novas.push(nd); });
   if(!DEM.length) addDemanda();
   renderDemandas();
@@ -414,9 +432,7 @@ async function addPendentes(){
   // e também a Ficha/PDF da denúncia de balcão do painel (pasta den_balcao).
   if(P3_URL){
     for(const nd of novas){
-      const o=nd.origem||{}; let folderKey=null;
-      if(o.fonte==='planilha') folderKey=o.tipo;           // mc/nuden/ri/ddu181/emergencia (arquivos no Drive)
-      // denúncias/requisições do PAINEL (novas) não têm arquivo no Drive — a Ficha é gerada na hora.
+      const o=nd.origem||{}; const folderKey=o.folder;   // pasta no Drive P3 (planilha/antigas)
       if(!folderKey || !P3_FOLDERS[folderKey] || !o.numero) continue;
       const ph={nome:'Buscando arquivos no Drive…',status:'up',link:null}; nd.anexos=(nd.anexos||[]); nd.anexos.push(ph); renderDemandas();
       const arqs=await buscarArquivosP3(folderKey, o.numero);
