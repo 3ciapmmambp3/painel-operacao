@@ -29,8 +29,9 @@
 
   function _assets(){ try{ return (global.location&&global.location.origin)?global.location.origin:''; }catch(e){ return ''; } }
 
-  // Monta o HTML da ficha.
-  function html(cartao){
+  // Monta o HTML da ficha. download=true remove a barra e injeta o html2pdf
+  // que salva o arquivo automaticamente (usado no "Baixar PDF").
+  function html(cartao, download){
     const base=_assets();
     const row=(l,v)=>`<tr><td class="l">${E(l)}</td><td>${(v==null||v==='')?'—':E(v)}</td></tr>`;
     const rowH=(l,h)=>`<tr><td class="l">${E(l)}</td><td>${h||'—'}</td></tr>`;
@@ -115,10 +116,9 @@
       .vazio{font-style:italic;color:#666}
       .rodape{margin-top:22px;border-top:1px solid #ddd;padding-top:10px;font-size:11.5px;color:#555}
       @media print{@page{margin:0} body{background:#fff} .vbar{display:none!important} .doc{max-width:none;margin:0;padding:16mm;border-radius:0;box-shadow:none}}
+      ${download?'.vbar{display:none} body{background:#fff} .doc{max-width:none;margin:0;border-radius:0;box-shadow:none;padding:16mm}':''}
     </style></head><body>
-      <div class="vbar"><span class="vt">👁 Visualização do cartão — confira e clique em Imprimir / PDF</span>
-        <button class="pr" onclick="window.print()">🖨 Imprimir / PDF</button>
-        <button onclick="window.close()">Fechar</button></div>
+      ${download?'':'<div class="vbar"><span class="vt">👁 Visualização do cartão — confira e clique em Imprimir / PDF</span><button class="pr" onclick="window.print()">🖨 Imprimir / PDF</button><button onclick="window.close()">Fechar</button></div>'}
       <div class="doc">
         <div class="view-brasoes">
           <img src="${base}/assets/escudo-cpe.png" alt="CPE" onerror="this.style.display='none'">
@@ -138,15 +138,37 @@
         ${obs?`<h4 class="sec">Observações</h4><table class="t">${obs}</table>`:''}
         <div class="rodape">Emitido por ${E(emitido||'—')} · ${fmtData(cartao.criado_em||cartao.created_at)}</div>
       </div>
+      ${download?`<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js"></script><script>(async function(){try{await (document.fonts?document.fonts.ready:0);}catch(e){}try{await Promise.all([].map.call(document.images,function(i){return i.complete?0:new Promise(function(r){i.onload=i.onerror=r;});}));}catch(e){}var el=document.querySelector('.doc');try{await html2pdf().set({margin:0,filename:${JSON.stringify(nomeArq(cartao))},image:{type:'jpeg',quality:0.98},html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff'},jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},pagebreak:{mode:['css','legacy']}}).from(el).save();}catch(e){console.error('html2pdf',e);}try{parent.postMessage('cp-pdf-done','*');}catch(e){}})();</script>`:''}
     </body></html>`;
   }
 
-  // Abre a janela de visualização/impressão (equivale ao "Baixar PDF").
-  function baixar(cartao){
+  // Abre a visualização (nova janela) p/ conferir e imprimir/salvar.
+  function imprimir(cartao){
     const w=global.open('', '_blank');
-    if(!w){ alert('Permita pop-ups para gerar o PDF do cartão.'); return false; }
-    w.document.write(html(cartao)); w.document.close();
+    if(!w){ alert('Permita pop-ups para visualizar/imprimir o cartão.'); return false; }
+    w.document.write(html(cartao, false)); w.document.close();
     return true;
+  }
+
+  // Baixa o PDF direto (sem diálogo): renderiza a ficha num iframe oculto e o
+  // html2pdf salva o arquivo com o nome padrão. Fallback = abre a visualização.
+  function baixar(cartao){
+    let ifr;
+    try{
+      ifr=document.createElement('iframe');
+      ifr.setAttribute('aria-hidden','true');
+      ifr.style.cssText='position:fixed;left:-10000px;top:0;width:820px;height:1400px;border:0;opacity:0';
+      document.body.appendChild(ifr);
+      let done=false;
+      const cleanup=()=>{ if(done) return; done=true; try{global.removeEventListener('message',onmsg);}catch(e){} setTimeout(()=>{ try{ifr.remove();}catch(e){} },400); };
+      const onmsg=e=>{ if(e && e.data==='cp-pdf-done') cleanup(); };
+      global.addEventListener('message', onmsg);
+      const d=ifr.contentDocument||(ifr.contentWindow&&ifr.contentWindow.document);
+      if(!d){ ifr.remove(); return imprimir(cartao); }
+      d.open(); d.write(html(cartao, true)); d.close();
+      setTimeout(cleanup, 25000);
+      return true;
+    }catch(e){ try{ if(ifr) ifr.remove(); }catch(_){} return imprimir(cartao); }
   }
 
   // WhatsApp: manda o texto + o LINK público do cartão (o PDF sai pelo botão
@@ -160,5 +182,5 @@
     return 'link';
   }
 
-  global.CartaoPDF = { baixar, whatsapp, html, nomeArq, tituloArq, statusLabel, atendidaLabel };
+  global.CartaoPDF = { baixar, imprimir, whatsapp, html, nomeArq, tituloArq, statusLabel, atendidaLabel };
 })(window);
