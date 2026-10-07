@@ -24,6 +24,7 @@
     return membros.length ? ('CARTÃO PROGRAMA - '+membros.join(', ')+(data?(' '+data):'')) : ('CARTÃO PROGRAMA '+(cartao.numero||''));
   }
   function nomeArq(cartao){ return tituloArq(cartao).replace(/[\\/:*?"<>|]+/g,' ').replace(/\s+/g,' ').trim()+'.pdf'; }
+  function mapsRota(coord){ const n=String(coord||'').match(/-?\d+(?:\.\d+)?/g); if(!n||n.length<2) return ''; return 'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(n[0]+','+n[1]); }
   function statusLabel(s){ return STLAB[s]||(s||'—'); }
   function atendidaLabel(a){ return ATLAB[a]||'—'; }
 
@@ -61,9 +62,14 @@
       const r=respostas[String(d.ordem)]||respostas[String(i+1)]||null;
       const anx=(d.anexos||[]).filter(a=>a&&a.link);
       const anexoCell=anx.length?anx.map(a=>`<a href="${String(a.link).replace(/"/g,'&quot;')}" target="_blank" rel="noopener">${E(a.nome||'anexo')}</a>`).join('<br>'):'';
+      const rota = mapsRota(d.coordenadas);
+      const coordCell = d.coordenadas
+        ? (rota?`<a href="${rota}" target="_blank" rel="noopener">Rota no Google Maps</a> (${E(d.coordenadas)})`:E(d.coordenadas))
+        : '';
       let corpo = rowBlk('Descrição', d.texto)
         + (d.endereco?row('Endereço / referência', d.endereco):'')
         + (d.municipio?row('Município', d.municipio):'')
+        + (d.coordenadas?rowH('Coordenadas', coordCell):'')
         + (anx.length?rowH('Anexo', anexoCell):'');
       let resp = (r&&r.atendida)
         ? row('Situação', atendidaLabel(r.atendida))
