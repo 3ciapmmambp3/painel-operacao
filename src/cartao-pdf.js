@@ -1,207 +1,164 @@
 /* ══════════════════════════════════════════════════════════════════════
-   cartao-pdf.js — geração do PDF do Cartão Programa + envio por WhatsApp.
-   Compartilhado por cartao-programa.html (listagem) e cartao-publico.html
-   (view pública). Sem dependências além do jsPDF 2.5.1 (UMD), carregado sob
-   demanda do mesmo CDN já usado no painel. Documento com anexos CLICÁVEIS
-   (doc.textWithLink) — padrão de PDF do painel.
+   cartao-pdf.js — Ficha do Cartão Programa (impressão/PDF) + WhatsApp.
+   Mesmo padrão da Ficha de Denúncia de Balcão (denuncias.html → gerarPDF):
+   abre uma nova janela com o documento branco (brasões + dourado, fontes
+   Playfair/Inter), o usuário clica em "Imprimir / PDF" e o Chrome salva.
+   O nome padrão do arquivo no Chrome = <title> do documento, então o título
+   já sai como "CARTÃO PROGRAMA - <militares> <dd Mmm aaaa>". Anexos são links
+   clicáveis (o Chrome preserva os hiperlinks no PDF). Sem biblioteca externa.
+   Compartilhado por cartao-programa.html e cartao-publico.html.
    ══════════════════════════════════════════════════════════════════════ */
 (function(global){
   'use strict';
-  const GOLD = [155, 138, 92];
-  const DARK = [26, 16, 0];
-  const INK  = [33, 33, 33];
-  const MUTED = [110, 110, 110];
-  const CDN = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+  const STLAB={EMITIDO:'Emitido',EM_ATENDIMENTO:'Em atendimento',CONCLUIDO:'Concluído'};
+  const ATLAB={TOTAL:'Atendida (total)',PARCIAL:'Atendida (parcial)',NAO:'Não atendida'};
+  const MES3=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
-  function _esc(s){ return (s==null?'':String(s)); }
-  function _data(iso){ if(!iso) return '—'; const d=new Date(String(iso).slice(0,10)+'T00:00:00'); return isNaN(d)?String(iso):d.toLocaleDateString('pt-BR'); }
-
-  function carregarJsPDF(){
-    return new Promise((res, rej)=>{
-      if(global.jspdf && global.jspdf.jsPDF) return res(global.jspdf.jsPDF);
-      const s=document.createElement('script'); s.src=CDN;
-      s.onload=()=>{ (global.jspdf && global.jspdf.jsPDF) ? res(global.jspdf.jsPDF) : rej(new Error('jsPDF não carregou')); };
-      s.onerror=()=>rej(new Error('Falha ao carregar o jsPDF (sem internet?)'));
-      document.head.appendChild(s);
-    });
+  const E = v => (v==null?'':String(v)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const fmtData = iso => { if(!iso) return '—'; const d=new Date(String(iso).slice(0,10)+'T00:00:00'); return isNaN(d)?String(iso):d.toLocaleDateString('pt-BR'); };
+  function dataLonga(iso){ if(!iso) return ''; const d=new Date(String(iso).slice(0,10)+'T00:00:00'); return isNaN(d)?'':(String(d.getDate()).padStart(2,'0')+' '+MES3[d.getMonth()]+' '+d.getFullYear()); }
+  function membroArq(s){ const t=String(s||'').trim(); if(!t || /^-*\s*n[ãa]o h[áa]/i.test(t)) return ''; const p=t.split(' - ').map(x=>x.trim()); return (p.length>=3?(p[1]+' '+p.slice(2).join(' ')):t).trim(); }
+  function tituloArq(cartao){
+    const membros=[cartao.comandante,cartao.motorista].concat(Array.isArray(cartao.patrulheiros)?cartao.patrulheiros:[]).map(membroArq).filter(Boolean);
+    const data=dataLonga(cartao.data_empenho);
+    return membros.length ? ('CARTÃO PROGRAMA - '+membros.join(', ')+(data?(' '+data):'')) : ('CARTÃO PROGRAMA '+(cartao.numero||''));
   }
+  function nomeArq(cartao){ return tituloArq(cartao).replace(/[\\/:*?"<>|]+/g,' ').replace(/\s+/g,' ').trim()+'.pdf'; }
+  function statusLabel(s){ return STLAB[s]||(s||'—'); }
+  function atendidaLabel(a){ return ATLAB[a]||'—'; }
 
-  // Normaliza nomes de status p/ rótulo amigável.
-  function statusLabel(s){
-    return ({EMITIDO:'Emitido', EM_ATENDIMENTO:'Em atendimento', CONCLUIDO:'Concluído'})[s] || (s||'—');
-  }
-  function atendidaLabel(a){
-    return ({TOTAL:'Atendida (total)', PARCIAL:'Atendida (parcial)', NAO:'Não atendida'})[a] || '—';
-  }
+  function _assets(){ try{ return (global.location&&global.location.origin)?global.location.origin:''; }catch(e){ return ''; } }
 
-  // Constrói e devolve o doc jsPDF já montado.
-  async function build(cartao){
-    const JsPDF = await carregarJsPDF();
-    const doc = new JsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
-    const PW = doc.internal.pageSize.getWidth();   // 210
-    const PH = doc.internal.pageSize.getHeight();   // 297
-    const M = 14;                                   // margem
-    const W = PW - M*2;
-    let y = M;
+  // Monta o HTML da ficha.
+  function html(cartao){
+    const base=_assets();
+    const row=(l,v)=>`<tr><td class="l">${E(l)}</td><td>${(v==null||v==='')?'—':E(v)}</td></tr>`;
+    const rowH=(l,h)=>`<tr><td class="l">${E(l)}</td><td>${h||'—'}</td></tr>`;
+    const rowBlk=(l,v)=>`<tr><td class="bl" colspan="2"><span class="bl-l">${E(l)}</span><div class="bl-v">${(v==null||v==='')?'—':E(v)}</div></td></tr>`;
+    const patr=(Array.isArray(cartao.patrulheiros)?cartao.patrulheiros:[]).filter(Boolean);
+    const respostas=cartao.respostas||{};
+    const gp = cartao.grupamento_completo || cartao.grupamento_id || '';
+    const opTxt = [cartao.operacao,cartao.operacao_descr].filter(Boolean).join(' — ');
 
-    const demandas = Array.isArray(cartao.demandas) ? cartao.demandas : [];
-    const respostas = cartao.respostas || {};
+    // Dados do serviço
+    let dados = row('Grupamento', gp)
+      + row('Data de empenho', fmtData(cartao.data_empenho))
+      + row('Turno de serviço', cartao.turno)
+      + row('Equipe', cartao.equipe)
+      + row('Tipo de serviço', cartao.tipo_servico)
+      + row('Operação', opTxt)
+      + row('Viatura', cartao.viatura)
+      + row('Comandante', cartao.comandante)
+      + row('Motorista', cartao.motorista)
+      + (patr.length?rowBlk('Patrulheiro(s)', patr.join('\n')):'');
 
-    function ensure(h){ if(y + h > PH - 16){ doc.addPage(); y = M; } }
-    function rule(){ doc.setDrawColor(...GOLD); doc.setLineWidth(0.5); doc.line(M, y, PW-M, y); }
-    function kv(label, value, x, w){
-      doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...MUTED);
-      doc.text(String(label).toUpperCase(), x, y);
-      doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(...INK);
-      const lines = doc.splitTextToSize(_esc(value||'—'), w);
-      doc.text(lines, x, y+4.2);
-      return 4.2 + lines.length*4.4;
-    }
-
-    // ── Cabeçalho ──
-    doc.setFillColor(...DARK); doc.rect(0,0,PW,26,'F');
-    doc.setTextColor(...GOLD); doc.setFont('helvetica','bold'); doc.setFontSize(13);
-    doc.text('CARTÃO PROGRAMA', M, 11);
-    doc.setTextColor(230,230,230); doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
-    doc.text('Polícia Militar de Minas Gerais · 3ª Cia PM de Meio Ambiente', M, 17);
-    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(...GOLD);
-    doc.text('Nº '+_esc(cartao.numero||'—'), PW-M, 11, {align:'right'});
-    doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(230,230,230);
-    doc.text(statusLabel(cartao.status), PW-M, 17, {align:'right'});
-    y = 34;
-
-    // ── Dados do serviço (grade 2 col) ──
-    const colW = (W-6)/2, xL=M, xR=M+colW+6;
-    let hL = kv('Grupamento', cartao.grupamento_completo || cartao.grupamento_id, xL, colW);
-    let hR = kv('Data de empenho', _data(cartao.data_empenho)+'   ·   Turno: '+_esc(cartao.turno||'—'), xR, colW);
-    y += Math.max(hL,hR)+2;
-    ensure(14);
-    hL = kv('Equipe', cartao.equipe||'—', xL, colW);
-    hR = kv('Tipo de serviço', cartao.tipo_servico||'—', xR, colW);
-    y += Math.max(hL,hR)+2;
-    ensure(14);
-    const opTxt = [cartao.operacao, cartao.operacao_descr].filter(Boolean).join(' — ') || '—';
-    hL = kv('Operação', opTxt, xL, colW);
-    hR = kv('Viatura', cartao.viatura||'—', xR, colW);
-    y += Math.max(hL,hR)+3;
-
-    // ── Equipe empregada ──
-    ensure(10); rule(); y+=5;
-    doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(...GOLD);
-    doc.text('EQUIPE EMPREGADA', M, y); y+=5;
-    const patr = Array.isArray(cartao.patrulheiros) ? cartao.patrulheiros.filter(Boolean) : [];
-    let h1 = kv('Comandante', cartao.comandante, xL, colW);
-    let h2 = kv('Motorista', cartao.motorista, xR, colW);
-    y += Math.max(h1,h2)+2;
-    if(patr.length){ ensure(12); const hh = kv('Patrulheiro(s)', patr.join('  ·  '), xL, W); y += hh+2; }
-
-    // ── Demandas ──
-    ensure(10); rule(); y+=5;
-    doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(...GOLD);
-    doc.text('DEMANDAS PARA ATENDIMENTO', M, y); y+=6;
-
-    if(!demandas.length){
-      doc.setFont('helvetica','italic'); doc.setFontSize(9.5); doc.setTextColor(...MUTED);
-      doc.text('Nenhuma demanda lançada.', M, y); y+=6;
-    }
+    // Demandas (cada uma com sua seção; resposta aparece se atendida)
+    const demandas=Array.isArray(cartao.demandas)?cartao.demandas:[];
+    let demHtml='';
     demandas.forEach((d,i)=>{
-      const ord = _esc(d.ordem || (i+1));
-      const r = respostas[String(d.ordem)] || respostas[String(i+1)] || null;
-      ensure(26);
-      // título da demanda
-      doc.setFillColor(245,242,232); doc.setDrawColor(...GOLD); doc.setLineWidth(0.3);
-      doc.roundedRect(M, y, W, 7, 1, 1, 'FD');
-      doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...DARK);
-      doc.text('DEMANDA '+ord + (d.municipio?('  —  '+_esc(d.municipio)):''), M+3, y+4.8);
-      y+=10;
-      // texto
-      doc.setFont('helvetica','normal'); doc.setFontSize(9.3); doc.setTextColor(...INK);
-      const tl = doc.splitTextToSize(_esc(d.texto||'—'), W);
-      tl.forEach(line=>{ ensure(5); doc.text(line, M, y); y+=4.6; });
-      if(d.endereco){ ensure(5); doc.setFontSize(8.5); doc.setTextColor(...MUTED); doc.text('Endereço/ref.: '+_esc(d.endereco), M, y); y+=4.6; }
-      // anexos clicáveis
-      const anx = Array.isArray(d.anexos) ? d.anexos.filter(a=>a && a.link) : [];
-      if(anx.length){
-        ensure(5); doc.setFontSize(8.5); doc.setTextColor(...MUTED); doc.text('Anexos:', M, y);
-        let ax = M+14;
-        anx.forEach((a,ai)=>{
-          const label = (a.nome ? _esc(a.nome) : ('anexo '+(ai+1)));
-          const tw = doc.getTextWidth(label)+4;
-          if(ax+tw > PW-M){ y+=5; ax=M+14; ensure(5); }
-          doc.setTextColor(40,90,160);
-          doc.textWithLink('• '+label, ax, y, {url:a.link});
-          ax += tw+4;
-        });
-        y+=5.5;
-      }
-      // resposta (se já atendida)
-      if(r && r.atendida){
-        ensure(10);
-        doc.setFillColor(238,246,238); doc.setDrawColor(70,150,70); doc.setLineWidth(0.3);
-        const parts = [
-          atendidaLabel(r.atendida),
-          r.reds? ('REDS: '+_esc(r.reds)) : '',
-          r.auto_infracao? ('Auto: '+_esc(r.auto_infracao)) : '',
-          r.ato_fiscalizacao? ('Ato Fisc.: '+_esc(r.ato_fiscalizacao)) : '',
-          r.data_atendimento? ('Data: '+_data(r.data_atendimento)) : ''
-        ].filter(Boolean).join('   ·   ');
-        const rl = doc.splitTextToSize('✔ '+parts + (r.obs?('\nObs.: '+_esc(r.obs)):''), W-6);
-        const bh = rl.length*4.4 + 4;
-        doc.roundedRect(M, y, W, bh, 1, 1, 'FD');
-        doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(40,110,40);
-        doc.text(rl, M+3, y+5);
-        y += bh+2;
-      }
-      y+=3;
+      const ord=d.ordem||(i+1);
+      const r=respostas[String(d.ordem)]||respostas[String(i+1)]||null;
+      const anx=(d.anexos||[]).filter(a=>a&&a.link);
+      const anexoCell=anx.length?anx.map(a=>`<a href="${String(a.link).replace(/"/g,'&quot;')}" target="_blank" rel="noopener">${E(a.nome||'anexo')}</a>`).join('<br>'):'';
+      let corpo = rowBlk('Descrição', d.texto)
+        + (d.endereco?row('Endereço / referência', d.endereco):'')
+        + (d.municipio?row('Município', d.municipio):'')
+        + (anx.length?rowH('Anexo', anexoCell):'');
+      let resp = (r&&r.atendida)
+        ? row('Situação', atendidaLabel(r.atendida))
+          + row('Data do atendimento', fmtData(r.data_atendimento))
+          + row('Nº REDS (BO/BOS/RAT)', r.reds)
+          + row('Nº Auto de Infração', r.auto_infracao)
+          + row('Nº Ato de Fiscalização', r.ato_fiscalizacao)
+          + (r.obs?rowBlk('Observações da resposta', r.obs):'')
+        : '';
+      demHtml += `<h4 class="sec">Demanda ${E(ord)}${d.municipio?(' <small>— '+E(d.municipio)+'</small>'):''}</h4><table class="t">${corpo}</table>`
+        + (resp?`<table class="t resp">${resp}</table>`:'<div class="pend">Pendente de atendimento</div>');
     });
+    if(!demandas.length) demHtml='<p class="vazio">Nenhuma demanda lançada.</p>';
 
-    // ── Observações / alteração de escala ──
-    const obs = cartao.observacoes_equipe;
-    if(obs || cartao.alterou_escala){
-      ensure(12); rule(); y+=5;
-      doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(...GOLD);
-      doc.text('OBSERVAÇÕES', M, y); y+=5;
-      if(cartao.alterou_escala){ const hh=kv('Alteração de escala', cartao.motivo_alteracao||'Sim', M, W); y+=hh+2; }
-      if(obs){ doc.setFont('helvetica','normal'); doc.setFontSize(9.3); doc.setTextColor(...INK);
-        doc.splitTextToSize(_esc(obs), W).forEach(l=>{ ensure(5); doc.text(l, M, y); y+=4.6; }); }
-    }
+    // Observações
+    let obs='';
+    if(cartao.alterou_escala) obs += rowBlk('Alteração de escala', cartao.motivo_alteracao||'Sim');
+    if(cartao.observacoes_equipe) obs += rowBlk('Observações para a equipe', cartao.observacoes_equipe);
 
-    // ── Rodapé em todas as páginas ──
-    const emitido = [cartao.criado_por_posto, cartao.criado_por_nome].filter(Boolean).join(' ');
-    const pags = doc.internal.getNumberOfPages();
-    for(let p=1;p<=pags;p++){
-      doc.setPage(p);
-      doc.setDrawColor(...GOLD); doc.setLineWidth(0.3); doc.line(M, PH-12, PW-M, PH-12);
-      doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(...MUTED);
-      doc.text('Emitido por '+(emitido||'—')+'  ·  '+_data(cartao.criado_em||cartao.created_at), M, PH-8);
-      doc.text(`Pág. ${p}/${pags}`, PW-M, PH-8, {align:'right'});
-    }
-    return doc;
+    const emitido=[cartao.criado_por_posto,cartao.criado_por_nome].filter(Boolean).join(' ');
+    const nrTexto='CARTÃO PROGRAMA Nº '+(cartao.numero||'')+' — 3ª CIA PM MAmb';
+
+    return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>${E(tituloArq(cartao))}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+      *{box-sizing:border-box} body{font-family:'Inter',Arial,Helvetica,sans-serif;color:#000;margin:0;padding:0;background:#e9ece9}
+      .vbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:10px;background:#f3efe6;border-bottom:1px solid #d8cfb6;padding:10px 16px}
+      .vbar .vt{flex:1;font-weight:700;font-size:13px;color:#6a5a2e}
+      .vbar button{font:inherit;font-size:13px;font-weight:700;padding:7px 14px;border-radius:7px;border:1px solid #d8cfb6;background:#fff;color:#4a3f20;cursor:pointer}
+      .vbar button.pr{background:#9b8a5c;color:#fff;border-color:#9b8a5c}
+      .doc{background:#fff;color:#000;max-width:820px;margin:22px auto;padding:30px 34px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.12)}
+      .doc *{color:#000}
+      .view-brasoes{display:flex;align-items:flex-start;justify-content:center;gap:20px;text-align:center;border-bottom:2px solid #9b8a5c;padding-bottom:16px;margin-bottom:22px}
+      .view-brasoes img{height:74px;width:auto;flex-shrink:0;margin-top:20px}
+      .view-titulo{flex:1;min-width:0;padding-top:20px}
+      .view-titulo .vt-orgao{font-size:12.5px;font-weight:800;line-height:1.55;text-transform:uppercase;letter-spacing:.02em}
+      .view-titulo h1{font-family:'Playfair Display',serif;font-size:24px;margin:1.1em 0 0;letter-spacing:.02em}
+      .view-titulo .vt-id{font-size:11.5px;font-weight:700;margin-top:8px;letter-spacing:.02em}
+      h4.sec{font-family:'Playfair Display',serif;font-size:16px;margin:24px 0 8px}
+      h4.sec small{font-family:'Inter',sans-serif;font-weight:500;font-size:12px;color:#6a5a2e}
+      table.t{width:100%;border-collapse:collapse;margin-bottom:6px;table-layout:fixed}
+      table.t td{padding:6px 10px;font-size:14px;line-height:1.45;border:0;border-bottom:1px solid #ddd;vertical-align:top;word-wrap:break-word}
+      table.t td.l{width:38%;color:#666;font-weight:600}
+      table.t td a{color:#0645ad;text-decoration:underline;word-break:break-all}
+      table.t.resp td{background:#f3f7f3;border-bottom-color:#d7e4d7}
+      table.t td.bl{padding:8px 10px}
+      table.t td.bl .bl-l{display:block;color:#666;font-weight:600;font-size:13px;margin-bottom:3px}
+      table.t td.bl .bl-v{white-space:pre-wrap;word-wrap:break-word;line-height:1.5;text-align:justify}
+      .pend{font-size:12.5px;color:#9a7b00;font-style:italic;margin:2px 0 8px}
+      .vazio{font-style:italic;color:#666}
+      .rodape{margin-top:22px;border-top:1px solid #ddd;padding-top:10px;font-size:11.5px;color:#555}
+      @media print{@page{margin:0} body{background:#fff} .vbar{display:none!important} .doc{max-width:none;margin:0;padding:16mm;border-radius:0;box-shadow:none}}
+    </style></head><body>
+      <div class="vbar"><span class="vt">👁 Visualização do cartão — confira e clique em Imprimir / PDF</span>
+        <button class="pr" onclick="window.print()">🖨 Imprimir / PDF</button>
+        <button onclick="window.close()">Fechar</button></div>
+      <div class="doc">
+        <div class="view-brasoes">
+          <img src="${base}/assets/escudo-cpe.png" alt="CPE" onerror="this.style.display='none'">
+          <div class="view-titulo">
+            <div class="vt-orgao">Comando de Policiamento Especializado</div>
+            <div class="vt-orgao">Batalhão de Polícia Militar de Meio Ambiente</div>
+            <div class="vt-orgao">3ª Companhia de Polícia Militar de Meio Ambiente</div>
+            <h1>CARTÃO PROGRAMA</h1>
+            <div class="vt-id">${E(nrTexto)} · ${E(statusLabel(cartao.status))}</div>
+          </div>
+          <img src="${base}/assets/brasao-bpmmamb.png" alt="BPM MAmb" onerror="this.style.display='none'">
+        </div>
+        <h4 class="sec">Dados do serviço</h4>
+        <table class="t">${dados}</table>
+        <h4 class="sec" style="border-bottom:1px solid #9b8a5c;padding-bottom:4px">Demandas para atendimento</h4>
+        ${demHtml}
+        ${obs?`<h4 class="sec">Observações</h4><table class="t">${obs}</table>`:''}
+        <div class="rodape">Emitido por ${E(emitido||'—')} · ${fmtData(cartao.criado_em||cartao.created_at)}</div>
+      </div>
+    </body></html>`;
   }
 
-  function nomeArq(cartao){ return 'Cartao-Programa-'+String(cartao.numero||'').replace(/\//g,'-')+'.pdf'; }
+  // Abre a janela de visualização/impressão (equivale ao "Baixar PDF").
+  function baixar(cartao){
+    const w=global.open('', '_blank');
+    if(!w){ alert('Permita pop-ups para gerar o PDF do cartão.'); return false; }
+    w.document.write(html(cartao)); w.document.close();
+    return true;
+  }
 
-  async function baixar(cartao){ const doc = await build(cartao); doc.save(nomeArq(cartao)); }
-  async function blob(cartao){ const doc = await build(cartao); return doc.output('blob'); }
-
-  // Envio por WhatsApp: no celular compartilha o PRÓPRIO PDF (Web Share API);
-  // onde não dá, abre o WhatsApp com o LINK público do cartão.
-  async function whatsapp(cartao, publicUrl){
+  // WhatsApp: manda o texto + o LINK público do cartão (o PDF sai pelo botão
+  // "Baixar PDF" → Salvar como PDF). Abre o app com a mensagem pronta.
+  function whatsapp(cartao, publicUrl){
     const texto = `*CARTÃO PROGRAMA Nº ${cartao.numero||''}*\n`+
       `${cartao.grupamento_completo||cartao.grupamento_id||''}\n`+
-      `Data: ${_data(cartao.data_empenho)} · Turno: ${cartao.turno||'—'} · Equipe ${cartao.equipe||'—'}\n`+
-      (publicUrl ? `\nAbra o cartão: ${publicUrl}` : '');
-    try{
-      const b = await blob(cartao);
-      const file = new File([b], nomeArq(cartao), {type:'application/pdf'});
-      if(navigator.canShare && navigator.canShare({files:[file]})){
-        await navigator.share({ files:[file], title:'Cartão Programa '+(cartao.numero||''), text:texto });
-        return 'share';
-      }
-    }catch(e){ if(e && e.name==='AbortError') return 'abort'; /* cai p/ link */ }
-    window.open('https://wa.me/?text='+encodeURIComponent(texto), '_blank');
+      `Data: ${fmtData(cartao.data_empenho)} · Turno: ${cartao.turno||'—'} · Equipe ${cartao.equipe||'—'}`+
+      (publicUrl ? `\n\nAbra o cartão: ${publicUrl}` : '');
+    global.open('https://wa.me/?text='+encodeURIComponent(texto), '_blank');
     return 'link';
   }
 
-  global.CartaoPDF = { build, baixar, blob, whatsapp, carregarJsPDF, statusLabel, atendidaLabel, nomeArq };
+  global.CartaoPDF = { baixar, whatsapp, html, nomeArq, tituloArq, statusLabel, atendidaLabel };
 })(window);
