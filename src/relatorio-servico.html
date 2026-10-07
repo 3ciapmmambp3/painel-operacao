@@ -4787,8 +4787,13 @@ document.addEventListener('click', () => {
     if(!SELID) return; const S=(typeof getSessaoAtual==='function')?getSessaoAtual():null; if(!S||!S.token) return;
     const box=document.getElementById('cpDems'); const respostas={};
     if(box) box.querySelectorAll('[data-ord]').forEach(el=>{ const ord=el.getAttribute('data-ord');const o={};el.querySelectorAll('[data-k]').forEach(inp=>{const v=(inp.value||'').trim();if(v)o[inp.getAttribute('data-k')]=v;});if(o.atendida)respostas[ord]=o; });
-    // mesmo sem respostas, grava o vínculo do relatório (p/ o botão Ver/Imprimir no cartão)
-    try{ await fetch(`${API}/rest/v1/rpc/cartao_atender`,{method:'POST',headers:H,body:JSON.stringify({p_token:S.token,p_id:SELID,p_respostas:respostas,p_relatorio:relId||null})}); }catch(e){ console.warn('[cartao] atender',e); }
+    // mesmo sem respostas, grava o vínculo do relatório (p/ o botão Ver/Imprimir no cartão).
+    // Fallback: se o banco ainda estiver sem o arg p_relatorio (db/131), refaz sem ele.
+    const call=(body)=>fetch(`${API}/rest/v1/rpc/cartao_atender`,{method:'POST',headers:H,body:JSON.stringify(body)});
+    try{
+      let r=await call({p_token:S.token,p_id:SELID,p_respostas:respostas,p_relatorio:relId||null});
+      if(!r.ok) await call({p_token:S.token,p_id:SELID,p_respostas:respostas});
+    }catch(e){ console.warn('[cartao] atender',e); }
   };
   if(dataEl) dataEl.addEventListener('change', carregar);
   setTimeout(carregar, 500);
