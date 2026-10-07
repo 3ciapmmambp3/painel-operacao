@@ -326,15 +326,33 @@ let PEND=[];
 const SHEET_SCRIPT_URL="https://script.google.com/macros/s/AKfycbwhyngzhpznhiidO0D4Dju9-nr8N-3bPR4il683btr_FH0fH8A6HlA7f9oV4nOh-MDj/exec";
 // tipos da planilha (sourceKey → rótulo). DEN_BALCAO/REQUISICAO ficam de fora (já vêm do painel/Supabase).
 // sourceKey da planilha → { rótulo, tipo (origem), folder (chave em P3_FOLDERS p/ anexos) }
+// aba = nome da aba na planilha de Grupamento de Atuação; muniIdx = índice da
+// coluna do município (A=0,B=1,C=2,D=3) — C em todas, D só na Requisição.
 const SHEET_TIPOS={
-  MC:{label:'Monitoramento Contínuo (MC)', tipo:'mc', folder:'mc'},
-  NUDEN:{label:'NUDEN', tipo:'nuden', folder:'nuden'},
-  RI:{label:'Força Tarefa Previncêndio (FTP/RI)', tipo:'ri', folder:'ri'},
-  DDU181:{label:'DDU 181', tipo:'ddu181', folder:null},
-  EMERGENCIA:{label:'Emergência Ambiental', tipo:'emergencia', folder:'emergencia'},
-  DEN_BALCAO:{label:'Denúncia (antiga/Drive)', tipo:'balcao_drive', folder:'den_balcao'},
-  REQUISICAO:{label:'Requisição (antiga/Drive)', tipo:'req_drive', folder:'den_balcao'}
+  MC:{label:'Monitoramento Contínuo (MC)', tipo:'mc', folder:'mc', aba:'MC', muniIdx:2},
+  NUDEN:{label:'NUDEN', tipo:'nuden', folder:'nuden', aba:'NUDEN', muniIdx:2},
+  RI:{label:'Força Tarefa Previncêndio (FTP/RI)', tipo:'ri', folder:'ri', aba:'RI', muniIdx:2},
+  DDU181:{label:'DDU 181', tipo:'ddu181', folder:null, aba:'DDU181', muniIdx:2},
+  EMERGENCIA:{label:'Emergência Ambiental', tipo:'emergencia', folder:'emergencia', aba:'EMERGENCIA', muniIdx:2},
+  DEN_BALCAO:{label:'Denúncia (antiga/Drive)', tipo:'balcao_drive', folder:'den_balcao', aba:'DEN_BALCAO', muniIdx:2},
+  REQUISICAO:{label:'Requisição (antiga/Drive)', tipo:'req_drive', folder:'den_balcao', aba:'REQUISIÇAO', muniIdx:3}
 };
+// Município vem da planilha (coluna C/D) lida direto via Sheets API (a referência
+// do Apps Script só devolve value+fração). Mapa: sourceKey → { norm(value): município }.
+const GRUP_SHEET_ID='1eUNODeJfzBHsb-7b0P2mwtsdCLakxqtqzxszt0Y2zFM';
+const GRUP_API_KEY='AIzaSyCBbKDtyNO2RmtpYNWipjC0OAQ07GFnbKU';
+let MUNI_MAP={};
+const _muniReady=(async function(){
+  try{
+    const keys=Object.keys(SHEET_TIPOS);
+    const ranges=keys.map(k=>{ const cfg=SHEET_TIPOS[k]; const col=(cfg.muniIdx>=3)?'D':'C'; return 'ranges='+encodeURIComponent(cfg.aba+'!A2:'+col); });
+    const url=`https://sheets.googleapis.com/v4/spreadsheets/${GRUP_SHEET_ID}/values:batchGet?key=${GRUP_API_KEY}&`+ranges.join('&');
+    const res=await fetch(url); if(!res.ok) return; const j=await res.json();
+    (j.valueRanges||[]).forEach((vr,idx)=>{ const k=keys[idx]; const cfg=SHEET_TIPOS[k]; const mm={};
+      (vr.values||[]).forEach(row=>{ const v=(row[0]||'').toString().trim(); const mu=(row[cfg.muniIdx]||'').toString().trim(); if(v&&mu) mm[_norm(v)]=mu; });
+      MUNI_MAP[k]=mm; });
+  }catch(e){ console.warn('municipios', e); }
+})();
 // Pastas por tipo no Drive da conta 3ciapmmamb.p3 (busca de PDF/KML por chave)
 const P3_FOLDERS={ mc:'1vZRSSJQzQrVxDW8fBemqGGG_1B1bdSsV', nuden:'1JO_llTri4rw5pY7bkV3uC1FECQL-zf6s', ri:'1LwYWj4MQF110dOrygv8HWk2DTwKiZwVm', emergencia:'1z0ZceiGhQbyRq2bp2RKP1gmAzCgZmgpN', den_balcao:'14x1aFthJJw_crfg1uz3l_47_djtIFaLE' };
 const P3_URL=(typeof CARTAO_P3_DRIVE_URL!=='undefined')?CARTAO_P3_DRIVE_URL:'';
@@ -379,12 +397,13 @@ async function carregarPendentes(){
   // 2) Planilha de Grupamento de Atuação — MC/NUDEN/RI/DDU181/Emergência do grupamento
   try{
     const refs=(typeof SbAuth!=='undefined')?await SbAuth.fetchReferencias(SHEET_SCRIPT_URL):null;
+    try{ await _muniReady; }catch(e){}   // garante o mapa de municípios (coluna C/D da planilha)
     if(refs){ const alvo=_normGrp(grup);
-      Object.keys(SHEET_TIPOS).forEach(key=>{ const cfg=SHEET_TIPOS[key]; (refs[key]||[]).forEach(it=>{
+      Object.keys(SHEET_TIPOS).forEach(key=>{ const cfg=SHEET_TIPOS[key]; const muniMapa=MUNI_MAP[key]||{}; (refs[key]||[]).forEach(it=>{
         const v=(it.value||'').trim(); if(!v||v==='#N/A'||/nº\s*000\//i.test(v)) return;
         if(_normGrp(it.fracao||'')!==alvo) return;
         let num=v; if(cfg.tipo==='balcao_drive'||cfg.tipo==='req_drive'){ const mm=v.match(/\d{1,4}\s*\/\s*\d{4}/); if(mm) num=mm[0].replace(/\s/g,''); }
-        const muni=(it.municipio||it.cidade||it.MUNICIPIO||'').toString().trim(); // usado se a planilha passar a devolver o município
+        const muni=(muniMapa[_norm(v)]||'').trim();   // município da coluna C/D da planilha
         PEND.push({tipo:cfg.tipo, tipoLabel:cfg.label, numero:num, texto:cfg.label+' — '+v, resumo:'', municipio:muni, endereco:'', situacao:'', anexos:[], fonte:'planilha', folder:cfg.folder||null, id:null});
       }); });
     }
