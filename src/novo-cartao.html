@@ -9,6 +9,7 @@
   <title>Novo Cartão Programa — 3ª Cia PM MAmb</title>
   <link rel="stylesheet" href="styles/global.css">
   <script src="auth.js"></script>
+  <script src="frota-grupamentos.js"></script>
   <style>
     body{padding-bottom:70px;background:var(--bg-page)}
     .wrap{max-width:900px;margin:16px auto 0;padding:0 16px}
@@ -153,20 +154,22 @@ function _grafiaGP(s){return String(s==null?'':s).replace(/MARILIERIA/gi,'MARLIE
 function erro(m){const el=document.getElementById('msg');el.className='msg err show';el.innerHTML=m;el.scrollIntoView({behavior:'smooth',block:'center'});}
 function okmsg(m){const el=document.getElementById('msg');el.className='msg ok show';el.innerHTML=m;}
 
-/* ── Grupamentos (optgroups: Cia / Pelotões / GP) — padrão do painel ── */
+/* ── Grupamento: optgroups por pelotão (padrão do painel, via FrotaGrup).
+   value = grupamento_completo (a lotação), p/ o escopo do cartão casar. ── */
+function grupOptions(){
+  const L=(window.FrotaGrup && FrotaGrup.lista)?FrotaGrup.lista:[];
+  const byPel={}; L.forEach(x=>{ (byPel[x.pel]=byPel[x.pel]||[]).push(x); });
+  return Object.keys(byPel).map(Number).sort((a,b)=>a-b).map(p=>{
+    const opts=byPel[p].map(x=>`<option value="${_esc(x.completo)}">${_esc((x.gp!=null?x.gp+'º Gp · ':'')+_grafiaGP(x.cidade))}</option>`).join('');
+    return `<optgroup label="${p}º Pelotão">${opts}</optgroup>`;
+  }).join('');
+}
 const _grupReady = (async function(){
   try{
-    const r=await fetch(`${API}/rest/v1/rpc/grupamentos_listar`,{method:'POST',headers:H,body:'{}'});
-    const rows=await r.json()||[];
-    const gpOpts=rows.map(g=>`<option value="${_esc(g.grupamento_completo)}">${_esc(_grafiaGP(g.grupamento_completo))}</option>`).join('');
-    const pel={};let cia='';
-    rows.forEach(g=>{const m=/^(\d+)\s*GP\s*\/\s*(\d+)\s*PEL\s*\/\s*(.+?)\s*\/\s*(.+)$/i.exec(g.grupamento_completo||'');if(!m)return;const gpN=+m[1],pelN=+m[2],ciaTxt=m[3].trim(),cidade=m[4].trim();if(!cia)cia=ciaTxt;if(!pel[pelN]||gpN<pel[pelN].gp)pel[pelN]={gp:gpN,label:`${pelN} PEL / ${ciaTxt} / ${cidade}`};});
-    const pelOpts=Object.keys(pel).map(Number).sort((a,b)=>a-b).map(n=>`<option value="${_esc(pel[n].label)}">${_esc(pel[n].label)}</option>`).join('');
-    const ciaOpt=cia?`<option value="${_esc(cia)}">${_esc(cia)}</option>`:'';
-    document.getElementById('grupamento').insertAdjacentHTML('beforeend',
-      (ciaOpt?`<optgroup label="Companhia">${ciaOpt}</optgroup>`:'')+(pelOpts?`<optgroup label="Pelotões">${pelOpts}</optgroup>`:'')+`<optgroup label="Grupamentos (GP)">${gpOpts}</optgroup>`);
-    // pré-seleciona o grupamento do usuário, se bater
-    if(S.grupamento_id){ const sel=document.getElementById('grupamento'); [...sel.options].forEach(o=>{ if(o.value && o.value.toUpperCase()===S.grupamento_id.toUpperCase()) sel.value=o.value; }); }
+    if(window.FrotaGrup) await FrotaGrup.carregar(API, AKEY);
+    const sel=document.getElementById('grupamento');
+    sel.innerHTML='<option value="">Selecione…</option>'+grupOptions();
+    if(S.grupamento_id){ [...sel.options].forEach(o=>{ if(o.value && o.value.toUpperCase()===String(S.grupamento_id).toUpperCase()) sel.value=o.value; }); }
   }catch(e){ console.error('grupamentos',e); }
 })();
 
