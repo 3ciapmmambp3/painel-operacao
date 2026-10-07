@@ -71,6 +71,7 @@
         ? (rota?`<a href="${rota}" target="_blank" rel="noopener">Rota no Google Maps</a> (${E(d.coordenadas)})`:E(d.coordenadas))
         : '';
       let corpo = rowBlk('Descrição', d.texto)
+        + (d.observacao?rowBlk('Observação', d.observacao):'')
         + (d.endereco?row('Endereço / referência', d.endereco):'')
         + (d.municipio?row('Município', d.municipio):'')
         + (d.coordenadas?rowH('Coordenadas', coordCell):'')
@@ -83,9 +84,10 @@
           + row('Nº Ato de Fiscalização', r.ato_fiscalizacao)
           + (r.obs?rowBlk('Observações da resposta', r.obs):'')
         : '';
-      const orig = d.origem && d.origem.numero ? ((d.origem.tipo==='requisicao'?'Requisição':'Denúncia')+' '+d.origem.numero) : '';
-      demHtml += `<h4 class="sec">Demanda ${E(ord)}${d.municipio?(' <small>— '+E(d.municipio)+'</small>'):''}${orig?(' <small>· '+E(orig)+'</small>'):''}</h4><table class="t">${corpo}</table>`
-        + (resp?`<table class="t resp">${resp}</table>`:'<div class="pend">Pendente de atendimento</div>');
+      const orig = d.origem && d.origem.numero ? ((d.origem.label||(d.origem.tipo==='requisicao'?'Requisição':'Denúncia'))+' '+d.origem.numero) : '';
+      demHtml += `<div class="demblock"><h4 class="sec">Demanda ${E(ord)}${d.municipio?(' <small>— '+E(d.municipio)+'</small>'):''}${orig?(' <small>· '+E(orig)+'</small>'):''}</h4><table class="t">${corpo}</table>`
+        + (resp?`<table class="t resp">${resp}</table>`:'<div class="pend">Pendente de atendimento</div>')
+        + `</div>`;
     });
     if(!demandas.length) demHtml='<p class="vazio">Nenhuma demanda lançada.</p>';
 
@@ -113,6 +115,7 @@
       .view-titulo .vt-orgao{font-size:12.5px;font-weight:800;line-height:1.55;text-transform:uppercase;letter-spacing:.02em}
       .view-titulo h1{font-family:'Playfair Display',serif;font-size:24px;margin:1.1em 0 0;letter-spacing:.02em}
       .view-titulo .vt-id{font-size:11.5px;font-weight:700;margin-top:8px;letter-spacing:.02em}
+      .demblock{break-inside:avoid;page-break-inside:avoid}
       h4.sec{font-family:'Playfair Display',serif;font-size:16px;margin:24px 0 8px}
       h4.sec small{font-family:'Inter',sans-serif;font-weight:500;font-size:12px;color:#6a5a2e}
       table.t{width:100%;border-collapse:collapse;margin-bottom:6px;table-layout:fixed}
@@ -149,7 +152,7 @@
         ${obs?`<h4 class="sec">Observações</h4><table class="t">${obs}</table>`:''}
         <div class="rodape">Emitido por ${E(emitido||'—')} · ${fmtData(cartao.criado_em||cartao.created_at)}</div>
       </div>
-      ${download?`<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js"></script><script>(async function(){try{await (document.fonts?document.fonts.ready:0);}catch(e){}try{await Promise.all([].map.call(document.images,function(i){return i.complete?0:new Promise(function(r){i.onload=i.onerror=r;});}));}catch(e){}var el=document.querySelector('.doc');try{await html2pdf().set({margin:0,filename:${JSON.stringify(nomeArq(cartao))},image:{type:'jpeg',quality:0.98},html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff'},jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},pagebreak:{mode:['css','legacy']}}).from(el).save();}catch(e){console.error('html2pdf',e);}try{parent.postMessage('cp-pdf-done','*');}catch(e){}})();</script>`:''}
+      ${download?`<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js"></script><script>(async function(){try{await (document.fonts?document.fonts.ready:0);}catch(e){}try{await Promise.all([].map.call(document.images,function(i){return i.complete?0:new Promise(function(r){i.onload=i.onerror=r;});}));}catch(e){}var el=document.querySelector('.doc');try{await html2pdf().set({margin:0,filename:${JSON.stringify(nomeArq(cartao))},image:{type:'jpeg',quality:0.98},html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff'},jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},pagebreak:{mode:['css','legacy'],avoid:'.demblock'}}).from(el).save();}catch(e){console.error('html2pdf',e);}try{parent.postMessage('cp-pdf-done','*');}catch(e){}})();</script>`:''}
     </body></html>`;
   }
 
