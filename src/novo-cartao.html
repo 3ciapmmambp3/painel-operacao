@@ -29,6 +29,7 @@
     input:focus,select:focus,textarea:focus{border-color:var(--gold)}
     textarea{resize:vertical;min-height:70px}
     .hint{font-size:10.5px;color:var(--text-hint)}
+    .lot{display:block;font-size:10.5px;color:var(--gold-light);margin-top:3px;min-height:12px}
     .pchip{font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:20px;border:1px solid var(--border-mid);background:transparent;color:var(--text-muted);cursor:pointer}
     .pchip.on{background:var(--gold-bg);border-color:var(--gold-border);color:var(--gold-light)}
     .coordrow{display:flex;gap:6px;align-items:center;margin-bottom:6px;font-size:12px;color:var(--text-muted);flex-wrap:wrap}
@@ -101,11 +102,10 @@
   <div class="card">
     <h2>Equipe empregada</h2>
     <div class="grid">
-      <div class="f col2 milbox"><label>Comandante da equipe</label><input id="comandante" placeholder="Busque por nome ou Nº PM" autocomplete="off" oninput="pick.filtrar('comandante')" onkeydown="pick.key(event,'comandante')"><div class="mil-drop" id="drop-comandante"></div></div>
-      <div class="f col2"><label>Grupamento de lotação (do comandante)</label><input id="grupamento_lotacao" readonly placeholder="— preenche ao escolher o comandante" style="color:var(--gold-light);border-style:dashed"></div>
-      <div class="f col2 milbox"><label>Motorista</label><input id="motorista" placeholder="Busque por nome ou Nº PM" autocomplete="off" oninput="pick.filtrar('motorista')" onkeydown="pick.key(event,'motorista')"><div class="mil-drop" id="drop-motorista"></div></div>
+      <div class="f col2 milbox"><label>Comandante da equipe</label><input id="comandante" placeholder="Busque por nome ou Nº PM" autocomplete="off" oninput="pick.filtrar('comandante');lotHint('comandante');attTotal()" onkeydown="pick.key(event,'comandante')"><div class="mil-drop" id="drop-comandante"></div><span class="lot" id="lot-comandante"></span></div>
+      <div class="f col2 milbox"><label>Motorista</label><input id="motorista" placeholder="Busque por nome ou Nº PM" autocomplete="off" oninput="pick.filtrar('motorista');lotHint('motorista');attTotal()" onkeydown="pick.key(event,'motorista')"><div class="mil-drop" id="drop-motorista"></div><span class="lot" id="lot-motorista"></span></div>
       <div class="f"><label>Viatura</label><input id="viatura" list="dl-viaturas" autocomplete="off" placeholder="Selecione a cadastrada ou digite (ex.: emprestada de outra unidade)"><datalist id="dl-viaturas"></datalist></div>
-      <div class="f"><label>Total de militares</label><input type="number" min="1" id="total_militares" placeholder="auto"></div>
+      <div class="f"><label>Total de militares</label><input type="number" id="total_militares" readonly placeholder="auto" style="border-style:dashed;color:var(--gold-light)"></div>
     </div>
     <div style="margin-top:12px"><label style="display:block;margin-bottom:6px">Patrulheiros</label><div id="patrulheiros"></div>
       <button type="button" class="btn ghost small" style="margin-top:8px" onclick="addPatrulheiro()">+ Adicionar patrulheiro</button></div>
@@ -222,14 +222,26 @@ const pick={
   key(e,id){ const drop=document.getElementById('drop-'+id);const opts=[...drop.querySelectorAll('.mil-opt:not(.empty)')];let hi=this._hi[id]??-1;
     if(e.key==='ArrowDown'){e.preventDefault();hi=Math.min(hi+1,opts.length-1);}else if(e.key==='ArrowUp'){e.preventDefault();hi=Math.max(hi-1,0);}else if(e.key==='Enter'){if(opts[hi]){e.preventDefault();opts[hi].click();}return;}else if(e.key==='Escape'){drop.classList.remove('open');return;}else return;
     this._hi[id]=hi;opts.forEach((o,i)=>o.classList.toggle('hi',i===hi));if(opts[hi])opts[hi].scrollIntoView({block:'nearest'});},
-  sel(id,el){ document.getElementById(id).value=el.getAttribute('data-v'); document.getElementById('drop-'+id).classList.remove('open'); if(id==='comandante') attLotacao(); }
+  sel(id,el){ document.getElementById(id).value=el.getAttribute('data-v'); document.getElementById('drop-'+id).classList.remove('open'); lotHint(id); attTotal(); }
 };
-function attLotacao(){
-  const el=document.getElementById('grupamento_lotacao'); if(!el) return;
-  const v=document.getElementById('comandante').value||'';
+// Indicador sutil do grupamento de LOTAÇÃO de cada militar (cidade), p/ equipes
+// mistas em operação. Lê do roster (Efetivo) pela matrícula do campo.
+function lotHint(id){
+  const el=document.getElementById('lot-'+id); if(!el) return;
+  const v=(document.getElementById(id)||{}).value||'';
   const mat=(v.split(' - ')[0]||'').replace(/\D/g,'');
   const m=mat?ROSTER.find(x=>(x.matricula||'').replace(/\D/g,'')===mat):null;
-  el.value=(m&&m.grupamento_id)?_grafiaGP(m.grupamento_id):'';
+  const g=(m&&m.grupamento_id)?_grafiaGP(m.grupamento_id):'';
+  el.textContent = g ? ('📍 Lotação: '+(g.split('/').pop().trim()||g)) : '';
+}
+// Soma automática do total de militares (ignora vazios e "NÃO HÁ").
+function _temMilitar(v){ v=(v||'').trim(); return !!v && !/n[ãa]o h[áa]/i.test(v); }
+function attTotal(){
+  let n=0;
+  if(_temMilitar((document.getElementById('comandante')||{}).value)) n++;
+  if(_temMilitar((document.getElementById('motorista')||{}).value)) n++;
+  document.querySelectorAll('#patrulheiros input').forEach(i=>{ if(_temMilitar(i.value)) n++; });
+  const el=document.getElementById('total_militares'); if(el) el.value=n||'';
 }
 document.addEventListener('click',e=>{ if(!e.target.closest('.milbox')) document.querySelectorAll('.mil-drop.open').forEach(d=>d.classList.remove('open')); });
 
@@ -287,9 +299,10 @@ let patrSeq=0;
 function addPatrulheiro(val){
   const id='patr-'+(++patrSeq);
   const wrap=document.createElement('div'); wrap.className='f milbox'; wrap.style.marginBottom='8px';
-  wrap.innerHTML=`<div style="display:flex;gap:8px"><input id="${id}" placeholder="Busque por nome ou Nº PM" autocomplete="off" oninput="pick.filtrar('${id}')" onkeydown="pick.key(event,'${id}')" style="flex:1"><button type="button" class="btn ghost small" onclick="this.closest('.milbox').remove()">✕</button></div><div class="mil-drop" id="drop-${id}"></div>`;
+  wrap.innerHTML=`<div style="display:flex;gap:8px"><input id="${id}" placeholder="Busque por nome ou Nº PM" autocomplete="off" oninput="pick.filtrar('${id}');lotHint('${id}');attTotal()" onkeydown="pick.key(event,'${id}')" style="flex:1"><button type="button" class="btn ghost small" onclick="this.closest('.milbox').remove();attTotal()">✕</button></div><div class="mil-drop" id="drop-${id}"></div><span class="lot" id="lot-${id}"></span>`;
   document.getElementById('patrulheiros').appendChild(wrap);
-  if(val) document.getElementById(id).value=val;
+  if(val){ document.getElementById(id).value=val; lotHint(id); }
+  attTotal();
 }
 
 /* ── Demandas (modelo de dados em JS) ── */
@@ -367,7 +380,7 @@ function renderPendentes(){
   const tipos=[...new Set(PEND.map(p=>p.tipoLabel))];
   const chips = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">`
     + `<button type="button" class="pchip${PFILTRO===''?' on':''}" onclick="setPFiltro('')">Todas (${PEND.length})</button>`
-    + tipos.map(t=>`<button type="button" class="pchip${PFILTRO===t?' on':''}" onclick="setPFiltro(${JSON.stringify(t)})">${_esc(t)} (${PEND.filter(p=>p.tipoLabel===t).length})</button>`).join('')
+    + tipos.map(t=>`<button type="button" class="pchip${PFILTRO===t?' on':''}" onclick="setPFiltro('${String(t).replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')">${_esc(t)} (${PEND.filter(p=>p.tipoLabel===t).length})</button>`).join('')
     + `</div>`;
   const lista=PEND.map((p,i)=>({p,i})).filter(x=>!PFILTRO||x.p.tipoLabel===PFILTRO);
   const itens = lista.length ? lista.map(({p,i})=>{ const dup=ja.has(p.tipo+':'+p.numero);
@@ -394,11 +407,12 @@ async function addPendentes(){
   renderDemandas();
   fecharPendentes();
   // demandas da planilha: busca e anexa automaticamente os arquivos do Drive (P3)
-  if(P3_URL){ let mudou=false;
-    for(const nd of novas){ if(nd.origem && nd.origem.fonte==='planilha'){
+  if(P3_URL){
+    for(const nd of novas){ if(nd.origem && nd.origem.fonte==='planilha' && P3_FOLDERS[nd.origem.tipo]){
+      const ph={nome:'Buscando anexos no Drive…',status:'up',link:null}; nd.anexos=(nd.anexos||[]); nd.anexos.push(ph); renderDemandas();
       const arqs=await buscarArquivosP3(nd.origem.tipo, nd.origem.numero);
-      if(arqs.length){ nd.anexos=(nd.anexos||[]).concat(arqs); mudou=true; } } }
-    if(mudou) renderDemandas();
+      nd.anexos=nd.anexos.filter(a=>a!==ph).concat(arqs); renderDemandas();
+    } }
   }
 }
 /* ── Coordenadas no padrão da Consulta: formato (Decimal/GMD/GMS) + campos ── */
@@ -419,7 +433,10 @@ function attCoord(i){ const c=(DEM[i]||{}).coord; if(!c) return; DEM[i].coordena
   const el=document.getElementById('rota-'+i); if(!el) return; const u=mapsRota(DEM[i].coordenadas);
   el.innerHTML = u ? `🧭 <a href="${u}" target="_blank" style="color:var(--gold-light)">Testar rota no Google Maps</a>`
     : (DEM[i].coordenadas ? '<span style="color:var(--text-hint)">coordenadas incompletas</span>' : ''); }
-function setFmt(i,v){ DEM[i].coord.fmt=v; document.querySelectorAll('[data-cf="'+i+'"]').forEach(el=>{ el.style.display=(el.getAttribute('data-fmt')===v)?'':'none'; }); attCoord(i); }
+function setFmt(i,v){ DEM[i].coord.fmt=v;
+  document.querySelectorAll('[data-cf="'+i+'"]').forEach(el=>{ el.style.display=(el.getAttribute('data-fmt')===v)?'':'none'; });
+  document.querySelectorAll('[data-cfb="'+i+'"]').forEach(b=>{ b.classList.toggle('on', b.getAttribute('data-v')===v); });
+  attCoord(i); }
 function _axRow(i,ax,c,seg){
   const hemis = ax==='lat'?['S','N']:['O','E']; const H=c[ax+'H']||hemis[0];
   const inp=(k,ph)=>`<input class="cx" placeholder="${ph}" value="${_esc(c[ax+k]||'')}" oninput="DEM[${i}].coord.${ax}${k}=this.value;attCoord(${i})">`;
@@ -432,8 +449,8 @@ function coordFieldsHTML(i,c){
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <input placeholder="Latitude (-17.6125)" value="${_esc(c.decLat)}" oninput="DEM[${i}].coord.decLat=this.value;attCoord(${i})">
         <input placeholder="Longitude (-41.4913)" value="${_esc(c.decLng)}" oninput="DEM[${i}].coord.decLng=this.value;attCoord(${i})"></div></div>
-    <div data-cf="${i}" data-fmt="gmd" style="${c.fmt==='gmd'?'':'display:none'}">${_axRow(i,'lat',c,false)}${_axRow(i,'lng',c,false)}</div>
-    <div data-cf="${i}" data-fmt="gms" style="${c.fmt==='gms'?'':'display:none'}">${_axRow(i,'lat',c,true)}${_axRow(i,'lng',c,true)}</div>`;
+    <div data-cf="${i}" data-fmt="gmd" style="${c.fmt==='gmd'?'':'display:none'}"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${_axRow(i,'lat',c,false)}${_axRow(i,'lng',c,false)}</div></div>
+    <div data-cf="${i}" data-fmt="gms" style="${c.fmt==='gms'?'':'display:none'}"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${_axRow(i,'lat',c,true)}${_axRow(i,'lng',c,true)}</div></div>`;
 }
 function renderDemandas(){
   DEM.forEach(d=>initCoord(d));
@@ -447,11 +464,11 @@ function renderDemandas(){
         <div class="f"><label>Endereço / referência</label><input value="${_esc(d.endereco)}" oninput="DEM[${i}].endereco=this.value"></div>
       </div>
       <div class="f" style="margin-top:10px"><label>Coordenadas — rota no Google Maps</label>
-        <select onchange="setFmt(${i},this.value)" style="max-width:250px;margin-bottom:7px">
-          <option value="dec"${DEM[i].coord.fmt==='dec'?' selected':''}>Decimal (GG.GGGGGG)</option>
-          <option value="gmd"${DEM[i].coord.fmt==='gmd'?' selected':''}>GMD — Graus, Min Decimais</option>
-          <option value="gms"${DEM[i].coord.fmt==='gms'?' selected':''}>GMS — Graus, Min, Seg</option>
-        </select>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+          <button type="button" class="pchip${DEM[i].coord.fmt==='dec'?' on':''}" data-cfb="${i}" data-v="dec" onclick="setFmt(${i},'dec')">Decimal (GG.GGGGGG)</button>
+          <button type="button" class="pchip${DEM[i].coord.fmt==='gmd'?' on':''}" data-cfb="${i}" data-v="gmd" onclick="setFmt(${i},'gmd')">GMD — Graus, Min Decimais</button>
+          <button type="button" class="pchip${DEM[i].coord.fmt==='gms'?' on':''}" data-cfb="${i}" data-v="gms" onclick="setFmt(${i},'gms')">GMS — Graus, Min, Seg</button>
+        </div>
         ${coordFieldsHTML(i,DEM[i].coord)}
         <span class="hint" id="rota-${i}"></span></div>
       <div class="f" style="margin-top:10px"><label>Observação (opcional)</label><textarea oninput="DEM[${i}].observacao=this.value" placeholder="Informação adicional para a equipe sobre esta demanda…" style="min-height:52px">${_esc(d.observacao||'')}</textarea></div>
@@ -552,8 +569,9 @@ function prefill(r){
   [...gsel.options].forEach(o=>{ if(o.value && o.value.toUpperCase()===gv.toUpperCase()) gsel.value=o.value; });
   set('data_empenho',(r.data_empenho||'').slice(0,10)); set('turno',r.turno); set('equipe',r.equipe);
   set('tipo_servico',r.tipo_servico); prefillOperacao(r.operacao);
-  set('comandante',r.comandante); set('motorista',r.motorista); set('viatura',r.viatura); set('total_militares',r.total_militares);
+  set('comandante',r.comandante); set('motorista',r.motorista); set('viatura',r.viatura);
   (Array.isArray(r.patrulheiros)?r.patrulheiros:[]).filter(Boolean).forEach(p=>addPatrulheiro(p));
+  lotHint('comandante'); lotHint('motorista'); attTotal();
   if(r.alterou_escala){ document.getElementById('alterou_escala').checked=true; document.getElementById('box-motivo').style.display=''; set('motivo_alteracao',r.motivo_alteracao); }
   set('observacoes_equipe',r.observacoes_equipe);
   DEM=(Array.isArray(r.demandas)?r.demandas:[]).map(d=>({texto:d.texto||'',municipio:d.municipio||'',endereco:d.endereco||'',coordenadas:d.coordenadas||'',observacao:d.observacao||'',origem:d.origem||null,
@@ -569,6 +587,7 @@ document.getElementById('data_empenho').addEventListener('change', fillOperacao)
 fillOperacao();
 if(EDIT_ROW){ Promise.all([_grupReady,_opReady]).then(()=>prefill(EDIT_ROW)).catch(()=>prefill(EDIT_ROW)); }
 else { addDemanda(); }
+attTotal();
 </script>
 </body>
 </html>
