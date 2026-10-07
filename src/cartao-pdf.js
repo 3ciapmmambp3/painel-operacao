@@ -113,7 +113,6 @@
       doc.roundedRect(M, y, W, 7, 1, 1, 'FD');
       doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...DARK);
       doc.text('DEMANDA '+ord + (d.municipio?('  —  '+_esc(d.municipio)):''), M+3, y+4.8);
-      if(d.sisfis){ doc.setTextColor(...GOLD); doc.setFontSize(7.5); doc.text('LANÇAR NO SISFIS', PW-M-3, y+4.8, {align:'right'}); }
       y+=10;
       // texto
       doc.setFont('helvetica','normal'); doc.setFontSize(9.3); doc.setTextColor(...INK);
