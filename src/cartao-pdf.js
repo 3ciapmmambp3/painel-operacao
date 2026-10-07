@@ -24,6 +24,7 @@
     return membros.length ? ('CARTÃO PROGRAMA - '+membros.join(', ')+(data?(' '+data):'')) : ('CARTÃO PROGRAMA '+(cartao.numero||''));
   }
   function nomeArq(cartao){ return tituloArq(cartao).replace(/[\\/:*?"<>|]+/g,' ').replace(/\s+/g,' ').trim()+'.pdf'; }
+  function _fmtTexto(s){ let t=String(s==null?'':s).replace(/\r/g,'').replace(/[ \t]*\n[ \t]*/g,' ').replace(/[ \t]{2,}/g,' ').trim(); t=t.replace(/\s+([A-Z]\)\s)/g,'\n$1').replace(/\s*(\*\*\*)/g,'\n$1').replace(/\s*(\(#{3,})/g,'\n$1'); return t.trim(); }
   function mapsRota(coord){
     if(global.Coord) return global.Coord.mapsRota(coord);
     const n=String(coord||'').match(/-?\d+(?:\.\d+)?/g); if(!n||n.length<2) return '';
@@ -73,7 +74,7 @@
       const endTxt = d.endereco ? (d.municipio && String(d.endereco).toUpperCase().indexOf(String(d.municipio).toUpperCase())===-1 ? (d.endereco+', '+d.municipio) : d.endereco) : '';
       const endRota = (endTxt && global.Coord && global.Coord.mapsRotaTexto) ? global.Coord.mapsRotaTexto(endTxt) : '';
       const endCell = d.endereco ? (endRota?`<a href="${endRota}" target="_blank" rel="noopener">${E(d.endereco)}</a>`:E(d.endereco)) : '';
-      let corpo = rowBlk('Descrição', d.texto)
+      let corpo = rowBlk('Descrição', _fmtTexto(d.texto))
         + (d.observacao?rowBlk('Observação', d.observacao):'')
         + (d.endereco?rowH('Endereço / referência', endCell):'')
         + (d.municipio?row('Município', d.municipio):'')
