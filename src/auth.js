@@ -58,6 +58,12 @@ const INTEL_DRIVE_URL = 'https://script.google.com/macros/s/AKfycbxSmtwcfMQGa0-a
  * O painel envia subpasta 'cartao-programa'. */
 const CARTAO_DRIVE_URL = 'https://script.google.com/macros/s/AKfycbwQ5EEfTk2CswmEmN8z7FEfD0pbzcOH3ZzGaVJNB9FC_0XDDybsvgSXKitm7hSKEnPW/exec';
 
+/* Busca de arquivos das demandas por tipo no Drive da conta 3ciapmmamb.p3
+ * (pastas MC/NUDEN/Balcão/RI/Emergência). Deixe '' enquanto o Web App de
+ * db/APPS-SCRIPT-cartao-p3-drive.gs não estiver publicado NESSA conta; então
+ * cole aqui a URL /exec. O Cartão Programa usa p/ anexar PDF/KML da demanda. */
+const CARTAO_P3_DRIVE_URL = '';
+
 /* Níveis de acesso em ordem crescente de permissão */
 const NIVEIS = ['operacional', 'admin_gp', 'admin_pelotao', 'admin', 'admin_geral'];
 

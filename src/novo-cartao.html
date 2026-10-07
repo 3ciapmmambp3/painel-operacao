@@ -307,6 +307,16 @@ let PEND=[];
 const SHEET_SCRIPT_URL="https://script.google.com/macros/s/AKfycbwhyngzhpznhiidO0D4Dju9-nr8N-3bPR4il683btr_FH0fH8A6HlA7f9oV4nOh-MDj/exec";
 // tipos da planilha (sourceKey → rótulo). DEN_BALCAO/REQUISICAO ficam de fora (já vêm do painel/Supabase).
 const SHEET_TIPOS={ MC:'Monitoramento Contínuo (MC)', NUDEN:'NUDEN', RI:'Força Tarefa Previncêndio (FTP/RI)', DDU181:'DDU 181', EMERGENCIA:'Emergência Ambiental' };
+// Pastas por tipo no Drive da conta 3ciapmmamb.p3 (busca de PDF/KML por chave)
+const P3_FOLDERS={ mc:'1vZRSSJQzQrVxDW8fBemqGGG_1B1bdSsV', nuden:'1JO_llTri4rw5pY7bkV3uC1FECQL-zf6s', ri:'1LwYWj4MQF110dOrygv8HWk2DTwKiZwVm', emergencia:'1z0ZceiGhQbyRq2bp2RKP1gmAzCgZmgpN', den_balcao:'14x1aFthJJw_crfg1uz3l_47_djtIFaLE' };
+const P3_URL=(typeof CARTAO_P3_DRIVE_URL!=='undefined')?CARTAO_P3_DRIVE_URL:'';
+async function buscarArquivosP3(tipo, chave){
+  const fid=P3_FOLDERS[tipo]; if(!P3_URL||!fid||!chave) return [];
+  try{ const r=await fetch(`${P3_URL}?action=buscar&folderId=${encodeURIComponent(fid)}&chave=${encodeURIComponent(chave)}`); if(!r.ok) return [];
+    const j=await r.json(); if(!j||!j.ok||!Array.isArray(j.arquivos)) return [];
+    return j.arquivos.map(a=>({nome:a.nome||'arquivo',mime:a.mime||null,link:a.link,id:a.id||null,status:'ok'})).filter(a=>a.link);
+  }catch(e){ return []; }
+}
 function _tipoLbl(t){ return t==='requisicao'?'Requisição':'Denúncia de Balcão'; }
 function _normGrp(s){ return String(s==null?'':s).toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').replace(/MARILIERIA/g,'MARLIERIA').replace(/MOLEVADE/g,'MONLEVADE').trim(); }
 function gprDe(completo){ const L=(window.FrotaGrup&&FrotaGrup.lista)?FrotaGrup.lista:[]; const x=L.find(y=>String(y.completo).toUpperCase()===String(completo||'').toUpperCase()); return x?x.gpr:''; }
@@ -371,16 +381,25 @@ function renderPendentes(){
 }
 function fecharPendentes(){ document.getElementById('pmod').style.display='none'; }
 function _demandaVazia(d){ return d && !((d.texto||'').trim()) && !((d.municipio||'').trim()) && !((d.endereco||'').trim()) && !((d.coordenadas||'').trim()) && !((d.observacao||'').trim()) && !d.origem && !(Array.isArray(d.anexos)&&d.anexos.length); }
-function addPendentes(){
+async function addPendentes(){
   const checks=[...document.querySelectorAll('#plista input[type=checkbox]:checked')];
   if(!checks.length){ fecharPendentes(); return; }
   // ocupa as demandas vazias primeiro: remove-as antes de anexar as pendentes
   DEM = DEM.filter(d=>!_demandaVazia(d));
+  const novas=[];
   checks.forEach(ch=>{ const p=PEND[+ch.getAttribute('data-i')]; if(!p) return;
-    DEM.push({texto:p.texto, municipio:p.municipio||'', endereco:p.endereco||'', coordenadas:'', observacao:'', anexos:(Array.isArray(p.anexos)?p.anexos.slice():[]), origem:{tipo:p.tipo, numero:p.numero, id:p.id, fonte:p.fonte, label:p.tipoLabel}}); });
+    const nd={texto:p.texto, municipio:p.municipio||'', endereco:p.endereco||'', coordenadas:'', observacao:'', anexos:(Array.isArray(p.anexos)?p.anexos.slice():[]), origem:{tipo:p.tipo, numero:p.numero, id:p.id, fonte:p.fonte, label:p.tipoLabel}};
+    DEM.push(nd); novas.push(nd); });
   if(!DEM.length) addDemanda();
   renderDemandas();
   fecharPendentes();
+  // demandas da planilha: busca e anexa automaticamente os arquivos do Drive (P3)
+  if(P3_URL){ let mudou=false;
+    for(const nd of novas){ if(nd.origem && nd.origem.fonte==='planilha'){
+      const arqs=await buscarArquivosP3(nd.origem.tipo, nd.origem.numero);
+      if(arqs.length){ nd.anexos=(nd.anexos||[]).concat(arqs); mudou=true; } } }
+    if(mudou) renderDemandas();
+  }
 }
 /* ── Coordenadas no padrão da Consulta: formato (Decimal/GMD/GMS) + campos ── */
 function initCoord(d){
