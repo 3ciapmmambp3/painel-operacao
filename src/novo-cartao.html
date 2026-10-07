@@ -345,6 +345,16 @@ async function buscarArquivosP3(tipo, chave){
     return j.arquivos.map(a=>({nome:a.nome||'arquivo',mime:a.mime||null,link:a.link,id:a.id||null,status:'ok'})).filter(a=>a.link);
   }catch(e){ return []; }
 }
+// Extrai o município do nome do PDF do MC (ex.: "13040284_2026_09_VIRGEM DA LAPA_CROQUI_MC.pdf")
+function _muniDoMC(arqs){
+  for(const a of (arqs||[])){
+    if(!/pdf/i.test(a.mime||'') && !/\.pdf$/i.test(a.nome||'')) continue;
+    const parts=(a.nome||'').replace(/\.[^.]+$/,'').split('_').map(s=>s.trim()).filter(Boolean);
+    const cand=parts.find(s=>/[A-Za-zÀ-ÿ]{3,}/.test(s) && !/^(croqui|mc|kml|pdf|ief)$/i.test(s) && !/^\d+$/.test(s));
+    if(cand) return cand;
+  }
+  return '';
+}
 function _tipoLbl(t){ return t==='requisicao'?'Requisição':'Denúncia de Balcão'; }
 function _normGrp(s){ return String(s==null?'':s).toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').replace(/MARILIERIA/g,'MARLIERIA').replace(/MOLEVADE/g,'MONLEVADE').trim(); }
 function gprDe(completo){ const L=(window.FrotaGrup&&FrotaGrup.lista)?FrotaGrup.lista:[]; const x=L.find(y=>String(y.completo).toUpperCase()===String(completo||'').toUpperCase()); return x?x.gpr:''; }
@@ -374,7 +384,8 @@ async function carregarPendentes(){
         const v=(it.value||'').trim(); if(!v||v==='#N/A'||/nº\s*000\//i.test(v)) return;
         if(_normGrp(it.fracao||'')!==alvo) return;
         let num=v; if(cfg.tipo==='balcao_drive'||cfg.tipo==='req_drive'){ const mm=v.match(/\d{1,4}\s*\/\s*\d{4}/); if(mm) num=mm[0].replace(/\s/g,''); }
-        PEND.push({tipo:cfg.tipo, tipoLabel:cfg.label, numero:num, texto:cfg.label+' — '+v, resumo:'', municipio:(it.fracao||'').split('/').pop().trim(), endereco:'', situacao:'', anexos:[], fonte:'planilha', folder:cfg.folder||null, id:null});
+        const muni=(it.municipio||it.cidade||it.MUNICIPIO||'').toString().trim(); // usado se a planilha passar a devolver o município
+        PEND.push({tipo:cfg.tipo, tipoLabel:cfg.label, numero:num, texto:cfg.label+' — '+v, resumo:'', municipio:muni, endereco:'', situacao:'', anexos:[], fonte:'planilha', folder:cfg.folder||null, id:null});
       }); });
     }
   }catch(e){ if(!PEND.length) erroP=(erroP?erroP+' · ':'')+'Planilha: '+(e.message||e); }
@@ -409,7 +420,7 @@ function renderPendentes(){
       <input type="checkbox" data-i="${i}" ${dup?'disabled':''} ${PSEL.has(i)?'checked':''} onchange="togglePSel(${i},this.checked)" style="margin-top:3px;width:auto">
       <span><b style="color:var(--gold-light)">${_esc(p.tipoLabel)} ${_esc(p.numero)}</b>${p.municipio?(' · 📍 <b>'+_esc(p.municipio)+'</b>'):''}${p.situacao?(' · '+_esc(p.situacao)):''}${(Array.isArray(p.anexos)&&p.anexos.length)?(' · 📎 '+p.anexos.length+' anexo(s)'):''}${dup?' · <i>já no cartão</i>':''}<br>
       ${p.resumo?`<span style="font-size:12px;color:var(--text-muted)">${_esc(p.resumo.slice(0,160))}</span><br>`:''}
-      <span style="font-size:11px;color:var(--text-hint)">📍 ${_esc(p.municipio||'—')}${p.endereco?(' · '+_esc(p.endereco)):''}</span></span></label>`;
+      ${p.endereco?`<span style="font-size:11px;color:var(--text-hint)">📍 ${_esc(p.endereco)}</span>`:''}</span></label>`;
   }).join('') : '<div class="hint">Nenhuma pendente deste tipo.</div>';
   box.innerHTML = chips + itens;
   atualizaBtnAdd();
@@ -442,6 +453,8 @@ async function addPendentes(){
       const add=arqs.filter(a=>!temLink.has(a.link));
       if(add.length) nd.anexos=nd.anexos.concat(add);
       else if(!nd.anexos.some(a=>a.link)) nd.anexos.push({nome:'Nenhum arquivo localizado no Drive para esta demanda.',status:'err',link:null});
+      // MC: município vem no nome do PDF (ex.: "…_VIRGEM DA LAPA_CROQUI_MC.pdf")
+      if(folderKey==='mc' && !((nd.municipio||'').trim())){ const mm=_muniDoMC(arqs); if(mm) nd.municipio=mm; }
       renderDemandas();
     }
   }
