@@ -83,7 +83,8 @@
           + row('Nº Ato de Fiscalização', r.ato_fiscalizacao)
           + (r.obs?rowBlk('Observações da resposta', r.obs):'')
         : '';
-      demHtml += `<h4 class="sec">Demanda ${E(ord)}${d.municipio?(' <small>— '+E(d.municipio)+'</small>'):''}</h4><table class="t">${corpo}</table>`
+      const orig = d.origem && d.origem.numero ? ((d.origem.tipo==='requisicao'?'Requisição':'Denúncia')+' '+d.origem.numero) : '';
+      demHtml += `<h4 class="sec">Demanda ${E(ord)}${d.municipio?(' <small>— '+E(d.municipio)+'</small>'):''}${orig?(' <small>· '+E(orig)+'</small>'):''}</h4><table class="t">${corpo}</table>`
         + (resp?`<table class="t resp">${resp}</table>`:'<div class="pend">Pendente de atendimento</div>');
     });
     if(!demandas.length) demHtml='<p class="vazio">Nenhuma demanda lançada.</p>';
@@ -137,7 +138,7 @@
             <div class="vt-orgao">Batalhão de Polícia Militar de Meio Ambiente</div>
             <div class="vt-orgao">3ª Companhia de Polícia Militar de Meio Ambiente</div>
             <h1>CARTÃO PROGRAMA</h1>
-            <div class="vt-id">${E(nrTexto)} · ${E(statusLabel(cartao.status))}</div>
+            <div class="vt-id">${E(nrTexto)}</div>
           </div>
           <img src="${base}/assets/brasao-bpmmamb.png" alt="BPM MAmb" onerror="this.style.display='none'">
         </div>

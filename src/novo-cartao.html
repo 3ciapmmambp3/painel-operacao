@@ -109,7 +109,10 @@
   <div class="card">
     <h2>Demandas para atendimento</h2>
     <div id="demandas"></div>
-    <button type="button" class="btn ghost small" style="margin-top:12px" onclick="addDemanda()">+ Adicionar demanda</button>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
+      <button type="button" class="btn ghost small" onclick="addDemanda()">+ Adicionar demanda (manual)</button>
+      <button type="button" class="btn ghost small" onclick="abrirPendentes()">📥 Puxar pendente do painel</button>
+    </div>
     <div class="hint" id="anx-hint" style="margin-top:10px"></div>
   </div>
 
@@ -127,6 +130,21 @@
     <button class="btn gold" id="btn-salvar" onclick="salvar()">Emitir Cartão</button>
     <button class="btn ghost" onclick="window.location.href='cartao-programa.html'">Cancelar</button>
     <span class="hint" id="foothint"></span>
+  </div>
+</div>
+
+<!-- Modal: demandas pendentes do painel -->
+<div id="pmod" style="position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:100;padding:16px">
+  <div style="background:var(--bg-page);border:1px solid var(--gold-border);border-radius:12px;max-width:640px;width:100%;max-height:88vh;overflow:auto">
+    <div style="padding:15px 18px;border-bottom:1px solid var(--border);font-weight:800;color:var(--gold-light);display:flex;align-items:center;gap:8px">Demandas pendentes do grupamento<button type="button" onclick="fecharPendentes()" style="margin-left:auto;background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer">✕</button></div>
+    <div style="padding:14px 18px">
+      <div class="hint" id="pmsg" style="margin-bottom:10px"></div>
+      <div id="plista"></div>
+      <div style="display:flex;gap:9px;justify-content:flex-end;margin-top:12px">
+        <button type="button" class="btn ghost" onclick="fecharPendentes()">Cancelar</button>
+        <button type="button" class="btn gold" onclick="addPendentes()">Adicionar selecionadas</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -270,12 +288,51 @@ function addDemanda(obj){
 }
 function rmDemanda(i){ DEM.splice(i,1); renderDemandas(); }
 function mapsRota(coord){ return (window.Coord?Coord.mapsRota(coord):''); }
+
+/* ── Puxar demandas PENDENTES do painel (denúncias/requisições do grupamento) ── */
+let PEND=[];
+function _tipoLbl(t){ return t==='requisicao'?'Requisição':'Denúncia de Balcão'; }
+function gprDe(completo){ const L=(window.FrotaGrup&&FrotaGrup.lista)?FrotaGrup.lista:[]; const x=L.find(y=>String(y.completo).toUpperCase()===String(completo||'').toUpperCase()); return x?x.gpr:''; }
+function textoDaDemanda(p){ let t='['+_tipoLbl(p.tipo)+' nº '+p.numero+'] '; if(p.tema) t+='Infração: '+p.tema+'. '; if(p.objeto) t+='Objeto: '+p.objeto+'. '; if(p.descricao) t+=p.descricao; return t.trim(); }
+async function carregarPendentes(){
+  PEND=[]; const gpr=gprDe(document.getElementById('grupamento').value);
+  if(!gpr) return {erro:'Selecione primeiro o grupamento (acima) para listar as pendentes dele.'};
+  try{
+    const q=`${API}/rest/v1/denuncias?select=id,numero,tipo,tema,objeto,descricao,municipio,endereco,referencia,situacao&ativo=is.true&gp_responsavel=eq.${encodeURIComponent(gpr)}&situacao=in.(PENDENTE,%22EM%20ANDAMENTO%22)&order=created_at.desc`;
+    const r=await fetch(q,{headers:H}); if(!r.ok) throw new Error(await r.text()); PEND=await r.json()||[];
+  }catch(e){ return {erro:'Falha ao buscar pendentes: '+(e.message||e)}; }
+  return {};
+}
+async function abrirPendentes(){
+  document.getElementById('pmod').style.display='flex';
+  document.getElementById('pmsg').textContent='';
+  document.getElementById('plista').innerHTML='<div class="hint">Carregando…</div>';
+  const res=await carregarPendentes();
+  if(res.erro){ document.getElementById('plista').innerHTML=''; document.getElementById('pmsg').innerHTML='<span style="color:#ef9a9a">'+_esc(res.erro)+'</span>'; return; }
+  if(!PEND.length){ document.getElementById('plista').innerHTML='<div class="hint">Nenhuma denúncia/requisição pendente para este grupamento.</div>'; return; }
+  const ja=new Set(DEM.filter(d=>d.origem).map(d=>d.origem.tipo+':'+d.origem.numero));
+  document.getElementById('plista').innerHTML=PEND.map((p,i)=>{ const dup=ja.has(p.tipo+':'+p.numero);
+    return `<label style="display:flex;gap:10px;align-items:flex-start;border:1px solid var(--border-mid);border-radius:8px;padding:10px 12px;margin-bottom:8px;${dup?'opacity:.5':''}">
+      <input type="checkbox" data-i="${i}" ${dup?'disabled':''} style="margin-top:3px;width:auto">
+      <span><b style="color:var(--gold-light)">${_esc(_tipoLbl(p.tipo))} nº ${_esc(p.numero)}</b> · ${_esc(p.situacao)}${dup?' · <i>já no cartão</i>':''}<br>
+      <span style="font-size:12px;color:var(--text-muted)">${_esc(((p.tema?p.tema+' — ':'')+(p.descricao||p.objeto||'')).slice(0,160))}</span><br>
+      <span style="font-size:11px;color:var(--text-hint)">📍 ${_esc(p.municipio||'—')}${p.endereco?(' · '+_esc(p.endereco)):''}</span></span></label>`;
+  }).join('');
+}
+function fecharPendentes(){ document.getElementById('pmod').style.display='none'; }
+function addPendentes(){
+  const checks=[...document.querySelectorAll('#plista input[type=checkbox]:checked')];
+  checks.forEach(ch=>{ const p=PEND[+ch.getAttribute('data-i')]; if(!p) return;
+    DEM.push({texto:textoDaDemanda(p),municipio:p.municipio||'',endereco:p.endereco||p.referencia||'',coordenadas:'',anexos:[],origem:{tipo:p.tipo,numero:p.numero,id:p.id}}); });
+  if(checks.length) renderDemandas();
+  fecharPendentes();
+}
 function attRota(i){ const el=document.getElementById('rota-'+i); if(!el) return; const u=mapsRota((DEM[i]||{}).coordenadas); el.innerHTML = u ? `🧭 <a href="${u}" target="_blank" style="color:var(--gold-light)">Testar rota no Google Maps</a>` : ''; }
 function renderDemandas(){
   const box=document.getElementById('demandas');
   box.innerHTML=DEM.map((d,i)=>`
     <div class="dem">
-      <div class="dhead"><b>DEMANDA ${i+1}</b><button type="button" class="rm" onclick="rmDemanda(${i})">Remover</button></div>
+      <div class="dhead"><b>DEMANDA ${i+1}${d.origem?` <span style="font-size:10px;font-weight:700;color:var(--gold-light);background:var(--gold-bg);border:1px solid var(--gold-border);border-radius:10px;padding:1px 7px">${_esc(_tipoLbl(d.origem.tipo))} ${_esc(d.origem.numero)}</span>`:''}</b><button type="button" class="rm" onclick="rmDemanda(${i})">Remover</button></div>
       <div class="f"><label>Descrição da demanda</label><textarea oninput="DEM[${i}].texto=this.value" placeholder="O que a equipe deve fazer…">${_esc(d.texto)}</textarea></div>
       <div class="grid" style="margin-top:10px">
         <div class="f"><label>Município</label><input value="${_esc(d.municipio)}" oninput="DEM[${i}].municipio=this.value"></div>
@@ -352,7 +409,7 @@ function coletar(){
     alterou_escala:document.getElementById('alterou_escala').checked,
     motivo_alteracao:document.getElementById('motivo_alteracao').value.trim(),
     observacoes_equipe:document.getElementById('observacoes_equipe').value.trim(),
-    demandas:DEM.map((d,i)=>({ordem:String(i+1),texto:d.texto.trim(),municipio:d.municipio.trim(),endereco:d.endereco.trim(),coordenadas:(d.coordenadas||'').trim(),
+    demandas:DEM.map((d,i)=>({ordem:String(i+1),texto:d.texto.trim(),municipio:d.municipio.trim(),endereco:d.endereco.trim(),coordenadas:(d.coordenadas||'').trim(),origem:d.origem||null,
       anexos:(d.anexos||[]).filter(a=>a.link&&a.status!=='up'&&a.status!=='err').map(a=>({nome:a.nome,mime:a.mime||null,tamanho:a.tamanho||null,link:a.link,id:a.id||null}))}))
   };
 }
@@ -385,7 +442,7 @@ function prefill(r){
   (Array.isArray(r.patrulheiros)?r.patrulheiros:[]).filter(Boolean).forEach(p=>addPatrulheiro(p));
   if(r.alterou_escala){ document.getElementById('alterou_escala').checked=true; document.getElementById('box-motivo').style.display=''; set('motivo_alteracao',r.motivo_alteracao); }
   set('observacoes_equipe',r.observacoes_equipe);
-  DEM=(Array.isArray(r.demandas)?r.demandas:[]).map(d=>({texto:d.texto||'',municipio:d.municipio||'',endereco:d.endereco||'',coordenadas:d.coordenadas||'',
+  DEM=(Array.isArray(r.demandas)?r.demandas:[]).map(d=>({texto:d.texto||'',municipio:d.municipio||'',endereco:d.endereco||'',coordenadas:d.coordenadas||'',origem:d.origem||null,
     anexos:(d.anexos||[]).map(a=>({nome:a.nome,mime:a.mime,tamanho:a.tamanho,link:a.link,id:a.id,status:'ok'}))}));
   if(!DEM.length) DEM=[{texto:'',municipio:'',endereco:'',coordenadas:'',anexos:[]}];
   renderDemandas();
