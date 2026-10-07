@@ -831,7 +831,7 @@ const CATEGORIES = [
   { id: 'cemig',         label: 'Convênio CEMIG',   icon: 'CM', ready: true },
   { id: 'recursos',      label: 'Recursos Empreg.', icon: 'RE', ready: true },
   { id: 'produtividade', label: 'Produtividade',    icon: '★', ready: true },
-  { id: 'cartao_programa', label: 'Resposta ao Cartão Programa', icon: 'CP', ready: false },
+  { id: 'cartao_programa', label: 'Resposta ao Cartão Programa', icon: 'CP', ready: true },
 ];
 
 // Os campos de Produtividade vêm dinamicamente de referenceCache.CAMPOS_PRODUTIVIDADE
@@ -2927,6 +2927,7 @@ function renderGrid(){
 }
 
 function buildBodyHTML(id){
+  if (id === 'cartao_programa') return (window.cpBuildHTML ? window.cpBuildHTML() : '<p class="placeholder-note">Carregando…</p>');
   if (id === 'operacao') return buildOperacaoPanel();
   if (id === 'produtividade') return buildProdutividadePanel();
   if (id === 'cemig') return buildCemigPanel();
@@ -2949,6 +2950,7 @@ function getOrCreatePanelNode(id){
   if (REPEATABLE_CONFIGS[id]) bindRepeatablePanel(div, id);
   if (id === 'paf') bindPafSmartFilter(div);
   if (id === 'fapi') bindFapiCard(div);
+  if (id === 'cartao_programa' && window.cpBindPanel) window.cpBindPanel(div);
   panelCache[id] = div;
   return div;
 }
@@ -2960,6 +2962,7 @@ function openModal(id){
   const node = getOrCreatePanelNode(id);
   modalBody.appendChild(node);
   refreshAutoCalcFields(node);
+  if (id === 'cartao_programa' && window.__cpReload) window.__cpReload();
   modalOverlay.classList.add('open');
   currentModalId = id;
 }
@@ -4741,15 +4744,16 @@ document.addEventListener('click', () => {
   const H={apikey:AKEY,Authorization:`Bearer ${AKEY}`,'Content-Type':'application/json'};
   const esc=s=>(s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const dfmt=iso=>{if(!iso)return '—';const d=new Date(String(iso).slice(0,10)+'T00:00:00');return isNaN(d)?String(iso):d.toLocaleDateString('pt-BR');};
-  let ABERTOS=[], SELID='';
-  const form=document.getElementById('relatorioForm'); if(!form) return;
-  const sec=document.createElement('div');
-  sec.innerHTML='<div class="section-title"><span class="badge">★</span><h2>Cartão Programa do dia</h2></div><div class="card"><div id="cpInner" style="font-size:13px;color:var(--text-muted)">Informe a data do serviço para carregar o cartão da sua equipe.</div></div>';
-  const b1=form.querySelector('.card');
-  if(b1&&b1.parentNode){ b1.parentNode.insertBefore(sec,b1.nextSibling); } else { form.appendChild(sec); }
+  let ABERTOS=[], SELID='', root=null;
   const dataEl=document.getElementById('dataServico');
+  function _inner(){ return root?root.querySelector('#cpInner'):null; }
+  function _dems(){ return root?root.querySelector('#cpDems'):null; }
+  // Encaixe no card "Resposta ao Cartão Programa" do relatório (modal de categoria).
+  window.cpBuildHTML=function(){ return '<div id="cpInner" style="font-size:13px;color:var(--text-muted)">Informe a data do serviço (Bloco 1) para carregar o cartão da sua equipe.</div>'; };
+  window.cpBindPanel=function(div){ root=div; carregar(); };
+  window.__cpReload=function(){ carregar(); };
   async function carregar(){
-    const S=(typeof getSessaoAtual==='function')?getSessaoAtual():null; const inner=document.getElementById('cpInner');
+    const S=(typeof getSessaoAtual==='function')?getSessaoAtual():null; const inner=_inner();
     const data=dataEl?dataEl.value:''; if(!inner) return;
     if(!S||!S.token){ inner.textContent='Faça login para ver o cartão.'; return; }
     if(!data){ inner.textContent='Informe a data do serviço para carregar o cartão da sua equipe.'; return; }
@@ -4759,7 +4763,7 @@ document.addEventListener('click', () => {
     }catch(e){ inner.innerHTML='<span style="color:#ef9a9a">Não foi possível carregar o cartão: '+esc(e.message||e)+'</span>'; }
   }
   function render(){
-    const inner=document.getElementById('cpInner'); if(!inner) return;
+    const inner=_inner(); if(!inner) return;
     if(!ABERTOS.length){ SELID=''; inner.innerHTML='<span style="color:var(--text-hint)">Nenhum cartão em aberto para esta data no seu grupamento. (Se não usa Cartão Programa, pode ignorar.)</span>'; return; }
     const opts=ABERTOS.map(c=>`<label style="display:flex;gap:8px;align-items:center;margin:4px 0;cursor:pointer"><input type="radio" name="cpSel" value="${esc(c.id)}" ${SELID===c.id?'checked':''} onchange="window.__cpSel(this.value)"> <span><b>Nº ${esc(c.numero)}</b> · Equipe ${esc(c.equipe||'—')} · ${dfmt(c.data_empenho)} — ${esc(c.grupamento_completo||c.grupamento_id)}</span></label>`).join('');
     inner.innerHTML='<div style="font-size:12.5px;color:var(--text-muted);margin-bottom:8px">Selecione o cartão da sua equipe e preencha o resultado de cada demanda. Ao enviar o relatório, o cartão é atualizado automaticamente.</div>'+opts+'<div id="cpDems" style="margin-top:12px"></div>';
@@ -4768,7 +4772,7 @@ document.addEventListener('click', () => {
   }
   window.__cpSel=function(id){ SELID=id; renderDems(); };
   function renderDems(){
-    const c=ABERTOS.find(x=>x.id===SELID); const box=document.getElementById('cpDems'); if(!box) return;
+    const c=ABERTOS.find(x=>x.id===SELID); const box=_dems(); if(!box) return;
     if(!c){ box.innerHTML=''; return; } const resp=c.respostas||{};
     const corpo=(c.demandas||[]).map((d,i)=>{const ord=esc(d.ordem||i+1);const r=resp[String(d.ordem)]||resp[String(i+1)]||{};const og=d.origem&&d.origem.numero?(' · '+esc((d.origem.label||'')+' '+d.origem.numero)):'';
       return '<div style="border:1px solid var(--border-mid);border-radius:8px;padding:10px 12px;margin-bottom:9px" data-ord="'+ord+'">'+
@@ -4790,7 +4794,7 @@ document.addEventListener('click', () => {
   const _n2=s=>String(s==null?'':s).toUpperCase().replace(/[^A-Z0-9]/g,'');
   function _cpData(x){ return (typeof _normalizarDataResp==='function')?(_normalizarDataResp(x)||''):(x||''); }
   function cpPuxarDosCards(){
-    const c=ABERTOS.find(x=>x.id===SELID); const box=document.getElementById('cpDems'); if(!c||!box) return;
+    const c=ABERTOS.find(x=>x.id===SELID); const box=_dems(); if(!c||!box) return;
     let payload=null; try{ payload=(typeof collectAllData==='function')?collectAllData():null; }catch(e){}
     const itens=[]; if(payload&&Array.isArray(payload.categorias)) payload.categorias.forEach(cat=>{ (cat.itens||[]).forEach(it=>itens.push(it)); });
     (c.demandas||[]).forEach((d,i)=>{
@@ -4810,7 +4814,7 @@ document.addEventListener('click', () => {
   window.marcarCartaoAtendido=async function(relId){
     if(!SELID) return; const S=(typeof getSessaoAtual==='function')?getSessaoAtual():null; if(!S||!S.token) return;
     try{ cpPuxarDosCards(); }catch(e){}   // garante o puxar dos cards no envio
-    const box=document.getElementById('cpDems'); const respostas={};
+    const box=_dems(); const respostas={};
     if(box) box.querySelectorAll('[data-ord]').forEach(el=>{ const ord=el.getAttribute('data-ord');const o={};el.querySelectorAll('[data-k]').forEach(inp=>{const v=(inp.value||'').trim();if(v)o[inp.getAttribute('data-k')]=v;});if(o.atendida)respostas[ord]=o; });
     // mesmo sem respostas, grava o vínculo do relatório (p/ o botão Ver/Imprimir no cartão).
     // Fallback: se o banco ainda estiver sem o arg p_relatorio (db/131), refaz sem ele.
@@ -4821,7 +4825,6 @@ document.addEventListener('click', () => {
     }catch(e){ console.warn('[cartao] atender',e); }
   };
   if(dataEl) dataEl.addEventListener('change', carregar);
-  setTimeout(carregar, 500);
 })();
 </script>
 </body>

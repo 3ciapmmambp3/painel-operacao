@@ -425,6 +425,29 @@ async function carregarPendentes(){
       }); });
     }
   }catch(e){ if(!PEND.length) erroP=(erroP?erroP+' · ':'')+'Planilha: '+(e.message||e); }
+  // 3) Pendentes de diligência — demandas de cartões anteriores NÃO finalizadas
+  //    (Em andamento/Não atendido). A planilha já as "solta" ao lançar o REDS,
+  //    então ficam aqui para re-despacho.
+  try{
+    const r=await fetch(`${API}/rest/v1/rpc/cartao_listar`,{method:'POST',headers:H,body:JSON.stringify({p_token:S.token})});
+    if(r.ok){ const cs=await r.json(); const alvo=_normGrp(grup);
+      (Array.isArray(cs)?cs:[]).forEach(c=>{
+        if(_normGrp(c.grupamento_completo||c.grupamento_id||'')!==alvo) return;   // só do grupamento escolhido
+        const resp=c.respostas||{};
+        (c.demandas||[]).forEach((d,i)=>{ const rr=resp[String(d.ordem)]||resp[String(i+1)]||null;
+          if(rr && (rr.atendida==='PARCIAL'||rr.atendida==='NAO')){
+            const sit = rr.atendida==='PARCIAL'?'Em andamento':'Não atendido';
+            PEND.push({ tipo:'diligencia', tipoLabel:'🟡 Pendente de diligência',
+              numero:(d.origem&&d.origem.numero)||(c.numero+' ·'+(d.ordem||(i+1))),
+              texto:d.texto||'', resumo:'Do cartão Nº '+c.numero+' — '+sit, municipio:d.municipio||'', endereco:d.endereco||'',
+              situacao:sit, anexos:(Array.isArray(d.anexos)?d.anexos.map(a=>Object.assign({status:'ok'},a)):[]),
+              fonte:'diligencia', folder:(d.origem&&d.origem.folder)||null, id:null,
+              origem:d.origem||null, coordenadas:d.coordenadas||'', observacao:d.observacao||'' });
+          }
+        });
+      });
+    }
+  }catch(e){}
   if(!PEND.length && erroP) return {erro:erroP};
   return {};
 }
@@ -473,7 +496,7 @@ async function addPendentes(){
   DEM = DEM.filter(d=>!_demandaVazia(d));
   const novas=[];
   sel.forEach(i=>{ const p=PEND[i]; if(!p) return;
-    const nd={texto:p.texto, municipio:p.municipio||'', endereco:p.endereco||'', coordenadas:'', observacao:'', anexos:(Array.isArray(p.anexos)?p.anexos.slice():[]), origem:{tipo:p.tipo, numero:p.numero, id:p.id, fonte:p.fonte, label:p.tipoLabel, folder:p.folder||null}};
+    const nd={texto:p.texto, municipio:p.municipio||'', endereco:p.endereco||'', coordenadas:p.coordenadas||'', observacao:p.observacao||'', anexos:(Array.isArray(p.anexos)?p.anexos.slice():[]), origem: p.origem || {tipo:p.tipo, numero:p.numero, id:p.id, fonte:p.fonte, label:p.tipoLabel, folder:p.folder||null}};
     DEM.push(nd); novas.push(nd); });
   if(!DEM.length) addDemanda();
   renderDemandas();
