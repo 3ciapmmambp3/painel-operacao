@@ -24,7 +24,11 @@
     return membros.length ? ('CARTÃO PROGRAMA - '+membros.join(', ')+(data?(' '+data):'')) : ('CARTÃO PROGRAMA '+(cartao.numero||''));
   }
   function nomeArq(cartao){ return tituloArq(cartao).replace(/[\\/:*?"<>|]+/g,' ').replace(/\s+/g,' ').trim()+'.pdf'; }
-  function mapsRota(coord){ const n=String(coord||'').match(/-?\d+(?:\.\d+)?/g); if(!n||n.length<2) return ''; return 'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(n[0]+','+n[1]); }
+  function mapsRota(coord){
+    if(global.Coord) return global.Coord.mapsRota(coord);
+    const n=String(coord||'').match(/-?\d+(?:\.\d+)?/g); if(!n||n.length<2) return '';
+    return 'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(n[0]+','+n[1]);
+  }
   function statusLabel(s){ return STLAB[s]||(s||'—'); }
   function atendidaLabel(a){ return ATLAB[a]||'—'; }
 
