@@ -148,7 +148,7 @@
       <div id="plista"></div>
       <div style="display:flex;gap:9px;justify-content:flex-end;margin-top:12px">
         <button type="button" class="btn ghost" onclick="fecharPendentes()">Cancelar</button>
-        <button type="button" class="btn gold" onclick="addPendentes()">Adicionar selecionadas</button>
+        <button type="button" class="btn gold" id="btn-add-pend" onclick="addPendentes()">Adicionar selecionadas</button>
       </div>
     </div>
   </div>
@@ -370,9 +370,12 @@ async function abrirPendentes(){
   const res=await carregarPendentes();
   if(res.erro){ document.getElementById('plista').innerHTML=''; document.getElementById('pmsg').innerHTML='<span style="color:#ef9a9a">'+_esc(res.erro)+'</span>'; return; }
   if(!PEND.length){ document.getElementById('plista').innerHTML='<div class="hint">Nenhuma demanda pendente para este grupamento.</div>'; return; }
-  PFILTRO=''; renderPendentes();
+  PFILTRO=''; PSEL.clear(); renderPendentes();
 }
 let PFILTRO='';
+let PSEL=new Set();   // índices do PEND marcados (persistem ao trocar de aba)
+function togglePSel(i,on){ if(on) PSEL.add(i); else PSEL.delete(i); atualizaBtnAdd(); }
+function atualizaBtnAdd(){ const b=document.getElementById('btn-add-pend'); if(b) b.textContent = PSEL.size ? ('Adicionar selecionadas ('+PSEL.size+')') : 'Adicionar selecionadas'; }
 function setPFiltro(t){ PFILTRO=t; renderPendentes(); }
 function renderPendentes(){
   const box=document.getElementById('plista');
@@ -385,34 +388,46 @@ function renderPendentes(){
   const lista=PEND.map((p,i)=>({p,i})).filter(x=>!PFILTRO||x.p.tipoLabel===PFILTRO);
   const itens = lista.length ? lista.map(({p,i})=>{ const dup=ja.has(p.tipo+':'+p.numero);
     return `<label style="display:flex;gap:10px;align-items:flex-start;border:1px solid var(--border-mid);border-radius:8px;padding:10px 12px;margin-bottom:8px;${dup?'opacity:.5':''}">
-      <input type="checkbox" data-i="${i}" ${dup?'disabled':''} style="margin-top:3px;width:auto">
+      <input type="checkbox" data-i="${i}" ${dup?'disabled':''} ${PSEL.has(i)?'checked':''} onchange="togglePSel(${i},this.checked)" style="margin-top:3px;width:auto">
       <span><b style="color:var(--gold-light)">${_esc(p.tipoLabel)} ${_esc(p.numero)}</b>${p.municipio?(' · 📍 <b>'+_esc(p.municipio)+'</b>'):''}${p.situacao?(' · '+_esc(p.situacao)):''}${(Array.isArray(p.anexos)&&p.anexos.length)?(' · 📎 '+p.anexos.length+' anexo(s)'):''}${dup?' · <i>já no cartão</i>':''}<br>
       ${p.resumo?`<span style="font-size:12px;color:var(--text-muted)">${_esc(p.resumo.slice(0,160))}</span><br>`:''}
       <span style="font-size:11px;color:var(--text-hint)">📍 ${_esc(p.municipio||'—')}${p.endereco?(' · '+_esc(p.endereco)):''}</span></span></label>`;
   }).join('') : '<div class="hint">Nenhuma pendente deste tipo.</div>';
   box.innerHTML = chips + itens;
+  atualizaBtnAdd();
 }
 function fecharPendentes(){ document.getElementById('pmod').style.display='none'; }
 function _demandaVazia(d){ return d && !((d.texto||'').trim()) && !((d.municipio||'').trim()) && !((d.endereco||'').trim()) && !((d.coordenadas||'').trim()) && !((d.observacao||'').trim()) && !d.origem && !(Array.isArray(d.anexos)&&d.anexos.length); }
 async function addPendentes(){
-  const checks=[...document.querySelectorAll('#plista input[type=checkbox]:checked')];
-  if(!checks.length){ fecharPendentes(); return; }
+  const sel=[...PSEL];
+  if(!sel.length){ fecharPendentes(); return; }
   // ocupa as demandas vazias primeiro: remove-as antes de anexar as pendentes
   DEM = DEM.filter(d=>!_demandaVazia(d));
   const novas=[];
-  checks.forEach(ch=>{ const p=PEND[+ch.getAttribute('data-i')]; if(!p) return;
+  sel.forEach(i=>{ const p=PEND[i]; if(!p) return;
     const nd={texto:p.texto, municipio:p.municipio||'', endereco:p.endereco||'', coordenadas:'', observacao:'', anexos:(Array.isArray(p.anexos)?p.anexos.slice():[]), origem:{tipo:p.tipo, numero:p.numero, id:p.id, fonte:p.fonte, label:p.tipoLabel}};
     DEM.push(nd); novas.push(nd); });
   if(!DEM.length) addDemanda();
   renderDemandas();
   fecharPendentes();
-  // demandas da planilha: busca e anexa automaticamente os arquivos do Drive (P3)
+  // busca e anexa os arquivos do Drive (P3): planilha (MC/NUDEN/RI/Emergência)
+  // e também a Ficha/PDF da denúncia de balcão do painel (pasta den_balcao).
   if(P3_URL){
-    for(const nd of novas){ if(nd.origem && nd.origem.fonte==='planilha' && P3_FOLDERS[nd.origem.tipo]){
-      const ph={nome:'Buscando anexos no Drive…',status:'up',link:null}; nd.anexos=(nd.anexos||[]); nd.anexos.push(ph); renderDemandas();
-      const arqs=await buscarArquivosP3(nd.origem.tipo, nd.origem.numero);
-      nd.anexos=nd.anexos.filter(a=>a!==ph).concat(arqs); renderDemandas();
-    } }
+    for(const nd of novas){
+      const o=nd.origem||{}; let folderKey=null;
+      if(o.fonte==='planilha') folderKey=o.tipo;           // mc/nuden/ri/ddu181/emergencia
+      else if(o.tipo==='denuncia') folderKey='den_balcao'; // PDF/arquivos da denúncia de balcão
+      if(!folderKey || !P3_FOLDERS[folderKey] || !o.numero) continue;
+      const ph={nome:'Buscando arquivos no Drive…',status:'up',link:null}; nd.anexos=(nd.anexos||[]); nd.anexos.push(ph); renderDemandas();
+      const arqs=await buscarArquivosP3(folderKey, o.numero);
+      nd.anexos=nd.anexos.filter(a=>a!==ph);
+      // evita duplicar (mesmo link já presente)
+      const temLink=new Set(nd.anexos.map(a=>a.link));
+      const add=arqs.filter(a=>!temLink.has(a.link));
+      if(add.length) nd.anexos=nd.anexos.concat(add);
+      else if(!nd.anexos.some(a=>a.link)) nd.anexos.push({nome:'Nenhum arquivo localizado no Drive para esta demanda.',status:'err',link:null});
+      renderDemandas();
+    }
   }
 }
 /* ── Coordenadas no padrão da Consulta: formato (Decimal/GMD/GMS) + campos ── */
