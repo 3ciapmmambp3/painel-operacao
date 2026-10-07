@@ -62,7 +62,7 @@ const CARTAO_DRIVE_URL = 'https://script.google.com/macros/s/AKfycbwQ5EEfTk2Cswm
  * (pastas MC/NUDEN/Balcão/RI/Emergência). Deixe '' enquanto o Web App de
  * db/APPS-SCRIPT-cartao-p3-drive.gs não estiver publicado NESSA conta; então
  * cole aqui a URL /exec. O Cartão Programa usa p/ anexar PDF/KML da demanda. */
-const CARTAO_P3_DRIVE_URL = '';
+const CARTAO_P3_DRIVE_URL = 'https://script.google.com/macros/s/AKfycbyxarwT_68D2A9ygk4ItGLxRl5wR6L8nZ9QMqnKn-_pGjL0qtbuZPsh4GSgUsTLhls7pg/exec';
 
 /* Níveis de acesso em ordem crescente de permissão */
 const NIVEIS = ['operacional', 'admin_gp', 'admin_pelotao', 'admin', 'admin_geral'];
