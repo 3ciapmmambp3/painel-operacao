@@ -1497,10 +1497,12 @@ async function quesitosInit(){
     const bancoNomes = doBanco
       .filter(o => opSituacao(o)[0] !== 'encerrada')
       .map(o => (o.nome||'').trim());
-    // do PAF: pelo NOME da operação (igual ao card Operação do Relatório); só as não encerradas.
+    // do PAF: rótulo "ID - NOME" (ex.: "2026 03 CIA 29 - OPERAÇÃO RECURSOS HIDRICOS 7"),
+    // normalizando espaços no ID; só as não encerradas. Mesmo rótulo é casado no Relatório.
+    const _pafLbl = o => { const id=String(o.id_operacao||'').replace(/\s+/g,' ').trim(); const nm=String(o.nome||'').trim(); return nm ? (id?(id+' - '+nm):nm) : id; };
     const pafNomes = doPaf
       .filter(o => opSituacao(o)[0] !== 'encerrada')
-      .map(o => (o.nome||'').trim());
+      .map(_pafLbl);
     // da planilha: só nomes legados que não existem no painel (sem data p/ filtrar situação)
     const planilhaNomes = daPlanilha
       .map(v => (v||'').trim())
@@ -1508,7 +1510,8 @@ async function quesitosInit(){
     const vistos = new Set();
     QS_OPERACOES = [...bancoNomes, ...pafNomes, ...planilhaNomes]
       .map(v=>(v||'').trim())
-      .filter(v=>v && v.indexOf('OUTRA')===-1)
+      // exclui "OUTRA…" e as operações fictícias (dados de teste legados da planilha)
+      .filter(v=>v && v.indexOf('OUTRA')===-1 && !/fict[ií]cia/i.test(v))
       .filter(v=>{ const k=v.toLowerCase(); if(vistos.has(k)) return false; vistos.add(k); return true; });
     // Permite vincular quesitos ao caso "OUTRA OPERAÇÃO NÃO DESCRITA ACIMA" — operação
     // avulsa que o militar digita no Relatório sem cadastro específico. Pode ser
