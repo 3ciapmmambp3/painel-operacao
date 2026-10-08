@@ -1485,10 +1485,20 @@ async function quesitosInit(){
       const ref = await auth_fetchReferencias(QS_SCRIPT_URL);
       daPlanilha = (ref.OPERACOES||[]).map(o=>o.value);
     }catch(e){ console.warn('operações (planilha) p/ quesitos:', e); }
+    // Operações do PAF (🌲 Plano Anual de Fiscalização) — também podem receber quesitos.
+    let doPaf = [];
+    try{
+      const rowsP = await sbRpc('paf_fapi_listar', { p_tipo:'PAF' });
+      doPaf = Array.isArray(rowsP) ? rowsP : [];
+    }catch(e){ console.warn('operações PAF p/ quesitos:', e); }
     // nomes já cadastrados no painel (qualquer situação) — a planilha não repete esses
     const nomesBanco = new Set(doBanco.map(o=>(o.nome||'').trim().toLowerCase()).filter(Boolean));
     // do banco: só as que NÃO estão encerradas (ativa, futura ou sem data). Reativar (mudar datas) faz voltar.
     const bancoNomes = doBanco
+      .filter(o => opSituacao(o)[0] !== 'encerrada')
+      .map(o => (o.nome||'').trim());
+    // do PAF: pelo NOME da operação (igual ao card Operação do Relatório); só as não encerradas.
+    const pafNomes = doPaf
       .filter(o => opSituacao(o)[0] !== 'encerrada')
       .map(o => (o.nome||'').trim());
     // da planilha: só nomes legados que não existem no painel (sem data p/ filtrar situação)
@@ -1496,7 +1506,7 @@ async function quesitosInit(){
       .map(v => (v||'').trim())
       .filter(v => v && !nomesBanco.has(v.toLowerCase()));
     const vistos = new Set();
-    QS_OPERACOES = [...bancoNomes, ...planilhaNomes]
+    QS_OPERACOES = [...bancoNomes, ...pafNomes, ...planilhaNomes]
       .map(v=>(v||'').trim())
       .filter(v=>v && v.indexOf('OUTRA')===-1)
       .filter(v=>{ const k=v.toLowerCase(); if(vistos.has(k)) return false; vistos.add(k); return true; });

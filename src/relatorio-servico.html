@@ -1536,9 +1536,13 @@ function bindOpSmartFilter(panel, cfg){
   populateOpSelect(idSelect, cfg.sourceKey);
 
   idSelect.addEventListener('change', () => {
-    if (!nomeInput) return;
-    const found = (referenceCache[cfg.sourceKey] || []).find(it => opItemVal(it) === idSelect.value);
-    nomeInput.value = found ? opItemNome(found) : '';
+    if (nomeInput){
+      const found = (referenceCache[cfg.sourceKey] || []).find(it => opItemVal(it) === idSelect.value);
+      nomeInput.value = found ? opItemNome(found) : '';
+    }
+    // A operação do PAF também alimenta os quesitos (Campos & Quesitos): re-renderiza
+    // o card Produtividade p/ exibir/limpar os quesitos vinculados a essa operação.
+    if (typeof refreshProdutividadePanel === 'function') refreshProdutividadePanel();
   });
 
   const dataInput = document.getElementById('dataServico');
@@ -1866,15 +1870,22 @@ function _operacaoQuesitosEfetivos(){
   const seen = new Set(globaisAtivos);
   const out = [];
   const selects = _opSelectsAll();
-  const temAlguma = selects.some(s => (s.value||'').trim() !== '');
+  // Operações escolhidas no relatório: card "Operação" + operação do PAF (card PAF).
+  // Assim os quesitos vinculados a uma operação do PAF (Campos & Quesitos) também
+  // entram. Mantém "OUTRA OPERAÇÃO NÃO DESCRITA ACIMA" (vem do próprio op-select).
+  const opsSel = selects.map(s => (s.value||'').trim()).filter(v => v);
+  try{
+    const pafNode = (typeof panelCache !== 'undefined' && panelCache) ? panelCache['paf'] : null;
+    const pafEl = pafNode ? pafNode.querySelector('.pre-fields [data-field="pafNome"]') : null;
+    const pafNome = pafEl ? (pafEl.value||'').trim() : '';
+    if (pafNome && !opsSel.includes(pafNome)) opsSel.push(pafNome);
+  }catch(e){}
+  const temAlguma = opsSel.length > 0;
   if (temAlguma){
     arr.filter(q => q.escopo === 'todas' && q.ativo !== false).forEach(q => {
       const k = (q.label||'').toLowerCase(); if (!seen.has(k)){ seen.add(k); out.push(q); }
     });
   }
-  // Mantém "OUTRA OPERAÇÃO NÃO DESCRITA ACIMA" para casar com quesitos que o admin
-  // vinculou explicitamente a esse caso em Campos & Quesitos (operação avulsa).
-  const opsSel = selects.map(s => (s.value||'').trim()).filter(v => v);
   opsSel.forEach(op => {
     arr.filter(q => q.escopo === 'especificas' && q.ativo !== false && Array.isArray(q.operacoes) && q.operacoes.includes(op)).forEach(q => {
       const k = (q.label||'').toLowerCase(); if (!seen.has(k)){ seen.add(k); out.push(q); }
