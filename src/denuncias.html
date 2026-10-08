@@ -316,14 +316,20 @@ const MILITAR = S ? `${S.matricula} — ${S.pg||''} ${S.guerra||S.nome||''}`.rep
 document.getElementById('who').textContent = MILITAR;
 
 /* ── Aba (mesmo motor, filtrado por tipo via ?tipo=) ─────────────────
-   Sem parâmetro → Denúncias de Balcão (padrão do link do painel). */
-const TIPO_ABA = (new URLSearchParams(location.search).get('tipo') === 'requisicao') ? 'requisicao' : 'denuncia';
-const TIPO_LBL = TIPO_ABA==='requisicao' ? 'Requisições' : 'Denúncias de Balcão';
+   Sem parâmetro → Denúncias de Balcão (padrão do link do painel).
+   ?tipo=todos → mostra TODAS as demandas (Balcão + Requisição + o que mais
+   entrar nesta tabela), para atendimento por prioridade (data/prazo). */
+const _TP = new URLSearchParams(location.search).get('tipo');
+const ABA_TODOS = _TP === 'todos';
+const TIPO_ABA = _TP === 'requisicao' ? 'requisicao' : 'denuncia';   // tipo p/ "Nova Demanda"/export quando não é "Todos"
+const TIPO_LBL = ABA_TODOS ? 'Todas as Demandas' : (TIPO_ABA==='requisicao' ? 'Requisições' : 'Denúncias de Balcão');
+// true quando a demanda d entra na aba atual (Todos = qualquer tipo).
+const naAba = d => ABA_TODOS || d.tipo === TIPO_ABA;
 document.title = `${TIPO_LBL} — 3ª Cia PM MAmb`;
 document.getElementById('pagettl').textContent = TIPO_LBL;
-document.getElementById('hdr-sub').textContent = TIPO_LBL;
+document.getElementById('hdr-sub').textContent = ABA_TODOS ? 'Controle de Demandas · prioridade por data/prazo' : TIPO_LBL;
 // (item ativo da sidebar é marcado pelo demandas-sidebar.js, via URL)
-(function(){ const b=document.getElementById('btn-nova'); if(b&&b.lastChild) b.lastChild.textContent = TIPO_ABA==='requisicao' ? ' Nova Requisição' : ' Nova Denúncia'; })();
+(function(){ const b=document.getElementById('btn-nova'); if(b&&b.lastChild) b.lastChild.textContent = ABA_TODOS ? ' Nova Demanda' : (TIPO_ABA==='requisicao' ? ' Nova Requisição' : ' Nova Denúncia'); })();
 
 const gpNum  = s => { const m=(s||'').match(/(\d+)\s*GP/i);  return m?+m[1]:null; };
 const pelNum = s => { const m=(s||'').match(/(\d+)\s*PEL/i); return m?+m[1]:null; };
@@ -460,12 +466,12 @@ function prazoInfo(d){
 function setFiltro(btn){ document.querySelectorAll('.fbtn').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); filtro=btn.dataset.f; render(); }
 function popularAnos(){
   const sel=document.getElementById('ano'); const atualVal=sel.value;
-  const anos=[...new Set(DADOS.filter(d=>d.tipo===TIPO_ABA).map(d=>d.ano).filter(Boolean))].sort((a,b)=>b-a);
+  const anos=[...new Set(DADOS.filter(naAba).map(d=>d.ano).filter(Boolean))].sort((a,b)=>b-a);
   sel.innerHTML='<option value="all">Todos os anos</option>'+anos.map(a=>`<option value="${a}">${a}</option>`).join('');
   if (anos.includes(+atualVal)) sel.value=atualVal;   // preserva seleção
 }
 function passa(d){
-  if (d.tipo !== TIPO_ABA) return false;        // a aba fixa o tipo (balcão ou requisição)
+  if (!naAba(d)) return false;                  // a aba fixa o tipo (Todos = qualquer tipo)
   const ano=document.getElementById('ano').value;
   if (ano!=='all' && String(d.ano)!==String(ano)) return false;
   const q=document.getElementById('busca').value.trim().toLowerCase();
@@ -486,9 +492,15 @@ function render(){
   const tb=document.getElementById('tb'); tb.innerHTML='';
   const pager=document.getElementById('pager');
   const rows=DADOS.filter(passa);
-  // Prioridade de atendimento: lista do MAIS ANTIGO para o mais recente (por data
-  // de recebimento; empate pela ordem de criação). Vale p/ Balcão e Requisição.
+  // Prioridade de atendimento. Nas abas individuais (Balcão/Requisição): do MAIS
+  // ANTIGO p/ o mais recente por data de recebimento. Na aba "Todos": por PRAZO
+  // (vencimento mais próximo primeiro; sem prazo vai p/ o fim). Empate: recebimento,
+  // depois ordem de criação.
   rows.sort((a,b)=>{
+    if(ABA_TODOS){
+      const pa=a.prazo||'', pb=b.prazo||'';
+      if(pa!==pb) return (pa&&pb) ? (pa<pb?-1:1) : (pa?-1:1);
+    }
     const A=recebDe(a), B=recebDe(b);
     if(A!==B) return A<B?-1:1;
     const ca=String(a.created_at||''), cb=String(b.created_at||'');
@@ -531,7 +543,7 @@ function render(){
   }
 }
 function kpis(){
-  const ATIVAS=DADOS.filter(d=>d.ativo!==false && d.tipo===TIPO_ABA);
+  const ATIVAS=DADOS.filter(d=>d.ativo!==false && naAba(d));
   const c=(f)=>ATIVAS.filter(f).length;
   document.getElementById('k-pend').textContent=c(d=>d.situacao==='PENDENTE');
   document.getElementById('k-and').textContent =c(d=>d.situacao==='EM ANDAMENTO');
@@ -570,8 +582,8 @@ function exportarExcel(){
   ]));
   const ws=XLSX.utils.aoa_to_sheet(aoa);
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, TIPO_ABA==='requisicao'?'Requisições':'Denúncias');
-  const nome=(TIPO_ABA==='requisicao'?'Requisicoes':'Denuncias_Balcao')+'_'+new Date().toISOString().slice(0,10)+'.xlsx';
+  XLSX.utils.book_append_sheet(wb, ws, ABA_TODOS?'Demandas':(TIPO_ABA==='requisicao'?'Requisições':'Denúncias'));
+  const nome=(ABA_TODOS?'Demandas':(TIPO_ABA==='requisicao'?'Requisicoes':'Denuncias_Balcao'))+'_'+new Date().toISOString().slice(0,10)+'.xlsx';
   XLSX.writeFile(wb, nome);
 }
 

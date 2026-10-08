@@ -27,7 +27,7 @@
     const path = (location.pathname.split('/').pop() || '').toLowerCase();
     const qs = new URLSearchParams(location.search);
     let ativo = '';
-    if (path === 'denuncias.html')                ativo = qs.get('tipo') === 'requisicao' ? 'req' : 'den';
+    if (path === 'denuncias.html')                ativo = qs.get('tipo') === 'todos' ? 'todos' : (qs.get('tipo') === 'requisicao' ? 'req' : 'den');
     else if (path === 'nova-denuncia.html')       ativo = qs.get('tipo') === 'requisicao' ? 'req' : 'den';
     else if (path === 'materiais-tco-semad.html') ativo = qs.get('aba') === 'SEMAD' ? 'mat-semad' : 'mat-tco';
     else if (path === 'relatorio-demandas.html')  ativo = 'relatorio';
@@ -43,6 +43,7 @@
         <span class="rd-sidebar-titulo">DEMANDAS</span>
         <button class="rd-btn-colapsar" id="rdToggle" title="Recolher menu" aria-label="Recolher menu">◂</button>
       </div>
+      ${item('todos','denuncias.html?tipo=todos','🗃️','Todos (por prioridade)')}
       ${item('den','denuncias.html?tipo=denuncia','📋','Denúncias de Balcão')}
       ${item('req','denuncias.html?tipo=requisicao','📨','Requisições')}
       ${item('mat-tco','materiais-tco-semad.html?aba=TCO','📦','Materiais Acautelados - TCO')}
