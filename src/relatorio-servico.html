@@ -385,6 +385,17 @@
   }
   .conditional.open{display:block;}
 
+  /* Situação do atendimento (Finalizada / Em andamento / Não atendida) — por entrada */
+  .situacao-atendimento{margin-bottom:16px;}
+  .situacao-atendimento > label{
+    display:block; font-size:13px; font-weight:600; letter-spacing:.03em;
+    text-transform:uppercase; color:var(--gold-text); margin-bottom:6px;
+  }
+  .situacao-atendimento select{font-weight:600;}
+  .situacao-atendimento[data-v="EM_ANDAMENTO"] select{border-color:#c9a227; box-shadow:inset 0 0 0 1px #c9a227;}
+  .situacao-atendimento[data-v="NAO_ATENDIDA"] select{border-color:var(--error); box-shadow:inset 0 0 0 1px var(--error);}
+  .situacao-atendimento .sit-hint{font-size:11.5px; color:var(--muted); margin-top:4px; font-style:italic;}
+
   .productivity-grid{
     display:grid;
     grid-template-columns:1fr 1fr;
@@ -868,7 +879,7 @@ const REPEATABLE_CONFIGS = {
     ],
   },
   nuden: {
-    entryLabel: 'Denúncia/Requisição', respostaCompartilhada: true,
+    entryLabel: 'Denúncia/Requisição', respostaCompartilhada: true, situacaoAtendimento: true,
     fields: [
       { label: 'Nº da Denúncia/Requisição', type: 'select', sourceKey: 'NUDEN', fracaoScoped: true, demandaListaObrigatoria: true },
       [
@@ -882,7 +893,7 @@ const REPEATABLE_CONFIGS = {
     ],
   },
   ddu: {
-    entryLabel: 'Denúncia DDU 181', respostaCompartilhada: true,
+    entryLabel: 'Denúncia DDU 181', respostaCompartilhada: true, situacaoAtendimento: true,
     fields: [
       { label: 'Nº da Denúncia DDU', type: 'select', sourceKey: 'DDU181', fracaoScoped: true, demandaListaObrigatoria: true },
       [
@@ -896,7 +907,7 @@ const REPEATABLE_CONFIGS = {
     ],
   },
   balcao: {
-    entryLabel: 'Denúncia/Requisição (Balcão)', respostaCompartilhada: true,
+    entryLabel: 'Denúncia/Requisição (Balcão)', respostaCompartilhada: true, situacaoAtendimento: true,
     fields: [
       { label: 'Denúncia de Balcão', type: 'select', sourceKey: 'DEN_BALCAO', fracaoScoped: true, demandaListaObrigatoria: true },
       [
@@ -967,7 +978,7 @@ const REPEATABLE_CONFIGS = {
     ],
   },
   mc: {
-    entryLabel: 'Monitoramento', respostaCompartilhada: true,
+    entryLabel: 'Monitoramento', respostaCompartilhada: true, situacaoAtendimento: true,
     fields: [
       { label: 'GEOCODE_IEF', type: 'select', sourceKey: 'MC', fracaoScoped: true, demandaListaObrigatoria: true },
       [
@@ -981,7 +992,7 @@ const REPEATABLE_CONFIGS = {
     ],
   },
   emergencia: {
-    entryLabel: 'Emergência Ambiental', respostaCompartilhada: true,
+    entryLabel: 'Emergência Ambiental', respostaCompartilhada: true, situacaoAtendimento: true,
     fields: [
       { label: 'Nº Protocolo', type: 'select', sourceKey: 'EMERGENCIA', fracaoScoped: true, demandaListaObrigatoria: true },
       [
@@ -995,7 +1006,7 @@ const REPEATABLE_CONFIGS = {
     ],
   },
   ftp: {
-    entryLabel: 'Atendimento FTP/RI', respostaCompartilhada: true,
+    entryLabel: 'Atendimento FTP/RI', respostaCompartilhada: true, situacaoAtendimento: true,
     fields: [
       { label: 'Nº RI', type: 'select', sourceKey: 'RI', fracaoScoped: true, demandaListaObrigatoria: true },
       [
@@ -1009,7 +1020,7 @@ const REPEATABLE_CONFIGS = {
     ],
   },
   requisicao: {
-    entryLabel: 'Requisição Externa', respostaCompartilhada: true,
+    entryLabel: 'Requisição Externa', respostaCompartilhada: true, situacaoAtendimento: true,
     fields: [
       { label: 'Nº da Requisição', type: 'select', sourceKey: 'REQUISICAO', fracaoScoped: true, demandaListaObrigatoria: true },
       [
@@ -1712,6 +1723,30 @@ async function carregarDemandasSupabase(){
   referenceCache['REQUISICAO'] = _merge(_scopePlan(referenceCache['REQUISICAO']), supReq);
 }
 
+// Demandas EM ANDAMENTO (tabela de controle Supabase, db/134): mescla nos cards
+// marcando "em andamento" (⟲). Substitui a versão "limpa" da mesma demanda para
+// não duplicar — assim a demanda continua aparecendo como pendente, com contexto.
+// Casa com _identNorm (ignora o marcador) no envio (gate planilha/baixa/controle).
+async function carregarDemandasAndamento(){
+  if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
+  const S = (typeof getSessaoAtual === 'function') ? getSessaoAtual() : null;
+  if (!S || !S.token) return;
+  const H = { apikey: SB_AUTH_KEY, Authorization:`Bearer ${SB_AUTH_KEY}`, 'Content-Type':'application/json' };
+  const r = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/demanda_andamento_listar`, { method:'POST', headers:H, body: JSON.stringify({ p_token: S.token }) });
+  if (!r.ok) throw new Error(`andamento ${r.status} ${await r.text()}`);
+  const rows = await r.json() || [];
+  rows.forEach(d => {
+    const sk = d.source_key; if (!sk) return;
+    const base = _identNorm(d.identificador);
+    const valor = _stripAndamento(d.rotulo || d.identificador) + AND_MARK;
+    const item = { value: valor, fracao: d.fracao || d.gp_responsavel || '' };
+    let arr = Array.isArray(referenceCache[sk]) ? referenceCache[sk] : [];
+    arr = arr.filter(it => { const v = (it && typeof it === 'object') ? it.value : it; return _identNorm(v) !== base; });
+    arr.push(item);
+    referenceCache[sk] = arr;
+  });
+}
+
 // OPERAÇÕES agora vêm do painel (Supabase), não mais da aba da planilha.
 // Sobrescreve referenceCache['OPERACOES'] no MESMO formato {value,inicio,final}
 // que o card "Operação" já consome (populateOperacaoSelect / operacaoItemValido).
@@ -1954,6 +1989,9 @@ async function fetchReferenceData(){
     catch(e){ console.warn('[quesitos] catálogo indisponível:', e); }
     try { await carregarDemandasSupabase(); }
     catch(e){ console.warn('[supademandas] mantendo fonte da planilha para DEN_BALCAO/REQUISICAO:', e); }
+    // Demandas EM ANDAMENTO (controle Supabase): reaparecem nos cards sinalizadas.
+    try { await carregarDemandasAndamento(); }
+    catch(e){ console.warn('[andamento] lista indisponível:', e); }
     dadosCarregados = true;
     setPlaceholderText('Selecione...');
     populateSelectsIn(document);
@@ -2740,12 +2778,29 @@ function renderFieldGroup(item){
   return fieldInputHTML(item);
 }
 
+// Controle de 3 estados por ENTRADA (atendimento). Fora de .field p/ NÃO ser
+// coletado como campo da planilha. Governa: só FINALIZADA alimenta a planilha +
+// baixa; EM_ANDAMENTO fica na tabela de controle (reaparece); NAO_ATENDIDA some
+// (fica pendente/intocada). Default = FINALIZADA → zero regressão.
+function situacaoAtendimentoHTML(){
+  return `
+    <div class="situacao-atendimento" data-v="FINALIZADA">
+      <label>Situação do atendimento</label>
+      <select data-situacao onchange="this.closest('.situacao-atendimento').setAttribute('data-v', this.value)">
+        <option value="FINALIZADA">✅ Finalizada (alimenta a planilha e dá baixa)</option>
+        <option value="EM_ANDAMENTO">🟡 Em andamento (continua no próximo serviço)</option>
+        <option value="NAO_ATENDIDA">⛔ Não atendida (pode ser redistribuída)</option>
+      </select>
+      <div class="sit-hint">Só "Finalizada" dá baixa na demanda. Em andamento/Não atendida ficam pendentes.</div>
+    </div>`;
+}
 function buildEntryBlockHTML(config, n, removable){
   const fieldsHTML = config.fields.map(renderFieldGroup).join('');
   return `
     <div class="entry-block" data-repeat-entry>
       <span class="entry-num">${config.entryLabel} ${n}</span>
       ${removable ? '<button type="button" class="entry-remove">&times;</button>' : ''}
+      ${config.situacaoAtendimento ? situacaoAtendimentoHTML() : ''}
       ${fieldsHTML}
     </div>`;
 }
@@ -2998,6 +3053,15 @@ function refreshProdutividadePanel(){
   renderGrid();
 }
 
+// Situação do atendimento (FINALIZADA/EM_ANDAMENTO/NAO_ATENDIDA) da ENTRADA que
+// contém o elemento `el`. Entradas sem o controle (categorias que não usam
+// situacaoAtendimento) contam como FINALIZADA (comportamento atual).
+function _entrySituacaoDe(el){
+  const entry = el && el.closest ? el.closest('[data-repeat-entry]') : null;
+  const sel = entry ? entry.querySelector('[data-situacao]') : null;
+  return sel ? (sel.value || 'FINALIZADA') : 'FINALIZADA';
+}
+
 // Valida o conteúdo do modal aberto: máscaras incompletas e campos obrigatórios.
 // Retorna uma lista de problemas (vazia = tudo ok).
 function validarModalAtual(){
@@ -3015,7 +3079,12 @@ function validarModalAtual(){
   });
 
   // Campos obrigatórios vazios — texto, select, textarea, com ou sem máscara.
+  // Exceção: numa entrada cuja Situação do atendimento ≠ Finalizada (em andamento
+  // ou não atendida), os campos de RESPOSTA (REDS/Auto/Ato/Data) são opcionais —
+  // a demanda não será finalizada agora. A escolha da demanda (demandaObrig)
+  // continua exigida mais abaixo.
   modalBody.querySelectorAll('[data-required="1"]').forEach(el => {
+    if (_entrySituacaoDe(el) !== 'FINALIZADA') return;
     const val = (el.value || '').trim();
     if (!val){
       const label = el.dataset.label || 'Campo';
@@ -4261,6 +4330,7 @@ const relatorioForm = document.getElementById('relatorioForm');
 const hiddenIframeRelatorio = document.getElementById('hidden_iframe_relatorio');
 let enviandoRelatorio = false;
 let ultimoPayloadEnviado = null;   // usado para a baixa automática das demandas no Supabase
+let ultimaSituMap = null;          // mapa de situação por demanda (gate planilha/baixa/controle)
 
 relatorioForm.setAttribute('action', SCRIPT_URL);
 relatorioForm.setAttribute('method', 'POST');
@@ -4285,17 +4355,26 @@ document.getElementById('reviewConfirmBtn').addEventListener('click', async () =
   reviewConfirmBtn.disabled = true;
   reviewConfirmBtn.textContent = 'Enviando...';
 
+  // Situação do atendimento: sincroniza o bloco "Resposta ao Cartão" nos cards
+  // (grupamentos COM cartão) e monta o mapa por demanda a partir dos controles.
+  try{ if (typeof window.cpSyncSituacaoParaCards === 'function') window.cpSyncSituacaoParaCards(); }catch(e){ console.warn('[situacao] cpSync', e); }
+  const situMap = coletarMapaSituacoes();
+  sanitizarDemandasNoPayload(payload);   // tira o marcador "em andamento" dos nºs (planilha/espelho/PDF limpos)
+
   // FASE 3 (id unificado): no CREATE, grava no Supabase PRIMEIRO — ele gera o
   // uuid e já vincula (sheet_id=uuid). A planilha recebe esse MESMO id como
   // "ID Relatório", então ambos ficam com o mesmo id. (Na edição, o Supabase é
   // atualizado depois, no load do iframe, pois já temos o id.)
   if (payload.modo !== 'atualizarRelatorio'){
-    const uuid = await gravarRelatorioSupabase(payload);
+    const uuid = await gravarRelatorioSupabase(payload);   // espelho recebe TUDO
     if (uuid) payload.idRelatorio = uuid;
   }
 
   ultimoPayloadEnviado = payload;
-  document.getElementById('payloadField').value = JSON.stringify(payload);
+  ultimaSituMap = situMap;
+  // A PLANILHA recebe só as FINALIZADAS (em andamento / não atendida não alimentam).
+  const payloadPlanilha = filtrarPayloadParaPlanilha(payload, situMap);
+  document.getElementById('payloadField').value = JSON.stringify(payloadPlanilha);
   enviandoRelatorio = true;
   relatorioForm.submit();
 });
@@ -4311,12 +4390,16 @@ hiddenIframeRelatorio.addEventListener('load', async () => {
   // O CREATE já gravou no Supabase ANTES do envio (Fase 3). Só a EDIÇÃO grava aqui
   // (depois do espelho na planilha). Best-effort.
   if (ehEdicao) await gravarRelatorioSupabase(ultimoPayloadEnviado);
-  // Baixa automática: marca no Supabase as denúncias/requisições atendidas neste relatório.
-  // Best-effort: se falhar, não impede o fluxo do relatório.
-  await marcarDemandasAtendidas(ultimoPayloadEnviado);
+  // Baixa automática: marca no Supabase as denúncias/requisições atendidas neste
+  // relatório — SÓ as FINALIZADAS (situMap). Best-effort.
+  await marcarDemandasAtendidas(ultimoPayloadEnviado, ultimaSituMap);
+  // Controle das demandas EM ANDAMENTO (Supabase): registra as em andamento e
+  // tira do controle as que foram finalizadas agora. Best-effort.
+  try{ await sincronizarDemandasAndamento(ultimoPayloadEnviado, ultimaSituMap, ultimoPayloadEnviado && ultimoPayloadEnviado.idRelatorio); }catch(e){ console.warn('[andamento] sync', e); }
   // Fecha também o Cartão Programa do dia (se a equipe respondeu demandas no bloco). Best-effort.
   try{ if (typeof window.marcarCartaoAtendido === 'function') await window.marcarCartaoAtendido(ultimoPayloadEnviado && ultimoPayloadEnviado.idRelatorio); }catch(e){ console.warn('[cartao] baixa', e); }
   ultimoPayloadEnviado = null;
+  ultimaSituMap = null;
   try{ if (typeof window.__rsLimparRascunho === 'function') window.__rsLimparRascunho(); }catch(e){}
   alert(ehEdicao ? 'Relatório atualizado com sucesso!' : 'Relatório enviado com sucesso!');
   window.location.href = 'meus-relatorios.html';
@@ -4366,7 +4449,100 @@ function _extrairNumeroOcorrencia(s){
   const m = String(s||'').match(/(\d{1,4})\s*\/\s*(\d{4})/);
   return m ? `${m[1].padStart(3,'0')}/${m[2]}` : null;
 }
-async function marcarDemandasAtendidas(payload){
+// ─── Situação do atendimento: helpers (gate planilha/baixa/controle) ─────
+// Categorias com controle de 3 estados → sourceKey do controle no Supabase.
+const CAT_SITUACAO = { nuden:'NUDEN', ddu:'DDU181', balcao:'DEN_BALCAO', mc:'MC', emergencia:'EMERGENCIA', ftp:'RI', requisicao:'REQUISICAO' };
+const AND_MARK = '  ⟲ EM ANDAMENTO';
+function _stripAndamento(v){ return String(v==null?'':v).replace(/\s*⟲\s*EM ANDAMENTO\s*$/i,'').trim(); }
+function _identNorm(v){ return _stripAndamento(v).replace(/\s+/g,' ').trim(); }
+// Rótulo da demanda (o select fração-scoped) de uma categoria.
+function _demandaLabelOf(catId){
+  const cfg = REPEATABLE_CONFIGS[catId]; if (!cfg) return null;
+  const flat = []; (cfg.fields || []).forEach(f => Array.isArray(f) ? flat.push(...f) : flat.push(f));
+  const dd = flat.find(f => f && f.fracaoScoped && f.sourceKey);
+  return dd ? dd.label : null;
+}
+// Lê, do DOM, a situação por demanda. Retorna { [catLabel]: { demandaLabel, sourceKey, byIdent: Map } }.
+function coletarMapaSituacoes(){
+  const mapa = {};
+  Object.keys(CAT_SITUACAO).forEach(catId => {
+    const node = (typeof panelCache !== 'undefined') ? panelCache[catId] : null; if (!node) return;
+    const catLabel = (CATEGORIES.find(c => c.id === catId) || {}).label; if (!catLabel) return;
+    const demandaLabel = _demandaLabelOf(catId); if (!demandaLabel) return;
+    const byIdent = new Map();
+    node.querySelectorAll('[data-repeat-entry]').forEach(entry => {
+      const sel = entry.querySelector('[data-situacao]');
+      const situacao = sel ? (sel.value || 'FINALIZADA') : 'FINALIZADA';
+      const vals = [];
+      const main = entry.querySelector('[data-fracao-scoped="1"]'); if (main && main.value) vals.push(main.value);
+      entry.querySelectorAll('.rc-extras [data-source]').forEach(inp => { if (inp.value) vals.push(inp.value); });
+      vals.forEach(v => byIdent.set(_identNorm(v), situacao));
+    });
+    mapa[catLabel] = { demandaLabel, sourceKey: CAT_SITUACAO[catId], byIdent };
+  });
+  return mapa;
+}
+// Situação de um item do payload, consultando o mapa (default FINALIZADA).
+function _situacaoDoItem(situMap, catLabel, item){
+  const m = situMap && situMap[catLabel]; if (!m) return 'FINALIZADA';
+  return m.byIdent.get(_identNorm(item[m.demandaLabel])) || 'FINALIZADA';
+}
+// Tira o marcador "em andamento" dos nºs de demanda no payload (planilha/espelho/PDF limpos).
+function sanitizarDemandasNoPayload(payload){
+  if (!payload || !Array.isArray(payload.categorias)) return;
+  const labels = {}; Object.keys(CAT_SITUACAO).forEach(id => { const l = _demandaLabelOf(id); if (l) labels[l] = 1; });
+  payload.categorias.forEach(cat => (cat.itens || []).forEach(it => {
+    Object.keys(labels).forEach(lab => { if (it[lab]) it[lab] = _stripAndamento(it[lab]); });
+  }));
+}
+// Cópia do payload para a PLANILHA, removendo os itens cuja situação ≠ Finalizada.
+function filtrarPayloadParaPlanilha(payload, situMap){
+  const clone = JSON.parse(JSON.stringify(payload));
+  clone.categorias = (clone.categorias || []).map(cat => {
+    if (!situMap || !situMap[cat.categoria]) return cat;
+    const itens = (cat.itens || []).filter(it => _situacaoDoItem(situMap, cat.categoria, it) === 'FINALIZADA');
+    return Object.assign({}, cat, { itens });
+  }).filter(cat => !situMap || !situMap[cat.categoria] || (Array.isArray(cat.itens) && cat.itens.length));
+  return clone;
+}
+// Registra as EM ANDAMENTO na tabela de controle e tira as FINALIZADAS (best-effort).
+async function sincronizarDemandasAndamento(payload, situMap, relId){
+  if (!payload || !Array.isArray(payload.categorias) || !situMap) return;
+  if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
+  const sess = (typeof getSessaoAtual === 'function') ? (getSessaoAtual() || {}) : {};
+  if (!sess.token) return;
+  const H = { apikey: SB_AUTH_KEY, Authorization: `Bearer ${SB_AUTH_KEY}`, 'Content-Type': 'application/json' };
+  const b1 = payload.bloco1 || {};
+  const fracao = (b1['Fração de Atuação'] || b1['Fração de atuação'] || '').trim();
+  for (const cat of payload.categorias){
+    const m = situMap[cat.categoria]; if (!m) continue;
+    for (const item of (cat.itens || [])){
+      const ident = _identNorm(item[m.demandaLabel]); if (!ident) continue;
+      const situacao = m.byIdent.get(ident) || 'FINALIZADA';
+      try {
+        if (situacao === 'EM_ANDAMENTO'){
+          const p_item = {
+            source_key: m.sourceKey, identificador: ident, rotulo: ident, fracao: fracao,
+            relatorio_id: relId || null,
+            dados: {
+              reds: item['Nº REDS (BO/BOS/RAT)'] || '', auto_infracao: item['Nº Auto de Infração'] || '',
+              ato_fiscalizacao: item['Nº Ato de Fiscalização'] || '',
+              data_atendimento: item['Data da Fiscalização'] || item['Data de Atendimento'] || '',
+              obs: item['Observações'] || ''
+            }
+          };
+          await fetch(`${SB_AUTH_URL}/rest/v1/rpc/demanda_andamento_registrar`,
+            { method:'POST', headers:H, body: JSON.stringify({ p_token: sess.token, p_item }) });
+        } else if (situacao === 'FINALIZADA'){
+          await fetch(`${SB_AUTH_URL}/rest/v1/rpc/demanda_andamento_finalizar`,
+            { method:'POST', headers:H, body: JSON.stringify({ p_token: sess.token, p_source_key: m.sourceKey, p_identificador: ident, p_fracao: fracao || null }) });
+        }
+        // NAO_ATENDIDA: nada (fica intocada / pendente na planilha).
+      } catch(err){ console.warn('[andamento]', m.sourceKey, ident, err); }
+    }
+  }
+}
+async function marcarDemandasAtendidas(payload, situMap){
   try {
     if (!payload || !Array.isArray(payload.categorias)) return;
     if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
@@ -4387,6 +4563,8 @@ async function marcarDemandasAtendidas(payload){
       const bloco = payload.categorias.find(c => c.categoria === cfg.cat);
       if (!bloco || !Array.isArray(bloco.itens)) continue;
       for (const item of bloco.itens){
+        // Só dá baixa nas FINALIZADAS (em andamento / não atendida não baixam).
+        if (_situacaoDoItem(situMap, cfg.cat, item) !== 'FINALIZADA') continue;
         const numero = _extrairNumeroOcorrencia(item[cfg.campoNum]);
         if (!numero) continue;
         const body = {
@@ -4834,6 +5012,23 @@ document.addEventListener('click', () => {
     });
   }
   window.__cpPuxar=cpPuxarDosCards;
+  // Sincroniza a situação do bloco "Resposta ao Cartão" para o controle de 3
+  // estados dos CARDS do relatório (grupamentos COM cartão). Casa pela demanda
+  // de origem (número). TOTAL→Finalizada, PARCIAL→Em andamento, NAO→Não atendida.
+  window.cpSyncSituacaoParaCards=function(){
+    const c=ABERTOS.find(x=>x.id===SELID); const box=_dems(); if(!c||!box) return;
+    const MAP={ TOTAL:'FINALIZADA', PARCIAL:'EM_ANDAMENTO', NAO:'NAO_ATENDIDA' };
+    const entries=Array.from(document.querySelectorAll('[data-repeat-entry]')).filter(en=>en.querySelector('[data-situacao]'));
+    (c.demandas||[]).forEach((d,i)=>{
+      const ord=String(d.ordem||(i+1)); const chave=_n2((d.origem||{}).numero); if(chave.length<5) return;
+      const row=box.querySelector('[data-ord="'+ord+'"]'); if(!row) return;
+      const selA=row.querySelector('[data-k="atendida"]'); const sit=selA?MAP[selA.value]:null; if(!sit) return;
+      const alvo=entries.find(en=>{ const inp=en.querySelector('[data-fracao-scoped="1"]'); const nv=inp?_n2(inp.value):''; return nv.length>=5 && (nv===chave || nv.indexOf(chave)!==-1); });
+      if(!alvo) return;
+      const selS=alvo.querySelector('[data-situacao]'); if(!selS) return;
+      selS.value=sit; const wrap=selS.closest('.situacao-atendimento'); if(wrap) wrap.setAttribute('data-v', sit);
+    });
+  };
   window.marcarCartaoAtendido=async function(relId){
     if(!SELID) return; const S=(typeof getSessaoAtual==='function')?getSessaoAtual():null; if(!S||!S.token) return;
     try{ cpPuxarDosCards(); }catch(e){}   // garante o puxar dos cards no envio
