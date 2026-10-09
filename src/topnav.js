@@ -181,7 +181,7 @@
     nav.id = 'topnav';
     nav.innerHTML = `
       <a class="topnav-link${on('meudia')}" href="inicio.html">☀️ MEU DIA</a>
-      <a class="topnav-link${on('visaogeral')}" href="painel.html?tab=inicio">📊 VISÃO GERAL</a>
+      ${ehColab ? '' : `<a class="topnav-link${on('visaogeral')}" href="painel.html?tab=inicio">📊 VISÃO GERAL</a>`}
       ${showSec('p1') ? tab('p1','hub-p1.html','<span class="hubdot hub-p1"></span> RECURSOS HUMANOS') : ''}
       ${showSec('p2') ? tab('p2','hub-p2.html','<span class="hubdot hub-p2"></span> INTELIGÊNCIA') : ''}
       ${showSec('p3') ? tab('p3','hub-p3.html','<span class="hubdot hub-p3"></span> EMPREGO OPERACIONAL') : ''}
