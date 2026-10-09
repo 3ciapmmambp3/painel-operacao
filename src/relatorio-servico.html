@@ -862,7 +862,7 @@ const REPEATABLE_CONFIGS = {
   // (REDS, palestra, atividade educativa, reunião, apoio, etc.). Fica associado
   // ao militar + data + relatório (como qualquer categoria do relatório).
   registro: {
-    entryLabel: 'Registro',
+    entryLabel: 'Registro', vincularCartao: true,
     fields: [
       { label: 'Tipo de atividade', type: 'select', options: ['Acionado pelo COPOM','Ocorrência Iniciativa','Operação','Palestra','Atividade educativa','Atividade extraordinária','Reunião','Apoio','Outra atividade'],
         allowOutroLivre: true, outroValor: 'Outra atividade', outroPlaceholder: 'Qual atividade? Descreva' },
@@ -2796,6 +2796,26 @@ function situacaoAtendimentoHTML(){
       <div class="sit-hint">Só "Finalizada" dá baixa na demanda. Em andamento/Não atendida ficam pendentes.</div>
     </div>`;
 }
+// Bloco p/ vincular um Registro (atividade livre: operação/patrulha) a uma demanda
+// SEM número do Cartão Programa da equipe. Fica ESCONDIDO até cpPopularVinculos()
+// achar demandas livres da equipe. Ao vincular, mostra a Situação do atendimento.
+function vinculoCartaoHTML(){
+  return `
+    <div class="cp-vinculo-box situacao-atendimento" data-v="FINALIZADA" style="display:none;border:1px dashed var(--gold);border-radius:8px;padding:10px 12px;margin-bottom:14px">
+      <label>🪪 Atende uma demanda do Cartão Programa? (opcional)</label>
+      <select data-cp-link onchange="var b=this.closest('.cp-vinculo-box');var s=b.querySelector('.cp-sit');if(s)s.style.display=this.value?'':'none';">
+        <option value="">— não vincular —</option>
+      </select>
+      <div class="cp-sit" style="display:none;margin-top:8px">
+        <label>Situação do atendimento</label>
+        <select data-situacao onchange="this.closest('.cp-vinculo-box').setAttribute('data-v', this.value)">
+          <option value="FINALIZADA">✅ Finalizada</option>
+          <option value="EM_ANDAMENTO">🟡 Em andamento (continua no próximo serviço)</option>
+          <option value="NAO_ATENDIDA">⛔ Não atendida (pode ser redistribuída)</option>
+        </select>
+      </div>
+    </div>`;
+}
 function buildEntryBlockHTML(config, n, removable){
   const fieldsHTML = config.fields.map(renderFieldGroup).join('');
   return `
@@ -2803,6 +2823,7 @@ function buildEntryBlockHTML(config, n, removable){
       <span class="entry-num">${config.entryLabel} ${n}</span>
       ${removable ? '<button type="button" class="entry-remove">&times;</button>' : ''}
       ${config.situacaoAtendimento ? situacaoAtendimentoHTML() : ''}
+      ${config.vincularCartao ? vinculoCartaoHTML() : ''}
       ${fieldsHTML}
     </div>`;
 }
@@ -2838,6 +2859,9 @@ function bindRepeatablePanel(panel, categoryId){
     }
     if (categoryId === 'ima') bindImaDuracao(entry);
     if (categoryId === 'fapi') bindFapiEntry(entry, panel);
+    // Registro: popula o seletor "vincular à demanda do Cartão" (cobre abrir o
+    // card e "+ Adicionar"); fica escondido se a equipe não tiver cartão.
+    if (categoryId === 'registro' && typeof window.cpPopularVinculos === 'function') setTimeout(window.cpPopularVinculos, 0);
     setupRespCompart(entry);
   }
   // Resposta compartilhada: acha o campo de DEMANDA (o select fração-scoped) e
@@ -4958,6 +4982,32 @@ document.addEventListener('click', () => {
     const meus=_matsRelatorio(); if(!meus.size) return null;
     return ABERTOS.filter(c=>{ const cm=_matsCartao(c); for(const m of meus) if(cm.has(m)) return true; return false; });
   }
+  // Demandas LIVRES (sem número) dos cartões da equipe — para o vínculo no Registro.
+  let CP_FREE=[];
+  window.cpPopularVinculos=async function(){
+    const selects=document.querySelectorAll('[data-cp-link]'); if(!selects.length) return;
+    const S=(typeof getSessaoAtual==='function')?getSessaoAtual():null; const data=dataEl?dataEl.value:'';
+    const meus=(S&&S.token&&data)?_matsRelatorio():new Set();
+    CP_FREE=[];
+    if(S&&S.token&&data&&meus.size){
+      try{
+        const r=await fetch(`${API}/rest/v1/rpc/cartao_abertos_por_data`,{method:'POST',headers:H,body:JSON.stringify({p_token:S.token,p_data:data})});
+        const abertos=r.ok?(await r.json()||[]):[];
+        abertos.filter(c=>{const cm=_matsCartao(c);for(const m of meus)if(cm.has(m))return true;return false;})
+          .forEach(c=>{ (c.demandas||[]).forEach((d,i)=>{
+            if(_n2((d.origem||{}).numero).length>=5) return;   // tem número = casa automático, não entra aqui
+            const ord=String(d.ordem||(i+1)); const tx=((d.texto||'').replace(/\s+/g,' ').trim()).slice(0,70);
+            CP_FREE.push({cartaoId:c.id, ordem:ord, label:'Cartão '+(c.numero||'')+' — demanda '+ord+(tx?(': '+tx):'')});
+          }); });
+      }catch(e){}
+    }
+    const esc2=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+    const opts='<option value="">— não vincular —</option>'+CP_FREE.map(x=>`<option value="${x.cartaoId}::${x.ordem}">${esc2(x.label)}</option>`).join('');
+    selects.forEach(sel=>{ const cur=sel.value; sel.innerHTML=opts; if([...sel.options].some(o=>o.value===cur)) sel.value=cur;
+      const box=sel.closest('.cp-vinculo-box'); if(box) box.style.display=CP_FREE.length?'':'none';
+      const sit=box?box.querySelector('.cp-sit'):null; if(sit) sit.style.display=sel.value?'':'none';
+    });
+  };
   // Encaixe no card "Resposta ao Cartão Programa" do relatório (modal de categoria).
   window.cpBuildHTML=function(){ return '<div id="cpInner" style="font-size:13px;color:var(--muted)">Informe a data do serviço (Bloco 1) para carregar o cartão da sua equipe.</div>'; };
   window.cpBindPanel=function(div){ root=div; carregar(); };
@@ -5078,6 +5128,20 @@ document.addEventListener('click', () => {
     const _idn=(typeof _identNorm==='function')?_identNorm:(v=>String(v==null?'':v));
     const MAPSIT={ FINALIZADA:'TOTAL', EM_ANDAMENTO:'PARCIAL', NAO_ATENDIDA:'NAO' };
     const call=(body)=>fetch(`${API}/rest/v1/rpc/cartao_atender`,{method:'POST',headers:H,body:JSON.stringify(body)});
+    // Vínculos do card Registro → demandas LIVRES do cartão ({cartaoId:{ordem:resposta}}).
+    const regByCartao={};
+    const regNode=(typeof panelCache!=='undefined'&&panelCache)?panelCache['registro']:null;
+    if(regNode){
+      regNode.querySelectorAll('[data-repeat-entry]').forEach(en=>{
+        const sel=en.querySelector('[data-cp-link]'); const v=sel?sel.value:''; if(!v) return;
+        const p=v.split('::'); const cid=p[0], ord=p[1]; if(!cid||!ord) return;
+        const box=sel.closest('.cp-vinculo-box'); const sitEl=box?box.querySelector('[data-situacao]'):null;
+        const o={ atendida: MAPSIT[(sitEl?sitEl.value:'FINALIZADA')]||'TOTAL' };
+        const reds=(en.querySelector('[data-label="Nº do REDS / Registro"]')||{}).value; if(reds&&reds.trim()) o.reds=reds.trim();
+        const dtEl=en.querySelector('input[type="date"]'); const dt=dtEl?dtEl.value:''; if(dt) o.data_atendimento=(typeof _cpData==='function'?_cpData(dt):dt);
+        (regByCartao[cid]=regByCartao[cid]||{})[ord]=o;
+      });
+    }
     for(const c of cartoes){
       const respostas={};
       (c.demandas||[]).forEach((d,i)=>{
@@ -5094,17 +5158,20 @@ document.addEventListener('click', () => {
         const dt=it['Data de Atendimento']||it['Data da Fiscalização']; if(dt) o.data_atendimento=(typeof _cpData==='function'?_cpData(dt):dt);
         respostas[ord]=o;
       });
+      // Demandas LIVRES vinculadas no Registro (sem número, casadas manualmente).
+      const rl=regByCartao[c.id]; if(rl) Object.keys(rl).forEach(ord=>{ respostas[ord]=rl[ord]; });
       try{
         let r=await call({p_token:S.token,p_id:c.id,p_respostas:respostas,p_relatorio:relId||null});
         if(!r.ok) await call({p_token:S.token,p_id:c.id,p_respostas:respostas});   // fallback sem p_relatorio (db/131)
       }catch(e){ console.warn('[cartao] atender',e); }
     }
   };
-  if(dataEl) dataEl.addEventListener('change', carregar);
-  // Equipe mudou no Bloco 1 (Comandante/Motorista/Patrulheiros) → re-filtra os cartões.
+  if(dataEl) dataEl.addEventListener('change', ()=>{ carregar(); try{ cpPopularVinculos(); }catch(_){} });
+  // Equipe mudou no Bloco 1 (Comandante/Motorista/Patrulheiros) → re-filtra os
+  // cartões e atualiza o vínculo do Registro (demandas livres da equipe).
   document.addEventListener('change', e => {
     const t=e.target; if(!t) return;
-    if(t.name==='comandante' || t.name==='motorista' || (t.closest && t.closest('#patrulheirosList'))) { try{ render(); }catch(_){} }
+    if(t.name==='comandante' || t.name==='motorista' || (t.closest && t.closest('#patrulheirosList'))) { try{ render(); }catch(_){} try{ cpPopularVinculos(); }catch(_){} }
   });
 })();
 </script>
