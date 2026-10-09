@@ -385,6 +385,17 @@
   }
   .conditional.open{display:block;}
 
+  /* Situação do atendimento (Finalizada / Em andamento / Não atendida) — por entrada */
+  .situacao-atendimento{margin-bottom:16px;}
+  .situacao-atendimento > label{
+    display:block; font-size:13px; font-weight:600; letter-spacing:.03em;
+    text-transform:uppercase; color:var(--gold-text); margin-bottom:6px;
+  }
+  .situacao-atendimento select{font-weight:600;}
+  .situacao-atendimento[data-v="EM_ANDAMENTO"] select{border-color:#c9a227; box-shadow:inset 0 0 0 1px #c9a227;}
+  .situacao-atendimento[data-v="NAO_ATENDIDA"] select{border-color:var(--error); box-shadow:inset 0 0 0 1px var(--error);}
+  .situacao-atendimento .sit-hint{font-size:11.5px; color:var(--muted); margin-top:4px; font-style:italic;}
+
   .productivity-grid{
     display:grid;
     grid-template-columns:1fr 1fr;
@@ -831,7 +842,9 @@ const CATEGORIES = [
   { id: 'cemig',         label: 'Convênio CEMIG',   icon: 'CM', ready: true },
   { id: 'recursos',      label: 'Recursos Empreg.', icon: 'RE', ready: true },
   { id: 'produtividade', label: 'Produtividade',    icon: '★', ready: true },
-  { id: 'cartao_programa', label: 'Resposta ao Cartão Programa', icon: 'CP', ready: false },
+  // "Resposta ao Cartão Programa" foi REMOVIDO: o cartão da equipe é atendido
+  // AUTOMATICAMENTE no envio, casando as demandas com os cards já preenchidos
+  // (ver window.marcarCartaoAtendido). Evita preencher duas vezes.
 ];
 
 // Os campos de Produtividade vêm dinamicamente de referenceCache.CAMPOS_PRODUTIVIDADE
@@ -849,7 +862,7 @@ const REPEATABLE_CONFIGS = {
   // (REDS, palestra, atividade educativa, reunião, apoio, etc.). Fica associado
   // ao militar + data + relatório (como qualquer categoria do relatório).
   registro: {
-    entryLabel: 'Registro',
+    entryLabel: 'Registro', vincularCartao: true,
     fields: [
       { label: 'Tipo de atividade', type: 'select', options: ['Acionado pelo COPOM','Ocorrência Iniciativa','Operação','Palestra','Atividade educativa','Atividade extraordinária','Reunião','Apoio','Outra atividade'],
         allowOutroLivre: true, outroValor: 'Outra atividade', outroPlaceholder: 'Qual atividade? Descreva' },
@@ -868,7 +881,7 @@ const REPEATABLE_CONFIGS = {
     ],
   },
   nuden: {
-    entryLabel: 'Denúncia/Requisição', respostaCompartilhada: true,
+    entryLabel: 'Denúncia/Requisição', respostaCompartilhada: true, situacaoAtendimento: true,
     fields: [
       { label: 'Nº da Denúncia/Requisição', type: 'select', sourceKey: 'NUDEN', fracaoScoped: true, demandaListaObrigatoria: true },
       [
@@ -882,7 +895,7 @@ const REPEATABLE_CONFIGS = {
     ],
   },
   ddu: {
-    entryLabel: 'Denúncia DDU 181', respostaCompartilhada: true,
+    entryLabel: 'Denúncia DDU 181', respostaCompartilhada: true, situacaoAtendimento: true,
     fields: [
       { label: 'Nº da Denúncia DDU', type: 'select', sourceKey: 'DDU181', fracaoScoped: true, demandaListaObrigatoria: true },
       [
@@ -896,7 +909,7 @@ const REPEATABLE_CONFIGS = {
     ],
   },
   balcao: {
-    entryLabel: 'Denúncia/Requisição (Balcão)', respostaCompartilhada: true,
+    entryLabel: 'Denúncia/Requisição (Balcão)', respostaCompartilhada: true, situacaoAtendimento: true,
     fields: [
       { label: 'Denúncia de Balcão', type: 'select', sourceKey: 'DEN_BALCAO', fracaoScoped: true, demandaListaObrigatoria: true },
       [
@@ -967,7 +980,7 @@ const REPEATABLE_CONFIGS = {
     ],
   },
   mc: {
-    entryLabel: 'Monitoramento', respostaCompartilhada: true,
+    entryLabel: 'Monitoramento', respostaCompartilhada: true, situacaoAtendimento: true,
     fields: [
       { label: 'GEOCODE_IEF', type: 'select', sourceKey: 'MC', fracaoScoped: true, demandaListaObrigatoria: true },
       [
@@ -981,7 +994,7 @@ const REPEATABLE_CONFIGS = {
     ],
   },
   emergencia: {
-    entryLabel: 'Emergência Ambiental', respostaCompartilhada: true,
+    entryLabel: 'Emergência Ambiental', respostaCompartilhada: true, situacaoAtendimento: true,
     fields: [
       { label: 'Nº Protocolo', type: 'select', sourceKey: 'EMERGENCIA', fracaoScoped: true, demandaListaObrigatoria: true },
       [
@@ -995,7 +1008,7 @@ const REPEATABLE_CONFIGS = {
     ],
   },
   ftp: {
-    entryLabel: 'Atendimento FTP/RI', respostaCompartilhada: true,
+    entryLabel: 'Atendimento FTP/RI', respostaCompartilhada: true, situacaoAtendimento: true,
     fields: [
       { label: 'Nº RI', type: 'select', sourceKey: 'RI', fracaoScoped: true, demandaListaObrigatoria: true },
       [
@@ -1009,7 +1022,7 @@ const REPEATABLE_CONFIGS = {
     ],
   },
   requisicao: {
-    entryLabel: 'Requisição Externa', respostaCompartilhada: true,
+    entryLabel: 'Requisição Externa', respostaCompartilhada: true, situacaoAtendimento: true,
     fields: [
       { label: 'Nº da Requisição', type: 'select', sourceKey: 'REQUISICAO', fracaoScoped: true, demandaListaObrigatoria: true },
       [
@@ -1716,6 +1729,30 @@ async function carregarDemandasSupabase(){
   referenceCache['REQUISICAO'] = _merge(_scopePlan(referenceCache['REQUISICAO']), supReq);
 }
 
+// Demandas EM ANDAMENTO (tabela de controle Supabase, db/134): mescla nos cards
+// marcando "em andamento" (⟲). Substitui a versão "limpa" da mesma demanda para
+// não duplicar — assim a demanda continua aparecendo como pendente, com contexto.
+// Casa com _identNorm (ignora o marcador) no envio (gate planilha/baixa/controle).
+async function carregarDemandasAndamento(){
+  if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
+  const S = (typeof getSessaoAtual === 'function') ? getSessaoAtual() : null;
+  if (!S || !S.token) return;
+  const H = { apikey: SB_AUTH_KEY, Authorization:`Bearer ${SB_AUTH_KEY}`, 'Content-Type':'application/json' };
+  const r = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/demanda_andamento_listar`, { method:'POST', headers:H, body: JSON.stringify({ p_token: S.token }) });
+  if (!r.ok) throw new Error(`andamento ${r.status} ${await r.text()}`);
+  const rows = await r.json() || [];
+  rows.forEach(d => {
+    const sk = d.source_key; if (!sk) return;
+    const base = _identNorm(d.identificador);
+    const valor = _stripAndamento(d.rotulo || d.identificador) + AND_MARK;
+    const item = { value: valor, fracao: d.fracao || d.gp_responsavel || '' };
+    let arr = Array.isArray(referenceCache[sk]) ? referenceCache[sk] : [];
+    arr = arr.filter(it => { const v = (it && typeof it === 'object') ? it.value : it; return _identNorm(v) !== base; });
+    arr.push(item);
+    referenceCache[sk] = arr;
+  });
+}
+
 // OPERAÇÕES agora vêm do painel (Supabase), não mais da aba da planilha.
 // Sobrescreve referenceCache['OPERACOES'] no MESMO formato {value,inicio,final}
 // que o card "Operação" já consome (populateOperacaoSelect / operacaoItemValido).
@@ -1969,6 +2006,9 @@ async function fetchReferenceData(){
     catch(e){ console.warn('[quesitos] catálogo indisponível:', e); }
     try { await carregarDemandasSupabase(); }
     catch(e){ console.warn('[supademandas] mantendo fonte da planilha para DEN_BALCAO/REQUISICAO:', e); }
+    // Demandas EM ANDAMENTO (controle Supabase): reaparecem nos cards sinalizadas.
+    try { await carregarDemandasAndamento(); }
+    catch(e){ console.warn('[andamento] lista indisponível:', e); }
     dadosCarregados = true;
     setPlaceholderText('Selecione...');
     populateSelectsIn(document);
@@ -2761,12 +2801,50 @@ function renderFieldGroup(item){
   return fieldInputHTML(item);
 }
 
+// Controle de 3 estados por ENTRADA (atendimento). Fora de .field p/ NÃO ser
+// coletado como campo da planilha. Governa: só FINALIZADA alimenta a planilha +
+// baixa; EM_ANDAMENTO fica na tabela de controle (reaparece); NAO_ATENDIDA some
+// (fica pendente/intocada). Default = FINALIZADA → zero regressão.
+function situacaoAtendimentoHTML(){
+  return `
+    <div class="situacao-atendimento" data-v="FINALIZADA">
+      <label>Situação do atendimento</label>
+      <select data-situacao onchange="this.closest('.situacao-atendimento').setAttribute('data-v', this.value)">
+        <option value="FINALIZADA">✅ Finalizada (alimenta a planilha e dá baixa)</option>
+        <option value="EM_ANDAMENTO">🟡 Em andamento (continua no próximo serviço)</option>
+        <option value="NAO_ATENDIDA">⛔ Não atendida (pode ser redistribuída)</option>
+      </select>
+      <div class="sit-hint">Só "Finalizada" dá baixa na demanda. Em andamento/Não atendida ficam pendentes.</div>
+    </div>`;
+}
+// Bloco p/ vincular um Registro (atividade livre: operação/patrulha) a uma demanda
+// SEM número do Cartão Programa da equipe. Fica ESCONDIDO até cpPopularVinculos()
+// achar demandas livres da equipe. Ao vincular, mostra a Situação do atendimento.
+function vinculoCartaoHTML(){
+  return `
+    <div class="cp-vinculo-box situacao-atendimento" data-v="FINALIZADA" style="display:none;border:1px dashed var(--gold);border-radius:8px;padding:10px 12px;margin-bottom:14px">
+      <label>🪪 Atende uma demanda do Cartão Programa? (opcional)</label>
+      <select data-cp-link onchange="var b=this.closest('.cp-vinculo-box');var s=b.querySelector('.cp-sit');if(s)s.style.display=this.value?'':'none';">
+        <option value="">— não vincular —</option>
+      </select>
+      <div class="cp-sit" style="display:none;margin-top:8px">
+        <label>Situação do atendimento</label>
+        <select data-situacao onchange="this.closest('.cp-vinculo-box').setAttribute('data-v', this.value)">
+          <option value="FINALIZADA">✅ Finalizada</option>
+          <option value="EM_ANDAMENTO">🟡 Em andamento (continua no próximo serviço)</option>
+          <option value="NAO_ATENDIDA">⛔ Não atendida (pode ser redistribuída)</option>
+        </select>
+      </div>
+    </div>`;
+}
 function buildEntryBlockHTML(config, n, removable){
   const fieldsHTML = config.fields.map(renderFieldGroup).join('');
   return `
     <div class="entry-block" data-repeat-entry>
       <span class="entry-num">${config.entryLabel} ${n}</span>
       ${removable ? '<button type="button" class="entry-remove">&times;</button>' : ''}
+      ${config.situacaoAtendimento ? situacaoAtendimentoHTML() : ''}
+      ${config.vincularCartao ? vinculoCartaoHTML() : ''}
       ${fieldsHTML}
     </div>`;
 }
@@ -2802,6 +2880,9 @@ function bindRepeatablePanel(panel, categoryId){
     }
     if (categoryId === 'ima') bindImaDuracao(entry);
     if (categoryId === 'fapi') bindFapiEntry(entry, panel);
+    // Registro: popula o seletor "vincular à demanda do Cartão" (cobre abrir o
+    // card e "+ Adicionar"); fica escondido se a equipe não tiver cartão.
+    if (categoryId === 'registro' && typeof window.cpPopularVinculos === 'function') setTimeout(window.cpPopularVinculos, 0);
     setupRespCompart(entry);
   }
   // Resposta compartilhada: acha o campo de DEMANDA (o select fração-scoped) e
@@ -2948,6 +3029,7 @@ function renderGrid(){
 }
 
 function buildBodyHTML(id){
+  if (id === 'cartao_programa') return (window.cpBuildHTML ? window.cpBuildHTML() : '<p class="placeholder-note">Carregando…</p>');
   if (id === 'operacao') return buildOperacaoPanel();
   if (id === 'produtividade') return buildProdutividadePanel();
   if (id === 'cemig') return buildCemigPanel();
@@ -2970,6 +3052,7 @@ function getOrCreatePanelNode(id){
   if (REPEATABLE_CONFIGS[id]) bindRepeatablePanel(div, id);
   if (id === 'paf') bindPafSmartFilter(div);
   if (id === 'fapi') bindFapiCard(div);
+  if (id === 'cartao_programa' && window.cpBindPanel) window.cpBindPanel(div);
   panelCache[id] = div;
   return div;
 }
@@ -2981,6 +3064,7 @@ function openModal(id){
   const node = getOrCreatePanelNode(id);
   modalBody.appendChild(node);
   refreshAutoCalcFields(node);
+  if (id === 'cartao_programa' && window.__cpReload) window.__cpReload();
   modalOverlay.classList.add('open');
   currentModalId = id;
 }
@@ -3016,6 +3100,15 @@ function refreshProdutividadePanel(){
   renderGrid();
 }
 
+// Situação do atendimento (FINALIZADA/EM_ANDAMENTO/NAO_ATENDIDA) da ENTRADA que
+// contém o elemento `el`. Entradas sem o controle (categorias que não usam
+// situacaoAtendimento) contam como FINALIZADA (comportamento atual).
+function _entrySituacaoDe(el){
+  const entry = el && el.closest ? el.closest('[data-repeat-entry]') : null;
+  const sel = entry ? entry.querySelector('[data-situacao]') : null;
+  return sel ? (sel.value || 'FINALIZADA') : 'FINALIZADA';
+}
+
 // Valida o conteúdo do modal aberto: máscaras incompletas e campos obrigatórios.
 // Retorna uma lista de problemas (vazia = tudo ok).
 function validarModalAtual(){
@@ -3033,7 +3126,12 @@ function validarModalAtual(){
   });
 
   // Campos obrigatórios vazios — texto, select, textarea, com ou sem máscara.
+  // Exceção: numa entrada cuja Situação do atendimento ≠ Finalizada (em andamento
+  // ou não atendida), os campos de RESPOSTA (REDS/Auto/Ato/Data) são opcionais —
+  // a demanda não será finalizada agora. A escolha da demanda (demandaObrig)
+  // continua exigida mais abaixo.
   modalBody.querySelectorAll('[data-required="1"]').forEach(el => {
+    if (_entrySituacaoDe(el) !== 'FINALIZADA') return;
     const val = (el.value || '').trim();
     if (!val){
       const label = el.dataset.label || 'Campo';
@@ -4279,6 +4377,7 @@ const relatorioForm = document.getElementById('relatorioForm');
 const hiddenIframeRelatorio = document.getElementById('hidden_iframe_relatorio');
 let enviandoRelatorio = false;
 let ultimoPayloadEnviado = null;   // usado para a baixa automática das demandas no Supabase
+let ultimaSituMap = null;          // mapa de situação por demanda (gate planilha/baixa/controle)
 
 relatorioForm.setAttribute('action', SCRIPT_URL);
 relatorioForm.setAttribute('method', 'POST');
@@ -4303,17 +4402,25 @@ document.getElementById('reviewConfirmBtn').addEventListener('click', async () =
   reviewConfirmBtn.disabled = true;
   reviewConfirmBtn.textContent = 'Enviando...';
 
+  // Situação do atendimento: mapa por demanda a partir dos controles de cada card
+  // (usado p/ o gate da planilha E, no envio, p/ atender o Cartão da equipe).
+  const situMap = coletarMapaSituacoes();
+  sanitizarDemandasNoPayload(payload);   // tira o marcador "em andamento" dos nºs (planilha/espelho/PDF limpos)
+
   // FASE 3 (id unificado): no CREATE, grava no Supabase PRIMEIRO — ele gera o
   // uuid e já vincula (sheet_id=uuid). A planilha recebe esse MESMO id como
   // "ID Relatório", então ambos ficam com o mesmo id. (Na edição, o Supabase é
   // atualizado depois, no load do iframe, pois já temos o id.)
   if (payload.modo !== 'atualizarRelatorio'){
-    const uuid = await gravarRelatorioSupabase(payload);
+    const uuid = await gravarRelatorioSupabase(payload);   // espelho recebe TUDO
     if (uuid) payload.idRelatorio = uuid;
   }
 
   ultimoPayloadEnviado = payload;
-  document.getElementById('payloadField').value = JSON.stringify(payload);
+  ultimaSituMap = situMap;
+  // A PLANILHA recebe só as FINALIZADAS (em andamento / não atendida não alimentam).
+  const payloadPlanilha = filtrarPayloadParaPlanilha(payload, situMap);
+  document.getElementById('payloadField').value = JSON.stringify(payloadPlanilha);
   enviandoRelatorio = true;
   relatorioForm.submit();
 });
@@ -4329,10 +4436,16 @@ hiddenIframeRelatorio.addEventListener('load', async () => {
   // O CREATE já gravou no Supabase ANTES do envio (Fase 3). Só a EDIÇÃO grava aqui
   // (depois do espelho na planilha). Best-effort.
   if (ehEdicao) await gravarRelatorioSupabase(ultimoPayloadEnviado);
-  // Baixa automática: marca no Supabase as denúncias/requisições atendidas neste relatório.
-  // Best-effort: se falhar, não impede o fluxo do relatório.
-  await marcarDemandasAtendidas(ultimoPayloadEnviado);
+  // Baixa automática: marca no Supabase as denúncias/requisições atendidas neste
+  // relatório — SÓ as FINALIZADAS (situMap). Best-effort.
+  await marcarDemandasAtendidas(ultimoPayloadEnviado, ultimaSituMap);
+  // Controle das demandas EM ANDAMENTO (Supabase): registra as em andamento e
+  // tira do controle as que foram finalizadas agora. Best-effort.
+  try{ await sincronizarDemandasAndamento(ultimoPayloadEnviado, ultimaSituMap, ultimoPayloadEnviado && ultimoPayloadEnviado.idRelatorio); }catch(e){ console.warn('[andamento] sync', e); }
+  // Fecha também o Cartão Programa do dia (se a equipe respondeu demandas no bloco). Best-effort.
+  try{ if (typeof window.marcarCartaoAtendido === 'function') await window.marcarCartaoAtendido(ultimoPayloadEnviado && ultimoPayloadEnviado.idRelatorio); }catch(e){ console.warn('[cartao] baixa', e); }
   ultimoPayloadEnviado = null;
+  ultimaSituMap = null;
   try{ if (typeof window.__rsLimparRascunho === 'function') window.__rsLimparRascunho(); }catch(e){}
   alert(ehEdicao ? 'Relatório atualizado com sucesso!' : 'Relatório enviado com sucesso!');
   window.location.href = 'meus-relatorios.html';
@@ -4382,7 +4495,100 @@ function _extrairNumeroOcorrencia(s){
   const m = String(s||'').match(/(\d{1,4})\s*\/\s*(\d{4})/);
   return m ? `${m[1].padStart(3,'0')}/${m[2]}` : null;
 }
-async function marcarDemandasAtendidas(payload){
+// ─── Situação do atendimento: helpers (gate planilha/baixa/controle) ─────
+// Categorias com controle de 3 estados → sourceKey do controle no Supabase.
+const CAT_SITUACAO = { nuden:'NUDEN', ddu:'DDU181', balcao:'DEN_BALCAO', mc:'MC', emergencia:'EMERGENCIA', ftp:'RI', requisicao:'REQUISICAO' };
+const AND_MARK = '  ⟲ EM ANDAMENTO';
+function _stripAndamento(v){ return String(v==null?'':v).replace(/\s*⟲\s*EM ANDAMENTO\s*$/i,'').trim(); }
+function _identNorm(v){ return _stripAndamento(v).replace(/\s+/g,' ').trim(); }
+// Rótulo da demanda (o select fração-scoped) de uma categoria.
+function _demandaLabelOf(catId){
+  const cfg = REPEATABLE_CONFIGS[catId]; if (!cfg) return null;
+  const flat = []; (cfg.fields || []).forEach(f => Array.isArray(f) ? flat.push(...f) : flat.push(f));
+  const dd = flat.find(f => f && f.fracaoScoped && f.sourceKey);
+  return dd ? dd.label : null;
+}
+// Lê, do DOM, a situação por demanda. Retorna { [catLabel]: { demandaLabel, sourceKey, byIdent: Map } }.
+function coletarMapaSituacoes(){
+  const mapa = {};
+  Object.keys(CAT_SITUACAO).forEach(catId => {
+    const node = (typeof panelCache !== 'undefined') ? panelCache[catId] : null; if (!node) return;
+    const catLabel = (CATEGORIES.find(c => c.id === catId) || {}).label; if (!catLabel) return;
+    const demandaLabel = _demandaLabelOf(catId); if (!demandaLabel) return;
+    const byIdent = new Map();
+    node.querySelectorAll('[data-repeat-entry]').forEach(entry => {
+      const sel = entry.querySelector('[data-situacao]');
+      const situacao = sel ? (sel.value || 'FINALIZADA') : 'FINALIZADA';
+      const vals = [];
+      const main = entry.querySelector('[data-fracao-scoped="1"]'); if (main && main.value) vals.push(main.value);
+      entry.querySelectorAll('.rc-extras [data-source]').forEach(inp => { if (inp.value) vals.push(inp.value); });
+      vals.forEach(v => byIdent.set(_identNorm(v), situacao));
+    });
+    mapa[catLabel] = { demandaLabel, sourceKey: CAT_SITUACAO[catId], byIdent };
+  });
+  return mapa;
+}
+// Situação de um item do payload, consultando o mapa (default FINALIZADA).
+function _situacaoDoItem(situMap, catLabel, item){
+  const m = situMap && situMap[catLabel]; if (!m) return 'FINALIZADA';
+  return m.byIdent.get(_identNorm(item[m.demandaLabel])) || 'FINALIZADA';
+}
+// Tira o marcador "em andamento" dos nºs de demanda no payload (planilha/espelho/PDF limpos).
+function sanitizarDemandasNoPayload(payload){
+  if (!payload || !Array.isArray(payload.categorias)) return;
+  const labels = {}; Object.keys(CAT_SITUACAO).forEach(id => { const l = _demandaLabelOf(id); if (l) labels[l] = 1; });
+  payload.categorias.forEach(cat => (cat.itens || []).forEach(it => {
+    Object.keys(labels).forEach(lab => { if (it[lab]) it[lab] = _stripAndamento(it[lab]); });
+  }));
+}
+// Cópia do payload para a PLANILHA, removendo os itens cuja situação ≠ Finalizada.
+function filtrarPayloadParaPlanilha(payload, situMap){
+  const clone = JSON.parse(JSON.stringify(payload));
+  clone.categorias = (clone.categorias || []).map(cat => {
+    if (!situMap || !situMap[cat.categoria]) return cat;
+    const itens = (cat.itens || []).filter(it => _situacaoDoItem(situMap, cat.categoria, it) === 'FINALIZADA');
+    return Object.assign({}, cat, { itens });
+  }).filter(cat => !situMap || !situMap[cat.categoria] || (Array.isArray(cat.itens) && cat.itens.length));
+  return clone;
+}
+// Registra as EM ANDAMENTO na tabela de controle e tira as FINALIZADAS (best-effort).
+async function sincronizarDemandasAndamento(payload, situMap, relId){
+  if (!payload || !Array.isArray(payload.categorias) || !situMap) return;
+  if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
+  const sess = (typeof getSessaoAtual === 'function') ? (getSessaoAtual() || {}) : {};
+  if (!sess.token) return;
+  const H = { apikey: SB_AUTH_KEY, Authorization: `Bearer ${SB_AUTH_KEY}`, 'Content-Type': 'application/json' };
+  const b1 = payload.bloco1 || {};
+  const fracao = (b1['Fração de Atuação'] || b1['Fração de atuação'] || '').trim();
+  for (const cat of payload.categorias){
+    const m = situMap[cat.categoria]; if (!m) continue;
+    for (const item of (cat.itens || [])){
+      const ident = _identNorm(item[m.demandaLabel]); if (!ident) continue;
+      const situacao = m.byIdent.get(ident) || 'FINALIZADA';
+      try {
+        if (situacao === 'EM_ANDAMENTO'){
+          const p_item = {
+            source_key: m.sourceKey, identificador: ident, rotulo: ident, fracao: fracao,
+            relatorio_id: relId || null,
+            dados: {
+              reds: item['Nº REDS (BO/BOS/RAT)'] || '', auto_infracao: item['Nº Auto de Infração'] || '',
+              ato_fiscalizacao: item['Nº Ato de Fiscalização'] || '',
+              data_atendimento: item['Data da Fiscalização'] || item['Data de Atendimento'] || '',
+              obs: item['Observações'] || ''
+            }
+          };
+          await fetch(`${SB_AUTH_URL}/rest/v1/rpc/demanda_andamento_registrar`,
+            { method:'POST', headers:H, body: JSON.stringify({ p_token: sess.token, p_item }) });
+        } else if (situacao === 'FINALIZADA'){
+          await fetch(`${SB_AUTH_URL}/rest/v1/rpc/demanda_andamento_finalizar`,
+            { method:'POST', headers:H, body: JSON.stringify({ p_token: sess.token, p_source_key: m.sourceKey, p_identificador: ident, p_fracao: fracao || null }) });
+        }
+        // NAO_ATENDIDA: nada (fica intocada / pendente na planilha).
+      } catch(err){ console.warn('[andamento]', m.sourceKey, ident, err); }
+    }
+  }
+}
+async function marcarDemandasAtendidas(payload, situMap){
   try {
     if (!payload || !Array.isArray(payload.categorias)) return;
     if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
@@ -4403,6 +4609,8 @@ async function marcarDemandasAtendidas(payload){
       const bloco = payload.categorias.find(c => c.categoria === cfg.cat);
       if (!bloco || !Array.isArray(bloco.itens)) continue;
       for (const item of bloco.itens){
+        // Só dá baixa nas FINALIZADAS (em andamento / não atendida não baixam).
+        if (_situacaoDoItem(situMap, cfg.cat, item) !== 'FINALIZADA') continue;
         const numero = _extrairNumeroOcorrencia(item[cfg.campoNum]);
         if (!numero) continue;
         const body = {
@@ -4751,5 +4959,242 @@ document.addEventListener('click', () => {
 </script>
 
 <script>(function(){try{var s=(typeof sessaoLer==='function')?sessaoLer():null;if(s&&(s.nivel_acesso==='admin_geral'||(s.funcao||'').toLowerCase().indexOf('aux p4')===0)){var l=document.getElementById('linkGestaoVtr');if(l)l.style.display='';}}catch(e){}})();</script>
+
+<!-- ═══ Bloco "Cartão Programa do dia" (fecha o cartão ao enviar o relatório) ═══ -->
+<script>
+(function(){
+  const API=(typeof SB_AUTH_URL!=='undefined')?SB_AUTH_URL:'', AKEY=(typeof SB_AUTH_KEY!=='undefined')?SB_AUTH_KEY:'';
+  if(!API||!AKEY) return;
+  const H={apikey:AKEY,Authorization:`Bearer ${AKEY}`,'Content-Type':'application/json'};
+  const esc=s=>(s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const dfmt=iso=>{if(!iso)return '—';const d=new Date(String(iso).slice(0,10)+'T00:00:00');return isNaN(d)?String(iso):d.toLocaleDateString('pt-BR');};
+  // Reaproveita as MÁSCARAS do relatório (REDS / Ato de Fiscalização) — são globais
+  // de script clássico. Auto de Infração segue o padrão do relatório: Número + Ano → "N/AAAA".
+  const _fmtMask=(v,k)=>{ try{ return (v&&typeof applyMaskValue==='function')?applyMaskValue(String(v),k):String(v||''); }catch(e){ return String(v||''); } };
+  const _redsPH=(typeof MASKS!=='undefined'&&MASKS.reds)?MASKS.reds.placeholder:'2026-030135292-001';
+  const _atoPH =(typeof MASKS!=='undefined'&&MASKS.ato )?MASKS.ato.placeholder :'2026.07.01.362.0000466';
+  const _splitAuto=v=>{ const s=String(v||'').trim(); if(!s) return {num:'',ano:''}; const m=s.match(/^(\d+)\s*\/\s*(\d{0,4})/); return m?{num:m[1],ano:m[2]||''}:{num:s.replace(/\D/g,''),ano:''}; };
+  const _hoje=()=>{ try{ return (typeof hojeISO==='function')?hojeISO():''; }catch(e){ return ''; } };
+  let ABERTOS=[], SELID='', root=null;
+  const dataEl=document.getElementById('dataServico');
+  function _inner(){ return root?root.querySelector('#cpInner'):null; }
+  function _dems(){ return root?root.querySelector('#cpDems'):null; }
+  // Filtro por EQUIPE: só mostra o(s) cartão(ões) em que a equipe do relatório
+  // (Comandante/Motorista/Patrulheiros do Bloco 1) aparece. Casa por matrícula.
+  // Extrai a MATRÍCULA (só dígitos) do valor "matrícula - POSTO - NOME" — pega a
+  // parte ANTES de " - " p/ não pegar o dígito do posto (ex.: "2º Sgt").
+  const _digsMat = v => (v==null?'':String(v).split(' - ')[0]).replace(/\D/g,'');
+  function _matsRelatorio(){
+    const set=new Set(); const add=v=>{ const d=_digsMat(v); if(d.length>=5) set.add(d); };
+    add((document.querySelector('[name="comandante"]')||{}).value);
+    add((document.querySelector('[name="motorista"]')||{}).value);
+    const pl=document.getElementById('patrulheirosList');
+    if(pl) pl.querySelectorAll('select,input').forEach(el=>add(el.value));
+    return set;
+  }
+  function _matsCartao(c){
+    const set=new Set(); const add=v=>{ const d=_digsMat(v); if(d.length>=5) set.add(d); };
+    add(c.comandante); add(c.motorista);
+    (Array.isArray(c.patrulheiros)?c.patrulheiros:[]).forEach(add);
+    return set;
+  }
+  // null = equipe ainda não preenchida; senão array dos cartões da equipe.
+  function _cartoesDaEquipe(){
+    const meus=_matsRelatorio(); if(!meus.size) return null;
+    return ABERTOS.filter(c=>{ const cm=_matsCartao(c); for(const m of meus) if(cm.has(m)) return true; return false; });
+  }
+  // Demandas LIVRES (sem número) dos cartões da equipe — para o vínculo no Registro.
+  let CP_FREE=[];
+  window.cpPopularVinculos=async function(){
+    const selects=document.querySelectorAll('[data-cp-link]'); if(!selects.length) return;
+    const S=(typeof getSessaoAtual==='function')?getSessaoAtual():null; const data=dataEl?dataEl.value:'';
+    const meus=(S&&S.token&&data)?_matsRelatorio():new Set();
+    CP_FREE=[];
+    if(S&&S.token&&data&&meus.size){
+      try{
+        const r=await fetch(`${API}/rest/v1/rpc/cartao_abertos_por_data`,{method:'POST',headers:H,body:JSON.stringify({p_token:S.token,p_data:data})});
+        const abertos=r.ok?(await r.json()||[]):[];
+        abertos.filter(c=>{const cm=_matsCartao(c);for(const m of meus)if(cm.has(m))return true;return false;})
+          .forEach(c=>{ (c.demandas||[]).forEach((d,i)=>{
+            if(_n2((d.origem||{}).numero).length>=5) return;   // tem número = casa automático, não entra aqui
+            const ord=String(d.ordem||(i+1)); const tx=((d.texto||'').replace(/\s+/g,' ').trim()).slice(0,70);
+            CP_FREE.push({cartaoId:c.id, ordem:ord, label:'Cartão '+(c.numero||'')+' — demanda '+ord+(tx?(': '+tx):'')});
+          }); });
+      }catch(e){}
+    }
+    const esc2=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+    const opts='<option value="">— não vincular —</option>'+CP_FREE.map(x=>`<option value="${x.cartaoId}::${x.ordem}">${esc2(x.label)}</option>`).join('');
+    selects.forEach(sel=>{ const cur=sel.value; sel.innerHTML=opts; if([...sel.options].some(o=>o.value===cur)) sel.value=cur;
+      const box=sel.closest('.cp-vinculo-box'); if(box) box.style.display=CP_FREE.length?'':'none';
+      const sit=box?box.querySelector('.cp-sit'):null; if(sit) sit.style.display=sel.value?'':'none';
+    });
+  };
+  // Encaixe no card "Resposta ao Cartão Programa" do relatório (modal de categoria).
+  window.cpBuildHTML=function(){ return '<div id="cpInner" style="font-size:13px;color:var(--muted)">Informe a data do serviço (Bloco 1) para carregar o cartão da sua equipe.</div>'; };
+  window.cpBindPanel=function(div){ root=div; carregar(); };
+  window.__cpReload=function(){ carregar(); };
+  async function carregar(){
+    const S=(typeof getSessaoAtual==='function')?getSessaoAtual():null; const inner=_inner();
+    const data=dataEl?dataEl.value:''; if(!inner) return;
+    if(!S||!S.token){ inner.textContent='Faça login para ver o cartão.'; return; }
+    if(!data){ inner.textContent='Informe a data do serviço para carregar o cartão da sua equipe.'; return; }
+    inner.textContent='Carregando cartão(ões) do dia…';
+    try{ const r=await fetch(`${API}/rest/v1/rpc/cartao_abertos_por_data`,{method:'POST',headers:H,body:JSON.stringify({p_token:S.token,p_data:data})});
+      if(!r.ok) throw new Error(await r.text()); ABERTOS=await r.json()||[]; render();
+    }catch(e){ inner.innerHTML='<span style="color:#ef9a9a">Não foi possível carregar o cartão: '+esc(e.message||e)+'</span>'; }
+  }
+  function render(){
+    const inner=_inner(); if(!inner) return;
+    if(!ABERTOS.length){ SELID=''; inner.innerHTML='<span style="color:var(--muted)">Nenhum cartão em aberto para esta data no seu grupamento. (Se não usa Cartão Programa, pode ignorar.)</span>'; return; }
+    const VIS=_cartoesDaEquipe();
+    if(VIS===null){ SELID=''; inner.innerHTML='<span style="color:var(--muted)">Preencha a equipe (Comandante / Motorista / Patrulheiros) no Bloco 1 para carregar o cartão da sua equipe.</span>'; return; }
+    if(!VIS.length){ SELID=''; inner.innerHTML='<span style="color:var(--muted)">Nenhum cartão em aberto para a SUA equipe nesta data. (Se não usa Cartão Programa, pode ignorar.)</span>'; return; }
+    const opts=VIS.map(c=>`<label style="display:flex;gap:8px;align-items:center;margin:4px 0;cursor:pointer"><input type="radio" name="cpSel" value="${esc(c.id)}" ${SELID===c.id?'checked':''} onchange="window.__cpSel(this.value)"> <span><b>Nº ${esc(c.numero)}</b> · Equipe ${esc(c.equipe||'—')} · ${dfmt(c.data_empenho)} — ${esc(c.grupamento_completo||c.grupamento_id)}</span></label>`).join('');
+    inner.innerHTML='<div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">Selecione o cartão da sua equipe e preencha o resultado de cada demanda. Ao enviar o relatório, o cartão é atualizado automaticamente.</div>'+opts+'<div id="cpDems" style="margin-top:12px"></div>';
+    if(SELID&&!VIS.some(c=>c.id===SELID)) SELID='';
+    if(!SELID && VIS.length===1) SELID=VIS[0].id;   // só 1 cartão da equipe → já seleciona
+    if(SELID) renderDems();
+  }
+  window.__cpSel=function(id){ SELID=id; renderDems(); };
+  function renderDems(){
+    const c=ABERTOS.find(x=>x.id===SELID); const box=_dems(); if(!box) return;
+    if(!c){ box.innerHTML=''; return; } const resp=c.respostas||{};
+    const maxD=_hoje()?(' max="'+_hoje()+'"'):'';
+    // Usa o MARKUP PADRÃO do relatório: .entry-block / .field / .row2 / .mini-list.
+    const corpo=(c.demandas||[]).map((d,i)=>{const ord=esc(d.ordem||i+1);const r=resp[String(d.ordem)]||resp[String(i+1)]||{};const og=d.origem&&d.origem.numero?(' · '+esc((d.origem.label||'')+' '+d.origem.numero)):'';
+      const au=_splitAuto(r.auto_infracao);
+      return '<div class="entry-block" data-ord="'+ord+'">'+
+        '<span class="entry-num">DEMANDA '+ord+(d.municipio?(' — '+esc(d.municipio)):'')+og+'</span>'+
+        '<p class="field-note" style="margin-top:0 !important;margin-bottom:12px">'+esc((d.texto||'').slice(0,220))+((d.texto||'').length>220?'…':'')+' <span class="cp-match" style="font-style:normal;font-weight:700;color:var(--gold-text)"></span></p>'+
+        '<div class="row2">'+
+          '<div class="field"><label>Situação</label><select data-k="atendida"><option value="">—</option><option value="TOTAL"'+(r.atendida==='TOTAL'?' selected':'')+'>✅ Finalizado</option><option value="PARCIAL"'+(r.atendida==='PARCIAL'?' selected':'')+'>🟡 Em andamento (precisa diligência)</option><option value="NAO"'+(r.atendida==='NAO'?' selected':'')+'>⛔ Não atendido</option></select></div>'+
+          '<div class="field"><label>Data de atendimento</label><input type="date" data-k="data_atendimento"'+maxD+' value="'+esc((r.data_atendimento||'').slice(0,10))+'"></div>'+
+        '</div>'+
+        '<div class="row2">'+
+          '<div class="field"><label>Nº REDS (BO/BOS/RAT)</label><input type="text" data-k="reds" data-mask="reds" placeholder="'+esc(_redsPH)+'" value="'+esc(_fmtMask(r.reds,'reds'))+'"></div>'+
+          '<div class="field"><label>Nº Ato de Fiscalização</label><input type="text" data-k="ato_fiscalizacao" data-mask="ato" placeholder="'+esc(_atoPH)+'" value="'+esc(_fmtMask(r.ato_fiscalizacao,'ato'))+'"></div>'+
+        '</div>'+
+        '<div class="row2">'+
+          '<div class="field"><label>Nº Auto de Infração</label><div class="mini-list"><div class="mini-row"><input type="text" data-k="auto_num" placeholder="Número" value="'+esc(au.num)+'"><input type="text" data-k="auto_ano" placeholder="Ano" maxlength="4" value="'+esc(au.ano)+'" style="flex:0 0 90px;max-width:90px"></div></div></div>'+
+          '<div class="field"><label>Observações</label><input type="text" data-k="obs" value="'+esc(r.obs||'')+'"></div>'+
+        '</div>'+
+      '</div>';}).join('') || '<p class="placeholder-note">Este cartão não tem demandas.</p>';
+    box.innerHTML='<button type="button" class="btn-add" onclick="window.__cpPuxar()" style="margin-bottom:10px">🔄 Puxar REDS/Auto/Ato dos cards do relatório</button>'
+      +'<p class="field-note" style="margin-top:0 !important;margin-bottom:12px">Preencha os cards acima (NUDEN/MC/DDU/Balcão…) e clique em Puxar — o cartão casa pela demanda e traz os dados. Confirme a situação de cada uma.</p>'
+      +corpo;
+    // máscaras REDS/Ato (mesmas do relatório) + só dígitos no Número/Ano do auto
+    if(typeof bindMasksIn==='function'){ try{ bindMasksIn(box); }catch(e){} }
+    box.querySelectorAll('input[data-k="auto_num"],input[data-k="auto_ano"]').forEach(inp=>{ if(inp._cpNum) return; inp._cpNum=1; inp.setAttribute('inputmode','numeric'); inp.addEventListener('input',()=>{ inp.value=inp.value.replace(/\D/g,''); }); });
+    cpPuxarDosCards();   // já tenta puxar com o que estiver preenchido
+  }
+  const _n2=s=>String(s==null?'':s).toUpperCase().replace(/[^A-Z0-9]/g,'');
+  function _cpData(x){ return (typeof _normalizarDataResp==='function')?(_normalizarDataResp(x)||''):(x||''); }
+  function cpPuxarDosCards(){
+    const c=ABERTOS.find(x=>x.id===SELID); const box=_dems(); if(!c||!box) return;
+    let payload=null; try{ payload=(typeof collectAllData==='function')?collectAllData():null; }catch(e){}
+    const itens=[]; if(payload&&Array.isArray(payload.categorias)) payload.categorias.forEach(cat=>{ (cat.itens||[]).forEach(it=>itens.push(it)); });
+    (c.demandas||[]).forEach((d,i)=>{
+      const ord=String(d.ordem||(i+1)); const chave=_n2((d.origem||{}).numero); if(chave.length<5) return;
+      // casa pela demanda de origem: 1º match EXATO do número (ignorando campos de data,
+      // p/ não casar "705/2026"→7052026 com uma data 17/05/2026→17052026); depois substring.
+      let it=itens.find(x=>Object.entries(x||{}).some(([k,v])=>!/data/i.test(k) && _n2(v)===chave));
+      if(!it) it=itens.find(x=>Object.entries(x||{}).some(([k,v])=>{ if(/data/i.test(k)) return false; const nv=_n2(v); return nv.length>=5 && nv.indexOf(chave)!==-1; }));
+      const row=box.querySelector('[data-ord="'+ord+'"]'); if(!row) return;
+      const tag=row.querySelector('.cp-match');
+      if(!it){ if(tag) tag.textContent=''; return; }
+      const set=(k,val)=>{ const el=row.querySelector('[data-k="'+k+'"]'); if(el && val && !(el.value||'').trim()) el.value=val; };
+      set('reds', _fmtMask(it['Nº REDS (BO/BOS/RAT)'],'reds'));
+      set('ato_fiscalizacao', _fmtMask(it['Nº Ato de Fiscalização'],'ato'));
+      const au=_splitAuto(it['Nº Auto de Infração']); if(au.num){ set('auto_num', au.num); set('auto_ano', au.ano); }
+      set('data_atendimento', _cpData(it['Data de Atendimento']||it['Data da Fiscalização']));
+      const sel=row.querySelector('[data-k="atendida"]'); if(sel && !sel.value && (it['Nº REDS (BO/BOS/RAT)']||'').trim()){ sel.value='TOTAL'; sel.setAttribute('data-v','TOTAL'); }
+      if(tag) tag.textContent='✓ dados puxados do card';
+    });
+  }
+  window.__cpPuxar=cpPuxarDosCards;
+  // Sincroniza a situação do bloco "Resposta ao Cartão" para o controle de 3
+  // estados dos CARDS do relatório (grupamentos COM cartão). Casa pela demanda
+  // de origem (número). TOTAL→Finalizada, PARCIAL→Em andamento, NAO→Não atendida.
+  window.cpSyncSituacaoParaCards=function(){
+    const c=ABERTOS.find(x=>x.id===SELID); const box=_dems(); if(!c||!box) return;
+    const MAP={ TOTAL:'FINALIZADA', PARCIAL:'EM_ANDAMENTO', NAO:'NAO_ATENDIDA' };
+    const entries=Array.from(document.querySelectorAll('[data-repeat-entry]')).filter(en=>en.querySelector('[data-situacao]'));
+    (c.demandas||[]).forEach((d,i)=>{
+      const ord=String(d.ordem||(i+1)); const chave=_n2((d.origem||{}).numero); if(chave.length<5) return;
+      const row=box.querySelector('[data-ord="'+ord+'"]'); if(!row) return;
+      const selA=row.querySelector('[data-k="atendida"]'); const sit=selA?MAP[selA.value]:null; if(!sit) return;
+      const alvo=entries.find(en=>{ const inp=en.querySelector('[data-fracao-scoped="1"]'); const nv=inp?_n2(inp.value):''; return nv.length>=5 && (nv===chave || nv.indexOf(chave)!==-1); });
+      if(!alvo) return;
+      const selS=alvo.querySelector('[data-situacao]'); if(!selS) return;
+      selS.value=sit; const wrap=selS.closest('.situacao-atendimento'); if(wrap) wrap.setAttribute('data-v', sit);
+    });
+  };
+  // ATENDE O CARTÃO AUTOMATICAMENTE no envio do relatório — SEM o bloco "Resposta".
+  // 1) acha o(s) cartão(ões) abertos da data que são da EQUIPE do relatório;
+  // 2) casa cada demanda (origem.numero) com o card correspondente (por número);
+  // 3) a situação vem do CONTROLE de cada card (Finalizada/Em andamento/Não atendida)
+  //    → TOTAL/PARCIAL/NAO; REDS/Auto/Ato/Data vêm do próprio card.
+  window.marcarCartaoAtendido=async function(relId){
+    const S=(typeof getSessaoAtual==='function')?getSessaoAtual():null; if(!S||!S.token) return;
+    const data=dataEl?dataEl.value:''; if(!data) return;
+    let abertos=[];
+    try{ const r=await fetch(`${API}/rest/v1/rpc/cartao_abertos_por_data`,{method:'POST',headers:H,body:JSON.stringify({p_token:S.token,p_data:data})}); if(r.ok) abertos=await r.json()||[]; }catch(e){ return; }
+    if(!abertos.length) return;
+    const meus=_matsRelatorio(); if(!meus.size) return;                 // sem equipe no Bloco 1 → não casa
+    const cartoes=abertos.filter(c=>{ const cm=_matsCartao(c); for(const m of meus) if(cm.has(m)) return true; return false; });
+    if(!cartoes.length) return;
+    let payload=null; try{ payload=(typeof collectAllData==='function')?collectAllData():null; }catch(e){}
+    const itens=[]; if(payload&&Array.isArray(payload.categorias)) payload.categorias.forEach(cat=>{ (cat.itens||[]).forEach(it=>{ try{ it.__cat=cat.categoria; }catch(_){} itens.push(it); }); });
+    const situMap=(typeof coletarMapaSituacoes==='function')?coletarMapaSituacoes():{};
+    const _idn=(typeof _identNorm==='function')?_identNorm:(v=>String(v==null?'':v));
+    const MAPSIT={ FINALIZADA:'TOTAL', EM_ANDAMENTO:'PARCIAL', NAO_ATENDIDA:'NAO' };
+    const call=(body)=>fetch(`${API}/rest/v1/rpc/cartao_atender`,{method:'POST',headers:H,body:JSON.stringify(body)});
+    // Vínculos do card Registro → demandas LIVRES do cartão ({cartaoId:{ordem:resposta}}).
+    const regByCartao={};
+    const regNode=(typeof panelCache!=='undefined'&&panelCache)?panelCache['registro']:null;
+    if(regNode){
+      regNode.querySelectorAll('[data-repeat-entry]').forEach(en=>{
+        const sel=en.querySelector('[data-cp-link]'); const v=sel?sel.value:''; if(!v) return;
+        const p=v.split('::'); const cid=p[0], ord=p[1]; if(!cid||!ord) return;
+        const box=sel.closest('.cp-vinculo-box'); const sitEl=box?box.querySelector('[data-situacao]'):null;
+        const o={ atendida: MAPSIT[(sitEl?sitEl.value:'FINALIZADA')]||'TOTAL' };
+        const reds=(en.querySelector('[data-label="Nº do REDS / Registro"]')||{}).value; if(reds&&reds.trim()) o.reds=reds.trim();
+        const dtEl=en.querySelector('input[type="date"]'); const dt=dtEl?dtEl.value:''; if(dt) o.data_atendimento=(typeof _cpData==='function'?_cpData(dt):dt);
+        (regByCartao[cid]=regByCartao[cid]||{})[ord]=o;
+      });
+    }
+    for(const c of cartoes){
+      const respostas={};
+      (c.demandas||[]).forEach((d,i)=>{
+        const ord=String(d.ordem||(i+1)); const chave=_n2((d.origem||{}).numero); if(chave.length<5) return;
+        let it=itens.find(x=>Object.entries(x||{}).some(([k,v])=>!/data/i.test(k) && _n2(v)===chave));
+        if(!it) it=itens.find(x=>Object.entries(x||{}).some(([k,v])=>{ if(/data/i.test(k)) return false; const nv=_n2(v); return nv.length>=5 && nv.indexOf(chave)!==-1; }));
+        if(!it) return;                                                  // demanda sem card = fica pendente no cartão
+        const m=situMap[it.__cat]; let sit='FINALIZADA';
+        if(m){ sit=m.byIdent.get(_idn(it[m.demandaLabel]))||'FINALIZADA'; }
+        const o={ atendida: MAPSIT[sit]||'TOTAL' };
+        const reds=it['Nº REDS (BO/BOS/RAT)']; if(reds) o.reds=reds;
+        const auto=it['Nº Auto de Infração']; if(auto) o.auto_infracao=auto;
+        const ato=it['Nº Ato de Fiscalização']; if(ato) o.ato_fiscalizacao=ato;
+        const dt=it['Data de Atendimento']||it['Data da Fiscalização']; if(dt) o.data_atendimento=(typeof _cpData==='function'?_cpData(dt):dt);
+        respostas[ord]=o;
+      });
+      // Demandas LIVRES vinculadas no Registro (sem número, casadas manualmente).
+      const rl=regByCartao[c.id]; if(rl) Object.keys(rl).forEach(ord=>{ respostas[ord]=rl[ord]; });
+      try{
+        let r=await call({p_token:S.token,p_id:c.id,p_respostas:respostas,p_relatorio:relId||null});
+        if(!r.ok) await call({p_token:S.token,p_id:c.id,p_respostas:respostas});   // fallback sem p_relatorio (db/131)
+      }catch(e){ console.warn('[cartao] atender',e); }
+    }
+  };
+  if(dataEl) dataEl.addEventListener('change', ()=>{ carregar(); try{ cpPopularVinculos(); }catch(_){} });
+  // Equipe mudou no Bloco 1 (Comandante/Motorista/Patrulheiros) → re-filtra os
+  // cartões e atualiza o vínculo do Registro (demandas livres da equipe).
+  document.addEventListener('change', e => {
+    const t=e.target; if(!t) return;
+    if(t.name==='comandante' || t.name==='motorista' || (t.closest && t.closest('#patrulheirosList'))) { try{ render(); }catch(_){} try{ cpPopularVinculos(); }catch(_){} }
+  });
+})();
+</script>
 </body>
 </html>

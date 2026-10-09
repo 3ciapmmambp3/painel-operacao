@@ -81,6 +81,7 @@
     p3: [
       {ic:'📄', t:'Relatório de Serviço', h:'meus-relatorios.html'},
       {ic:'📋', t:'Controle de Demandas', h:'denuncias.html'},
+      {ic:'🪪', t:'Cartão Programa', h:'cartao-programa.html'},
       {ic:'🛡️', t:'Operações POE', h:'painel.html?tab=operacoes'},
       {ic:'🌿', t:'Operações GDO Rural', h:'painel.html?tab=gdo-rural'},
       {ic:'📊', t:'Produtividade', h:'produtividade.html'},

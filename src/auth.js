@@ -50,6 +50,20 @@ const OFICIOS_DRIVE_URL = 'https://script.google.com/macros/s/AKfycbz0qm_ckK8zg0
  * 'inteligencia'. É separado do OFICIOS_DRIVE_URL de propósito (contas diferentes). */
 const INTEL_DRIVE_URL = 'https://script.google.com/macros/s/AKfycbxSmtwcfMQGa0-a4ZYzf64TwS6Ul-OghfpHLkK-MXq9Hm9cVKT6WVUqfOyX2c9Fiw7ELQ/exec';
 
+/* Anexos do CARTÃO PROGRAMA no Google Drive — CONTA SEPARADA
+ * (3ciapmmamb.cartao@gmail.com). Deixe '' enquanto o Web App não estiver
+ * publicado (o upload é desabilitado e o anexo fica só pelo link manual).
+ * Para ativar: publique db/APPS-SCRIPT-oficios-drive.gs NESSA conta
+ * (Executar como: Eu; Quem acessa: Qualquer pessoa) e cole aqui a URL /exec.
+ * O painel envia subpasta 'cartao-programa'. */
+const CARTAO_DRIVE_URL = 'https://script.google.com/macros/s/AKfycbwQ5EEfTk2CswmEmN8z7FEfD0pbzcOH3ZzGaVJNB9FC_0XDDybsvgSXKitm7hSKEnPW/exec';
+
+/* Busca de arquivos das demandas por tipo no Drive da conta 3ciapmmamb.p3
+ * (pastas MC/NUDEN/Balcão/RI/Emergência). Deixe '' enquanto o Web App de
+ * db/APPS-SCRIPT-cartao-p3-drive.gs não estiver publicado NESSA conta; então
+ * cole aqui a URL /exec. O Cartão Programa usa p/ anexar PDF/KML da demanda. */
+const CARTAO_P3_DRIVE_URL = 'https://script.google.com/macros/s/AKfycbyxarwT_68D2A9ygk4ItGLxRl5wR6L8nZ9QMqnKn-_pGjL0qtbuZPsh4GSgUsTLhls7pg/exec';
+
 /* Níveis de acesso em ordem crescente de permissão */
 const NIVEIS = ['operacional', 'admin_gp', 'admin_pelotao', 'admin', 'admin_geral'];
 
