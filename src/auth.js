@@ -319,6 +319,20 @@ function auth_podeVerGrupamento(sessao, grupamento_id) {
   return false; // operacional não acessa painel admin
 }
 
+/** Perfil que acessa a área de Recursos Humanos / hub P1:
+ *  admin_geral, Aux P1, CMT de Cia/Pelotão OU colaborador (perfil fixo
+ *  "Colaborador RH"). Centraliza o gate que antes era repetido por página. */
+function auth_ehRH(sessao) {
+  if (!sessao) return false;
+  if (sessao.nivel_acesso === 'admin_geral') return true;
+  if (sessao.categoria === 'colaborador') return true;
+  const fx = (sessao.funcao || '').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  if (/AUX/.test(fx) && /P\s*1/.test(fx)) return true;
+  if (/(CMT|COMANDANTE)/.test(fx) && /\bCIA\b/.test(fx)) return true;
+  if (/(CMT|COMANDANTE)/.test(fx) && /\bPEL\b/.test(fx)) return true; // CMT Pel assume na falta do CMT Cia
+  return false;
+}
+
 /* ─── MIGRAÇÃO: importar dados da planilha (uso único) ──────────── */
 
 /**
@@ -457,6 +471,7 @@ window.SbAuth = {
   excluirUsuario:   auth_excluirUsuario,
   temPermissao:     auth_temPermissao,
   podeVerGrupamento: auth_podeVerGrupamento,
+  ehRH:             auth_ehRH,
   migrarDaPlanilha: auth_migrarDaPlanilha,
   fetchReferencias: auth_fetchReferencias,
   limparCacheReferencias: auth_limparCacheReferencias,
