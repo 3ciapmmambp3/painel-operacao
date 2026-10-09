@@ -1053,6 +1053,10 @@ const QR_NIVEL = (sessao && sessao.nivel_acesso) || '';
 const QR_FUNC  = ((sessao && sessao.funcao) || '').toLowerCase().trim();
 const QR_ADMIN = ['admin_geral','admin','admin_pelotao','admin_gp'].includes(QR_NIVEL);
 const QR_CAD3  = () => QR_NIVEL==='admin_geral' || QR_FUNC==='aux p3';
+// Colaborador (não-militar) é restrito à ÁREA dele (p1..p5, codificada na função
+// "COLABORADOR P1"). No Meu Dia não vê os atalhos operacionais — só a seção dele.
+const QR_EH_COLAB = !!(sessao && sessao.categoria === 'colaborador');
+const QR_COLAB_SEC = QR_EH_COLAB ? (((QR_FUNC.match(/\bp\s*([1-5])\b/)||[])[1]) ? 'p'+QR_FUNC.match(/\bp\s*([1-5])\b/)[1] : null) : null;
 
 const QR_SISTEMA = [
   {ic:'🗓️', t:'TTA — Pré-turno',           d:'Registrar o Treinamento Tático e a equipe do serviço.', h:'tta.html', tag:'lançar'},
@@ -1092,6 +1096,16 @@ function qrCardHTML(a, key){
 }
 function qrRender(){
   const box = document.getElementById('quick'); if(!box) return;
+  // Colaborador: nada de atalhos operacionais (TTA/Relatório/Movimentação/Chamada).
+  // Mostra só a ÁREA dele + Meu Perfil. O resto da navegação já é bloqueada.
+  if(QR_EH_COLAB){
+    const nomeSec = {p1:'Recursos Humanos',p2:'Inteligência',p3:'Emprego Operacional',p4:'Apoio Logístico',p5:'Comunicação Organizacional'}[QR_COLAB_SEC] || 'Minha seção';
+    const hub = QR_COLAB_SEC ? ('hub-'+QR_COLAB_SEC+'.html') : 'perfil.html';
+    box.innerHTML =
+      qrCardHTML({ic:'🗂️', t:nomeSec, d:'Sua área de trabalho.', h:hub, tag:''}, null) +
+      qrCardHTML({ic:'👤', t:'Meu Perfil', d:'Seus dados e troca de senha.', h:'perfil.html', tag:''}, null);
+    return;
+  }
   let html = QR_SISTEMA.map(a=>qrCardHTML(a,null)).join('');
   QR_CUSTOM.forEach(k=>{ const a=QR_CATALOGO.find(x=>x.k===k); if(a && a.ok()) html += qrCardHTML(a, QR_EDIT?k:null); });
   if(QR_EDIT) html += `<button class="qc qc-add" onclick="qrAbrirPicker()"><div class="qic">➕</div><div class="qt">Adicionar atalho</div></button>`;
