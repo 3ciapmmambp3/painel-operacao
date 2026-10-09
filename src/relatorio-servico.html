@@ -4933,6 +4933,30 @@ document.addEventListener('click', () => {
   const dataEl=document.getElementById('dataServico');
   function _inner(){ return root?root.querySelector('#cpInner'):null; }
   function _dems(){ return root?root.querySelector('#cpDems'):null; }
+  // Filtro por EQUIPE: só mostra o(s) cartão(ões) em que a equipe do relatório
+  // (Comandante/Motorista/Patrulheiros do Bloco 1) aparece. Casa por matrícula.
+  // Extrai a MATRÍCULA (só dígitos) do valor "matrícula - POSTO - NOME" — pega a
+  // parte ANTES de " - " p/ não pegar o dígito do posto (ex.: "2º Sgt").
+  const _digsMat = v => (v==null?'':String(v).split(' - ')[0]).replace(/\D/g,'');
+  function _matsRelatorio(){
+    const set=new Set(); const add=v=>{ const d=_digsMat(v); if(d.length>=5) set.add(d); };
+    add((document.querySelector('[name="comandante"]')||{}).value);
+    add((document.querySelector('[name="motorista"]')||{}).value);
+    const pl=document.getElementById('patrulheirosList');
+    if(pl) pl.querySelectorAll('select,input').forEach(el=>add(el.value));
+    return set;
+  }
+  function _matsCartao(c){
+    const set=new Set(); const add=v=>{ const d=_digsMat(v); if(d.length>=5) set.add(d); };
+    add(c.comandante); add(c.motorista);
+    (Array.isArray(c.patrulheiros)?c.patrulheiros:[]).forEach(add);
+    return set;
+  }
+  // null = equipe ainda não preenchida; senão array dos cartões da equipe.
+  function _cartoesDaEquipe(){
+    const meus=_matsRelatorio(); if(!meus.size) return null;
+    return ABERTOS.filter(c=>{ const cm=_matsCartao(c); for(const m of meus) if(cm.has(m)) return true; return false; });
+  }
   // Encaixe no card "Resposta ao Cartão Programa" do relatório (modal de categoria).
   window.cpBuildHTML=function(){ return '<div id="cpInner" style="font-size:13px;color:var(--muted)">Informe a data do serviço (Bloco 1) para carregar o cartão da sua equipe.</div>'; };
   window.cpBindPanel=function(div){ root=div; carregar(); };
@@ -4950,9 +4974,13 @@ document.addEventListener('click', () => {
   function render(){
     const inner=_inner(); if(!inner) return;
     if(!ABERTOS.length){ SELID=''; inner.innerHTML='<span style="color:var(--muted)">Nenhum cartão em aberto para esta data no seu grupamento. (Se não usa Cartão Programa, pode ignorar.)</span>'; return; }
-    const opts=ABERTOS.map(c=>`<label style="display:flex;gap:8px;align-items:center;margin:4px 0;cursor:pointer"><input type="radio" name="cpSel" value="${esc(c.id)}" ${SELID===c.id?'checked':''} onchange="window.__cpSel(this.value)"> <span><b>Nº ${esc(c.numero)}</b> · Equipe ${esc(c.equipe||'—')} · ${dfmt(c.data_empenho)} — ${esc(c.grupamento_completo||c.grupamento_id)}</span></label>`).join('');
+    const VIS=_cartoesDaEquipe();
+    if(VIS===null){ SELID=''; inner.innerHTML='<span style="color:var(--muted)">Preencha a equipe (Comandante / Motorista / Patrulheiros) no Bloco 1 para carregar o cartão da sua equipe.</span>'; return; }
+    if(!VIS.length){ SELID=''; inner.innerHTML='<span style="color:var(--muted)">Nenhum cartão em aberto para a SUA equipe nesta data. (Se não usa Cartão Programa, pode ignorar.)</span>'; return; }
+    const opts=VIS.map(c=>`<label style="display:flex;gap:8px;align-items:center;margin:4px 0;cursor:pointer"><input type="radio" name="cpSel" value="${esc(c.id)}" ${SELID===c.id?'checked':''} onchange="window.__cpSel(this.value)"> <span><b>Nº ${esc(c.numero)}</b> · Equipe ${esc(c.equipe||'—')} · ${dfmt(c.data_empenho)} — ${esc(c.grupamento_completo||c.grupamento_id)}</span></label>`).join('');
     inner.innerHTML='<div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">Selecione o cartão da sua equipe e preencha o resultado de cada demanda. Ao enviar o relatório, o cartão é atualizado automaticamente.</div>'+opts+'<div id="cpDems" style="margin-top:12px"></div>';
-    if(SELID&&!ABERTOS.some(c=>c.id===SELID)) SELID='';
+    if(SELID&&!VIS.some(c=>c.id===SELID)) SELID='';
+    if(!SELID && VIS.length===1) SELID=VIS[0].id;   // só 1 cartão da equipe → já seleciona
     if(SELID) renderDems();
   }
   window.__cpSel=function(id){ SELID=id; renderDems(); };
@@ -5046,6 +5074,11 @@ document.addEventListener('click', () => {
     }catch(e){ console.warn('[cartao] atender',e); }
   };
   if(dataEl) dataEl.addEventListener('change', carregar);
+  // Equipe mudou no Bloco 1 (Comandante/Motorista/Patrulheiros) → re-filtra os cartões.
+  document.addEventListener('change', e => {
+    const t=e.target; if(!t) return;
+    if(t.name==='comandante' || t.name==='motorista' || (t.closest && t.closest('#patrulheirosList'))) { try{ render(); }catch(_){} }
+  });
 })();
 </script>
 </body>
