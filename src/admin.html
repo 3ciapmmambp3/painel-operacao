@@ -290,8 +290,16 @@ document.addEventListener('click', () => {
       <div class="sec-body">
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;">
           <div class="mfg">
-            <label>Nº PM *</label>
-            <input type="text" id="new-npm" placeholder="Ex: 138.988-1" maxlength="9" oninput="fmtNP(this)" autocomplete="off">
+            <label>Categoria *</label>
+            <select id="new-categoria" onchange="onCategoriaChange()">
+              <option value="militar">Militar</option>
+              <option value="assistente_adm">Assistente administrativo</option>
+              <option value="colaborador">Colaborador (não-militar)</option>
+            </select>
+          </div>
+          <div class="mfg">
+            <label id="lbl-new-npm">Nº PM *</label>
+            <input type="text" id="new-npm" placeholder="Ex: 138.988-1" maxlength="9" oninput="fmtNPcad(this)" autocomplete="off">
           </div>
           <div class="mfg">
             <label>P/G</label>
@@ -1485,20 +1493,33 @@ async function quesitosInit(){
       const ref = await auth_fetchReferencias(QS_SCRIPT_URL);
       daPlanilha = (ref.OPERACOES||[]).map(o=>o.value);
     }catch(e){ console.warn('operações (planilha) p/ quesitos:', e); }
+    // Operações do PAF (🌲 Plano Anual de Fiscalização) — também podem receber quesitos.
+    let doPaf = [];
+    try{
+      const rowsP = await sbRpc('paf_fapi_listar', { p_tipo:'PAF' });
+      doPaf = Array.isArray(rowsP) ? rowsP : [];
+    }catch(e){ console.warn('operações PAF p/ quesitos:', e); }
     // nomes já cadastrados no painel (qualquer situação) — a planilha não repete esses
     const nomesBanco = new Set(doBanco.map(o=>(o.nome||'').trim().toLowerCase()).filter(Boolean));
     // do banco: só as que NÃO estão encerradas (ativa, futura ou sem data). Reativar (mudar datas) faz voltar.
     const bancoNomes = doBanco
       .filter(o => opSituacao(o)[0] !== 'encerrada')
       .map(o => (o.nome||'').trim());
+    // do PAF: rótulo "ID - NOME" (ex.: "2026 03 CIA 29 - OPERAÇÃO RECURSOS HIDRICOS 7"),
+    // normalizando espaços no ID; só as não encerradas. Mesmo rótulo é casado no Relatório.
+    const _pafLbl = o => { const id=String(o.id_operacao||'').replace(/\s+/g,' ').trim(); const nm=String(o.nome||'').trim(); return nm ? (id?(id+' - '+nm):nm) : id; };
+    const pafNomes = doPaf
+      .filter(o => opSituacao(o)[0] !== 'encerrada')
+      .map(_pafLbl);
     // da planilha: só nomes legados que não existem no painel (sem data p/ filtrar situação)
     const planilhaNomes = daPlanilha
       .map(v => (v||'').trim())
       .filter(v => v && !nomesBanco.has(v.toLowerCase()));
     const vistos = new Set();
-    QS_OPERACOES = [...bancoNomes, ...planilhaNomes]
+    QS_OPERACOES = [...bancoNomes, ...pafNomes, ...planilhaNomes]
       .map(v=>(v||'').trim())
-      .filter(v=>v && v.indexOf('OUTRA')===-1)
+      // exclui "OUTRA…" e as operações fictícias (dados de teste legados da planilha)
+      .filter(v=>v && v.indexOf('OUTRA')===-1 && !/fict[ií]cia/i.test(v))
       .filter(v=>{ const k=v.toLowerCase(); if(vistos.has(k)) return false; vistos.add(k); return true; });
     // Permite vincular quesitos ao caso "OUTRA OPERAÇÃO NÃO DESCRITA ACIMA" — operação
     // avulsa que o militar digita no Relatório sem cadastro específico. Pode ser
@@ -3154,27 +3175,41 @@ function normNomeMil(s){
 }
 
 async function adicionarUsuario() {
+  const categoria = (document.getElementById('new-categoria')||{}).value || 'militar';
+  const ehColab = categoria === 'colaborador';
   const npm    = document.getElementById('new-npm').value.trim();
   const pg     = montarPostoComQuadro(document.getElementById('new-pg').value, getQuadro('new-quadro-tog'));
   const nome   = normNomeMil(document.getElementById('new-nome').value);
   const guerra = normNomeMil(document.getElementById('new-guerra').value);
   const funcao = normNomeMil(document.getElementById('new-funcao').value);
   const lotacao= normNomeMil(document.getElementById('new-lotacao').value);
-  const nivel  = document.getElementById('new-perfil').value;
+  // Colaborador não é militar → perfil fixo "Colaborador RH" (operacional); o
+  // banco força nível e função. Para militar/assistente, usa o nível escolhido.
+  const nivel  = ehColab ? 'operacional' : document.getElementById('new-perfil').value;
+  const secaoColab = (document.getElementById('new-secao')||{}).value || '';
 
-  if (!npm || !nome || !nivel) {
-    showMsg('msg-add','err','Preencha os campos obrigatórios: Nº PM, Nome Completo e Nível de Acesso.'); return;
+  if (!npm || !nome || (!ehColab && !nivel)) {
+    showMsg('msg-add','err','Preencha os campos obrigatórios: Nº/Matrícula, Nome Completo e Nível de Acesso.'); return;
   }
-  if (npm.replace(/\D/g,'').length < 7) {
+  // Militar: exige 7 dígitos. Colaborador: matrícula livre (ex.: C932305).
+  if (!ehColab && npm.replace(/\D/g,'').length < 7) {
     showMsg('msg-add','err','Nº PM deve ter 7 dígitos.'); return;
+  }
+  if (ehColab && npm.replace(/\D/g,'').length < 3) {
+    showMsg('msg-add','err','Informe a matrícula do colaborador.'); return;
+  }
+  // Colaborador: a Área de acesso define a seção que ele poderá usar (obrigatória).
+  if (ehColab && !secaoColab) {
+    showMsg('msg-add','err','Escolha a Área de acesso do colaborador (Seção).'); return;
   }
 
   const btn = document.querySelector('[onclick="adicionarUsuario()"]');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Salvando...'; }
 
   const r = await SbAuth.criarUsuario({
-    matricula: npm, posto_graduacao: pg, nome_completo: nome,
-    nome_guerra: guerra, funcao, grupamento_id: lotacao, nivel_acesso: nivel,
+    matricula: npm, posto_graduacao: ehColab ? '' : pg, nome_completo: nome,
+    nome_guerra: guerra, funcao: ehColab ? '' : funcao, grupamento_id: lotacao, nivel_acesso: nivel,
+    categoria,
     secao: (document.getElementById('new-secao')||{}).value || ''
   }, sessao);
 
@@ -3320,6 +3355,30 @@ function fmtNP(el) {
   if (v.length > 6) v = v.slice(0,3)+'.'+v.slice(3,6)+'-'+v.slice(6);
   else if (v.length > 3) v = v.slice(0,3)+'.'+v.slice(3);
   el.value = v;
+}
+// Máscara do cadastro ciente da categoria: Militar usa o padrão PM (000.000-0);
+// Colaborador aceita matrícula livre, com letras (ex.: C932305), em MAIÚSCULAS.
+function fmtNPcad(el) {
+  const cat = (document.getElementById('new-categoria')||{}).value || 'militar';
+  if (cat === 'colaborador') { el.value = el.value.toUpperCase().replace(/[^A-Z0-9.\-]/g,'').slice(0,12); return; }
+  fmtNP(el);
+}
+// Ajusta o form conforme a categoria (rótulo/placeholder da matrícula; P/G e
+// Nível só fazem sentido p/ militar — ficam opcionais p/ colaborador).
+function onCategoriaChange() {
+  const cat = (document.getElementById('new-categoria')||{}).value || 'militar';
+  const ehColab = cat === 'colaborador';
+  const lbl = document.getElementById('lbl-new-npm');
+  const npm = document.getElementById('new-npm');
+  const perfil = document.getElementById('new-perfil');
+  const funcao = document.getElementById('new-funcao');
+  const secao  = document.getElementById('new-secao');
+  if (lbl) lbl.textContent = ehColab ? 'Matrícula *' : 'Nº PM *';
+  if (npm){ npm.placeholder = ehColab ? 'Ex: C932305' : 'Ex: 138.988-1'; npm.maxLength = ehColab ? 12 : 9; if (ehColab) fmtNPcad(npm); else fmtNP(npm); }
+  if (perfil){ perfil.disabled = ehColab; perfil.title = ehColab ? 'Colaborador usa o perfil fixo por ÁREA.' : ''; }
+  // Colaborador: a FUNÇÃO é derivada da Área (não se escolhe aqui); a Área é obrigatória.
+  if (funcao){ funcao.disabled = ehColab; funcao.title = ehColab ? 'A função do colaborador é definida pela Área de acesso.' : ''; }
+  if (secao){ const sl = secao.previousElementSibling; if (sl && sl.tagName==='LABEL') sl.textContent = ehColab ? 'Área de acesso *' : 'Seção'; }
 }
 
 /* ══ INIT ══ */

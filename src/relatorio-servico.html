@@ -1549,9 +1549,13 @@ function bindOpSmartFilter(panel, cfg){
   populateOpSelect(idSelect, cfg.sourceKey);
 
   idSelect.addEventListener('change', () => {
-    if (!nomeInput) return;
-    const found = (referenceCache[cfg.sourceKey] || []).find(it => opItemVal(it) === idSelect.value);
-    nomeInput.value = found ? opItemNome(found) : '';
+    if (nomeInput){
+      const found = (referenceCache[cfg.sourceKey] || []).find(it => opItemVal(it) === idSelect.value);
+      nomeInput.value = found ? opItemNome(found) : '';
+    }
+    // A operação do PAF também alimenta os quesitos (Campos & Quesitos): re-renderiza
+    // o card Produtividade p/ exibir/limpar os quesitos vinculados a essa operação.
+    if (typeof refreshProdutividadePanel === 'function') refreshProdutividadePanel();
   });
 
   const dataInput = document.getElementById('dataServico');
@@ -1903,15 +1907,26 @@ function _operacaoQuesitosEfetivos(){
   const seen = new Set(globaisAtivos);
   const out = [];
   const selects = _opSelectsAll();
-  const temAlguma = selects.some(s => (s.value||'').trim() !== '');
+  // Operações escolhidas no relatório: card "Operação" + operação do PAF (card PAF).
+  // Assim os quesitos vinculados a uma operação do PAF (Campos & Quesitos) também
+  // entram. Mantém "OUTRA OPERAÇÃO NÃO DESCRITA ACIMA" (vem do próprio op-select).
+  const opsSel = selects.map(s => (s.value||'').trim()).filter(v => v);
+  try{
+    // PAF casa pelo rótulo "ID - NOME" (mesmo formato do Campos & Quesitos).
+    const pafNode = (typeof panelCache !== 'undefined' && panelCache) ? panelCache['paf'] : null;
+    const idEl   = pafNode ? pafNode.querySelector('.pre-fields [data-field="pafId"]')   : null;
+    const nomeEl = pafNode ? pafNode.querySelector('.pre-fields [data-field="pafNome"]') : null;
+    const pid = idEl   ? (idEl.value||'').replace(/\s+/g,' ').trim() : '';
+    const pnm = nomeEl ? (nomeEl.value||'').trim() : '';
+    const pafLabel = pnm ? (pid ? (pid+' - '+pnm) : pnm) : pid;
+    if (pafLabel && !opsSel.includes(pafLabel)) opsSel.push(pafLabel);
+  }catch(e){}
+  const temAlguma = opsSel.length > 0;
   if (temAlguma){
     arr.filter(q => q.escopo === 'todas' && q.ativo !== false).forEach(q => {
       const k = (q.label||'').toLowerCase(); if (!seen.has(k)){ seen.add(k); out.push(q); }
     });
   }
-  // Mantém "OUTRA OPERAÇÃO NÃO DESCRITA ACIMA" para casar com quesitos que o admin
-  // vinculou explicitamente a esse caso em Campos & Quesitos (operação avulsa).
-  const opsSel = selects.map(s => (s.value||'').trim()).filter(v => v);
   opsSel.forEach(op => {
     arr.filter(q => q.escopo === 'especificas' && q.ativo !== false && Array.isArray(q.operacoes) && q.operacoes.includes(op)).forEach(q => {
       const k = (q.label||'').toLowerCase(); if (!seen.has(k)){ seen.add(k); out.push(q); }
@@ -2436,7 +2451,13 @@ function bindHodometroFromMov(entry){
 // TEM ficha do dia). Assim o relatório sai com o hodômetro preenchido mesmo que
 // a ficha só tenha sido lançada depois de a viatura ter sido escolhida.
 async function garantirHodometroDaFicha(){
-  const entries = document.querySelectorAll('[data-repeat-list="recursos"] [data-repeat-entry]');
+  // O card Recursos costuma estar FECHADO no envio → fica DESTACADO no panelCache
+  // (fora do document). Busca nele primeiro; cai p/ o document se por acaso estiver
+  // aberto. Sem isso, o repuxar da ficha no envio não rodava (hodômetro vazio quando
+  // a ficha foi lançada depois da viatura já estar selecionada e o card fechado).
+  const node = (typeof panelCache !== 'undefined' && panelCache && panelCache['recursos'])
+    ? panelCache['recursos'] : document;
+  const entries = node.querySelectorAll('[data-repeat-entry]');
   for (const entry of entries){
     if (typeof entry._puxarHod === 'function') { try { await entry._puxarHod(); } catch(e){} }
   }

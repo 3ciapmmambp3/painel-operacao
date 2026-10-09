@@ -333,6 +333,28 @@ function auth_podeVerGrupamento(sessao, grupamento_id) {
   return false; // operacional não acessa painel admin
 }
 
+/** Perfil que acessa a área de Recursos Humanos / hub P1:
+ *  admin_geral, Aux P1, CMT de Cia/Pelotão OU colaborador (perfil fixo
+ *  "Colaborador RH"). Centraliza o gate que antes era repetido por página. */
+/** Seção (p1..p5) de um colaborador, derivada da função ("COLABORADOR P1" → 'p1').
+ *  null quando não é colaborador ou não tem área definida. */
+function auth_colabSecao(sessao) {
+  if (!sessao || sessao.categoria !== 'colaborador') return null;
+  const m = (sessao.funcao || '').toString().toLowerCase().match(/\bp\s*([1-5])\b/);
+  return m ? ('p' + m[1]) : null;
+}
+
+function auth_ehRH(sessao) {
+  if (!sessao) return false;
+  if (sessao.nivel_acesso === 'admin_geral') return true;
+  if (sessao.categoria === 'colaborador') return auth_colabSecao(sessao) === 'p1';
+  const fx = (sessao.funcao || '').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  if (/AUX/.test(fx) && /P\s*1/.test(fx)) return true;
+  if (/(CMT|COMANDANTE)/.test(fx) && /\bCIA\b/.test(fx)) return true;
+  if (/(CMT|COMANDANTE)/.test(fx) && /\bPEL\b/.test(fx)) return true; // CMT Pel assume na falta do CMT Cia
+  return false;
+}
+
 /* ─── MIGRAÇÃO: importar dados da planilha (uso único) ──────────── */
 
 /**
@@ -471,6 +493,8 @@ window.SbAuth = {
   excluirUsuario:   auth_excluirUsuario,
   temPermissao:     auth_temPermissao,
   podeVerGrupamento: auth_podeVerGrupamento,
+  ehRH:             auth_ehRH,
+  colabSecao:       auth_colabSecao,
   migrarDaPlanilha: auth_migrarDaPlanilha,
   fetchReferencias: auth_fetchReferencias,
   limparCacheReferencias: auth_limparCacheReferencias,

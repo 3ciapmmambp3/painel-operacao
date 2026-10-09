@@ -124,9 +124,17 @@
   function montar(){
     const sessao = (typeof sessaoLer === 'function') ? sessaoLer() : null;
     const nivel  = sessao ? sessao.nivel_acesso : 'operacional';
-    const isAdmin = ['admin_geral','admin','admin_pelotao','admin_gp'].includes(nivel);
+    // Colaborador é restrito a UMA seção (área, derivada da função "COLABORADOR P1").
+    // Mostra só a aba dessa seção; esconde as demais + Gestão Operacional + ADM.
+    const colabSec = (typeof auth_colabSecao === 'function') ? auth_colabSecao(sessao)
+                     : (sessao && sessao.categoria === 'colaborador'
+                        ? ((((sessao.funcao||'').toLowerCase().match(/\bp\s*([1-5])\b/)||[])[1]) ? 'p'+(sessao.funcao.toLowerCase().match(/\bp\s*([1-5])\b/)[1]) : null)
+                        : null);
+    const ehColab = !!(sessao && sessao.categoria === 'colaborador');
+    const showSec = k => !ehColab || colabSec === k;   // colaborador: só a sua seção
+    const isAdmin = !ehColab && ['admin_geral','admin','admin_pelotao','admin_gp'].includes(nivel);
     // Gestão Operacional (Supervisão e Controle) = mesma regra da página: sem admin_gp.
-    const podeGO = ['admin_geral','admin','admin_pelotao'].includes(nivel);
+    const podeGO = !ehColab && ['admin_geral','admin','admin_pelotao'].includes(nivel);
     // Permissões por item (MESMAS regras do secnav.js e das páginas — não afrouxar).
     const funcao = (sessao && sessao.funcao || '').toLowerCase().trim();
     const grup   = (sessao && sessao.grupamento_id || '').toUpperCase();
@@ -174,12 +182,12 @@
     nav.id = 'topnav';
     nav.innerHTML = `
       <a class="topnav-link${on('meudia')}" href="inicio.html">☀️ MEU DIA</a>
-      <a class="topnav-link${on('visaogeral')}" href="painel.html?tab=inicio">📊 VISÃO GERAL</a>
-      ${tab('p1','hub-p1.html','<span class="hubdot hub-p1"></span> RECURSOS HUMANOS')}
-      ${tab('p2','hub-p2.html','<span class="hubdot hub-p2"></span> INTELIGÊNCIA')}
-      ${tab('p3','hub-p3.html','<span class="hubdot hub-p3"></span> EMPREGO OPERACIONAL')}
-      ${tab('p4','hub-p4.html','<span class="hubdot hub-p4"></span> APOIO LOGÍSTICO')}
-      ${tab('p5','hub-p5.html','<span class="hubdot hub-p5"></span> COMUNICAÇÃO ORGANIZACIONAL')}
+      ${ehColab ? '' : `<a class="topnav-link${on('visaogeral')}" href="painel.html?tab=inicio">📊 VISÃO GERAL</a>`}
+      ${showSec('p1') ? tab('p1','hub-p1.html','<span class="hubdot hub-p1"></span> RECURSOS HUMANOS') : ''}
+      ${showSec('p2') ? tab('p2','hub-p2.html','<span class="hubdot hub-p2"></span> INTELIGÊNCIA') : ''}
+      ${showSec('p3') ? tab('p3','hub-p3.html','<span class="hubdot hub-p3"></span> EMPREGO OPERACIONAL') : ''}
+      ${showSec('p4') ? tab('p4','hub-p4.html','<span class="hubdot hub-p4"></span> APOIO LOGÍSTICO') : ''}
+      ${showSec('p5') ? tab('p5','hub-p5.html','<span class="hubdot hub-p5"></span> COMUNICAÇÃO ORGANIZACIONAL') : ''}
       ${podeGO ? tab('go','hub-go.html','🎛️ GESTÃO OPERACIONAL') : ''}
       <div class="topnav-item" id="admTopnavItem" style="display:${isAdmin?'':'none'};">
         <div class="topnav-link${on('adm')}" data-dropdown="ddAdm">⚙ ADM <span class="chev">▾</span></div>
