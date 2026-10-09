@@ -109,11 +109,11 @@ begin
 
   insert into public.militares (
     matricula, matricula_clean, posto_graduacao, nome_completo, nome_guerra,
-    funcao, grupamento_id, nivel_acesso, categoria, senha_hash, primeiro_acesso, ativo
+    funcao, grupamento_id, secao, nivel_acesso, categoria, senha_hash, primeiro_acesso, ativo
   ) values (
     v_matr, v_clean, nullif(p_dados->>'posto_graduacao',''), p_dados->>'nome_completo',
     nullif(p_dados->>'nome_guerra',''), v_funcao,
-    nullif(p_dados->>'grupamento_id',''),
+    nullif(p_dados->>'grupamento_id',''), lower(nullif(p_dados->>'secao','')),
     case when v_cat = 'colaborador' then 'operacional'
          else coalesce(nullif(p_dados->>'nivel_acesso',''), 'operacional') end,
     v_cat, crypt('Mudar@123', gen_salt('bf')), true, true
@@ -129,7 +129,7 @@ create or replace function public.auth_listar_usuarios(p_token uuid)
 returns table (id uuid, matricula text, matricula_clean text, posto_graduacao text,
                nome_completo text, nome_guerra text, email text, primeiro_acesso boolean,
                ativo boolean, nivel_acesso text, funcao text, grupamento_id text,
-               categoria text, created_at timestamptz, updated_at timestamptz)
+               secao text, categoria text, created_at timestamptz, updated_at timestamptz)
 language plpgsql security definer set search_path = public as $$
 declare v_nivel text;
 begin
@@ -140,7 +140,7 @@ begin
   return query
     select m.id, m.matricula, m.matricula_clean, m.posto_graduacao, m.nome_completo,
            m.nome_guerra, m.email, m.primeiro_acesso, m.ativo, m.nivel_acesso, m.funcao,
-           m.grupamento_id, m.categoria, m.created_at, m.updated_at
+           m.grupamento_id, m.secao, m.categoria, m.created_at, m.updated_at
     from public.militares m order by m.nome_completo;
 end;
 $$;
@@ -158,6 +158,7 @@ returns boolean language sql immutable as $$
       or (coalesce(p_funcao,'') ~* 'colaborador');
 $$;
 
+-- Base = versão vigente (db/109), acrescentando apenas m.categoria no select.
 create or replace function public.efetivo_listar(p_token uuid, p_incluir_inativos boolean default false)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
@@ -178,14 +179,19 @@ begin
            m.cod_rpm, m.nome_rpm, m.cod_unidade_principal, m.nome_unidade_principal,
            m.cod_unidade, m.nome_unidade, m.cod_siad, m.tipo_atividade, m.cod_municipio,
            m.ultima_promocao, m.classificacao_curso, m.antiguidade_ordem,
+           m.rg, m.cpf, m.titulo_eleitor, m.cnh_numero, m.cnh_categoria, m.cnh_validade,
+           m.data_nascimento, m.telefone_funcional, m.telefone_pessoal1, m.telefone_pessoal2,
+           m.endereco_funcional, m.endereco_residencial1, m.endereco_residencial2,
+           m.email_pessoal, m.email_funcional, m.sexo,
            coalesce(m.situacao_efetivo,'ATIVO') as situacao_efetivo,
+           (m.ativo and coalesce(m.situacao_efetivo,'ATIVO')='ATIVO') as integrante_ativo,
            m.transf_destino, m.transf_pasta_funcional, m.transf_data_envio,
            m.transf_oficio_numero, m.transf_obs, m.transf_anexo,
            coalesce(m.antiguidade_ordem, 999999) as ord_antig,
            public._posto_rank(m.posto_graduacao) as rank_posto
       from public.militares m
      where m.matricula_clean not in ('0000001','0000002','0000003','0000004')
-       and (p_incluir_inativos or m.ativo = true)
+       and (p_incluir_inativos or (m.ativo and coalesce(m.situacao_efetivo,'ATIVO')='ATIVO'))
   ) t;
 
   return v_out;
@@ -193,20 +199,23 @@ end;
 $$;
 
 -- ─── 6) TTA: colaborador não é militar → fora do picker de escala ────────
+-- Mantém a assinatura vigente (db/44: inclui `funcao`) + exclui ASPM e colaborador.
 create or replace function public.tta_listar_militares(p_token uuid)
 returns table (id uuid, matricula text, posto_graduacao text, nome_completo text,
-               nome_guerra text, grupamento_id text)
+               nome_guerra text, grupamento_id text, funcao text)
 language plpgsql security definer set search_path = public as $$
+declare v_me record;
 begin
-  if (select sm.id from public._sessao_militar(p_token) sm) is null then
-    raise exception 'Sessão expirada. Faça login novamente.';
-  end if;
+  select * into v_me from public._sessao_militar(p_token);
+  if v_me.id is null then raise exception 'Sessão expirada. Faça login novamente.'; end if;
   return query
-    select m.id, m.matricula, m.posto_graduacao, m.nome_completo, m.nome_guerra, m.grupamento_id
+    select m.id, m.matricula, m.posto_graduacao, m.nome_completo, m.nome_guerra,
+           m.grupamento_id, m.funcao
     from public.militares m
     where m.ativo = true
       and m.matricula_clean not in ('0000001','0000002','0000003','0000004')
-      and coalesce(m.categoria,'militar') <> 'colaborador'
+      and coalesce(upper(btrim(m.funcao)),'') <> 'ASPM'          -- ASPM não é militar
+      and coalesce(m.categoria,'militar') <> 'colaborador'       -- colaborador não é militar
     order by m.matricula_clean;
 end;
 $$;
