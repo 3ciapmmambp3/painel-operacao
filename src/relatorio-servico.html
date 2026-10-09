@@ -842,7 +842,9 @@ const CATEGORIES = [
   { id: 'cemig',         label: 'Convênio CEMIG',   icon: 'CM', ready: true },
   { id: 'recursos',      label: 'Recursos Empreg.', icon: 'RE', ready: true },
   { id: 'produtividade', label: 'Produtividade',    icon: '★', ready: true },
-  { id: 'cartao_programa', label: 'Resposta ao Cartão Programa', icon: 'CP', ready: true },
+  // "Resposta ao Cartão Programa" foi REMOVIDO: o cartão da equipe é atendido
+  // AUTOMATICAMENTE no envio, casando as demandas com os cards já preenchidos
+  // (ver window.marcarCartaoAtendido). Evita preencher duas vezes.
 ];
 
 // Os campos de Produtividade vêm dinamicamente de referenceCache.CAMPOS_PRODUTIVIDADE
@@ -4355,9 +4357,8 @@ document.getElementById('reviewConfirmBtn').addEventListener('click', async () =
   reviewConfirmBtn.disabled = true;
   reviewConfirmBtn.textContent = 'Enviando...';
 
-  // Situação do atendimento: sincroniza o bloco "Resposta ao Cartão" nos cards
-  // (grupamentos COM cartão) e monta o mapa por demanda a partir dos controles.
-  try{ if (typeof window.cpSyncSituacaoParaCards === 'function') window.cpSyncSituacaoParaCards(); }catch(e){ console.warn('[situacao] cpSync', e); }
+  // Situação do atendimento: mapa por demanda a partir dos controles de cada card
+  // (usado p/ o gate da planilha E, no envio, p/ atender o Cartão da equipe).
   const situMap = coletarMapaSituacoes();
   sanitizarDemandasNoPayload(payload);   // tira o marcador "em andamento" dos nºs (planilha/espelho/PDF limpos)
 
@@ -5057,21 +5058,47 @@ document.addEventListener('click', () => {
       selS.value=sit; const wrap=selS.closest('.situacao-atendimento'); if(wrap) wrap.setAttribute('data-v', sit);
     });
   };
+  // ATENDE O CARTÃO AUTOMATICAMENTE no envio do relatório — SEM o bloco "Resposta".
+  // 1) acha o(s) cartão(ões) abertos da data que são da EQUIPE do relatório;
+  // 2) casa cada demanda (origem.numero) com o card correspondente (por número);
+  // 3) a situação vem do CONTROLE de cada card (Finalizada/Em andamento/Não atendida)
+  //    → TOTAL/PARCIAL/NAO; REDS/Auto/Ato/Data vêm do próprio card.
   window.marcarCartaoAtendido=async function(relId){
-    if(!SELID) return; const S=(typeof getSessaoAtual==='function')?getSessaoAtual():null; if(!S||!S.token) return;
-    try{ cpPuxarDosCards(); }catch(e){}   // garante o puxar dos cards no envio
-    const box=_dems(); const respostas={};
-    if(box) box.querySelectorAll('[data-ord]').forEach(el=>{ const ord=el.getAttribute('data-ord');const o={};el.querySelectorAll('[data-k]').forEach(inp=>{const v=(inp.value||'').trim();if(v)o[inp.getAttribute('data-k')]=v;});
-      // Auto de Infração: Número + Ano → "N/AAAA" (padrão do relatório)
-      if(o.auto_num){ o.auto_infracao = o.auto_ano ? (o.auto_num+'/'+o.auto_ano) : o.auto_num; } delete o.auto_num; delete o.auto_ano;
-      if(o.atendida)respostas[ord]=o; });
-    // mesmo sem respostas, grava o vínculo do relatório (p/ o botão Ver/Imprimir no cartão).
-    // Fallback: se o banco ainda estiver sem o arg p_relatorio (db/131), refaz sem ele.
+    const S=(typeof getSessaoAtual==='function')?getSessaoAtual():null; if(!S||!S.token) return;
+    const data=dataEl?dataEl.value:''; if(!data) return;
+    let abertos=[];
+    try{ const r=await fetch(`${API}/rest/v1/rpc/cartao_abertos_por_data`,{method:'POST',headers:H,body:JSON.stringify({p_token:S.token,p_data:data})}); if(r.ok) abertos=await r.json()||[]; }catch(e){ return; }
+    if(!abertos.length) return;
+    const meus=_matsRelatorio(); if(!meus.size) return;                 // sem equipe no Bloco 1 → não casa
+    const cartoes=abertos.filter(c=>{ const cm=_matsCartao(c); for(const m of meus) if(cm.has(m)) return true; return false; });
+    if(!cartoes.length) return;
+    let payload=null; try{ payload=(typeof collectAllData==='function')?collectAllData():null; }catch(e){}
+    const itens=[]; if(payload&&Array.isArray(payload.categorias)) payload.categorias.forEach(cat=>{ (cat.itens||[]).forEach(it=>{ try{ it.__cat=cat.categoria; }catch(_){} itens.push(it); }); });
+    const situMap=(typeof coletarMapaSituacoes==='function')?coletarMapaSituacoes():{};
+    const _idn=(typeof _identNorm==='function')?_identNorm:(v=>String(v==null?'':v));
+    const MAPSIT={ FINALIZADA:'TOTAL', EM_ANDAMENTO:'PARCIAL', NAO_ATENDIDA:'NAO' };
     const call=(body)=>fetch(`${API}/rest/v1/rpc/cartao_atender`,{method:'POST',headers:H,body:JSON.stringify(body)});
-    try{
-      let r=await call({p_token:S.token,p_id:SELID,p_respostas:respostas,p_relatorio:relId||null});
-      if(!r.ok) await call({p_token:S.token,p_id:SELID,p_respostas:respostas});
-    }catch(e){ console.warn('[cartao] atender',e); }
+    for(const c of cartoes){
+      const respostas={};
+      (c.demandas||[]).forEach((d,i)=>{
+        const ord=String(d.ordem||(i+1)); const chave=_n2((d.origem||{}).numero); if(chave.length<5) return;
+        let it=itens.find(x=>Object.entries(x||{}).some(([k,v])=>!/data/i.test(k) && _n2(v)===chave));
+        if(!it) it=itens.find(x=>Object.entries(x||{}).some(([k,v])=>{ if(/data/i.test(k)) return false; const nv=_n2(v); return nv.length>=5 && nv.indexOf(chave)!==-1; }));
+        if(!it) return;                                                  // demanda sem card = fica pendente no cartão
+        const m=situMap[it.__cat]; let sit='FINALIZADA';
+        if(m){ sit=m.byIdent.get(_idn(it[m.demandaLabel]))||'FINALIZADA'; }
+        const o={ atendida: MAPSIT[sit]||'TOTAL' };
+        const reds=it['Nº REDS (BO/BOS/RAT)']; if(reds) o.reds=reds;
+        const auto=it['Nº Auto de Infração']; if(auto) o.auto_infracao=auto;
+        const ato=it['Nº Ato de Fiscalização']; if(ato) o.ato_fiscalizacao=ato;
+        const dt=it['Data de Atendimento']||it['Data da Fiscalização']; if(dt) o.data_atendimento=(typeof _cpData==='function'?_cpData(dt):dt);
+        respostas[ord]=o;
+      });
+      try{
+        let r=await call({p_token:S.token,p_id:c.id,p_respostas:respostas,p_relatorio:relId||null});
+        if(!r.ok) await call({p_token:S.token,p_id:c.id,p_respostas:respostas});   // fallback sem p_relatorio (db/131)
+      }catch(e){ console.warn('[cartao] atender',e); }
+    }
   };
   if(dataEl) dataEl.addEventListener('change', carregar);
   // Equipe mudou no Bloco 1 (Comandante/Motorista/Patrulheiros) → re-filtra os cartões.
