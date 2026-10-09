@@ -46,6 +46,8 @@
 
     .eq-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;}
     .eq-card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:15px 16px;display:flex;flex-direction:column;gap:9px;}
+    .eq-cp{margin-top:4px;padding-top:10px;border-top:1px dashed var(--border);}
+    .eq-cp .btn-sm{width:100%;}
     .eq-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:9px;}
     .eq-num{font-size:14px;font-weight:800;color:var(--gold-light);letter-spacing:.3px;}
     .eq-tag{font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.3px;}
@@ -147,6 +149,7 @@ const NIVEIS_OK = ['admin_geral','admin','admin_pelotao'];
 
 let EQUIPES = [];    // itens achatados (equipe + dados da chamada)
 let VMAP = {};       // prefixo -> {placa, marca_modelo}
+let CARTOES = [];    // cartões programa ativos no escopo (p/ casar com a equipe)
 
 async function rpc(fn, body){
   const r = await fetch(`${API}/rest/v1/rpc/${fn}`, { method:'POST', headers:H, body:JSON.stringify(body||{}) });
@@ -209,6 +212,8 @@ async function carregar(){
       const rv=await fetch(`${API}/rest/v1/viaturas?select=prefixo,placa,marca_modelo&ativo=eq.true`,{headers:H});
       if(rv.ok){ (await rv.json()).forEach(v=>{ VMAP[v.prefixo]={placa:v.placa,modelo:v.marca_modelo}; }); }
     }catch(e){}
+    // cartões programa ativos no escopo — best-effort (não quebra a tela se o módulo falhar)
+    try{ CARTOES = await rpc('cartao_listar', { p_token:S.token }) || []; }catch(e){ CARTOES=[]; }
     // achatar: cada equipe da cada chamada vira um item
     EQUIPES=[];
     chamadas.forEach(c=>{
@@ -271,6 +276,35 @@ function limparFiltros(){
   render();
 }
 
+/* ── casar equipe (TTA) × cartão programa ── mesmo critério do Relatório:
+   mesma DATA (data_empenho = data da chamada) + matrícula em comum. ── */
+const STLAB_CP={EMITIDO:'Emitido',EM_ATENDIMENTO:'Em atendimento',CONCLUIDO:'Concluído'};
+const _digsMat = v => (v==null?'':String(v).split(' - ')[0]).replace(/\D/g,'');
+function _matsCartao(c){
+  const set=new Set(); const add=v=>{ const d=_digsMat(v); if(d.length>=5) set.add(d); };
+  add(c.comandante); add(c.motorista);
+  (Array.isArray(c.patrulheiros)?c.patrulheiros:[]).forEach(add);
+  return set;
+}
+function _matsEquipe(e){
+  const set=new Set(); const add=m=>{ const d=(m&&m.matricula?String(m.matricula):'').replace(/\D/g,''); if(d.length>=5) set.add(d); };
+  add(e.comandante); add(e.motorista); (e.patrulheiros||[]).forEach(add);
+  return set;
+}
+// melhor cartão da equipe naquela data (maior sobreposição de matrículas); null se nenhum.
+function _cartaoDaEquipe(e){
+  if(!CARTOES.length) return null;
+  const meus=_matsEquipe(e); if(!meus.size) return null;
+  let best=null, bestN=0;
+  for(const c of CARTOES){
+    if((c.data_empenho||'')!==(e.data||'')) continue;
+    const cm=_matsCartao(c); let n=0; for(const m of meus) if(cm.has(m)) n++;
+    if(n>bestN){ bestN=n; best=c; }
+  }
+  return bestN>0 ? best : null;
+}
+function verCartao(id){ window.open('cartao-publico.html?id='+encodeURIComponent(id),'_blank','noopener'); }
+
 function render(){
   const dini=document.getElementById('f-ini').value, dfim=document.getElementById('f-fim').value;
   const multiDia = dini && dfim && dini!==dfim;
@@ -303,6 +337,7 @@ function render(){
     const cmt=fmtMil(e.comandante), mot=fmtMil(e.motorista);
     const pats=(e.patrulheiros||[]).map(fmtMil).filter(Boolean);
     const turno=[e.inicio_turno,e.final_turno].filter(Boolean).join(' às ');
+    const cp=_cartaoDaEquipe(e);
     return `<div class="eq-card">
       <div class="eq-top">
         <span class="eq-num">Equipe ${esc(e.ordem||'')}</span>
@@ -320,6 +355,7 @@ function render(){
         ${e.operacao?`<span class="m op">🛡 ${esc(e.operacao)}</span>`:''}
       </div>
       ${(e.municipios||[]).length?`<div class="eq-munis">${e.municipios.map(m=>`<span class="mc">${esc(m)}</span>`).join('')}</div>`:''}
+      ${cp?`<div class="eq-cp"><button class="btn-gold btn-sm" onclick="verCartao('${esc(cp.id)}')" title="Abrir o Cartão Programa desta equipe (ver demandas, atendimento e imprimir)">🪪 Cartão ${esc(cp.numero)}${cp.status?` · ${esc(STLAB_CP[cp.status]||cp.status)}`:''} — Ver / Imprimir</button></div>`:''}
     </div>`;
   }).join('')+'</div>';
 }
