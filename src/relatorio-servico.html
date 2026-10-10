@@ -2837,6 +2837,23 @@ function vinculoCartaoHTML(){
       </div>
     </div>`;
 }
+// Vínculo "leve" para os cards com situação (DDU, NUDEN, Balcão, MC, Emergência,
+// RI, Requisição): permite apontar que ESTE lançamento atende uma demanda do
+// Cartão Programa que foi digitada MANUALMENTE (sem número de origem, por isso o
+// casamento automático por número não a encontra). A SITUAÇÃO e os dados de
+// resposta (REDS/Auto/Ato/Data) vêm do próprio card — por isso não há um segundo
+// seletor de situação aqui. Fica escondido até cpPopularVinculos() achar demandas
+// livres da equipe.
+function vinculoCartaoCardHTML(){
+  return `
+    <div class="cp-vinculo-box" data-cp-card="1" style="display:none;border:1px dashed var(--gold);border-radius:8px;padding:10px 12px;margin-bottom:14px">
+      <label>🪪 Atende uma demanda do Cartão Programa sem número? (opcional)</label>
+      <select data-cp-link>
+        <option value="">— não vincular —</option>
+      </select>
+      <div class="sit-hint">Vincule quando este lançamento atende uma demanda que foi digitada manualmente no cartão (sem número). A baixa usa a situação e os dados (REDS/Auto/Ato/Data) deste card.</div>
+    </div>`;
+}
 function buildEntryBlockHTML(config, n, removable){
   const fieldsHTML = config.fields.map(renderFieldGroup).join('');
   return `
@@ -2844,6 +2861,7 @@ function buildEntryBlockHTML(config, n, removable){
       <span class="entry-num">${config.entryLabel} ${n}</span>
       ${removable ? '<button type="button" class="entry-remove">&times;</button>' : ''}
       ${config.situacaoAtendimento ? situacaoAtendimentoHTML() : ''}
+      ${config.situacaoAtendimento ? vinculoCartaoCardHTML() : ''}
       ${config.vincularCartao ? vinculoCartaoHTML() : ''}
       ${fieldsHTML}
     </div>`;
@@ -2880,9 +2898,10 @@ function bindRepeatablePanel(panel, categoryId){
     }
     if (categoryId === 'ima') bindImaDuracao(entry);
     if (categoryId === 'fapi') bindFapiEntry(entry, panel);
-    // Registro: popula o seletor "vincular à demanda do Cartão" (cobre abrir o
-    // card e "+ Adicionar"); fica escondido se a equipe não tiver cartão.
-    if (categoryId === 'registro' && typeof window.cpPopularVinculos === 'function') setTimeout(window.cpPopularVinculos, 0);
+    // Popula o seletor "vincular à demanda do Cartão" (cobre abrir o card e
+    // "+ Adicionar"); fica escondido se a equipe não tiver demanda livre. Vale
+    // p/ o Registro (vincularCartao) e p/ os cards com situação (DDU/NUDEN/etc.).
+    if ((config.vincularCartao || config.situacaoAtendimento) && typeof window.cpPopularVinculos === 'function') setTimeout(window.cpPopularVinculos, 0);
     setupRespCompart(entry);
   }
   // Resposta compartilhada: acha o campo de DEMANDA (o select fração-scoped) e
@@ -3108,6 +3127,16 @@ function _entrySituacaoDe(el){
   const sel = entry ? entry.querySelector('[data-situacao]') : null;
   return sel ? (sel.value || 'FINALIZADA') : 'FINALIZADA';
 }
+// Rótulo da situação para exibir/gravar (resumo, PDF, Ver/Imprimir) e o caminho de volta.
+const SITUACAO_ROTULO_KEY = 'Situação do atendimento';
+const SITUACAO_ROTULOS = { FINALIZADA:'✅ Finalizada', EM_ANDAMENTO:'🟡 Em andamento', NAO_ATENDIDA:'⛔ Não atendida' };
+function _situacaoRotulo(code){ return SITUACAO_ROTULOS[code] || SITUACAO_ROTULOS.FINALIZADA; }
+function _situacaoCodigoDoRotulo(txt){
+  const t = String(txt == null ? '' : txt).toUpperCase();
+  if (t.indexOf('ANDAMENTO') !== -1) return 'EM_ANDAMENTO';
+  if (t.indexOf('NÃO') !== -1 || t.indexOf('NAO') !== -1) return 'NAO_ATENDIDA';
+  return 'FINALIZADA';
+}
 
 // Valida o conteúdo do modal aberto: máscaras incompletas e campos obrigatórios.
 // Retorna uma lista de problemas (vazia = tudo ok).
@@ -3157,20 +3186,43 @@ function validarModalAtual(){
       return labelEl && labelEl.textContent.trim() === label;
     });
 
+    // Situação desta entrada (padrão Finalizada quando não há o controle).
+    const _selSitEsc = escopo.querySelector('[data-situacao]');
+    const sitEntry = _selSitEsc ? (_selSitEsc.value || 'FINALIZADA') : 'FINALIZADA';
+    const preenchida = entryIsFilled(escopo);
+
     // Se tem Auto de Infração preenchido (qualquer uma das linhas), o Ato de
-    // Fiscalização passa a ser obrigatório.
+    // Fiscalização passa a ser obrigatório — mas só quando a demanda está sendo
+    // FINALIZADA (em andamento / não atendida não exigem os campos específicos).
     const autoInfracaoBox = escopo.querySelector('[data-auto-infracao="1"]');
     const temAlgumAuto = autoInfracaoBox && Array.from(autoInfracaoBox.querySelectorAll('.mini-row input[data-label]')).some(inp => inp.value.trim());
     const ato = campoPorLabel('Nº Ato de Fiscalização');
-    if (temAlgumAuto && ato && !ato.value.trim()){
+    if (sitEntry === 'FINALIZADA' && temAlgumAuto && ato && !ato.value.trim()){
       problemas.push('"Nº Ato de Fiscalização" é obrigatório quando "Nº Auto de Infração" foi preenchido.');
+    }
+
+    // EM ANDAMENTO (continua no próximo serviço): a demanda ainda será finalizada,
+    // então exige só o Nº REDS e a Data (os campos específicos ficam p/ a baixa).
+    if (sitEntry === 'EM_ANDAMENTO' && preenchida){
+      const redsEl = escopo.querySelector('input[data-mask="reds"]');
+      if (redsEl && !(redsEl.value || '').trim()){
+        problemas.push('Como a demanda está "em andamento", o "Nº REDS" é obrigatório.');
+      }
+      const dataEl2 = escopo.querySelector('input[type="date"]');
+      if (dataEl2 && !(dataEl2.value || '').trim()){
+        problemas.push('Como a demanda está "em andamento", a "Data" é obrigatória.');
+      }
     }
 
     // Se a entrada tem ALGUM dado (ex.: Nº REDS), a LISTA DE DEMANDA é obrigatória
     // (Nº da Denúncia/DDU/Balcão/GEOCODE/Protocolo/RI/Requisição) — todo
     // atendimento tem que apontar qual demanda foi atendida, senão não dá baixa.
+    // Exceção: quando a entrada está VINCULADA a uma demanda do cartão sem número
+    // (data-cp-link preenchido), o vínculo já identifica a demanda atendida.
     const demSel = escopo.querySelector('[data-demanda-obrig="1"]');
-    if (demSel && entryIsFilled(escopo) && !(demSel.value || '').trim()){
+    const cpLinkEl = escopo.querySelector('[data-cp-link]');
+    const cpVinculada = cpLinkEl && (cpLinkEl.value || '').trim();
+    if (demSel && preenchida && !(demSel.value || '').trim() && !cpVinculada){
       problemas.push(`"${demSel.dataset.label || 'Nº da demanda'}" é obrigatório — selecione a demanda atendida.`);
     }
 
@@ -3629,7 +3681,21 @@ function preencherBloco1(bloco1){
 // Preenche uma entrada (dentro de um card) casando pelo rótulo do campo
 // (data-label, ou o texto do <label> irmão como reserva).
 function preencherEntradaPorLabel_(escopo, itemData){
+  // Restaura a Situação do atendimento (fica fora de .field, então não entra no
+  // laço genérico abaixo). Sem isso, um relatório salvo "em andamento" voltaria
+  // como Finalizada no Ver/Imprimir e na edição.
+  const _sitSalva = itemData && itemData[SITUACAO_ROTULO_KEY];
+  if (_sitSalva){
+    const _selSit = escopo.querySelector('[data-situacao]');
+    if (_selSit){
+      const _code = _situacaoCodigoDoRotulo(_sitSalva);
+      _selSit.value = _code;
+      const _wrap = _selSit.closest('.situacao-atendimento, .cp-vinculo-box');
+      if (_wrap) _wrap.setAttribute('data-v', _code);
+    }
+  }
   Object.keys(itemData).forEach(label => {
+    if (label === SITUACAO_ROTULO_KEY) return; // tratada à parte (acima)
     const valor = itemData[label];
     if (valor === undefined || valor === null || valor === '') return;
     const candidatos = Array.from(escopo.querySelectorAll('input, select, textarea'));
@@ -4058,6 +4124,10 @@ function collectCategoryEntries(id){
         }
         aplicarCampo_(f, campos);
       });
+    // Situação do atendimento (fica fora de .field): grava no item para aparecer
+    // no resumo/PDF/Ver-Imprimir e ser restaurada ao reabrir o relatório.
+    const _selSit = entry.querySelector('[data-situacao]');
+    if (_selSit) campos[SITUACAO_ROTULO_KEY] = _situacaoRotulo(_selSit.value || 'FINALIZADA');
     if (Object.keys(campos).length) result.push(campos);
     // Resposta compartilhada: cada demanda EXTRA vira um item individualizado
     // com os MESMOS dados de resposta (só troca o nº da demanda).
@@ -4549,6 +4619,8 @@ function filtrarPayloadParaPlanilha(payload, situMap){
     const itens = (cat.itens || []).filter(it => _situacaoDoItem(situMap, cat.categoria, it) === 'FINALIZADA');
     return Object.assign({}, cat, { itens });
   }).filter(cat => !situMap || !situMap[cat.categoria] || (Array.isArray(cat.itens) && cat.itens.length));
+  // A situação é só p/ exibição/controle — não vira coluna na planilha.
+  (clone.categorias || []).forEach(cat => (cat.itens || []).forEach(it => { if (it && typeof it === 'object') delete it[SITUACAO_ROTULO_KEY]; }));
   return clone;
 }
 // Registra as EM ANDAMENTO na tabela de controle e tira as FINALIZADAS (best-effort).
@@ -5149,20 +5221,32 @@ document.addEventListener('click', () => {
     const _idn=(typeof _identNorm==='function')?_identNorm:(v=>String(v==null?'':v));
     const MAPSIT={ FINALIZADA:'TOTAL', EM_ANDAMENTO:'PARCIAL', NAO_ATENDIDA:'NAO' };
     const call=(body)=>fetch(`${API}/rest/v1/rpc/cartao_atender`,{method:'POST',headers:H,body:JSON.stringify(body)});
-    // Vínculos do card Registro → demandas LIVRES do cartão ({cartaoId:{ordem:resposta}}).
-    const regByCartao={};
-    const regNode=(typeof panelCache!=='undefined'&&panelCache)?panelCache['registro']:null;
-    if(regNode){
-      regNode.querySelectorAll('[data-repeat-entry]').forEach(en=>{
-        const sel=en.querySelector('[data-cp-link]'); const v=sel?sel.value:''; if(!v) return;
-        const p=v.split('::'); const cid=p[0], ord=p[1]; if(!cid||!ord) return;
-        const box=sel.closest('.cp-vinculo-box'); const sitEl=box?box.querySelector('[data-situacao]'):null;
-        const o={ atendida: MAPSIT[(sitEl?sitEl.value:'FINALIZADA')]||'TOTAL' };
-        const reds=(en.querySelector('[data-label="Nº do REDS / Registro"]')||{}).value; if(reds&&reds.trim()) o.reds=reds.trim();
-        const dtEl=en.querySelector('input[type="date"]'); const dt=dtEl?dtEl.value:''; if(dt) o.data_atendimento=(typeof _cpData==='function'?_cpData(dt):dt);
-        (regByCartao[cid]=regByCartao[cid]||{})[ord]=o;
-      });
+    // Resposta (REDS/Auto/Ato/Data) lida direto de uma ENTRADA do DOM — usada nos
+    // vínculos manuais a demandas LIVRES do cartão (card Registro OU cards com
+    // situação, ex. DDU/NUDEN digitados manualmente no cartão, sem número).
+    function _respDaEntrada(en){
+      const o={};
+      let reds=(en.querySelector('input[data-mask="reds"]')||{}).value;
+      if(!reds||!reds.trim()) reds=(en.querySelector('[data-label="Nº do REDS / Registro"]')||{}).value;
+      if(reds&&reds.trim()) o.reds=reds.trim();
+      const ato=(en.querySelector('[data-label="Nº Ato de Fiscalização"]')||{}).value; if(ato&&ato.trim()) o.ato_fiscalizacao=ato.trim();
+      const autoBox=en.querySelector('[data-auto-infracao="1"]');
+      if(autoBox){ const autos=Array.from(autoBox.querySelectorAll('.mini-row')).map(r=>{const i=r.querySelectorAll('input');const n=(i[0]&&i[0].value.trim())||'';const a=(i[1]&&i[1].value.trim())||'';return n?(n+'/'+a):'';}).filter(Boolean); if(autos.length) o.auto_infracao=autos.join(', '); }
+      const dtEl=en.querySelector('input[type="date"]'); const dt=dtEl?dtEl.value:''; if(dt) o.data_atendimento=(typeof _cpData==='function'?_cpData(dt):dt);
+      return o;
     }
+    // Vínculos manuais → demandas LIVRES do cartão ({cartaoId:{ordem:resposta}}).
+    // Varre TODAS as entradas com [data-cp-link] (Registro + cards com situação).
+    const regByCartao={};
+    document.querySelectorAll('[data-repeat-entry]').forEach(en=>{
+      const sel=en.querySelector('[data-cp-link]'); const v=sel?sel.value:''; if(!v) return;
+      const p=v.split('::'); const cid=p[0], ord=p[1]; if(!cid||!ord) return;
+      // Situação: do próprio bloco de vínculo (Registro) OU do controle do card.
+      const box=sel.closest('.cp-vinculo-box'); let sitEl=box?box.querySelector('[data-situacao]'):null;
+      if(!sitEl) sitEl=en.querySelector('[data-situacao]');
+      const o=_respDaEntrada(en); o.atendida=MAPSIT[(sitEl?sitEl.value:'FINALIZADA')]||'TOTAL';
+      (regByCartao[cid]=regByCartao[cid]||{})[ord]=o;
+    });
     for(const c of cartoes){
       const respostas={};
       (c.demandas||[]).forEach((d,i)=>{
