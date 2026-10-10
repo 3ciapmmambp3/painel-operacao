@@ -240,6 +240,11 @@ function _cpResumoHTML(c){
   if(k.pend) p.push(`<span style="color:var(--text-muted)">⬜ ${k.pend} sem resposta</span>`);
   return p.join(' · ');
 }
+// Badge exibido: "Em andamento" SÓ quando há demanda PARCIAL; senão o status normal.
+function _cpBadge(c){
+  if(c.status==='EM_ATENDIMENTO' && _cpContagem(c).parc>0) return {cls:'b-EM_ATENDIMENTO', txt:'Em andamento'};
+  return {cls:'b-'+c.status, txt:STLAB[c.status]||c.status};
+}
 function render(){
   const grp=document.getElementById('f-grup').value, data=document.getElementById('f-data').value, eq=document.getElementById('f-equipe').value.trim().toUpperCase();
   let lista=TODOS.filter(c=>
@@ -248,12 +253,12 @@ function render(){
   if(!lista.length){ document.getElementById('lista').innerHTML='<div class="empty">Nenhum cartão encontrado.</div>'; return; }
   document.getElementById('lista').innerHTML=`<table><thead><tr>
     <th>Nº</th><th>Data</th><th>Turno</th><th>Eq.</th><th>Grupamento</th><th>Comandante</th><th>Dem.</th><th>Status</th></tr></thead><tbody>${
-    lista.map(c=>{const nd=(c.demandas||[]).length; const nr=Object.keys(c.respostas||{}).length;
+    lista.map(c=>{const nd=(c.demandas||[]).length; const nr=Object.keys(c.respostas||{}).length; const bd=_cpBadge(c);
       return `<tr class="row" onclick='abrirDrawer(${JSON.stringify(c).replace(/'/g,"&#39;")})'>
       <td><b>${_esc(c.numero)}</b></td><td>${_data(c.data_empenho)}</td><td>${_esc(c.turno||'—')}</td>
       <td>${_esc(c.equipe||'—')}</td><td>${_esc(_grafiaGP(c.grupamento_completo||c.grupamento_id).split('/').slice(0,2).join('/'))}</td>
       <td>${_esc((c.comandante||'—').split(' - ').slice(2).join(' - ')||c.comandante||'—')}</td>
-      <td>${nr}/${nd}</td><td><span class="badge b-${c.status}">${STLAB[c.status]||c.status}</span>${c.status==='EM_ATENDIMENTO'&&_cpResumoHTML(c)?`<div style="font-size:10.5px;margin-top:4px;line-height:1.4">${_cpResumoHTML(c)}</div>`:''}</td></tr>`;
+      <td>${nr}/${nd}</td><td><span class="badge ${bd.cls}">${bd.txt}</span>${c.status==='EM_ATENDIMENTO'&&_cpResumoHTML(c)?`<div style="font-size:10.5px;margin-top:4px;line-height:1.4">${_cpResumoHTML(c)}</div>`:''}</td></tr>`;
     }).join('')}</tbody></table>`;
 }
 
@@ -272,7 +277,7 @@ function podeGerir(c){
 function abrirDrawer(c){
   CUR=c;
   document.getElementById('d-num').textContent='Nº '+c.numero;
-  const b=document.getElementById('d-badge'); b.className='badge b-'+c.status; b.textContent=STLAB[c.status]||c.status;
+  const b=document.getElementById('d-badge'); const bd=_cpBadge(c); b.className='badge '+bd.cls; b.textContent=bd.txt;
   const patr=(Array.isArray(c.patrulheiros)?c.patrulheiros:[]).filter(Boolean);
   const dems=mergeDemandas(c);
   const gerir=podeGerir(c);
