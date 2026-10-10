@@ -160,8 +160,11 @@
 const S = (typeof sessaoLer==='function') ? sessaoLer() : null;
 if(!S){ location.href='index.html'; }
 const NV = (typeof NIVEIS!=='undefined') ? NIVEIS : ['operacional','admin_gp','admin_pelotao','admin','admin_geral'];
-const podeEmitir = !!S && NV.indexOf(S.nivel_acesso) >= NV.indexOf('admin_gp');
-if(S && !podeEmitir){ alert('Apenas comandantes (GP, Pelotão, Cia) e Admin podem emitir Cartão Programa.'); location.href='cartao-programa.html'; }
+// Qualquer militar logado pode emitir (o operacional lança quando o comandante
+// está de férias). A gestão escolhe o grupamento; o operacional fica travado no
+// próprio grupamento (ver _grupReady) e o backend (db/139) reforça isso.
+const podeEmitir = !!S;
+const _ehGestaoEmit = !!S && NV.indexOf(S.nivel_acesso) >= NV.indexOf('admin_gp');
 
 /* Modo EDIÇÃO (?editar=<id>): a linha chega via sessionStorage (setada na listagem). */
 let EDIT_ID=null, EDIT_ROW=null;
@@ -196,6 +199,12 @@ const _grupReady = (async function(){
     const sel=document.getElementById('grupamento');
     sel.innerHTML='<option value="">Selecione…</option>'+grupOptions();
     if(S.grupamento_id){ [...sel.options].forEach(o=>{ if(o.value && o.value.toUpperCase()===String(S.grupamento_id).toUpperCase()) sel.value=o.value; }); }
+    // Operacional só emite para o PRÓPRIO grupamento → deixa só ele no seletor.
+    if(!_ehGestaoEmit){
+      const cur = sel.value || (S.grupamento_id||'');
+      sel.innerHTML = cur ? `<option value="${_esc(cur)}">${_esc(_grafiaGP(cur))}</option>` : '<option value="">Selecione…</option>';
+      sel.value = cur;
+    }
   }catch(e){ console.error('grupamentos',e); }
 })();
 
