@@ -223,6 +223,23 @@ function _souEu(c){
   const campos=[c.comandante,c.motorista].concat(Array.isArray(c.patrulheiros)?c.patrulheiros:[]);
   return campos.some(v=>((v||'').split(' - ')[0]||'').replace(/\D/g,'')===_meuMat);
 }
+// Conta as demandas por situação (p/ o resumo "1 em andamento · 1 não atendida").
+function _cpContagem(c){
+  const dem=Array.isArray(c.demandas)?c.demandas:[]; const resp=c.respostas||{};
+  let fin=0,parc=0,nao=0,pend=0;
+  dem.forEach((d,i)=>{ const r=resp[String(d.ordem)]||resp[String(i+1)]||null; const a=r&&r.atendida;
+    if(a==='TOTAL') fin++; else if(a==='PARCIAL') parc++; else if(a==='NAO') nao++; else pend++; });
+  return {total:dem.length, fin, parc, nao, pend};
+}
+// Mensagem curta do que ainda falta no cartão (o que carregar p/ o próximo cartão
+// × o que redistribuir × o que está sem resposta). Vazio se não houver pendência.
+function _cpResumoHTML(c){
+  const k=_cpContagem(c); const p=[];
+  if(k.parc) p.push(`<span style="color:#ffb300">🟡 ${k.parc} em andamento</span>`);
+  if(k.nao)  p.push(`<span style="color:#ff6b6b">⛔ ${k.nao} não atendida${k.nao>1?'s':''}</span>`);
+  if(k.pend) p.push(`<span style="color:var(--text-muted)">⬜ ${k.pend} sem resposta</span>`);
+  return p.join(' · ');
+}
 function render(){
   const grp=document.getElementById('f-grup').value, data=document.getElementById('f-data').value, eq=document.getElementById('f-equipe').value.trim().toUpperCase();
   let lista=TODOS.filter(c=>
@@ -236,7 +253,7 @@ function render(){
       <td><b>${_esc(c.numero)}</b></td><td>${_data(c.data_empenho)}</td><td>${_esc(c.turno||'—')}</td>
       <td>${_esc(c.equipe||'—')}</td><td>${_esc(_grafiaGP(c.grupamento_completo||c.grupamento_id).split('/').slice(0,2).join('/'))}</td>
       <td>${_esc((c.comandante||'—').split(' - ').slice(2).join(' - ')||c.comandante||'—')}</td>
-      <td>${nr}/${nd}</td><td><span class="badge b-${c.status}">${STLAB[c.status]||c.status}</span></td></tr>`;
+      <td>${nr}/${nd}</td><td><span class="badge b-${c.status}">${STLAB[c.status]||c.status}</span>${c.status==='EM_ATENDIMENTO'&&_cpResumoHTML(c)?`<div style="font-size:10.5px;margin-top:4px;line-height:1.4">${_cpResumoHTML(c)}</div>`:''}</td></tr>`;
     }).join('')}</tbody></table>`;
 }
 
@@ -260,6 +277,7 @@ function abrirDrawer(c){
   const dems=mergeDemandas(c);
   const gerir=podeGerir(c);
   document.getElementById('d-body').innerHTML=`
+    ${c.status==='EM_ATENDIMENTO'&&_cpResumoHTML(c)?`<div style="border:1px dashed var(--gold);border-radius:8px;padding:9px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.5">${_cpResumoHTML(c)}<div style="color:var(--text-hint);font-size:11px;margin-top:4px">Em andamento → levar para o próximo cartão · Não atendida → redistribuir</div></div>`:''}
     <div class="kv">
       <div class="i"><div class="l">Grupamento</div><div class="v">${_esc(_grafiaGP(c.grupamento_completo||c.grupamento_id))}</div></div>
       <div class="i"><div class="l">Data · Turno</div><div class="v">${_data(c.data_empenho)} · ${_esc(c.turno||'—')}</div></div>
