@@ -380,6 +380,36 @@ function _muniDoMC(arqs){
 function _tipoLbl(t){ return t==='requisicao'?'Requisição':'Denúncia de Balcão'; }
 function _normGrp(s){ return String(s==null?'':s).toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').replace(/MARILIERIA/g,'MARLIERIA').replace(/MOLEVADE/g,'MONLEVADE').trim(); }
 function gprDe(completo){ const L=(window.FrotaGrup&&FrotaGrup.lista)?FrotaGrup.lista:[]; const x=L.find(y=>String(y.completo).toUpperCase()===String(completo||'').toUpperCase()); return x?x.gpr:''; }
+/* Grupamentos que COMPARTILHAM demandas (atendem um do outro) — MESMA regra do
+   Relatório de Serviço (FRACOES_COMPARTILHADAS). O "puxar pendente" de um deles
+   lista as demandas de TODOS do grupo. Compara por (nº GP, nº PEL, cidade). */
+const FRACOES_COMPARTILHADAS = [
+  ['1 GP / 4 PEL / 3 CIA PM MAMB / TEOFILO OTONI', '3 GP / 4 PEL / 3 CIA PM MAMB / ITAMBACURI'],
+];
+function _fracaoKey(s){
+  const parts=_normGrp(s).split('/').map(x=>x.trim());
+  const gp=((parts[0]||'').match(/\d+/)||[''])[0];
+  const pel=((parts[1]||'').match(/\d+/)||[''])[0];
+  const cidade=parts[parts.length-1]||'';
+  return gp+'|'+pel+'|'+cidade;
+}
+const _GRUPOS_COMPART_KEYS = FRACOES_COMPARTILHADAS.map(g=>g.map(_fracaoKey));
+// true quando a fração do item e o grupamento alvo são o mesmo OU compartilham.
+function _naFracaoCompart(fracao, alvo){
+  const a=_fracaoKey(fracao), b=_fracaoKey(alvo);
+  if(a && a===b) return true;
+  return _GRUPOS_COMPART_KEYS.some(grp=>grp.includes(a)&&grp.includes(b));
+}
+// GPRs (gp_responsavel) do grupamento alvo + dos que compartilham com ele.
+function _gprsDoEscopo(grup){
+  const alvoKey=_fracaoKey(grup);
+  const keys=new Set([alvoKey]);
+  _GRUPOS_COMPART_KEYS.forEach(grp=>{ if(grp.includes(alvoKey)) grp.forEach(k=>keys.add(k)); });
+  const gprs=new Set(); const self=gprDe(grup); if(self) gprs.add(self);
+  const L=(window.FrotaGrup&&FrotaGrup.lista)?FrotaGrup.lista:[];
+  L.forEach(y=>{ if(y.gpr && keys.has(_fracaoKey(y.completo))) gprs.add(y.gpr); });
+  return [...gprs];
+}
 // Texto PADRÃO por tipo (o histórico completo fica nos anexos/Ficha).
 function _tplDemanda(kind, N, muni, demandante){
   N=N||''; const M=muni?(' — '+muni):'';
@@ -398,10 +428,11 @@ async function carregarPendentes(){
   PEND=[]; const grup=document.getElementById('grupamento').value;
   if(!grup) return {erro:'Selecione primeiro o grupamento (acima) para listar as pendentes dele.'};
   let erroP='';
-  // 1) Painel (Supabase) — denúncias/requisições pendentes
-  const gpr=gprDe(grup);
-  if(gpr){ try{
-    const q=`${API}/rest/v1/denuncias?select=id,numero,tipo,origem,tema,objeto,descricao,municipio,endereco,referencia,situacao,anexos&ativo=is.true&gp_responsavel=eq.${encodeURIComponent(gpr)}&situacao=in.(PENDENTE,%22EM%20ANDAMENTO%22)&order=created_at.desc`;
+  // 1) Painel (Supabase) — denúncias/requisições pendentes (do GP + compartilhados)
+  const gprs=_gprsDoEscopo(grup);
+  if(gprs.length){ try{
+    const inVal=gprs.map(g=>'%22'+encodeURIComponent(g)+'%22').join(',');
+    const q=`${API}/rest/v1/denuncias?select=id,numero,tipo,origem,tema,objeto,descricao,municipio,endereco,referencia,situacao,anexos&ativo=is.true&gp_responsavel=in.(${inVal})&situacao=in.(PENDENTE,%22EM%20ANDAMENTO%22)&order=created_at.desc`;
     const r=await fetch(q,{headers:H}); if(!r.ok) throw new Error(await r.text());
     const arr=await r.json();
     (Array.isArray(arr)?arr:[]).forEach(p=>{
@@ -418,7 +449,7 @@ async function carregarPendentes(){
     if(refs){ const alvo=_normGrp(grup);
       Object.keys(SHEET_TIPOS).forEach(key=>{ const cfg=SHEET_TIPOS[key]; const muniMapa=MUNI_MAP[key]||{}; (refs[key]||[]).forEach(it=>{
         const v=(it.value||'').trim(); if(!v||v==='#N/A'||/nº\s*000\//i.test(v)) return;
-        if(_normGrp(it.fracao||'')!==alvo) return;
+        if(!_naFracaoCompart(it.fracao||'', grup)) return;
         let num=v; if(cfg.tipo==='balcao_drive'||cfg.tipo==='req_drive'){ const mm=v.match(/\d{1,4}\s*\/\s*\d{4}/); if(mm) num=mm[0].replace(/\s/g,''); }
         const muni=(muniMapa[_norm(v)]||'').trim();   // município da coluna C/D da planilha
         PEND.push({tipo:cfg.tipo, tipoLabel:cfg.label, numero:num, texto:_tplDemanda(cfg.kind, num, muni), resumo:'', municipio:muni, endereco:'', situacao:'', anexos:[], fonte:'planilha', folder:cfg.folder||null, id:null});
@@ -432,7 +463,7 @@ async function carregarPendentes(){
     const r=await fetch(`${API}/rest/v1/rpc/cartao_listar`,{method:'POST',headers:H,body:JSON.stringify({p_token:S.token})});
     if(r.ok){ const cs=await r.json(); const alvo=_normGrp(grup);
       (Array.isArray(cs)?cs:[]).forEach(c=>{
-        if(_normGrp(c.grupamento_completo||c.grupamento_id||'')!==alvo) return;   // só do grupamento escolhido
+        if(!_naFracaoCompart(c.grupamento_completo||c.grupamento_id||'', grup)) return;   // do grupamento + compartilhados
         const resp=c.respostas||{};
         (c.demandas||[]).forEach((d,i)=>{ const rr=resp[String(d.ordem)]||resp[String(i+1)]||null;
           if(rr && (rr.atendida==='PARCIAL'||rr.atendida==='NAO')){
