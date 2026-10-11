@@ -235,14 +235,20 @@ function _cpContagem(c){
 // × o que redistribuir × o que está sem resposta). Vazio se não houver pendência.
 function _cpResumoHTML(c){
   const k=_cpContagem(c); const p=[];
+  if(k.fin)  p.push(`<span style="color:var(--success)">✅ ${k.fin} finalizada${k.fin>1?'s':''}</span>`);
   if(k.parc) p.push(`<span style="color:#ffb300">🟡 ${k.parc} em andamento</span>`);
   if(k.nao)  p.push(`<span style="color:#ff6b6b">⛔ ${k.nao} não atendida${k.nao>1?'s':''}</span>`);
   if(k.pend) p.push(`<span style="color:var(--text-muted)">⬜ ${k.pend} sem resposta</span>`);
   return p.join(' · ');
 }
-// Badge exibido: "Em andamento" SÓ quando há demanda PARCIAL; senão o status normal.
+// Badge exibido: "Em andamento" SÓ quando há demanda PARCIAL. Se o cartão está
+// EM_ATENDIMENTO mas nenhuma demanda ficou "em andamento", não mostra selo:
+// no lugar dele aparece o resumo (✅ finalizadas · ⛔ não atendidas · ⬜ sem resposta).
 function _cpBadge(c){
-  if(c.status==='EM_ATENDIMENTO' && _cpContagem(c).parc>0) return {cls:'b-EM_ATENDIMENTO', txt:'Em andamento'};
+  if(c.status==='EM_ATENDIMENTO'){
+    if(_cpContagem(c).parc>0) return {cls:'b-EM_ATENDIMENTO', txt:'Em andamento'};
+    return {hide:true};
+  }
   return {cls:'b-'+c.status, txt:STLAB[c.status]||c.status};
 }
 function render(){
@@ -253,12 +259,15 @@ function render(){
   if(!lista.length){ document.getElementById('lista').innerHTML='<div class="empty">Nenhum cartão encontrado.</div>'; return; }
   document.getElementById('lista').innerHTML=`<table><thead><tr>
     <th>Nº</th><th>Data</th><th>Turno</th><th>Eq.</th><th>Grupamento</th><th>Comandante</th><th>Dem.</th><th>Status</th></tr></thead><tbody>${
-    lista.map(c=>{const nd=(c.demandas||[]).length; const nr=Object.keys(c.respostas||{}).length; const bd=_cpBadge(c);
+    lista.map(c=>{const nd=(c.demandas||[]).length; const nr=Object.keys(c.respostas||{}).length; const bd=_cpBadge(c); const resumo=_cpResumoHTML(c);
+      const stCell = bd.hide
+        ? `<div style="font-size:11px;line-height:1.45">${resumo||'—'}</div>`
+        : `<span class="badge ${bd.cls}">${bd.txt}</span>${(c.status==='EM_ATENDIMENTO'&&resumo)?`<div style="font-size:10.5px;margin-top:4px;line-height:1.4">${resumo}</div>`:''}`;
       return `<tr class="row" onclick='abrirDrawer(${JSON.stringify(c).replace(/'/g,"&#39;")})'>
       <td><b>${_esc(c.numero)}</b></td><td>${_data(c.data_empenho)}</td><td>${_esc(c.turno||'—')}</td>
       <td>${_esc(c.equipe||'—')}</td><td>${_esc(_grafiaGP(c.grupamento_completo||c.grupamento_id).split('/').slice(0,2).join('/'))}</td>
       <td>${_esc((c.comandante||'—').split(' - ').slice(2).join(' - ')||c.comandante||'—')}</td>
-      <td>${nr}/${nd}</td><td><span class="badge ${bd.cls}">${bd.txt}</span>${c.status==='EM_ATENDIMENTO'&&_cpResumoHTML(c)?`<div style="font-size:10.5px;margin-top:4px;line-height:1.4">${_cpResumoHTML(c)}</div>`:''}</td></tr>`;
+      <td>${nr}/${nd}</td><td>${stCell}</td></tr>`;
     }).join('')}</tbody></table>`;
 }
 
@@ -277,7 +286,8 @@ function podeGerir(c){
 function abrirDrawer(c){
   CUR=c;
   document.getElementById('d-num').textContent='Nº '+c.numero;
-  const b=document.getElementById('d-badge'); const bd=_cpBadge(c); b.className='badge '+bd.cls; b.textContent=bd.txt;
+  const b=document.getElementById('d-badge'); const bd=_cpBadge(c);
+  if(bd.hide){ b.style.display='none'; } else { b.style.display=''; b.className='badge '+bd.cls; b.textContent=bd.txt; }
   const patr=(Array.isArray(c.patrulheiros)?c.patrulheiros:[]).filter(Boolean);
   const dems=mergeDemandas(c);
   const gerir=podeGerir(c);
