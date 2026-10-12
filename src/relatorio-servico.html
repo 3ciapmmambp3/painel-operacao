@@ -5088,7 +5088,7 @@ document.addEventListener('click', () => {
         const abertos=r.ok?(await r.json()||[]):[];
         abertos.filter(c=>{const cm=_matsCartao(c);for(const m of meus)if(cm.has(m))return true;return false;})
           .forEach(c=>{ (c.demandas||[]).forEach((d,i)=>{
-            if(_n2((d.origem||{}).numero).length>=5) return;   // tem número = casa automático, não entra aqui
+            if(_cpChaveDemanda(d).length>=5) return;   // tem número (origem ou no texto) = casa automático, não entra aqui
             const ord=String(d.ordem||(i+1)); const tx=((d.texto||'').replace(/\s+/g,' ').trim()).slice(0,70);
             CP_FREE.push({cartaoId:c.id, ordem:ord, label:'Cartão '+(c.numero||'')+' — demanda '+ord+(tx?(': '+tx):'')});
           }); });
@@ -5160,13 +5160,26 @@ document.addEventListener('click', () => {
     cpPuxarDosCards();   // já tenta puxar com o que estiver preenchido
   }
   const _n2=s=>String(s==null?'':s).toUpperCase().replace(/[^A-Z0-9]/g,'');
+  // Chave de casamento da demanda com os cards do relatório. Usa origem.numero
+  // (quando a demanda veio do painel). Se não houver origem (demanda digitada/
+  // importada à mão), extrai o número do próprio texto — padrão "ID da Demanda:
+  // <nº>" (ou "Controle Nº <nº>") que todos os templates DDU/MC/NUDEN/RI/Denúncia
+  // gravam. Assim o REDS/Ato/Situação do card puxa mesmo com origem=null.
+  function _cpChaveDemanda(d){
+    d=d||{};
+    let k=_n2((d.origem||{}).numero); if(k.length>=5) return k;
+    const t=String(d.texto||'');
+    let m=t.match(/ID\s+da\s+Demanda:\s*([0-9][0-9.\-\/]*)/i);
+    if(!m) m=t.match(/Controle\s+N[ºo°]?\s*:?\s*([0-9][0-9.\-\/]*)/i);
+    return m?_n2(m[1]):'';
+  }
   function _cpData(x){ return (typeof _normalizarDataResp==='function')?(_normalizarDataResp(x)||''):(x||''); }
   function cpPuxarDosCards(){
     const c=ABERTOS.find(x=>x.id===SELID); const box=_dems(); if(!c||!box) return;
     let payload=null; try{ payload=(typeof collectAllData==='function')?collectAllData():null; }catch(e){}
     const itens=[]; if(payload&&Array.isArray(payload.categorias)) payload.categorias.forEach(cat=>{ (cat.itens||[]).forEach(it=>itens.push(it)); });
     (c.demandas||[]).forEach((d,i)=>{
-      const ord=String(d.ordem||(i+1)); const chave=_n2((d.origem||{}).numero); if(chave.length<5) return;
+      const ord=String(d.ordem||(i+1)); const chave=_cpChaveDemanda(d); if(chave.length<5) return;
       // casa pela demanda de origem: 1º match EXATO do número (ignorando campos de data,
       // p/ não casar "705/2026"→7052026 com uma data 17/05/2026→17052026); depois substring.
       let it=itens.find(x=>Object.entries(x||{}).some(([k,v])=>!/data/i.test(k) && _n2(v)===chave));
@@ -5192,7 +5205,7 @@ document.addEventListener('click', () => {
     const MAP={ TOTAL:'FINALIZADA', PARCIAL:'EM_ANDAMENTO', NAO:'NAO_ATENDIDA' };
     const entries=Array.from(document.querySelectorAll('[data-repeat-entry]')).filter(en=>en.querySelector('[data-situacao]'));
     (c.demandas||[]).forEach((d,i)=>{
-      const ord=String(d.ordem||(i+1)); const chave=_n2((d.origem||{}).numero); if(chave.length<5) return;
+      const ord=String(d.ordem||(i+1)); const chave=_cpChaveDemanda(d); if(chave.length<5) return;
       const row=box.querySelector('[data-ord="'+ord+'"]'); if(!row) return;
       const selA=row.querySelector('[data-k="atendida"]'); const sit=selA?MAP[selA.value]:null; if(!sit) return;
       const alvo=entries.find(en=>{ const inp=en.querySelector('[data-fracao-scoped="1"]'); const nv=inp?_n2(inp.value):''; return nv.length>=5 && (nv===chave || nv.indexOf(chave)!==-1); });
@@ -5250,7 +5263,7 @@ document.addEventListener('click', () => {
     for(const c of cartoes){
       const respostas={};
       (c.demandas||[]).forEach((d,i)=>{
-        const ord=String(d.ordem||(i+1)); const chave=_n2((d.origem||{}).numero); if(chave.length<5) return;
+        const ord=String(d.ordem||(i+1)); const chave=_cpChaveDemanda(d); if(chave.length<5) return;
         let it=itens.find(x=>Object.entries(x||{}).some(([k,v])=>!/data/i.test(k) && _n2(v)===chave));
         if(!it) it=itens.find(x=>Object.entries(x||{}).some(([k,v])=>{ if(/data/i.test(k)) return false; const nv=_n2(v); return nv.length>=5 && nv.indexOf(chave)!==-1; }));
         if(!it) return;                                                  // demanda sem card = fica pendente no cartão
