@@ -5246,6 +5246,30 @@ document.addEventListener('click', () => {
       const autoBox=en.querySelector('[data-auto-infracao="1"]');
       if(autoBox){ const autos=Array.from(autoBox.querySelectorAll('.mini-row')).map(r=>{const i=r.querySelectorAll('input');const n=(i[0]&&i[0].value.trim())||'';const a=(i[1]&&i[1].value.trim())||'';return n?(n+'/'+a):'';}).filter(Boolean); if(autos.length) o.auto_infracao=autos.join(', '); }
       const dtEl=en.querySelector('input[type="date"]'); const dt=dtEl?dtEl.value:''; if(dt) o.data_atendimento=(typeof _cpData==='function'?_cpData(dt):dt);
+      // Observação lançada no card (Registro/IMA/etc.) entra na resposta do cartão.
+      let obs=(en.querySelector('[data-label="Observações"]')||en.querySelector('[data-label="Observação"]')||en.querySelector('textarea.apoio-obs')||{}).value;
+      if(obs&&obs.trim()) o.obs=obs.trim();
+      return o;
+    }
+    // Combina a SITUAÇÃO de várias operações numa demanda: só TOTAL se todas
+    // concluídas; qualquer pendência (PARCIAL, ou mistura de feita/não feita) → PARCIAL.
+    function _cpSit(a,b){
+      const v=[a,b].filter(Boolean); if(!v.length) return 'TOTAL';
+      if(v.indexOf('PARCIAL')>=0) return 'PARCIAL';
+      const t=v.indexOf('TOTAL')>=0, n=v.indexOf('NAO')>=0;
+      if(t&&n) return 'PARCIAL'; if(t) return 'TOTAL'; return 'NAO';
+    }
+    // Agrega 2 respostas da MESMA demanda (ex.: 3 operações no Registro vinculadas
+    // à demanda 3): junta REDS/Auto/Ato/Obs (distintos) e combina a situação.
+    function _cpMergeResp(a,b){
+      if(!a) return b; if(!b) return a;
+      const _j=(x,y,sep)=>{ const s=[]; [x,y].forEach(v=>String(v==null?'':v).split(sep==='|'?/\s*\|\s*/:/\s*,\s*/).forEach(p=>{p=p.trim(); if(p&&s.indexOf(p)<0)s.push(p);})); return s.join(sep==='|'?' | ':', '); };
+      const o={ atendida:_cpSit(a.atendida,b.atendida) };
+      const reds=_j(a.reds,b.reds,','); if(reds) o.reds=reds;
+      const au=_j(a.auto_infracao,b.auto_infracao,','); if(au) o.auto_infracao=au;
+      const ato=_j(a.ato_fiscalizacao,b.ato_fiscalizacao,','); if(ato) o.ato_fiscalizacao=ato;
+      const obs=_j(a.obs,b.obs,'|'); if(obs) o.obs=obs;
+      const dt=a.data_atendimento||b.data_atendimento; if(dt) o.data_atendimento=dt;
       return o;
     }
     // Vínculos manuais → demandas LIVRES do cartão ({cartaoId:{ordem:resposta}}).
@@ -5258,7 +5282,8 @@ document.addEventListener('click', () => {
       const box=sel.closest('.cp-vinculo-box'); let sitEl=box?box.querySelector('[data-situacao]'):null;
       if(!sitEl) sitEl=en.querySelector('[data-situacao]');
       const o=_respDaEntrada(en); o.atendida=MAPSIT[(sitEl?sitEl.value:'FINALIZADA')]||'TOTAL';
-      (regByCartao[cid]=regByCartao[cid]||{})[ord]=o;
+      const bucket=(regByCartao[cid]=regByCartao[cid]||{});
+      bucket[ord]=_cpMergeResp(bucket[ord],o);   // várias operações na mesma demanda → agrega
     });
     for(const c of cartoes){
       const respostas={};
@@ -5274,10 +5299,11 @@ document.addEventListener('click', () => {
         const auto=it['Nº Auto de Infração']; if(auto) o.auto_infracao=auto;
         const ato=it['Nº Ato de Fiscalização']; if(ato) o.ato_fiscalizacao=ato;
         const dt=it['Data de Atendimento']||it['Data da Fiscalização']; if(dt) o.data_atendimento=(typeof _cpData==='function'?_cpData(dt):dt);
-        respostas[ord]=o;
+        const obs=it['Observações']||it['Observação']; if(obs&&String(obs).trim()) o.obs=String(obs).trim();
+        respostas[ord]=_cpMergeResp(respostas[ord],o);   // vários cards na mesma demanda → agrega
       });
       // Demandas LIVRES vinculadas no Registro (sem número, casadas manualmente).
-      const rl=regByCartao[c.id]; if(rl) Object.keys(rl).forEach(ord=>{ respostas[ord]=rl[ord]; });
+      const rl=regByCartao[c.id]; if(rl) Object.keys(rl).forEach(ord=>{ respostas[ord]=_cpMergeResp(respostas[ord],rl[ord]); });
       try{
         let r=await call({p_token:S.token,p_id:c.id,p_respostas:respostas,p_relatorio:relId||null});
         if(!r.ok) await call({p_token:S.token,p_id:c.id,p_respostas:respostas});   // fallback sem p_relatorio (db/131)
