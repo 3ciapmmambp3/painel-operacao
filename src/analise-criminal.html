@@ -3191,6 +3191,7 @@ let dadosVisitas  = [];   /* visitas tranquilizadoras BD_VISITA_REUNIAO */
 let _rcrUrbanos   = [];   /* registros RCR descartados por estarem em área urbana (IBGE) */
 let dadosGrupos   = [];   /* tabela GRUPOS para lookup */
 let dadosSituacoes = {};  /* { bo_crime: {status,motivo,observacao,numero_rat,...} } — visitas_situacao */
+let dadosSituacoesCorr = {};  /* idem, mas da aba Correlação Op×Crime — tabela correlacao_situacao */
 let fichasIntel   = [];   /* fichas de inteligência (localStorage) */
 let missoes       = [];   /* missões (localStorage) */
 let auditoriasMap = {};   /* RAT → dados de auditoria */
@@ -3491,7 +3492,7 @@ async function recarregarTudo(forcar){
     }catch(e){ console.warn('Erro ao salvar crimes no storage:', e); }
 
     /* 4. Carrega ops, visitas e missões em background sem bloquear a UI */
-    Promise.all([carregarOpsGdo(), carregarVisitas(), carregarSituacoes()])
+    Promise.all([carregarOpsGdo(), carregarVisitas(), carregarSituacoes(), carregarSituacoesCorr()])
       .then(() => {
         /* Atualiza abas que dependem de ops/visitas */
         try{ renderDashboard(); } catch(e){}
@@ -4065,27 +4066,56 @@ const SITUACAO_MOTIVOS = [
   { value: 'outro',                 label: 'Outro motivo (detalhar na observação)' },
 ];
 
-async function carregarSituacoes() {
+/* Motivos da aba Correlação Op × Crime (local de atuação × local do fato). */
+const SITUACAO_MOTIVOS_CORR = [
+  { value: 'local_diverso',                  label: 'Local registrado não corresponde ao local do fato.' },
+  { value: 'sem_acesso_local',               label: 'Impossibilidade de acesso ao local inicialmente previsto.' },
+  { value: 'inseguranca_local',              label: 'Condição de segurança que inviabilizou a atuação no local do fato.' },
+  { value: 'info_atualizada_local',          label: 'Informações atualizadas indicaram outro local de atuação.' },
+  { value: 'autor_outro_endereco',           label: 'Suspeito ou autor localizado em endereço diferente do local do fato.' },
+  { value: 'abordagem_local_distinto',       label: 'Necessidade de abordagem ou fiscalização em local distinto para continuidade da ação policial.' },
+  { value: 'desdobramento_ocorrencia',       label: 'Desdobramento da ocorrência exigiu atuação em outro local.' },
+  { value: 'denuncia_outro_local',           label: 'Denúncia ou informação complementar indicou outro local de interesse operacional.' },
+  { value: 'diligencia_endereco_relacionado',label: 'Necessidade de realizar diligências em endereço relacionado ao fato.' },
+  { value: 'local_dificil_localizacao',      label: 'Local do fato de difícil localização ou com referência geográfica imprecisa.' },
+  { value: 'determinacao_comando',           label: 'Determinação ou orientação do comando para atuação em local distinto.' },
+  { value: 'outro',                          label: 'Outro motivo devidamente justificado.' },
+];
+
+/* Registro de contexto: o modal de situação serve às 2 abas (Visitas e
+   Correlação), cada uma com sua TABELA e seus MOTIVOS. ctx padrão = 'visita'
+   (mantém compatibilidade com todas as chamadas existentes). */
+const _SIT_CTX = {
+  visita:     { tabela:'visitas_situacao',    motivos:SITUACAO_MOTIVOS,      titulo:'Situação da Visita',            blocoLabel:'Crime / BOS vinculado', onSaved:()=>{ try{ renderVisitas(); }catch(e){} } },
+  correlacao: { tabela:'correlacao_situacao', motivos:SITUACAO_MOTIVOS_CORR, titulo:'Situação (Correlação Op × Crime)', blocoLabel:'Crime / BO vinculado',  onSaved:()=>{ try{ renderCruzamento(); }catch(e){} } },
+};
+function _sitCfg(ctx){ return _SIT_CTX[ctx] || _SIT_CTX.visita; }
+function _sitDados(ctx){ return (ctx==='correlacao') ? dadosSituacoesCorr : dadosSituacoes; }
+
+async function _carregarSituacoesTab(ctx){
+  const cfg = _sitCfg(ctx);
   try {
     const r = await fetch(
-      `${SB_URL}/rest/v1/visitas_situacao?select=*`,
+      `${SB_URL}/rest/v1/${cfg.tabela}?select=*`,
       { headers: { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY } }
     );
-    if(!r.ok) { dadosSituacoes = {}; return; }
-    const rows = await r.json();
-    dadosSituacoes = {};
-    rows.forEach(row => { dadosSituacoes[row.bo_crime] = row; });
+    const map = {};
+    if(r.ok){ (await r.json()).forEach(row => { map[row.bo_crime] = row; }); }
+    if(ctx==='correlacao') dadosSituacoesCorr = map; else dadosSituacoes = map;
   } catch(e) {
-    console.warn('[carregarSituacoes] Erro:', e.message);
-    dadosSituacoes = {};
+    console.warn('[carregarSituacoes '+ctx+'] Erro:', e.message);
+    if(ctx==='correlacao') dadosSituacoesCorr = {}; else dadosSituacoes = {};
   }
 }
+async function carregarSituacoes()     { return _carregarSituacoesTab('visita'); }
+async function carregarSituacoesCorr() { return _carregarSituacoesTab('correlacao'); }
 
-function _abrirModalSituacao(boCrime) {
+function _abrirModalSituacao(boCrime, ctx='visita') {
   const prev = document.getElementById('_modal-situacao');
   if(prev) prev.remove();
 
-  const existente = dadosSituacoes[boCrime] || null;
+  const cfg = _sitCfg(ctx);
+  const existente = _sitDados(ctx)[boCrime] || null;
 
   if(existente && !_sitPodeEditar(existente)) {
     alert(
@@ -4101,19 +4131,19 @@ function _abrirModalSituacao(boCrime) {
   modal.id = '_modal-situacao';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:10000;display:flex;align-items:center;justify-content:center;';
 
-  const opcoesMotivo = SITUACAO_MOTIVOS.map(m =>
+  const opcoesMotivo = cfg.motivos.map(m =>
     `<option value="${m.value}" ${existente?.motivo===m.value?'selected':''}>${m.label}</option>`
   ).join('');
 
   modal.innerHTML = `
     <div style="background:#1e1e1e;border:1px solid rgba(239,83,80,.4);border-radius:10px;padding:20px 24px;width:520px;max-width:92vw;max-height:85vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.8);">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-        <div style="font-size:13px;font-weight:700;color:#ef5350;">⚠ ${existente?'Editar':'Registrar'} Situação da Visita</div>
+        <div style="font-size:13px;font-weight:700;color:#ef5350;">⚠ ${existente?'Editar':'Registrar'} ${cfg.titulo}</div>
         <button onclick="document.getElementById('_modal-situacao').remove()" style="background:none;border:none;color:var(--text-muted);font-size:18px;cursor:pointer;">✕</button>
       </div>
 
       <div style="background:#161616;border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:14px;">
-        <div style="font-size:10px;color:var(--text-muted);">Crime / BOS vinculado</div>
+        <div style="font-size:10px;color:var(--text-muted);">${cfg.blocoLabel}</div>
         <div style="font-size:12px;font-family:monospace;color:#ddd;">${boCrime}</div>
       </div>
 
@@ -4141,10 +4171,10 @@ function _abrirModalSituacao(boCrime) {
       </div>
 
       <div style="display:flex;gap:8px;justify-content:flex-end;">
-        ${existente ? `<button onclick="_excluirSituacao('${boCrime}')" style="background:none;border:1px solid rgba(239,83,80,.4);color:#ef5350;padding:8px 14px;border-radius:5px;font-size:12px;cursor:pointer;">🗑 Remover</button>` : ''}
+        ${existente ? `<button onclick="_excluirSituacao('${boCrime}','${ctx}')" style="background:none;border:1px solid rgba(239,83,80,.4);color:#ef5350;padding:8px 14px;border-radius:5px;font-size:12px;cursor:pointer;">🗑 Remover</button>` : ''}
         <button onclick="document.getElementById('_modal-situacao').remove()"
           style="background:none;border:1px solid var(--border);color:var(--text-muted);padding:8px 16px;border-radius:5px;font-size:12px;cursor:pointer;">Cancelar</button>
-        <button onclick="_salvarSituacao('${boCrime}')"
+        <button onclick="_salvarSituacao('${boCrime}','${ctx}')"
           style="background:rgba(239,83,80,.15);border:1px solid rgba(239,83,80,.5);color:#ef5350;padding:8px 20px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer;">
           ✔ Salvar
         </button>
@@ -4207,9 +4237,10 @@ function _sitColetarRegistros() {
   }).filter(r => r.valor);
 }
 
-async function _salvarSituacao(boCrime) {
+async function _salvarSituacao(boCrime, ctx='visita') {
   const msg    = document.getElementById('_sit-msg');
-  const existeAntesCheck = dadosSituacoes[boCrime] || null;
+  const DS = _sitDados(ctx); const cfg = _sitCfg(ctx);
+  const existeAntesCheck = DS[boCrime] || null;
   if(existeAntesCheck && !_sitPodeEditar(existeAntesCheck)) {
     if(msg) msg.innerHTML = '<span style="color:var(--danger);">✗ Você não tem permissão para editar este registro.</span>';
     return;
@@ -4226,7 +4257,7 @@ async function _salvarSituacao(boCrime) {
     return;
   }
 
-  const existeAntes = dadosSituacoes[boCrime] || null;
+  const existeAntes = DS[boCrime] || null;
   /* Data do registro é capturada automaticamente pelo sistema (data em que a
      situação foi registrada), não preenchida manualmente pelo militar */
   const dataRegistro = existeAntes?.data_registro || new Date().toISOString().slice(0,10);
@@ -4246,24 +4277,25 @@ async function _salvarSituacao(boCrime) {
   if(msg) msg.innerHTML = '<span style="color:var(--text-muted);">Salvando...</span>';
 
   try {
-    const existe = !!dadosSituacoes[boCrime];
+    const existe = !!DS[boCrime];
     const hdrs = _acHeaders({'Content-Type':'application/json','Prefer':'return=minimal'});
     const res = await fetch(
-      `${SB_URL}/rest/v1/visitas_situacao${existe ? '?bo_crime=eq.'+encodeURIComponent(boCrime) : ''}`,
+      `${SB_URL}/rest/v1/${cfg.tabela}${existe ? '?bo_crime=eq.'+encodeURIComponent(boCrime) : ''}`,
       { method: existe ? 'PATCH' : 'POST', headers: hdrs, body: JSON.stringify(payload) }
     );
     if(!res.ok) throw new Error('HTTP ' + res.status);
 
-    dadosSituacoes[boCrime] = payload;
+    DS[boCrime] = payload;
     if(msg) msg.innerHTML = '<span style="color:var(--success);">✔ Situação registrada com sucesso.</span>';
-    setTimeout(() => { document.getElementById('_modal-situacao')?.remove(); renderVisitas(); }, 700);
+    setTimeout(() => { document.getElementById('_modal-situacao')?.remove(); cfg.onSaved(); }, 700);
   } catch(e) {
     if(msg) msg.innerHTML = `<span style="color:var(--danger);">✗ Erro ao salvar: ${e.message}</span>`;
   }
 }
 
-async function _excluirSituacao(boCrime) {
-  const sitAtual = dadosSituacoes[boCrime] || null;
+async function _excluirSituacao(boCrime, ctx='visita') {
+  const DS = _sitDados(ctx); const cfg = _sitCfg(ctx);
+  const sitAtual = DS[boCrime] || null;
   if(sitAtual && !_sitPodeEditar(sitAtual)) {
     alert('Você não tem permissão para remover este registro.\nApenas o autor (até 7 dias) ou o Admin Geral podem fazer isso.');
     return;
@@ -4271,20 +4303,20 @@ async function _excluirSituacao(boCrime) {
   if(!confirm(`Remover o registro de situação para\n${boCrime}?\n\nO crime voltará a aparecer como pendente.`)) return;
   try {
     const res = await fetch(
-      `${SB_URL}/rest/v1/visitas_situacao?bo_crime=eq.${encodeURIComponent(boCrime)}`,
+      `${SB_URL}/rest/v1/${cfg.tabela}?bo_crime=eq.${encodeURIComponent(boCrime)}`,
       { method: 'DELETE', headers: _acHeaders() }
     );
     if(!res.ok) throw new Error('HTTP ' + res.status);
-    delete dadosSituacoes[boCrime];
+    delete DS[boCrime];
     document.getElementById('_modal-situacao')?.remove();
-    renderVisitas();
+    cfg.onSaved();
   } catch(e) {
     alert('Erro ao remover: ' + e.message);
   }
 }
 
-function _situacaoMotivoLabel(motivo) {
-  const m = SITUACAO_MOTIVOS.find(x => x.value === motivo);
+function _situacaoMotivoLabel(motivo, ctx='visita') {
+  const m = _sitCfg(ctx).motivos.find(x => x.value === motivo);
   return m ? m.label : motivo;
 }
 
@@ -8282,6 +8314,18 @@ function renderCruzamento(){
 
     const temQualquer = r.opsValidas.length || r.opsInvalidas.length || visitasVinc.length;
 
+    /* Situação (Correlação Op × Crime) — justificativa de local, registrada por crime */
+    const _boCr    = r.crime.bo||r.crime.rat||'';
+    const _boCrJs  = _boCr.replace(/'/g,"\\'");
+    const _sitC    = dadosSituacoesCorr[_boCr];
+    const _sitCTrava = _sitC && !_sitPodeEditar(_sitC);
+    const _sitCLabel = _sitC ? (_sitPodeEditar(_sitC) ? '✏️ Editar Situação' : '🔒 Situação Registrada') : '⚠ Registrar Situação';
+    const _sitCCor   = _sitCTrava ? 'var(--text-hint)' : '#ff9800';
+    const _sitCBorda = _sitCTrava ? 'rgba(150,150,150,.3)' : 'rgba(255,152,0,.4)';
+    const _sitCInfo  = _sitC
+      ? `<div style="font-size:9px;color:#ff9800;margin-top:3px;max-width:320px;text-align:right;">⚠ ${_situacaoMotivoLabel(_sitC.motivo,'correlacao')}${_sitC.observacao?` <span style="color:var(--text-muted);font-style:italic;">— "${_sitC.observacao}"</span>`:''}</div>`
+      : '';
+
     html += `<div class="cruzamento-row ${r.status}" data-crz-id="${idx}">
       <div class="cruzamento-header">
         <div>
@@ -8297,6 +8341,10 @@ function renderCruzamento(){
           <button onclick="_abrirModalVinculoRat('${(r.crime.bo||r.crime.rat||'').replace(/'/g,"\'")}')"
             style="background:none;border:1px solid rgba(155,138,92,.4);color:var(--gold);padding:2px 8px;border-radius:3px;font-size:10px;cursor:pointer;transition:all .15s;margin-top:2px;"
             onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='rgba(155,138,92,.4)'">🔗 Vincular RAT</button>
+          <button onclick="_abrirModalSituacao('${_boCrJs}','correlacao')"
+            style="background:none;border:1px solid ${_sitCBorda};color:${_sitCCor};padding:2px 8px;border-radius:3px;font-size:10px;cursor:pointer;transition:all .15s;"
+            onmouseover="this.style.borderColor='${_sitCCor}'" onmouseout="this.style.borderColor='${_sitCBorda}'">${_sitCLabel}</button>
+          ${_sitCInfo}
         </div>
       </div>
       ${temQualquer ? `
