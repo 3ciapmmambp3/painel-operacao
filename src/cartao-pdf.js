@@ -31,7 +31,7 @@
     return 'https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(n[0]+','+n[1]);
   }
   function statusLabel(s){ return STLAB[s]||(s||'—'); }
-  function atendidaLabel(a){ return ({TOTAL:'Finalizado',PARCIAL:'Em andamento (precisa de nova diligência)',NAO:'Não atendido'})[a] || (ATLAB[a]||'—'); }
+  function atendidaLabel(a){ return ({TOTAL:'✅ Finalizado',PARCIAL:'🟡 Em andamento (precisa de nova diligência)',NAO:'⛔ Não atendido'})[a] || (ATLAB[a]||'—'); }
 
   function _assets(){ try{ return (global.location&&global.location.origin)?global.location.origin:''; }catch(e){ return ''; } }
 
@@ -80,8 +80,9 @@
         + (d.municipio?row('Município', d.municipio):'')
         + (d.coordenadas?rowH('Coordenadas', coordCell):'')
         + (anx.length?rowH('Anexo', anexoCell):'');
+      const _corSit = r&&r.atendida ? ({TOTAL:'#1b7a1b',PARCIAL:'#b26a00',NAO:'#c62828'})[r.atendida]||'' : '';
       let resp = (r&&r.atendida)
-        ? row('Situação', atendidaLabel(r.atendida))
+        ? rowH('Situação', `<span style="color:${_corSit||'inherit'};font-weight:700">${E(atendidaLabel(r.atendida))}</span>`)
           + row('Data do atendimento', fmtData(r.data_atendimento))
           + row('Nº REDS (BO/BOS/RAT)', r.reds)
           + row('Nº Auto de Infração', r.auto_infracao)
@@ -90,7 +91,7 @@
         : '';
       const orig = d.origem && d.origem.numero ? ((d.origem.label||(d.origem.tipo==='requisicao'?'Requisição':'Denúncia'))+' '+d.origem.numero) : '';
       demHtml += `<div class="demblock"><h4 class="sec">Demanda ${E(ord)}${d.municipio?(' <small>— '+E(d.municipio)+'</small>'):''}${orig?(' <small>· '+E(orig)+'</small>'):''}</h4><table class="t">${corpo}</table>`
-        + (resp?`<table class="t resp">${resp}</table>`:'<div class="pend">Não respondida</div>')
+        + (resp?`<table class="t resp">${resp}</table>`:'<div class="pend" style="color:#c62828;font-weight:700">⛔ Não respondida</div>')
         + `</div>`;
     });
     if(!demandas.length) demHtml='<p class="vazio">Nenhuma demanda lançada.</p>';
