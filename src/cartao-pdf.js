@@ -90,7 +90,7 @@
         : '';
       const orig = d.origem && d.origem.numero ? ((d.origem.label||(d.origem.tipo==='requisicao'?'Requisição':'Denúncia'))+' '+d.origem.numero) : '';
       demHtml += `<div class="demblock"><h4 class="sec">Demanda ${E(ord)}${d.municipio?(' <small>— '+E(d.municipio)+'</small>'):''}${orig?(' <small>· '+E(orig)+'</small>'):''}</h4><table class="t">${corpo}</table>`
-        + (resp?`<table class="t resp">${resp}</table>`:'<div class="pend">Pendente de atendimento</div>')
+        + (resp?`<table class="t resp">${resp}</table>`:'<div class="pend">Não respondida</div>')
         + `</div>`;
     });
     if(!demandas.length) demHtml='<p class="vazio">Nenhuma demanda lançada.</p>';
