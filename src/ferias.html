@@ -142,6 +142,7 @@
     <div class="area-switch">
       <button id="sw-gestao" class="asw active" onclick="mostrarTela('gestao')">Gestão de Férias</button>
       <button id="sw-crono" class="asw" onclick="mostrarTela('cronograma')">📅 Cronograma de Férias Anuais</button>
+      <button id="sw-militar" class="asw" style="display:none;" onclick="mostrarTela('militar')">🏖️ Minhas férias</button>
     </div>
 
     <!-- Título da tela de Cronograma (programação das férias do ano) -->
@@ -1461,12 +1462,20 @@ async function milCancelar(id){
 // alterna entre a tela de GESTÃO (Anuais/Prêmio/Lançamentos) e a de CRONOGRAMA
 function mostrarTela(tela){
   const crono = tela==='cronograma';
-  document.getElementById('sw-gestao').classList.toggle('active', !crono);
+  const mil   = tela==='militar';
+  document.getElementById('sw-gestao').classList.toggle('active', tela==='gestao');
   document.getElementById('sw-crono').classList.toggle('active', crono);
-  document.getElementById('tabs-gestao').style.display = crono?'none':'flex';
-  document.getElementById('tabs-crono').style.display  = crono?'flex':'none';
-  document.getElementById('crono-titulo').style.display = crono?'block':'none';
+  const swMil=document.getElementById('sw-militar'); if(swMil) swMil.classList.toggle('active', mil);
+  // conteúdo da GESTÃO (dentro do #area-p1) — some quando a aba é "Minhas férias"
+  document.getElementById('tabs-gestao').style.display = (!mil && !crono)?'flex':'none';
+  document.getElementById('tabs-crono').style.display  = (!mil && crono)?'flex':'none';
+  const ct=document.getElementById('crono-titulo'); if(ct) ct.style.display = (!mil && crono)?'block':'none';
+  if(mil) document.querySelectorAll('#area-p1 .panel').forEach(p=>p.classList.remove('active'));
+  // área do MILITAR (escolha) — irmã do #area-p1
+  const am=document.getElementById('area-militar'); if(am) am.style.display = mil?'block':'none';
+  const mt=document.getElementById('mil-titulo'); if(mt) mt.style.display='none';   // o rótulo da aba já indica
   const lbl=document.querySelector('.yr label'); if(lbl) lbl.textContent = crono?'Ano do cronograma':'Ano de gozo';
+  if(mil){ try{ milBoot(); }catch(e){} return; }
   abrirTab(crono?'crono':'anuais');
 }
 function abrirTab(t){
@@ -1575,14 +1584,13 @@ async function boot(){
     milBoot();
     return;
   }
-  // Gestão (Admin Geral / Aux P1 / CMT Cia) também escolhe as PRÓPRIAS férias:
-  // mostra a área de gestão E a área do militar (igual ao CMT de Pelotão/GP).
+  // Gestão (Admin Geral / Aux P1 / CMT Cia) também escolhe as PRÓPRIAS férias,
+  // mas numa ABA separada "🏖️ Minhas férias" (não embolado com a gestão).
   document.getElementById('area-p1').style.display='block';
-  document.getElementById('area-militar').style.display='block';
-  const _mt=document.getElementById('mil-titulo'); if(_mt) _mt.style.display='block';
+  document.getElementById('area-militar').style.display='none';   // carrega sob demanda na aba
+  const _swMil=document.getElementById('sw-militar'); if(_swMil) _swMil.style.display='';   // libera a aba
   try{ const c=await rpc('ferias_cronograma_get',{p_token:sessao.token,p_ano:anoSel}); preencherCronograma(c); }
   catch(e){ flash(e.message||'Erro ao carregar.',false); preencherCronograma(null); }
-  try{ milBoot(); }catch(e){}
   // se estiver na aba de lançamentos/percentuais já aberta, recarrega
   const ativa=document.querySelector('.tab.active')?.dataset.tab;
   if(ativa==='lanc') carregarPedidos(); else if(ativa==='pct') carregarPct();
