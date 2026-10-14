@@ -32,6 +32,15 @@
   }
   function statusLabel(s){ return STLAB[s]||(s||'—'); }
   function atendidaLabel(a){ return ({TOTAL:'✅ Finalizado',PARCIAL:'🟡 Em andamento (precisa de nova diligência)',NAO:'⛔ Não atendido'})[a] || (ATLAB[a]||'—'); }
+  // Demanda SEM resposta: rótulo conforme a DATA do cartão — futuro = aguardando,
+  // hoje = equipe em campo, passado = não respondida (pendência/redistribuir).
+  function semRespPDF(dataEmpenho){
+    const t=new Date(); const hoje=t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');
+    const d=String(dataEmpenho||'').slice(0,10);
+    if(d && d>hoje)   return '<div class="pend" style="color:#2f6090;font-weight:700">⏳ Aguardando atendimento</div>';
+    if(d && d===hoje) return '<div class="pend" style="color:#1565c0;font-weight:700">🔵 Em atendimento</div>';
+    return '<div class="pend" style="color:#c62828;font-weight:700">⛔ Não respondida</div>';
+  }
 
   function _assets(){ try{ return (global.location&&global.location.origin)?global.location.origin:''; }catch(e){ return ''; } }
 
@@ -91,7 +100,7 @@
         : '';
       const orig = d.origem && d.origem.numero ? ((d.origem.label||(d.origem.tipo==='requisicao'?'Requisição':'Denúncia'))+' '+d.origem.numero) : '';
       demHtml += `<div class="demblock"><h4 class="sec">Demanda ${E(ord)}${d.municipio?(' <small>— '+E(d.municipio)+'</small>'):''}${orig?(' <small>· '+E(orig)+'</small>'):''}</h4><table class="t">${corpo}</table>`
-        + (resp?`<table class="t resp">${resp}</table>`:'<div class="pend" style="color:#c62828;font-weight:700">⛔ Não respondida</div>')
+        + (resp?`<table class="t resp">${resp}</table>`:semRespPDF(cartao.data_empenho))
         + `</div>`;
     });
     if(!demandas.length) demHtml='<p class="vazio">Nenhuma demanda lançada.</p>';
