@@ -143,6 +143,7 @@
       <button id="sw-gestao" class="asw active" onclick="mostrarTela('gestao')">Gestão de Férias</button>
       <button id="sw-crono" class="asw" onclick="mostrarTela('cronograma')">📅 Cronograma de Férias Anuais</button>
       <button id="sw-militar" class="asw" style="display:none;" onclick="mostrarTela('militar')">🏖️ Minhas férias</button>
+      <button id="sw-tramitar" class="asw" style="display:none;" onclick="mostrarTela('tramitar')">✅ Tramitar Solicitação de Férias</button>
     </div>
 
     <!-- Título da tela de Cronograma (programação das férias do ano) -->
@@ -1463,19 +1464,22 @@ async function milCancelar(id){
 function mostrarTela(tela){
   const crono = tela==='cronograma';
   const mil   = tela==='militar';
+  const tram  = tela==='tramitar';
   document.getElementById('sw-gestao').classList.toggle('active', tela==='gestao');
   document.getElementById('sw-crono').classList.toggle('active', crono);
-  const swMil=document.getElementById('sw-militar'); if(swMil) swMil.classList.toggle('active', mil);
-  // conteúdo da GESTÃO (dentro do #area-p1) — some quando a aba é "Minhas férias"
-  document.getElementById('tabs-gestao').style.display = (!mil && !crono)?'flex':'none';
-  document.getElementById('tabs-crono').style.display  = (!mil && crono)?'flex':'none';
-  const ct=document.getElementById('crono-titulo'); if(ct) ct.style.display = (!mil && crono)?'block':'none';
-  if(mil) document.querySelectorAll('#area-p1 .panel').forEach(p=>p.classList.remove('active'));
+  const swMil=document.getElementById('sw-militar');   if(swMil) swMil.classList.toggle('active', mil);
+  const swTr =document.getElementById('sw-tramitar');  if(swTr)  swTr.classList.toggle('active', tram);
+  // barras de abas internas da gestão (só nas telas de gestão/cronograma)
+  document.getElementById('tabs-gestao').style.display = (tela==='gestao')?'flex':'none';
+  document.getElementById('tabs-crono').style.display  = (crono)?'flex':'none';
+  const ct=document.getElementById('crono-titulo'); if(ct) ct.style.display = crono?'block':'none';
+  if(mil || tram) document.querySelectorAll('#area-p1 .panel').forEach(p=>p.classList.remove('active'));
   // área do MILITAR (escolha) — irmã do #area-p1
   const am=document.getElementById('area-militar'); if(am) am.style.display = mil?'block':'none';
   const mt=document.getElementById('mil-titulo'); if(mt) mt.style.display='none';   // o rótulo da aba já indica
   const lbl=document.querySelector('.yr label'); if(lbl) lbl.textContent = crono?'Ano do cronograma':'Ano de gozo';
   if(mil){ try{ milBoot(); }catch(e){} return; }
+  if(tram){ const pa=document.getElementById('panel-aprovar'); if(pa) pa.classList.add('active'); try{ aprovarBoot(); }catch(e){} return; }
   abrirTab(crono?'crono':'anuais');
 }
 function abrirTab(t){
@@ -1563,19 +1567,20 @@ async function boot(){
   if(!podeP1()){
     ehCmtEscopo = podeAprovarPel() || podeAprovarGp();
     if(ehCmtEscopo){
-      // CMT do Pelotão/Grupamento: só a aba "Aprovar" (escopo dele) + suas próprias férias
+      // CMT/Aux do Pelotão ou Cmt/Admin do GP: DUAS abas lado a lado no alternador —
+      // "🏖️ Minhas férias" (1ª) e "✅ Tramitar Solicitação de Férias" (escopo dele).
       document.getElementById('area-p1').style.display='block';
-      document.getElementById('area-militar').style.display='block';
-      const asw=document.querySelector('.area-switch'); if(asw) asw.style.display='none';   // sem alternador de telas
-      const ctit=document.getElementById('crono-titulo'); if(ctit) ctit.style.display='none';
-      document.getElementById('tabs-gestao').style.display='none';                          // esconde Anuais/Prêmio/Lançamentos
-      document.getElementById('tabs-crono').style.display='flex';
-      ['crono','pct'].forEach(t=>{ const b=document.querySelector(`#tabs-crono .tab[data-tab="${t}"]`); if(b) b.style.display='none'; }); // deixa só Aprovar
-      document.getElementById('mil-titulo').style.display='block';                           // separa "Minhas férias"
-      document.getElementById('hero-sub').textContent='Aprovar férias do seu pelotão';
+      const asw=document.querySelector('.area-switch'); if(asw) asw.style.display='flex';
+      document.getElementById('sw-gestao').style.display='none';
+      document.getElementById('sw-crono').style.display='none';
+      const _swM=document.getElementById('sw-militar');  if(_swM) _swM.style.display='';
+      const _swT=document.getElementById('sw-tramitar'); if(_swT) _swT.style.display='';
+      document.getElementById('crono-titulo').style.display='none';
+      document.getElementById('tabs-gestao').style.display='none';
+      document.getElementById('tabs-crono').style.display='none';   // Tramitar agora é aba do alternador
+      document.getElementById('hero-sub').textContent='Suas férias e tramitação do seu escopo';
       try{ cronograma=await rpc('ferias_cronograma_get',{p_token:sessao.token,p_ano:anoSel}); }catch(e){ cronograma=null; }
-      abrirTab('aprovar');
-      milBoot();
+      mostrarTela('militar');   // abre em "Minhas férias" (1ª aba)
       return;
     }
     document.getElementById('area-p1').style.display='none';
