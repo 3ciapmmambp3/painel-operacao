@@ -5086,11 +5086,24 @@ document.addEventListener('click', () => {
       try{
         const r=await fetch(`${API}/rest/v1/rpc/cartao_abertos_por_data`,{method:'POST',headers:H,body:JSON.stringify({p_token:S.token,p_data:data})});
         const abertos=r.ok?(await r.json()||[]):[];
+        // Cards já preenchidos no relatório → p/ saber quais demandas NUMERADAS já
+        // casam sozinhas (essas dispensam vínculo manual). As numeradas SEM card
+        // correspondente (ex.: apoio ao IMA que não carrega o nº) passam a aparecer
+        // no seletor — senão ficariam inalcançáveis (caixa escondida).
+        let _pay=null; try{ _pay=(typeof collectAllData==='function')?collectAllData():null; }catch(e){}
+        const _itens=[]; if(_pay&&Array.isArray(_pay.categorias)) _pay.categorias.forEach(cat=>{ (cat.itens||[]).forEach(it=>_itens.push(it)); });
+        const _casaCard=(chave)=>{ if(!chave||chave.length<5) return false;
+          return _itens.some(x=>Object.entries(x||{}).some(([k,v])=>!/data/i.test(k)&&_n2(v)===chave))
+              || _itens.some(x=>Object.entries(x||{}).some(([k,v])=>{ if(/data/i.test(k))return false; const nv=_n2(v); return nv.length>=5&&nv.indexOf(chave)!==-1; })); };
         abertos.filter(c=>{const cm=_matsCartao(c);for(const m of meus)if(cm.has(m))return true;return false;})
-          .forEach(c=>{ (c.demandas||[]).forEach((d,i)=>{
-            if(_cpChaveDemanda(d).length>=5) return;   // tem número (origem ou no texto) = casa automático, não entra aqui
-            const ord=String(d.ordem||(i+1)); const tx=((d.texto||'').replace(/\s+/g,' ').trim()).slice(0,70);
-            CP_FREE.push({cartaoId:c.id, ordem:ord, label:'Cartão '+(c.numero||'')+' — demanda '+ord+(tx?(': '+tx):'')});
+          .forEach(c=>{ const _resp=c.respostas||{}; (c.demandas||[]).forEach((d,i)=>{
+            const ord=String(d.ordem||(i+1));
+            const _r=_resp[ord]||_resp[String(i+1)]; if(_r&&_r.atendida) return;   // demanda já respondida = não precisa vincular
+            const chave=_cpChaveDemanda(d);
+            if(chave.length>=5 && _casaCard(chave)) return;   // número já casa um card do relatório = automático
+            const tx=((d.texto||'').replace(/\s+/g,' ').trim()).slice(0,70);
+            const numInfo=(chave.length>=5)?(' [nº '+(((d.origem||{}).numero)||chave)+']'):'';
+            CP_FREE.push({cartaoId:c.id, ordem:ord, label:'Cartão '+(c.numero||'')+' — demanda '+ord+numInfo+(tx?(': '+tx):'')});
           }); });
       }catch(e){}
     }
