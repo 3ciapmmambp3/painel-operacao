@@ -2079,7 +2079,11 @@ async function preencherEquipeDoTTA(chamadaId){
     // matrícula vazia (ex.: equipe SEM viatura → sem motorista) não casa com
     // ninguém — senão `.includes('')` daria sempre true e pegava o 1º da lista.
     const acharRef = matricula => { const d = soDigitos(matricula); return d ? lista.find(it => soDigitos(it).includes(d)) : undefined; };
-    const setIf = (inp, ref) => { if (inp && ref && !inp.value) inp.value = ref; };
+    // Dispara 'change' ao setar — senão os ouvintes (ex.: cartão do dia +
+    // cpPopularVinculos, que re-populam o vínculo do Registro) não re-rodam
+    // quando a equipe vem do auto-preenchimento do TTA (e a caixa "Atende uma
+    // demanda do Cartão Programa?" fica escondida mesmo havendo demanda livre).
+    const setIf = (inp, ref) => { if (inp && ref && !inp.value){ inp.value = ref; inp.dispatchEvent(new Event('change', { bubbles: true })); } };
 
     const equipes = Array.isArray(chamada.equipes) ? chamada.equipes : [];
 
@@ -2112,7 +2116,7 @@ async function preencherEquipeDoTTA(chamadaId){
         let campo = document.querySelectorAll('[name="patrulheiro[]"]')[i];
         if (!campo){ addPatrulheiroRow(true); campo = document.querySelectorAll('[name="patrulheiro[]"]')[i]; }
         const ref = acharRef(p.matricula);
-        if (campo && ref && !campo.value) campo.value = ref;
+        if (campo && ref && !campo.value){ campo.value = ref; campo.dispatchEvent(new Event('change', { bubbles: true })); }
       });
 
       // Viatura principal → card Recursos Empregados. Cria o card se ainda não
@@ -2176,7 +2180,7 @@ async function preencherEquipeDoTTA(chamadaId){
     const refs = presentes.map(m => acharRef(m.matricula)).filter(Boolean);
     if (refs.length){
       setIf(document.querySelector('[name="motorista"]'), refs[0]);
-      refs.slice(1).forEach((ref,i)=>{ let campo=document.querySelectorAll('[name="patrulheiro[]"]')[i]; if(!campo){addPatrulheiroRow(true);campo=document.querySelectorAll('[name="patrulheiro[]"]')[i];} if(campo&&!campo.value)campo.value=ref; });
+      refs.slice(1).forEach((ref,i)=>{ let campo=document.querySelectorAll('[name="patrulheiro[]"]')[i]; if(!campo){addPatrulheiroRow(true);campo=document.querySelectorAll('[name="patrulheiro[]"]')[i];} if(campo&&!campo.value){campo.value=ref; campo.dispatchEvent(new Event('change', { bubbles: true }));} });
     }
   }catch(e){ console.warn('[TTA] pré-preenchimento não aplicado:', e); }
 }
