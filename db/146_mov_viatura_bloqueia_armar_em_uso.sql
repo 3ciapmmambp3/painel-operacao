@@ -10,9 +10,9 @@
 -- FIX: antes de gravar, bloqueia quando o PERÍODO da nova ficha SOBREPÕE o de
 -- uma ficha ativa da mesma viatura (uma viatura não pode estar em dois serviços
 -- ao mesmo tempo). Uma ficha SEM término (aberta) é tratada como "em uso" por
--- até 24h a partir do início (o form já limita o turno a 24h, salvo DSP) — isso
--- evita travar a viatura para sempre por causa de uma ficha antiga que ninguém
--- fechou. A trava anterior (mesma equipe no dia) é mantida e vem primeiro, com
+-- até 48h a partir do início — isso evita travar a viatura para sempre por
+-- causa de uma ficha antiga que ninguém fechou. A trava anterior (mesma equipe
+-- no dia) é mantida e vem primeiro, com
 -- a mensagem específica "edite a ficha existente".
 --
 -- Recria mov_viatura_criar (base = db/86) e mov_viatura_criar_publico (base =
@@ -68,7 +68,7 @@ begin
 
   -- trava de uso simultâneo: o período da nova ficha sobrepõe o de uma ficha
   -- ativa da MESMA viatura (inclusive uma ainda ABERTA, sem término). Ficha
-  -- aberta vale como "em uso" por até 24h a partir do início.
+  -- aberta vale como "em uso" por até 48h a partir do início.
   select coalesce(m.inicio, m.criado_em)                                   as ini,
          m.termino                                                         as ter,
          coalesce(nullif(m.motorista_nome,''), m.criado_por_nome, 'outro militar') as quem
@@ -76,8 +76,8 @@ begin
     from public.mov_viaturas m
    where m.ativo = true
      and m.prefixo = v_pref
-     and v_ini < coalesce(m.termino, coalesce(m.inicio, m.criado_em) + interval '24 hours')
-     and coalesce(m.inicio, m.criado_em) < coalesce(v_ter, v_ini + interval '24 hours')
+     and v_ini < coalesce(m.termino, coalesce(m.inicio, m.criado_em) + interval '48 hours')
+     and coalesce(m.inicio, m.criado_em) < coalesce(v_ter, v_ini + interval '48 hours')
    order by coalesce(m.inicio, m.criado_em) desc
    limit 1;
   if found then
@@ -175,7 +175,7 @@ begin
 
   -- trava de uso simultâneo (igual ao fluxo com sessão): a viatura não pode
   -- estar em dois serviços ao mesmo tempo; ficha aberta conta como "em uso"
-  -- por até 24h a partir do início.
+  -- por até 48h a partir do início.
   select coalesce(m.inicio, m.criado_em)                                   as ini,
          m.termino                                                         as ter,
          coalesce(nullif(m.motorista_nome,''), m.criado_por_nome, 'outro militar') as quem
@@ -183,8 +183,8 @@ begin
     from public.mov_viaturas m
    where m.ativo = true
      and m.prefixo = v.prefixo
-     and v_ini < coalesce(m.termino, coalesce(m.inicio, m.criado_em) + interval '24 hours')
-     and coalesce(m.inicio, m.criado_em) < coalesce(v_ter, v_ini + interval '24 hours')
+     and v_ini < coalesce(m.termino, coalesce(m.inicio, m.criado_em) + interval '48 hours')
+     and coalesce(m.inicio, m.criado_em) < coalesce(v_ter, v_ini + interval '48 hours')
    order by coalesce(m.inicio, m.criado_em) desc
    limit 1;
   if found then
