@@ -171,6 +171,12 @@ let EDIT_ID=null, EDIT_ROW=null;
 try{ const _eid=new URLSearchParams(location.search).get('editar'); if(_eid){ const _raw=sessionStorage.getItem('cartao_editar'); const _r=_raw?JSON.parse(_raw):null; if(_r && _r.id===_eid){ EDIT_ID=_eid; EDIT_ROW=_r; } } }catch(e){}
 if(EDIT_ROW){ document.getElementById('titulo').textContent='Editar Cartão '+(EDIT_ROW.numero||''); document.getElementById('sub').textContent='As respostas já lançadas pela equipe são preservadas.'; }
 
+/* Modo CÓPIA (?copiar=<id>): novo cartão pré-preenchido a partir de outro. NÃO é
+   edição — salva como cartão novo (número novo), e o original fica intacto. */
+let COPY_ROW=null;
+try{ const _cid=new URLSearchParams(location.search).get('copiar'); if(!EDIT_ID && _cid){ const _raw=sessionStorage.getItem('cartao_copiar'); const _r=_raw?JSON.parse(_raw):null; if(_r && _r.id===_cid){ COPY_ROW=_r; } } }catch(e){}
+if(COPY_ROW){ document.getElementById('titulo').textContent='Copiar Cartão '+(COPY_ROW.numero||''); document.getElementById('sub').textContent='Novo cartão a partir do Nº '+(COPY_ROW.numero||'')+' — escolha a nova data de empenho. Demandas já concluídas (✅) não foram copiadas.'; }
+
 const API=(typeof SB_AUTH_URL!=='undefined')?SB_AUTH_URL:'';
 const AKEY=(typeof SB_AUTH_KEY!=='undefined')?SB_AUTH_KEY:'';
 const H={'apikey':AKEY,'Authorization':`Bearer ${AKEY}`,'Content-Type':'application/json'};
@@ -708,23 +714,32 @@ async function salvar(){
 }
 
 /* ── Prefill (modo edição) ── */
-function prefill(r){
+function prefill(r, isCopy){
   const set=(id,v)=>{ const el=document.getElementById(id); if(el!=null) el.value=(v==null?'':v); };
   // grupamento (select) — tenta casar o value
   const gsel=document.getElementById('grupamento'); const gv=r.grupamento_completo||r.grupamento_id||'';
   [...gsel.options].forEach(o=>{ if(o.value && o.value.toUpperCase()===gv.toUpperCase()) gsel.value=o.value; });
-  set('data_empenho',(r.data_empenho||'').slice(0,10)); set('turno',r.turno); set('equipe',r.equipe);
+  // Na CÓPIA a data fica EM BRANCO (é para outro dia de serviço — você escolhe).
+  set('data_empenho', isCopy ? '' : (r.data_empenho||'').slice(0,10)); set('turno',r.turno); set('equipe',r.equipe);
   set('tipo_servico',r.tipo_servico); prefillOperacao(r.operacao);
   set('comandante',r.comandante); set('motorista',r.motorista); set('viatura',r.viatura);
   (Array.isArray(r.patrulheiros)?r.patrulheiros:[]).filter(Boolean).forEach(p=>addPatrulheiro(p));
   lotHint('comandante'); lotHint('motorista'); attTotal();
-  if(r.alterou_escala){ document.getElementById('alterou_escala').checked=true; document.getElementById('box-motivo').style.display=''; set('motivo_alteracao',r.motivo_alteracao); }
+  // "Alteração de escala" é específica do dia original → não carrega na cópia.
+  if(!isCopy && r.alterou_escala){ document.getElementById('alterou_escala').checked=true; document.getElementById('box-motivo').style.display=''; set('motivo_alteracao',r.motivo_alteracao); }
   set('observacoes_equipe',r.observacoes_equipe);
-  DEM=(Array.isArray(r.demandas)?r.demandas:[]).map(d=>({texto:d.texto||'',municipio:d.municipio||'',endereco:d.endereco||'',coordenadas:d.coordenadas||'',observacao:d.observacao||'',origem:d.origem||null,
+  // Demandas: na cópia, deixa de fora as já CONCLUÍDAS (resposta atendida === TOTAL).
+  let dsrc=Array.isArray(r.demandas)?r.demandas:[];
+  if(isCopy){ const resp=r.respostas||{}; const antes=dsrc.length;
+    dsrc=dsrc.filter((d,i)=>{ const rr=resp[String(d.ordem)]||resp[String(i+1)]||null; return !(rr && rr.atendida==='TOTAL'); });
+    const fora=antes-dsrc.length;
+    if(fora>0){ const sub=document.getElementById('sub'); if(sub) sub.textContent += ' ('+fora+' já concluída'+(fora>1?'s':'')+' deixada'+(fora>1?'s':'')+' de fora).'; }
+  }
+  DEM=dsrc.map(d=>({texto:d.texto||'',municipio:d.municipio||'',endereco:d.endereco||'',coordenadas:d.coordenadas||'',observacao:d.observacao||'',origem:d.origem||null,
     anexos:(d.anexos||[]).map(a=>({nome:a.nome,mime:a.mime,tamanho:a.tamanho,link:a.link,id:a.id,status:'ok'}))}));
   if(!DEM.length) DEM=[{texto:'',municipio:'',endereco:'',coordenadas:'',anexos:[]}];
   renderDemandas();
-  document.getElementById('btn-salvar').textContent='Salvar alterações';
+  if(!isCopy) document.getElementById('btn-salvar').textContent='Salvar alterações';
 }
 
 /* boot */
@@ -732,6 +747,7 @@ document.getElementById('data_empenho').value=new Date().toISOString().slice(0,1
 document.getElementById('data_empenho').addEventListener('change', fillOperacao);
 fillOperacao();
 if(EDIT_ROW){ Promise.all([_grupReady,_opReady]).then(()=>prefill(EDIT_ROW)).catch(()=>prefill(EDIT_ROW)); }
+else if(COPY_ROW){ Promise.all([_grupReady,_opReady]).then(()=>prefill(COPY_ROW,true)).catch(()=>prefill(COPY_ROW,true)); }
 else { addDemanda(); }
 attTotal();
 </script>
