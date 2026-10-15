@@ -81,10 +81,11 @@ begin
    order by coalesce(m.inicio, m.criado_em) desc
    limit 1;
   if found then
-    raise exception 'A viatura % já está em uso (armada) por % desde %%. Faça o "Término (devolver)" daquela ficha antes de armar de novo — ou, se a viatura já voltou, edite a ficha dela e lance o término.',
+    raise exception '%', format(
+      'A viatura %s já está em uso (armada) por %s desde %s%s. Faça o "Término (devolver)" daquela ficha antes de armar de novo — ou, se a viatura já voltou, edite a ficha dela e lance o término.',
       v_pref, v_conf.quem,
       to_char(v_conf.ini at time zone 'America/Sao_Paulo','DD/MM/YYYY HH24:MI'),
-      case when v_conf.ter is null then ' (ainda sem Término lançado)' else '' end;
+      case when v_conf.ter is null then ' (ainda sem Término lançado)' else '' end);
   end if;
 
   insert into public.mov_viaturas (
@@ -187,10 +188,11 @@ begin
    order by coalesce(m.inicio, m.criado_em) desc
    limit 1;
   if found then
-    raise exception 'A viatura % já está em uso (armada) por % desde %%. Aguarde o "Término (devolver)" daquela ficha antes de armar de novo.',
+    raise exception '%', format(
+      'A viatura %s já está em uso (armada) por %s desde %s%s. Aguarde o "Término (devolver)" daquela ficha antes de armar de novo.',
       v.prefixo, v_conf.quem,
       to_char(v_conf.ini at time zone 'America/Sao_Paulo','DD/MM/YYYY HH24:MI'),
-      case when v_conf.ter is null then ' (ainda sem Término lançado)' else '' end;
+      case when v_conf.ter is null then ' (ainda sem Término lançado)' else '' end);
   end if;
 
   insert into public.mov_viaturas (
