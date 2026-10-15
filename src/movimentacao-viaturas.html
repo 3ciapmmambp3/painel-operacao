@@ -617,6 +617,16 @@ function cmtEquipeMask(el){
 }
 function _vdh(iso){ if(!iso) return '—'; const d=new Date(iso); if(isNaN(d)) return '—'; const p=n=>String(n).padStart(2,'0'); return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; }
 function _vrow(l,v){ return `<tr><td class="vl">${_vesc(l)}</td><td class="vv">${(v==null||v==='')?'—':_vesc(v)}</td></tr>`; }
+// Remove o posto/graduação do INÍCIO do nome (o motorista_nome às vezes vem
+// "POSTO + nome", o que duplicava o posto na ficha, já que ele tem a sua própria
+// linha). Compara token a token, normalizado (sem acento/caixa).
+function _stripPostoPrefixo(nome, posto){
+  const norm=s=>String(s==null?'':s).toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  const nt=String(nome==null?'':nome).trim().split(/\s+/).filter(Boolean);
+  const pt=norm(posto).trim().split(/\s+/).filter(Boolean);
+  let i=0; while(i<pt.length && i<nt.length && norm(nt[i])===pt[i]) i++;
+  return (i>0 ? nt.slice(i).join(' ') : String(nome==null?'':nome)).trim();
+}
 function _vsecoes(dados){
   if(!dados || typeof dados!=='object') return '';
   const rotulo = { abastecimento:'Abastecimento', acidente:'Acidente', manutencao:'Manutenção / defeito', avaria:'Avarias de uso', limpeza:'Limpeza / higienização', taq:'Embarcação / Motor / TAQ', aeronave:'Aeronave / Drone', externo:'Condutor externo' };
@@ -942,11 +952,15 @@ async function abrirVerFicha(id){
   // Posto/graduação do motorista — não é gravado na ficha; busca no efetivo pela matrícula.
   let _motPosto = f.motorista_posto || f.posto_graduacao || '';
   const _motMat = (f.motorista_matricula||'').replace(/\D/g,'');
-  if(!_motPosto && _motMat){
+  let _motNome = (f.motorista_nome||'');
+  if(_motMat){
     try{ if(!ROSTER.length) ROSTER = await rpc('tta_listar_militares', { p_token:S.token }) || []; }catch(e){}
     const _m = (ROSTER||[]).find(x => (x.matricula||'').replace(/\D/g,'') === _motMat);
-    if(_m) _motPosto = _m.posto_graduacao || '';
+    if(_m){ if(!_motPosto) _motPosto = _m.posto_graduacao || ''; if(_m.nome_completo) _motNome = _m.nome_completo; }
   }
+  // tira o posto embutido no nome (vem "POSTO + nome" do TTA) — ele já tem a
+  // linha "Posto / Graduação" logo abaixo, então não pode se repetir aqui.
+  if(_motPosto) _motNome = _stripPostoPrefixo(_motNome, _motPosto);
   // Posto/graduação de quem registrou — também não é gravado na ficha; busca no efetivo pela matrícula.
   let _regPosto = '';
   const _regMat = (f.criado_por_matricula||'').replace(/\D/g,'');
@@ -984,7 +998,7 @@ async function abrirVerFicha(id){
     <h3 class="vsec">Viatura e motorista</h3>
     <table class="vt">
       ${_vrow('Prefixo', f.prefixo)}${_vrow('Placa', f.placa)}
-      ${_vrow('Motorista', f.motorista_nome)}${_vrow('Posto / Graduação', _motPosto)}
+      ${_vrow('Motorista', _motNome)}${_vrow('Posto / Graduação', _motPosto)}
       ${_vrow('Nº PM', f.motorista_matricula)}${_vrow('Lotação', _grafiaCidade(f.lotacao_motorista))}
     </table>
     <h3 class="vsec">Utilização</h3>
