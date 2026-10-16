@@ -1349,8 +1349,9 @@ function milOpts(){
 function milOptLabel(w){ return `Período ${w.periodo}: ${fmtBR(w.ini)} a ${fmtBR(w.fim)}`; }
 function milOptsHtml(list,sel){ return '<option value="">— selecione —</option>'+list.map((w,i)=>`<option value="${i}" ${String(i)===String(sel)?'selected':''}>${esc(milOptLabel(w))}</option>`).join(''); }
 function idxWin(list,p){ if(!p) return ''; const i=list.findIndex(w=>String(w.ini).slice(0,10)===String(p.ini).slice(0,10)&&String(w.fim).slice(0,10)===String(p.fim).slice(0,10)); return i<0?'':i; }
-// lista suspensa de EXERCÍCIO (ano a que a parcela se refere): só o ano de gozo e o ano anterior
-function exercHtml(sel){ let h=''; for(let a=anoSel;a>=anoSel-1;a--){ h+=`<option value="${a}" ${String(a)===String(sel)?'selected':''}>${a}</option>`; } return h; }
+// lista suspensa de EXERCÍCIO (ano a que a parcela se refere): só o ano de gozo e o ano anterior.
+// Começa SEM pré-seleção — o militar tem que escolher (evita esquecer de trocar p/ o ano anterior).
+function exercHtml(sel){ let h='<option value="">— selecione —</option>'; for(let a=anoSel;a>=anoSel-1;a--){ h+=`<option value="${a}" ${String(a)===String(sel)?'selected':''}>${a}</option>`; } return h; }
 function opcaoBlock(n,pre){
   pre=pre||{}; const mod=pre.modalidade||(n===1?'25_DIRETO':'');
   const pp=pre.parcelas||[];
@@ -1358,7 +1359,7 @@ function opcaoBlock(n,pre){
   const i25=mod==='25_DIRETO'?idxWin(milLists.l25,p25):'';
   const i15=mod==='15_10_FRACIONADO'?idxWin(milLists.l15,p15):'';
   const i10=mod==='15_10_FRACIONADO'?idxWin(milLists.l10,p10):'';
-  const ex25=(p25&&p25.exercicio)||anoSel, ex15=(p15&&p15.exercicio)||anoSel, ex10=(p10&&p10.exercicio)||anoSel;
+  const ex25=(p25&&p25.exercicio)||'', ex15=(p15&&p15.exercicio)||'', ex10=(p10&&p10.exercicio)||'';
   return `<div class="per" data-op="${n}">
     <div class="perhead"><b>Opção ${n} <span style="color:var(--danger);">*</span></b></div>
     <div class="grid"><div class="fld"><label>Modalidade</label>
@@ -1469,7 +1470,6 @@ async function milBoot(){
 async function milEnviar(){
   try{
     const opcoes=[]; let erro=null;
-    const _ex=v=>parseInt(v,10)||anoSel;
     [1,2,3].forEach(n=>{
       if(erro) return;
       const blk=document.querySelector(`#mil-opcoes .per[data-op="${n}"]`); if(!blk) return;
@@ -1478,13 +1478,18 @@ async function milEnviar(){
       let parcelas=[];
       if(mod==='25_DIRETO'){ const i=blk.querySelector('.op-25sel').value;
         if(i===''){ erro='Selecione o período de 25 dias na '+n+'ª opção.'; return; }
-        const w=milLists.l25[i]; parcelas=[{parcela:'25',periodo:w.periodo,ini:w.ini,fim:w.fim,exercicio:_ex(blk.querySelector('.op-25ex').value)}];
+        const ex=blk.querySelector('.op-25ex').value;
+        if(!ex){ erro='Selecione o exercício (ano de referência) dos 25 dias na '+n+'ª opção.'; return; }
+        const w=milLists.l25[i]; parcelas=[{parcela:'25',periodo:w.periodo,ini:w.ini,fim:w.fim,exercicio:parseInt(ex,10)}];
       } else {
         const i15=blk.querySelector('.op-15sel').value, i10=blk.querySelector('.op-10sel').value;
         if(i15===''||i10===''){ erro='Selecione o 15 e o 10 na '+n+'ª opção.'; return; }
+        const ex15=blk.querySelector('.op-15ex').value, ex10=blk.querySelector('.op-10ex').value;
+        if(!ex15){ erro='Selecione o exercício (ano de referência) dos 15 dias na '+n+'ª opção.'; return; }
+        if(!ex10){ erro='Selecione o exercício (ano de referência) dos 10 dias na '+n+'ª opção.'; return; }
         const w15=milLists.l15[i15], w10=milLists.l10[i10];
-        parcelas=[{parcela:'15',periodo:w15.periodo,ini:w15.ini,fim:w15.fim,exercicio:_ex(blk.querySelector('.op-15ex').value)},
-                  {parcela:'10',periodo:w10.periodo,ini:w10.ini,fim:w10.fim,exercicio:_ex(blk.querySelector('.op-10ex').value)}];
+        parcelas=[{parcela:'15',periodo:w15.periodo,ini:w15.ini,fim:w15.fim,exercicio:parseInt(ex15,10)},
+                  {parcela:'10',periodo:w10.periodo,ini:w10.ini,fim:w10.fim,exercicio:parseInt(ex10,10)}];
       }
       opcoes.push({ordem:n,modalidade:mod,parcelas});
     });
