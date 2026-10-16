@@ -2904,10 +2904,7 @@ function bindRepeatablePanel(panel, categoryId){
     // Popula o seletor "vincular à demanda do Cartão" (cobre abrir o card e
     // "+ Adicionar"); fica escondido se a equipe não tiver demanda livre. Vale
     // p/ o Registro (vincularCartao) e p/ os cards com situação (DDU/NUDEN/etc.).
-    if (config.vincularCartao || config.situacaoAtendimento){
-      if (typeof window.cpPopularVinculosSoon === 'function') window.cpPopularVinculosSoon();
-      else if (typeof window.cpPopularVinculos === 'function') setTimeout(window.cpPopularVinculos, 0);
-    }
+    if ((config.vincularCartao || config.situacaoAtendimento) && typeof window.cpPopularVinculos === 'function') setTimeout(window.cpPopularVinculos, 0);
     setupRespCompart(entry);
   }
   // Resposta compartilhada: acha o campo de DEMANDA (o select fração-scoped) e
@@ -3089,6 +3086,11 @@ function openModal(id){
   const node = getOrCreatePanelNode(id);
   modalBody.appendChild(node);
   refreshAutoCalcFields(node);
+  // Popula a caixa "Atende uma demanda do Cartão Programa?" das entradas já
+  // carregadas: os painéis ficam em cache DETACHED, então o gatilho por entrada
+  // (no carregamento da edição) rodou fora do document e não as encontrou. Agora
+  // o painel está anexado ao modal, então as caixas existem no DOM.
+  if (node.querySelector && node.querySelector('[data-cp-link]') && typeof window.cpPopularVinculosSoon === 'function') window.cpPopularVinculosSoon();
   if (id === 'cartao_programa' && window.__cpReload) window.__cpReload();
   modalOverlay.classList.add('open');
   currentModalId = id;
@@ -5135,10 +5137,19 @@ document.addEventListener('click', () => {
   // "+ Adicionar". É idempotente e preserva qualquer vínculo já selecionado.
   let _cpSoonAtivo=false;
   window.cpPopularVinculosSoon=function(){
-    try{ window.cpPopularVinculos(); }catch(e){}
     if(_cpSoonAtivo) return; _cpSoonAtivo=true;
-    [250,600,1200,2500,4500].forEach(ms=>setTimeout(()=>{ try{ window.cpPopularVinculos(); }catch(e){} }, ms));
-    setTimeout(()=>{ _cpSoonAtivo=false; }, 4600);
+    // Tentativas em SÉRIE (await encadeado): no 1º open do modal após carregar a
+    // edição a 1ª execução pode vir vazia (fetch do cartão ainda frio); repetir
+    // resolve. Em série p/ nunca rodar duas ao mesmo tempo (uma corrida duplicava
+    // as opções do dropdown). Idempotente; preserva vínculo já selecionado.
+    const gaps=[0,300,700,1400,2600];
+    let i=0;
+    const run=async()=>{
+      try{ await window.cpPopularVinculos(); }catch(e){}
+      i++;
+      if(i<gaps.length) setTimeout(run, gaps[i]); else _cpSoonAtivo=false;
+    };
+    setTimeout(run, gaps[0]);
   };
   // Encaixe no card "Resposta ao Cartão Programa" do relatório (modal de categoria).
   window.cpBuildHTML=function(){ return '<div id="cpInner" style="font-size:13px;color:var(--muted)">Informe a data do serviço (Bloco 1) para carregar o cartão da sua equipe.</div>'; };
