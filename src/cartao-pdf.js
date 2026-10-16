@@ -202,9 +202,17 @@
   // WhatsApp: manda o texto + o LINK público do cartão (o PDF sai pelo botão
   // "Baixar PDF" → Salvar como PDF). Abre o app com a mensagem pronta.
   function whatsapp(cartao, publicUrl){
+    const nomeMil=v=>{ const p=(v||'').split(' - '); return (p.length>=3?(p[1]+' '+p.slice(2).join(' - ')):(v||'')).trim(); };
+    const L=[];
+    if(cartao.comandante) L.push('Cmt: '+nomeMil(cartao.comandante));
+    if(cartao.motorista)  L.push('Mot: '+nomeMil(cartao.motorista));
+    const patr=(Array.isArray(cartao.patrulheiros)?cartao.patrulheiros:[]).filter(Boolean).map(nomeMil);
+    if(patr.length) L.push('Patrulheiro'+(patr.length>1?'s':'')+': '+patr.join(' · '));
+    const equipe = L.length ? `\n\n*Equipe:*\n${L.join('\n')}` : '';
     const texto = `*CARTÃO PROGRAMA Nº ${cartao.numero||''}*\n`+
       `${cartao.grupamento_completo||cartao.grupamento_id||''}\n`+
       `Data: ${fmtData(cartao.data_empenho)} · Turno: ${cartao.turno||'—'} · Equipe ${cartao.equipe||'—'}`+
+      equipe+
       (publicUrl ? `\n\nAbra o cartão: ${publicUrl}` : '');
     global.open('https://wa.me/?text='+encodeURIComponent(texto), '_blank');
     return 'link';
