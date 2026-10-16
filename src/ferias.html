@@ -356,7 +356,11 @@
     <div id="mil-status"></div>
     <div id="mil-form-card" class="card" style="display:none;">
       <h3 id="mil-form-titulo" style="font-size:13px;color:var(--acc);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">Escolha das suas férias</h3>
-      <div class="miut" id="mil-exercicio-info" style="margin-bottom:14px;"></div>
+      <div class="fld" style="margin-bottom:14px;">
+        <label>Exercício (ano a que as férias se referem)</label>
+        <select id="mil-exercicio"></select>
+        <div class="miut" id="mil-exercicio-info" style="margin-top:6px;"></div>
+      </div>
       <div id="mil-opcoes"></div>
       <div class="fld" style="margin-top:12px;"><label>Observações</label><textarea id="mil-obs" rows="2"></textarea></div>
       <div class="row-actions" style="justify-content:flex-end;margin-top:16px;">
@@ -1442,7 +1446,14 @@ async function milBoot(){
       st.insertAdjacentHTML('beforeend','<div class="msg err" style="display:block;margin-top:10px;">O cronograma ainda não tem os períodos cadastrados. Avise o Aux P1.</div>');
       return;
     }
-    document.getElementById('mil-exercicio-info').innerHTML='Exercício (ano de referência): <b>'+((meu&&meu.exercicio)||anoSel)+'</b> <span class="miut">— definido pela seção; se você tem férias de outro ano a tirar, fale com o Aux P1.</span>';
+    (function(){
+      const selEx=document.getElementById('mil-exercicio');
+      const atual=Number((meu&&meu.exercicio)||anoSel);
+      selEx.innerHTML='';
+      for(let a=anoSel; a>=2023; a--){ const o=document.createElement('option'); o.value=a; o.textContent=a; selEx.appendChild(o); }
+      selEx.value = (atual>=2023 && atual<=anoSel) ? String(atual) : String(anoSel);
+    })();
+    document.getElementById('mil-exercicio-info').innerHTML='⚠️ Não confunda com o <b>ano de gozo</b> (<b>'+anoSel+'</b>, quando você vai tirar). O <b>exercício</b> é o ano a que as férias se referem — normalmente também '+anoSel+', mas se está gozando férias atrasadas de um ano anterior (ex.: cassadas), selecione o ano correspondente.';
     document.getElementById('mil-obs').value=(meu&&meu.observacoes)||'';
     renderOpcoes((meu&&meu.opcoes&&meu.opcoes.length)?meu.opcoes:(meu&&meu.parcelas&&meu.parcelas.length?[{ordem:1,modalidade:meu.modalidade,parcelas:meu.parcelas}]:[]));
     document.getElementById('mil-form-titulo').textContent = meu?'Alterar sua escolha':'Escolha das suas férias';
@@ -1475,7 +1486,8 @@ async function milEnviar(){
     for(let i=0;i<sigs.length;i++) for(let j=i+1;j<sigs.length;j++){
       if(sigs[i]===sigs[j]) return flash(`A ${opcoes[i].ordem}ª e a ${opcoes[j].ordem}ª opção estão com o MESMO período. Cada opção precisa ser diferente.`,false);
     }
-    await rpc('ferias_pedido_solicitar',{p_token:sessao.token,p_dados:{ano:anoSel,opcoes,observacoes:document.getElementById('mil-obs').value.trim()||null}});
+    const exercicioSel=parseInt(document.getElementById('mil-exercicio').value,10)||anoSel;
+    await rpc('ferias_pedido_solicitar',{p_token:sessao.token,p_dados:{ano:anoSel,exercicio:exercicioSel,opcoes,observacoes:document.getElementById('mil-obs').value.trim()||null}});
     flash('Escolha enviada! Aguarde a aprovação do comandante do pelotão.',true); milBoot();
   }catch(e){ flash(e.message||'Erro ao enviar.',false); }
 }
