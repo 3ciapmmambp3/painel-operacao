@@ -356,11 +356,7 @@
     <div id="mil-status"></div>
     <div id="mil-form-card" class="card" style="display:none;">
       <h3 id="mil-form-titulo" style="font-size:13px;color:var(--acc);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">Escolha das suas férias</h3>
-      <div class="fld" style="margin-bottom:14px;">
-        <label>Exercício (ano a que as férias se referem)</label>
-        <select id="mil-exercicio" style="width:auto;min-width:110px;max-width:140px;"></select>
-        <div class="miut" id="mil-exercicio-info" style="margin-top:6px;"></div>
-      </div>
+      <div class="miut" id="mil-exercicio-info" style="margin-bottom:14px;"></div>
       <div id="mil-opcoes"></div>
       <div class="fld" style="margin-top:12px;"><label>Observações</label><textarea id="mil-obs" rows="2"></textarea></div>
       <div class="row-actions" style="justify-content:flex-end;margin-top:16px;">
@@ -1012,10 +1008,10 @@ function valResumo(){
 // monta as parcelas atuais do modal (sem exigir tudo preenchido)
 function valParcelasAtuais(){
   const mod=document.getElementById('val-mod').value; const parcelas=[];
-  if(mod==='25_DIRETO'){ const i=document.getElementById('val-25sel').value; if(i!==''){ const x=val25[i]; parcelas.push({parcela:'25',ini:x.ini,fim:x.fim}); } }
+  if(mod==='25_DIRETO'){ const i=document.getElementById('val-25sel').value; if(i!==''){ const x=val25[i]; parcelas.push({parcela:'25',ini:x.ini,fim:x.fim,exercicio:x.exercicio}); } }
   else { const i15=document.getElementById('val-15sel').value, i10=document.getElementById('val-10sel').value;
-    if(i15!==''){ const a=val15[i15]; parcelas.push({parcela:'15',ini:a.ini,fim:a.fim}); }
-    if(i10!==''){ const b=val10[i10]; parcelas.push({parcela:'10',ini:b.ini,fim:b.fim}); } }
+    if(i15!==''){ const a=val15[i15]; parcelas.push({parcela:'15',ini:a.ini,fim:a.fim,exercicio:a.exercicio}); }
+    if(i10!==''){ const b=val10[i10]; parcelas.push({parcela:'10',ini:b.ini,fim:b.fim,exercicio:b.exercicio}); } }
   return parcelas;
 }
 // barra de percentual ao vivo: Cia (só Aux P1) + Pelotão (P1 e CMT), no pico do período
@@ -1055,7 +1051,7 @@ function _barrasHtml(r){
   return h;
 }
 function valMotivo(){ document.getElementById('val-motivo-fld').style.display=document.getElementById('val-sit').value==='REJEITADO'?'flex':'none'; }
-function valOptHtml(list){ return '<option value="">— selecione —</option>'+list.map((x,i)=>`<option value="${i}">${x.opcao}ª escolha${x.periodo?' · Período '+x.periodo:''}: ${fmtBR(x.ini)}–${fmtBR(x.fim)}</option>`).join(''); }
+function valOptHtml(list){ return '<option value="">— selecione —</option>'+list.map((x,i)=>`<option value="${i}">${x.opcao}ª escolha${x.periodo?' · Período '+x.periodo:''}${x.exercicio?' · Exerc. '+x.exercicio:''}: ${fmtBR(x.ini)}–${fmtBR(x.fim)}</option>`).join(''); }
 function abrirValidar(id){
   const p=pedidos.find(x=>x.id===id); if(!p) return; valPed=p;
   const m=p.militar||{};
@@ -1071,7 +1067,8 @@ function abrirValidar(id){
       else if(x.parcela==='15'){ idx=val15.length; val15.push(Object.assign({},x,{opcao:o.ordem})); }
       else { idx=val10.length; val10.push(Object.assign({},x,{opcao:o.ordem})); }
       const per=x.periodo?` <span style="opacity:.85;">· Período ${x.periodo}</span>`:'';
-      return `<a href="#" onclick="valUsar('${x.parcela}',${idx});return false;" title="Usar no período final" style="display:inline-block;background:var(--bg-card);border:1px solid ${cor};border-radius:5px;padding:2px 8px;font-size:11px;text-decoration:none;color:var(--text-white);white-space:nowrap;cursor:pointer;"><b style="color:${cor};">${x.parcela} dias</b>${per} · ${_dm(x.ini)}–${_dm(x.fim)}</a>`;
+      const exc=x.exercicio?` <span style="opacity:.85;">· Exerc. ${x.exercicio}</span>`:'';
+      return `<a href="#" onclick="valUsar('${x.parcela}',${idx});return false;" title="Usar no período final" style="display:inline-block;background:var(--bg-card);border:1px solid ${cor};border-radius:5px;padding:2px 8px;font-size:11px;text-decoration:none;color:var(--text-white);white-space:nowrap;cursor:pointer;"><b style="color:${cor};">${x.parcela} dias</b>${per}${exc} · ${_dm(x.ini)}–${_dm(x.fim)}</a>`;
     }).join(' ');
     opsHtml+=`<div style="border-left:3px solid ${cor};padding-left:9px;margin-bottom:6px;">
       <div style="font-size:9.5px;font-weight:800;letter-spacing:.6px;color:${cor};text-transform:uppercase;">${o.ordem}ª escolha — clique para usar</div>
@@ -1104,12 +1101,12 @@ async function salvarValidacao(){
     const mod=document.getElementById('val-mod').value; let parcelas=[];
     if(mod==='25_DIRETO'){ const i=document.getElementById('val-25sel').value;
       if(i==='') return flash('Selecione o período de 25 dias.',false);
-      const x=val25[i]; parcelas=[{parcela:'25',periodo:x.periodo,ini:x.ini,fim:x.fim}];
+      const x=val25[i]; parcelas=[{parcela:'25',periodo:x.periodo,ini:x.ini,fim:x.fim,exercicio:x.exercicio}];
     } else {
       const i15=document.getElementById('val-15sel').value, i10=document.getElementById('val-10sel').value;
       if(i15===''||i10==='') return flash('Selecione o 15 e o 10 dias.',false);
       const a=val15[i15], b=val10[i10];
-      parcelas=[{parcela:'15',periodo:a.periodo,ini:a.ini,fim:a.fim},{parcela:'10',periodo:b.periodo,ini:b.ini,fim:b.fim}];
+      parcelas=[{parcela:'15',periodo:a.periodo,ini:a.ini,fim:a.fim,exercicio:a.exercicio},{parcela:'10',periodo:b.periodo,ini:b.ini,fim:b.fim,exercicio:b.exercicio}];
     }
     const sit=document.getElementById('val-sit').value;
     const dados={ ano:anoSel, modalidade:mod, parcelas, situacao:sit };
@@ -1209,7 +1206,7 @@ function renderControle(){
       <td class="miut">${primeira?_seq:''}</td>
       <td><b>${esc(r.pg||'')}</b> ${esc(r.nome||'')}<div class="miut">${esc(r.matricula||'')}</div></td>
       <td>${esc(r.cidade||'—')}</td>
-      <td class="col-ano">${esc(r.exercicio||'—')}</td>
+      <td class="col-ano">${esc((x&&x.exercicio)||r.exercicio||'—')}</td>
       <td>${esc(dias)}</td>
       <td style="white-space:nowrap;">${x?fmtBR(x.ini):'—'}</td>
       <td style="white-space:nowrap;">${x?fmtBR(x.fim):'—'}</td>
@@ -1235,7 +1232,7 @@ function exportarControle(){
   let _seq=0,_lastId=null;
   linhas.forEach(({r,x,primeira})=>{ if(r.id!==_lastId){_seq++;_lastId=r.id;}
     aoa.push([primeira?_seq:'',_pelRot(r.pelotao||''),r.fracao||'',r.matricula||'',r.pg||'',r.nome||'',r.cidade||'',
-      r.exercicio||'',x?(x.parcela==='PREMIO'?'Prêmio':x.parcela):'',x?fmtBR(x.ini):'',x?fmtBR(x.fim):'',situ[r.situacao]||r.situacao]); });
+      (x&&x.exercicio)||r.exercicio||'',x?(x.parcela==='PREMIO'?'Prêmio':x.parcela):'',x?fmtBR(x.ini):'',x?fmtBR(x.fim):'',situ[r.situacao]||r.situacao]); });
   const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=aoa[0].map(h=>({wch:Math.max(10,h.length+2)}));
   const nome=ctModo==='PREMIO'?'Ferias-Premio':'Ferias-Anuais';
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, nome.slice(0,28)+' '+anoSel);
@@ -1352,33 +1349,46 @@ function milOpts(){
 function milOptLabel(w){ return `Período ${w.periodo}: ${fmtBR(w.ini)} a ${fmtBR(w.fim)}`; }
 function milOptsHtml(list,sel){ return '<option value="">— selecione —</option>'+list.map((w,i)=>`<option value="${i}" ${String(i)===String(sel)?'selected':''}>${esc(milOptLabel(w))}</option>`).join(''); }
 function idxWin(list,p){ if(!p) return ''; const i=list.findIndex(w=>String(w.ini).slice(0,10)===String(p.ini).slice(0,10)&&String(w.fim).slice(0,10)===String(p.fim).slice(0,10)); return i<0?'':i; }
+// lista suspensa de EXERCÍCIO (ano a que a parcela se refere): 2023 → ano de gozo
+function exercHtml(sel){ let h=''; for(let a=anoSel;a>=2023;a--){ h+=`<option value="${a}" ${String(a)===String(sel)?'selected':''}>${a}</option>`; } return h; }
 function opcaoBlock(n,pre){
   pre=pre||{}; const mod=pre.modalidade||(n===1?'25_DIRETO':'');
   const pp=pre.parcelas||[];
-  const i25=mod==='25_DIRETO'?idxWin(milLists.l25,pp.find(x=>x.parcela==='25')):'';
-  const i15=mod==='15_10_FRACIONADO'?idxWin(milLists.l15,pp.find(x=>x.parcela==='15')):'';
-  const i10=mod==='15_10_FRACIONADO'?idxWin(milLists.l10,pp.find(x=>x.parcela==='10')):'';
+  const p25=pp.find(x=>x.parcela==='25'), p15=pp.find(x=>x.parcela==='15'), p10=pp.find(x=>x.parcela==='10');
+  const i25=mod==='25_DIRETO'?idxWin(milLists.l25,p25):'';
+  const i15=mod==='15_10_FRACIONADO'?idxWin(milLists.l15,p15):'';
+  const i10=mod==='15_10_FRACIONADO'?idxWin(milLists.l10,p10):'';
+  const ex25=(p25&&p25.exercicio)||anoSel, ex15=(p15&&p15.exercicio)||anoSel, ex10=(p10&&p10.exercicio)||anoSel;
   return `<div class="per" data-op="${n}">
-    <div class="perhead"><b>Opção ${n}${n===1?'':' (opcional)'}</b></div>
+    <div class="perhead"><b>Opção ${n} <span style="color:var(--danger);">*</span></b></div>
     <div class="grid"><div class="fld"><label>Modalidade</label>
       <select class="op-mod" onchange="opMod(${n})">
-        <option value="" ${!mod?'selected':''}>— não usar —</option>
+        <option value="" ${!mod?'selected':''}>— selecione —</option>
         <option value="25_DIRETO" ${mod==='25_DIRETO'?'selected':''}>25 dias direto</option>
         <option value="15_10_FRACIONADO" ${mod==='15_10_FRACIONADO'?'selected':''}>15 + 10 dias (fracionado)</option>
       </select></div></div>
     <div class="op-25" style="margin-top:8px;display:${mod==='25_DIRETO'?'block':'none'};">
-      <div class="fld"><label>Período — 25 dias direto</label><select class="op-25sel">${milOptsHtml(milLists.l25,i25)}</select></div></div>
+      <div class="grid">
+        <div class="fld"><label>Período — 25 dias direto</label><select class="op-25sel">${milOptsHtml(milLists.l25,i25)}</select></div>
+        <div class="fld"><label>Exercício (ano ref.)</label><select class="op-25ex">${exercHtml(ex25)}</select></div>
+      </div></div>
     <div class="op-1510" style="margin-top:8px;display:${mod==='15_10_FRACIONADO'?'block':'none'};">
       <div class="grid">
         <div class="fld"><label>15 dias</label><select class="op-15sel">${milOptsHtml(milLists.l15,i15)}</select></div>
+        <div class="fld"><label>Exercício dos 15 (ano ref.)</label><select class="op-15ex">${exercHtml(ex15)}</select></div>
+      </div>
+      <div class="grid" style="margin-top:8px;">
         <div class="fld"><label>10 dias</label><select class="op-10sel">${milOptsHtml(milLists.l10,i10)}</select></div>
+        <div class="fld"><label>Exercício dos 10 (ano ref.)</label><select class="op-10ex">${exercHtml(ex10)}</select></div>
       </div></div>
   </div>`;
 }
 function opMod(n){ const blk=document.querySelector(`#mil-opcoes .per[data-op="${n}"]`); if(!blk) return; const v=blk.querySelector('.op-mod').value;
   blk.querySelector('.op-25').style.display=v==='25_DIRETO'?'block':'none';
   blk.querySelector('.op-1510').style.display=v==='15_10_FRACIONADO'?'block':'none'; }
-function renderOpcoes(pre){ pre=pre||[]; document.getElementById('mil-opcoes').innerHTML=[1,2,3].map(n=>opcaoBlock(n,(pre||[]).find(o=>o.ordem===n))).join(''); }
+function renderOpcoes(pre){ pre=pre||[];
+  const intro='<div class="miut" style="margin-bottom:10px;">Informe as <b>3 opções</b> (todas obrigatórias <span style="color:var(--danger);">*</span>), cada uma com um período <b>diferente</b>. Em cada opção, escolha também o <b>Exercício</b> (ano a que aquela parcela se refere) — o 15 e o 10 podem ser de anos diferentes.</div>';
+  document.getElementById('mil-opcoes').innerHTML=intro+[1,2,3].map(n=>opcaoBlock(n,(pre||[]).find(o=>o.ordem===n))).join(''); }
 function milTag(s){ const m={PENDENTE:['pend','Pendente — aguardando o comandante do pelotão'],APROVADO_PEL:['aprov','Aprovada pelo pelotão — aguardando o Cmt Cia'],VALIDADO:['valid','Validada pelo Cmt Cia ✓'],REJEITADO:['rej','Rejeitada']}; const t=m[s]||['','—']; return `<span class="tag ${t[0]}">${t[1]}</span>`; }
 async function milBoot(){
   const st=document.getElementById('mil-status'); const form=document.getElementById('mil-form-card');
@@ -1391,7 +1401,8 @@ async function milBoot(){
   st.innerHTML='<div class="card"><div class="empty">Carregando…</div></div>';
   try{ cronograma = await rpc('ferias_cronograma_get',{p_token:sessao.token,p_ano:anoSel}); }catch(e){ cronograma=null; }
   let meu=null;
-  try{ const arr=await rpc('ferias_pedidos_listar',{p_token:sessao.token,p_ano:anoSel})||[]; meu=arr.find(p=>p.tipo==='ANUAL'&&p.militar_id===sessao.id)||arr.find(p=>p.tipo==='ANUAL')||null; }catch(e){}
+  try{ const arr=await rpc('ferias_pedidos_listar',{p_token:sessao.token,p_ano:anoSel})||[];
+    meu=arr.find(p=>p.tipo==='ANUAL'&&(String(p.militar_id)===String(sessao.id)||(p.militar&&String(p.militar.matricula)===String(sessao.matricula))))||null; }catch(e){}
 
   const hoje=new Date().toISOString().slice(0,10);
   const aberto = cronograma && cronograma.situacao==='ABERTO';
@@ -1419,12 +1430,14 @@ async function milBoot(){
     let corpo, titulo;
     if(aprovado){
       titulo='Período aprovado';
-      const fin=(meu.parcelas||[]).map(x=>`${x.parcela} dias ${x.periodo?'· Período '+x.periodo+' ':''}· ${fmtBR(x.ini)}–${fmtBR(x.fim)}`).join('  +  ');
+      const _pc=x=>`${x.parcela} dias ${x.periodo?'· Período '+x.periodo+' ':''}${x.exercicio?'· Exerc. '+x.exercicio+' ':''}· ${fmtBR(x.ini)}–${fmtBR(x.fim)}`;
+      const fin=(meu.parcelas||[]).map(_pc).join('  +  ');
       corpo='<div style="font-size:13px;color:var(--text-white);">'+esc(fin||'—')+'</div>';
     } else {
       titulo='Suas opções (aguardando)';
+      const _pc=x=>`${x.parcela} dias ${x.periodo?'· Período '+x.periodo+' ':''}${x.exercicio?'· Exerc. '+x.exercicio+' ':''}· ${fmtBR(x.ini)}–${fmtBR(x.fim)}`;
       const ops=(meu.opcoes&&meu.opcoes.length)?meu.opcoes:(meu.parcelas&&meu.parcelas.length?[{ordem:1,parcelas:meu.parcelas}]:[]);
-      corpo=ops.map(o=>{ const p=(o.parcelas||[]).map(x=>`${x.parcela} dias ${x.periodo?'· Período '+x.periodo+' ':''}· ${fmtBR(x.ini)}–${fmtBR(x.fim)}`).join(' + '); return `<div style="font-size:12.5px;color:var(--text-white);padding:2px 0;"><b>${o.ordem}ª opção:</b> ${esc(p||'—')}</div>`; }).join('')||'<div class="miut">—</div>';
+      corpo=ops.map(o=>{ const p=(o.parcelas||[]).map(_pc).join(' + '); return `<div style="font-size:12.5px;color:var(--text-white);padding:2px 0;"><b>${o.ordem}ª opção:</b> ${esc(p||'—')}</div>`; }).join('')||'<div class="miut">—</div>';
     }
     sHtml+='<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">'
       +'<div style="font-size:11px;color:var(--text-hint);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">'+titulo+'</div>'
@@ -1446,14 +1459,7 @@ async function milBoot(){
       st.insertAdjacentHTML('beforeend','<div class="msg err" style="display:block;margin-top:10px;">O cronograma ainda não tem os períodos cadastrados. Avise o Aux P1.</div>');
       return;
     }
-    (function(){
-      const selEx=document.getElementById('mil-exercicio');
-      const atual=Number((meu&&meu.exercicio)||anoSel);
-      selEx.innerHTML='';
-      for(let a=anoSel; a>=2023; a--){ const o=document.createElement('option'); o.value=a; o.textContent=a; selEx.appendChild(o); }
-      selEx.value = (atual>=2023 && atual<=anoSel) ? String(atual) : String(anoSel);
-    })();
-    document.getElementById('mil-exercicio-info').innerHTML='⚠️ Não confunda com o <b>ano de gozo</b> (<b>'+anoSel+'</b>, quando você vai tirar). O <b>exercício</b> é o ano a que as férias se referem — normalmente também '+anoSel+', mas se está gozando férias atrasadas de um ano anterior (ex.: cassadas), selecione o ano correspondente.';
+    document.getElementById('mil-exercicio-info').innerHTML='⚠️ <b>Ano de gozo</b> = <b>'+anoSel+'</b> (quando você vai tirar). Em cada opção abaixo, informe o <b>Exercício</b> — o ano a que a parcela se refere (normalmente '+anoSel+'; se são férias atrasadas de um ano anterior, ex.: cassadas, selecione o ano correspondente). Como o 15 e o 10 podem ser de anos diferentes, o exercício é por parcela.';
     document.getElementById('mil-obs').value=(meu&&meu.observacoes)||'';
     renderOpcoes((meu&&meu.opcoes&&meu.opcoes.length)?meu.opcoes:(meu&&meu.parcelas&&meu.parcelas.length?[{ordem:1,modalidade:meu.modalidade,parcelas:meu.parcelas}]:[]));
     document.getElementById('mil-form-titulo').textContent = meu?'Alterar sua escolha':'Escolha das suas férias';
@@ -1463,30 +1469,35 @@ async function milBoot(){
 async function milEnviar(){
   try{
     const opcoes=[]; let erro=null;
+    const _ex=v=>parseInt(v,10)||anoSel;
     [1,2,3].forEach(n=>{
+      if(erro) return;
       const blk=document.querySelector(`#mil-opcoes .per[data-op="${n}"]`); if(!blk) return;
-      const mod=blk.querySelector('.op-mod').value; if(!mod) return;
+      const mod=blk.querySelector('.op-mod').value;
+      if(!mod){ erro='Escolha a modalidade da '+n+'ª opção (as 3 opções são obrigatórias).'; return; }
       let parcelas=[];
       if(mod==='25_DIRETO'){ const i=blk.querySelector('.op-25sel').value;
-        if(i===''){ erro='Selecione o período de 25 dias na '+n+'ª opção (ou marque "não usar").'; return; }
-        const w=milLists.l25[i]; parcelas=[{parcela:'25',periodo:w.periodo,ini:w.ini,fim:w.fim}];
+        if(i===''){ erro='Selecione o período de 25 dias na '+n+'ª opção.'; return; }
+        const w=milLists.l25[i]; parcelas=[{parcela:'25',periodo:w.periodo,ini:w.ini,fim:w.fim,exercicio:_ex(blk.querySelector('.op-25ex').value)}];
       } else {
         const i15=blk.querySelector('.op-15sel').value, i10=blk.querySelector('.op-10sel').value;
-        if(i15===''||i10===''){ erro='Selecione o 15 e o 10 na '+n+'ª opção (ou marque "não usar").'; return; }
+        if(i15===''||i10===''){ erro='Selecione o 15 e o 10 na '+n+'ª opção.'; return; }
         const w15=milLists.l15[i15], w10=milLists.l10[i10];
-        parcelas=[{parcela:'15',periodo:w15.periodo,ini:w15.ini,fim:w15.fim},{parcela:'10',periodo:w10.periodo,ini:w10.ini,fim:w10.fim}];
+        parcelas=[{parcela:'15',periodo:w15.periodo,ini:w15.ini,fim:w15.fim,exercicio:_ex(blk.querySelector('.op-15ex').value)},
+                  {parcela:'10',periodo:w10.periodo,ini:w10.ini,fim:w10.fim,exercicio:_ex(blk.querySelector('.op-10ex').value)}];
       }
       opcoes.push({ordem:n,modalidade:mod,parcelas});
     });
     if(erro) return flash(erro,false);
-    if(!opcoes.length) return flash('Informe ao menos a 1ª opção.',false);
+    if(opcoes.length<3) return flash('Informe as 3 opções — todas são obrigatórias.',false);
     // opções não podem repetir o mesmo período — cada uma tem que ser diferente
     const _sig=o=>(o.parcelas||[]).map(p=>`${p.parcela}:${String(p.ini).slice(0,10)}~${String(p.fim).slice(0,10)}`).sort().join('|');
     const sigs=opcoes.map(_sig);
     for(let i=0;i<sigs.length;i++) for(let j=i+1;j<sigs.length;j++){
       if(sigs[i]===sigs[j]) return flash(`A ${opcoes[i].ordem}ª e a ${opcoes[j].ordem}ª opção estão com o MESMO período. Cada opção precisa ser diferente.`,false);
     }
-    const exercicioSel=parseInt(document.getElementById('mil-exercicio').value,10)||anoSel;
+    // exercício do pedido (coluna resumo) = o da 1ª parcela da 1ª opção
+    const exercicioSel=(opcoes[0].parcelas[0]&&opcoes[0].parcelas[0].exercicio)||anoSel;
     await rpc('ferias_pedido_solicitar',{p_token:sessao.token,p_dados:{ano:anoSel,exercicio:exercicioSel,opcoes,observacoes:document.getElementById('mil-obs').value.trim()||null}});
     flash('Escolha enviada! Aguarde a aprovação do comandante do pelotão.',true); milBoot();
   }catch(e){ flash(e.message||'Erro ao enviar.',false); }
