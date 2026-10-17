@@ -747,20 +747,20 @@ async function carregarPct(){
     const reconv=!!r.contar_reconvocados;
     if(!pedidos.length){ try{ pedidos=await rpc('ferias_pedidos_listar',{p_token:sessao.token,p_ano:anoSel})||[]; }catch(e){} }
     const c=cronograma||{}; const limPel=c.limites_pelotao||{}; const limGp=c.limites_grupamento||{};
-    // ocupação DO PERÍODO = militares (não rejeitados) com férias sobrepondo a janela
-    const ov=x=>String(x.ini).slice(0,10)<=String(per.fim).slice(0,10) && String(x.fim).slice(0,10)>=String(per.ini).slice(0,10);
+    // ocupação DO PERÍODO = PICO de militares (não rejeitados) de férias no MESMO dia,
+    // dentro da janela do período. Quem não se sobrepõe no calendário não soma.
     const conta=m=>reconv || !/QOR|QPR/i.test(String((m&&m.pg)||''));
-    const eleg=pedidos.filter(p=>p.situacao!=='REJEITADO' && conta(p.militar) && (p.parcelas||[]).some(ov));
+    const eleg=pedidos.filter(p=>p.situacao!=='REJEITADO' && conta(p.militar) && (p.parcelas||[]).length);
     const mk=(f,total)=>({ferias:f,total:total||0,pct:total?Math.round(1000*f/total)/10:0});
-    document.getElementById('pct-cia').innerHTML = blocoPct('Companhia (3ª Cia)', mk(eleg.length,(r.cia&&r.cia.total)||0), c.pct_max_cia);
-    const porPel={},porGp={}; eleg.forEach(p=>{ porPel[p.pelotao]=(porPel[p.pelotao]||0)+1; porGp[p.grupamento_id]=(porGp[p.grupamento_id]||0)+1; });
+    document.getElementById('pct-cia').innerHTML = blocoPct('Companhia (3ª Cia)', mk(picoConcorrente(eleg,per.ini,per.fim),(r.cia&&r.cia.total)||0), c.pct_max_cia);
+    const subPel={},subGp={}; eleg.forEach(p=>{ (subPel[p.pelotao]=subPel[p.pelotao]||[]).push(p); (subGp[p.grupamento_id]=subGp[p.grupamento_id]||[]).push(p); });
     document.getElementById('pct-pel').innerHTML = (r.pelotoes&&r.pelotoes.length)
-      ? r.pelotoes.map(x=>blocoPct(x.pelotao, mk(porPel[x.pelotao]||0, x.total), limPel[x.pelotao] ?? c.pct_max_pelotao)).join('') : '<div class="empty">Sem dados.</div>';
+      ? r.pelotoes.map(x=>blocoPct(x.pelotao, mk(picoConcorrente(subPel[x.pelotao]||[],per.ini,per.fim), x.total), limPel[x.pelotao] ?? c.pct_max_pelotao)).join('') : '<div class="empty">Sem dados.</div>';
     // só GPs reais (têm "N GP"); comandantes de pelotão ("N PEL/...") e ADM não são
     // grupamento — dariam 1/1=100%; eles seguem contando no pelotão e na Cia.
     const gps=(r.grupamentos||[]).filter(g=>/\d\s*GP/i.test(g.grupamento));
     document.getElementById('pct-gp').innerHTML = gps.length
-      ? gps.map(g=>blocoPct(g.grupamento, mk(porGp[g.grupamento]||0, g.total), limGp[g.grupamento] ?? c.pct_max_grupamento)).join('') : '<div class="empty">Sem dados.</div>';
+      ? gps.map(g=>blocoPct(g.grupamento, mk(picoConcorrente(subGp[g.grupamento]||[],per.ini,per.fim), g.total), limGp[g.grupamento] ?? c.pct_max_grupamento)).join('') : '<div class="empty">Sem dados.</div>';
   }catch(e){ flash(e.message||'Erro.',false); }
 }
 function blocoPct(nome, o, limite){
@@ -1576,6 +1576,24 @@ function apPeriodoSpans(){
     const v=ds.filter(Boolean).map(s=>String(s).slice(0,10)).sort(); return {ordem:p.ordem, ini:v[0], fim:v[v.length-1]}; });
 }
 function apOverlap(aIni,aFim,bIni,bFim){ return String(aIni).slice(0,10)<=String(bFim).slice(0,10) && String(aFim).slice(0,10)>=String(bIni).slice(0,10); }
+// soma n dias a uma data ISO (YYYY-MM-DD) usando componentes locais (sem fuso)
+function _isoAddDia(iso,n){ const a=String(iso).slice(0,10).split('-').map(Number); const dt=new Date(a[0],a[1]-1,a[2]+n); const z=x=>String(x).padStart(2,'0'); return dt.getFullYear()+'-'+z(dt.getMonth()+1)+'-'+z(dt.getDate()); }
+// PICO de militares de férias no MESMO dia, dentro da janela [ini,fim]. Cada pedido
+// = 1 militar; conta presente num dia se alguma parcela cobre o dia. Militares que
+// não se sobrepõem no calendário NÃO somam (ex.: 15 dias + 10 dias em datas distintas
+// contam como 1 — igual a quem tira 25 direto). Mesma lógica da trava de aprovação
+// no servidor (_ferias_dia_estoura).
+function picoConcorrente(lista, ini, fim){
+  ini=String(ini||'').slice(0,10); fim=String(fim||'').slice(0,10);
+  if(!ini||!fim) return 0;
+  const arr=(lista||[]).map(p=>(p.parcelas||[]).map(x=>[String(x.ini).slice(0,10),String(x.fim).slice(0,10)])).filter(ps=>ps.length);
+  let pico=0;
+  for(let dia=ini; dia<=fim; dia=_isoAddDia(dia,1)){
+    let n=0; for(const ps of arr){ if(ps.some(w=>w[0]<=dia && w[1]>=dia)) n++; }
+    if(n>pico){ pico=n; if(pico===arr.length) break; }
+  }
+  return pico;
+}
 let apSit='';
 function apSetSit(s){ apSit=s; document.querySelectorAll('#ap-chips .ct-chip').forEach(b=>b.classList.toggle('active', b.dataset.sit===s)); aprovarRender(); }
 function aprovarRender(){
@@ -1589,8 +1607,9 @@ function aprovarRender(){
   const total= ehCia ? (apTotals['__CIA__']||lista.length||0) : (apTotals[pel]||lista.length||0);
   const limPel= ehCia ? (cronograma&&cronograma.pct_max_cia)
     : ((cronograma&&cronograma.limites_pelotao&&cronograma.limites_pelotao[pel])!=null?cronograma.limites_pelotao[pel]:(cronograma&&cronograma.pct_max_pelotao));
+  const baseP=lista.filter(p=>p.situacao!=='REJEITADO' && (p.parcelas||[]).length);
   const pctHtml=spans.map(s=>{
-    const n=lista.filter(p=>p.situacao!=='REJEITADO' && (p.parcelas||[]).some(x=>apOverlap(x.ini,x.fim,s.ini,s.fim))).length;
+    const n=picoConcorrente(baseP, s.ini, s.fim);  // pico concorrente dia a dia na janela
     const pct=total>0?Math.round(1000*n/total)/10:0; const over=limPel!=null&&pct>Number(limPel);
     return `<div style="margin-bottom:7px;"><div style="display:flex;justify-content:space-between;font-size:11.5px;"><span>Período ${s.ordem} <span class="miut">${fmtBR(s.ini)}–${fmtBR(s.fim)}</span></span><span style="color:${over?'var(--danger)':'var(--text-muted)'};">${n}/${total} · ${pct}%${limPel!=null?` <span class="miut">lim ${limPel}%</span>`:''}</span></div><div class="pctbar${over?' over':''}"><i style="width:${Math.min(100,pct)}%"></i></div></div>`;
   }).join('');
