@@ -39,6 +39,8 @@
     .b-EMITIDO{color:var(--info);background:rgba(66,165,245,.14)}
     .b-EM_ATENDIMENTO{color:#ffb300;background:rgba(255,179,0,.14)}
     .b-CONCLUIDO{color:var(--success);background:var(--success-bg)}
+    .b-NAOATEND{color:#ff6b6b;background:rgba(255,107,107,.14)}
+    .b-PENDREL{color:#ffa726;background:rgba(255,167,38,.14)}
     .empty{text-align:center;color:var(--text-hint);padding:40px;font-size:13px}
     /* drawer */
     .ov{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:9998}
@@ -253,10 +255,25 @@ function _cpResumoHTML(c){
 // Badge exibido: "Em andamento" SÓ quando há demanda PARCIAL. Se o cartão está
 // EM_ATENDIMENTO mas nenhuma demanda ficou "em andamento", não mostra selo:
 // no lugar dele aparece o resumo (✅ finalizadas · ⛔ não atendidas · ⬜ sem resposta).
+// Cartão EMITIDO cuja DATA já passou (data_empenho < hoje): não fica "Emitido"
+// eternamente. Se a equipe lançou o relatório (relatorio_id) mas nenhuma demanda
+// foi atendida → "Não atendido". Se ainda não lançou → "Relatório pendente"
+// (o gestor sabe que falta a equipe lançar o relatório de serviço).
+function _cpVencido(c){
+  if(c.status!=='EMITIDO') return false;
+  const d=String(c.data_empenho||'').slice(0,10); if(!d) return false;
+  const t=new Date(); const hoje=t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');
+  return d<hoje;
+}
 function _cpBadge(c){
   if(c.status==='EM_ATENDIMENTO'){
     if(_cpContagem(c).parc>0) return {cls:'b-EM_ATENDIMENTO', txt:'Em andamento'};
     return {hide:true};
+  }
+  if(_cpVencido(c)){
+    return c.relatorio_id
+      ? {cls:'b-NAOATEND', txt:'⛔ Não atendido'}
+      : {cls:'b-PENDREL', txt:'⏳ Relatório pendente', title:'Pendente de lançamento do relatório de serviço'};
   }
   return {cls:'b-'+c.status, txt:STLAB[c.status]||c.status};
 }
@@ -271,7 +288,7 @@ function render(){
     lista.map(c=>{const nd=(c.demandas||[]).length; const nr=Object.keys(c.respostas||{}).length; const bd=_cpBadge(c); const resumo=_cpResumoHTML(c);
       const stCell = bd.hide
         ? `<div style="font-size:11px;line-height:1.45">${resumo||'—'}</div>`
-        : `<span class="badge ${bd.cls}">${bd.txt}</span>${(c.status==='EM_ATENDIMENTO'&&resumo)?`<div style="font-size:10.5px;margin-top:4px;line-height:1.4">${resumo}</div>`:''}`;
+        : `<span class="badge ${bd.cls}"${bd.title?` title="${_esc(bd.title)}"`:''}>${bd.txt}</span>${(c.status==='EM_ATENDIMENTO'&&resumo)?`<div style="font-size:10.5px;margin-top:4px;line-height:1.4">${resumo}</div>`:''}`;
       return `<tr class="row" onclick='abrirDrawer(${JSON.stringify(c).replace(/'/g,"&#39;")})'>
       <td><b>${_esc(c.numero)}</b></td><td>${_data(c.data_empenho)}</td><td>${_esc(c.turno||'—')}</td>
       <td>${_esc(c.equipe||'—')}</td><td>${_esc(_grafiaGP(c.grupamento_completo||c.grupamento_id).split('/').slice(0,2).join('/'))}</td>
@@ -296,12 +313,13 @@ function abrirDrawer(c){
   CUR=c;
   document.getElementById('d-num').textContent='Nº '+c.numero;
   const b=document.getElementById('d-badge'); const bd=_cpBadge(c);
-  if(bd.hide){ b.style.display='none'; } else { b.style.display=''; b.className='badge '+bd.cls; b.textContent=bd.txt; }
+  if(bd.hide){ b.style.display='none'; } else { b.style.display=''; b.className='badge '+bd.cls; b.textContent=bd.txt; if(bd.title) b.title=bd.title; else b.removeAttribute('title'); }
   const patr=(Array.isArray(c.patrulheiros)?c.patrulheiros:[]).filter(Boolean);
   const dems=mergeDemandas(c);
   const gerir=podeGerir(c);
   document.getElementById('d-body').innerHTML=`
     ${c.status==='EM_ATENDIMENTO'&&_cpResumoHTML(c)?`<div style="border:1px dashed var(--gold);border-radius:8px;padding:9px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.5">${_cpResumoHTML(c)}<div style="color:var(--text-hint);font-size:11px;margin-top:4px">Em andamento → levar para o próximo cartão · Não atendida → redistribuir</div></div>`:''}
+    ${_cpVencido(c)?`<div style="border:1px dashed ${c.relatorio_id?'#ff6b6b':'#ffa726'};border-radius:8px;padding:9px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.5;color:${c.relatorio_id?'#ff6b6b':'#ffa726'}">${c.relatorio_id?'⛔ Relatório lançado, mas nenhuma demanda foi atendida — <b>Não atendido</b>.':'⏳ <b>Pendente de lançamento do relatório de serviço</b> — a equipe ainda não lançou o relatório deste cartão.'}</div>`:''}
     <div class="kv">
       <div class="i"><div class="l">Grupamento</div><div class="v">${_esc(_grafiaGP(c.grupamento_completo||c.grupamento_id))}</div></div>
       <div class="i"><div class="l">Data · Turno</div><div class="v">${_data(c.data_empenho)} · ${_esc(c.turno||'—')}</div></div>
