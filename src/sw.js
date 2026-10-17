@@ -19,5 +19,9 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// Sem handler de 'fetch' que intercepte: o navegador faz o fetch normal (rede).
-// Isso garante conteúdo sempre atualizado e elimina qualquer cache do SW.
+// Handler de 'fetch' VAZIO (não chama respondWith): o navegador faz o fetch
+// normal pela rede — segue SEM cache e sempre atualizado. Ele existe só porque
+// o Chrome exige um service worker COM handler de fetch para disparar o
+// beforeinstallprompt (o convite/botão "Instalar app"). Sem isto, o app fica
+// instalável só pelo menu do navegador, mas o nosso banner não aparece.
+self.addEventListener('fetch', () => {});
