@@ -15,6 +15,8 @@
   <link rel="stylesheet" href="styles/global.css">
   <script src="auth.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
   <script src="pwa.js" defer></script>
   <style>
     body{display:flex;flex-direction:column;min-height:100vh;}
@@ -48,14 +50,16 @@
     .resumo-exec b{color:var(--gold);}
 
     /* ---- KPIs (igual Produtividade: .kpi-card) ---- */
-    .rg-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:22px;}
+    .rg-kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:22px;}
+    @media (max-width:1100px){ .rg-kpis{grid-template-columns:repeat(3,1fr);} }
+    @media (max-width:640px){ .rg-kpis{grid-template-columns:repeat(2,1fr);} }
     .kpi{background:var(--bg-dark);border-radius:8px;padding:12px 14px;border-top:3px solid var(--gold);}
     .kpi.red{border-top-color:var(--danger);}
     .kpi.green{border-top-color:var(--success);}
     .kpi.blue{border-top-color:var(--info);}
-    .kpi-val{font-size:24px;font-weight:800;color:var(--text-white);line-height:1;}
-    .kpi-label{font-size:10.5px;color:var(--text-muted);text-transform:uppercase;font-weight:700;margin-top:5px;}
-    .kpi-sub{font-size:10.5px;color:var(--text-muted);margin-top:4px;}
+    .kpi-val{font-size:23px;font-weight:800;color:var(--text-white);line-height:1;}
+    .kpi-label{font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:700;margin-top:5px;}
+    .kpi-sub{font-size:10px;color:var(--text-muted);margin-top:4px;}
 
     /* ---- Tabela (igual Produtividade: .prod-table) ---- */
     .rg-tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
@@ -846,6 +850,166 @@ function exportarExcel(){
 }
 
 /* ════════════════════════════════════════════════════════════════
+   EXPORTAR PDF (mesmo padrão do Relatório de Produtividade)
+════════════════════════════════════════════════════════════════ */
+async function exportarPDF(){
+  const btn = document.getElementById('btn-print');
+  const txt0 = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ Gerando...';
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const MARGIN = 14, contentW = pageW - MARGIN*2;
+    const OURO=[155,138,92], OURO_CLARO=[212,185,104], ESCURO=[26,16,0];
+    const TXT=[40,32,20], MUTED=[120,110,90], LINHA=[225,220,205];
+    const TOP_TABELA=22, BOTTOM=16;
+
+    const carregarImg_ = (src) => new Promise(res => {
+      const img = new Image();
+      img.onload = () => { try {
+        const c = document.createElement('canvas');
+        c.width = img.naturalWidth; c.height = img.naturalHeight;
+        c.getContext('2d').drawImage(img, 0, 0);
+        res({ dataURL: c.toDataURL('image/png'), w: img.naturalWidth, h: img.naturalHeight });
+      } catch(e){ res(null); } };
+      img.onerror = () => res(null);
+      img.src = src;
+    });
+
+    let y = 0;
+    const novaPagina_ = () => { doc.addPage(); y = TOP_TABELA; };
+    const garantir_ = (h) => { if(y + h > pageH - BOTTOM) novaPagina_(); };
+    const tabela_ = (titulo, head, body, extra) => {
+      if(!body.length) return;
+      garantir_(16);
+      doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.setTextColor(...MUTED);
+      doc.text(titulo.toUpperCase(), MARGIN, y);
+      doc.autoTable(Object.assign({
+        startY: y + 3, head: [head], body, theme: 'striped',
+        styles: { fontSize: 7.5, cellPadding: 2, textColor: TXT, lineColor: LINHA, lineWidth: 0.1, overflow: 'linebreak', halign:'center' },
+        headStyles: { fillColor: ESCURO, textColor: OURO_CLARO, fontStyle: 'bold', fontSize: 7.5, halign:'center' },
+        footStyles: { fillColor: [238,232,214], textColor: TXT, fontStyle: 'bold', fontSize: 7.5, halign:'center' },
+        alternateRowStyles: { fillColor: [247,244,235] },
+        margin: { top: TOP_TABELA, bottom: BOTTOM, left: MARGIN, right: MARGIN },
+      }, extra||{}));
+      y = doc.lastAutoTable.finalY + 8;
+    };
+
+    const { lista, tot } = montarRelatorio();
+    const pct = tot.exige ? Math.round(tot.feitas/tot.exige*100) : 0;
+
+    /* ---- Cabeçalho institucional (2 escudos: CPE / BPM MAmb) ---- */
+    const [imgEsq, imgDir] = await Promise.all([
+      carregarImg_('assets/escudo-cpe.png'),
+      carregarImg_('assets/brasao-bpmmamb.png'),
+    ]);
+    const bh = 18;
+    if(imgEsq) doc.addImage(imgEsq.dataURL, 'PNG', MARGIN, 10, bh*(imgEsq.w/imgEsq.h), bh);
+    if(imgDir){ const w = bh*(imgDir.w/imgDir.h); doc.addImage(imgDir.dataURL, 'PNG', pageW - MARGIN - w, 10, w, bh); }
+    doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(30,24,14);
+    doc.text('Comando de Policiamento Especializado', pageW/2, 13, { align:'center' });
+    doc.text('Batalhão de Polícia Militar de Meio Ambiente', pageW/2, 17.5, { align:'center' });
+    doc.text('3ª Companhia de Polícia Militar de Meio Ambiente', pageW/2, 22, { align:'center' });
+    doc.setFontSize(17); doc.setTextColor(20,16,8);
+    doc.text('RELATÓRIO CONSOLIDADO GDO', pageW/2, 30, { align:'center' });
+    doc.setDrawColor(...OURO); doc.setLineWidth(0.7); doc.line(MARGIN, 33, pageW - MARGIN, 33);
+
+    /* ---- Período / filtros ---- */
+    let hy = 39;
+    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(...OURO);
+    doc.text('PERÍODO: ' + periodoLabel().toUpperCase(), pageW/2, hy, { align:'center' }); hy += 5.5;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...TXT);
+    const pelTxt = pelSel() ? `${pelSel()}º Pelotão` : 'Todos os pelotões';
+    const gpTxt = gpSel() ? (document.getElementById('f-gp').selectedOptions[0]?.text || gpSel()) : 'Todos os grupamentos';
+    doc.text(`Pelotão: ${pelTxt}    |    Grupamento: ${gpTxt}`, pageW/2, hy, { align:'center' }); hy += 4.5;
+    doc.setFontSize(7.5); doc.setTextColor(...MUTED);
+    doc.text(`Gerado em ${new Date().toLocaleString('pt-BR')}`, pageW/2, hy, { align:'center' }); hy += 3;
+    doc.setDrawColor(...LINHA); doc.setLineWidth(0.2); doc.line(MARGIN, hy, pageW - MARGIN, hy);
+    y = hy + 7;
+
+    /* ---- Resumo do período ---- */
+    const resumo = `No período ${periodoLabel()}${pelSel()?` (${pelSel()}º Pelotão)`:''}, a 3ª Cia PM MAmb registrou `
+      + `${tot.viol} crime(s) violento(s) e ${tot.ifz} furto(s) (IF) em zona rural, em ${lista.length} grupamento(s). `
+      + `Das ${tot.exige} visita(s) tranquilizadora(s) devida(s), ${tot.feitas} foram realizada(s) (${pct}%) e ${tot.pend} segue(m) pendente(s). `
+      + `No mesmo período foram ${tot.ops} operação(ões) GDO Rural, sendo ${tot.opsValidas} válida(s).`;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9);
+    const linhasResumo = doc.splitTextToSize(resumo, contentW - 10);
+    const boxH = linhasResumo.length * 4.4 + 12;
+    garantir_(boxH);
+    doc.setFillColor(250,247,238); doc.setDrawColor(...OURO_CLARO); doc.setLineWidth(0.3);
+    doc.roundedRect(MARGIN, y, contentW, boxH, 2, 2, 'FD');
+    doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...OURO);
+    doc.text('RESUMO DO PERÍODO', MARGIN + 5, y + 6);
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...TXT);
+    doc.text(linhasResumo, MARGIN + 5, y + 11);
+    y += boxH + 8;
+
+    /* ---- KPIs (6 cards proporcionais em uma linha) ---- */
+    const cards = [
+      ['Crimes violentos', tot.viol], ['IF', tot.ifz], ['Visitas exigidas', tot.exige],
+      ['Visitas feitas', tot.feitas], ['Visitas pendentes', tot.pend], ['Operações', tot.ops],
+    ];
+    const nC = cards.length, gap = 3, cw = (contentW - (nC-1)*gap) / nC, chh = 16;
+    garantir_(chh + 4);
+    cards.forEach((c, i) => {
+      const x = MARGIN + i*(cw+gap);
+      doc.setFillColor(247,244,235); doc.setDrawColor(...LINHA); doc.setLineWidth(0.1);
+      doc.roundedRect(x, y, cw, chh, 1.5, 1.5, 'FD');
+      doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(30,24,14);
+      doc.text(String(c[1]), x + cw/2, y + 8, { align:'center' });
+      doc.setFont('helvetica','normal'); doc.setFontSize(5.6); doc.setTextColor(...MUTED);
+      doc.text(doc.splitTextToSize(String(c[0]).toUpperCase(), cw - 2), x + cw/2, y + 11.5, { align:'center' });
+    });
+    y += chh + 8;
+
+    /* ---- Consolidado por Grupamento ---- */
+    tabela_('Consolidado por Grupamento',
+      ['Grupamento','IMV','CVPE','CVPA','C.Viol','IF','Exige','Feitas','Pend.','Ops','Válidas'],
+      lista.map(g => [ g.nome + (g.sub?`\n${g.sub}`:''), g.imv, g.cvpe, g.cvpa, g.viol, g.ifz, g.exige, g.feitas, g.pendentes.length, g.ops, g.opsValidas ]),
+      { foot: [['TOTAL', tot.imv, tot.cvpe, tot.cvpa, tot.viol, tot.ifz, tot.exige, tot.feitas, tot.pend, tot.ops, tot.opsValidas]],
+        styles: { fontSize: 7, cellPadding: 1.6, textColor: TXT, lineColor: LINHA, lineWidth: 0.1, overflow: 'linebreak', halign:'center' },
+        columnStyles: { 0: { halign:'left', cellWidth: 38 } } });
+
+    /* ---- Visitas por indicador ---- */
+    const vEsp = ind => ind === 'IF' ? 'Furto (A20028)' : 'Pessoa (A20001)';
+    tabela_('Visitas Tranquilizadoras por Indicador',
+      ['Indicador','Visita esperada','Exige','Feitas','Pendentes','% feito'],
+      ['CVPE','CVPA','IF'].map(k => { const v = tot.vis[k]; return [k, vEsp(k), v.e, v.f, v.p, v.e?Math.round(v.f/v.e*100)+'%':'—']; }),
+      { foot: [['TOTAL','', tot.exige, tot.feitas, tot.pend, tot.exige?Math.round(tot.feitas/tot.exige*100)+'%':'—']],
+        columnStyles: { 0: { halign:'left', fontStyle:'bold', cellWidth: 22 }, 1: { halign:'left' } } });
+
+    /* ---- Pendências detalhadas ---- */
+    const pendRows = [];
+    lista.forEach(g => g.pendentes
+      .slice().sort((a,b)=>{ const oa={CVPE:0,CVPA:1,IF:2}; return (oa[a.indicador]-oa[b.indicador]); })
+      .forEach(p => pendRows.push([ g.nome, p.bo, p.data, p.municipio, p.indicador, vEsp(p.indicador) ])));
+    tabela_('Pendências de Visita Tranquilizadora',
+      ['Grupamento','Nº BO/REDS','Data','Município','Ind.','Visita esperada'],
+      pendRows,
+      { styles: { fontSize: 7, cellPadding: 1.6, textColor: TXT, lineColor: LINHA, lineWidth: 0.1, overflow: 'linebreak', halign:'left' },
+        columnStyles: { 1: { cellWidth: 34 }, 2: { cellWidth: 18, halign:'center' }, 4: { halign:'center' } } });
+
+    /* ---- Rodapé ---- */
+    const totalPg = doc.internal.getNumberOfPages();
+    for(let p=1; p<=totalPg; p++){
+      doc.setPage(p);
+      doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(...MUTED);
+      doc.text('Painel de Gestão Operacional — 3ª Cia PM MAmb', MARGIN, pageH - 8);
+      doc.text(`Página ${p} de ${totalPg}`, pageW - MARGIN, pageH - 8, { align:'right' });
+    }
+
+    doc.save('Relatorio-GDO_' + (mesSel()||'Ano') + '-' + (anoSel()||'') + '.pdf');
+  } catch(e){
+    console.error(e);
+    alert('Erro ao gerar o PDF: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = txt0;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════
    FILTROS + BOOT
 ════════════════════════════════════════════════════════════════ */
 function popularFiltros(){
@@ -931,7 +1095,7 @@ document.getElementById('f-mes').addEventListener('change', render);
 document.getElementById('f-pel').addEventListener('change', () => { atualizarGPs(); render(); });
 document.getElementById('f-gp').addEventListener('change', render);
 document.getElementById('btn-excel').addEventListener('click', exportarExcel);
-document.getElementById('btn-print').addEventListener('click', () => window.print());
+document.getElementById('btn-print').addEventListener('click', exportarPDF);
 document.getElementById('rg-atualizar').addEventListener('click', carregarTudo);
 
 /* Balão (tooltip) de ocorrências — delegação no container */
