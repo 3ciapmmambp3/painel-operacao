@@ -222,7 +222,8 @@
       <b>Crimes violentos</b> = ocorrências de Morte Violenta (IMV), Crimes Violentos contra a Pessoa (CVPE) e contra o Patrimônio (CVPA).<br>
       <b>Visitas tranquilizadoras exigidas</b> = ocorrências que geram a obrigação da visita (CVPE sempre; CVPA/IF quando o complemento de natureza é residência/estabelecimento). Morte violenta (IMV) não gera visita.<br>
       <b>Feitas</b> = existe visita válida (natureza A20001/A20028) a até 200&nbsp;m do crime e em data igual ou posterior, ou vínculo direto POG. <b>Pendentes</b> = sem visita.<br>
-      <b>Operações</b> = operações GDO Rural (Y07) em zona rural no período; <b>válidas</b> = as que cumprem os critérios de tempo/efetivo/viatura/abordagem da GDO.
+      <b>Operações</b> = operações GDO Rural (Y07) em zona rural no período; <b>válidas</b> = as que cumprem os critérios de tempo/efetivo/viatura/abordagem da GDO.<br>
+      💡 Passe o mouse sobre os números de <b>IMV, CVPE, CVPA, Total, IF, Exige e Pend.</b> para ver os nº das ocorrências (BO/REDS).
     </div>
 
   </div>
@@ -557,6 +558,7 @@ function montarRelatorio(){
     if(!porGP[colK]){
       const r = rotuloGP(colK);
       porGP[colK] = { ...r, imv:0, cvpe:0, cvpa:0, viol:0, ifz:0, exige:0, feitas:0, pendentes:[], exigidos:[], ops:0, opsValidas:0,
+        cr:{ IMV:[], CVPE:[], CVPA:[], VIOL:[], IF:[] },
         vis:{ CVPE:{e:0,f:0,p:0}, CVPA:{e:0,f:0,p:0}, IF:{e:0,f:0,p:0} } };
     }
     return porGP[colK];
@@ -566,10 +568,11 @@ function montarRelatorio(){
   dadosCrimes.forEach(c => {
     if(!crimeNoRecorte(c)) return;
     const g = getGP(c.grupamento || '');
-    if(c.indicador==='IMV'){ g.imv++; g.viol++; }
-    else if(c.indicador==='CVPE'){ g.cvpe++; g.viol++; }
-    else if(c.indicador==='CVPA'){ g.cvpa++; g.viol++; }
-    else if(c.indicador==='IF'){ g.ifz++; }
+    const crItem = { bo:c.bo, data:c.data, municipio:c.municipio, indicador:c.indicador, grupamento:(c.grupamento||'—') };
+    if(c.indicador==='IMV'){ g.imv++; g.viol++; g.cr.IMV.push(crItem); g.cr.VIOL.push(crItem); }
+    else if(c.indicador==='CVPE'){ g.cvpe++; g.viol++; g.cr.CVPE.push(crItem); g.cr.VIOL.push(crItem); }
+    else if(c.indicador==='CVPA'){ g.cvpa++; g.viol++; g.cr.CVPA.push(crItem); g.cr.VIOL.push(crItem); }
+    else if(c.indicador==='IF'){ g.ifz++; g.cr.IF.push(crItem); }
     if(exigeVisita(c)){
       g.exige++;
       g.vis[c.indicador].e++;
@@ -711,14 +714,33 @@ function render(){
     const exKey = 'ex'+idx, pdKey = 'pd'+idx;
     if(g.exigidos.length)  window._rgTips[exKey] = tipHtml('Ocorrências que exigem visita — '+g.nome, g.chave, g.exigidos, false);
     if(g.pendentes.length) window._rgTips[pdKey] = tipHtml('Visitas pendentes — '+g.nome, g.chave, g.pendentes, false);
+
+    /* Balões por indicador de crime (Nº da ocorrência) */
+    const crCfg = [
+      { k:'IMV',  titulo:'IMV (morte violenta) — ' },
+      { k:'CVPE', titulo:'CVPE (crime violento contra a pessoa) — ' },
+      { k:'CVPA', titulo:'CVPA (crime violento contra o patrimônio) — ' },
+      { k:'VIOL', titulo:'Crimes violentos (IMV+CVPE+CVPA) — ' },
+      { k:'IF',   titulo:'IF (furto em zona rural) — ' },
+    ];
+    const ck = {};
+    crCfg.forEach(cf => {
+      const arr = g.cr[cf.k];
+      if(arr && arr.length){ const key = cf.k.toLowerCase()+idx; window._rgTips[key] = tipHtml(cf.titulo+g.nome, g.chave, arr, false); ck[cf.k] = key; }
+    });
+    const cell = (k, val, bold) => {
+      const inner = val ? (bold?`<b>${val}</b>`:val) : '<span class="pill-zero">0</span>';
+      return `<td${ck[k]?` class="tip-cell" data-tipkey="${ck[k]}"`:''}>${inner}</td>`;
+    };
+
     html += `
       <tr>
         <td class="esq"><div class="gp-nome">${g.nome}</div>${g.sub?`<div class="gp-sub">${g.sub}</div>`:''}</td>
-        <td>${g.imv||'<span class="pill-zero">0</span>'}</td>
-        <td>${g.cvpe||'<span class="pill-zero">0</span>'}</td>
-        <td>${g.cvpa||'<span class="pill-zero">0</span>'}</td>
-        <td><b>${g.viol}</b></td>
-        <td>${g.ifz||'<span class="pill-zero">0</span>'}</td>
+        ${cell('IMV', g.imv)}
+        ${cell('CVPE', g.cvpe)}
+        ${cell('CVPA', g.cvpa)}
+        ${cell('VIOL', g.viol, true)}
+        ${cell('IF', g.ifz)}
         <td${g.exigidos.length?` class="tip-cell" data-tipkey="${exKey}"`:''}>${g.exige||'<span class="pill-zero">0</span>'}</td>
         <td>${pill(g.feitas,true)}</td>
         <td${g.pendentes.length?` class="tip-cell" data-tipkey="${pdKey}"`:''}>${pill(g.pendentes.length,false)}</td>
