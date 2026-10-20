@@ -74,6 +74,19 @@
 
     .sec-titulo{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:800;color:var(--gold);margin:24px 0 12px;}
 
+    /* Cabeçalhos com rowspan (Grupamento, IF) alinhados à mesma linha dos demais */
+    table.rg-tbl thead th[rowspan]{vertical-align:bottom;}
+
+    /* ---- Balão (tooltip) de ocorrências ---- */
+    .tip-cell{cursor:help;}
+    #rg-tip{position:fixed;z-index:9999;pointer-events:none;display:none;max-width:360px;background:var(--bg-card);border:1px solid var(--gold-border,rgba(155,138,92,.5));border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.5);padding:10px 12px;font-size:11.5px;color:var(--text-white);}
+    #rg-tip .tt-title{color:var(--gold);font-weight:800;font-size:11px;margin-bottom:5px;}
+    #rg-tip .tt-gp{color:var(--text-hint);margin-bottom:7px;font-size:10px;}
+    #rg-tip table{width:100%;border-collapse:collapse;}
+    #rg-tip td{padding:2px 6px;white-space:nowrap;border:none;color:var(--text-muted);}
+    #rg-tip td.bo{font-family:ui-monospace,monospace;color:var(--text-white);}
+    #rg-tip .tt-more{color:var(--text-hint);margin-top:6px;font-style:italic;}
+
     /* ---- Pendências por GP ---- */
     .pend-gp{border:1px solid var(--border);border-radius:8px;margin-bottom:10px;overflow:hidden;}
     .pend-gp-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:11px 14px;background:var(--bg-input);cursor:pointer;}
@@ -102,18 +115,30 @@
     /* ---- Impressão / PDF ---- */
     .print-head{display:none;}
     @media print{
-      .topnav,.header,.rg-filtros,.rg-acoes,#rg-atualizar,.print-hide{display:none !important;}
-      body{background:#fff;color:#000;}
+      @page{margin:12mm;}
+      html,body{background:#fff !important;color:#111;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+      .topnav,.header,.rg-filtros,.print-hide,#rg-tip{display:none !important;}
+      .page-layout,.rd-conteudo{display:block;}
       .rg-card{margin:0;border:none;padding:0;background:#fff;}
-      .print-head{display:block;text-align:center;margin-bottom:14px;border-bottom:2px solid #000;padding-bottom:10px;}
-      .print-head h1{font-size:16px;margin:0;color:#000;}
-      .print-head p{font-size:11px;margin:3px 0 0;color:#333;}
-      .kpi{border:1px solid #999;background:#fff;}
-      .kpi-val,.kpi-label,.kpi-sub,.gp-nome,table.rg-tbl td{color:#000 !important;}
-      table.rg-tbl th{background:#eee;color:#000;}
-      .pend-gp-body{display:block !important;}
-      .pend-gp-head{background:#eee;color:#000;}
+      .print-head{display:block;text-align:center;margin-bottom:16px;border-bottom:2px solid var(--gold);padding-bottom:10px;}
+      .print-head .ph-shields{display:flex;justify-content:center;align-items:center;gap:14px;margin-bottom:8px;}
+      .print-head .ph-shields img{height:46px;}
+      .print-head h1{font-size:15px;margin:0;color:#111;letter-spacing:.3px;}
+      .print-head p{font-size:11px;margin:4px 0 0;color:#555;}
+      .resumo-exec{color:#111;}
+      .resumo-exec b{color:#7a6a3a;}
+      .kpi{background:#faf7ef;}
+      .kpi-val{color:#111;}
+      .kpi-label,.kpi-sub{color:#555;}
+      .sec-titulo{color:#7a6a3a;}
+      table.rg-tbl th{color:#555;}
+      table.rg-tbl td,.gp-nome{color:#111;}
+      .gp-sub{color:#777;}
+      .pend-gp,.pend-gp-body{display:block !important;}
+      .pend-gp-head{background:#faf7ef;color:#111;}
+      .pend-gp-body td{color:#111;}
       .rg-tbl-wrap{overflow:visible;}
+      .kpi,.pill,.resumo-exec,.pend-gp-head{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
       a[href]:after{content:'';}
     }
   </style>
@@ -147,6 +172,11 @@
   <div class="rg-card">
 
     <div class="print-head">
+      <div class="ph-shields">
+        <img src="assets/escudo-cpe.png" alt="CPE" onerror="this.style.display='none'">
+        <img src="assets/escudo-pmmg.png" alt="PMMG" onerror="this.style.display='none'">
+        <img src="assets/brasao-bpmmamb.png" alt="BPM MAMB" onerror="this.style.display='none'">
+      </div>
       <h1>RELATÓRIO CONSOLIDADO GDO — 3ª Cia PM MAmb</h1>
       <p id="print-periodo">Período: —</p>
     </div>
@@ -195,6 +225,8 @@
 
   </div>
 </div>
+
+<div id="rg-tip"></div>
 
 <script>
 /* ════════════════════════════════════════════════════════════════
@@ -519,7 +551,7 @@ function montarRelatorio(){
   const getGP = colK => {
     if(!porGP[colK]){
       const r = rotuloGP(colK);
-      porGP[colK] = { ...r, imv:0, cvpe:0, cvpa:0, viol:0, ifz:0, exige:0, feitas:0, pendentes:[], ops:0, opsValidas:0,
+      porGP[colK] = { ...r, imv:0, cvpe:0, cvpa:0, viol:0, ifz:0, exige:0, feitas:0, pendentes:[], exigidos:[], ops:0, opsValidas:0,
         vis:{ CVPE:{e:0,f:0,p:0}, CVPA:{e:0,f:0,p:0}, IF:{e:0,f:0,p:0} } };
     }
     return porGP[colK];
@@ -537,8 +569,10 @@ function montarRelatorio(){
       g.exige++;
       g.vis[c.indicador].e++;
       const vis = visitasDoCrime(c);
-      if(vis.length){ g.feitas++; g.vis[c.indicador].f++; }
-      else { g.pendentes.push({ bo:c.bo, data:c.data, municipio:c.municipio, indicador:c.indicador }); g.vis[c.indicador].p++; }
+      const item = { bo:c.bo, data:c.data, municipio:c.municipio, indicador:c.indicador, grupamento:(c.grupamento||'—') };
+      g.exigidos.push(item);
+      if(vis.length){ g.feitas++; g.vis[c.indicador].f++; item.feita=true; }
+      else { item.feita=false; g.pendentes.push(item); g.vis[c.indicador].p++; }
     }
   });
 
@@ -577,10 +611,28 @@ function periodoLabel(){
   return (m ? (m.charAt(0)+m.slice(1).toLowerCase()) : 'Ano inteiro') + ' / ' + a;
 }
 
+/* Conteúdo do balão (tooltip) com as ocorrências */
+function tipHtml(titulo, gpCompleto, itens, comStatus){
+  const cap = 15;
+  const rows = itens.slice(0, cap).map(p => `<tr>
+      <td class="bo">${p.bo||'—'}</td>
+      <td>${p.data||'—'}</td>
+      <td>${p.municipio||'—'}</td>
+      <td>${p.indicador}</td>
+      ${comStatus ? `<td>${p.feita?'✓':'✗ pend.'}</td>` : ''}
+    </tr>`).join('');
+  const extra = itens.length - cap;
+  return `<div class="tt-title">${titulo}</div>`
+    + `<div class="tt-gp">Grupamento resp.: ${gpCompleto}</div>`
+    + `<table>${rows}</table>`
+    + (extra > 0 ? `<div class="tt-more">+${extra} ocorrência(s)… abra "Pendências" para ver todas.</div>` : '');
+}
+
 function render(){
   const { lista, tot } = montarRelatorio();
   document.getElementById('print-periodo').textContent = 'Período: ' + periodoLabel();
   const corpo = document.getElementById('rg-corpo');
+  window._rgTips = {};
 
   if(!lista.length){
     corpo.innerHTML = '<div class="rg-empty">Nenhum dado para o período selecionado.</div>';
@@ -650,7 +702,10 @@ function render(){
         </thead>
         <tbody>`;
 
-  lista.forEach(g => {
+  lista.forEach((g, idx) => {
+    const exKey = 'ex'+idx, pdKey = 'pd'+idx;
+    if(g.exigidos.length)  window._rgTips[exKey] = tipHtml('Ocorrências que exigem visita — '+g.nome, g.chave, g.exigidos, true);
+    if(g.pendentes.length) window._rgTips[pdKey] = tipHtml('Visitas pendentes — '+g.nome, g.chave, g.pendentes, false);
     html += `
       <tr>
         <td class="esq"><div class="gp-nome">${g.nome}</div>${g.sub?`<div class="gp-sub">${g.sub}</div>`:''}</td>
@@ -659,9 +714,9 @@ function render(){
         <td>${g.cvpa||'<span class="pill-zero">0</span>'}</td>
         <td><b>${g.viol}</b></td>
         <td>${g.ifz||'<span class="pill-zero">0</span>'}</td>
-        <td>${g.exige||'<span class="pill-zero">0</span>'}</td>
+        <td${g.exigidos.length?` class="tip-cell" data-tipkey="${exKey}"`:''}>${g.exige||'<span class="pill-zero">0</span>'}</td>
         <td>${pill(g.feitas,true)}</td>
-        <td>${pill(g.pendentes.length,false)}</td>
+        <td${g.pendentes.length?` class="tip-cell" data-tipkey="${pdKey}"`:''}>${pill(g.pendentes.length,false)}</td>
         <td>${g.ops||'<span class="pill-zero">0</span>'}</td>
         <td>${g.opsValidas||'<span class="pill-zero">0</span>'}</td>
       </tr>`;
@@ -865,6 +920,32 @@ document.getElementById('f-gp').addEventListener('change', render);
 document.getElementById('btn-excel').addEventListener('click', exportarExcel);
 document.getElementById('btn-print').addEventListener('click', () => window.print());
 document.getElementById('rg-atualizar').addEventListener('click', carregarTudo);
+
+/* Balão (tooltip) de ocorrências — delegação no container */
+(function(){
+  const tip = document.getElementById('rg-tip');
+  const corpo = document.getElementById('rg-corpo');
+  function pos(e){
+    const pad = 14, r = tip.getBoundingClientRect();
+    let x = e.clientX + pad, y = e.clientY + pad;
+    if(x + r.width  > window.innerWidth)  x = e.clientX - r.width  - pad;
+    if(y + r.height > window.innerHeight) y = e.clientY - r.height - pad;
+    tip.style.left = Math.max(4, x) + 'px';
+    tip.style.top  = Math.max(4, y) + 'px';
+  }
+  corpo.addEventListener('mouseover', e => {
+    const cell = e.target.closest('[data-tipkey]');
+    if(cell && window._rgTips && window._rgTips[cell.dataset.tipkey]){
+      tip.innerHTML = window._rgTips[cell.dataset.tipkey];
+      tip.style.display = 'block';
+      pos(e);
+    } else {
+      tip.style.display = 'none';
+    }
+  });
+  corpo.addEventListener('mousemove', e => { if(tip.style.display === 'block') pos(e); });
+  corpo.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+})();
 
 carregarTudo();
 </script>
