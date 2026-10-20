@@ -884,20 +884,32 @@ function atualizarGPs(){
     arr.map(([k,lbl])=>`<option value="${k.replace(/"/g,'&quot;')}">${lbl}</option>`).join('');
   sel.value = [...sel.options].some(o=>o.value===atual) ? atual : '';
 }
+let _mesJaInit = false;  /* false até a 1ª montagem — garante abrir no mês atual */
 function atualizarMeses(){
   const a = anoSel();
-  const mesesPresentes = new Set(dadosCrimes.filter(c => (c.ano||anoDaData(c.data))===a).map(c=>c.mes).filter(Boolean));
+  const mesAtual = MESES[new Date().getMonth()];
+  const anoCorrente = String(new Date().getFullYear());
   const selMes = document.getElementById('f-mes');
-  const atual = selMes.value;
+  /* só preserva a escolha depois que o seletor já foi inicializado uma vez
+     (no 1º carregamento o valor é vazio e não deve ser confundido com "Ano inteiro") */
+  const anterior = _mesJaInit ? selMes.value : null;
+
+  const presentes = MESES.filter(m => dadosCrimes.some(c => (c.ano||anoDaData(c.data))===a && c.mes===m));
+  /* no ano corrente, garante o mês atual como opção mesmo sem dados ainda */
+  let opcoes = presentes.slice();
+  if(a === anoCorrente && !opcoes.includes(mesAtual)) opcoes = MESES.filter(m => opcoes.includes(m) || m===mesAtual);
+
   selMes.innerHTML = '<option value="">Ano inteiro</option>' +
-    MESES.filter(m=>mesesPresentes.has(m)).map(m=>`<option value="${m}">${m.charAt(0)+m.slice(1).toLowerCase()}</option>`).join('');
-  /* mantém seleção, senão default = mês mais recente presente */
-  if([...selMes.options].some(o=>o.value===atual)) selMes.value = atual;
-  else {
-    const presentesOrd = MESES.filter(m=>mesesPresentes.has(m));
-    const mesAtual = MESES[new Date().getMonth()];
-    selMes.value = mesesPresentes.has(mesAtual) ? mesAtual : (presentesOrd.length ? presentesOrd[presentesOrd.length-1] : '');
-  }
+    opcoes.map(m=>`<option value="${m}">${m.charAt(0)+m.slice(1).toLowerCase()}</option>`).join('');
+
+  /* 1) mantém a escolha do usuário se ainda existir; 2) senão abre no mês atual;
+     3) senão, mês mais recente com dados */
+  let alvo;
+  if(anterior !== null && [...selMes.options].some(o=>o.value===anterior)) alvo = anterior;
+  else if(opcoes.includes(mesAtual)) alvo = mesAtual;
+  else alvo = opcoes.length ? opcoes[opcoes.length-1] : '';
+  selMes.value = alvo;
+  _mesJaInit = true;
 }
 
 async function carregarTudo(){
