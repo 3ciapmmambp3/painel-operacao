@@ -135,7 +135,6 @@
 </header>
 
 <script src="topnav.js" data-ativo="p3"></script>
-<script src="secnav.js" data-secao="p3"></script>
 
 <div class="page-layout">
   <div class="rd-conteudo">
@@ -164,6 +163,10 @@
       <div class="rg-fg">
         <label>Pelotão</label>
         <select id="f-pel"><option value="">Todos os pelotões</option></select>
+      </div>
+      <div class="rg-fg">
+        <label>Grupamento</label>
+        <select id="f-gp"><option value="">Todos os grupamentos</option></select>
       </div>
       <div class="rg-acoes">
         <button class="btn-outline" id="btn-excel">⬇ Excel</button>
@@ -450,20 +453,23 @@ async function carregarOps(){
 function anoSel(){ return document.getElementById('f-ano').value; }
 function mesSel(){ return document.getElementById('f-mes').value; }
 function pelSel(){ return document.getElementById('f-pel').value; }
+function gpSel(){ return document.getElementById('f-gp').value; }
 
-/* Crime passa no recorte de período/pelotão */
+/* Crime passa no recorte de período/pelotão/grupamento */
 function crimeNoRecorte(c){
-  const a = anoSel(), m = mesSel(), p = pelSel();
+  const a = anoSel(), m = mesSel(), p = pelSel(), g = gpSel();
   if(a && (c.ano||anoDaData(c.data)) !== a) return false;
   if(m && c.mes !== m) return false;
   if(p && pelDoColk(c.grupamento) !== parseInt(p)) return false;
+  if(g && (c.grupamento||'') !== g) return false;
   return true;
 }
 function opNoRecorte(o){
-  const a = anoSel(), m = mesSel(), p = pelSel();
+  const a = anoSel(), m = mesSel(), p = pelSel(), g = gpSel();
   if(a && anoDaData(o.data) !== a) return false;
   if(m && mesDaData(o.data) !== m) return false;
   if(p && pelDoColk(o.grupamento) !== parseInt(p)) return false;
+  if(g && (o.grupamento||'') !== g) return false;
   return true;
 }
 
@@ -509,7 +515,7 @@ function montarRelatorio(){
   const getGP = colK => {
     if(!porGP[colK]){
       const r = rotuloGP(colK);
-      porGP[colK] = { ...r, imv:0, cvpe:0, cvpa:0, viol:0, exige:0, feitas:0, pendentes:[], ops:0, opsValidas:0 };
+      porGP[colK] = { ...r, imv:0, cvpe:0, cvpa:0, viol:0, ifz:0, exige:0, feitas:0, pendentes:[], ops:0, opsValidas:0 };
     }
     return porGP[colK];
   };
@@ -521,6 +527,7 @@ function montarRelatorio(){
     if(c.indicador==='IMV'){ g.imv++; g.viol++; }
     else if(c.indicador==='CVPE'){ g.cvpe++; g.viol++; }
     else if(c.indicador==='CVPA'){ g.cvpa++; g.viol++; }
+    else if(c.indicador==='IF'){ g.ifz++; }
     if(exigeVisita(c)){
       g.exige++;
       const vis = visitasDoCrime(c);
@@ -541,10 +548,10 @@ function montarRelatorio(){
     b.pendentes.length - a.pendentes.length || b.viol - a.viol || a.nome.localeCompare(b.nome)
   );
   const tot = lista.reduce((t,g)=>({
-    imv:t.imv+g.imv, cvpe:t.cvpe+g.cvpe, cvpa:t.cvpa+g.cvpa, viol:t.viol+g.viol,
+    imv:t.imv+g.imv, cvpe:t.cvpe+g.cvpe, cvpa:t.cvpa+g.cvpa, viol:t.viol+g.viol, ifz:t.ifz+g.ifz,
     exige:t.exige+g.exige, feitas:t.feitas+g.feitas, pend:t.pend+g.pendentes.length,
     ops:t.ops+g.ops, opsValidas:t.opsValidas+g.opsValidas,
-  }), {imv:0,cvpe:0,cvpa:0,viol:0,exige:0,feitas:0,pend:0,ops:0,opsValidas:0});
+  }), {imv:0,cvpe:0,cvpa:0,viol:0,ifz:0,exige:0,feitas:0,pend:0,ops:0,opsValidas:0});
   return { lista, tot };
 }
 
@@ -581,6 +588,11 @@ function render(){
         <div class="kpi-sub">IMV ${tot.imv} · CVPE ${tot.cvpe} · CVPA ${tot.cvpa}</div>
       </div>
       <div class="kpi">
+        <div class="kpi-label">Furtos (IF)</div>
+        <div class="kpi-val">${tot.ifz}</div>
+        <div class="kpi-sub">infração/furto em zona rural</div>
+      </div>
+      <div class="kpi">
         <div class="kpi-label">Visitas exigidas</div>
         <div class="kpi-val">${tot.exige}</div>
         <div class="kpi-sub">ocorrências que pedem visita</div>
@@ -609,12 +621,13 @@ function render(){
           <tr>
             <th class="esq" rowspan="2">Grupamento</th>
             <th colspan="4">Crimes violentos</th>
+            <th rowspan="2" title="Infração/furto em zona rural (ifzr)">Furtos<br>(IF)</th>
             <th colspan="3">Visitas tranquilizadoras</th>
             <th colspan="2">Operações</th>
           </tr>
           <tr>
             <th>IMV</th><th>CVPE</th><th>CVPA</th><th>Total</th>
-            <th>Exige</th><th>Feitas</th><th>Pend.</th>
+            <th title="Ocorrências que geram a obrigação da visita tranquilizadora (CVPE sempre; CVPA/IF quando o complemento é residência/estabelecimento). Não é 'quem exige', é 'quantas visitas são devidas'.">Exige</th><th>Feitas</th><th>Pend.</th>
             <th>Realiz.</th><th>Válidas</th>
           </tr>
         </thead>
@@ -628,6 +641,7 @@ function render(){
         <td>${g.cvpe||'<span class="pill-zero">0</span>'}</td>
         <td>${g.cvpa||'<span class="pill-zero">0</span>'}</td>
         <td><b>${g.viol}</b></td>
+        <td>${g.ifz||'<span class="pill-zero">0</span>'}</td>
         <td>${g.exige||'<span class="pill-zero">0</span>'}</td>
         <td>${pill(g.feitas,true)}</td>
         <td>${pill(g.pendentes.length,false)}</td>
@@ -642,6 +656,7 @@ function render(){
           <tr>
             <td class="esq">TOTAL</td>
             <td>${tot.imv}</td><td>${tot.cvpe}</td><td>${tot.cvpa}</td><td>${tot.viol}</td>
+            <td>${tot.ifz}</td>
             <td>${tot.exige}</td><td>${tot.feitas}</td><td>${tot.pend}</td>
             <td>${tot.ops}</td><td>${tot.opsValidas}</td>
           </tr>
@@ -695,15 +710,15 @@ function exportarExcel(){
     ['RELATÓRIO CONSOLIDADO GDO — 3ª Cia PM MAmb'],
     ['Período: ' + periodoLabel()],
     [],
-    ['Grupamento','GP','Pelotão','IMV','CVPE','CVPA','Crimes violentos','Visitas exige','Visitas feitas','Visitas pendentes','Operações realizadas','Operações válidas GDO'],
+    ['Grupamento','GP','Pelotão','IMV','CVPE','CVPA','Crimes violentos','Furtos (IF)','Visitas exige','Visitas feitas','Visitas pendentes','Operações realizadas','Operações válidas GDO'],
   ];
   lista.forEach(g => aoa.push([
     g.nome, (gpNumDoColk(g.chave)!==99?gpNumDoColk(g.chave):''), (pelDoColk(g.chave)!==99?pelDoColk(g.chave):''),
-    g.imv, g.cvpe, g.cvpa, g.viol, g.exige, g.feitas, g.pendentes.length, g.ops, g.opsValidas,
+    g.imv, g.cvpe, g.cvpa, g.viol, g.ifz, g.exige, g.feitas, g.pendentes.length, g.ops, g.opsValidas,
   ]));
-  aoa.push(['TOTAL','','',tot.imv,tot.cvpe,tot.cvpa,tot.viol,tot.exige,tot.feitas,tot.pend,tot.ops,tot.opsValidas]);
+  aoa.push(['TOTAL','','',tot.imv,tot.cvpe,tot.cvpa,tot.viol,tot.ifz,tot.exige,tot.feitas,tot.pend,tot.ops,tot.opsValidas]);
   const ws1 = XLSX.utils.aoa_to_sheet(aoa);
-  ws1['!cols'] = [{wch:30},{wch:5},{wch:7},{wch:6},{wch:6},{wch:6},{wch:15},{wch:12},{wch:12},{wch:15},{wch:18},{wch:18}];
+  ws1['!cols'] = [{wch:30},{wch:5},{wch:7},{wch:6},{wch:6},{wch:6},{wch:15},{wch:11},{wch:12},{wch:12},{wch:15},{wch:18},{wch:18}];
   XLSX.utils.book_append_sheet(wb, ws1, 'Por Grupamento');
 
   const pend = [['Grupamento','Nº BO/REDS','Data','Município','Indicador']];
@@ -735,6 +750,26 @@ function popularFiltros(){
   const pels = [...new Set(dadosCrimes.map(c => pelDoColk(c.grupamento)).filter(n=>n && n!==99))].sort((a,b)=>a-b);
   document.getElementById('f-pel').innerHTML = '<option value="">Todos os pelotões</option>' +
     pels.map(p=>`<option value="${p}">${p}º Pelotão</option>`).join('');
+
+  atualizarGPs();
+}
+/* Lista de grupamentos (afunila pelo pelotão selecionado) */
+function atualizarGPs(){
+  const p = pelSel();
+  const mapa = new Map(); /* colK → rótulo */
+  const add = colK => {
+    if(!colK) return;
+    if(p && pelDoColk(colK) !== parseInt(p)) return;
+    if(!mapa.has(colK)){ const r = rotuloGP(colK); mapa.set(colK, r.nome + (r.sub?` (${r.sub})`:'')); }
+  };
+  dadosCrimes.forEach(c => add(c.grupamento));
+  dadosOps.forEach(o => add(o.grupamento));
+  const sel = document.getElementById('f-gp');
+  const atual = sel.value;
+  const arr = [...mapa.entries()].sort((a,b)=>a[1].localeCompare(b[1],'pt-BR'));
+  sel.innerHTML = '<option value="">Todos os grupamentos</option>' +
+    arr.map(([k,lbl])=>`<option value="${k.replace(/"/g,'&quot;')}">${lbl}</option>`).join('');
+  sel.value = [...sel.options].some(o=>o.value===atual) ? atual : '';
 }
 function atualizarMeses(){
   const a = anoSel();
@@ -767,7 +802,8 @@ async function carregarTudo(){
 
 document.getElementById('f-ano').addEventListener('change', () => { atualizarMeses(); render(); });
 document.getElementById('f-mes').addEventListener('change', render);
-document.getElementById('f-pel').addEventListener('change', render);
+document.getElementById('f-pel').addEventListener('change', () => { atualizarGPs(); render(); });
+document.getElementById('f-gp').addEventListener('change', render);
 document.getElementById('btn-excel').addEventListener('click', exportarExcel);
 document.getElementById('btn-print').addEventListener('click', () => window.print());
 document.getElementById('rg-atualizar').addEventListener('click', carregarTudo);
