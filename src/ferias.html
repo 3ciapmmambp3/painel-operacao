@@ -1618,10 +1618,15 @@ async function aprovarBoot(){
 }
 
 // ── Visão "quem já escolheu / quem falta escolher" (escolha do próprio militar) ──
-let ROSTER_ESC=[];
+let ROSTER_ESC=[], _rosterAno=null;
 async function garantirRosterEscopo(){
-  if(ROSTER_ESC.length) return ROSTER_ESC;
-  try{ ROSTER_ESC = await rpc('militares_roster_escopo',{p_token:sessao.token}) || []; }catch(e){ ROSTER_ESC=[]; }
+  if(ROSTER_ESC.length && _rosterAno===anoSel) return ROSTER_ESC;   // recarrega ao trocar o ano
+  // efetivo com recorte de escopo correto (pelotão via grupos) — db/150
+  try{ ROSTER_ESC = await rpc('ferias_efetivo_escopo',{p_token:sessao.token,p_ano:anoSel}) || []; _rosterAno=anoSel; }
+  catch(e){
+    // fallback enquanto a RPC nova (db/150) não estiver aplicada
+    try{ ROSTER_ESC = await rpc('militares_roster_escopo',{p_token:sessao.token}) || []; _rosterAno=anoSel; }catch(e2){ ROSTER_ESC=[]; }
+  }
   return ROSTER_ESC;
 }
 const _soDig = s => String(s||'').replace(/\D/g,'');
@@ -1737,9 +1742,13 @@ function aprovarRender(){
   const tb=document.getElementById('ap-tbody');
   // chip "Pendentes de escolha": lista quem (do efetivo do escopo) ainda não tem férias no ano
   if(apSit==='__FALTAM__'){
-    if(!_escFaltam.length){ tb.innerHTML='<tr><td colspan="6"><div class="empty">'+(_escTot?'🎉 Todo o efetivo já tem férias lançadas no ano.':'Carregando efetivo…')+'</div></td></tr>'; return; }
-    const sorted=_escFaltam.slice().sort((a,b)=>String(a.grupamento_id||'').localeCompare(String(b.grupamento_id||''))||_escNome(a).localeCompare(_escNome(b)));
-    tb.innerHTML='<tr><td colspan="6" class="miut" style="background:var(--bg-dark);">Militares do seu efetivo que ainda NÃO têm férias anuais lançadas em '+anoSel+' (visão de toda a sua área, não filtra por pelotão).</td></tr>'
+    // respeita o seletor de pelotão quando o efetivo traz o pelotão (db/150)
+    let faltamShow=_escFaltam;
+    if(pel && pel!=='__CIA__' && _escFaltam.some(m=>m.pelotao!=null))
+      faltamShow=_escFaltam.filter(m=>String(m.pelotao||'')===String(pel));
+    if(!faltamShow.length){ tb.innerHTML='<tr><td colspan="6"><div class="empty">'+(_escTot?'🎉 Ninguém pendente de escolha'+(pel&&pel!=='__CIA__'?' neste pelotão.':' no seu efetivo.'):'Carregando efetivo…')+'</div></td></tr>'; return; }
+    const sorted=faltamShow.slice().sort((a,b)=>String(a.grupamento_id||'').localeCompare(String(b.grupamento_id||''))||_escNome(a).localeCompare(_escNome(b)));
+    tb.innerHTML='<tr><td colspan="6" class="miut" style="background:var(--bg-dark);">Militares do seu efetivo que ainda NÃO têm férias anuais lançadas em '+anoSel+(pel&&pel!=='__CIA__'?' — pelotão '+esc(pel):' (toda a sua área)')+'.</td></tr>'
       + sorted.map((m,i)=>`<tr>
         <td class="miut">${i+1}</td>
         <td style="min-width:220px;"><b>${_escNome(m)}</b><div class="miut">${esc(m.matricula||'')}</div></td>
