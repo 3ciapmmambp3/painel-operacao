@@ -86,6 +86,7 @@
       {ic:'🌿', t:'Operações GDO Rural', h:'painel.html?tab=gdo-rural'},
       {ic:'📊', t:'Produtividade', h:'produtividade.html'},
       {ic:'🔴', t:'Análise Criminal', h:'analise-criminal.html'},
+      {ic:'📑', t:'Relatório Consolidado GDO', h:'relatorio-gdo.html'},
       {ic:'🤝', t:'Visitas Tranquilizadoras', h:'analise-criminal.html?sub=visitas'},
       {ic:'🏘️', t:'Reunião Comunitária Rural', h:'analise-criminal.html?sub=rcr'},
       // "Gestão e Cadastros" — no hub-p3 só aparecem p/ Aux P3 ou Admin Geral.

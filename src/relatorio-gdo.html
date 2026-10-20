@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<script>
+(function(){
+  var saved;
+  try{ saved=localStorage.getItem('poe_theme'); }catch(e){}
+  if(!saved) saved=window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+})();
+</script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Relatório Consolidado GDO — 3ª Cia PM MAmb</title>
+  <link rel="stylesheet" href="styles/global.css">
+  <script src="auth.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    body{display:flex;flex-direction:column;min-height:100vh;}
+
+    /* ---- Barra de navegação (topo) ---- */
+    .topnav{display:flex;align-items:center;gap:2px;background:var(--bg-dark);border-bottom:1px solid var(--border);padding:0 16px;position:relative;z-index:100;flex-wrap:wrap;overflow:visible;}
+    .topnav-item{position:relative;}
+    .topnav-link{display:flex;align-items:center;gap:5px;padding:11px 9px;color:var(--text-muted);font-size:11px;font-weight:700;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;text-decoration:none;}
+    .topnav-link:hover{color:var(--text-white);}
+    .topnav-link.active{color:var(--gold);border-bottom-color:var(--gold);}
+    .topnav-link .chev{font-size:9px;opacity:.7;}
+    .topnav-dropdown{display:none;position:absolute;top:100%;left:0;background:var(--bg-card);border:1px solid var(--border);border-radius:0 0 8px 8px;min-width:190px;box-shadow:0 12px 24px rgba(0,0,0,.4);padding:6px;}
+    .topnav-dropdown.open{display:block;}
+    .topnav-dropdown a{display:block;padding:9px 12px;color:var(--text-white);font-size:12.5px;border-radius:6px;text-decoration:none;}
+    .topnav-dropdown a:hover{background:var(--bg-hover);color:var(--gold);}
+
+    .page-layout{display:flex;flex:1;}
+    .rd-conteudo{flex:1;min-width:0;}
+
+    .rg-card{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:18px 20px;margin:20px;}
+
+    /* ---- Filtros ---- */
+    .rg-filtros{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:6px;}
+    .rg-fg{display:flex;flex-direction:column;gap:4px;}
+    .rg-fg label{font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:700;}
+    .rg-fg select{background:var(--bg-input);border:1px solid var(--border);color:var(--text-white);border-radius:6px;padding:8px 10px;font-size:13px;min-width:150px;}
+    .rg-acoes{display:flex;gap:8px;margin-left:auto;}
+
+    /* ---- KPIs ---- */
+    .rg-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:18px 0;}
+    .kpi{background:var(--bg-input);border:1px solid var(--border);border-radius:8px;padding:14px 16px;position:relative;overflow:hidden;}
+    .kpi::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--gold);}
+    .kpi.red::before{background:var(--danger);}
+    .kpi.green::before{background:var(--success);}
+    .kpi.blue::before{background:var(--info);}
+    .kpi-label{font-size:10.5px;color:var(--text-muted);text-transform:uppercase;font-weight:700;letter-spacing:.4px;}
+    .kpi-val{font-size:30px;font-weight:800;color:var(--text-white);line-height:1.1;margin-top:4px;}
+    .kpi-sub{font-size:11px;color:var(--text-muted);margin-top:3px;}
+
+    /* ---- Tabela ---- */
+    .rg-tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:8px;}
+    table.rg-tbl{width:100%;border-collapse:collapse;font-size:12.5px;min-width:760px;}
+    table.rg-tbl th{background:var(--bg-dark);color:var(--text-muted);text-transform:uppercase;font-size:10px;font-weight:700;letter-spacing:.4px;padding:10px 12px;text-align:center;border-bottom:1px solid var(--border);white-space:nowrap;}
+    table.rg-tbl th.esq,table.rg-tbl td.esq{text-align:left;}
+    table.rg-tbl td{padding:10px 12px;text-align:center;border-bottom:1px solid var(--border);color:var(--text-white);}
+    table.rg-tbl tbody tr:hover{background:var(--bg-hover);}
+    table.rg-tbl tfoot td{font-weight:800;background:var(--bg-dark);border-top:2px solid var(--gold);}
+    .gp-nome{font-weight:700;color:var(--text-white);}
+    .gp-sub{font-size:10px;color:var(--text-muted);font-weight:400;}
+    .pill{display:inline-block;min-width:26px;padding:2px 8px;border-radius:10px;font-weight:700;font-size:11.5px;}
+    .pill-red{background:rgba(239,83,80,.15);color:var(--danger);border:1px solid rgba(239,83,80,.35);}
+    .pill-green{background:rgba(102,187,106,.14);color:var(--success);border:1px solid rgba(102,187,106,.35);}
+    .pill-zero{color:var(--text-hint);}
+
+    .sec-titulo{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:800;color:var(--gold);margin:26px 0 12px;text-transform:uppercase;letter-spacing:.5px;}
+
+    /* ---- Pendências por GP ---- */
+    .pend-gp{border:1px solid var(--border);border-radius:8px;margin-bottom:10px;overflow:hidden;}
+    .pend-gp-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:11px 14px;background:var(--bg-input);cursor:pointer;}
+    .pend-gp-head:hover{background:var(--bg-hover);}
+    .pend-gp-body{display:none;padding:0;}
+    .pend-gp.aberto .pend-gp-body{display:block;}
+    .pend-gp-body table{width:100%;border-collapse:collapse;font-size:12px;}
+    .pend-gp-body th{background:var(--bg-dark);color:var(--text-muted);font-size:9.5px;text-transform:uppercase;padding:7px 12px;text-align:left;}
+    .pend-gp-body td{padding:7px 12px;border-top:1px solid var(--border);color:var(--text-white);}
+    .mono{font-family:ui-monospace,monospace;font-size:11px;color:var(--text-muted);}
+
+    .rg-empty{color:var(--text-muted);font-size:13px;text-align:center;padding:40px 0;}
+    .rg-loading{color:var(--text-muted);font-size:13px;text-align:center;padding:50px 0;}
+
+    .legenda{font-size:11px;color:var(--text-muted);margin-top:10px;line-height:1.6;}
+    .legenda b{color:var(--text-white);}
+
+    @media screen and (max-width: 768px){
+      .topnav-link{padding:11px 12px;font-size:11.5px;}
+      .page-layout{flex-direction:column;}
+      .rg-filtros{align-items:stretch;}
+      .rg-acoes{margin-left:0;}
+      .rg-fg select{min-width:0;width:100%;}
+    }
+
+    /* ---- Impressão / PDF ---- */
+    .print-head{display:none;}
+    @media print{
+      .topnav,.header,.rg-filtros,.rg-acoes,#rg-atualizar,.print-hide{display:none !important;}
+      body{background:#fff;color:#000;}
+      .rg-card{margin:0;border:none;padding:0;background:#fff;}
+      .print-head{display:block;text-align:center;margin-bottom:14px;border-bottom:2px solid #000;padding-bottom:10px;}
+      .print-head h1{font-size:16px;margin:0;color:#000;}
+      .print-head p{font-size:11px;margin:3px 0 0;color:#333;}
+      .kpi{border:1px solid #999;background:#fff;}
+      .kpi-val,.kpi-label,.kpi-sub,.gp-nome,table.rg-tbl td{color:#000 !important;}
+      table.rg-tbl th{background:#eee;color:#000;}
+      .pend-gp-body{display:block !important;}
+      .pend-gp-head{background:#eee;color:#000;}
+      .rg-tbl-wrap{overflow:visible;}
+      a[href]:after{content:'';}
+    }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <div class="header-shields"><img src="assets/escudo-cpe.png" alt="CPE" onerror="this.style.display='none'"><img src="assets/escudo-pmmg.png" alt="PMMG" onerror="this.style.display='none'"><img src="assets/brasao-bpmmamb.png" alt="BPM MAMB" onerror="this.style.display='none'"></div><div class="header-div"></div>
+    <div class="header-title"><div class="header-kicker">CPE · BPM MAmb · 3ª Cia PM MAmb</div>
+      <h1>PAINEL DE GESTÃO OPERACIONAL</h1>
+      <p>3ª Cia PM MAmb — Acompanhamento 2026</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <div id="user-info" style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);cursor:pointer;padding:5px 10px;border:1px solid var(--border);border-radius:5px;" onclick="window.location.href='perfil.html'" title="Meu Perfil">
+      <span id="user-avatar" style="width:22px;height:22px;border-radius:50%;background:var(--gold);color:#1a1000;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">?</span>
+      <span id="user-nome">—</span>
+      <span id="user-badge" style="font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;"></span>
+    </div>
+    <button class="btn-outline" onclick="localStorage.removeItem('poe_sessao_v2');sessionStorage.removeItem('poe_sessao_v2');localStorage.removeItem('poe_sessao');window.location.href='index.html'">Sair</button>
+  </div>
+</header>
+
+<script src="topnav.js" data-ativo="p3"></script>
+<script src="secnav.js" data-secao="p3"></script>
+
+<div class="page-layout">
+  <div class="rd-conteudo">
+
+<main class="content">
+  <div class="rg-card">
+
+    <div class="print-head">
+      <h1>RELATÓRIO CONSOLIDADO GDO — 3ª Cia PM MAmb</h1>
+      <p id="print-periodo">Período: —</p>
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px;" class="print-hide">
+      <h2 style="font-size:16px;margin:0;">Relatório Consolidado GDO <span style="font-size:12px;color:var(--text-muted);font-weight:400;">· por Grupamento</span></h2>
+    </div>
+
+    <div class="rg-filtros print-hide">
+      <div class="rg-fg">
+        <label>Ano</label>
+        <select id="f-ano"></select>
+      </div>
+      <div class="rg-fg">
+        <label>Mês</label>
+        <select id="f-mes"><option value="">Ano inteiro</option></select>
+      </div>
+      <div class="rg-fg">
+        <label>Pelotão</label>
+        <select id="f-pel"><option value="">Todos os pelotões</option></select>
+      </div>
+      <div class="rg-acoes">
+        <button class="btn-outline" id="btn-excel">⬇ Excel</button>
+        <button class="btn-outline" id="btn-print">🖨 Imprimir / PDF</button>
+        <button class="btn-outline" id="rg-atualizar" title="Rebaixar os dados do servidor">↻ Atualizar</button>
+      </div>
+    </div>
+
+    <div id="rg-corpo">
+      <div class="rg-loading" id="rg-status">Carregando dados…</div>
+    </div>
+
+    <div class="legenda print-hide" id="rg-legenda" style="display:none;">
+      <b>Crimes violentos</b> = ocorrências de Morte Violenta (IMV), Crimes Violentos contra a Pessoa (CVPE) e contra o Patrimônio (CVPA).<br>
+      <b>Visitas tranquilizadoras exigidas</b> = ocorrências que geram a obrigação da visita (CVPE sempre; CVPA/IF quando o complemento de natureza é residência/estabelecimento). Morte violenta (IMV) não gera visita.<br>
+      <b>Feitas</b> = existe visita válida (natureza A20001/A20028) a até 200&nbsp;m do crime e em data igual ou posterior, ou vínculo direto POG. <b>Pendentes</b> = sem visita.<br>
+      <b>Operações</b> = operações GDO Rural (Y07) em zona rural no período; <b>válidas</b> = as que cumprem os critérios de tempo/efetivo/viatura/abordagem da GDO.
+    </div>
+
+  </div>
+</main>
+
+  </div>
+</div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════
+   Relatório Consolidado GDO — página autônoma.
+   Lê as MESMAS tabelas do Supabase que o Análise Criminal
+   (bd_crimes, bd_visitas, bd_visitas_pog, bd_operacoes, grupos,
+   municipios_grupos) e aplica as mesmas regras de visita, para que
+   os números batam com aquele módulo.
+════════════════════════════════════════════════════════════════ */
+const SB_URL = 'https://zrnbebjszwkmquzthjfa.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpybmJlYmpzendrbXF1enRoamZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkzOTA4MzEsImV4cCI6MjA5NDk2NjgzMX0.di9t2SOCTLZ2uPFOnTOiy6srvt7GC5cdqenZZScXve4';
+const SB_HDR = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY };
+
+const MESES = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
+
+/* ---- Guarda de sessão (mesmo padrão das demais páginas) ---- */
+const sessao = (function(){
+  const raw = sessionStorage.getItem('poe_sessao_v2');
+  if(!raw){ window.location.href='index.html'; return null; }
+  try{ const s = JSON.parse(raw); if(!s || !s.id){ window.location.href='index.html'; return null; } return s; }
+  catch(e){ window.location.href='index.html'; return null; }
+})();
+
+if(sessao){
+  document.getElementById('user-nome').textContent = sessao.nome || sessao.matricula;
+  const initials = (sessao.nome||'U').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+  document.getElementById('user-avatar').textContent = initials;
+  const badge = document.getElementById('user-badge');
+  const nivel = sessao.nivel_acesso;
+  const mapaBadge = {
+    admin_geral: ['ADMIN GERAL', 'rgba(155,138,92,.2)', 'var(--gold)', 'var(--gold-border)'],
+    admin: ['ADMIN', 'rgba(155,138,92,.2)', 'var(--gold)', 'var(--gold-border)'],
+    admin_pelotao: ['ADMIN PELOTÃO', 'rgba(255,152,0,.15)', '#ffa726', 'rgba(255,152,0,.4)'],
+    admin_gp: ['ADMIN GP', 'rgba(255,152,0,.15)', '#ffa726', 'rgba(255,152,0,.4)'],
+  };
+  const info = mapaBadge[nivel] || ['OPERACIONAL', 'rgba(66,165,245,.15)', 'var(--info)', 'rgba(66,165,245,.3)'];
+  badge.textContent = info[0];
+  badge.style.cssText = `font-size:10px;padding:1px 6px;border-radius:3px;font-weight:700;background:${info[1]};color:${info[2]};border:1px solid ${info[3]};`;
+  const admTopnavItem = document.getElementById('admTopnavItem');
+  const ehAdmin = ['admin_geral','admin','admin_pelotao','admin_gp'].includes(nivel);
+  if(admTopnavItem && ehAdmin) admTopnavItem.style.display = '';
+}
+
+/* ---- Dropdowns da barra do topo ---- */
+document.querySelectorAll('.topnav-link[data-dropdown]').forEach(link => {
+  link.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const dd = document.getElementById(link.dataset.dropdown);
+    const jaAberto = dd.classList.contains('open');
+    document.querySelectorAll('.topnav-dropdown.open').forEach(d => d.classList.remove('open'));
+    if(!jaAberto) dd.classList.add('open');
+  });
+});
+document.addEventListener('click', () => {
+  document.querySelectorAll('.topnav-dropdown.open').forEach(d => d.classList.remove('open'));
+});
+
+/* ════════════════════════════════════════════════════════════════
+   HELPERS (idênticos aos do Análise Criminal)
+════════════════════════════════════════════════════════════════ */
+function norm(s){ return(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/-/g,' ').replace(/\s+/g,' ').trim().toUpperCase(); }
+function pelDoColk(colK){ const m=(colK||'').match(/(\d+)\s*PEL/i); return m?parseInt(m[1]):99; }
+function gpNumDoColk(colK){ const m=(colK||'').match(/(\d+)\s*GP/i); return m?parseInt(m[1]):99; }
+function parseDataDDMMAAAA(s){ const m=(s||'').match(/(\d{2})\/(\d{2})\/(\d{4})/); if(!m) return null; return new Date(m[3], m[2]-1, m[1]); }
+function distanciaKm(lat1,lng1,lat2,lng2){
+  const R=6371, dLat=(lat2-lat1)*Math.PI/180, dLon=(lng2-lng1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+function anoDaData(s){ const m=(s||'').match(/(\d{4})/); return m?m[1]:''; }
+function mesDaData(s){
+  const p1=(s||'').match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  const p2=(s||'').match(/(\d{4})-(\d{2})-(\d{2})/);
+  let idx=-1;
+  if(p1) idx=parseInt(p1[2])-1; else if(p2) idx=parseInt(p2[2])-1;
+  return (idx>=0 && idx<12) ? MESES[idx] : '';
+}
+/* Critérios de validade GDO (igual painel.html / análise criminal) */
+function gdoValidaOp(op){
+  if(!['Y07001','Y07002','Y07014'].includes(op.natureza)) return false;
+  if((op.tempo||0) < 30) return false;
+  if((op.militares||0) < 2) return false;
+  if((op.viaturas||0) < 1) return false;
+  if(op.natureza==='Y07001' || op.natureza==='Y07002'){
+    if((op.pessoas||0) < 2) return false;
+    if((op.veiculos||0) < 1) return false;
+  }
+  return true;
+}
+function corrigeCoord(lat,lng){
+  lat = parseFloat((lat||'').toString().replace(',','.')) || null;
+  lng = parseFloat((lng||'').toString().replace(',','.')) || null;
+  if(lat!==null && lng!==null){
+    const latOk = lat>=-35 && lat<=6, lngOk = lng>=-75 && lng<=-28;
+    if(!latOk && !lngOk){
+      if(lng>=-35 && lng<=6 && lat>=-75 && lat<=-28){ [lat,lng]=[lng,lat]; }
+      else { lat=null; lng=null; }
+    } else if(!latOk || !lngOk){ lat=null; lng=null; }
+  }
+  return [lat,lng];
+}
+async function sbPaginado(tabela, fields){
+  let rows=[], off=0, cont=true;
+  while(cont){
+    const r = await fetch(`${SB_URL}/rest/v1/${tabela}?${fields}&limit=1000&offset=${off}`, { headers: SB_HDR });
+    if(!r.ok) throw new Error(tabela+' HTTP '+r.status);
+    const page = await r.json();
+    rows = rows.concat(page);
+    cont = page.length === 1000;
+    off += 1000;
+  }
+  return rows;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   ESTADO
+════════════════════════════════════════════════════════════════ */
+let munToGrup = {};   /* município norm → grupamento completo (colK) */
+let dadosCrimes = [];
+let dadosVisitas = [];
+let dadosOps = [];
+
+const COMP_VALIDOS = [115, 2005, 2002, 2003, 2015];
+const IND_VIOLENTOS = ['IMV','CVPE','CVPA'];
+
+/* ════════════════════════════════════════════════════════════════
+   LOADERS
+════════════════════════════════════════════════════════════════ */
+async function carregarGrupos(){
+  munToGrup = {};
+  const [grupos, muns] = await Promise.all([
+    fetch(`${SB_URL}/rest/v1/grupos?select=gp_responsavel,grupamento_bpm,grupamento_completo&limit=10000`, { headers: SB_HDR }).then(r=>r.json()),
+    fetch(`${SB_URL}/rest/v1/municipios_grupos?select=municipio,gp_responsavel&limit=10000`, { headers: SB_HDR }).then(r=>r.json()),
+  ]);
+  const gpMap = {};
+  grupos.forEach(g => { const gp=(g.gp_responsavel||'').trim(); if(gp) gpMap[norm(gp)] = g; });
+  muns.forEach(m => {
+    const mun = (m.municipio||'').trim();
+    const g = gpMap[norm((m.gp_responsavel||'').trim())] || {};
+    const colK = (g.grupamento_completo||'').trim() || (g.grupamento_bpm||'').trim() || (m.gp_responsavel||'').trim();
+    if(mun && !munToGrup[norm(mun)]) munToGrup[norm(mun)] = colK;
+  });
+}
+
+async function carregarCrimes(){
+  dadosCrimes = [];
+  const fields = `select=numero_reds,ano_fato,mes_descricao,data_fato,municipio,descricao_localizacao,latitude,longitude,unid_registro_nivel_4,` +
+    `imv_total,icvpe_total,icvpa_total,ifzr,descr_natureza_principal,codigo_complemento_natureza,complemento_natureza&order=data_fato`;
+  const rows = await sbPaginado('bd_crimes', fields);
+  const IND_COL = { IMV:'imv_total', CVPE:'icvpe_total', CVPA:'icvpa_total', IF:'ifzr' };
+  rows.forEach((r, idx) => {
+    const munVal = (r.municipio||'').toString().trim();
+    if(!munVal) return;
+    const boVal = (r.numero_reds||'').toString().trim();
+    const dataStr = (r.data_fato||'').toString().trim();
+    const [lat,lng] = corrigeCoord(r.latitude, r.longitude);
+    const mesRaw = (r.mes_descricao||'').toString().toUpperCase().trim();
+    const mesVal = MESES.find(m=>m===mesRaw)
+      || MESES.find(m=>m.normalize('NFD').replace(/[̀-ͯ]/g,'')===mesRaw.normalize('NFD').replace(/[̀-ͯ]/g,''))
+      || mesRaw;
+    const colK = munToGrup[norm(munVal)] || (r.unid_registro_nivel_4||'').toString().trim();
+    ['IMV','CVPE','CVPA','IF'].forEach(ind => {
+      const qtdRaw = r[IND_COL[ind]];
+      const qtdNum = parseInt(qtdRaw) || 0;
+      if(ind!=='IF' && qtdNum<=0) return;
+      if(ind==='IF' && (qtdRaw===null||qtdRaw===undefined||qtdRaw===''||qtdNum<=0)) return;
+      dadosCrimes.push({
+        bo: boVal || ('BO-'+ind+'-'+idx),
+        ano: (r.ano_fato||'').toString().trim(),
+        mes: mesVal,
+        data: dataStr,
+        municipio: munVal,
+        lat, lng,
+        grupamento: colK,
+        indicador: ind,
+        codComplemento: parseInt(r.codigo_complemento_natureza) || null,
+        qtdVitimas: ind!=='IF' ? qtdNum : 0,
+      });
+    });
+  });
+}
+
+async function carregarVisitas(){
+  dadosVisitas = [];
+  const fields = `select=numero_bos,codigo_natureza,desc_natureza,data_fato,municipio,descricao_localizacao,latitude,longitude,unid_registro,opr_tempo_total_minutos,bo_referencia&order=data_fato`;
+  const rows = await sbPaginado('bd_visitas', fields);
+  const NATS = {'A20028':true,'A20001':true,'A19000':true,'A19001':true,'A19004':true,'A19099':true};
+  rows.forEach(row => {
+    const bo = (row.numero_bos||'').toString().trim();
+    const natCode = (row.codigo_natureza||'').toString().toUpperCase().trim();
+    if(!bo || !NATS[natCode]) return;
+    const [lat,lng] = corrigeCoord(row.latitude, row.longitude);
+    const minutos = parseInt(row.opr_tempo_total_minutos) || 0;
+    const isRCR = ['A19000','A19001','A19004','A19099'].includes(natCode);
+    /* Para visita tranquilizadora (A20001/A20028) a validade é só tempo >= 1 min. */
+    const visitaValida = bo && (isRCR ? false : minutos >= 1);
+    dadosVisitas.push({
+      bo, natCode,
+      data: (row.data_fato||'').toString().trim(),
+      municipio: (row.municipio||'').toString().trim(),
+      lat, lng,
+      unidReg: (row.unid_registro||'').toString().trim(),
+      minutos, visitaValida, isPOG:false,
+      boRefs: Array.isArray(row.bo_referencia) ? row.bo_referencia : (row.bo_referencia ? [row.bo_referencia] : []),
+    });
+  });
+  /* POG manuais */
+  try{
+    const pog = await fetch(`${SB_URL}/rest/v1/bd_visitas_pog?select=numero_bos,data_fato,municipio,latitude,longitude,bo_referencia,unid_registro&order=data_fato`, { headers: SB_HDR }).then(r=>r.ok?r.json():[]);
+    pog.forEach(row => {
+      const bo = (row.numero_bos||'').toString().trim();
+      if(!bo) return;
+      const [lat,lng] = corrigeCoord(row.latitude, row.longitude);
+      dadosVisitas.push({
+        bo, natCode:'A20028',
+        data: (row.data_fato||'').toString().trim(),
+        municipio: (row.municipio||'').toString().trim(),
+        lat, lng,
+        unidReg: (row.unid_registro||'').toString().trim() || 'POG',
+        minutos:60, visitaValida:true, isPOG:true,
+        boRefs: Array.isArray(row.bo_referencia) ? row.bo_referencia : (row.bo_referencia ? [row.bo_referencia] : []),
+      });
+    });
+  }catch(e){ console.warn('[POG]', e.message); }
+}
+
+async function carregarOps(){
+  dadosOps = [];
+  const fields = `select=numero_rat,data_fato,municipio,codigo_natureza_principal,descricao_localizacao,latitude,longitude,opr_tempo_total_minutos,unid_registro,efetivos,viaturas,produtividade,rat_referencia&order=data_fato`;
+  const rows = await sbPaginado('bd_operacoes', fields);
+  rows.forEach(r => {
+    const nat = (r.codigo_natureza_principal||'').toString().trim();
+    const loc = (r.descricao_localizacao||'').toString().toUpperCase();
+    if(!nat || !loc.includes('RURAL')) return;
+    if(!nat.startsWith('Y07')) return;
+    const municipio = (r.municipio||'').toString().trim();
+    const dataStr = (r.data_fato||'').toString().trim();
+    const _prodStr = (r.produtividade||'').toString();
+    const _mPess = _prodStr.match(/idIndicador:15\/[^|]*quantidade:(\d+)/);
+    const _mVeic = _prodStr.match(/idIndicador:18\/[^|]*quantidade:(\d+)/);
+    const [lat,lng] = corrigeCoord(r.latitude, r.longitude);
+    dadosOps.push({
+      rat: (r.numero_rat||'').toString().trim(),
+      data: dataStr,
+      municipio, lat, lng,
+      natureza: nat,
+      grupamento: munToGrup[norm(municipio)] || '',
+      tempo: parseInt(r.opr_tempo_total_minutos) || 0,
+      militares: ((r.efetivos||'').toString().match(/numeroPolicia:/g)||[]).length,
+      viaturas: ((r.viaturas||'').toString().match(/prefixo:/g)||[]).length,
+      pessoas: _mPess ? parseInt(_mPess[1]) : 0,
+      veiculos: _mVeic ? parseInt(_mVeic[1]) : 0,
+    });
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════
+   FILTRO DE PERÍODO + CÁLCULO
+════════════════════════════════════════════════════════════════ */
+function anoSel(){ return document.getElementById('f-ano').value; }
+function mesSel(){ return document.getElementById('f-mes').value; }
+function pelSel(){ return document.getElementById('f-pel').value; }
+
+/* Crime passa no recorte de período/pelotão */
+function crimeNoRecorte(c){
+  const a = anoSel(), m = mesSel(), p = pelSel();
+  if(a && (c.ano||anoDaData(c.data)) !== a) return false;
+  if(m && c.mes !== m) return false;
+  if(p && pelDoColk(c.grupamento) !== parseInt(p)) return false;
+  return true;
+}
+function opNoRecorte(o){
+  const a = anoSel(), m = mesSel(), p = pelSel();
+  if(a && anoDaData(o.data) !== a) return false;
+  if(m && mesDaData(o.data) !== m) return false;
+  if(p && pelDoColk(o.grupamento) !== parseInt(p)) return false;
+  return true;
+}
+
+/* Ocorrência exige visita tranquilizadora? (mesma regra do Análise Criminal) */
+function exigeVisita(c){
+  if(!['CVPE','CVPA','IF'].includes(c.indicador)) return false;
+  if(c.indicador === 'CVPE') return true; /* CVPE sempre */
+  return c.codComplemento !== null && COMP_VALIDOS.includes(c.codComplemento);
+}
+
+/* Existe visita válida para o crime? Retorna as visitas que atendem. */
+function visitasDoCrime(c){
+  const natEsperada = c.indicador === 'IF' ? 'A20028' : 'A20001';
+  const dataCrime = parseDataDDMMAAAA(c.data);
+  return dadosVisitas.filter(v => {
+    /* vínculo direto (inclui POG): decisão manual, ignora raio/natureza */
+    if(v.boRefs && v.boRefs.includes(c.bo)) return true;
+    if(!v.visitaValida) return false;
+    if(v.isPOG) return false;              /* POG só por vínculo direto */
+    if(v.natCode !== natEsperada) return false;
+    if(!c.lat || !c.lng || !v.lat || !v.lng) return false;
+    if(distanciaKm(c.lat, c.lng, v.lat, v.lng) > 0.2) return false; /* 200 m */
+    if(dataCrime){
+      const dv = parseDataDDMMAAAA(v.data);
+      if(dv && (dv - dataCrime) < 0) return false; /* visita não antes do crime */
+    }
+    return true;
+  });
+}
+
+function rotuloGP(colK){
+  if(!colK) return { chave:'—', nome:'Sem grupamento', sub:'' };
+  const partes = colK.split('/').map(s=>s.trim()).filter(Boolean);
+  const sede = partes.length && !/CIA/i.test(partes[partes.length-1]) ? partes[partes.length-1] : '';
+  const gpN = gpNumDoColk(colK), pelN = pelDoColk(colK);
+  const sub = [ (gpN!==99?gpN+'º GP':''), (pelN!==99?pelN+'º Pel':'') ].filter(Boolean).join(' · ');
+  return { chave: colK, nome: sede || colK, sub };
+}
+
+/* Monta o agregado por GP para o recorte atual */
+function montarRelatorio(){
+  const porGP = {};   /* colK → agregado */
+  const getGP = colK => {
+    if(!porGP[colK]){
+      const r = rotuloGP(colK);
+      porGP[colK] = { ...r, imv:0, cvpe:0, cvpa:0, viol:0, exige:0, feitas:0, pendentes:[], ops:0, opsValidas:0 };
+    }
+    return porGP[colK];
+  };
+
+  /* Crimes */
+  dadosCrimes.forEach(c => {
+    if(!crimeNoRecorte(c)) return;
+    const g = getGP(c.grupamento || '');
+    if(c.indicador==='IMV'){ g.imv++; g.viol++; }
+    else if(c.indicador==='CVPE'){ g.cvpe++; g.viol++; }
+    else if(c.indicador==='CVPA'){ g.cvpa++; g.viol++; }
+    if(exigeVisita(c)){
+      g.exige++;
+      const vis = visitasDoCrime(c);
+      if(vis.length) g.feitas++;
+      else g.pendentes.push({ bo:c.bo, data:c.data, municipio:c.municipio, indicador:c.indicador });
+    }
+  });
+
+  /* Operações */
+  dadosOps.forEach(o => {
+    if(!opNoRecorte(o)) return;
+    const g = getGP(o.grupamento || '');
+    g.ops++;
+    if(gdoValidaOp(o)) g.opsValidas++;
+  });
+
+  const lista = Object.values(porGP).sort((a,b) =>
+    b.pendentes.length - a.pendentes.length || b.viol - a.viol || a.nome.localeCompare(b.nome)
+  );
+  const tot = lista.reduce((t,g)=>({
+    imv:t.imv+g.imv, cvpe:t.cvpe+g.cvpe, cvpa:t.cvpa+g.cvpa, viol:t.viol+g.viol,
+    exige:t.exige+g.exige, feitas:t.feitas+g.feitas, pend:t.pend+g.pendentes.length,
+    ops:t.ops+g.ops, opsValidas:t.opsValidas+g.opsValidas,
+  }), {imv:0,cvpe:0,cvpa:0,viol:0,exige:0,feitas:0,pend:0,ops:0,opsValidas:0});
+  return { lista, tot };
+}
+
+/* ════════════════════════════════════════════════════════════════
+   RENDER
+════════════════════════════════════════════════════════════════ */
+function pill(n, bom){
+  if(!n) return '<span class="pill pill-zero">0</span>';
+  return `<span class="pill ${bom?'pill-green':'pill-red'}">${n}</span>`;
+}
+function periodoLabel(){
+  const a = anoSel() || 'todos', m = mesSel();
+  return (m ? (m.charAt(0)+m.slice(1).toLowerCase()) : 'Ano inteiro') + ' / ' + a;
+}
+
+function render(){
+  const { lista, tot } = montarRelatorio();
+  document.getElementById('print-periodo').textContent = 'Período: ' + periodoLabel();
+  const corpo = document.getElementById('rg-corpo');
+
+  if(!lista.length){
+    corpo.innerHTML = '<div class="rg-empty">Nenhum dado para o período selecionado.</div>';
+    document.getElementById('rg-legenda').style.display='';
+    return;
+  }
+
+  const pctFeitas = tot.exige ? Math.round(tot.feitas/tot.exige*100) : 0;
+
+  let html = `
+    <div class="rg-kpis">
+      <div class="kpi red">
+        <div class="kpi-label">Crimes violentos</div>
+        <div class="kpi-val">${tot.viol}</div>
+        <div class="kpi-sub">IMV ${tot.imv} · CVPE ${tot.cvpe} · CVPA ${tot.cvpa}</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Visitas exigidas</div>
+        <div class="kpi-val">${tot.exige}</div>
+        <div class="kpi-sub">ocorrências que pedem visita</div>
+      </div>
+      <div class="kpi green">
+        <div class="kpi-label">Visitas feitas</div>
+        <div class="kpi-val">${tot.feitas}</div>
+        <div class="kpi-sub">${pctFeitas}% das exigidas</div>
+      </div>
+      <div class="kpi red">
+        <div class="kpi-label">Visitas pendentes</div>
+        <div class="kpi-val">${tot.pend}</div>
+        <div class="kpi-sub">sem visita tranquilizadora</div>
+      </div>
+      <div class="kpi blue">
+        <div class="kpi-label">Operações realizadas</div>
+        <div class="kpi-val">${tot.ops}</div>
+        <div class="kpi-sub">${tot.opsValidas} válidas p/ GDO</div>
+      </div>
+    </div>
+
+    <div class="sec-titulo">📊 Consolidado por Grupamento</div>
+    <div class="rg-tbl-wrap">
+      <table class="rg-tbl">
+        <thead>
+          <tr>
+            <th class="esq" rowspan="2">Grupamento</th>
+            <th colspan="4">Crimes violentos</th>
+            <th colspan="3">Visitas tranquilizadoras</th>
+            <th colspan="2">Operações</th>
+          </tr>
+          <tr>
+            <th>IMV</th><th>CVPE</th><th>CVPA</th><th>Total</th>
+            <th>Exige</th><th>Feitas</th><th>Pend.</th>
+            <th>Realiz.</th><th>Válidas</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+  lista.forEach(g => {
+    html += `
+      <tr>
+        <td class="esq"><div class="gp-nome">${g.nome}</div>${g.sub?`<div class="gp-sub">${g.sub}</div>`:''}</td>
+        <td>${g.imv||'<span class="pill-zero">0</span>'}</td>
+        <td>${g.cvpe||'<span class="pill-zero">0</span>'}</td>
+        <td>${g.cvpa||'<span class="pill-zero">0</span>'}</td>
+        <td><b>${g.viol}</b></td>
+        <td>${g.exige||'<span class="pill-zero">0</span>'}</td>
+        <td>${pill(g.feitas,true)}</td>
+        <td>${pill(g.pendentes.length,false)}</td>
+        <td>${g.ops||'<span class="pill-zero">0</span>'}</td>
+        <td>${g.opsValidas||'<span class="pill-zero">0</span>'}</td>
+      </tr>`;
+  });
+
+  html += `
+        </tbody>
+        <tfoot>
+          <tr>
+            <td class="esq">TOTAL</td>
+            <td>${tot.imv}</td><td>${tot.cvpe}</td><td>${tot.cvpa}</td><td>${tot.viol}</td>
+            <td>${tot.exige}</td><td>${tot.feitas}</td><td>${tot.pend}</td>
+            <td>${tot.ops}</td><td>${tot.opsValidas}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>`;
+
+  /* Pendências detalhadas por GP */
+  const comPend = lista.filter(g => g.pendentes.length);
+  html += `<div class="sec-titulo">⚠️ Pendências de Visita Tranquilizadora ${comPend.length?`<span style="color:var(--text-muted);font-weight:400;font-size:11px;">(clique para expandir)</span>`:''}</div>`;
+  if(!comPend.length){
+    html += `<div class="rg-empty" style="padding:24px 0;">✅ Nenhuma visita pendente no período. Todas as ocorrências que exigiam visita foram atendidas.</div>`;
+  } else {
+    comPend.forEach(g => {
+      const linhas = g.pendentes
+        .sort((a,b)=>{ const da=parseDataDDMMAAAA(a.data),db=parseDataDDMMAAAA(b.data); return (db&&da)?(db-da):0; })
+        .map(p => `<tr>
+            <td class="mono">${p.bo||'—'}</td>
+            <td>${p.data||'—'}</td>
+            <td>${p.municipio||'—'}</td>
+            <td><b style="color:var(--danger);">${p.indicador}</b></td>
+          </tr>`).join('');
+      html += `
+        <div class="pend-gp">
+          <div class="pend-gp-head" onclick="this.parentElement.classList.toggle('aberto')">
+            <div><span class="gp-nome">${g.nome}</span> ${g.sub?`<span class="gp-sub">· ${g.sub}</span>`:''}</div>
+            <div><span class="pill pill-red">${g.pendentes.length} pendente(s)</span></div>
+          </div>
+          <div class="pend-gp-body">
+            <table>
+              <thead><tr><th>Nº BO/REDS</th><th>Data</th><th>Município</th><th>Indicador</th></tr></thead>
+              <tbody>${linhas}</tbody>
+            </table>
+          </div>
+        </div>`;
+    });
+  }
+
+  corpo.innerHTML = html;
+  document.getElementById('rg-legenda').style.display='';
+}
+
+/* ════════════════════════════════════════════════════════════════
+   EXPORTAR EXCEL
+════════════════════════════════════════════════════════════════ */
+function exportarExcel(){
+  const { lista, tot } = montarRelatorio();
+  const wb = XLSX.utils.book_new();
+
+  const aoa = [
+    ['RELATÓRIO CONSOLIDADO GDO — 3ª Cia PM MAmb'],
+    ['Período: ' + periodoLabel()],
+    [],
+    ['Grupamento','GP','Pelotão','IMV','CVPE','CVPA','Crimes violentos','Visitas exige','Visitas feitas','Visitas pendentes','Operações realizadas','Operações válidas GDO'],
+  ];
+  lista.forEach(g => aoa.push([
+    g.nome, (gpNumDoColk(g.chave)!==99?gpNumDoColk(g.chave):''), (pelDoColk(g.chave)!==99?pelDoColk(g.chave):''),
+    g.imv, g.cvpe, g.cvpa, g.viol, g.exige, g.feitas, g.pendentes.length, g.ops, g.opsValidas,
+  ]));
+  aoa.push(['TOTAL','','',tot.imv,tot.cvpe,tot.cvpa,tot.viol,tot.exige,tot.feitas,tot.pend,tot.ops,tot.opsValidas]);
+  const ws1 = XLSX.utils.aoa_to_sheet(aoa);
+  ws1['!cols'] = [{wch:30},{wch:5},{wch:7},{wch:6},{wch:6},{wch:6},{wch:15},{wch:12},{wch:12},{wch:15},{wch:18},{wch:18}];
+  XLSX.utils.book_append_sheet(wb, ws1, 'Por Grupamento');
+
+  const pend = [['Grupamento','Nº BO/REDS','Data','Município','Indicador']];
+  lista.forEach(g => g.pendentes.forEach(p => pend.push([g.nome, p.bo, p.data, p.municipio, p.indicador])));
+  const ws2 = XLSX.utils.aoa_to_sheet(pend);
+  ws2['!cols'] = [{wch:28},{wch:20},{wch:12},{wch:22},{wch:10}];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Pendências');
+
+  const nome = 'Relatorio-GDO_' + (mesSel()||'Ano') + '-' + (anoSel()||'') + '.xlsx';
+  XLSX.writeFile(wb, nome);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   FILTROS + BOOT
+════════════════════════════════════════════════════════════════ */
+function popularFiltros(){
+  /* Anos presentes */
+  const anos = [...new Set(dadosCrimes.map(c => c.ano || anoDaData(c.data)).filter(Boolean))].sort().reverse();
+  if(!anos.length) anos.push(String(new Date().getFullYear()));
+  const selAno = document.getElementById('f-ano');
+  selAno.innerHTML = anos.map(a=>`<option value="${a}">${a}</option>`).join('');
+  const anoAtual = String(new Date().getFullYear());
+  selAno.value = anos.includes(anoAtual) ? anoAtual : anos[0];
+
+  /* Meses do ano selecionado */
+  atualizarMeses();
+
+  /* Pelotões presentes */
+  const pels = [...new Set(dadosCrimes.map(c => pelDoColk(c.grupamento)).filter(n=>n && n!==99))].sort((a,b)=>a-b);
+  document.getElementById('f-pel').innerHTML = '<option value="">Todos os pelotões</option>' +
+    pels.map(p=>`<option value="${p}">${p}º Pelotão</option>`).join('');
+}
+function atualizarMeses(){
+  const a = anoSel();
+  const mesesPresentes = new Set(dadosCrimes.filter(c => (c.ano||anoDaData(c.data))===a).map(c=>c.mes).filter(Boolean));
+  const selMes = document.getElementById('f-mes');
+  const atual = selMes.value;
+  selMes.innerHTML = '<option value="">Ano inteiro</option>' +
+    MESES.filter(m=>mesesPresentes.has(m)).map(m=>`<option value="${m}">${m.charAt(0)+m.slice(1).toLowerCase()}</option>`).join('');
+  /* mantém seleção, senão default = mês mais recente presente */
+  if([...selMes.options].some(o=>o.value===atual)) selMes.value = atual;
+  else {
+    const presentesOrd = MESES.filter(m=>mesesPresentes.has(m));
+    const mesAtual = MESES[new Date().getMonth()];
+    selMes.value = mesesPresentes.has(mesAtual) ? mesAtual : (presentesOrd.length ? presentesOrd[presentesOrd.length-1] : '');
+  }
+}
+
+async function carregarTudo(){
+  document.getElementById('rg-corpo').innerHTML = '<div class="rg-loading" id="rg-status">Carregando dados…</div>';
+  try{
+    await carregarGrupos();
+    await Promise.all([ carregarCrimes(), carregarVisitas(), carregarOps() ]);
+    popularFiltros();
+    render();
+  }catch(e){
+    console.error(e);
+    document.getElementById('rg-corpo').innerHTML = `<div class="rg-empty" style="color:var(--danger);">Erro ao carregar os dados: ${e.message}</div>`;
+  }
+}
+
+document.getElementById('f-ano').addEventListener('change', () => { atualizarMeses(); render(); });
+document.getElementById('f-mes').addEventListener('change', render);
+document.getElementById('f-pel').addEventListener('change', render);
+document.getElementById('btn-excel').addEventListener('click', exportarExcel);
+document.getElementById('btn-print').addEventListener('click', () => window.print());
+document.getElementById('rg-atualizar').addEventListener('click', carregarTudo);
+
+carregarTudo();
+</script>
+</body>
+</html>
