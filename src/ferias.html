@@ -33,6 +33,20 @@
     .tab:hover{color:var(--text-white);}
     .tab.active{color:var(--text-white);background:var(--bg-card);border-color:var(--border);border-bottom:1px solid var(--bg-card);margin-bottom:-1px;}
     .panel{display:none;} .panel.active{display:block;}
+    /* ── card "situação das escolhas" ── */
+    .esc-head b{color:var(--text-white);font-size:15px;}
+    .esc-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px;}
+    .esc-stat{background:var(--bg-dark);border-radius:8px;padding:12px 10px;text-align:center;border-top:3px solid var(--gold);}
+    .esc-stat.green{border-top-color:var(--success);} .esc-stat.red{border-top-color:var(--danger);}
+    .esc-stat .n{font-size:26px;font-weight:800;color:var(--text-white);line-height:1;}
+    .esc-stat .l{font-size:10.5px;color:var(--text-muted);text-transform:uppercase;font-weight:700;margin-top:6px;letter-spacing:.4px;}
+    .esc-sum{cursor:pointer;color:var(--gold);font-size:12.5px;font-weight:700;}
+    .esc-faltam{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin-top:10px;}
+    .esc-grp{background:var(--bg-dark);border:1px solid var(--border);border-radius:8px;padding:9px 11px;}
+    .esc-grp-h{font-size:10px;letter-spacing:.4px;text-transform:uppercase;color:var(--gold);font-weight:800;margin-bottom:5px;border-bottom:1px solid var(--border);padding-bottom:4px;}
+    .esc-grp-h span{color:var(--text-hint);font-weight:600;}
+    .esc-mil{font-size:12.5px;color:var(--text-white);padding:2px 0;}
+    @media(max-width:520px){ .esc-stats{grid-template-columns:repeat(3,1fr);} .esc-stat .n{font-size:21px;} }
     .area-switch{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;}
     .asw{padding:9px 16px;font-size:13px;font-weight:700;border-radius:9px;cursor:pointer;font-family:inherit;
       background:var(--bg-card);border:1px solid var(--border);color:var(--text-muted);}
@@ -1612,13 +1626,16 @@ const _soDig = s => String(s||'').replace(/\D/g,'');
 async function renderEscolhasResumo(){
   const box=document.getElementById('ap-escolhas'); if(!box) return;
   const roster=await garantirRosterEscopo();
-  // base = efetivo do escopo, menos ASPM (não escolhe — é lançado pela P1)
+  // base = efetivo do escopo, menos ASPM (não tira férias anuais por escolha — é lançado pela P1)
   const base=roster.filter(m=>!/ASPM/.test((m.posto_graduacao||'').toUpperCase()));
-  // quem ESCOLHEU = tem pedido ANUAL do ano com opções enviadas pelo próprio militar
+  // quem JÁ TEM FÉRIAS no ano = tem lançamento ANUAL (escolha do militar OU lançado/importado
+  // pela P1), com conteúdo e não rejeitado. Casa por id OU matrícula (robusto).
   const idEsc=new Set(), matEsc=new Set();
   (pedidos||[]).forEach(p=>{
     if((p.tipo||'ANUAL')!=='ANUAL') return;
-    if(!(p.opcoes && p.opcoes.length)) return;   // só escolha do próprio militar (tem opções)
+    if(p.situacao==='REJEITADO') return;
+    const temConteudo=(p.parcelas&&p.parcelas.length)||(p.opcoes&&p.opcoes.length);
+    if(!temConteudo) return;
     if(p.militar_id!=null) idEsc.add(String(p.militar_id));
     const mat=_soDig(p.militar&&p.militar.matricula); if(mat) matEsc.add(mat);
   });
@@ -1626,7 +1643,7 @@ async function renderEscolhasResumo(){
   const faltam=base.filter(m=>!escolheu(m));
   const total=base.length, nEsc=total-faltam.length, pct=total?Math.round(100*nEsc/total):0;
 
-  if(!total){ box.innerHTML='<div class="miut">Sem efetivo no seu escopo para apurar as escolhas.</div>'; return; }
+  if(!total){ box.innerHTML='<div class="miut">Sem efetivo no seu escopo para apurar as escolhas de férias.</div>'; return; }
 
   // agrupa os que faltam por fração / grupamento
   const porGrp={};
@@ -1634,27 +1651,27 @@ async function renderEscolhasResumo(){
   const _nm=m=>`${(m.posto_graduacao||'').toUpperCase()} ${esc(m.nome_completo||m.nome_guerra||'')}`.trim();
   const grps=Object.keys(porGrp).sort();
   const listaHtml = faltam.length
-    ? grps.map(g=>`<div style="margin-top:8px;"><div class="miut" style="text-transform:uppercase;font-size:10px;letter-spacing:.4px;margin-bottom:3px;">${esc(g)} <span style="opacity:.7;">(${porGrp[g].length})</span></div>`
-        + porGrp[g].sort((a,b)=>_nm(a).localeCompare(_nm(b))).map(m=>`<div style="font-size:12.5px;color:var(--text-white);padding:1px 0;">${_nm(m)} <span class="miut">· ${esc(m.matricula||'')}</span></div>`).join('')
-        + '</div>').join('')
-    : '<div class="miut" style="margin-top:8px;">🎉 Todos do efetivo já enviaram a escolha.</div>';
+    ? `<div class="esc-faltam">`+grps.map(g=>`<div class="esc-grp"><div class="esc-grp-h">${esc(g)} <span>(${porGrp[g].length})</span></div>`
+        + porGrp[g].sort((a,b)=>_nm(a).localeCompare(_nm(b))).map(m=>`<div class="esc-mil">${_nm(m)}<span class="miut"> · ${esc(m.matricula||'')}</span></div>`).join('')
+        + '</div>').join('')+'</div>'
+    : '<div class="miut" style="margin-top:10px;">🎉 Todo o efetivo já tem férias lançadas no ano.</div>';
 
   box.innerHTML=`
-    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:center;">
-      <div><b style="color:var(--text-white);font-size:14px;">📋 Escolhas de férias ${anoSel}</b>
-        <div class="miut">Conta a escolha enviada pelo próprio militar (self-service). Base: efetivo do seu escopo, exceto ASPM.</div></div>
-      <div style="display:flex;gap:16px;text-align:center;">
-        <div><div style="font-size:20px;font-weight:800;color:var(--text-white);">${total}</div><div class="miut" style="font-size:10px;">EFETIVO</div></div>
-        <div><div style="font-size:20px;font-weight:800;color:var(--success);">${nEsc}</div><div class="miut" style="font-size:10px;">ESCOLHERAM</div></div>
-        <div><div style="font-size:20px;font-weight:800;color:${faltam.length?'var(--danger)':'var(--success)'};">${faltam.length}</div><div class="miut" style="font-size:10px;">FALTAM</div></div>
-      </div>
+    <div class="esc-head">
+      <div><b>📋 Férias ${anoSel} — situação das escolhas</b>
+        <div class="miut">Militares que já têm férias anuais lançadas no ano (escolha do próprio ou lançamento da P1). Base: seu efetivo, exceto ASPM.</div></div>
     </div>
-    <div class="pctbar" style="margin-top:10px;"><i style="width:${pct}%"></i></div>
-    <div class="miut" style="margin-top:4px;">${pct}% do efetivo já escolheu.</div>
-    <details style="margin-top:10px;"${faltam.length?' open':''}>
-      <summary style="cursor:pointer;color:var(--acc);font-size:12.5px;">Ver quem falta escolher (${faltam.length})</summary>
+    <div class="esc-stats">
+      <div class="esc-stat gold"><div class="n">${total}</div><div class="l">Efetivo</div></div>
+      <div class="esc-stat green"><div class="n">${nEsc}</div><div class="l">Já escolheram</div></div>
+      <div class="esc-stat ${faltam.length?'red':'green'}"><div class="n">${faltam.length}</div><div class="l">Faltam escolher</div></div>
+    </div>
+    <div class="pctbar" style="margin-top:12px;"><i style="width:${pct}%"></i></div>
+    <div class="miut" style="margin-top:4px;">${pct}% do efetivo já com férias lançadas.</div>
+    ${faltam.length?`<details style="margin-top:12px;" open>
+      <summary class="esc-sum">Ver quem falta escolher (${faltam.length})</summary>
       ${listaHtml}
-    </details>`;
+    </details>`:listaHtml}`;
 }
 function apPeriodoSpans(){
   return ((cronograma&&cronograma.periodos)||[]).map(p=>{ const ds=[];
