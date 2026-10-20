@@ -709,7 +709,7 @@ function render(){
 
   lista.forEach((g, idx) => {
     const exKey = 'ex'+idx, pdKey = 'pd'+idx;
-    if(g.exigidos.length)  window._rgTips[exKey] = tipHtml('Ocorrências que exigem visita — '+g.nome, g.chave, g.exigidos, true);
+    if(g.exigidos.length)  window._rgTips[exKey] = tipHtml('Ocorrências que exigem visita — '+g.nome, g.chave, g.exigidos, false);
     if(g.pendentes.length) window._rgTips[pdKey] = tipHtml('Visitas pendentes — '+g.nome, g.chave, g.pendentes, false);
     html += `
       <tr>
@@ -946,21 +946,32 @@ async function exportarPDF(){
     doc.text(linhasResumo, MARGIN + 5, y + 11);
     y += boxH + 8;
 
-    /* ---- KPIs (6 cards proporcionais em uma linha) ---- */
+    /* ---- KPIs (6 cards proporcionais em uma linha, com cor e subinfo) ---- */
+    const C_DANGER=[239,83,80], C_SUCCESS=[102,187,106], C_INFO=[66,165,245];
     const cards = [
-      ['Crimes violentos', tot.viol], ['IF', tot.ifz], ['Visitas exigidas', tot.exige],
-      ['Visitas feitas', tot.feitas], ['Visitas pendentes', tot.pend], ['Operações', tot.ops],
+      ['Crimes violentos', tot.viol, `IMV ${tot.imv}  ·  CVPE ${tot.cvpe}  ·  CVPA ${tot.cvpa}`, C_DANGER],
+      ['IF', tot.ifz, 'Furto em zona rural', OURO],
+      ['Visitas exigidas', tot.exige, `CVPE ${tot.vis.CVPE.e}  ·  CVPA ${tot.vis.CVPA.e}  ·  IF ${tot.vis.IF.e}`, OURO],
+      ['Visitas feitas', tot.feitas, `${pct}% das exigidas`, C_SUCCESS],
+      ['Visitas pendentes', tot.pend, `CVPE ${tot.vis.CVPE.p}  ·  CVPA ${tot.vis.CVPA.p}  ·  IF ${tot.vis.IF.p}`, C_DANGER],
+      ['Operações', tot.ops, `${tot.opsValidas} válidas p/ GDO`, C_INFO],
     ];
-    const nC = cards.length, gap = 3, cw = (contentW - (nC-1)*gap) / nC, chh = 16;
+    const nC = cards.length, gap = 3, cw = (contentW - (nC-1)*gap) / nC, chh = 22;
     garantir_(chh + 4);
     cards.forEach((c, i) => {
       const x = MARGIN + i*(cw+gap);
-      doc.setFillColor(247,244,235); doc.setDrawColor(...LINHA); doc.setLineWidth(0.1);
-      doc.roundedRect(x, y, cw, chh, 1.5, 1.5, 'FD');
+      doc.setFillColor(247,244,235);
+      doc.roundedRect(x, y, cw, chh, 1.5, 1.5, 'F');
+      doc.setFillColor(...c[3]);
+      doc.roundedRect(x, y, cw, 2, 1, 1, 'F');       /* barra de cor no topo */
+      doc.setDrawColor(...LINHA); doc.setLineWidth(0.1);
+      doc.roundedRect(x, y, cw, chh, 1.5, 1.5, 'S');
       doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(30,24,14);
-      doc.text(String(c[1]), x + cw/2, y + 8, { align:'center' });
-      doc.setFont('helvetica','normal'); doc.setFontSize(5.6); doc.setTextColor(...MUTED);
-      doc.text(doc.splitTextToSize(String(c[0]).toUpperCase(), cw - 2), x + cw/2, y + 11.5, { align:'center' });
+      doc.text(String(c[1]), x + cw/2, y + 9.5, { align:'center' });
+      doc.setFont('helvetica','bold'); doc.setFontSize(5.6); doc.setTextColor(...MUTED);
+      doc.text(doc.splitTextToSize(String(c[0]).toUpperCase(), cw - 2), x + cw/2, y + 13.5, { align:'center' });
+      doc.setFont('helvetica','normal'); doc.setFontSize(5); doc.setTextColor(...c[3]);
+      doc.text(doc.splitTextToSize(String(c[2]), cw - 2.5), x + cw/2, y + 17.5, { align:'center' });
     });
     y += chh + 8;
 
