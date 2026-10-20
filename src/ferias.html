@@ -168,6 +168,9 @@
 
     <!-- ══ TAB APROVAR PELOTÃO ══ -->
     <div class="panel" id="panel-aprovar">
+      <div class="card" id="ap-escolhas-card">
+        <div id="ap-escolhas"><div class="miut">Carregando visão das escolhas…</div></div>
+      </div>
       <div class="card">
         <div class="row-actions" style="align-items:flex-end;gap:12px;margin-bottom:6px;">
           <div class="fld" style="max-width:220px;"><label>Pelotão</label><select id="ap-pel" onchange="aprovarRender()"></select></div>
@@ -303,6 +306,7 @@
           <div class="fld"><label>Pelotão</label><select id="ct-pel" onchange="renderControle()"><option value="">Todos os pelotões</option></select></div>
           <div class="fld"><label>Fração / GP</label><select id="ct-gp" onchange="renderControle()"><option value="">Todos os grupamentos</option></select></div>
           <div class="fld"><label>Exercício (ref.)</label><select id="ct-exerc" onchange="renderControle()"><option value="">Todos</option></select></div>
+          <div class="fld"><label>Período</label><select id="ct-periodo" onchange="renderControle()"><option value="">Todos os períodos</option></select></div>
           <div class="fld"><label>Busca (nome/Nº)</label><input id="ct-busca" placeholder="nome ou 000.000-0" oninput="ctBuscaMask(this)"></div>
         </div>
         <div style="overflow-x:auto;">
@@ -1152,6 +1156,7 @@ async function carregarControle(){
   document.getElementById('ct-pel').innerHTML='<option value="">Todos os pelotões</option>';
   document.getElementById('ct-gp').innerHTML='<option value="">Todos os grupamentos</option>';
   document.getElementById('ct-exerc').innerHTML='<option value="">Todos</option>';
+  const _cp=document.getElementById('ct-periodo'); if(_cp) _cp.innerHTML='<option value="">Todos os períodos</option>';
   popularFiltrosCt(); renderControle();
 }
 function _pelRot(p){ return /^\d+$/.test(String(p))?('Pelotão '+p):(p||'—'); }
@@ -1167,11 +1172,26 @@ function popularFiltrosCt(){
   selG.value=curG; if(selG.value!==curG) selG.value='';
   if(selE && selE.options.length<=1){ const exs=[...new Set(base.map(r=>r.exercicio).filter(x=>x!=null))].sort((a,b)=>b-a);
     selE.innerHTML='<option value="">Todos</option>'+exs.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join(''); }
+  // Período (do cronograma do ano) — casa as férias pela DATA (funciona tb p/ importados)
+  const selPe=document.getElementById('ct-periodo');
+  if(selPe){ const spans=_ctPeriodoSpans(); const cur=selPe.value;
+    selPe.innerHTML='<option value="">Todos os períodos</option>'
+      + spans.map(s=>`<option value="${esc(s.ordem)}">Período ${esc(s.ordem)} (${fmtBR(s.ini)}–${fmtBR(s.fim)})</option>`).join('');
+    selPe.value=cur; if(selPe.value!==cur) selPe.value='';
+  }
+}
+// janelas (ordem, ini, fim) de cada período do cronograma do ano atual
+function _ctPeriodoSpans(){
+  try{ return (typeof apPeriodoSpans==='function' ? apPeriodoSpans() : []).filter(s=>s.ini&&s.fim); }catch(e){ return []; }
 }
 // uma linha por PARCELA (como na planilha: 15+10 fracionado = 2 linhas)
 function ctLinhas(){
   const v=id=>{const e=document.getElementById(id);return e?e.value:'';};
   const fp=v('ct-pel'),fg=v('ct-gp'),fe=v('ct-exerc'),fs=ctSit,fb=_norm(v('ct-busca').trim());
+  const fper=v('ct-periodo');
+  const spanPer=fper ? _ctPeriodoSpans().find(s=>String(s.ordem)===String(fper)) : null;
+  const _noPer=(x)=>{ if(!spanPer||!x) return false; const i=String(x.ini||x.fim||'').slice(0,10), f=String(x.fim||x.ini||'').slice(0,10);
+    if(!i&&!f) return true; return !apOverlap(i||f, f||i, spanPer.ini, spanPer.fim); };
   const out=[];
   _ctDoModo().forEach(r=>{
     if(fp && String(r.pelotao||'')!==fp) return;
@@ -1179,7 +1199,8 @@ function ctLinhas(){
     if(fe && String(r.exercicio||'')!==fe) return;
     if(fs && r.situacao!==fs) return;
     if(fb){ const hay=_norm(`${r.matricula||''} ${r.nome||''} ${r.pg||''}`); if(!hay.includes(fb)) return; }
-    const pcs=Array.isArray(r.parcelas)?r.parcelas:[];
+    let pcs=Array.isArray(r.parcelas)?r.parcelas:[];
+    if(spanPer){ pcs=pcs.filter(x=>!_noPer(x)); if(!pcs.length) return; }   // período: só parcelas dentro da janela
     if(pcs.length) pcs.forEach((x,i)=>out.push({r,x,primeira:i===0})); else out.push({r,x:null,primeira:true});
   });
   return out;
@@ -1196,7 +1217,7 @@ function renderControle(){
   popularFiltrosCt();
   // reseta a página quando os filtros/aba mudam (mas não ao navegar)
   const v=id=>{const e=document.getElementById(id);return e?e.value:'';};
-  const sig=[ctModo,v('ct-pel'),v('ct-gp'),v('ct-exerc'),ctSit,v('ct-busca')].join('|');
+  const sig=[ctModo,v('ct-pel'),v('ct-gp'),v('ct-exerc'),v('ct-periodo'),ctSit,v('ct-busca')].join('|');
   if(sig!==_ctSig){ _ctSig=sig; ctPagina=1; }
   const linhas=ctLinhas();
   if(!linhas.length){ tb.innerHTML='<tr><td colspan="9"><div class="empty">Nenhuma férias'+(CTRL.length?' com esses filtros':' para '+anoSel)+'.</div></td></tr>'; return; }
@@ -1577,6 +1598,63 @@ async function aprovarBoot(){
   }
   try{ pedidos=await rpc('ferias_pedidos_listar',{p_token:sessao.token,p_ano:anoSel})||[]; }catch(e){ pedidos=[]; }
   aprovarRender();
+  renderEscolhasResumo();
+}
+
+// ── Visão "quem já escolheu / quem falta escolher" (escolha do próprio militar) ──
+let ROSTER_ESC=[];
+async function garantirRosterEscopo(){
+  if(ROSTER_ESC.length) return ROSTER_ESC;
+  try{ ROSTER_ESC = await rpc('militares_roster_escopo',{p_token:sessao.token}) || []; }catch(e){ ROSTER_ESC=[]; }
+  return ROSTER_ESC;
+}
+const _soDig = s => String(s||'').replace(/\D/g,'');
+async function renderEscolhasResumo(){
+  const box=document.getElementById('ap-escolhas'); if(!box) return;
+  const roster=await garantirRosterEscopo();
+  // base = efetivo do escopo, menos ASPM (não escolhe — é lançado pela P1)
+  const base=roster.filter(m=>!/ASPM/.test((m.posto_graduacao||'').toUpperCase()));
+  // quem ESCOLHEU = tem pedido ANUAL do ano com opções enviadas pelo próprio militar
+  const idEsc=new Set(), matEsc=new Set();
+  (pedidos||[]).forEach(p=>{
+    if((p.tipo||'ANUAL')!=='ANUAL') return;
+    if(!(p.opcoes && p.opcoes.length)) return;   // só escolha do próprio militar (tem opções)
+    if(p.militar_id!=null) idEsc.add(String(p.militar_id));
+    const mat=_soDig(p.militar&&p.militar.matricula); if(mat) matEsc.add(mat);
+  });
+  const escolheu=m=> idEsc.has(String(m.id)) || matEsc.has(_soDig(m.matricula));
+  const faltam=base.filter(m=>!escolheu(m));
+  const total=base.length, nEsc=total-faltam.length, pct=total?Math.round(100*nEsc/total):0;
+
+  if(!total){ box.innerHTML='<div class="miut">Sem efetivo no seu escopo para apurar as escolhas.</div>'; return; }
+
+  // agrupa os que faltam por fração / grupamento
+  const porGrp={};
+  faltam.forEach(m=>{ const g=(m.grupamento_id||'—'); (porGrp[g]=porGrp[g]||[]).push(m); });
+  const _nm=m=>`${(m.posto_graduacao||'').toUpperCase()} ${esc(m.nome_completo||m.nome_guerra||'')}`.trim();
+  const grps=Object.keys(porGrp).sort();
+  const listaHtml = faltam.length
+    ? grps.map(g=>`<div style="margin-top:8px;"><div class="miut" style="text-transform:uppercase;font-size:10px;letter-spacing:.4px;margin-bottom:3px;">${esc(g)} <span style="opacity:.7;">(${porGrp[g].length})</span></div>`
+        + porGrp[g].sort((a,b)=>_nm(a).localeCompare(_nm(b))).map(m=>`<div style="font-size:12.5px;color:var(--text-white);padding:1px 0;">${_nm(m)} <span class="miut">· ${esc(m.matricula||'')}</span></div>`).join('')
+        + '</div>').join('')
+    : '<div class="miut" style="margin-top:8px;">🎉 Todos do efetivo já enviaram a escolha.</div>';
+
+  box.innerHTML=`
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:center;">
+      <div><b style="color:var(--text-white);font-size:14px;">📋 Escolhas de férias ${anoSel}</b>
+        <div class="miut">Conta a escolha enviada pelo próprio militar (self-service). Base: efetivo do seu escopo, exceto ASPM.</div></div>
+      <div style="display:flex;gap:16px;text-align:center;">
+        <div><div style="font-size:20px;font-weight:800;color:var(--text-white);">${total}</div><div class="miut" style="font-size:10px;">EFETIVO</div></div>
+        <div><div style="font-size:20px;font-weight:800;color:var(--success);">${nEsc}</div><div class="miut" style="font-size:10px;">ESCOLHERAM</div></div>
+        <div><div style="font-size:20px;font-weight:800;color:${faltam.length?'var(--danger)':'var(--success)'};">${faltam.length}</div><div class="miut" style="font-size:10px;">FALTAM</div></div>
+      </div>
+    </div>
+    <div class="pctbar" style="margin-top:10px;"><i style="width:${pct}%"></i></div>
+    <div class="miut" style="margin-top:4px;">${pct}% do efetivo já escolheu.</div>
+    <details style="margin-top:10px;"${faltam.length?' open':''}>
+      <summary style="cursor:pointer;color:var(--acc);font-size:12.5px;">Ver quem falta escolher (${faltam.length})</summary>
+      ${listaHtml}
+    </details>`;
 }
 function apPeriodoSpans(){
   return ((cronograma&&cronograma.periodos)||[]).map(p=>{ const ds=[];
@@ -1680,6 +1758,7 @@ async function boot(){
   // se estiver na aba de lançamentos/percentuais já aberta, recarrega
   const ativa=document.querySelector('.tab.active')?.dataset.tab;
   if(ativa==='lanc') carregarPedidos(); else if(ativa==='pct') carregarPct();
+  else if(ativa==='aprovar') aprovarBoot();
   else if(ativa==='anuais'||ativa==='premio'){ CTRL=[]; carregarControle(); }
 }
 boot();
