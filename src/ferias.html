@@ -198,6 +198,8 @@
           <button class="ct-chip" data-sit="PENDENTE" onclick="apSetSit('PENDENTE')">Pendentes de validação <span id="ap-pend-n" class="miut"></span></button>
           <button class="ct-chip" data-sit="APROVADO_PEL" onclick="apSetSit('APROVADO_PEL')">Aprovados pelo Pelotão</button>
           <button class="ct-chip" data-sit="VALIDADO" onclick="apSetSit('VALIDADO')">Validados</button>
+          <button class="ct-chip" data-sit="__FALTAM__" onclick="apSetSit('__FALTAM__')">⏳ Pendentes de escolha <span id="ap-faltam-n" class="miut"></span></button>
+          <span class="miut" id="ap-esc-badge" style="align-self:center;margin-left:4px;"></span>
         </div>
         <div style="overflow-x:auto;">
           <table>
@@ -1623,6 +1625,22 @@ async function garantirRosterEscopo(){
   return ROSTER_ESC;
 }
 const _soDig = s => String(s||'').replace(/\D/g,'');
+let _escFaltam=[], _escTot=0, _escNesc=0;   // guarda p/ o chip "Pendentes de escolha"
+const _escNome=m=>`${(m.posto_graduacao||'').toUpperCase()} ${esc(m.nome_completo||m.nome_guerra||'')}`.trim();
+// lista dos que faltam, agrupada por fração/grupamento (reusada no card e no chip)
+function _escListaHtml(faltam){
+  if(!faltam.length) return '<div class="miut" style="margin-top:10px;">🎉 Todo o efetivo já tem férias lançadas no ano.</div>';
+  const porGrp={}; faltam.forEach(m=>{ const g=(m.grupamento_id||'—'); (porGrp[g]=porGrp[g]||[]).push(m); });
+  return '<div class="esc-faltam">'+Object.keys(porGrp).sort().map(g=>`<div class="esc-grp"><div class="esc-grp-h">${esc(g)} <span>(${porGrp[g].length})</span></div>`
+      + porGrp[g].sort((a,b)=>_escNome(a).localeCompare(_escNome(b))).map(m=>`<div class="esc-mil">${_escNome(m)}<span class="miut"> · ${esc(m.matricula||'')}</span></div>`).join('')
+      + '</div>').join('')+'</div>';
+}
+// atualiza o contador do chip "Pendentes de escolha" e o total "já escolheram"
+function _escAtualizarChips(){
+  const fn=document.getElementById('ap-faltam-n'); if(fn) fn.textContent=_escFaltam.length?`(${_escFaltam.length})`:'';
+  const eb=document.getElementById('ap-esc-badge'); if(eb) eb.textContent=_escTot?`✅ Já escolheram: ${_escNesc} de ${_escTot}`:'';
+  if((apSit==='__FALTAM__') && typeof aprovarRender==='function') aprovarRender();   // se o chip está ativo, re-renderiza a lista
+}
 async function renderEscolhasResumo(){
   const box=document.getElementById('ap-escolhas'); if(!box) return;
   const roster=await garantirRosterEscopo();
@@ -1643,18 +1661,11 @@ async function renderEscolhasResumo(){
   const faltam=base.filter(m=>!escolheu(m));
   const total=base.length, nEsc=total-faltam.length, pct=total?Math.round(100*nEsc/total):0;
 
-  if(!total){ box.innerHTML='<div class="miut">Sem efetivo no seu escopo para apurar as escolhas de férias.</div>'; return; }
+  if(!total){ box.innerHTML='<div class="miut">Sem efetivo no seu escopo para apurar as escolhas de férias.</div>';
+    _escFaltam=[]; _escTot=0; _escNesc=0; _escAtualizarChips(); return; }
 
-  // agrupa os que faltam por fração / grupamento
-  const porGrp={};
-  faltam.forEach(m=>{ const g=(m.grupamento_id||'—'); (porGrp[g]=porGrp[g]||[]).push(m); });
-  const _nm=m=>`${(m.posto_graduacao||'').toUpperCase()} ${esc(m.nome_completo||m.nome_guerra||'')}`.trim();
-  const grps=Object.keys(porGrp).sort();
-  const listaHtml = faltam.length
-    ? `<div class="esc-faltam">`+grps.map(g=>`<div class="esc-grp"><div class="esc-grp-h">${esc(g)} <span>(${porGrp[g].length})</span></div>`
-        + porGrp[g].sort((a,b)=>_nm(a).localeCompare(_nm(b))).map(m=>`<div class="esc-mil">${_nm(m)}<span class="miut"> · ${esc(m.matricula||'')}</span></div>`).join('')
-        + '</div>').join('')+'</div>'
-    : '<div class="miut" style="margin-top:10px;">🎉 Todo o efetivo já tem férias lançadas no ano.</div>';
+  _escFaltam=faltam; _escTot=total; _escNesc=nEsc; _escAtualizarChips();   // alimenta o chip "Pendentes de escolha"
+  const listaHtml = _escListaHtml(faltam);
 
   box.innerHTML=`
     <div class="esc-head">
@@ -1724,6 +1735,19 @@ function aprovarRender(){
     <div class="pctbar"><i style="width:${Math.min(100,pctGeral)}%"></i></div></div>`;
   document.getElementById('ap-pct').innerHTML=spans.length?('<div class="miut" style="text-transform:uppercase;font-size:10px;letter-spacing:.4px;margin-bottom:8px;">Percentual '+(ehCia?'da Cia':'do pelotão')+' — provisório, atualiza ao definir</div>'+geralHtml+pctHtml):('<div class="miut" style="text-transform:uppercase;font-size:10px;letter-spacing:.4px;margin-bottom:8px;">Percentual '+(ehCia?'da Cia':'do pelotão')+'</div>'+geralHtml+'<div class="miut">Cronograma sem períodos cadastrados (mostrando só o geral).</div>');
   const tb=document.getElementById('ap-tbody');
+  // chip "Pendentes de escolha": lista quem (do efetivo do escopo) ainda não tem férias no ano
+  if(apSit==='__FALTAM__'){
+    if(!_escFaltam.length){ tb.innerHTML='<tr><td colspan="6"><div class="empty">'+(_escTot?'🎉 Todo o efetivo já tem férias lançadas no ano.':'Carregando efetivo…')+'</div></td></tr>'; return; }
+    const sorted=_escFaltam.slice().sort((a,b)=>String(a.grupamento_id||'').localeCompare(String(b.grupamento_id||''))||_escNome(a).localeCompare(_escNome(b)));
+    tb.innerHTML='<tr><td colspan="6" class="miut" style="background:var(--bg-dark);">Militares do seu efetivo que ainda NÃO têm férias anuais lançadas em '+anoSel+' (visão de toda a sua área, não filtra por pelotão).</td></tr>'
+      + sorted.map((m,i)=>`<tr>
+        <td class="miut">${i+1}</td>
+        <td style="min-width:220px;"><b>${_escNome(m)}</b><div class="miut">${esc(m.matricula||'')}</div></td>
+        <td colspan="3" style="font-size:12px;color:var(--text-white);">${esc(m.grupamento_id||'—')}</td>
+        <td style="text-align:right;white-space:nowrap;"><span class="miut">aguardando escolha</span></td>
+      </tr>`).join('');
+    return;
+  }
   if(!listaTb.length){ tb.innerHTML='<tr><td colspan="6"><div class="empty">'+(lista.length?'Nenhum pedido com esse filtro.':(ehCia?'Nenhum pedido lançado.':'Nenhum pedido neste pelotão.'))+'</div></td></tr>'; return; }
   tb.innerHTML=listaTb.map((p,i)=>{ const m=p.militar||{};
     const ops=(p.opcoes&&p.opcoes.length)?p.opcoes:[];
