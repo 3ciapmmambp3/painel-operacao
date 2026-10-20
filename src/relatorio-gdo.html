@@ -519,7 +519,8 @@ function montarRelatorio(){
   const getGP = colK => {
     if(!porGP[colK]){
       const r = rotuloGP(colK);
-      porGP[colK] = { ...r, imv:0, cvpe:0, cvpa:0, viol:0, ifz:0, exige:0, feitas:0, pendentes:[], ops:0, opsValidas:0 };
+      porGP[colK] = { ...r, imv:0, cvpe:0, cvpa:0, viol:0, ifz:0, exige:0, feitas:0, pendentes:[], ops:0, opsValidas:0,
+        vis:{ CVPE:{e:0,f:0,p:0}, CVPA:{e:0,f:0,p:0}, IF:{e:0,f:0,p:0} } };
     }
     return porGP[colK];
   };
@@ -534,9 +535,10 @@ function montarRelatorio(){
     else if(c.indicador==='IF'){ g.ifz++; }
     if(exigeVisita(c)){
       g.exige++;
+      g.vis[c.indicador].e++;
       const vis = visitasDoCrime(c);
-      if(vis.length) g.feitas++;
-      else g.pendentes.push({ bo:c.bo, data:c.data, municipio:c.municipio, indicador:c.indicador });
+      if(vis.length){ g.feitas++; g.vis[c.indicador].f++; }
+      else { g.pendentes.push({ bo:c.bo, data:c.data, municipio:c.municipio, indicador:c.indicador }); g.vis[c.indicador].p++; }
     }
   });
 
@@ -551,11 +553,15 @@ function montarRelatorio(){
   const lista = Object.values(porGP).sort((a,b) =>
     b.pendentes.length - a.pendentes.length || b.viol - a.viol || a.nome.localeCompare(b.nome)
   );
-  const tot = lista.reduce((t,g)=>({
-    imv:t.imv+g.imv, cvpe:t.cvpe+g.cvpe, cvpa:t.cvpa+g.cvpa, viol:t.viol+g.viol, ifz:t.ifz+g.ifz,
-    exige:t.exige+g.exige, feitas:t.feitas+g.feitas, pend:t.pend+g.pendentes.length,
-    ops:t.ops+g.ops, opsValidas:t.opsValidas+g.opsValidas,
-  }), {imv:0,cvpe:0,cvpa:0,viol:0,ifz:0,exige:0,feitas:0,pend:0,ops:0,opsValidas:0});
+  const tot = lista.reduce((t,g)=>{
+    ['CVPE','CVPA','IF'].forEach(k=>{ t.vis[k].e+=g.vis[k].e; t.vis[k].f+=g.vis[k].f; t.vis[k].p+=g.vis[k].p; });
+    return {
+      imv:t.imv+g.imv, cvpe:t.cvpe+g.cvpe, cvpa:t.cvpa+g.cvpa, viol:t.viol+g.viol, ifz:t.ifz+g.ifz,
+      exige:t.exige+g.exige, feitas:t.feitas+g.feitas, pend:t.pend+g.pendentes.length,
+      ops:t.ops+g.ops, opsValidas:t.opsValidas+g.opsValidas, vis:t.vis,
+    };
+  }, {imv:0,cvpe:0,cvpa:0,viol:0,ifz:0,exige:0,feitas:0,pend:0,ops:0,opsValidas:0,
+      vis:{ CVPE:{e:0,f:0,p:0}, CVPA:{e:0,f:0,p:0}, IF:{e:0,f:0,p:0} }});
   return { lista, tot };
 }
 
@@ -599,14 +605,14 @@ function render(){
         <div class="kpi-sub">IMV ${tot.imv} · CVPE ${tot.cvpe} · CVPA ${tot.cvpa}</div>
       </div>
       <div class="kpi">
-        <div class="kpi-label">Furtos (IF)</div>
+        <div class="kpi-label">IF</div>
         <div class="kpi-val">${tot.ifz}</div>
         <div class="kpi-sub">infração/furto em zona rural</div>
       </div>
       <div class="kpi">
         <div class="kpi-label">Visitas exigidas</div>
         <div class="kpi-val">${tot.exige}</div>
-        <div class="kpi-sub">ocorrências que pedem visita</div>
+        <div class="kpi-sub">CVPE ${tot.vis.CVPE.e} · CVPA ${tot.vis.CVPA.e} · IF ${tot.vis.IF.e}</div>
       </div>
       <div class="kpi green">
         <div class="kpi-label">Visitas feitas</div>
@@ -616,7 +622,7 @@ function render(){
       <div class="kpi red">
         <div class="kpi-label">Visitas pendentes</div>
         <div class="kpi-val">${tot.pend}</div>
-        <div class="kpi-sub">sem visita tranquilizadora</div>
+        <div class="kpi-sub">CVPE ${tot.vis.CVPE.p} · CVPA ${tot.vis.CVPA.p} · IF ${tot.vis.IF.p}</div>
       </div>
       <div class="kpi blue">
         <div class="kpi-label">Operações realizadas</div>
@@ -632,7 +638,7 @@ function render(){
           <tr>
             <th class="esq" rowspan="2">Grupamento</th>
             <th colspan="4">Crimes violentos</th>
-            <th rowspan="2" title="Infração/furto em zona rural (ifzr)">Furtos<br>(IF)</th>
+            <th rowspan="2" title="Infração/furto em zona rural (ifzr)">IF</th>
             <th colspan="3">Visitas tranquilizadoras</th>
             <th colspan="2">Operações</th>
           </tr>
@@ -675,6 +681,36 @@ function render(){
       </table>
     </div>`;
 
+  /* Visitas por indicador — demonstra qual indicador deve ser visitado e qual está pendente */
+  const INDLBL = { CVPE:'Crime violento contra a pessoa', CVPA:'Crime violento contra o patrimônio', IF:'Furto em zona rural' };
+  const visEsperada = ind => ind === 'IF' ? 'Furto (A20028)' : 'Pessoa (A20001)';
+  html += `<div class="sec-titulo">🤝 Visitas Tranquilizadoras por Indicador</div>
+    <div class="rg-tbl-wrap">
+      <table class="rg-tbl" style="min-width:560px;">
+        <thead><tr>
+          <th class="esq">Indicador</th><th class="esq">Visita esperada</th><th>Exige</th><th>Feitas</th><th>Pendentes</th><th>% feito</th>
+        </tr></thead>
+        <tbody>
+          ${['CVPE','CVPA','IF'].map(k => {
+            const v = tot.vis[k]; const pc = v.e ? Math.round(v.f/v.e*100) : 0;
+            return `<tr>
+              <td class="esq"><b>${k}</b> <span class="gp-sub">${INDLBL[k]}</span></td>
+              <td class="esq">${visEsperada(k)}</td>
+              <td>${v.e||'<span class="pill-zero">0</span>'}</td>
+              <td>${pill(v.f,true)}</td>
+              <td>${pill(v.p,false)}</td>
+              <td>${v.e?pc+'%':'—'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+        <tfoot><tr>
+          <td class="esq">TOTAL</td><td></td>
+          <td>${tot.exige}</td><td>${tot.feitas}</td><td>${tot.pend}</td>
+          <td>${tot.exige?Math.round(tot.feitas/tot.exige*100)+'%':'—'}</td>
+        </tr></tfoot>
+      </table>
+    </div>`;
+
   /* Pendências detalhadas por GP */
   const comPend = lista.filter(g => g.pendentes.length);
   html += `<div class="sec-titulo">⚠️ Pendências de Visita Tranquilizadora ${comPend.length?`<span style="color:var(--text-muted);font-weight:400;font-size:11px;">(clique para expandir)</span>`:''}</div>`;
@@ -682,23 +718,25 @@ function render(){
     html += `<div class="rg-empty" style="padding:24px 0;">✅ Nenhuma visita pendente no período. Todas as ocorrências que exigiam visita foram atendidas.</div>`;
   } else {
     comPend.forEach(g => {
+      const brk = ['CVPE','CVPA','IF'].filter(k=>g.vis[k].p>0).map(k=>`${k} ${g.vis[k].p}`).join(' · ');
       const linhas = g.pendentes
-        .sort((a,b)=>{ const da=parseDataDDMMAAAA(a.data),db=parseDataDDMMAAAA(b.data); return (db&&da)?(db-da):0; })
+        .sort((a,b)=>{ const oa={CVPE:0,CVPA:1,IF:2}; if(oa[a.indicador]!==oa[b.indicador]) return oa[a.indicador]-oa[b.indicador]; const da=parseDataDDMMAAAA(a.data),db=parseDataDDMMAAAA(b.data); return (db&&da)?(db-da):0; })
         .map(p => `<tr>
             <td class="mono">${p.bo||'—'}</td>
             <td>${p.data||'—'}</td>
             <td>${p.municipio||'—'}</td>
             <td><b style="color:var(--danger);">${p.indicador}</b></td>
+            <td>${visEsperada(p.indicador)}</td>
           </tr>`).join('');
       html += `
         <div class="pend-gp">
           <div class="pend-gp-head" onclick="this.parentElement.classList.toggle('aberto')">
-            <div><span class="gp-nome">${g.nome}</span> ${g.sub?`<span class="gp-sub">· ${g.sub}</span>`:''}</div>
+            <div><span class="gp-nome">${g.nome}</span> ${g.sub?`<span class="gp-sub">· ${g.sub}</span>`:''} ${brk?`<span class="gp-sub">· ${brk}</span>`:''}</div>
             <div><span class="pill pill-red">${g.pendentes.length} pendente(s)</span></div>
           </div>
           <div class="pend-gp-body">
             <table>
-              <thead><tr><th>Nº BO/REDS</th><th>Data</th><th>Município</th><th>Indicador</th></tr></thead>
+              <thead><tr><th>Nº BO/REDS</th><th>Data</th><th>Município</th><th>Indicador</th><th>Visita esperada</th></tr></thead>
               <tbody>${linhas}</tbody>
             </table>
           </div>
@@ -721,7 +759,7 @@ function exportarExcel(){
     ['RELATÓRIO CONSOLIDADO GDO — 3ª Cia PM MAmb'],
     ['Período: ' + periodoLabel()],
     [],
-    ['Grupamento','GP','Pelotão','IMV','CVPE','CVPA','Crimes violentos','Furtos (IF)','Visitas exige','Visitas feitas','Visitas pendentes','Operações realizadas','Operações válidas GDO'],
+    ['Grupamento','GP','Pelotão','IMV','CVPE','CVPA','Crimes violentos','IF','Visitas exige','Visitas feitas','Visitas pendentes','Operações realizadas','Operações válidas GDO'],
   ];
   lista.forEach(g => aoa.push([
     g.nome, (gpNumDoColk(g.chave)!==99?gpNumDoColk(g.chave):''), (pelDoColk(g.chave)!==99?pelDoColk(g.chave):''),
@@ -732,11 +770,20 @@ function exportarExcel(){
   ws1['!cols'] = [{wch:30},{wch:5},{wch:7},{wch:6},{wch:6},{wch:6},{wch:15},{wch:11},{wch:12},{wch:12},{wch:15},{wch:18},{wch:18}];
   XLSX.utils.book_append_sheet(wb, ws1, 'Por Grupamento');
 
-  const pend = [['Grupamento','Nº BO/REDS','Data','Município','Indicador']];
-  lista.forEach(g => g.pendentes.forEach(p => pend.push([g.nome, p.bo, p.data, p.municipio, p.indicador])));
-  const ws2 = XLSX.utils.aoa_to_sheet(pend);
-  ws2['!cols'] = [{wch:28},{wch:20},{wch:12},{wch:22},{wch:10}];
-  XLSX.utils.book_append_sheet(wb, ws2, 'Pendências');
+  /* Aba: Visitas por indicador */
+  const vEsp = ind => ind === 'IF' ? 'Furto (A20028)' : 'Pessoa (A20001)';
+  const vind = [['Indicador','Visita esperada','Exige','Feitas','Pendentes','% feito']];
+  ['CVPE','CVPA','IF'].forEach(k => { const v=tot.vis[k]; vind.push([k, vEsp(k), v.e, v.f, v.p, v.e?Math.round(v.f/v.e*100)+'%':'—']); });
+  vind.push(['TOTAL','',tot.exige,tot.feitas,tot.pend,tot.exige?Math.round(tot.feitas/tot.exige*100)+'%':'—']);
+  const ws2 = XLSX.utils.aoa_to_sheet(vind);
+  ws2['!cols'] = [{wch:10},{wch:18},{wch:8},{wch:8},{wch:11},{wch:9}];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Visitas por Indicador');
+
+  const pend = [['Grupamento','Nº BO/REDS','Data','Município','Indicador','Visita esperada']];
+  lista.forEach(g => g.pendentes.forEach(p => pend.push([g.nome, p.bo, p.data, p.municipio, p.indicador, vEsp(p.indicador)])));
+  const ws3 = XLSX.utils.aoa_to_sheet(pend);
+  ws3['!cols'] = [{wch:28},{wch:20},{wch:12},{wch:22},{wch:10},{wch:16}];
+  XLSX.utils.book_append_sheet(wb, ws3, 'Pendências');
 
   const nome = 'Relatorio-GDO_' + (mesSel()||'Ano') + '-' + (anoSel()||'') + '.xlsx';
   XLSX.writeFile(wb, nome);
