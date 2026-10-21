@@ -223,7 +223,7 @@
       <b>Visitas tranquilizadoras exigidas</b> = ocorrências que geram a obrigação da visita (CVPE sempre; CVPA/IF quando o complemento de natureza é residência/estabelecimento). Morte violenta (IMV) não gera visita.<br>
       <b>Feitas</b> = existe visita válida (natureza A20001/A20028) a até 200&nbsp;m do crime e em data igual ou posterior, ou vínculo direto POG. <b>Pendentes</b> = sem visita.<br>
       <b>Operações</b> = operações GDO Rural (Y07) em zona rural no período; <b>válidas</b> = as que cumprem os critérios de tempo/efetivo/viatura/abordagem da GDO.<br>
-      💡 Passe o mouse sobre os números de <b>IMV, CVPE, CVPA, Total, IF, Exige e Pend.</b> para ver os nº das ocorrências (BO/REDS).
+      💡 Passe o mouse sobre os números de <b>IMV, CVPE, CVPA, Total, IF, Exige, Pend. e Operações</b> para ver os nº das ocorrências (BO/REDS/RAT); nas <b>Operações realizadas</b>, o balão mostra também o motivo de cada operação não ter sido validada.
     </div>
 
   </div>
@@ -358,6 +358,20 @@ function gdoValidaOp(op){
     if((op.veiculos||0) < 1) return false;
   }
   return true;
+}
+/* Motivo(s) de a operação NÃO ser válida p/ GDO (mesma linguagem do painel GDO Rural).
+   Retorna '' quando a operação é válida. */
+function gdoMotivoRejeicao(op){
+  if(!['Y07001','Y07002','Y07014'].includes(op.natureza)) return 'natureza '+(op.natureza||'—')+' não conta p/ GDO';
+  const m=[];
+  if((op.tempo||0)     < 30) m.push(`tempo ${op.tempo||0}min < 30min`);
+  if((op.militares||0) <  2) m.push(`militares ${op.militares||0} < 2`);
+  if((op.viaturas||0)  <  1) m.push(`viaturas ${op.viaturas||0} < 1`);
+  if(op.natureza==='Y07001' || op.natureza==='Y07002'){
+    if((op.pessoas||0)  < 2) m.push(`pessoas ${op.pessoas||0} < 2`);
+    if((op.veiculos||0) < 1) m.push(`veículos ${op.veiculos||0} < 1`);
+  }
+  return m.join(' · ');
 }
 function corrigeCoord(lat,lng){
   lat = parseFloat((lat||'').toString().replace(',','.')) || null;
@@ -597,6 +611,7 @@ function montarRelatorio(){
     if(!porGP[colK]){
       const r = rotuloGP(colK);
       porGP[colK] = { ...r, imv:0, cvpe:0, cvpa:0, viol:0, ifz:0, exige:0, feitas:0, pendentes:[], exigidos:[], ops:0, opsValidas:0,
+        opsItens:[], opsValidasItens:[],
         cr:{ IMV:[], CVPE:[], CVPA:[], VIOL:[], IF:[] },
         vis:{ CVPE:{e:0,f:0,p:0}, CVPA:{e:0,f:0,p:0}, IF:{e:0,f:0,p:0} } };
     }
@@ -628,7 +643,10 @@ function montarRelatorio(){
     if(!opNoRecorte(o)) return;
     const g = getGP(o.grupamento || '');
     g.ops++;
-    if(gdoValidaOp(o)) g.opsValidas++;
+    const valida = gdoValidaOp(o);
+    const item = { rat:o.rat, data:o.data, municipio:o.municipio, valida:valida, motivo: valida ? '' : gdoMotivoRejeicao(o) };
+    g.opsItens.push(item);
+    if(valida){ g.opsValidas++; g.opsValidasItens.push(item); }
   });
 
   const lista = Object.values(porGP).sort((a,b) =>
@@ -673,6 +691,25 @@ function tipHtml(titulo, gpCompleto, itens, comStatus){
     + `<div class="tt-gp">Grupamento resp.: ${gpCompleto}</div>`
     + `<table>${rows}</table>`
     + (extra > 0 ? `<div class="tt-more">+${extra} ocorrência(s)… abra "Pendências" para ver todas.</div>` : '');
+}
+
+/* Balão das OPERAÇÕES (nº do RAT, data, município). comMotivo=true mostra o
+   status ✓ válida / ✗ motivo de não validação (igual ao painel GDO Rural). */
+function tipHtmlOps(titulo, gpCompleto, itens, comMotivo){
+  const cap = 15;
+  const rows = itens.slice(0, cap).map(p => `<tr>
+      <td class="bo">${p.rat||'—'}</td>
+      <td>${p.data||'—'}</td>
+      <td class="mun">${p.municipio||'—'}</td>
+      ${comMotivo ? `<td>${p.valida
+          ? '<span style="color:var(--green)">✓ válida</span>'
+          : '<span style="color:var(--red)">✗ '+(p.motivo||'não válida')+'</span>'}</td>` : ''}
+    </tr>`).join('');
+  const extra = itens.length - cap;
+  return `<div class="tt-title">${titulo}</div>`
+    + `<div class="tt-gp">Grupamento resp.: ${gpCompleto}</div>`
+    + `<table>${rows}</table>`
+    + (extra > 0 ? `<div class="tt-more">+${extra} operação(ões)…</div>` : '');
 }
 
 function render(){
@@ -750,9 +787,11 @@ function render(){
         <tbody>`;
 
   lista.forEach((g, idx) => {
-    const exKey = 'ex'+idx, pdKey = 'pd'+idx;
+    const exKey = 'ex'+idx, pdKey = 'pd'+idx, opKey = 'op'+idx, ovKey = 'ov'+idx;
     if(g.exigidos.length)  window._rgTips[exKey] = tipHtml('Ocorrências que exigem visita — '+g.nome, g.chave, g.exigidos, false);
     if(g.pendentes.length) window._rgTips[pdKey] = tipHtml('Visitas pendentes — '+g.nome, g.chave, g.pendentes, false);
+    if(g.opsItens.length)        window._rgTips[opKey] = tipHtmlOps('Operações realizadas — '+g.nome, g.chave, g.opsItens, true);
+    if(g.opsValidasItens.length) window._rgTips[ovKey] = tipHtmlOps('Operações válidas p/ GDO — '+g.nome, g.chave, g.opsValidasItens, false);
 
     /* Balões por indicador de crime (Nº da ocorrência) */
     const crCfg = [
@@ -783,8 +822,8 @@ function render(){
         <td${g.exigidos.length?` class="tip-cell" data-tipkey="${exKey}"`:''}>${g.exige||'<span class="pill-zero">0</span>'}</td>
         <td>${pill(g.feitas,true)}</td>
         <td${g.pendentes.length?` class="tip-cell" data-tipkey="${pdKey}"`:''}>${pill(g.pendentes.length,false)}</td>
-        <td>${g.ops||'<span class="pill-zero">0</span>'}</td>
-        <td>${g.opsValidas||'<span class="pill-zero">0</span>'}</td>
+        <td${g.opsItens.length?` class="tip-cell" data-tipkey="${opKey}"`:''}>${g.ops||'<span class="pill-zero">0</span>'}</td>
+        <td${g.opsValidasItens.length?` class="tip-cell" data-tipkey="${ovKey}"`:''}>${g.opsValidas||'<span class="pill-zero">0</span>'}</td>
       </tr>`;
   });
 
