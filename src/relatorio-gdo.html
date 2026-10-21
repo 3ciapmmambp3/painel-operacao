@@ -276,6 +276,42 @@ if(sessao){
   if(admTopnavItem && ehAdmin) admTopnavItem.style.display = '';
 }
 
+/* ════════════════════════════════════════════════════════════════
+   ESCOPO POR PAPEL — limita os grupamentos que o usuário enxerga
+   • Admin Geral / Admin / CMT de Cia / CMT de Pelotão → toda a Cia
+   • Aux Pelotão / admin_pelotao                       → GPs do SEU pelotão
+   • Cmt de Grupamento / admin_gp / Operacional        → só o SEU grupamento
+   (o grupamento/pelotão do usuário vem de sessao.grupamento_id, formato
+    longo "3 GP / 1 PEL / 3 Cia PM MAmb"; a FUNÇÃO tem prioridade.)
+════════════════════════════════════════════════════════════════ */
+const ESCOPO = (function(){
+  if(!sessao) return { tipo:'cia' };
+  const nivel = (sessao.nivel_acesso||'').toString();
+  const fx    = (sessao.funcao||'').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  const ehCmt = /(CMT|COMANDANTE)/.test(fx);
+  const ehCmtCiaOuPel = ehCmt && (/\bCIA\b/.test(fx) || /PEL/.test(fx));
+  const gid    = (sessao.grupamento_id || sessao.lotacao || '').toString();
+  const meuPel = (gid.match(/(\d+)\s*PEL/i)||[])[1] || '';
+  const meuGp  = (gid.match(/(\d+)\s*GP/i) ||[])[1] || '';
+  /* Cia inteira */
+  if(nivel==='admin_geral' || nivel==='admin' || ehCmtCiaOuPel) return { tipo:'cia' };
+  /* Pelotão (todos os GPs do próprio pelotão) */
+  const ehAuxPel = /AUX/.test(fx) && /PEL/.test(fx);
+  if(nivel==='admin_pelotao' || ehAuxPel) return { tipo:'pel', pel:meuPel, gp:meuGp };
+  /* Grupamento (só o próprio GP): Cmt de Grupamento, admin_gp, Operacional */
+  return { tipo:'gp', pel:meuPel, gp:meuGp };
+})();
+
+/* Um grupamento (colK) está dentro do escopo do usuário? */
+function colKNoEscopo(colK){
+  if(ESCOPO.tipo==='cia') return true;
+  if(ESCOPO.tipo==='pel') return ESCOPO.pel!=='' && String(pelDoColk(colK))===String(ESCOPO.pel);
+  /* gp: casa por nº de Pelotão + nº de GP (robusto a diferenças de texto) */
+  return ESCOPO.pel!=='' && ESCOPO.gp!=='' &&
+         String(pelDoColk(colK))===String(ESCOPO.pel) &&
+         String(gpNumDoColk(colK))===String(ESCOPO.gp);
+}
+
 /* ---- Dropdowns da barra do topo ---- */
 document.querySelectorAll('.topnav-link[data-dropdown]').forEach(link => {
   link.addEventListener('click', (e) => {
@@ -499,6 +535,7 @@ function gpSel(){ return document.getElementById('f-gp').value; }
 
 /* Crime passa no recorte de período/pelotão/grupamento */
 function crimeNoRecorte(c){
+  if(!colKNoEscopo(c.grupamento||'')) return false;   /* trava por papel */
   const a = anoSel(), m = mesSel(), p = pelSel(), g = gpSel();
   if(a && (c.ano||anoDaData(c.data)) !== a) return false;
   if(m && c.mes !== m) return false;
@@ -507,6 +544,7 @@ function crimeNoRecorte(c){
   return true;
 }
 function opNoRecorte(o){
+  if(!colKNoEscopo(o.grupamento||'')) return false;   /* trava por papel */
   const a = anoSel(), m = mesSel(), p = pelSel(), g = gpSel();
   if(a && anoDaData(o.data) !== a) return false;
   if(m && mesDaData(o.data) !== m) return false;
@@ -1066,12 +1104,50 @@ function popularFiltros(){
   /* Meses do ano selecionado */
   atualizarMeses();
 
-  /* Pelotões presentes */
-  const pels = [...new Set(dadosCrimes.map(c => pelDoColk(c.grupamento)).filter(n=>n && n!==99))].sort((a,b)=>a-b);
-  document.getElementById('f-pel').innerHTML = '<option value="">Todos os pelotões</option>' +
+  /* Pelotões presentes (restritos ao escopo do usuário) */
+  let pels = [...new Set(dadosCrimes.map(c => pelDoColk(c.grupamento)).filter(n=>n && n!==99))].sort((a,b)=>a-b);
+  if(ESCOPO.tipo!=='cia' && ESCOPO.pel!=='') pels = pels.filter(p=>String(p)===String(ESCOPO.pel));
+  const selPel = document.getElementById('f-pel');
+  selPel.innerHTML = (ESCOPO.tipo==='cia' ? '<option value="">Todos os pelotões</option>' : '') +
     pels.map(p=>`<option value="${p}">${p}º Pelotão</option>`).join('');
+  if(ESCOPO.tipo!=='cia' && ESCOPO.pel!=='') selPel.value = ESCOPO.pel;
 
   atualizarGPs();
+  aplicarEscopoFiltros();
+}
+
+/* Trava/oculta os seletores conforme o escopo do usuário + aviso */
+function aplicarEscopoFiltros(){
+  if(ESCOPO.tipo==='cia') return;
+  const fgPel = document.getElementById('f-pel');
+  if(fgPel){
+    if(ESCOPO.pel!=='') fgPel.value = ESCOPO.pel;
+    fgPel.disabled = true;
+    const fg = fgPel.closest('.rg-fg'); if(fg) fg.style.display = 'none';
+  }
+  if(ESCOPO.tipo==='gp'){
+    const fgGp = document.getElementById('f-gp');
+    if(fgGp){
+      const opt = [...fgGp.options].find(o => o.value &&
+        String(pelDoColk(o.value))===String(ESCOPO.pel) &&
+        String(gpNumDoColk(o.value))===String(ESCOPO.gp));
+      if(opt) fgGp.value = opt.value;
+      fgGp.disabled = true;
+      const fg = fgGp.closest('.rg-fg'); if(fg) fg.style.display = 'none';
+    }
+  }
+  /* aviso de escopo (uma vez) */
+  if(!document.getElementById('rg-aviso-escopo')){
+    const div = document.createElement('div');
+    div.id = 'rg-aviso-escopo';
+    div.className = 'print-hide';
+    div.style.cssText = 'margin:-6px 0 14px;padding:7px 12px;background:rgba(66,165,245,.08);border:1px solid rgba(66,165,245,.3);border-radius:6px;font-size:11.5px;color:var(--info);';
+    div.textContent = ESCOPO.tipo==='pel'
+      ? `🔒 Exibindo apenas o ${ESCOPO.pel||'seu'}º Pelotão (todos os grupamentos).`
+      : `🔒 Exibindo apenas o seu grupamento (${ESCOPO.gp||'?'}º GP · ${ESCOPO.pel||'?'}º Pel).`;
+    const filtros = document.querySelector('.rg-filtros');
+    if(filtros) filtros.insertAdjacentElement('afterend', div);
+  }
 }
 /* Lista de grupamentos (afunila pelo pelotão selecionado) */
 function atualizarGPs(){
