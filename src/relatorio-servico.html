@@ -1729,6 +1729,53 @@ async function carregarDemandasSupabase(){
   referenceCache['REQUISICAO'] = _merge(_scopePlan(referenceCache['REQUISICAO']), supReq);
 }
 
+// ── NUDEN (Controle de Demandas, tabela nuden_demandas — db/151) ──────────
+// ADITIVO: injeta as pendentes da NUDEN no card do Relatório SEM tocar no que
+// a planilha do Cartão já trouxe para referenceCache['NUDEN']. Rótulo começa
+// pelo CÓDIGO (D######), que a baixa (marcarDemandasAtendidas) extrai p/ chamar
+// nuden_baixar. Best-effort: falhou, mantém o que havia.
+async function carregarNudenControleSupabase(){
+  if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
+  const S = (typeof getSessaoAtual === 'function') ? getSessaoAtual() : null;
+  if (!S) return;
+  const H = { apikey: SB_AUTH_KEY, Authorization:`Bearer ${SB_AUTH_KEY}`, 'Content-Type':'application/json' };
+  const gpN  = s => { const m=(s||'').match(/(\d+)\s*GP/i);  return m?+m[1]:null; };
+  const pelN = s => { const m=(s||'').match(/(\d+)\s*PEL/i); return m?+m[1]:null; };
+  const rg = await fetch(`${SB_AUTH_URL}/rest/v1/grupos?select=gp_responsavel,grupamento_completo`, { headers:H });
+  if (!rg.ok) return;
+  const GRUPOS = (await rg.json()).map(g => ({ gpr:g.gp_responsavel, gp:gpN(g.grupamento_completo), pel:pelN(g.grupamento_completo) }));
+  const nivel = S.nivel_acesso || 'operacional';
+  const meuGp = gpN(S.grupamento_id), meuPel = pelN(S.grupamento_id);
+  let ALLOWED;
+  if (nivel==='admin' || nivel==='admin_geral') ALLOWED = GRUPOS.slice();
+  else if (nivel==='admin_pelotao')             ALLOWED = GRUPOS.filter(g => g.pel===meuPel);
+  else {
+    ALLOWED = GRUPOS.filter(g => g.gp===meuGp && g.pel===meuPel);
+    if (!ALLOWED.length) ALLOWED = GRUPOS.filter(g => (S.grupamento_id||'').toUpperCase().includes((g.gpr||'').replace('GP ','')));
+  }
+  const gprs = [...new Set(ALLOWED.map(g=>g.gpr).filter(Boolean))];
+  if (!gprs.length) return;
+  const inList = '(' + gprs.map(v=>`"${String(v).replace(/"/g,'')}"`).join(',') + ')';
+  const sit = 'in.(' + ['"PENDENTE"','"EM ANDAMENTO"'].join(',') + ')';
+  const url = `${SB_AUTH_URL}/rest/v1/nuden_demandas?select=codigo,municipio,natureza,fracao_responsavel,grupamento_completo`
+            + `&gp_responsavel=in.${encodeURIComponent(inList)}&situacao=${encodeURIComponent(sit)}&ativo=eq.true`
+            + `&data_atendimento=is.null&order=data_vencimento.asc.nullslast&limit=3000`;
+  const rd = await fetch(url, { headers:H });
+  if (!rd.ok) return;   // ex.: 404 enquanto a migração db/151 não rodou
+  const rows = await rd.json();
+  const itens = rows.map(d => {
+    const extras = [d.municipio, d.natureza].filter(Boolean).join(' · ');
+    return { value: extras ? `${d.codigo} — ${extras}` : `${d.codigo}`, fracao: d.grupamento_completo || d.fracao_responsavel || '' };
+  });
+  const atual = Array.isArray(referenceCache['NUDEN']) ? referenceCache['NUDEN'] : [];
+  const seen = new Set(); const out = [];
+  [...atual, ...itens].forEach(it => {
+    const k = ((it && typeof it==='object') ? (it.value||'') : (it||'')).replace(/\s+/g,' ').trim();
+    if (k && !seen.has(k)) { seen.add(k); out.push(it); }
+  });
+  referenceCache['NUDEN'] = out;
+}
+
 // Demandas EM ANDAMENTO (tabela de controle Supabase, db/134): mescla nos cards
 // marcando "em andamento" (⟲). Substitui a versão "limpa" da mesma demanda para
 // não duplicar — assim a demanda continua aparecendo como pendente, com contexto.
@@ -2006,6 +2053,9 @@ async function fetchReferenceData(){
     catch(e){ console.warn('[quesitos] catálogo indisponível:', e); }
     try { await carregarDemandasSupabase(); }
     catch(e){ console.warn('[supademandas] mantendo fonte da planilha para DEN_BALCAO/REQUISICAO:', e); }
+    // NUDEN (Controle de Demandas, db/151): injeta pendentes no card, aditivo.
+    try { await carregarNudenControleSupabase(); }
+    catch(e){ console.warn('[nuden] controle de demandas indisponível:', e); }
     // Demandas EM ANDAMENTO (controle Supabase): reaparecem nos cards sinalizadas.
     try { await carregarDemandasAndamento(); }
     catch(e){ console.warn('[andamento] lista indisponível:', e); }
@@ -4717,6 +4767,35 @@ async function marcarDemandasAtendidas(payload, situMap){
         } catch(err){ console.warn('[baixa] falha em', numero, err); }
       }
     }
+    // ── NUDEN (Controle de Demandas, db/151): baixa por CÓDIGO via nuden_baixar.
+    // ADITIVO: só dispara em itens cujo rótulo traz um código D###### e que
+    // estejam FINALIZADA; não interfere no fluxo do Cartão. GAIA == Ato de Fisc.
+    try {
+      const catLabelN = (CATEGORIES.find(c => c.id === 'nuden') || {}).label;
+      const campoN = _demandaLabelOf('nuden');
+      const blocoN = catLabelN ? payload.categorias.find(c => c.categoria === catLabelN) : null;
+      if (catLabelN && campoN && blocoN && Array.isArray(blocoN.itens)){
+        const atendNome = [sess.pg, (sess.guerra||sess.nome)].map(s=>(s||'').trim()).filter(Boolean).join(' ') || null;
+        for (const item of blocoN.itens){
+          if (_situacaoDoItem(situMap, catLabelN, item) !== 'FINALIZADA') continue;
+          const codM = String(item[campoN]||'').match(/\bD\s?\d{3,}\b/i);
+          if (!codM) continue;   // sem código D###### = item da planilha do Cartão, não é nosso
+          const p_dados = {
+            codigo: codM[0].replace(/\s+/g,'').toUpperCase(),
+            data_atendimento: _normalizarDataResp(item['Data de Atendimento'] || item['Data da Fiscalização']),
+            numero_reds: item['Nº REDS (BO/BOS/RAT)'] || null,
+            numero_gaia: item['Nº Ato de Fiscalização'] || null,   // GAIA == Ato de Fiscalização
+            observacoes_resposta: item['Observações'] || null,
+            atendido_por_matricula: sess.matricula || null,
+            atendido_por_nome: atendNome
+          };
+          try {
+            await fetch(`${SB_AUTH_URL}/rest/v1/rpc/nuden_baixar`,
+              { method:'POST', headers:H, body: JSON.stringify({ p_dados }) });
+          } catch(err){ console.warn('[baixa nuden] falha em', p_dados.codigo, err); }
+        }
+      }
+    } catch(err){ console.warn('[baixa nuden]', err); }
   } catch(e){ console.warn('[baixa] marcarDemandasAtendidas', e); }
 }
 

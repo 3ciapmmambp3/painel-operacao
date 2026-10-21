@@ -28,6 +28,7 @@
     const qs = new URLSearchParams(location.search);
     let ativo = '';
     if (path === 'denuncias.html')                ativo = qs.get('tipo') === 'todos' ? 'todos' : (qs.get('tipo') === 'requisicao' ? 'req' : 'den');
+    else if (path === 'nuden.html')               ativo = 'nuden';
     else if (path === 'nova-denuncia.html')       ativo = qs.get('tipo') === 'requisicao' ? 'req' : 'den';
     else if (path === 'materiais-tco-semad.html') ativo = qs.get('aba') === 'SEMAD' ? 'mat-semad' : 'mat-tco';
     else if (path === 'relatorio-demandas.html')  ativo = 'relatorio';
@@ -46,6 +47,7 @@
       ${item('todos','denuncias.html?tipo=todos','🗃️','Todos (por prioridade)')}
       ${item('den','denuncias.html?tipo=denuncia','📋','Denúncias de Balcão')}
       ${item('req','denuncias.html?tipo=requisicao','📨','Requisições')}
+      ${item('nuden','nuden.html','🌿','NUDEN / SEMAD')}
       ${item('mat-tco','materiais-tco-semad.html?aba=TCO','📦','Materiais Acautelados - TCO')}
       ${item('mat-semad','materiais-tco-semad.html?aba=SEMAD','♻️','Materiais Acautelados - SEMAD')}
       ${soon('🌳','IEF / SISFIS')}
