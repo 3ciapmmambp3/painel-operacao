@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DDU 181 — 3ª Cia PM MAmb</title>
+<link rel="stylesheet" href="styles/global.css">
+<script src="auth.js"></script>
+<script src="topnav.js" data-ativo="p3"></script>
+<script src="demandas-sidebar.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  body{padding-bottom:40px}
+  .shell{display:flex;align-items:flex-start}
+  .shell .wrap{flex:1;min-width:0;max-width:none;margin:20px 22px 0;padding:0}
+  @media(max-width:760px){ .shell{flex-direction:column;align-items:stretch} .shell .wrap{margin:16px 14px 0} }
+  .pagehead{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:16px;gap:16px;flex-wrap:wrap}
+  .pagehead h2{font-size:20px;font-weight:700}
+  .scope{font-size:12px;color:var(--text-muted);margin-top:5px;display:flex;align-items:center;gap:7px}
+  .scope .pin{width:14px;height:14px;stroke:var(--gold);fill:none;stroke-width:1.8}
+  .scope b{color:var(--gold);font-weight:600}
+
+  .selbar{display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:11px 14px}
+  .selbar .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--gold);font-weight:700}
+  .selbar select{background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:8px 30px 8px 11px;color:var(--text-white);font-size:12.5px;outline:none;appearance:none;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239b8a5c' stroke-width='3'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
+  .selbar select:focus{border-color:var(--gold)}
+
+  /* quadros por prazo (modelo SISDEN) — clicáveis como filtro */
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:18px}
+  .kpi{background:var(--bg-card);border:1px solid var(--border);border-radius:11px;padding:15px 17px;position:relative;overflow:hidden;text-align:left;font:inherit;color:inherit;cursor:pointer}
+  .kpi:hover{background:var(--bg-hover)}
+  .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--border-mid)}
+  .kpi.on{border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold-border)}
+  .kpi.tot::before{background:var(--gold)} .kpi.okp::before{background:var(--success)}
+  .kpi.warn::before{background:#ffb74d} .kpi.late::before{background:var(--danger)} .kpi.done::before{background:var(--info)}
+  .kpi .lbl{font-size:11px;color:var(--text-muted);font-weight:600;letter-spacing:.3px;text-transform:uppercase}
+  .kpi .val{font-size:27px;font-weight:800;margin-top:6px;font-variant-numeric:tabular-nums;line-height:1}
+  .kpi.tot .val{color:var(--gold-light)} .kpi.okp .val{color:var(--success)}
+  .kpi.warn .val{color:#ffb74d} .kpi.late .val{color:var(--danger)} .kpi.done .val{color:#90caf9}
+  .kpi .sub{font-size:10.5px;color:var(--text-hint);margin-top:5px}
+
+  .toolbar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  .search{flex:1;min-width:200px;position:relative}
+  .search svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:15px;height:15px;stroke:var(--text-hint);fill:none;stroke-width:2}
+  .search input{width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:8px;padding:10px 12px 10px 34px;color:var(--text-white);font-size:13px;outline:none}
+  .search input:focus{border-color:var(--gold)}
+  .yearsel{background:var(--bg-input);border:1px solid var(--border-mid);border-radius:8px;padding:10px 30px 10px 12px;color:var(--text-white);font-size:12.5px;font-weight:600;outline:none;appearance:none;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239b8a5c' stroke-width='3'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
+  .yearsel:focus{border-color:var(--gold)}
+
+  .tablewrap{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;overflow-x:auto}
+  table{width:100%;border-collapse:collapse}
+  .tablewrap table{min-width:720px}
+  thead th{background:var(--bg-dark);text-align:left;font-size:10.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);font-weight:700;padding:11px 14px;border-bottom:1px solid var(--border);white-space:nowrap}
+  tbody tr{cursor:pointer;transition:background .12s;border-bottom:1px solid var(--border)}
+  tbody tr:last-child{border-bottom:none}
+  tbody tr:nth-child(even){background:var(--bg-stripe)}
+  tbody tr:hover{background:var(--bg-hover)}
+  tbody td{padding:12px 14px;font-size:12.5px;vertical-align:middle}
+  .num{font-weight:700;color:var(--gold);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap}
+  .pill::before{content:"";width:6px;height:6px;border-radius:50%}
+  .s-PENDENTE{background:rgba(255,183,77,.13);color:#ffb74d} .s-PENDENTE::before{background:#ffb74d}
+  .s-EMANDAMENTO{background:var(--info-bg);color:#90caf9} .s-EMANDAMENTO::before{background:var(--info)}
+  .s-RESPONDIDA,.s-FINALIZADA{background:var(--success-bg);color:var(--success)} .s-RESPONDIDA::before,.s-FINALIZADA::before{background:var(--success)}
+  .s-DEVOLVIDA{background:rgba(255,183,77,.13);color:#ffb74d} .s-DEVOLVIDA::before{background:#ffb74d}
+  .s-INATIVADA{background:rgba(239,83,80,.13);color:#ef9a9a} .s-INATIVADA::before{background:#ef5350}
+  .prazo{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .prazo.ok{color:var(--success)} .prazo.warn{color:#ffb74d} .prazo.late{color:var(--danger)} .prazo.none{color:var(--text-hint)}
+  .muni{color:var(--text-white)} .tema{color:var(--text-muted)}
+  .empty{padding:40px;text-align:center;color:var(--text-hint);font-size:13px}
+  .colhide{}
+  @media(max-width:1000px){.kpis{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:900px){.colhide{display:none}}
+  @media(max-width:560px){.kpis{grid-template-columns:repeat(2,1fr)}}
+
+  /* GAVETA */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:none;justify-content:flex-end}
+  .overlay.show{display:flex}
+  .panel{width:min(660px,100%);background:var(--bg-page);border-left:1px solid var(--border);height:100%;overflow-y:auto;box-shadow:-10px 0 40px rgba(0,0,0,.5)}
+  .p-head{position:sticky;top:0;background:#111;border-bottom:1px solid var(--border);padding:16px 22px;display:flex;align-items:center;justify-content:space-between;gap:12px;z-index:2}
+  .p-head .pn{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .p-head .pn b{font-size:17px;color:var(--gold);font-weight:800}
+  .pclose{background:var(--bg-hover);border:1px solid var(--border-mid);color:var(--text-muted);width:32px;height:32px;border-radius:7px;cursor:pointer;font-size:16px;flex-shrink:0}
+  .pclose:hover{color:var(--text-white)}
+  .p-body{padding:20px 22px 30px}
+  .grpline{background:var(--success-bg);border:1px solid rgba(102,187,106,.35);border-radius:9px;padding:11px 14px;display:flex;align-items:center;gap:10px;font-size:13px;margin-bottom:18px}
+  .grpline svg{width:16px;height:16px;stroke:var(--success);fill:none;stroke-width:1.8;flex-shrink:0}
+  .dl{display:grid;grid-template-columns:1fr 1fr;gap:14px 20px;margin-bottom:8px}
+  .di{display:flex;flex-direction:column;gap:4px} .di.full{grid-column:1/-1}
+  .di dt{font-size:10.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--gold);font-weight:700}
+  .di dd{font-size:13.5px;color:var(--text-white);line-height:1.5}
+  .di dd.desc{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:11px 13px;color:#ddd;white-space:pre-wrap}
+  .sec-t{font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);font-weight:700;margin:22px 0 11px;display:flex;align-items:center;gap:8px}
+  .sec-t::after{content:"";flex:1;height:1px;background:var(--border)}
+  .anx{display:flex;flex-direction:column;gap:9px}
+  .anxitem{display:flex;align-items:center;gap:12px;background:var(--bg-card);border:1px solid var(--border);border-radius:9px;padding:11px 13px}
+  .anxitem .ic{width:18px;height:18px;stroke:var(--gold);fill:none;stroke-width:1.7;flex-shrink:0}
+  .anxitem .m{flex:1;min-width:0}
+  .anxitem .m b{font-size:12.5px;font-weight:600;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .anxitem .m small{font-size:10.5px;color:var(--text-hint)}
+  .anxbtn{background:var(--gold-bg);border:1px solid var(--gold-border);color:var(--gold-light);padding:7px 13px;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;white-space:nowrap;text-decoration:none}
+  .anxbtn:hover{background:var(--gold);color:#1a1000}
+  .rs{background:var(--bg-card);border:1px solid var(--border);border-radius:9px;padding:12px 14px;font-size:12.5px;color:var(--text-muted)}
+  .rs b{color:var(--text-white)}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:#111;border:1px solid var(--gold-border);color:var(--text-white);padding:12px 20px;border-radius:10px;font-size:13px;z-index:60;box-shadow:0 8px 30px rgba(0,0,0,.6);opacity:0;transition:.28s}
+  .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+  .obs-fase2{font-size:11px;color:var(--text-hint);margin-top:10px;font-style:italic}
+</style>
+<script src="pwa.js" defer></script>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <div class="header-shields"><img src="assets/escudo-cpe.png" alt="CPE" onerror="this.style.display='none'"><img src="assets/escudo-pmmg.png" alt="PMMG" onerror="this.style.display='none'"><img src="assets/brasao-bpmmamb.png" alt="BPM MAMB" onerror="this.style.display='none'"></div><div class="header-div"></div>
+    <div class="header-title"><div class="header-kicker">CPE · BPM MAmb · 3ª Cia PM MAmb</div><h1>PAINEL DE GESTÃO OPERACIONAL</h1><p id="hdr-sub">Controle de Demandas · DDU 181</p></div>
+  </div>
+  <div class="header-right"><span class="last-update" id="who"></span></div>
+</header>
+
+<div class="shell">
+<aside class="rd-sidebar" id="demandas-sidebar"></aside>
+
+<div class="wrap">
+  <div class="pagehead">
+    <div>
+      <h2 id="pagettl">DDU 181</h2>
+      <div class="scope">
+        <svg class="pin" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        <span id="scope-txt">Carregando…</span>
+      </div>
+    </div>
+    <button class="btn-gold btn-sm" onclick="exportarExcel()"><svg viewBox="0 0 24 24" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.4"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Exportar Excel</button>
+  </div>
+
+  <div class="selbar" id="selbar" style="display:none">
+    <span class="lbl">Escopo:</span>
+    <select id="sel-pel" onchange="onPelChange()"></select>
+    <select id="sel-grp" onchange="aplicar()"></select>
+  </div>
+
+  <div class="kpis" id="kpis">
+    <button class="kpi tot on" data-f="todas"     onclick="setFiltroKpi(this)"><div class="lbl">Recebidas</div><div class="val" id="k-rec">—</div><div class="sub">na base</div></button>
+    <button class="kpi okp" data-f="noprazo"       onclick="setFiltroKpi(this)"><div class="lbl">No prazo</div><div class="val" id="k-ok">—</div><div class="sub">pendentes</div></button>
+    <button class="kpi warn" data-f="vence10"      onclick="setFiltroKpi(this)"><div class="lbl">Vence ≤10d</div><div class="val" id="k-10">—</div><div class="sub">atenção</div></button>
+    <button class="kpi late" data-f="atraso"       onclick="setFiltroKpi(this)"><div class="lbl">Em atraso</div><div class="val" id="k-late">—</div><div class="sub">prazo vencido</div></button>
+    <button class="kpi done" data-f="atendidas"    onclick="setFiltroKpi(this)"><div class="lbl">Atendidas</div><div class="val" id="k-done">—</div><div class="sub">respondidas</div></button>
+  </div>
+
+  <div class="toolbar">
+    <div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="busca" placeholder="Buscar por código, município, natureza, fração, REDS, GAIA…" oninput="render()"></div>
+    <select id="ano" class="yearsel" onchange="render()"><option value="all">Todos os anos</option></select>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr>
+        <th>Código</th><th>Natureza</th><th>Município</th>
+        <th class="colhide">Fração responsável</th><th>Gerada</th><th>Vencimento</th><th>Situação</th><th>Prazo</th><th>PDF</th>
+      </tr></thead>
+      <tbody id="tb"><tr><td colspan="9" class="empty">Carregando…</td></tr></tbody>
+    </table>
+  </div>
+  <div id="pager" style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:12px;font-size:12.5px;color:var(--text-muted);flex-wrap:wrap"></div>
+  <p class="obs-fase2">A baixa (atendimento) da DDU é feita pelo <b>Relatório de Serviço</b>, como Balcão/Requisição. Anotações, devolução e prioridade entram na próxima fase.</p>
+</div>
+</div>
+
+<div class="overlay" id="ov" onclick="if(event.target===this)fechar()">
+  <div class="panel">
+    <div class="p-head">
+      <div class="pn"><b id="d-num"></b><span id="d-sit" class="pill"></span></div>
+      <button class="pclose" onclick="fechar()">✕</button>
+    </div>
+    <div class="p-body" id="d-body"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ── sessão / config ─────────────────────────────────────────────── */
+const S = (typeof sessaoLer === 'function') ? sessaoLer() : null;
+if (!S) location.href = 'index.html';
+const API  = (typeof SB_AUTH_URL !== 'undefined') ? SB_AUTH_URL : '';
+const AKEY = (typeof SB_AUTH_KEY !== 'undefined') ? SB_AUTH_KEY : '';
+const H = { 'apikey': AKEY, 'Authorization': `Bearer ${AKEY}`, 'Content-Type': 'application/json' };
+
+const MILITAR = S ? `${S.matricula} — ${S.pg||''} ${S.guerra||S.nome||''}`.replace(/\s+/g,' ').trim() : '';
+if (S) document.getElementById('who').textContent = MILITAR;
+document.title = 'DDU 181 — 3ª Cia PM MAmb';
+
+const gpNum  = s => { const m=(s||'').match(/(\d+)\s*GP/i);  return m?+m[1]:null; };
+const pelNum = s => { const m=(s||'').match(/(\d+)\s*PEL/i); return m?+m[1]:null; };
+const nivel = S ? S.nivel_acesso : 'operacional';
+const isAdminTotal = nivel==='admin' || nivel==='admin_geral';
+const isAdminPel   = nivel==='admin_pelotao';
+const isAdminGeral = nivel==='admin_geral';
+
+let GRUPOS = [], ALLOWED = [], DADOS = [], atual = null, filtro = 'todas';
+
+const _grafiaGP = s => String(s==null?'':s).replace(/MARILIERIA/gi,'MARLIERIA').replace(/MOLEVADE/gi,'MONLEVADE');
+const byId = id => DADOS.find(x=>String(x.id)===String(id));
+// Anexo (gaveta): pasta (vários arquivos) × arquivo único (PDF).
+function anxHtml(a){
+  const isPasta = a && a.tipo==='pasta';
+  const icon = isPasta
+    ? '<svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>'
+    : '<svg class="ic" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>';
+  const sub = isPasta ? `Pasta no Drive · ${a.qtd||0} arquivo(s)` : 'Google Drive · DDU';
+  const btn = isPasta ? 'Abrir pasta' : 'Abrir';
+  const nome = a.nome || (isPasta ? 'Documentos anexados' : 'denúncia.pdf');
+  return `<div class="anxitem">${icon}<div class="m"><b>${nome}</b><small>${sub}</small></div>`+
+         `<a class="anxbtn" href="${a.web_view_link||a.link||'#'}" target="_blank" rel="noopener">${btn}</a></div>`;
+}
+function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2600); }
+
+/* ── boot ────────────────────────────────────────────────────────── */
+(async function init(){
+  try {
+    const r = await fetch(`${API}/rest/v1/grupos?select=gp_responsavel,grupamento_completo,pelotao&order=grupamento_completo`, { headers:H });
+    GRUPOS = (await r.json()).map(g => ({ gpr:g.gp_responsavel, comp:g.grupamento_completo, gp:gpNum(g.grupamento_completo), pel:pelNum(g.grupamento_completo) }));
+  } catch(e){ console.error('grupos',e); }
+
+  const meuGp = gpNum(S.grupamento_id), meuPel = pelNum(S.grupamento_id);
+  if (isAdminTotal) ALLOWED = GRUPOS.slice();
+  else if (isAdminPel) ALLOWED = GRUPOS.filter(g => g.pel===meuPel);
+  else {
+    ALLOWED = GRUPOS.filter(g => g.gp===meuGp && g.pel===meuPel);
+    if (!ALLOWED.length) ALLOWED = GRUPOS.filter(g => (S.grupamento_id||'').toUpperCase().includes(g.gpr.replace('GP ','')));
+  }
+  montarSeletor(meuPel);
+  await carregar();
+})();
+
+function montarSeletor(meuPel){
+  if (!(isAdminTotal || isAdminPel)) return;
+  document.getElementById('selbar').style.display = 'flex';
+  const selPel = document.getElementById('sel-pel');
+  const pels = [...new Set(ALLOWED.map(g=>g.pel))].sort((a,b)=>a-b);
+  selPel.innerHTML = (isAdminTotal ? '<option value="all">Todos os pelotões</option>' : '')
+    + pels.map(p=>`<option value="${p}"${p===meuPel&&isAdminPel?' selected':''}>${p}º Pelotão</option>`).join('');
+  preencherGrupamentos();
+}
+function preencherGrupamentos(){
+  const selPel = document.getElementById('sel-pel').value;
+  const selGrp = document.getElementById('sel-grp');
+  const prev = selGrp.value;
+  let lista = ALLOWED.slice();
+  if (selPel!=='all') lista = lista.filter(g=>String(g.pel)===String(selPel));
+  const pels = [...new Set(lista.map(g=>g.pel))].sort((a,b)=>a-b);
+  let html = '<option value="all">Todos os grupamentos</option>';
+  pels.forEach(p=>{
+    const doPel = lista.filter(g=>g.pel===p).sort((a,b)=>_grafiaGP(a.comp).localeCompare(_grafiaGP(b.comp),'pt-BR'));
+    html += `<optgroup label="${(p||'?')}º Pelotão">${doPel.map(g=>`<option value="${g.gpr}">${_grafiaGP(g.comp)}</option>`).join('')}</optgroup>`;
+  });
+  selGrp.innerHTML = html;
+  if ([...selGrp.options].some(o=>o.value===prev)) selGrp.value = prev;
+}
+function onPelChange(){ preencherGrupamentos(); aplicar(); }
+function aplicar(){ carregar(); }
+
+function _selVal(id){ const e=document.getElementById(id); return e?e.value:'all'; }
+function gprEscopo(){
+  let lista = ALLOWED.slice();
+  if (document.getElementById('selbar').style.display!=='none'){
+    const p=_selVal('sel-pel'), g=_selVal('sel-grp');
+    if (p!=='all') lista = lista.filter(x=>String(x.pel)===String(p));
+    if (g!=='all') lista = lista.filter(x=>x.gpr===g);
+  }
+  return lista.map(x=>x.gpr);
+}
+// admin geral vendo TUDO (todos pel + todos grp) também traz as demandas cujo
+// município não casou com nenhum grupamento (gp_responsavel nulo).
+function verTudoSemFiltro(){
+  return isAdminTotal && _selVal('sel-pel')==='all' && _selVal('sel-grp')==='all';
+}
+
+async function carregar(){
+  const gprs = gprEscopo();
+  document.getElementById('scope-txt').innerHTML = verTudoSemFiltro()
+    ? `Demandas de <b>toda a 3ª Cia</b>`
+    : (gprs.length===1
+        ? `Demandas de <b>${_grafiaGP((ALLOWED.find(g=>g.gpr===gprs[0])||{}).comp||gprs[0])}</b>`
+        : `Demandas de <b>${gprs.length} grupamento(s)</b>`);
+  const tb = document.getElementById('tb');
+  tb.innerHTML = '<tr><td colspan="9" class="empty">Carregando…</td></tr>';
+  try {
+    let url;
+    if (verTudoSemFiltro()){
+      url = `${API}/rest/v1/ddu_demandas?select=*&order=data_vencimento.asc.nullslast`;
+    } else {
+      if (!gprs.length){ DADOS=[]; render(); kpis(); return; }
+      const inList = '(' + gprs.map(v=>`"${v.replace(/"/g,'')}"`).join(',') + ')';
+      url = `${API}/rest/v1/ddu_demandas?select=*&gp_responsavel=in.${encodeURIComponent(inList)}&order=data_vencimento.asc.nullslast`;
+    }
+    // PostgREST limita a 1000 linhas por requisição → pagina via header Range
+    // até trazer tudo (a 3ª Cia tem ~4,8 mil demandas).
+    const PAGE = 1000; let offset = 0; const todas = [];
+    for (;;){
+      const r = await fetch(url, { headers: Object.assign({}, H, { 'Range-Unit':'items', 'Range': `${offset}-${offset+PAGE-1}` }) });
+      if (!r.ok){
+        const txt = await r.text();
+        if (offset===0 && (r.status===404 || /relation .*ddu_demandas.* does not exist|could not find the table/i.test(txt))){
+          DADOS=[]; render(); kpis();
+          tb.innerHTML = '<tr><td colspan="9" class="empty">Módulo DDU aguardando a migração <b>db/152</b> no Supabase e a 1ª sincronização (Apps Script). Depois disso as demandas aparecem aqui.</td></tr>';
+          return;
+        }
+        throw new Error(`${r.status} ${txt}`);
+      }
+      const chunk = await r.json();
+      todas.push(...chunk);
+      if (chunk.length < PAGE || todas.length >= 20000) break;   // guarda-chuva de segurança
+      offset += PAGE;
+    }
+    DADOS = todas;
+    popularAnos(); render(); kpis();
+  } catch(e){
+    console.error('nuden',e);
+    tb.innerHTML = `<tr><td colspan="9" class="empty">Erro ao carregar: ${e.message}</td></tr>`;
+  }
+}
+
+/* ── regras de prazo (modelo SISDEN) ─────────────────────────────── */
+function hoje0(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
+function diasVenc(d){ if(!d.data_vencimento) return null; const p=new Date(d.data_vencimento+'T00:00:00'); return Math.round((p-hoje0())/86400000); }
+const atendidaN = d => !!d.data_atendimento || d.situacao==='RESPONDIDA' || d.situacao==='FINALIZADA';
+function emAtraso(d){ if(atendidaN(d)) return false; const dv=diasVenc(d); if(dv!=null && dv<0) return true; return /ATRAS/i.test(d.status_prazo||''); }
+const noPrazoN = d => !atendidaN(d) && !emAtraso(d);
+function venceLogo(d){ if(atendidaN(d)) return false; const dv=diasVenc(d); return dv!=null && dv>=0 && dv<=10; }
+const anoDe = d => { const s=d.data_gerada||d.data_envio||''; return s?+String(s).slice(0,4):null; };
+
+const SIT_LBL = { PENDENTE:'Pendente', 'EM ANDAMENTO':'Em andamento', RESPONDIDA:'Respondida', DEVOLVIDA:'Devolvida', FINALIZADA:'Finalizada', INATIVADA:'Inativada' };
+const sitCls = s => 's-'+String(s||'').replace(/\s/g,'');
+function fmtData(iso){ if(!iso) return '—'; const p=String(iso).slice(0,10).split('-'); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:iso; }
+function prazoInfo(d){
+  if (atendidaN(d)) return {cls:'ok', txt:'atendida'};
+  const dv=diasVenc(d);
+  if (dv==null) return {cls:'none', txt: d.status_prazo || '—'};
+  if (dv<0)  return {cls:'late', txt:`há ${-dv} dia(s)`};
+  if (dv<=10) return {cls:'warn', txt:`em ${dv} dia(s)`};
+  return {cls:'ok', txt:`em ${dv} dia(s)`};
+}
+
+/* ── filtros / KPIs ──────────────────────────────────────────────── */
+function setFiltroKpi(btn){ document.querySelectorAll('.kpi').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); filtro=btn.dataset.f; render(); }
+function popularAnos(){
+  const sel=document.getElementById('ano'); const atualVal=sel.value;
+  const anos=[...new Set(DADOS.map(anoDe).filter(Boolean))].sort((a,b)=>b-a);
+  sel.innerHTML='<option value="all">Todos os anos</option>'+anos.map(a=>`<option value="${a}">${a}</option>`).join('');
+  if (anos.includes(+atualVal)) sel.value=atualVal;
+}
+// Escopo base (ativas + ano + busca), SEM o filtro dos cards — os quadros e a
+// lista partem daqui, então os cards já respeitam o ano/busca selecionados.
+function baseScope(d){
+  if (d.ativo===false) return false;
+  const ano=document.getElementById('ano').value;
+  if (ano!=='all' && String(anoDe(d))!==String(ano)) return false;
+  const q=document.getElementById('busca').value.trim().toLowerCase();
+  if (q){ const hay=`${d.codigo} ${d.municipio||''} ${d.natureza||''} ${d.fracao_responsavel||''} ${d.numero_reds||''} ${d.numero_gaia||''}`.toLowerCase(); if(!hay.includes(q)) return false; }
+  return true;
+}
+function passa(d){
+  if (!baseScope(d)) return false;
+  if (filtro==='todas') return true;
+  if (filtro==='noprazo') return noPrazoN(d);
+  if (filtro==='vence10') return venceLogo(d);
+  if (filtro==='atraso') return emAtraso(d);
+  if (filtro==='atendidas') return atendidaN(d);
+  return true;
+}
+function kpis(){
+  const A=DADOS.filter(baseScope);
+  const c=f=>A.filter(f).length;
+  document.getElementById('k-rec').textContent = A.length;
+  document.getElementById('k-ok').textContent  = c(noPrazoN);
+  document.getElementById('k-10').textContent  = c(venceLogo);
+  document.getElementById('k-late').textContent= c(emAtraso);
+  document.getElementById('k-done').textContent= c(atendidaN);
+}
+
+let PAGE=1; const PAGE_SIZE=15; let _sig='';
+function irPagina(p){ PAGE=p; render(); }
+function render(){
+  kpis();   // mantém os quadros em sincronia com ano/busca
+  const tb=document.getElementById('tb'); tb.innerHTML='';
+  const pager=document.getElementById('pager');
+  const rows=DADOS.filter(passa);
+  // Ordenação: 1) ANO desc (2026 sempre na frente); 2) pendentes antes das
+  // atendidas; 3) entre pendentes, MAIS ATRASADAS primeiro (menor vencimento);
+  // 4) entre atendidas, mais recentes primeiro.
+  rows.sort((a,b)=>{
+    const ya=anoDe(a)||0, yb=anoDe(b)||0; if(ya!==yb) return yb-ya;
+    const aA=atendidaN(a)?1:0, bA=atendidaN(b)?1:0; if(aA!==bA) return aA-bA;
+    if(!atendidaN(a)){
+      const pa=a.data_vencimento||'', pb=b.data_vencimento||'';
+      if(pa!==pb) return (pa&&pb)?(pa<pb?-1:1):(pa?-1:1);   // sem vencimento vai p/ o fim
+    } else {
+      const da=a.data_atendimento||'', db=b.data_atendimento||'';
+      if(da!==db) return da<db?1:-1;
+    }
+    return String(b.data_gerada||'').localeCompare(String(a.data_gerada||''));
+  });
+  const gel=id=>document.getElementById(id)||{};
+  const sig=[filtro, gel('busca').value, gel('ano').value, _selVal('sel-pel'), _selVal('sel-grp')].join('|');
+  if(sig!==_sig){ PAGE=1; _sig=sig; }
+  if(!rows.length){ tb.innerHTML='<tr><td colspan="9" class="empty">Nenhuma demanda neste filtro.</td></tr>'; if(pager)pager.innerHTML=''; return; }
+  const totalPag=Math.ceil(rows.length/PAGE_SIZE);
+  if(PAGE>totalPag)PAGE=totalPag; if(PAGE<1)PAGE=1;
+  const ini=(PAGE-1)*PAGE_SIZE;
+  rows.slice(ini, ini+PAGE_SIZE).forEach(d=>{
+    const pr=prazoInfo(d);
+    const temPdf=(d.anexos||[]).length>0;
+    const tr=document.createElement('tr'); tr.onclick=()=>abrir(d);
+    tr.innerHTML =
+      `<td class="num">${d.codigo||'—'}</td>`+
+      `<td class="tema">${d.natureza||'—'}</td>`+
+      `<td class="muni">${d.municipio||'—'}</td>`+
+      `<td class="colhide tema">${_grafiaGP(d.fracao_responsavel)||'—'}</td>`+
+      `<td class="prazo" style="font-weight:500">${fmtData(d.data_gerada)}</td>`+
+      `<td class="prazo" style="font-weight:500">${fmtData(d.data_vencimento)}</td>`+
+      `<td><span class="pill ${sitCls(d.situacao)}">${SIT_LBL[d.situacao]||d.situacao}</span></td>`+
+      `<td><span class="prazo ${pr.cls}">${pr.txt}</span></td>`+
+      `<td>${temPdf?`<a class="anxbtn" href="${(d.anexos[0].web_view_link||d.anexos[0].link||'#')}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${d.anexos[0].tipo==='pasta'?'Pasta':'PDF'}</a>`:'<span style="color:var(--text-hint)">—</span>'}</td>`;
+    tb.appendChild(tr);
+  });
+  if(pager){
+    if(totalPag<=1){ pager.innerHTML=`<span>${rows.length} demanda(s)</span>`; }
+    else{
+      const btn=(lbl,p,dis)=>`<button onclick="irPagina(${p})" ${dis?'disabled':''} style="background:var(--bg-input);border:1px solid var(--border-mid);color:var(--text-white);border-radius:6px;padding:6px 12px;font-size:12px;cursor:${dis?'not-allowed':'pointer'};opacity:${dis?'.5':'1'}">${lbl}</button>`;
+      pager.innerHTML=`<span>${rows.length} demanda(s) · mostrando ${ini+1}–${Math.min(ini+PAGE_SIZE,rows.length)}</span>`+
+        `<span style="display:flex;gap:8px;align-items:center">${btn('‹ Anterior',PAGE-1,PAGE===1)}<b style="color:var(--gold-light)">Página ${PAGE} de ${totalPag}</b>${btn('Próxima ›',PAGE+1,PAGE===totalPag)}</span>`;
+    }
+  }
+}
+
+/* ── gaveta ──────────────────────────────────────────────────────── */
+function abrir(d){
+  atual=d;
+  document.getElementById('d-num').textContent=d.codigo||'—';
+  const bs=document.getElementById('d-sit'); bs.className='pill '+sitCls(d.situacao); bs.textContent=SIT_LBL[d.situacao]||d.situacao;
+  const anexos=(d.anexos||[]);
+  const di=(t,v,full)=>`<div class="di${full?' full':''}"><dt>${t}</dt><dd>${(v==null||v==='')?'—':v}</dd></div>`;
+  const pr=prazoInfo(d);
+  document.getElementById('d-body').innerHTML =
+    `<div class="grpline"><svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+       <span style="flex:1"><b>Fração responsável:</b> ${_grafiaGP(d.fracao_responsavel||d.grupamento_completo||'—')}</span></div>`+
+    `<dl class="dl">`+
+      di('Tipo', d.tipo_demanda)+
+      di('Natureza / infração', d.natureza)+
+      di('Município', d.municipio)+
+      di('Data gerada', fmtData(d.data_gerada))+
+      di('Enviada à fração', fmtData(d.data_envio))+
+      di('Vencimento', fmtData(d.data_vencimento))+
+      di('Status do prazo', d.status_prazo || pr.txt)+
+      di('Endereço', d.endereco, true)+
+      (d.info_complementares?`<div class="di full"><dt>Informações complementares</dt><dd class="desc">${d.info_complementares}</dd></div>`:'')+
+    `</dl>`+
+    `<div class="sec-t">Documento(s)</div>`+
+    (anexos.length ? `<div class="anx">`+anexos.map(anxHtml).join('')+`</div>`
+     : `<div class="rs">Documento não localizado para este código no Drive da DDU.</div>`)+
+    `<div class="sec-t">Atendimento</div>`+
+    (atendidaN(d)
+      ? `<dl class="dl">`+
+          di('Data do atendimento', fmtData(d.data_atendimento))+
+          di('Nº REDS', d.numero_reds)+
+          di('Nº GAIA (Ato de Fiscalização)', d.numero_gaia)+
+          di('Resultado', d.resultado)+
+          di('Status do atendimento', d.status_atendimento)+
+          (d.observacoes_resposta?`<div class="di full"><dt>Observações</dt><dd class="desc">${d.observacoes_resposta}</dd></div>`:'')+
+          (d.atendido_por_nome?di('Baixa registrada por', d.atendido_por_nome, true):'')+
+        `</dl>`
+      : `<div class="rs">Pendente de atendimento. A baixa é feita pelo <b>Relatório de Serviço</b> (data, REDS, Nº GAIA/Ato de Fiscalização, resultado).</div>`);
+  document.getElementById('ov').classList.add('show');
+  document.body.style.overflow='hidden';
+}
+function fechar(){ document.getElementById('ov').classList.remove('show'); document.body.style.overflow=''; }
+
+/* ── exportar Excel ──────────────────────────────────────────────── */
+function exportarExcel(){
+  const rows=DADOS.filter(passa).map(d=>({
+    'Código':d.codigo, 'Tipo':d.tipo_demanda, 'Natureza':d.natureza, 'Município':d.municipio,
+    'Fração responsável':_grafiaGP(d.fracao_responsavel), 'Data gerada':fmtData(d.data_gerada),
+    'Enviada':fmtData(d.data_envio), 'Vencimento':fmtData(d.data_vencimento),
+    'Status do prazo':d.status_prazo||prazoInfo(d).txt, 'Situação':SIT_LBL[d.situacao]||d.situacao,
+    'Data atendimento':fmtData(d.data_atendimento), 'Nº REDS':d.numero_reds, 'Nº GAIA/Ato':d.numero_gaia,
+    'Resultado':d.resultado
+  }));
+  if(!rows.length) return toast('Nada para exportar neste filtro.');
+  const ws=XLSX.utils.json_to_sheet(rows); const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'DDU');
+  XLSX.writeFile(wb, 'DDU_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
+</script>
+</body>
+</html>
