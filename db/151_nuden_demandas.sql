@@ -121,12 +121,15 @@ begin
     if v_codigo is null then continue; end if;   -- ignora linhas sem código
 
     -- resolve grupamento do painel pelo município (best effort; p/ o filtro de escopo)
+    -- Match INSENSÍVEL A ACENTO: a view guarda sem acento (SAO DOMINGOS DO PRATA)
+    -- e a planilha traz com acento (SÃO DOMINGOS DO PRATA) — translate iguala os dois.
     v_muni := upper(trim(coalesce(r->>'municipio','')));
     v_gp := null; v_gpc := null;
     if v_muni <> '' then
       select gp_responsavel, grupamento_completo into v_gp, v_gpc
         from public.vw_municipio_grupamento
-        where municipio_upper = v_muni
+        where translate(municipio_upper,'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ','AAAAAEEEEIIIIOOOOOUUUUC')
+            = translate(v_muni,       'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ','AAAAAEEEEIIIIOOOOOUUUUC')
         limit 1;
     end if;
 
@@ -250,6 +253,18 @@ create policy nuden_update_anon on public.nuden_demandas
 
 grant execute on function public.nuden_sync(jsonb)   to anon;
 grant execute on function public.nuden_baixar(jsonb) to anon;
+
+-- ─── 5) BACKFILL do grupamento (idempotente) ──────────────────────────
+-- Corrige linhas já importadas cujo gp_responsavel ficou nulo por diferença
+-- de acento no nome do município (ex.: TIMÓTEO x TIMOTEO). Reexecutar esta
+-- migration preenche o escopo sem precisar re-sincronizar a planilha.
+update public.nuden_demandas nd
+   set gp_responsavel = v.gp_responsavel
+  from public.vw_municipio_grupamento v
+ where nd.gp_responsavel is null
+   and nd.municipio is not null
+   and translate(upper(trim(nd.municipio)),'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ','AAAAAEEEEIIIIOOOOOUUUUC')
+     = translate(v.municipio_upper,        'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ','AAAAAEEEEIIIIOOOOOUUUUC');
 
 -- ─── Teste rápido: ─────────────────────────────────────────────────────
 -- select * from public.nuden_sync('[{"codigo":"D000001","municipio":"GOVERNADOR VALADARES",
