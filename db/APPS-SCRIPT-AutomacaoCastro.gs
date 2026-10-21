@@ -1,6 +1,8 @@
 /* ══════════════════════════════════════════════════════════════════════
-   APPS-SCRIPT-nuden-sync.gs — NUDEN: planilha → Supabase (painel-operacao)
+   AutomaçãoCastro.gs — NUDEN: planilha → Supabase (painel-operacao)
    3ª Cia PM MAmb · Controle de Demandas
+   >>> No editor do Apps Script, nomeie este arquivo como "AutomaçãoCastro"
+       (para não confundir com o "Automação (Anderson)" do mesmo projeto). <<<
 
    O QUE FAZ
      Lê as DUAS abas da planilha "NUDEN - 3ª CIA MAMB", mapeia as colunas
@@ -12,8 +14,8 @@
 
    IMPORTANTE (convivência): este arquivo pode ficar no MESMO projeto Apps
    Script de outros scripts (ex.: "Automação (Anderson)") — TUDO está dentro
-   do namespace NUDEN_SYNC, então NÃO há colisão de nomes. Globais só os dois
-   comandos do menu abaixo.
+   do namespace AutomacaoCastro, então NÃO há colisão de nomes. Globais só os
+   dois comandos do menu abaixo.
 
    COMO USAR
      1. Abra a planilha dona (conta 3ciapmmamb.p3) → Extensões → Apps Script.
@@ -23,11 +25,11 @@
    ══════════════════════════════════════════════════════════════════════ */
 
 // ─── COMANDOS DO MENU (únicos globais) ─────────────────────────────────
-function nudenSyncAgora()        { return NUDEN_SYNC.run(); }
-function instalarGatilhoNuden()  { return NUDEN_SYNC.instalarGatilho(); }
+function nudenSyncAgora()        { return AutomacaoCastro.run(); }
+function instalarGatilhoNuden()  { return AutomacaoCastro.instalarGatilho(); }
 
 // ─── MÓDULO (tudo encapsulado p/ não colidir com outros scripts) ───────
-var NUDEN_SYNC = (function () {
+var AutomacaoCastro = (function () {
 
   // ─── CONFIG ──────────────────────────────────────────────────────────
   var CFG = {
