@@ -617,13 +617,15 @@ function popularGp(){
   sel.value=cidades.includes(atual)?atual:'';
 }
 function onFiltroPelGp(which){ if(which==='pel') popularGp(); render(); }
-function render(){
+/* Aplica os filtros ativos (aba, motivo, pelotão, grupamento, busca) — usado
+   tanto no render da tela quanto na exportação p/ Excel. */
+function listaFiltrada(){
   const q=norm(document.getElementById('busca').value);
   const ehAtivo=m=>(m.integrante_ativo??m.ativo);
   const fm=document.getElementById('f-motivo').value;
   const fpel=document.getElementById('f-pel')?document.getElementById('f-pel').value:'';
   const fgp=document.getElementById('f-gp')?document.getElementById('f-gp').value:'';
-  let arr=LISTA.filter(m=>{
+  return LISTA.filter(m=>{
     if(ABA==='hipotecados'){
       if(!ehHipotecado(m)) return false;
     } else if(ABA==='inativos'){
@@ -640,6 +642,9 @@ function render(){
     if(q){ const hay=norm([m.nome_completo,m.nome_guerra,m.matricula,m.funcao,m.nome_unidade,m.cod_unidade,m.posto_graduacao].join(' ')); if(!hay.includes(q)) return false; }
     return true;
   });
+}
+function render(){
+  let arr=listaFiltrada();
   const tb=document.getElementById('tbody');
   if(!arr.length){ const _msg = ABA==='hipotecados' ? 'Nenhum militar hipotecado.' : (ABA==='inativos' ? 'Nenhum militar inativo'+(document.getElementById('f-motivo').value?' com esse motivo':'')+'.' : 'Nenhum militar.'); tb.innerHTML='<tr><td colspan="9"><div class="empty">'+_msg+'</div></td></tr>'; return; }
   if(modoUnidade) arr=arr.slice().sort(cmpUnidade);
@@ -879,7 +884,8 @@ async function excluirDefinitivo(id){
 async function exportar(){
   const porUnid = modoUnidade;
   if(porUnid) await carregarMapaGp();
-  const lista = porUnid ? LISTA.slice().sort(cmpUnidade) : LISTA;
+  const base = listaFiltrada();                       // respeita os filtros ativos (pelotão/grupamento/aba/busca)
+  const lista = porUnid ? base.slice().sort(cmpUnidade) : base;
   const hdr=(porUnid?['Unidade']:[]).concat(['Ordem','Nº PM','Posto/Grad','Nome completo','Nome de guerra','Função',
     'COD_RPM','NOME_RPM','COD_UNIDADE_PRINCIPAL','NOME_UNIDADE_PRINCIPAL','COD_UNIDADE','NOME_UNIDADE',
     'COD_SIAD','TIPO_ATIVIDADE','COD_MUNICIPIO','Última promoção','Classificação curso','Situação','Ativo',
@@ -891,7 +897,9 @@ async function exportar(){
     m.situacao_efetivo||'',m.ativo?'Sim':'Não',m.transf_destino||'',m.transf_pasta_funcional==null?'':(m.transf_pasta_funcional?'Sim':'Não'),
     fmtBR(m.transf_data_envio),m.transf_oficio_numero||''])));
   const ws=XLSX.utils.aoa_to_sheet(aoa); const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Efetivo'); XLSX.writeFile(wb, 'Efetivo_3aCia_'+(porUnid?'porUnidade_':'')+new Date().toISOString().slice(0,10)+'.xlsx');
+  const _fpel=document.getElementById('f-pel')?.value||'', _fgp=document.getElementById('f-gp')?.value||'';
+  const _sufFiltro=[ _fpel?_fpel+'PEL':'', _fgp?_fgp.replace(/[^\wÀ-ÿ]+/g,'-'):'' ].filter(Boolean).join('_');
+  XLSX.utils.book_append_sheet(wb, ws, 'Efetivo'); XLSX.writeFile(wb, 'Efetivo_3aCia_'+(porUnid?'porUnidade_':'')+(_sufFiltro?_sufFiltro+'_':'')+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 
 // ── boot ──
