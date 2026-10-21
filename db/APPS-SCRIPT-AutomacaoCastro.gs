@@ -183,35 +183,44 @@ var AutomacaoCastro = (function () {
   // RÁPIDO: 1 só listagem de arquivos + 1 só de subpastas (sem abrir cada
   // subpasta). O robô do SISDEN só cria subpasta quando há VÁRIOS documentos;
   // demandas com 1 documento ficam como arquivo solto. Então subpasta = PASTA.
+  // Indexa por NOME normalizado (código inteiro, p/ "D148683" e protocolo
+  // "2026.10.01.503.0001872") E por DÍGITOS exatos (p/ nomes antigos tipo
+  // "Relatorio_Denuncia_149062_Simples", que trazem só os dígitos do código).
   function indexarDrive() {
-    var idx = { folderMap: {}, fileMap: {} };
+    var idx = { folderMap: {}, fileMap: {}, folderDig: {}, fileDig: {} };
     if (!CFG.DRIVE_FOLDER) return idx;
     try {
       var root = DriveApp.getFolderById(CFG.DRIVE_FOLDER);
       var fi = root.getFiles();
       while (fi.hasNext()) {
         var f = fi.next(), nm = f.getName();
-        var k = normCod(semExt(nm));
-        (idx.fileMap[k] = idx.fileMap[k] || []).push({ tipo: 'arquivo', nome: nm, web_view_link: fileUrl(f.getId()) });
+        var item = { tipo: 'arquivo', nome: nm, web_view_link: fileUrl(f.getId()) };
+        var k = normCod(semExt(nm)); (idx.fileMap[k] = idx.fileMap[k] || []).push(item);
+        var dk = soDig(nm); if (dk) (idx.fileDig[dk] = idx.fileDig[dk] || []).push(item);
       }
       var fo = root.getFolders();
       while (fo.hasNext()) {
         var sub = fo.next(), fn = sub.getName();
-        idx.folderMap[normCod(fn)] = { nome: fn, web_view_link: 'https://drive.google.com/drive/folders/' + sub.getId() };
+        var o = { nome: fn, web_view_link: 'https://drive.google.com/drive/folders/' + sub.getId() };
+        idx.folderMap[normCod(fn)] = o;
+        var fdk = soDig(fn); if (fdk && !idx.folderDig[fdk]) idx.folderDig[fdk] = o;
       }
     } catch (e) { Logger.log('Drive NUDEN indisponível: ' + e); }
     return idx;
   }
-  // Anexos de um código: subpasta (vários docs) → abre a PASTA; senão o(s)
-  // arquivo(s) soltos cujo nome (sem extensão) é o código.
+  // Anexos de um código: subpasta (vários docs) → PASTA; senão arquivo(s) soltos.
+  // Casa pelo código inteiro e, como reserva, pelos dígitos exatos do código.
   function acharAnexos(idx, codigo) {
     var k = normCod(codigo); if (!k) return null;
-    var fd = idx.folderMap[k];
-    if (fd) return [{ tipo: 'pasta', nome: fd.nome, web_view_link: fd.web_view_link }];
-    if (idx.fileMap[k]) return idx.fileMap[k].slice();
+    var dk = soDig(codigo);
+    if (idx.folderMap[k])        return [{ tipo: 'pasta', nome: idx.folderMap[k].nome, web_view_link: idx.folderMap[k].web_view_link }];
+    if (idx.fileMap[k])          return idx.fileMap[k].slice();
+    if (dk && idx.folderDig[dk]) return [{ tipo: 'pasta', nome: idx.folderDig[dk].nome, web_view_link: idx.folderDig[dk].web_view_link }];
+    if (dk && idx.fileDig[dk])   return idx.fileDig[dk].slice();
     return null;
   }
   function normCod(s) { return String(s == null ? '' : s).toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+  function soDig(s)   { return String(s == null ? '' : s).replace(/\D/g, ''); }
   function semExt(s)  { return String(s == null ? '' : s).replace(/\.[A-Za-z0-9]{1,5}$/, ''); }
   function fileUrl(id){ return 'https://drive.google.com/file/d/' + id + '/view'; }
 

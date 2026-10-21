@@ -351,12 +351,18 @@ function popularAnos(){
   sel.innerHTML='<option value="all">Todos os anos</option>'+anos.map(a=>`<option value="${a}">${a}</option>`).join('');
   if (anos.includes(+atualVal)) sel.value=atualVal;
 }
-function passa(d){
+// Escopo base (ativas + ano + busca), SEM o filtro dos cards — os quadros e a
+// lista partem daqui, então os cards já respeitam o ano/busca selecionados.
+function baseScope(d){
   if (d.ativo===false) return false;
   const ano=document.getElementById('ano').value;
   if (ano!=='all' && String(anoDe(d))!==String(ano)) return false;
   const q=document.getElementById('busca').value.trim().toLowerCase();
   if (q){ const hay=`${d.codigo} ${d.municipio||''} ${d.natureza||''} ${d.fracao_responsavel||''} ${d.numero_reds||''} ${d.numero_gaia||''}`.toLowerCase(); if(!hay.includes(q)) return false; }
+  return true;
+}
+function passa(d){
+  if (!baseScope(d)) return false;
   if (filtro==='todas') return true;
   if (filtro==='noprazo') return noPrazoN(d);
   if (filtro==='vence10') return venceLogo(d);
@@ -365,7 +371,7 @@ function passa(d){
   return true;
 }
 function kpis(){
-  const A=DADOS.filter(d=>d.ativo!==false);
+  const A=DADOS.filter(baseScope);
   const c=f=>A.filter(f).length;
   document.getElementById('k-rec').textContent = A.length;
   document.getElementById('k-ok').textContent  = c(noPrazoN);
@@ -377,6 +383,7 @@ function kpis(){
 let PAGE=1; const PAGE_SIZE=15; let _sig='';
 function irPagina(p){ PAGE=p; render(); }
 function render(){
+  kpis();   // mantém os quadros em sincronia com ano/busca
   const tb=document.getElementById('tb'); tb.innerHTML='';
   const pager=document.getElementById('pager');
   const rows=DADOS.filter(passa);
