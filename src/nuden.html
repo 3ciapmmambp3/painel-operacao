@@ -277,24 +277,32 @@ async function carregar(){
   try {
     let url;
     if (verTudoSemFiltro()){
-      url = `${API}/rest/v1/nuden_demandas?select=*&order=data_vencimento.asc.nullslast&limit=5000`;
+      url = `${API}/rest/v1/nuden_demandas?select=*&order=data_vencimento.asc.nullslast`;
     } else {
       if (!gprs.length){ DADOS=[]; render(); kpis(); return; }
       const inList = '(' + gprs.map(v=>`"${v.replace(/"/g,'')}"`).join(',') + ')';
-      url = `${API}/rest/v1/nuden_demandas?select=*&gp_responsavel=in.${encodeURIComponent(inList)}&order=data_vencimento.asc.nullslast&limit=5000`;
+      url = `${API}/rest/v1/nuden_demandas?select=*&gp_responsavel=in.${encodeURIComponent(inList)}&order=data_vencimento.asc.nullslast`;
     }
-    const r = await fetch(url, { headers:H });
-    if (!r.ok){
-      const txt = await r.text();
-      // tabela ainda não criada (migration db/151 não rodou): mensagem amigável
-      if (r.status===404 || /relation .*nuden_demandas.* does not exist|could not find the table/i.test(txt)){
-        DADOS=[]; render(); kpis();
-        tb.innerHTML = '<tr><td colspan="9" class="empty">Módulo NUDEN aguardando a migração <b>db/151</b> no Supabase e a 1ª sincronização (Apps Script). Depois disso as demandas aparecem aqui.</td></tr>';
-        return;
+    // PostgREST limita a 1000 linhas por requisição → pagina via header Range
+    // até trazer tudo (a 3ª Cia tem ~4,8 mil demandas).
+    const PAGE = 1000; let offset = 0; const todas = [];
+    for (;;){
+      const r = await fetch(url, { headers: Object.assign({}, H, { 'Range-Unit':'items', 'Range': `${offset}-${offset+PAGE-1}` }) });
+      if (!r.ok){
+        const txt = await r.text();
+        if (offset===0 && (r.status===404 || /relation .*nuden_demandas.* does not exist|could not find the table/i.test(txt))){
+          DADOS=[]; render(); kpis();
+          tb.innerHTML = '<tr><td colspan="9" class="empty">Módulo NUDEN aguardando a migração <b>db/151</b> no Supabase e a 1ª sincronização (Apps Script). Depois disso as demandas aparecem aqui.</td></tr>';
+          return;
+        }
+        throw new Error(`${r.status} ${txt}`);
       }
-      throw new Error(`${r.status} ${txt}`);
+      const chunk = await r.json();
+      todas.push(...chunk);
+      if (chunk.length < PAGE || todas.length >= 20000) break;   // guarda-chuva de segurança
+      offset += PAGE;
     }
-    DADOS = await r.json();
+    DADOS = todas;
     popularAnos(); render(); kpis();
   } catch(e){
     console.error('nuden',e);
