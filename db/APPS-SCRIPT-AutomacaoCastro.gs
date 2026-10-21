@@ -180,40 +180,36 @@ var AutomacaoCastro = (function () {
   // UMA vez (mapa exato por nome normalizado): arquivos soltos no topo e
   // subpastas (demandas com vários documentos). Os arquivos de cada subpasta
   // são lidos sob demanda (só quando a subpasta casa) p/ não estourar a quota.
+  // RÁPIDO: 1 só listagem de arquivos + 1 só de subpastas (sem abrir cada
+  // subpasta). O robô do SISDEN só cria subpasta quando há VÁRIOS documentos;
+  // demandas com 1 documento ficam como arquivo solto. Então subpasta = PASTA.
   function indexarDrive() {
-    var idx = { folderMap: {}, fileMap: {}, files: [] };
+    var idx = { folderMap: {}, fileMap: {} };
     if (!CFG.DRIVE_FOLDER) return idx;
     try {
       var root = DriveApp.getFolderById(CFG.DRIVE_FOLDER);
       var fi = root.getFiles();
       while (fi.hasNext()) {
         var f = fi.next(), nm = f.getName();
-        var item = { nome: nm, norm: normCod(nm), web_view_link: fileUrl(f.getId()), tipo: 'arquivo' };
-        idx.files.push(item);
-        var k = normCod(semExt(nm)); (idx.fileMap[k] = idx.fileMap[k] || []).push(item);
+        var k = normCod(semExt(nm));
+        (idx.fileMap[k] = idx.fileMap[k] || []).push({ tipo: 'arquivo', nome: nm, web_view_link: fileUrl(f.getId()) });
       }
       var fo = root.getFolders();
       while (fo.hasNext()) {
         var sub = fo.next(), fn = sub.getName();
-        idx.folderMap[normCod(fn)] = { nome: fn, folder: sub, url: 'https://drive.google.com/drive/folders/' + sub.getId() };
+        idx.folderMap[normCod(fn)] = { nome: fn, web_view_link: 'https://drive.google.com/drive/folders/' + sub.getId() };
       }
     } catch (e) { Logger.log('Drive NUDEN indisponível: ' + e); }
     return idx;
   }
-  // Anexos de um código: subpasta exata (>1 arquivo → PASTA; 1 → o arquivo);
-  // senão arquivo exato (nome sem extensão == código); senão contém o código.
+  // Anexos de um código: subpasta (vários docs) → abre a PASTA; senão o(s)
+  // arquivo(s) soltos cujo nome (sem extensão) é o código.
   function acharAnexos(idx, codigo) {
     var k = normCod(codigo); if (!k) return null;
     var fd = idx.folderMap[k];
-    if (fd) {
-      var arqs = [];
-      try { var it = fd.folder.getFiles(); while (it.hasNext()) { var ff = it.next(); arqs.push({ tipo: 'arquivo', nome: ff.getName(), web_view_link: fileUrl(ff.getId()) }); } } catch (e) {}
-      if (arqs.length === 1) return [arqs[0]];
-      return [{ tipo: 'pasta', nome: fd.nome, web_view_link: fd.url, qtd: arqs.length }];
-    }
+    if (fd) return [{ tipo: 'pasta', nome: fd.nome, web_view_link: fd.web_view_link }];
     if (idx.fileMap[k]) return idx.fileMap[k].slice();
-    var achados = idx.files.filter(function (x) { return x.norm.indexOf(k) >= 0; });
-    return achados.length ? achados : null;
+    return null;
   }
   function normCod(s) { return String(s == null ? '' : s).toUpperCase().replace(/[^A-Z0-9]/g, ''); }
   function semExt(s)  { return String(s == null ? '' : s).replace(/\.[A-Za-z0-9]{1,5}$/, ''); }
