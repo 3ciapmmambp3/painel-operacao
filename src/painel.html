@@ -503,7 +503,7 @@ window.addEventListener('load', function(){
 
       <div class="fg" style="max-width:200px;">
         <label>Pelotão</label>
-        <select id="f-pel" onchange="renderOperacoes()">
+        <select id="f-pel" onchange="popularFiltroGP();renderOperacoes()">
           <option value="">Todos os pelotões</option>
           <option value="1">1º Pelotão</option>
           <option value="2">2º Pelotão</option>
@@ -708,7 +708,7 @@ window.addEventListener('load', function(){
       <option>JULHO</option><option>AGOSTO</option><option>SETEMBRO</option>
       <option>OUTUBRO</option><option>NOVEMBRO</option><option>DEZEMBRO</option>
     </select>
-    <select id="gdo-fs-pel" onchange="atualizarGdoFS()" style="padding:5px 8px;background:#252525;border:1px solid var(--border-hover);border-radius:4px;color:#fff;font-size:11px;">
+    <select id="gdo-fs-pel" onchange="popularFiltroGdoFsGP();atualizarGdoFS()" style="padding:5px 8px;background:#252525;border:1px solid var(--border-hover);border-radius:4px;color:#fff;font-size:11px;">
       <option value="">Todos os pelotões</option>
       <option value="1">1º PEL</option><option value="2">2º PEL</option>
       <option value="3">3º PEL</option><option value="4">4º PEL</option><option value="5">5º PEL</option>
@@ -3168,12 +3168,14 @@ function progColor(pct){
 
 /* ══ FILTROS ══ */
 function popularFiltroGP(){
+  const pelF = document.getElementById('f-pel')?.value || '';   /* afunila pelo pelotão selecionado */
   /* Usa dadosGrupos como fonte — garante todos os 33 GPs */
   const pelMap={}, numMap={};
   dadosGrupos.forEach(r=>{
     if(r.gpResp){ pelMap[r.gpResp]=r.pelNum; numMap[r.gpResp]=gpNumDoColk(r.colK||r.grupamento); }
   });
-  const gps = [...new Set(dadosGrupos.map(r=>r.gpResp))].filter(Boolean);
+  let gps = [...new Set(dadosGrupos.map(r=>r.gpResp))].filter(Boolean);
+  if(pelF) gps = gps.filter(g => String(pelMap[g]) === String(pelF));
   gps.sort((a,b)=>{
     const pa=pelMap[a]||99, pb=pelMap[b]||99;
     if(pa!==pb) return pa-pb;
@@ -3222,6 +3224,27 @@ function popularFiltroGdoGP(){
   el.innerHTML = '<option value="">Todos os grupamentos</option>' +
     Object.keys(byPelGdo).sort((a,b)=>{ const na=a===''?999:+a, nb=b===''?999:+b; return na-nb; }).map(k=>
       `<optgroup label="${k===''?'Sem pelotão':k+'º Pelotão'}">`+byPelGdo[k].map(g=>`<option value="${g.gpResp}">${g.gpResp.replace('GP ','')}</option>`).join('')+'</optgroup>'
+    ).join('');
+  if([...el.options].some(o=>o.value===cur)) el.value=cur;
+}
+/* GDO tela cheia: afunila o grupamento pelo pelotão escolhido no overlay */
+function popularFiltroGdoFsGP(){
+  const pelF = document.getElementById('gdo-fs-pel')?.value || '';
+  const el = document.getElementById('gdo-fs-gp');
+  if(!el) return;
+  const cur = el.value;
+  const gps = dadosGrupos
+    .filter(r => !pelF || r.pelNum === parseInt(pelF))
+    .sort((a,b) => {
+      if(a.pelNum !== b.pelNum) return a.pelNum - b.pelNum;
+      return gpNumDoColk(a.colK||a.grupamento) - gpNumDoColk(b.colK||b.grupamento);
+    });
+  const byPel = {}, vistos = new Set();
+  gps.forEach(g => { if(vistos.has(g.gpResp)) return; vistos.add(g.gpResp);
+    const k=(g.pelNum==null||isNaN(g.pelNum))?'':String(g.pelNum); (byPel[k]=byPel[k]||[]).push(g); });
+  el.innerHTML = '<option value="">Todos os grupamentos</option>' +
+    Object.keys(byPel).sort((a,b)=>{ const na=a===''?999:+a, nb=b===''?999:+b; return na-nb; }).map(k=>
+      `<optgroup label="${k===''?'Sem pelotão':k+'º Pelotão'}">`+byPel[k].map(g=>`<option value="${g.gpResp}">${g.gpResp.replace('GP ','')}</option>`).join('')+'</optgroup>'
     ).join('');
   if([...el.options].some(o=>o.value===cur)) el.value=cur;
 }
