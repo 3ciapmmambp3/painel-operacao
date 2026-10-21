@@ -202,6 +202,18 @@ let GRUPOS = [], ALLOWED = [], DADOS = [], atual = null, filtro = 'todas';
 
 const _grafiaGP = s => String(s==null?'':s).replace(/MARILIERIA/gi,'MARLIERIA').replace(/MOLEVADE/gi,'MONLEVADE');
 const byId = id => DADOS.find(x=>String(x.id)===String(id));
+// Anexo (gaveta): pasta (vários arquivos) × arquivo único (PDF).
+function anxHtml(a){
+  const isPasta = a && a.tipo==='pasta';
+  const icon = isPasta
+    ? '<svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>'
+    : '<svg class="ic" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>';
+  const sub = isPasta ? `Pasta no Drive · ${a.qtd||0} arquivo(s)` : 'Google Drive · NUDEN';
+  const btn = isPasta ? 'Abrir pasta' : 'Abrir';
+  const nome = a.nome || (isPasta ? 'Documentos anexados' : 'denúncia.pdf');
+  return `<div class="anxitem">${icon}<div class="m"><b>${nome}</b><small>${sub}</small></div>`+
+         `<a class="anxbtn" href="${a.web_view_link||a.link||'#'}" target="_blank" rel="noopener">${btn}</a></div>`;
+}
 function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2600); }
 
 /* ── boot ────────────────────────────────────────────────────────── */
@@ -368,12 +380,20 @@ function render(){
   const tb=document.getElementById('tb'); tb.innerHTML='';
   const pager=document.getElementById('pager');
   const rows=DADOS.filter(passa);
-  // prioridade: pendentes primeiro, por vencimento mais próximo (vencidas no topo)
+  // Ordenação: 1) ANO desc (2026 sempre na frente); 2) pendentes antes das
+  // atendidas; 3) entre pendentes, MAIS ATRASADAS primeiro (menor vencimento);
+  // 4) entre atendidas, mais recentes primeiro.
   rows.sort((a,b)=>{
+    const ya=anoDe(a)||0, yb=anoDe(b)||0; if(ya!==yb) return yb-ya;
     const aA=atendidaN(a)?1:0, bA=atendidaN(b)?1:0; if(aA!==bA) return aA-bA;
-    const pa=a.data_vencimento||'', pb=b.data_vencimento||'';
-    if(pa!==pb) return (pa&&pb)?(pa<pb?-1:1):(pa?-1:1);
-    return String(a.data_gerada||'')<String(b.data_gerada||'')?-1:1;
+    if(!atendidaN(a)){
+      const pa=a.data_vencimento||'', pb=b.data_vencimento||'';
+      if(pa!==pb) return (pa&&pb)?(pa<pb?-1:1):(pa?-1:1);   // sem vencimento vai p/ o fim
+    } else {
+      const da=a.data_atendimento||'', db=b.data_atendimento||'';
+      if(da!==db) return da<db?1:-1;
+    }
+    return String(b.data_gerada||'').localeCompare(String(a.data_gerada||''));
   });
   const gel=id=>document.getElementById(id)||{};
   const sig=[filtro, gel('busca').value, gel('ano').value, _selVal('sel-pel'), _selVal('sel-grp')].join('|');
@@ -395,7 +415,7 @@ function render(){
       `<td class="prazo" style="font-weight:500">${fmtData(d.data_vencimento)}</td>`+
       `<td><span class="pill ${sitCls(d.situacao)}">${SIT_LBL[d.situacao]||d.situacao}</span></td>`+
       `<td><span class="prazo ${pr.cls}">${pr.txt}</span></td>`+
-      `<td>${temPdf?`<a class="anxbtn" href="${(d.anexos[0].web_view_link||d.anexos[0].link||'#')}" target="_blank" rel="noopener" onclick="event.stopPropagation()">PDF</a>`:'<span style="color:var(--text-hint)">—</span>'}</td>`;
+      `<td>${temPdf?`<a class="anxbtn" href="${(d.anexos[0].web_view_link||d.anexos[0].link||'#')}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${d.anexos[0].tipo==='pasta'?'Pasta':'PDF'}</a>`:'<span style="color:var(--text-hint)">—</span>'}</td>`;
     tb.appendChild(tr);
   });
   if(pager){
@@ -430,12 +450,9 @@ function abrir(d){
       di('Endereço', d.endereco, true)+
       (d.info_complementares?`<div class="di full"><dt>Informações complementares</dt><dd class="desc">${d.info_complementares}</dd></div>`:'')+
     `</dl>`+
-    `<div class="sec-t">Documento (PDF)</div>`+
-    (anexos.length ? `<div class="anx">`+anexos.map(a=>
-       `<div class="anxitem"><svg class="ic" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
-        <div class="m"><b>${a.nome||'denúncia.pdf'}</b><small>Google Drive · NUDEN</small></div>
-        <a class="anxbtn" href="${a.web_view_link||a.link||'#'}" target="_blank" rel="noopener">Abrir</a></div>`).join('')+`</div>`
-     : `<div class="rs">PDF não localizado para este código no Drive da NUDEN.</div>`)+
+    `<div class="sec-t">Documento(s)</div>`+
+    (anexos.length ? `<div class="anx">`+anexos.map(anxHtml).join('')+`</div>`
+     : `<div class="rs">Documento não localizado para este código no Drive da NUDEN.</div>`)+
     `<div class="sec-t">Atendimento</div>`+
     (atendidaN(d)
       ? `<dl class="dl">`+

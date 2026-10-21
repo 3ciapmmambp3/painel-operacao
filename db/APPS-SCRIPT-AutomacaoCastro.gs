@@ -55,7 +55,7 @@ var AutomacaoCastro = (function () {
         data_vencimento:     ['DATA VENCIMENTO','DATA DE VENCIMENTO'],
         status_prazo:        ['STATUS DO PRAZO'],
         data_atendimento:    ['DATA ATENDIMENTO','DATA DO ATENDIMENTO'],
-        numero_gaia:         ['NUMERO DO GAIA','N DO GAIA','GAIA'],
+        numero_gaia:         ['NUMERO DO GAIA','N DO GAIA','GAIA','NUMERO DO ATO DE FISCALIZACAO','ATO DE FISCALIZACAO','N CODIGO ID SISFIS','NUMERO CODIGO ID SISFIS','CODIGO ID SISFIS','ID SISFIS'],
         numero_reds:         ['NUMERO DO REDS','N DO REDS','REDS'],
         resultado:           ['RESULTADO'],
         status_atendimento:  ['STATUS DO ATENDIMENTO'],
@@ -73,6 +73,8 @@ var AutomacaoCastro = (function () {
         data_vencimento:     ['EXPIRACAO','DATA PRORROGADA','VENCIMENTO'],
         status_prazo:        ['SITUACAO'],
         data_atendimento:    ['DATA DA RESPONSTA','DATA DA RESPOSTA','DATA RESPOSTA','DATA_FISC_PMMG','DATA FISC PMMG'],
+        // "Nº Código ID SISFIS" era o SISFIS antigamente; HOJE é o Ato de Fiscalização (== GAIA).
+        numero_gaia:         ['N CODIGO ID SISFIS','NUMERO CODIGO ID SISFIS','CODIGO ID SISFIS','ID SISFIS','SISFIS','ATO DE FISCALIZACAO','NUMERO DO ATO DE FISCALIZACAO','NUMERO DO GAIA','GAIA'],
         numero_reds:         ['N REDS','NUMERO DO REDS','REDS'],
         status_atendimento:  ['STATUS','STATUS RESPOSTA A SEMAD'],
         info_complementares: ['OBSERVACOES','INFORMACOES']
@@ -83,7 +85,8 @@ var AutomacaoCastro = (function () {
   function run() {
     var ss = CFG.SHEET_ID ? SpreadsheetApp.openById(CFG.SHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
     var porCodigo = {};
-    var pdfs = indexarPdfsDrive();
+    var drive = indexarDrive();
+    var dadoc = indexarDadoc(ss);   // código → { ato, reds, data } (atendimentos ANTIGOS, pré-painel)
 
     ABAS.forEach(function (cfg) {
       var sh = ss.getSheetByName(cfg.nome);
@@ -122,12 +125,22 @@ var AutomacaoCastro = (function () {
         };
         if (!obj.data_vencimento && obj.data_envio) obj.data_vencimento = addDias(obj.data_envio, CFG.PRAZO_DIAS);
 
-        var pdf = acharPdf(pdfs, cod);
-        if (pdf) obj.anexos = [pdf];
+        var anx = acharAnexos(drive, cod);
+        if (anx) obj.anexos = anx;
 
         var ja = porCodigo[cod];
         if (!ja || cfg.fonte_aba === 'robo') porCodigo[cod] = obj;
       }
+    });
+
+    // Completa o Ato de Fiscalização (=GAIA)/REDS/data das ATENDIDAS ANTIGAS
+    // a partir da BD_DENUNCIASDADOC — só preenche o que estiver vazio.
+    Object.keys(porCodigo).forEach(function (cod) {
+      var o = porCodigo[cod], d = dadoc[normCod(cod)];
+      if (!d) return;
+      if (!o.numero_gaia && d.ato)       o.numero_gaia = d.ato;
+      if (!o.numero_reds && d.reds)      o.numero_reds = d.reds;
+      if (!o.data_atendimento && d.data) o.data_atendimento = d.data;
     });
 
     var linhas = Object.keys(porCodigo).map(function (k) { return porCodigo[k]; });
@@ -161,28 +174,68 @@ var AutomacaoCastro = (function () {
     Logger.log('Gatilho NUDEN instalado: a cada ' + CFG.FREQ_HORAS + 'h.');
   }
 
-  // ─── DRIVE (PDF da denúncia) ──────────────────────────────────────────
-  function indexarPdfsDrive() {
-    var out = [];
-    if (!CFG.DRIVE_FOLDER) return out;
+  // ─── DRIVE (documento(s) da denúncia) ────────────────────────────────
+  // O arquivo/subpasta é nomeado pelo CÓDIGO DEMANDA (coluna B) — que pode ser
+  // o antigo "D148683" OU o protocolo novo "2026.10.01.503.0001872". Indexa
+  // UMA vez (mapa exato por nome normalizado): arquivos soltos no topo e
+  // subpastas (demandas com vários documentos). Os arquivos de cada subpasta
+  // são lidos sob demanda (só quando a subpasta casa) p/ não estourar a quota.
+  function indexarDrive() {
+    var idx = { folderMap: {}, fileMap: {}, files: [] };
+    if (!CFG.DRIVE_FOLDER) return idx;
     try {
-      var it = DriveApp.getFolderById(CFG.DRIVE_FOLDER).getFiles();
-      while (it.hasNext()) {
-        var f = it.next();
-        out.push({ nomeNorm: normCod(f.getName()), file_id: f.getId(), nome: f.getName(),
-                   web_view_link: 'https://drive.google.com/file/d/' + f.getId() + '/view' });
+      var root = DriveApp.getFolderById(CFG.DRIVE_FOLDER);
+      var fi = root.getFiles();
+      while (fi.hasNext()) {
+        var f = fi.next(), nm = f.getName();
+        var item = { nome: nm, norm: normCod(nm), web_view_link: fileUrl(f.getId()), tipo: 'arquivo' };
+        idx.files.push(item);
+        var k = normCod(semExt(nm)); (idx.fileMap[k] = idx.fileMap[k] || []).push(item);
+      }
+      var fo = root.getFolders();
+      while (fo.hasNext()) {
+        var sub = fo.next(), fn = sub.getName();
+        idx.folderMap[normCod(fn)] = { nome: fn, folder: sub, url: 'https://drive.google.com/drive/folders/' + sub.getId() };
       }
     } catch (e) { Logger.log('Drive NUDEN indisponível: ' + e); }
-    return out;
+    return idx;
   }
-  function acharPdf(idx, codigo) {
-    var c = normCod(codigo);
-    if (!c || !idx.length) return null;
-    for (var i = 0; i < idx.length; i++) if (idx[i].nomeNorm.indexOf(c) >= 0)
-      return { file_id: idx[i].file_id, nome: idx[i].nome, web_view_link: idx[i].web_view_link };
-    return null;
+  // Anexos de um código: subpasta exata (>1 arquivo → PASTA; 1 → o arquivo);
+  // senão arquivo exato (nome sem extensão == código); senão contém o código.
+  function acharAnexos(idx, codigo) {
+    var k = normCod(codigo); if (!k) return null;
+    var fd = idx.folderMap[k];
+    if (fd) {
+      var arqs = [];
+      try { var it = fd.folder.getFiles(); while (it.hasNext()) { var ff = it.next(); arqs.push({ tipo: 'arquivo', nome: ff.getName(), web_view_link: fileUrl(ff.getId()) }); } } catch (e) {}
+      if (arqs.length === 1) return [arqs[0]];
+      return [{ tipo: 'pasta', nome: fd.nome, web_view_link: fd.url, qtd: arqs.length }];
+    }
+    if (idx.fileMap[k]) return idx.fileMap[k].slice();
+    var achados = idx.files.filter(function (x) { return x.norm.indexOf(k) >= 0; });
+    return achados.length ? achados : null;
   }
   function normCod(s) { return String(s == null ? '' : s).toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+  function semExt(s)  { return String(s == null ? '' : s).replace(/\.[A-Za-z0-9]{1,5}$/, ''); }
+  function fileUrl(id){ return 'https://drive.google.com/file/d/' + id + '/view'; }
+
+  // BD_DENUNCIASDADOC: Ato de Fiscalização (=GAIA) das atendidas ANTIGAS.
+  // Colunas: A=Nº DENÚNCIA (SENHA) · B=DATA ATENDIMENTO · C=ATO DE FISCALIZAÇÃO · D=Nº REDS
+  function indexarDadoc(ss) {
+    var map = {};
+    var sh = ss.getSheetByName('BD_DENUNCIASDADOC'); if (!sh) return map;
+    var vs = sh.getDataRange().getValues();
+    for (var i = 1; i < vs.length; i++) {
+      var cod = String(vs[i][0] == null ? '' : vs[i][0]).trim(); if (!cod) continue;
+      var k = normCod(cod); if (map[k]) continue;   // 1ª ocorrência vence
+      map[k] = {
+        data: dataVal(vs[i][1]),
+        ato:  String(vs[i][2] == null ? '' : vs[i][2]).trim(),
+        reds: String(vs[i][3] == null ? '' : vs[i][3]).trim()
+      };
+    }
+    return map;
+  }
 
   // ─── HELPERS ──────────────────────────────────────────────────────────
   function normHead(s) {
@@ -205,7 +258,9 @@ var AutomacaoCastro = (function () {
   }
   function dataIso(linha, i) {
     if (i == null || i < 0 || i >= linha.length) return '';
-    var v = linha[i];
+    return dataVal(linha[i]);
+  }
+  function dataVal(v) {
     if (v instanceof Date) return iso(v);
     var s = String(v == null ? '' : v).trim();
     if (!s) return '';
