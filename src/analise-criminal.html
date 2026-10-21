@@ -952,7 +952,7 @@ document.addEventListener('click', () => {
       </div>
       <div class="fg">
         <label>Pelotão</label>
-        <select id="f-pel-dash" onchange="renderDashboard()">
+        <select id="f-pel-dash" onchange="_afunilarGpPorPel('f-gp-dash',this.value);renderDashboard()">
           <option value="">Todos os pelotões</option>
           <option value="1">1º Pelotão</option><option value="2">2º Pelotão</option>
           <option value="3">3º Pelotão</option><option value="4">4º Pelotão</option>
@@ -1083,7 +1083,7 @@ document.addEventListener('click', () => {
       </div>
       <div class="fg">
         <label>Pelotão</label>
-        <select id="mapa-pel" onchange="renderMapaCriminal()">
+        <select id="mapa-pel" onchange="_afunilarGpPorPel('mapa-gp',this.value);renderMapaCriminal()">
           <option value="">Todos os pelotões</option>
           <option value="1">1º Pelotão</option><option value="2">2º Pelotão</option>
           <option value="3">3º Pelotão</option><option value="4">4º Pelotão</option>
@@ -1198,7 +1198,7 @@ document.addEventListener('click', () => {
         <option value="CVPA">CVPA</option>
         <option value="IF">IF</option>
       </select>
-      <select id="fs-pel" onchange="sincFiltrosFS()" style="padding:5px 8px;background:#252525;border:1px solid var(--border-hover);border-radius:4px;color:#fff;font-size:11px;">
+      <select id="fs-pel" onchange="_afunilarGpPorPel('fs-gp',this.value);sincFiltrosFS()" style="padding:5px 8px;background:#252525;border:1px solid var(--border-hover);border-radius:4px;color:#fff;font-size:11px;">
         <option value="">Todos os pelotões</option>
         <option value="1">1º PEL</option><option value="2">2º PEL</option>
         <option value="3">3º PEL</option><option value="4">4º PEL</option>
@@ -1491,7 +1491,7 @@ document.addEventListener('click', () => {
       </div>
       <div class="fg">
         <label>Pelotão</label>
-        <select id="cx-pel" onchange="renderCruzamento()">
+        <select id="cx-pel" onchange="_afunilarGpPorPel('cx-gp',this.value);renderCruzamento()">
           <option value="">Todos os pelotões</option>
           <option value="1">1º Pelotão</option><option value="2">2º Pelotão</option>
           <option value="3">3º Pelotão</option><option value="4">4º Pelotão</option>
@@ -1563,7 +1563,7 @@ document.addEventListener('click', () => {
       <div class="filter-row">
         <div class="fg">
           <label>Pelotão</label>
-          <select id="creg-pel" onchange="renderCxRegistrosTab()">
+          <select id="creg-pel" onchange="_afunilarGpPorPel('creg-gp',this.value);renderCxRegistrosTab()">
             <option value="">Todos os pelotões</option>
             <option value="1">1º Pelotão</option><option value="2">2º Pelotão</option>
             <option value="3">3º Pelotão</option><option value="4">4º Pelotão</option>
@@ -1710,7 +1710,7 @@ document.addEventListener('click', () => {
       </div>
       <div class="fg">
         <label>Pelotão</label>
-        <select id="vt-pel" onchange="renderVisitas()">
+        <select id="vt-pel" onchange="_afunilarGpPorPel('vt-gp',this.value);renderVisitas()">
           <option value="">Todos os pelotões</option>
           <option value="1">1º Pelotão</option><option value="2">2º Pelotão</option>
           <option value="3">3º Pelotão</option><option value="4">4º Pelotão</option>
@@ -1878,7 +1878,7 @@ document.addEventListener('click', () => {
       </div>
       <div class="fg">
         <label>Pelotão</label>
-        <select id="rcr-pel" onchange="renderRCR()">
+        <select id="rcr-pel" onchange="_afunilarGpPorPel('rcr-gp',this.value,true);renderRCR()">
           <option value="">Todos os pelotões</option>
           <option value="1">1º Pelotão</option>
           <option value="2">2º Pelotão</option>
@@ -4446,6 +4446,38 @@ function popularFiltrosGPs(){
   });
 }
 
+/* Afunila UM select de Grupamento pelo(s) pelotão(ões) escolhido(s) num filtro.
+   pelVal: '' (todos), número/string, ou array (multisseleção).
+   useGpResp=true → value=gpResp (curto), texto=grupamento completo (padrão do RCR);
+   caso contrário → value=texto=grupamento completo (padrão dos demais selects).
+   Sempre respeita a trava do usuário (admin_pelotão/operacional), como popularFiltrosGPs. */
+function _afunilarGpPorPel(gpId, pelVal, useGpResp){
+  const el = document.getElementById(gpId);
+  if(!el) return;
+  const cur = el.value;
+  const pels = Array.isArray(pelVal) ? pelVal.map(String).filter(Boolean)
+                                     : (pelVal ? [String(pelVal)] : []);
+  const _isAdmin = sessao && (sessao.perfil === 'admin' || sessao.perfil === 'comandante');
+  const _meuPel  = (!_isAdmin) ? _pelotaoDoUsuario() : '';
+  const vistos = new Set(); const lista = [];
+  dadosGrupos
+    .filter(r => r.grupamento && (!_meuPel || String(r.pelNum) === _meuPel))
+    .filter(r => !pels.length || pels.includes(String(r.pelNum)))
+    .sort((a,b) => { if(a.pelNum!==b.pelNum) return a.pelNum-b.pelNum; return gpNumDoColk(a.grupamento)-gpNumDoColk(b.grupamento); })
+    .forEach(r => {
+      const val = useGpResp ? (r.gpResp||r.grupamento) : r.grupamento;
+      if(!val || vistos.has(val)) return; vistos.add(val);
+      lista.push({ val:val, txt:r.grupamento, pel:r.pelNum });
+    });
+  const byPel = {};
+  lista.forEach(x => { const k=(x.pel==null||isNaN(x.pel))?'':String(x.pel); (byPel[k]=byPel[k]||[]).push(x); });
+  const optg = Object.keys(byPel).sort((a,b)=>{ const na=a===''?999:+a, nb=b===''?999:+b; return na-nb; })
+    .map(k => `<optgroup label="${k===''?'Sem pelotão':k+'º Pelotão'}">`
+      + byPel[k].map(x=>`<option value="${x.val}">${x.txt}</option>`).join('') + '</optgroup>').join('');
+  el.innerHTML = '<option value="">Todos os grupamentos</option>' + optg;
+  el.value = [...el.options].some(o=>o.value===cur) ? cur : '';   /* reseta se o GP não pertence ao novo pelotão */
+}
+
 /** Extrai o número do pelotão do usuário logado a partir da lotação. */
 /** Extrai o número do pelotão do usuário logado a partir da lotação. */
 // CMT de Cia e CMT de Pelotão (por função): acesso de Cia inteira (todos os
@@ -4770,6 +4802,9 @@ function _pelDdUpdateLabel(prefix){
 
 function onPelDdChange(prefix){
   _pelDdUpdateLabel(prefix);
+  /* afunila o Grupamento pelos pelotões marcados no dropdown */
+  if(prefix==='cr')    _afunilarGpPorPel('cr-gp', getPelDd('cr'));
+  if(prefix==='intel') _afunilarGpPorPel('intel-busca-gp', getPelDd('intel'));
   const renders = { cr: renderCrimes, intel: renderIntel };
   if(renders[prefix]) renders[prefix]();
 }
@@ -5485,7 +5520,10 @@ function _abrirMapaCriminalFullscreen(){
   const _mapaBuscaEl = document.getElementById('mapa-busca');
   if(_fsBuscaEl && _mapaBuscaEl) _fsBuscaEl.value = _mapaBuscaEl.value;
   const _fsGpEl = document.getElementById('fs-gp');
-  if(_fsGpEl) _fsGpEl.value = document.getElementById('mapa-gp')?.value || '';
+  if(_fsGpEl){
+    _afunilarGpPorPel('fs-gp', document.getElementById('mapa-pel')?.value || '');  /* opções já afuniladas pelo pelotão */
+    _fsGpEl.value = document.getElementById('mapa-gp')?.value || '';
+  }
 
   /* Impede scroll do body */
   document.body.style.overflow = 'hidden';
