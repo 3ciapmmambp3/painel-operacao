@@ -36,7 +36,8 @@ function nudenSyncAgora()       { return AutomacaoCastro.run('NUDEN'); }
 function dduSyncAgora()         { return AutomacaoCastro.run('DDU'); }
 function riSyncAgora()          { return AutomacaoCastro.run('RI'); }
 function emergenciaSyncAgora()  { return AutomacaoCastro.run('EMERGENCIA'); }
-function sincronizarTudo()      { ['NUDEN','DDU','RI','EMERGENCIA'].forEach(function(k){ AutomacaoCastro.run(k); }); }
+function mcSyncAgora()          { return AutomacaoCastro.runMC(); }   // reconcilia aba MC → Supabase + casa PDF
+function sincronizarTudo()      { ['NUDEN','DDU','RI','EMERGENCIA'].forEach(function(k){ AutomacaoCastro.run(k); }); AutomacaoCastro.runMC(); }
 function instalarGatilhoNuden() { return AutomacaoCastro.instalarGatilho(); }
 
 // ─── WEB APP (lançamento manual / espelho da baixa, chamado pelo painel) ─
@@ -171,6 +172,31 @@ var AutomacaoCastro = (function () {
             status_prazo:        ['SITUACAO'],
             numero_gaia:         ['SISFIS'],
             numero_reds:         ['REDS'],
+            status_atendimento:  ['STATUS']
+        }}
+      ]
+    },
+    // MONITORAMENTO CONTÍNUO — fluxo próprio (carga de LOTE pelo painel). A aba MC
+    // é a planilha-controle corrente; o Drive MC guarda as pastas por lote (PDF
+    // croqui + KML mestre que o painel soltou). Chave = GEOCOD_IEF. Prazo 45d.
+    MC: {
+      rpc: 'mc_sync',
+      sheetId: '195fFn-DPmExOWL3jNMj-8nuhP0pwJ7g0Hk9RRrmvegY',
+      driveFolder: '1vZRSSJQzQrVxDW8fBemqGGG_1B1bdSsV',
+      tipoDefault: 'MC',
+      prazoDias: 45,
+      abas: [
+        { nome: 'MC', fonte_aba: 'manual', header: 1, map: {
+            codigo:              ['GEOCOD_IEF','GEOCOD'],
+            municipio:           ['MUNICIPIO'],
+            fracao_responsavel:  ['N GRUPAMENTO','GRUPAMENTO'],
+            data_gerada:         ['DATA RECEBIDO NA 3 CIA PMMAMB','DATA RECEBIDO'],
+            data_envio:          ['DATA ENVIADO PARA O GRUPAMENTO','DATA ENVIADO'],
+            data_vencimento:     ['EXPIRACAO'],
+            status_prazo:        ['SITUACAO'],
+            data_atendimento:    ['DATA RESPOSTA','DATA_FISC_PMMG','DATA FISC PMMG'],
+            numero_gaia:         ['ID SISFIS','SISFIS'],
+            numero_reds:         ['N REDS','REDS'],
             status_atendimento:  ['STATUS']
         }}
       ]
@@ -448,6 +474,8 @@ var AutomacaoCastro = (function () {
     try {
       if (p.action === 'lancar') return jsonOut(lancar(p));
       if (p.action === 'baixar') return jsonOut(baixarSheet(p));
+      if (p.action === 'mc_listar_lotes') return jsonOut(mcListarLotes());
+      if (p.action === 'mc_lote')          return jsonOut(mcLote(p));
       return jsonOut({ ok: false, error: 'ação desconhecida: ' + p.action });
     } catch (err2) {
       return jsonOut({ ok: false, error: String(err2 && err2.message || err2) });
@@ -559,5 +587,242 @@ var AutomacaoCastro = (function () {
     return { ok: true, row: row };
   }
 
-  return { run: run, instalarGatilho: instalarGatilho, doGet: doGet, doPost: doPost };
+  // ═══════════════════════════════════════════════════════════════════════
+  //  MONITORAMENTO CONTÍNUO (MC) — fluxo próprio
+  //  Carga de LOTE: o painel manda {action:'mc_lote', loteId|lote, offset, limit}.
+  //  O Apps Script lê o KML mestre da pasta (ExtendedData = todos os dados),
+  //  separa 1 KML por GEOCOD (em memória, guardado no banco p/ download no
+  //  painel), casa o PDF croqui pelo prefixo GEOCOD, resolve GP/PEL no GRUPOS,
+  //  escreve na aba MC e manda ao Supabase. Roda PAGINADO (progresso no painel).
+  //  runMC() reconcilia aba MC → Supabase (puxa de volta REDS/ato/data que o
+  //  Aux lançar na planilha) e re-casa os PDFs.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // acentos → letra base (p/ casar MUNICIPIO entre KML/planilha e GRUPOS)
+  function normMuni(s) {
+    return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .toUpperCase().replace(/[^A-Z0-9]/g, '');
+  }
+  function _dt(isoStr) { var p = String(isoStr).slice(0, 10).split('-'); return new Date(+p[0], (+p[1]) - 1, +p[2]); }
+
+  // lê a aba GRUPOS → { MUNICIPIOnorm: { gp, pel } }
+  function lerGrupos() {
+    var map = {};
+    try {
+      var sh = SpreadsheetApp.openById(FONTES.MC.sheetId).getSheetByName('GRUPOS');
+      if (!sh) return map;
+      var vs = sh.getDataRange().getValues();
+      for (var i = 0; i < vs.length; i++) {
+        var muni = String(vs[i][0] == null ? '' : vs[i][0]).trim(); if (!muni) continue;
+        var k = normMuni(muni);
+        if (k === 'MUNICIPIO' || k === 'DADOSDAFRACAO' || !k) continue;
+        if (!map[k]) map[k] = { gp: String(vs[i][1] || '').trim(), pel: String(vs[i][2] || '').trim() };
+      }
+    } catch (e) { Logger.log('GRUPOS indisponível: ' + e); }
+    return map;
+  }
+
+  // acha a pasta do lote no Drive MC (por id, senão por nome)
+  function _mcFolder(p) {
+    var root = DriveApp.getFolderById(FONTES.MC.driveFolder);
+    if (p.loteId) { try { return DriveApp.getFolderById(p.loteId); } catch (e) {} }
+    var nm = String(p.lote || '').trim();
+    var fo = root.getFolders();
+    while (fo.hasNext()) { var f = fo.next(); if (f.getName().trim() === nm) return f; }
+    throw new Error('pasta do lote não encontrada no Drive MC: ' + (p.lote || p.loteId || ''));
+  }
+
+  // KML mestre = o .kml da pasta com mais placemarks (texto UTF-8)
+  function _mcMasterKml(folder) {
+    var it = folder.getFiles(), best = null, bestN = -1;
+    while (it.hasNext()) {
+      var f = it.next(), nm = f.getName();
+      if (!/\.kml$/i.test(nm)) continue;
+      var t = f.getBlob().getDataAsString('UTF-8');
+      var n = (t.match(/<Placemark/g) || []).length;
+      if (n > bestN) { bestN = n; best = t; }
+    }
+    return best;
+  }
+  function _mcSplit(text) {
+    var schema = (text.match(/<Schema\b[\s\S]*?<\/Schema>/) || [''])[0];
+    var pms = text.match(/<Placemark\b[\s\S]*?<\/Placemark>/g) || [];
+    return { schema: schema, placemarks: pms };
+  }
+  function _mcData(pm) {
+    var d = {}, re = /<SimpleData name="([^"]+)">([\s\S]*?)<\/SimpleData>/g, m;
+    while ((m = re.exec(pm))) { d[m[1]] = m[2]; }
+    return d;
+  }
+  function _mcWrapKml(schema, geocod, pm) {
+    return '<?xml version="1.0" encoding="utf-8" ?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n' +
+           '<Document id="root_doc">\n' + schema + '\n<Folder><name>MC_' + geocod + '</name>\n' +
+           pm + '\n</Folder>\n</Document></kml>\n';
+  }
+  // indexa PDFs por GEOCOD (prefixo numérico do nome) — recursivo raso
+  function _mcIndexPdfs(folder) { var m = {}; _mcWalkPdfs(folder, m, 2); return m; }
+  function _mcIndexPdfsRec(folderId) {
+    var m = {}; try { _mcWalkPdfs(DriveApp.getFolderById(folderId), m, 0); } catch (e) { Logger.log('MC drive: ' + e); }
+    return m;
+  }
+  function _mcWalkPdfs(folder, map, depth) {
+    var fi = folder.getFiles();
+    while (fi.hasNext()) {
+      var f = fi.next(), nm = f.getName();
+      if (!/\.pdf$/i.test(nm)) continue;
+      var g = (nm.match(/^(\d+)/) || [])[1]; if (!g) continue;
+      if (!map[g]) map[g] = { tipo: 'arquivo', nome: nm, web_view_link: fileUrl(f.getId()) };
+    }
+    if (depth < 3) { var fo = folder.getFolders(); while (fo.hasNext()) { _mcWalkPdfs(fo.next(), map, depth + 1); } }
+  }
+
+  // lista as pastas (lotes) do Drive MC p/ o painel escolher qual carregar
+  function mcListarLotes() {
+    var root = DriveApp.getFolderById(FONTES.MC.driveFolder), out = [], fo = root.getFolders();
+    while (fo.hasNext()) { var f = fo.next(); out.push({ id: f.getId(), nome: f.getName() }); }
+    out.sort(function (a, b) { return a.nome < b.nome ? 1 : (a.nome > b.nome ? -1 : 0); });
+    return { ok: true, lotes: out };
+  }
+
+  // CARGA DE LOTE (paginada): processa [offset, offset+limit) do KML mestre
+  function mcLote(p) {
+    var F = FONTES.MC;
+    var folder = _mcFolder(p), lote = folder.getName().trim();
+    var offset = Math.max(0, parseInt(p.offset || 0, 10) || 0);
+    var limit  = Math.max(1, parseInt(p.limit || 60, 10) || 60);
+
+    var kmlText = _mcMasterKml(folder);
+    if (!kmlText) throw new Error('KML mestre (.kml) não encontrado na pasta do lote');
+    var sp = _mcSplit(kmlText), pms = sp.placemarks, total = pms.length;
+    if (!total) throw new Error('KML sem placemarks (<Placemark>)');
+
+    var slice = pms.slice(offset, offset + limit);
+    if (!slice.length) return { ok: true, done: true, total: total, processed: 0, nextOffset: total, lote: lote };
+
+    var pdfIdx = _mcIndexPdfs(folder), grupos = lerGrupos();
+    var hoje = iso(new Date()), venc = addDias(hoje, F.prazoDias);
+
+    var sh = SpreadsheetApp.openById(F.sheetId).getSheetByName(F.abas[0].nome);
+    var ncol = sh.getLastColumn();
+    var cabec = sh.getRange(1, 1, 1, ncol).getValues()[0].map(normHead);
+    function C(al) { return acharCol(cabec, al); }
+    var cA = C(['DATA GERADA']), cB = C(['DATA RECEBIDO NA 3 CIA PMMAMB', 'DATA RECEBIDO']),
+        cG = C(['EXPIRACAO']), cI = C(['SITUACAO']), cJ = C(['STATUS']),
+        cK = C(['N GRUPAMENTO', 'GRUPAMENTO']), cL = C(['PELOTAO']),
+        cM = C(['MUNICIPIO']), cN = C(['GEOCOD_IEF', 'GEOCOD']),
+        cT = C(['CLIQUE NO ICONE PDF PARA BAIXAR', 'CLIQUE NO ICONE PDF', 'CLIQUE PARA BAIXAR']),
+        cX = C(['KML']), cY = C(['PASTA DRIVE MC']);
+
+    // idempotência do append: geocods já na planilha
+    var jaSet = {};
+    if (cN >= 0 && sh.getLastRow() > 1) {
+      var col = sh.getRange(2, cN + 1, sh.getLastRow() - 1, 1).getValues();
+      for (var z = 0; z < col.length; z++) { var gg = String(col[z][0] == null ? '' : col[z][0]).trim(); if (gg) jaSet[gg] = 1; }
+    }
+
+    var linhasSb = [], novasSheet = [], pdfRows = [];
+    for (var i = 0; i < slice.length; i++) {
+      var pm = slice[i], d = _mcData(pm);
+      var geocod = String(d.GEOCOD_IEF || '').trim(); if (!geocod) continue;
+      var municipio = String(d.MUNICIPIO || '').trim();
+      var g = grupos[normMuni(municipio)] || { gp: '', pel: '' };
+      var pdf = pdfIdx[geocod] || null;
+      var dFim = dataVal(d.DATA_FINAL), dIni = dataVal(d.DATA_INIC);
+
+      linhasSb.push({
+        codigo: geocod, tipo_demanda: 'MC',
+        data_gerada: hoje, data_vencimento: venc,
+        natureza: String(d.BIOMA_IBGE || '').trim(),
+        municipio: municipio, endereco: String(d.NUFIS || '').trim(),
+        fracao_responsavel: g.gp || '',
+        hectares: String(d.HECTARES || '').replace(',', '.'),
+        data_inic: dIni, data_final: dFim,
+        mes_ref: String(d.MES_REF || '').trim(), ano_ref: String(d.ANO_REF || '').trim(),
+        coord_x: String(d.X || '').replace(',', '.'), coord_y: String(d.Y || '').replace(',', '.'),
+        regional: String(d.NUFIS || '').trim(), bioma: String(d.BIOMA_IBGE || '').trim(),
+        id_semad: String(d.ID || '').trim(), lote: lote,
+        kml_content: _mcWrapKml(sp.schema, geocod, pm),
+        fonte_aba: 'painel',
+        raw: { pelotao: g.pel || '', grupamento: g.gp || '', nufis: String(d.NUFIS || '').trim() },
+        anexos: pdf ? [pdf] : []
+      });
+
+      if (!jaSet[geocod]) {
+        jaSet[geocod] = 1;
+        var row = new Array(ncol); for (var c = 0; c < ncol; c++) row[c] = '';
+        if (cA >= 0 && dFim) row[cA] = _dt(dFim);
+        if (cB >= 0) row[cB] = _dt(hoje);
+        if (cG >= 0) row[cG] = _dt(venc);
+        if (cJ >= 0) row[cJ] = 'PENDENTE';
+        if (cK >= 0) row[cK] = g.gp || '';
+        if (cL >= 0) row[cL] = g.pel || '';
+        if (cM >= 0) row[cM] = municipio;
+        if (cN >= 0) row[cN] = geocod;
+        if (cX >= 0) row[cX] = 'KML gerado (painel)';
+        if (cY >= 0) row[cY] = lote;
+        novasSheet.push(row);
+        pdfRows.push(pdf ? pdf.web_view_link : '');
+      }
+    }
+
+    if (novasSheet.length) {
+      var startRow = sh.getLastRow() + 1;
+      sh.getRange(startRow, 1, novasSheet.length, ncol).setValues(novasSheet);
+      if (cT >= 0) for (var k = 0; k < pdfRows.length; k++)
+        if (pdfRows[k]) sh.getRange(startRow + k, cT + 1).setFormula('=HYPERLINK("' + pdfRows[k] + '";"CLIQUE PARA BAIXAR")');
+    }
+
+    var ins = 0, upd = 0;
+    if (linhasSb.length) { var r = enviarRpc(F.rpc, { linhas: linhasSb }); if (r && r[0]) { ins = r[0].inseridas || 0; upd = r[0].atualizadas || 0; } }
+
+    var next = offset + limit;
+    return { ok: true, done: next >= total, total: total, processed: slice.length,
+             nextOffset: Math.min(next, total), inseridas: ins, atualizadas: upd, lote: lote };
+  }
+
+  // RECONCILIA aba MC → Supabase (puxa REDS/ato/data que o Aux lançar) + re-casa PDFs
+  function runMC() {
+    var F = FONTES.MC, cfg = F.abas[0];
+    var sh = SpreadsheetApp.openById(F.sheetId).getSheetByName(cfg.nome);
+    if (!sh) { Logger.log('[MC] aba não encontrada'); return; }
+    var dados = sh.getDataRange().getValues();
+    if (dados.length < cfg.header) return;
+    var cabec = dados[cfg.header - 1].map(normHead);
+    var idx = {}; Object.keys(cfg.map).forEach(function (k) { idx[k] = acharCol(cabec, cfg.map[k]); });
+    var cL = acharCol(cabec, ['PELOTAO']), cY = acharCol(cabec, ['PASTA DRIVE MC']);
+    var pdfIdx = _mcIndexPdfsRec(F.driveFolder);
+    var porCodigo = {};
+    for (var i = cfg.header; i < dados.length; i++) {
+      var linha = dados[i], cod = cel(linha, idx.codigo); if (!cod) continue;
+      var obj = {
+        codigo: cod, tipo_demanda: 'MC',
+        data_gerada: dataIso(linha, idx.data_gerada),
+        municipio: cel(linha, idx.municipio),
+        fracao_responsavel: cel(linha, idx.fracao_responsavel),
+        data_envio: dataIso(linha, idx.data_envio),
+        data_vencimento: dataIso(linha, idx.data_vencimento),
+        status_prazo: cel(linha, idx.status_prazo),
+        data_atendimento: dataIso(linha, idx.data_atendimento),
+        numero_gaia: cel(linha, idx.numero_gaia),
+        numero_reds: cel(linha, idx.numero_reds),
+        status_atendimento: cel(linha, idx.status_atendimento),
+        lote: cY >= 0 ? cel(linha, cY) : '',
+        fonte_aba: 'manual', raw: { aba: cfg.nome, pelotao: cL >= 0 ? cel(linha, cL) : '' }
+      };
+      var pdf = pdfIdx[String(cod).trim()]; if (pdf) obj.anexos = [pdf];
+      porCodigo[cod] = obj;
+    }
+    var linhas = Object.keys(porCodigo).map(function (k) { return porCodigo[k]; });
+    Logger.log('[MC] ' + linhas.length + ' demandas para sincronizar.');
+    if (!linhas.length) return;
+    var LOTE = 500, ins = 0, upd = 0;
+    for (var j = 0; j < linhas.length; j += LOTE) {
+      var r = enviarRpc(F.rpc, { linhas: linhas.slice(j, j + LOTE) });
+      if (r && r[0]) { ins += r[0].inseridas || 0; upd += r[0].atualizadas || 0; }
+    }
+    Logger.log('[MC] OK — inseridas: ' + ins + ' · atualizadas: ' + upd);
+  }
+
+  return { run: run, runMC: runMC, mcLote: mcLote, mcListarLotes: mcListarLotes,
+           instalarGatilho: instalarGatilho, doGet: doGet, doPost: doPost };
 })();
