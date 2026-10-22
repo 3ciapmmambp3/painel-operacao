@@ -56,6 +56,9 @@
   .kpi.p .val{color:var(--warn)} .kpi.a .val{color:var(--info)}
   .kpi.ok .val{color:var(--success)} .kpi.late .val{color:var(--danger)}
   .kpi .sub{font-size:10.5px;color:var(--text-hint);margin-top:5px}
+  .kpi.clickable{cursor:pointer;transition:border-color .12s,box-shadow .12s}
+  .kpi.clickable:hover{border-color:var(--border-hover)}
+  .kpi.on{border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold-border)}
 
   .toolbar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
   .search{flex:1;min-width:200px;position:relative}
@@ -193,10 +196,10 @@
   </div>
 
   <div class="kpis">
-    <div class="kpi p"><div class="lbl">Pendentes</div><div class="val" id="k-pend">—</div><div class="sub">aguardando início</div></div>
-    <div class="kpi a"><div class="lbl">Em andamento</div><div class="val" id="k-and">—</div><div class="sub">sendo atendidas</div></div>
-    <div class="kpi ok"><div class="lbl">Atendidas</div><div class="val" id="k-ok">—</div><div class="sub">concluídas / respondidas</div></div>
-    <div class="kpi late"><div class="lbl">Atrasadas</div><div class="val" id="k-late">—</div><div class="sub">prazo vencido</div></div>
+    <div class="kpi p clickable" data-cf="PENDENTE" onclick="filtrarCard('PENDENTE')" title="Filtrar: pendentes"><div class="lbl">Pendentes</div><div class="val" id="k-pend">—</div><div class="sub">aguardando início</div></div>
+    <div class="kpi a clickable" data-cf="andamento" onclick="filtrarCard('andamento')" title="Filtrar: em andamento"><div class="lbl">Em andamento</div><div class="val" id="k-and">—</div><div class="sub">sendo atendidas</div></div>
+    <div class="kpi ok clickable" data-cf="atendidas" onclick="filtrarCard('atendidas')" title="Filtrar: atendidas"><div class="lbl">Atendidas</div><div class="val" id="k-ok">—</div><div class="sub">concluídas / respondidas</div></div>
+    <div class="kpi late clickable" data-cf="vencidas" onclick="filtrarCard('vencidas')" title="Filtrar: atrasadas/vencidas"><div class="lbl">Atrasadas</div><div class="val" id="k-late">—</div><div class="sub">prazo vencido</div></div>
   </div>
 
   <div class="toolbar">
@@ -466,7 +469,15 @@ function prazoInfo(d){
   return {cls:'ok', txt:`em ${dias} dia(s)`};
 }
 
-function setFiltro(btn){ document.querySelectorAll('.fbtn').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); filtro=btn.dataset.f; render(); }
+// Filtro único (barra de botões E cards clicáveis) — mantém os dois em sincronia.
+function aplicarFiltro(f){
+  filtro=f;
+  document.querySelectorAll('.fbtn').forEach(b=>b.classList.toggle('on', b.dataset.f===f));
+  document.querySelectorAll('.kpi[data-cf]').forEach(c=>c.classList.toggle('on', c.dataset.cf===f));
+  render();
+}
+function setFiltro(btn){ aplicarFiltro(btn.dataset.f); }
+function filtrarCard(f){ aplicarFiltro(f); }
 function popularAnos(){
   const sel=document.getElementById('ano'); const atualVal=sel.value;
   const anos=[...new Set(DADOS.filter(naAba).map(d=>d.ano).filter(Boolean))].sort((a,b)=>b-a);
@@ -484,6 +495,7 @@ function passa(d){
   if (inativa) return false;                    // nos demais filtros, inativadas ficam ocultas
   if (filtro==='todas') return true;
   if (filtro==='PENDENTE') return d.situacao==='PENDENTE';
+  if (filtro==='andamento') return d.situacao==='EM ANDAMENTO';
   if (filtro==='vencidas') return vencida(d);
   if (filtro==='atendidas') return atendida(d);
   return true;
