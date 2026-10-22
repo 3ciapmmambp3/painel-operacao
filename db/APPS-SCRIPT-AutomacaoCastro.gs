@@ -194,6 +194,17 @@ var AutomacaoCastro = (function () {
       var cabec = dados[cfg.header - 1].map(normHead);
       var idx = {}; Object.keys(cfg.map).forEach(function (campo) { idx[campo] = acharCol(cabec, cfg.map[campo]); });
 
+      // coluna "CLIQUE PARA BAIXAR": o link do PDF já está na própria linha
+      // (mais confiável que casar pelo nome do arquivo no Drive). Lê o hyperlink
+      // tanto de célula-link quanto de fórmula =HYPERLINK.
+      var idxLink = acharCol(cabec, ['CLIQUE PARA BAIXAR', 'BAIXAR', 'LINK DO PDF']);
+      var rtvLink = null, fmLink = null;
+      if (idxLink >= 0 && dados.length > cfg.header) {
+        var rng = sh.getRange(cfg.header + 1, idxLink + 1, dados.length - cfg.header, 1);
+        try { rtvLink = rng.getRichTextValues(); } catch (e) {}
+        try { fmLink = rng.getFormulas(); } catch (e) {}
+      }
+
       for (var i = cfg.header; i < dados.length; i++) {
         var linha = dados[i];
         var cod = cel(linha, idx.codigo);
@@ -221,7 +232,10 @@ var AutomacaoCastro = (function () {
         var _base = obj.data_envio || obj.data_gerada;
         var _prazo = F.prazoDias || COMUM.PRAZO_DIAS;
         if (!obj.data_vencimento && _base) obj.data_vencimento = addDias(_base, _prazo);
-        var anx = acharAnexos(drive, cod); if (anx) obj.anexos = anx;
+        // 1º) link direto da coluna "CLIQUE PARA BAIXAR"; 2º) Drive pelo código/número.
+        var slink = linkDaCelula(rtvLink, fmLink, i - cfg.header, idxLink);
+        if (slink) obj.anexos = [{ tipo: 'arquivo', nome: 'Documento (' + cod + ')', web_view_link: slink }];
+        else { var anx = acharAnexos(drive, cod, obj.municipio); if (anx) obj.anexos = anx; }
         var ja = porCodigo[cod];
         if (!ja || cfg.fonte_aba === 'robo') porCodigo[cod] = obj;
       }
@@ -270,7 +284,7 @@ var AutomacaoCastro = (function () {
 
   // ─── DRIVE ────────────────────────────────────────────────────────────
   function indexarDrive(folderId) {
-    var idx = { folderMap: {}, fileMap: {}, folderDig: {}, fileDig: {} };
+    var idx = { folderMap: {}, fileMap: {}, folderDig: {}, fileDig: {}, fileNum: {}, folderNum: {} };
     if (!folderId) return idx;
     try {
       var root = DriveApp.getFolderById(folderId);
@@ -280,25 +294,56 @@ var AutomacaoCastro = (function () {
         var item = { tipo: 'arquivo', nome: nm, web_view_link: fileUrl(f.getId()) };
         var k = normCod(semExt(nm)); (idx.fileMap[k] = idx.fileMap[k] || []).push(item);
         var dk = soDig(nm); if (dk) (idx.fileDig[dk] = idx.fileDig[dk] || []).push(item);
+        var nnum = primeiroNum(nm); if (nnum) (idx.fileNum[nnum] = idx.fileNum[nnum] || []).push(item);
       }
       var fo = root.getFolders();
       while (fo.hasNext()) {
         var sub = fo.next(), fn = sub.getName();
-        var o = { nome: fn, web_view_link: 'https://drive.google.com/drive/folders/' + sub.getId() };
+        var o = { tipo: 'pasta', nome: fn, web_view_link: 'https://drive.google.com/drive/folders/' + sub.getId() };
         idx.folderMap[normCod(fn)] = o;
         var fdk = soDig(fn); if (fdk && !idx.folderDig[fdk]) idx.folderDig[fdk] = o;
+        var fnum = primeiroNum(fn); if (fnum) (idx.folderNum[fnum] = idx.folderNum[fnum] || []).push(o);
       }
     } catch (e) { Logger.log('Drive indisponível (' + folderId + '): ' + e); }
     return idx;
   }
-  function acharAnexos(idx, codigo) {
+  // casa anexos de uma demanda: 1) código exato (pasta/arquivo), 2) só dígitos,
+  // 3) pelo NÚMERO da demanda (antes da "/"), ex. arquivo "RI 718 APA ... - Município"
+  //    → desempata pelo município quando há mais de um com o mesmo número.
+  function acharAnexos(idx, codigo, municipio) {
     var k = normCod(codigo); if (!k) return null;
     var dk = soDig(codigo);
-    if (idx.folderMap[k])        return [{ tipo: 'pasta', nome: idx.folderMap[k].nome, web_view_link: idx.folderMap[k].web_view_link }];
+    if (idx.folderMap[k])        return [idx.folderMap[k]];
     if (idx.fileMap[k])          return idx.fileMap[k].slice();
-    if (dk && idx.folderDig[dk]) return [{ tipo: 'pasta', nome: idx.folderDig[dk].nome, web_view_link: idx.folderDig[dk].web_view_link }];
+    if (dk && idx.folderDig[dk]) return [idx.folderDig[dk]];
     if (dk && idx.fileDig[dk])   return idx.fileDig[dk].slice();
+    var num = primeiroNum(String(codigo).split('/')[0]);
+    if (num) {
+      var fold = (idx.folderNum && idx.folderNum[num]) || [];
+      var arqs = (idx.fileNum && idx.fileNum[num]) || [];
+      var cands = fold.concat(arqs);
+      if (cands.length === 1) return [cands[0]];
+      if (cands.length > 1) {
+        var mk = normCod(municipio || '');
+        if (mk) { var m = cands.filter(function (c) { return normCod(c.nome).indexOf(mk) >= 0; }); if (m.length) return [m[0]]; }
+        return [cands[0]];   // mesmo número, município não casou → pega o 1º
+      }
+    }
     return null;
+  }
+  // extrai o link do PDF da célula "CLIQUE PARA BAIXAR" (célula-link ou =HYPERLINK)
+  function linkDaCelula(rtv, fm, r, idxLink) {
+    if (idxLink < 0 || r < 0) return '';
+    try {
+      if (rtv && rtv[r] && rtv[r][0]) {
+        var u = rtv[r][0].getLinkUrl();
+        if (u) return u;
+        var runs = rtv[r][0].getRuns ? rtv[r][0].getRuns() : null;
+        if (runs) for (var j = 0; j < runs.length; j++) { var ru = runs[j].getLinkUrl(); if (ru) return ru; }
+      }
+    } catch (e) {}
+    if (fm && fm[r] && fm[r][0]) { var m = String(fm[r][0]).match(/HYPERLINK\(\s*"([^"]+)"/i); if (m) return m[1]; }
+    return '';
   }
 
   // ─── Ato/REDS antigos (BD_DENUNCIASDADOC / RESPOSTADDU) ───────────────
@@ -344,6 +389,7 @@ var AutomacaoCastro = (function () {
   }
   function normCod(s) { return String(s == null ? '' : s).toUpperCase().replace(/[^A-Z0-9]/g, ''); }
   function soDig(s)   { return String(s == null ? '' : s).replace(/\D/g, ''); }
+  function primeiroNum(s) { var m = String(s == null ? '' : s).match(/\d+/); return m ? String(parseInt(m[0], 10)) : ''; }
   function semExt(s)  { return String(s == null ? '' : s).replace(/\.[A-Za-z0-9]{1,5}$/, ''); }
   function fileUrl(id){ return 'https://drive.google.com/file/d/' + id + '/view'; }
   function iso(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
