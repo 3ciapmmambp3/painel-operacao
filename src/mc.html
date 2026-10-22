@@ -150,6 +150,7 @@
     <div style="display:flex;gap:9px;flex-wrap:wrap">
       <button class="btn-gold btn-sm" id="btn-novo" onclick="abrirLote()" style="display:none"><svg viewBox="0 0 24 24" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.4"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Carregar lote</button>
       <button class="btn-outline btn-sm" onclick="exportarExcel()"><svg viewBox="0 0 24 24" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.4"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Exportar Excel</button>
+      <button class="btn-outline btn-sm" onclick="exportarBaixaSemad()" title="Só as demandas já fiscalizadas, nas colunas da planilha SEMAD (DATA ATENDIMENTO · REDS · AUTO DE INFRAÇÃO · ATO DE FISCALIZAÇÃO · OBSERVAÇÃO), ordenadas por GEOCOD — para copiar e colar."><svg viewBox="0 0 24 24" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.4"><path d="M8 2h8l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M9 13h6M9 17h6M9 9h2"/></svg> Exportar p/ baixa (SEMAD)</button>
     </div>
   </div>
 
@@ -727,6 +728,29 @@ function exportarExcel(){
   const ws=XLSX.utils.json_to_sheet(rows); const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'MC');
   XLSX.writeFile(wb, 'MonitoramentoContinuo_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
+
+/* ── exportar no formato da planilha SEMAD (copiar/colar a baixa) ──────
+   Colunas exatas da aba: DATA ATENDIMENTO · REDS · AUTO DE INFRAÇÃO ·
+   ATO DE FISCALIZAÇÃO (nova, = ID SISFIS) · OBSERVAÇÃO. 1ª coluna GEOCOD_IEF
+   é só a chave p/ localizar/alinhar a linha. Só demandas já fiscalizadas. */
+function exportarBaixaSemad(){
+  const dOut = iso => { if(!iso) return ''; const p=String(iso).slice(0,10).split('-'); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:String(iso); };
+  const rows = DADOS.filter(passa).filter(d=>d.data_atendimento)
+    .sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo),undefined,{numeric:true}))
+    .map(d=>({
+      'GEOCOD_IEF': d.codigo,
+      'DATA ATENDIMENTO': dOut(d.data_atendimento),
+      'REDS': d.numero_reds||'',
+      'AUTO DE INFRAÇÃO': d.numero_auto_infracao||'',
+      'ATO DE FISCALIZAÇÃO': d.numero_gaia||'',
+      'OBSERVAÇÃO': d.observacoes_resposta||''
+    }));
+  if(!rows.length) return toast('Nenhuma demanda fiscalizada neste filtro para exportar.');
+  const ws=XLSX.utils.json_to_sheet(rows); const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Baixa SEMAD');
+  XLSX.writeFile(wb, 'MC_baixa_SEMAD_'+new Date().toISOString().slice(0,10)+'.xlsx');
+  toast(rows.length+' demanda(s) fiscalizada(s) exportada(s).');
 }
 </script>
 <script src="demandas-gestao.js"></script>
