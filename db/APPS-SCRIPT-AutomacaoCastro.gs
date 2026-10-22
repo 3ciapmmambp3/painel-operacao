@@ -477,6 +477,7 @@ var AutomacaoCastro = (function () {
       if (p.action === 'mc_listar_lotes') return jsonOut(mcListarLotes());
       if (p.action === 'mc_lote')          return jsonOut(mcLote(p));
       if (p.action === 'mc_importar')      return jsonOut(runMC() || { ok: true });
+      if (p.action === 'mc_kml_backfill')  return jsonOut(mcKmlBackfill(p));
       return jsonOut({ ok: false, error: 'ação desconhecida: ' + p.action });
     } catch (err2) {
       return jsonOut({ ok: false, error: String(err2 && err2.message || err2) });
@@ -819,6 +820,38 @@ var AutomacaoCastro = (function () {
              nextOffset: Math.min(next, total), inseridas: ins, atualizadas: upd, lote: lote };
   }
 
+  // BACKFILL de KML individual: varre o KML mestre das pastas (folderIds) e preenche
+  // kml_content das linhas já existentes (via mc_set_kml, só UPDATE — não mexe em data/baixa).
+  // O painel pagina por pasta e manda um lote de folderIds por chamada.
+  function mcKmlBackfill(p) {
+    var ids = p.folderIds;
+    if (typeof ids === 'string') { try { ids = JSON.parse(ids); } catch (e) { ids = ids ? [ids] : []; } }
+    if (!ids && p.folderId) ids = [p.folderId];
+    if (!ids || !ids.length) return { ok: true, pastas: 0, geocods: 0, atualizadas: 0, semKml: [] };
+
+    var rowsAll = [], semKml = [];
+    for (var fi = 0; fi < ids.length; fi++) {
+      var folder;
+      try { folder = DriveApp.getFolderById(ids[fi]); } catch (e) { continue; }
+      var kmlText = _mcMasterKml(folder);
+      if (!kmlText) { semKml.push(folder.getName()); continue; }
+      var sp = _mcSplit(kmlText), pms = sp.placemarks;
+      for (var i = 0; i < pms.length; i++) {
+        var d = _mcData(pms[i]), g = String(d.GEOCOD_IEF || '').trim();
+        if (!g) continue;
+        rowsAll.push({ codigo: g, kml: _mcWrapKml(sp.schema, g, pms[i]) });
+      }
+    }
+
+    var upd = 0, LOTE = 400;
+    for (var j = 0; j < rowsAll.length; j += LOTE) {
+      var r = enviarRpc('mc_set_kml', { linhas: rowsAll.slice(j, j + LOTE) });
+      if (typeof r === 'number') upd += r;
+      else if (r && r.length) upd += (typeof r[0] === 'number' ? r[0] : 0);
+    }
+    return { ok: true, pastas: ids.length, geocods: rowsAll.length, atualizadas: upd, semKml: semKml };
+  }
+
   // RECONCILIA aba MC → Supabase (puxa REDS/ato/data que o Aux lançar) + re-casa PDFs
   function runMC() {
     var F = FONTES.MC, cfg = F.abas[0];
@@ -864,5 +897,6 @@ var AutomacaoCastro = (function () {
   }
 
   return { run: run, runMC: runMC, mcLote: mcLote, mcListarLotes: mcListarLotes,
+           mcKmlBackfill: mcKmlBackfill,
            instalarGatilho: instalarGatilho, doGet: doGet, doPost: doPost };
 })();

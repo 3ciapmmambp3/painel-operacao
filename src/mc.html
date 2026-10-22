@@ -220,8 +220,11 @@
         <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px"><span id="lp-txt">Processando…</span></div>
         <div style="height:10px;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:6px;overflow:hidden"><div id="lp-bar" style="height:100%;width:0;background:var(--gold);transition:width .3s"></div></div>
       </div>
-      <div class="mfoot" style="justify-content:space-between">
-        <button class="btn-outline btn-sm" id="f-importar" onclick="importarPlanilha()" title="Traz para o painel os lotes que já estão lançados na aba MC (sem precisar recarregar as pastas)">↻ Importar da planilha</button>
+      <div class="mfoot" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <span style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn-outline btn-sm" id="f-importar" onclick="importarPlanilha()" title="Traz para o painel os lotes que já estão lançados na aba MC (sem precisar recarregar as pastas)">↻ Importar da planilha</button>
+          <button class="btn-outline btn-sm" id="f-kml" onclick="gerarKmlsFaltantes()" title="Gera o KML individual (por GEOCOD) das demandas que estão sem KML, varrendo os KML mestres das pastas da companhia selecionada. Não altera datas nem baixa.">🛰️ Gerar KMLs faltantes</button>
+        </span>
         <span style="display:flex;gap:8px">
           <button class="btn-outline btn-sm" onclick="fecharLote()">Fechar</button>
           <button class="btn-gold btn-sm" id="f-carregar" onclick="carregarLote()">Carregar lote</button>
@@ -680,6 +683,35 @@ async function importarPlanilha(){
     await carregar();
   }catch(e){ toast('Erro: '+(e.message||e)); }
   finally{ btn.disabled=false; btn.textContent=txt0; }
+}
+async function gerarKmlsFaltantes(){
+  if(!AUTO_URL) return toast('Não configurado (Web App).');
+  const emp=(document.getElementById('f-empresa')||{}).value||'';
+  const alvo=LOTES_CACHE.filter(l=>(!emp||l.empresa===emp));
+  if(!alvo.length) return toast('Nenhuma pasta no filtro atual para varrer.');
+  if(!confirm(`Varre o KML mestre de ${alvo.length} pasta(s)${emp?' da '+emp:''} e gera o KML individual das demandas que estão sem KML.\n\nNão altera datas nem baixa. Pode demorar alguns minutos. Continuar?`)) return;
+  const btn=document.getElementById('f-kml'); btn.disabled=true;
+  const prog=document.getElementById('lote-prog'); prog.style.display='block';
+  const bar=document.getElementById('lp-bar'), txt=document.getElementById('lp-txt');
+  const ids=alvo.map(l=>l.id); const BATCH=4;
+  let feitos=0, atualizadas=0, geocods=0; const semKml=[];
+  try{
+    for(let i=0;i<ids.length;i+=BATCH){
+      const lote=ids.slice(i,i+BATCH);
+      const r=await fetch(AUTO_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'mc_kml_backfill', folderIds:lote})});
+      const j=await r.json();
+      if(!j||!j.ok) throw new Error((j&&j.erro)||(j&&j.error)||'falha no backfill de KML');
+      atualizadas+=j.atualizadas||0; geocods+=j.geocods||0; (j.semKml||[]).forEach(n=>semKml.push(n));
+      feitos=Math.min(i+BATCH, ids.length);
+      bar.style.width=Math.round(feitos/ids.length*100)+'%';
+      txt.textContent=`Gerando KMLs… ${feitos}/${ids.length} pastas · ${atualizadas} GEOCOD preenchidos`;
+    }
+    bar.style.width='100%';
+    txt.textContent=`Concluído: ${atualizadas} KML(s) gerados em ${geocods} GEOCOD varridos.`+(semKml.length?` ${semKml.length} pasta(s) sem KML mestre.`:'');
+    toast(`KMLs gerados: ${atualizadas}.`);
+    await carregar();
+  }catch(e){ toast('Erro: '+(e.message||e)); txt.textContent='Erro: '+(e.message||e); }
+  finally{ btn.disabled=false; }
 }
 async function carregarLote(){
   const sel=document.getElementById('f-lote'); const loteId=sel.value;
