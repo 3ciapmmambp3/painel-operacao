@@ -476,6 +476,7 @@ var AutomacaoCastro = (function () {
       if (p.action === 'baixar') return jsonOut(baixarSheet(p));
       if (p.action === 'mc_listar_lotes') return jsonOut(mcListarLotes());
       if (p.action === 'mc_lote')          return jsonOut(mcLote(p));
+      if (p.action === 'mc_importar')      return jsonOut(runMC() || { ok: true });
       return jsonOut({ ok: false, error: 'ação desconhecida: ' + p.action });
     } catch (err2) {
       return jsonOut({ ok: false, error: String(err2 && err2.message || err2) });
@@ -677,10 +678,48 @@ var AutomacaoCastro = (function () {
   }
 
   // lista as pastas (lotes) do Drive MC p/ o painel escolher qual carregar
+  // extrai {empresa, data(iso)} do nome da pasta — aceita AAAA-MM-DD e DD-MM-AAAA
+  function _mcParseNome(nome) {
+    function p2(n) { n = String(n); return n.length < 2 ? '0' + n : n; }
+    var s = String(nome || '').trim(), iso = '', m;
+    if ((m = s.match(/(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/)))      iso = m[1] + '-' + p2(m[2]) + '-' + p2(m[3]);
+    else if ((m = s.match(/(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/))) iso = m[3] + '-' + p2(m[2]) + '-' + p2(m[1]);
+    var empresa = s.replace(/\s*\d{1,4}[-\/.]\d{1,2}[-\/.]\d{1,4}.*$/, '').trim();
+    return { empresa: empresa, data: iso };
+  }
+
   function mcListarLotes() {
-    var root = DriveApp.getFolderById(FONTES.MC.driveFolder), out = [], fo = root.getFolders();
-    while (fo.hasNext()) { var f = fo.next(); out.push({ id: f.getId(), nome: f.getName() }); }
-    out.sort(function (a, b) { return a.nome < b.nome ? 1 : (a.nome > b.nome ? -1 : 0); });
+    var F = FONTES.MC;
+    var root = DriveApp.getFolderById(F.driveFolder), out = [], fo = root.getFolders();
+    // lotes já carregados (coluna PASTA DRIVE MC da aba MC) → {nome: qtd}
+    var carregados = {};
+    try {
+      var sh = SpreadsheetApp.openById(F.sheetId).getSheetByName(F.abas[0].nome);
+      if (sh && sh.getLastRow() > 1) {
+        var cab = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(normHead);
+        var cY = acharCol(cab, ['PASTA DRIVE MC']);
+        if (cY >= 0) {
+          var col = sh.getRange(2, cY + 1, sh.getLastRow() - 1, 1).getValues();
+          for (var z = 0; z < col.length; z++) {
+            var v = String(col[z][0] == null ? '' : col[z][0]).trim();
+            if (v) carregados[v] = (carregados[v] || 0) + 1;
+          }
+        }
+      }
+    } catch (e) {}
+    while (fo.hasNext()) {
+      var f = fo.next(), nome = String(f.getName()).trim(), pn = _mcParseNome(nome);
+      out.push({ id: f.getId(), nome: nome, empresa: pn.empresa, data: pn.data,
+                 carregado: !!carregados[nome], qtd: carregados[nome] || 0 });
+    }
+    // por data desc; sem data por último; desempate por nome desc
+    out.sort(function (a, b) {
+      var da = a.data || '', db = b.data || '';
+      if (da && db) return da < db ? 1 : (da > db ? -1 : (a.nome < b.nome ? 1 : -1));
+      if (da && !db) return -1;
+      if (!da && db) return 1;
+      return a.nome < b.nome ? 1 : -1;
+    });
     return { ok: true, lotes: out };
   }
 
@@ -784,9 +823,9 @@ var AutomacaoCastro = (function () {
   function runMC() {
     var F = FONTES.MC, cfg = F.abas[0];
     var sh = SpreadsheetApp.openById(F.sheetId).getSheetByName(cfg.nome);
-    if (!sh) { Logger.log('[MC] aba não encontrada'); return; }
+    if (!sh) { Logger.log('[MC] aba não encontrada'); return { ok: false, erro: 'aba MC não encontrada', total: 0, inseridas: 0, atualizadas: 0 }; }
     var dados = sh.getDataRange().getValues();
-    if (dados.length < cfg.header) return;
+    if (dados.length < cfg.header) return { ok: true, total: 0, inseridas: 0, atualizadas: 0 };
     var cabec = dados[cfg.header - 1].map(normHead);
     var idx = {}; Object.keys(cfg.map).forEach(function (k) { idx[k] = acharCol(cabec, cfg.map[k]); });
     var cL = acharCol(cabec, ['PELOTAO']), cY = acharCol(cabec, ['PASTA DRIVE MC']);
@@ -814,13 +853,14 @@ var AutomacaoCastro = (function () {
     }
     var linhas = Object.keys(porCodigo).map(function (k) { return porCodigo[k]; });
     Logger.log('[MC] ' + linhas.length + ' demandas para sincronizar.');
-    if (!linhas.length) return;
+    if (!linhas.length) return { ok: true, total: 0, inseridas: 0, atualizadas: 0 };
     var LOTE = 500, ins = 0, upd = 0;
     for (var j = 0; j < linhas.length; j += LOTE) {
       var r = enviarRpc(F.rpc, { linhas: linhas.slice(j, j + LOTE) });
       if (r && r[0]) { ins += r[0].inseridas || 0; upd += r[0].atualizadas || 0; }
     }
     Logger.log('[MC] OK — inseridas: ' + ins + ' · atualizadas: ' + upd);
+    return { ok: true, total: linhas.length, inseridas: ins, atualizadas: upd };
   }
 
   return { run: run, runMC: runMC, mcLote: mcLote, mcListarLotes: mcListarLotes,

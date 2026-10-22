@@ -206,16 +206,25 @@
     <div class="mh"><b>Carregar lote · Monitoramento Contínuo</b><button class="pclose" onclick="fecharLote()">✕</button></div>
     <div class="mb">
       <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px;line-height:1.55">Selecione a pasta do lote que você salvou no <b>Drive MC</b> (baixada do Drive da SEMAD). O sistema lê o <b>KML mestre</b>, gera <b>um KML por GEOCOD</b>, casa o <b>PDF do croqui</b> e lança na planilha (aba MC) + banco. Recebido = hoje · prazo 45 dias.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+        <div class="fld" style="flex:1;min-width:150px"><label>Companhia</label>
+          <select id="f-empresa" onchange="renderLotes()"><option value="">Todas</option></select></div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-muted);padding-bottom:8px;cursor:pointer">
+          <input type="checkbox" id="f-ocultar" checked onchange="renderLotes()"> ocultar já carregados</label>
+      </div>
       <div class="fld full"><label>Lote (pasta no Drive MC) <span class="req">*</span></label>
         <select id="f-lote"><option value="">Carregando pastas…</option></select>
-        <div class="hint">reexecutar o mesmo lote é seguro (não duplica)</div></div>
+        <div class="hint">ordenados por data (mais recente primeiro) · ✓ = já carregado · reexecutar é seguro (não duplica)</div></div>
       <div id="lote-prog" style="display:none;margin-top:16px">
         <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px"><span id="lp-txt">Processando…</span></div>
         <div style="height:10px;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:6px;overflow:hidden"><div id="lp-bar" style="height:100%;width:0;background:var(--gold);transition:width .3s"></div></div>
       </div>
-      <div class="mfoot">
-        <button class="btn-outline btn-sm" onclick="fecharLote()">Fechar</button>
-        <button class="btn-gold btn-sm" id="f-carregar" onclick="carregarLote()">Carregar lote</button>
+      <div class="mfoot" style="justify-content:space-between">
+        <button class="btn-outline btn-sm" id="f-importar" onclick="importarPlanilha()" title="Traz para o painel os lotes que já estão lançados na aba MC (sem precisar recarregar as pastas)">↻ Importar da planilha</button>
+        <span style="display:flex;gap:8px">
+          <button class="btn-outline btn-sm" onclick="fecharLote()">Fechar</button>
+          <button class="btn-gold btn-sm" id="f-carregar" onclick="carregarLote()">Carregar lote</button>
+        </span>
       </div>
     </div>
   </div>
@@ -624,6 +633,7 @@ async function reativarDemanda(){
 }
 
 /* ── Carregar lote (Drive MC → KML por GEOCOD + croqui → planilha+banco) ── */
+let LOTES_CACHE=[];
 async function abrirLote(){
   if(!AUTO_URL) return toast('Carga de lote não configurada (publique o Web App AutomaçãoCastro e preencha AUTOMACAO_CASTRO_URL).');
   document.getElementById('mov').classList.add('show'); document.body.style.overflow='hidden';
@@ -634,16 +644,46 @@ async function abrirLote(){
     const r=await fetch(AUTO_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'mc_listar_lotes'})});
     const j=await r.json();
     if(!j||!j.ok) throw new Error((j&&j.error)||'falha ao listar lotes');
-    const lotes=j.lotes||[];
-    sel.innerHTML = lotes.length
-      ? lotes.map(l=>`<option value="${l.id}">${l.nome}</option>`).join('')
-      : '<option value="">(nenhuma pasta encontrada no Drive MC)</option>';
+    LOTES_CACHE = j.lotes||[];
+    // popula o filtro de companhia com as empresas presentes (ordenadas)
+    const emp=document.getElementById('f-empresa');
+    const empresas=[...new Set(LOTES_CACHE.map(l=>l.empresa).filter(Boolean))].sort();
+    // pré-seleciona a companhia que mais aparece (normalmente a do próprio painel)
+    const cont={}; LOTES_CACHE.forEach(l=>{ if(l.empresa) cont[l.empresa]=(cont[l.empresa]||0)+1; });
+    const maisComum=empresas.slice().sort((a,b)=>(cont[b]||0)-(cont[a]||0))[0]||'';
+    emp.innerHTML='<option value="">Todas</option>'+empresas.map(e=>`<option value="${e}"${e===maisComum?' selected':''}>${e}</option>`).join('');
+    renderLotes();
   }catch(e){ sel.innerHTML='<option value="">erro ao listar</option>'; toast('Erro: '+(e.message||e)); }
 }
+function renderLotes(){
+  const sel=document.getElementById('f-lote'); if(!sel) return;
+  const emp=(document.getElementById('f-empresa')||{}).value||'';
+  const ocultar=(document.getElementById('f-ocultar')||{}).checked;
+  const fmtD=s=>{ const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s||''); return m?`${m[3]}/${m[2]}/${m[1]}`:''; };
+  let lotes=LOTES_CACHE.filter(l=>(!emp||l.empresa===emp)&&(!ocultar||!l.carregado));
+  if(!lotes.length){ sel.innerHTML='<option value="">(nenhuma pasta'+(ocultar?' não carregada':'')+' nesse filtro)</option>'; return; }
+  sel.innerHTML=lotes.map(l=>{
+    const d=fmtD(l.data), tag=l.carregado?` ✓ carregado${l.qtd?' ('+l.qtd+')':''}`:'';
+    return `<option value="${l.id}">${d?d+' · ':''}${l.nome}${tag}</option>`;
+  }).join('');
+}
 function fecharLote(){ document.getElementById('mov').classList.remove('show'); document.body.style.overflow=''; }
+async function importarPlanilha(){
+  if(!AUTO_URL) return toast('Importação não configurada (Web App).');
+  const btn=document.getElementById('f-importar'); const txt0=btn.textContent; btn.disabled=true; btn.textContent='Importando…';
+  try{
+    const r=await fetch(AUTO_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'mc_importar'})});
+    const j=await r.json();
+    if(!j||!j.ok) throw new Error((j&&j.erro)||(j&&j.error)||'falha ao importar da planilha');
+    toast(`Planilha importada: ${j.total||0} demandas (novas ${j.inseridas||0} · atualizadas ${j.atualizadas||0}).`);
+    await carregar();
+  }catch(e){ toast('Erro: '+(e.message||e)); }
+  finally{ btn.disabled=false; btn.textContent=txt0; }
+}
 async function carregarLote(){
   const sel=document.getElementById('f-lote'); const loteId=sel.value;
-  const loteNome=sel.options[sel.selectedIndex]?sel.options[sel.selectedIndex].text:'';
+  const loteObj=LOTES_CACHE.find(l=>l.id===loteId);
+  const loteNome=loteObj?loteObj.nome:(sel.options[sel.selectedIndex]?sel.options[sel.selectedIndex].text:'');
   if(!loteId) return toast('Selecione um lote.');
   const btn=document.getElementById('f-carregar'); btn.disabled=true;
   const prog=document.getElementById('lote-prog'); prog.style.display='block';
