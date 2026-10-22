@@ -235,10 +235,30 @@ var AutomacaoCastro = (function () {
         // 1º) link direto da coluna "CLIQUE PARA BAIXAR"; 2º) Drive pelo código/número.
         var slink = linkDaCelula(rtvLink, fmLink, i - cfg.header, idxLink);
         if (slink) obj.anexos = [{ tipo: 'arquivo', nome: 'Documento (' + cod + ')', web_view_link: slink }];
-        else { var anx = acharAnexos(drive, cod, obj.municipio); if (anx) obj.anexos = anx; }
+        else { var anx = acharAnexos(drive, cod); if (anx) obj.anexos = anx; }
         var ja = porCodigo[cod];
         if (!ja || cfg.fonte_aba === 'robo') porCodigo[cod] = obj;
       }
+    });
+
+    // ── ANEXO por NÚMERO (quando não veio por link nem por código exato) ──
+    // O nome do arquivo traz só o nº do RI (sem o ano) e o nº se repete entre anos.
+    // Nº ÚNICO (1 ano só) → casa direto; nº que REPETE entre anos → só casa com o
+    // arquivo do ano certo (não espalha o PDF de 2026 em 2024/2025).
+    var numAnos = {};
+    Object.keys(porCodigo).forEach(function (cod) {
+      var n = primeiroNum(String(cod).split('/')[0]);
+      var a = (String(cod).split('/')[1] || '').replace(/\D/g, '');
+      if (n) { numAnos[n] = numAnos[n] || {}; if (a) numAnos[n][a] = 1; }
+    });
+    Object.keys(porCodigo).forEach(function (cod) {
+      var o = porCodigo[cod];
+      if (o.anexos && o.anexos.length) return;
+      var n = primeiroNum(String(cod).split('/')[0]); if (!n) return;
+      var a = (String(cod).split('/')[1] || '').replace(/\D/g, '');
+      var ambiguo = (numAnos[n] ? Object.keys(numAnos[n]).length : 0) > 1;
+      var anx = acharAnexosPorNumero(drive, n, o.municipio, a, ambiguo);
+      if (anx) o.anexos = anx;
     });
 
     // completa o Ato/REDS/data das atendidas ANTIGAS (só o que estiver vazio)
@@ -291,7 +311,7 @@ var AutomacaoCastro = (function () {
       var fi = root.getFiles();
       while (fi.hasNext()) {
         var f = fi.next(), nm = f.getName();
-        var item = { tipo: 'arquivo', nome: nm, web_view_link: fileUrl(f.getId()) };
+        var item = { tipo: 'arquivo', id: f.getId(), nome: nm, ano: anoDoNome(nm), web_view_link: fileUrl(f.getId()) };
         var k = normCod(semExt(nm)); (idx.fileMap[k] = idx.fileMap[k] || []).push(item);
         var dk = soDig(nm); if (dk) (idx.fileDig[dk] = idx.fileDig[dk] || []).push(item);
         var nnum = primeiroNum(nm); if (nnum) (idx.fileNum[nnum] = idx.fileNum[nnum] || []).push(item);
@@ -299,7 +319,7 @@ var AutomacaoCastro = (function () {
       var fo = root.getFolders();
       while (fo.hasNext()) {
         var sub = fo.next(), fn = sub.getName();
-        var o = { tipo: 'pasta', nome: fn, web_view_link: 'https://drive.google.com/drive/folders/' + sub.getId() };
+        var o = { tipo: 'pasta', id: sub.getId(), nome: fn, ano: anoDoNome(fn), web_view_link: 'https://drive.google.com/drive/folders/' + sub.getId() };
         idx.folderMap[normCod(fn)] = o;
         var fdk = soDig(fn); if (fdk && !idx.folderDig[fdk]) idx.folderDig[fdk] = o;
         var fnum = primeiroNum(fn); if (fnum) (idx.folderNum[fnum] = idx.folderNum[fnum] || []).push(o);
@@ -307,29 +327,47 @@ var AutomacaoCastro = (function () {
     } catch (e) { Logger.log('Drive indisponível (' + folderId + '): ' + e); }
     return idx;
   }
-  // casa anexos de uma demanda: 1) código exato (pasta/arquivo), 2) só dígitos,
-  // 3) pelo NÚMERO da demanda (antes da "/"), ex. arquivo "RI 718 APA ... - Município"
-  //    → desempata pelo município quando há mais de um com o mesmo número.
-  function acharAnexos(idx, codigo, municipio) {
+  // casa anexos pelo CÓDIGO EXATO (pasta/arquivo com o nome = código, inclui ano).
+  function acharAnexos(idx, codigo) {
     var k = normCod(codigo); if (!k) return null;
     var dk = soDig(codigo);
     if (idx.folderMap[k])        return [idx.folderMap[k]];
     if (idx.fileMap[k])          return idx.fileMap[k].slice();
     if (dk && idx.folderDig[dk]) return [idx.folderDig[dk]];
     if (dk && idx.fileDig[dk])   return idx.fileDig[dk].slice();
-    var num = primeiroNum(String(codigo).split('/')[0]);
-    if (num) {
-      var fold = (idx.folderNum && idx.folderNum[num]) || [];
-      var arqs = (idx.fileNum && idx.fileNum[num]) || [];
-      var cands = fold.concat(arqs);
-      if (cands.length === 1) return [cands[0]];
-      if (cands.length > 1) {
-        var mk = normCod(municipio || '');
-        if (mk) { var m = cands.filter(function (c) { return normCod(c.nome).indexOf(mk) >= 0; }); if (m.length) return [m[0]]; }
-        return [cands[0]];   // mesmo número, município não casou → pega o 1º
-      }
-    }
     return null;
+  }
+  // casa pelo NÚMERO da demanda (arquivo "RI 718 APA ... - Município", sem o ano).
+  // requireAno=true (quando o nº repete entre anos): só casa com o arquivo do MESMO
+  // ANO (ano no nome do arquivo ou, na falta, a data de criação no Drive) — evita
+  // colar o PDF de 2026 nas demandas de 2024/2025 com o mesmo número.
+  function acharAnexosPorNumero(idx, num, municipio, ano, requireAno) {
+    if (!num) return null;
+    var cands = ((idx.folderNum && idx.folderNum[num]) || []).concat((idx.fileNum && idx.fileNum[num]) || []);
+    if (!cands.length) return null;
+    if (cands.length > 1 && municipio) {
+      var mk = normCod(municipio);
+      var m = cands.filter(function (c) { return normCod(c.nome).indexOf(mk) >= 0; });
+      if (m.length) cands = m;
+    }
+    if (requireAno && ano) {
+      var y = cands.filter(function (c) { return anoDoArquivo(c) === String(ano); });
+      if (!y.length) return null;   // nenhum arquivo do ano certo → não casa
+      cands = y;
+    }
+    return [cands[0]];
+  }
+  // ano a partir do NOME (token 20xx) ou, se o nome não tiver, da data de criação.
+  function anoDoNome(s) { var m = String(s == null ? '' : s).match(/(?:^|\D)(20\d{2})(?:\D|$)/); return m ? m[1] : ''; }
+  function anoDoArquivo(item) {
+    if (item && item.ano) return String(item.ano);
+    try {
+      if (item && item.id) {
+        var f = (item.tipo === 'pasta') ? DriveApp.getFolderById(item.id) : DriveApp.getFileById(item.id);
+        return String(f.getDateCreated().getFullYear());
+      }
+    } catch (e) {}
+    return '';
   }
   // extrai o link do PDF da célula "CLIQUE PARA BAIXAR" (célula-link ou =HYPERLINK)
   function linkDaCelula(rtv, fm, r, idxLink) {
