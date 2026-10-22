@@ -70,7 +70,7 @@ const CARTAO_P3_DRIVE_URL = 'https://script.google.com/macros/s/AKfycbyxarwT_68D
  * Deixe '' enquanto o Web App não estiver publicado; então publique
  * db/APPS-SCRIPT-AutomacaoCastro.gs (Implantar ▸ App da Web ▸ Executar como: Eu;
  * Quem acessa: Qualquer pessoa) e cole aqui a URL /exec. */
-const AUTOMACAO_CASTRO_URL = '';
+const AUTOMACAO_CASTRO_URL = 'https://script.google.com/macros/s/AKfycbwEG6w7DUh8l2feshI4QgeiJDSSzg1PiVQJ3NmtlzobtRJ8Qp6OUjRcTcg7N_0GIwHA/exec';
 
 /* Níveis de acesso em ordem crescente de permissão */
 const NIVEIS = ['operacional', 'admin_gp', 'admin_pelotao', 'admin', 'admin_geral'];
