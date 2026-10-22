@@ -46,6 +46,8 @@
   .search input:focus{border-color:var(--gold)}
   .yearsel{background:var(--bg-input);border:1px solid var(--border-mid);border-radius:8px;padding:10px 30px 10px 12px;color:var(--text-white);font-size:12.5px;font-weight:600;outline:none;appearance:none;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239b8a5c' stroke-width='3'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
   .yearsel:focus{border-color:var(--gold)}
+  .gerbtn{background:var(--bg-input);border:1px solid var(--border-mid);color:var(--text-muted);padding:10px 14px;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer}
+  .gerbtn.on{background:var(--gold-bg);border-color:var(--gold);color:var(--gold-light)}
 
   .tablewrap{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;overflow-x:auto}
   table{width:100%;border-collapse:collapse}
@@ -151,6 +153,10 @@
     <div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
       <input id="busca" placeholder="Buscar por código, município, natureza, fração, REDS, GAIA…" oninput="render()"></div>
     <select id="ano" class="yearsel" onchange="render()"><option value="all">Todos os anos</option></select>
+    <span id="ger-tools" style="display:none;gap:8px;margin-left:auto">
+      <button id="ger-semgp" class="gerbtn" onclick="toggleGer('sem-gp')">Sem grupamento</button>
+      <button id="ger-inativas" class="gerbtn" onclick="toggleGer('inativas')">Inativadas</button>
+    </span>
   </div>
 
   <div class="tablewrap">
@@ -197,6 +203,13 @@ const nivel = S ? S.nivel_acesso : 'operacional';
 const isAdminTotal = nivel==='admin' || nivel==='admin_geral';
 const isAdminPel   = nivel==='admin_pelotao';
 const isAdminGeral = nivel==='admin_geral';
+// Gestão do módulo NUDEN = Aux P3 + Admin Geral (no DDU é Aux P2 + Admin Geral).
+const _func = (S && S.funcao || '').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+const isAuxGestor = /AUX\s*P?\s*3/.test(_func);
+const GERIR = isAdminGeral || isAuxGestor;   // pode corrigir grupamento / inativar
+const GERIR_LABEL = 'Aux P3 / Admin';
+const TBL = 'nuden_demandas';
+let gerFiltro = '';   // ''|'sem-gp'|'inativas' (só p/ quem gere)
 
 let GRUPOS = [], ALLOWED = [], DADOS = [], atual = null, filtro = 'todas';
 
@@ -230,12 +243,14 @@ function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.
     ALLOWED = GRUPOS.filter(g => g.gp===meuGp && g.pel===meuPel);
     if (!ALLOWED.length) ALLOWED = GRUPOS.filter(g => (S.grupamento_id||'').toUpperCase().includes(g.gpr.replace('GP ','')));
   }
+  if (GERIR) ALLOWED = GRUPOS.slice();   // quem gere vê toda a Cia p/ achar/atribuir as sem grupamento
   montarSeletor(meuPel);
+  if (GERIR){ const gt=document.getElementById('ger-tools'); if(gt) gt.style.display='inline-flex'; }
   await carregar();
 })();
 
 function montarSeletor(meuPel){
-  if (!(isAdminTotal || isAdminPel)) return;
+  if (!(isAdminTotal || isAdminPel || GERIR)) return;
   document.getElementById('selbar').style.display = 'flex';
   const selPel = document.getElementById('sel-pel');
   const pels = [...new Set(ALLOWED.map(g=>g.pel))].sort((a,b)=>a-b);
@@ -274,7 +289,7 @@ function gprEscopo(){
 // admin geral vendo TUDO (todos pel + todos grp) também traz as demandas cujo
 // município não casou com nenhum grupamento (gp_responsavel nulo).
 function verTudoSemFiltro(){
-  return isAdminTotal && _selVal('sel-pel')==='all' && _selVal('sel-grp')==='all';
+  return (isAdminTotal || GERIR) && _selVal('sel-pel')==='all' && _selVal('sel-grp')==='all';
 }
 
 async function carregar(){
@@ -354,7 +369,9 @@ function popularAnos(){
 // Escopo base (ativas + ano + busca), SEM o filtro dos cards — os quadros e a
 // lista partem daqui, então os cards já respeitam o ano/busca selecionados.
 function baseScope(d){
-  if (d.ativo===false) return false;
+  if (gerFiltro==='inativas'){ if (d.ativo!==false) return false; }
+  else if (d.ativo===false) return false;
+  if (gerFiltro==='sem-gp' && d.gp_responsavel) return false;
   const ano=document.getElementById('ano').value;
   if (ano!=='all' && String(anoDe(d))!==String(ano)) return false;
   const q=document.getElementById('busca').value.trim().toLowerCase();
@@ -471,11 +488,75 @@ function abrir(d){
           (d.observacoes_resposta?`<div class="di full"><dt>Observações</dt><dd class="desc">${d.observacoes_resposta}</dd></div>`:'')+
           (d.atendido_por_nome?di('Baixa registrada por', d.atendido_por_nome, true):'')+
         `</dl>`
-      : `<div class="rs">Pendente de atendimento. A baixa é feita pelo <b>Relatório de Serviço</b> (data, REDS, Nº GAIA/Ato de Fiscalização, resultado).</div>`);
+      : `<div class="rs">Pendente de atendimento. A baixa é feita pelo <b>Relatório de Serviço</b> (data, REDS, Nº GAIA/Ato de Fiscalização, resultado).</div>`)
+    + (GERIR ? gestaoHtml(d) : '');
   document.getElementById('ov').classList.add('show');
   document.body.style.overflow='hidden';
 }
 function fechar(){ document.getElementById('ov').classList.remove('show'); document.body.style.overflow=''; }
+
+/* ── Gestão (Aux P2/P3 + Admin): corrigir grupamento / inativar fora da Cia ── */
+function toggleGer(k){
+  gerFiltro = (gerFiltro===k) ? '' : k;
+  const map={'sem-gp':'ger-semgp','inativas':'ger-inativas'};
+  Object.keys(map).forEach(kk=>{ const b=document.getElementById(map[kk]); if(b) b.classList.toggle('on', gerFiltro===kk); });
+  render();
+}
+function gestaoGrpOptions(sel){
+  const pels=[...new Set(GRUPOS.map(g=>g.pel))].sort((a,b)=>a-b);
+  let html='<option value="">— selecione o grupamento —</option>';
+  pels.forEach(p=>{
+    const doPel=GRUPOS.filter(g=>g.pel===p).sort((a,b)=>_grafiaGP(a.comp).localeCompare(_grafiaGP(b.comp),'pt-BR'));
+    html+=`<optgroup label="${(p||'?')}º Pelotão">`+doPel.map(g=>`<option value="${g.gpr}"${g.gpr===sel?' selected':''}>${_grafiaGP(g.comp)}</option>`).join('')+`</optgroup>`;
+  });
+  return html;
+}
+function gestaoHtml(d){
+  const inativa = d.ativo===false;
+  return `<div class="sec-t">Gestão · ${GERIR_LABEL}</div>`+
+    (inativa
+      ? `<div class="rs" style="background:var(--danger-bg);border-color:rgba(239,83,80,.4);color:#ef9a9a">
+           <b>INATIVADA</b> (fora das listas)${d.motivo_inativacao?` — ${d.motivo_inativacao}`:''}
+           <button class="anxbtn" style="margin-left:8px" onclick="reativarDemanda()">Reativar</button></div>`
+      : `<div class="rs">
+           <div style="margin-bottom:8px">Corrigir <b>grupamento responsável</b> (p/ escopar correto):</div>
+           <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+             <select id="ger-grp-sel" class="yearsel" style="flex:1;min-width:220px">${gestaoGrpOptions(d.gp_responsavel)}</select>
+             <button class="anxbtn" onclick="salvarGrupamento()">Salvar</button>
+           </div>
+           <div style="margin-top:12px">
+             <button class="anxbtn" style="background:var(--danger-bg);border-color:rgba(239,83,80,.4);color:#ef9a9a" onclick="excluirFora()">Excluir (não é da 3ª Cia)</button>
+           </div>
+         </div>`);
+}
+async function _patchAtual(body){
+  const r = await fetch(`${API}/rest/v1/${TBL}?id=eq.${encodeURIComponent(atual.id)}`,
+    { method:'PATCH', headers:Object.assign({},H,{Prefer:'return=representation'}), body:JSON.stringify(body) });
+  if(!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  const rows = await r.json(); const row = rows && rows[0];
+  if(row){ Object.assign(atual,row); const i=DADOS.findIndex(x=>x.id===atual.id); if(i>=0) DADOS[i]=atual; }
+}
+async function salvarGrupamento(){
+  const gpr=(document.getElementById('ger-grp-sel')||{}).value||'';
+  if(!gpr) return toast('Selecione um grupamento.');
+  const g=GRUPOS.find(x=>x.gpr===gpr);
+  try{ await _patchAtual({ gp_responsavel:gpr, grupamento_completo:(g?g.comp:null), fracao_responsavel:(g?g.comp:atual.fracao_responsavel) });
+    render(); abrir(atual); toast('Grupamento atualizado.'); }
+  catch(e){ toast('Erro: '+e.message); }
+}
+async function excluirFora(){
+  const motivo = prompt('Motivo (ex.: não pertence à 3ª Cia):','Não pertence à 3ª Cia');
+  if(motivo===null) return;
+  try{ await _patchAtual({ ativo:false, motivo_inativacao:(motivo.trim()||'Não pertence à 3ª Cia'),
+        inativado_por_matricula:(S&&S.matricula)||null, inativado_por_nome:MILITAR||null, inativado_em:new Date().toISOString() });
+    render(); kpis(); abrir(atual); toast('Demanda inativada (saiu das listas).'); }
+  catch(e){ toast('Erro: '+e.message); }
+}
+async function reativarDemanda(){
+  try{ await _patchAtual({ ativo:true, motivo_inativacao:null, inativado_em:null });
+    render(); kpis(); abrir(atual); toast('Demanda reativada.'); }
+  catch(e){ toast('Erro: '+e.message); }
+}
 
 /* ── exportar Excel ──────────────────────────────────────────────── */
 function exportarExcel(){
