@@ -26,17 +26,17 @@
   .selbar select:focus{border-color:var(--gold)}
 
   /* quadros por prazo (modelo SISDEN) — clicáveis como filtro */
-  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:18px}
+  .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:18px}
   .kpi{background:var(--bg-card);border:1px solid var(--border);border-radius:11px;padding:15px 17px;position:relative;overflow:hidden;text-align:left;font:inherit;color:inherit;cursor:pointer}
   .kpi:hover{background:var(--bg-hover)}
   .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--border-mid)}
   .kpi.on{border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold-border)}
   .kpi.tot::before{background:var(--gold)} .kpi.okp::before{background:var(--success)}
-  .kpi.warn::before{background:#ffb74d} .kpi.late::before{background:var(--danger)} .kpi.done::before{background:var(--info)}
+  .kpi.warn::before{background:#ffb74d} .kpi.late::before{background:var(--danger)} .kpi.done::before{background:var(--info)} .kpi.extk::before{background:#ba68c8}
   .kpi .lbl{font-size:11px;color:var(--text-muted);font-weight:600;letter-spacing:.3px;text-transform:uppercase}
   .kpi .val{font-size:27px;font-weight:800;margin-top:6px;font-variant-numeric:tabular-nums;line-height:1}
   .kpi.tot .val{color:var(--gold-light)} .kpi.okp .val{color:var(--success)}
-  .kpi.warn .val{color:#ffb74d} .kpi.late .val{color:var(--danger)} .kpi.done .val{color:#90caf9}
+  .kpi.warn .val{color:#ffb74d} .kpi.late .val{color:var(--danger)} .kpi.done .val{color:#90caf9} .kpi.extk .val{color:#ce93d8}
   .kpi .sub{font-size:10.5px;color:var(--text-hint);margin-top:5px}
 
   .toolbar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
@@ -146,7 +146,8 @@
     <button class="kpi okp" data-f="noprazo"       onclick="setFiltroKpi(this)"><div class="lbl">No prazo</div><div class="val" id="k-ok">—</div><div class="sub">pendentes</div></button>
     <button class="kpi warn" data-f="vence10"      onclick="setFiltroKpi(this)"><div class="lbl">Vence ≤10d</div><div class="val" id="k-10">—</div><div class="sub">atenção</div></button>
     <button class="kpi late" data-f="atraso"       onclick="setFiltroKpi(this)"><div class="lbl">Em atraso</div><div class="val" id="k-late">—</div><div class="sub">prazo vencido</div></button>
-    <button class="kpi done" data-f="atendidas"    onclick="setFiltroKpi(this)"><div class="lbl">Atendidas</div><div class="val" id="k-done">—</div><div class="sub">respondidas</div></button>
+    <button class="kpi done" data-f="atendidas"    onclick="setFiltroKpi(this)"><div class="lbl">Atendidas</div><div class="val" id="k-done">—</div><div class="sub">pela fração</div></button>
+    <button class="kpi extk" data-f="externo"      onclick="setFiltroKpi(this)"><div class="lbl">A lançar · DDU</div><div class="val" id="k-ext">—</div><div class="sub">aguarda resposta externa</div></button>
   </div>
 
   <div class="toolbar">
@@ -209,6 +210,8 @@ const isAuxGestor = /AUX\s*P?\s*2/.test(_func);
 const GERIR = isAdminGeral || isAuxGestor;   // pode corrigir grupamento / inativar
 const GERIR_LABEL = 'Aux P2 / Admin';
 const TBL = 'ddu_demandas';
+const RPC_BAIXAR = 'ddu_baixar';            // baixa manual pela gaveta (Aux P2/Admin)
+const SISTEMA_EXTERNO = 'Plataforma DDU';   // controle da resposta no órgão externo
 let gerFiltro = '';   // ''|'sem-gp'|'inativas' (só p/ quem gere)
 
 let GRUPOS = [], ALLOWED = [], DADOS = [], atual = null, filtro = 'todas';
@@ -385,6 +388,7 @@ function passa(d){
   if (filtro==='vence10') return venceLogo(d);
   if (filtro==='atraso') return emAtraso(d);
   if (filtro==='atendidas') return atendidaN(d);
+  if (filtro==='externo') return atendidaN(d) && !d.data_resposta_externa;
   return true;
 }
 function kpis(){
@@ -395,6 +399,7 @@ function kpis(){
   document.getElementById('k-10').textContent  = c(venceLogo);
   document.getElementById('k-late').textContent= c(emAtraso);
   document.getElementById('k-done').textContent= c(atendidaN);
+  const ke=document.getElementById('k-ext'); if(ke) ke.textContent = c(d=>atendidaN(d) && !d.data_resposta_externa);
 }
 
 let PAGE=1; const PAGE_SIZE=15; let _sig='';
@@ -492,7 +497,8 @@ function abrir(d){
           (d.atendido_por_nome?di('Baixa registrada por', d.atendido_por_nome, true):'')+
         `</dl>`
       : `<div class="rs">Pendente de atendimento. A baixa é feita pelo <b>Relatório de Serviço</b> (data, REDS, Nº GAIA/Ato de Fiscalização, resultado).</div>`)
-    + (GERIR ? gestaoHtml(d) : '');
+    + (GERIR ? gestaoHtml(d) : '')
+    + (GERIR ? gestaoExtraHtml(d) : '');
   document.getElementById('ov').classList.add('show');
   document.body.style.overflow='hidden';
 }
@@ -577,5 +583,6 @@ function exportarExcel(){
   XLSX.writeFile(wb, 'DDU_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 </script>
+<script src="demandas-gestao.js"></script>
 </body>
 </html>
