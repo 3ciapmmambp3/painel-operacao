@@ -1736,6 +1736,8 @@ async function carregarDemandasSupabase(){
 // nuden_baixar. Best-effort: falhou, mantém o que havia.
 async function carregarNudenControleSupabase(){ return carregarControleSupabase('nuden_demandas','NUDEN'); }
 async function carregarDduControleSupabase(){   return carregarControleSupabase('ddu_demandas','DDU181'); }
+async function carregarRiControleSupabase(){    return carregarControleSupabase('ri_demandas','RI'); }
+async function carregarEmergenciaControleSupabase(){ return carregarControleSupabase('emergencia_demandas','EMERGENCIA'); }
 // Puxa as pendentes de uma tabela do Controle (nuden_demandas/ddu_demandas) e
 // injeta no card correspondente do Relatório (referenceCache[sourceKey]), ADITIVO.
 async function carregarControleSupabase(tabela, sourceKey){
@@ -2062,6 +2064,10 @@ async function fetchReferenceData(){
     catch(e){ console.warn('[nuden] controle de demandas indisponível:', e); }
     try { await carregarDduControleSupabase(); }
     catch(e){ console.warn('[ddu] controle de demandas indisponível:', e); }
+    try { await carregarRiControleSupabase(); }
+    catch(e){ console.warn('[ri] controle de demandas indisponível:', e); }
+    try { await carregarEmergenciaControleSupabase(); }
+    catch(e){ console.warn('[emergencia] controle de demandas indisponível:', e); }
     // Demandas EM ANDAMENTO (controle Supabase): reaparecem nos cards sinalizadas.
     try { await carregarDemandasAndamento(); }
     catch(e){ console.warn('[andamento] lista indisponível:', e); }
@@ -4778,7 +4784,7 @@ async function marcarDemandasAtendidas(payload, situMap){
     // cujo rótulo começa pelo código (antes do "—") — cobre D######, protocolo
     // "2026.10.01.503…" e numérico do DDU; não mexe no fluxo do Cartão.
     const atendNomeCtrl = (b1['Comandante'] || '').trim() || equipeTxt || null;
-    const baixarControle = async (catId, rpc) => {
+    const baixarControle = async (catId, rpc, fonteKey) => {
       try {
         const catLabel = (CATEGORIES.find(c => c.id === catId) || {}).label;
         const campo = _demandaLabelOf(catId);
@@ -4801,11 +4807,22 @@ async function marcarDemandasAtendidas(payload, situMap){
           };
           try { await fetch(`${SB_AUTH_URL}/rest/v1/rpc/${rpc}`, { method:'POST', headers:H, body: JSON.stringify({ p_dados }) }); }
           catch(err){ console.warn('[baixa '+catId+'] falha em', codigo, err); }
+          // Espelho na planilha (FTP/Emergência): escreve o atendimento de volta
+          // na aba via Web App AutomaçãoCastro. Best-effort, não bloqueia a baixa.
+          if (fonteKey && typeof AUTOMACAO_CASTRO_URL!=='undefined' && AUTOMACAO_CASTRO_URL){
+            try { await fetch(AUTOMACAO_CASTRO_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+              body: JSON.stringify({ action:'baixar', fonte:fonteKey, codigo, atendimento:{
+                data_atendimento:p_dados.data_atendimento, numero_reds:p_dados.numero_reds,
+                numero_gaia:p_dados.numero_gaia, status_atendimento:'RESPONDIDA' } }) }); }
+            catch(err){ console.warn('[espelho '+catId+']', err); }
+          }
         }
       } catch(err){ console.warn('[baixa '+catId+']', err); }
     };
     await baixarControle('nuden', 'nuden_baixar');
     await baixarControle('ddu', 'ddu_baixar');
+    await baixarControle('ftp', 'ri_baixar', 'RI');
+    await baixarControle('emergencia', 'emergencia_baixar', 'EMERGENCIA');
   } catch(e){ console.warn('[baixa] marcarDemandasAtendidas', e); }
 }
 

@@ -1,24 +1,32 @@
 /* ══════════════════════════════════════════════════════════════════════
-   AutomaçãoCastro.gs — NUDEN e DDU: planilha → Supabase (painel-operacao)
-   3ª Cia PM MAmb · Controle de Demandas
+   AutomaçãoCastro.gs — NUDEN, DDU, FTP/RI e Emergência: planilha ↔ Supabase
+   3ª Cia PM MAmb · Controle de Demandas (painel-operacao)
    >>> No editor do Apps Script, nomeie este arquivo como "AutomaçãoCastro". <<<
 
    O QUE FAZ
-     Lê as abas de cada FONTE (NUDEN e DDU 181), mapeia as colunas POR NOME,
-     deduplica por CÓDIGO DEMANDA (prefere a aba do robô), casa o(s)
-     documento(s) do Drive pelo código e manda tudo para o Supabase via RPC
-     (nuden_sync / ddu_sync — upsert). Completa o Ato/REDS/data das ATENDIDAS
-     ANTIGAS por uma aba de respostas (BD_DENUNCIASDADOC / RESPOSTADDU).
+     1) SYNC (planilha → Supabase): lê as abas de cada FONTE, mapeia as colunas
+        POR NOME, deduplica por CÓDIGO, casa o(s) documento(s) do Drive e manda
+        tudo p/ o Supabase via RPC (*_sync, upsert). Completa Ato/REDS/data das
+        ATENDIDAS ANTIGAS por uma aba de respostas (BD_*).
+     2) WEB APP (painel → planilha+Drive+Supabase): doPost com
+        action='lancar'  → sobe o PDF no Drive, gera o código, grava a linha na
+                            planilha e chama *_sync (espelha nos 3 lugares);
+        action='baixar'  → espelha o atendimento de volta na planilha (a baixa
+                            no banco é feita pelo Relatório via *_baixar).
 
      COMANDOS (menu Executar):
-       nudenSyncAgora        → sincroniza só a NUDEN
-       dduSyncAgora          → sincroniza só o DDU
-       sincronizarTudo       → as duas (use este no gatilho)
+       nudenSyncAgora / dduSyncAgora / riSyncAgora / emergenciaSyncAgora
+       sincronizarTudo       → todas as fontes (use este no gatilho)
        instalarGatilhoNuden  → cria 1 gatilho de tempo p/ sincronizarTudo
 
+   PUBLICAR O WEB APP (p/ o lançamento manual funcionar):
+     Implantar ▸ Nova implantação ▸ Tipo "App da Web" ▸ Executar como EU ▸
+     Quem tem acesso "Qualquer pessoa" ▸ copiar a URL /exec e colar em
+     AUTOMACAO_CASTRO_URL no src/config.js (ou no topo de ri.html/emergencia.html).
+
    PRÉ-REQUISITOS (conta que roda o script, ex. 3ciapmmamb.p3):
-     • precisa de ACESSO às 2 planilhas (NUDEN e DDU) e às 2 pastas do Drive.
-     • rode db/151 (NUDEN) e db/152 (DDU) no Supabase antes.
+     • ACESSO DE EDIÇÃO às 4 planilhas e às pastas do Drive.
+     • rode db/151 (NUDEN), db/152 (DDU), db/154 (RI) e db/155 (Emergência).
 
    Tudo encapsulado no namespace AutomacaoCastro (sem colidir com outros .gs).
    ══════════════════════════════════════════════════════════════════════ */
@@ -26,8 +34,14 @@
 // ─── COMANDOS (únicos globais) ─────────────────────────────────────────
 function nudenSyncAgora()       { return AutomacaoCastro.run('NUDEN'); }
 function dduSyncAgora()         { return AutomacaoCastro.run('DDU'); }
-function sincronizarTudo()      { AutomacaoCastro.run('NUDEN'); AutomacaoCastro.run('DDU'); }
+function riSyncAgora()          { return AutomacaoCastro.run('RI'); }
+function emergenciaSyncAgora()  { return AutomacaoCastro.run('EMERGENCIA'); }
+function sincronizarTudo()      { ['NUDEN','DDU','RI','EMERGENCIA'].forEach(function(k){ AutomacaoCastro.run(k); }); }
 function instalarGatilhoNuden() { return AutomacaoCastro.instalarGatilho(); }
+
+// ─── WEB APP (lançamento manual / espelho da baixa, chamado pelo painel) ─
+function doPost(e)             { return AutomacaoCastro.doPost(e); }
+function doGet(e)              { return AutomacaoCastro.doGet(e); }
 
 // ─── MÓDULO ────────────────────────────────────────────────────────────
 var AutomacaoCastro = (function () {
@@ -111,6 +125,55 @@ var AutomacaoCastro = (function () {
             status_atendimento:  ['STATUS RESPOSTA A PLATAFORNA DDU','STATUS']
         }}
       ]
+    },
+    RI: {
+      rpc: 'ri_sync',
+      sheetId: '1n7AYqalb-Bs1l2y7cUl9_6GxwNmQR3IcTzvbd7nogGw',
+      driveFolder: '1LwYWj4MQF110dOrygv8HWk2DTwKiZwVm',
+      tipoDefault: 'FTP',
+      prazoDias: 4,
+      dadoc: { aba: 'BD_FTP', cod: 0, data: 1, reds: 2, atoCols: [3] },
+      abas: [
+        { nome: 'FTP 3ª CIA MAMB', fonte_aba: 'manual', header: 1, map: {
+            codigo:              ['RI/ANO','RI ANO'],
+            natureza:            ['NOME UC'],
+            endereco:            ['TIPO UC'],
+            municipio:           ['MUNICIPIO'],
+            fracao_responsavel:  ['GRUPAMENTO'],
+            data_gerada:         ['DATA RECEBIDO'],
+            data_envio:          ['DATA ENVIADO PARA O GRUPAMENTO','DATA ENVIADO'],
+            data_vencimento:     ['EXPIRACAO'],
+            status_prazo:        ['SITUACAO'],
+            data_atendimento:    ['DATA RESPOSTA','DATA FISCALIZACAO'],
+            numero_gaia:         ['ID SISFIS','SISFIS'],
+            numero_reds:         ['REDS'],
+            status_atendimento:  ['STATUS'],
+            info_complementares: ['PROTOCOLO DE ENVIO','PROTOCOLO']
+        }}
+      ]
+    },
+    EMERGENCIA: {
+      rpc: 'emergencia_sync',
+      sheetId: '1HSyM-g1KPgai4n6KFknvNz8nnnzr3J7_ljGJk3NV0uE',
+      driveFolder: '1z0ZceiGhQbyRq2bp2RKP1gmAzCgZmgpN',
+      tipoDefault: 'EMERGÊNCIA',
+      prazoDias: 4,
+      dadoc: { aba: 'BD_EMERGENCIA', cod: 0, data: 1, reds: 2, atoCols: [3] },
+      abas: [
+        { nome: 'EMERGENCIA_3ªCIAMAMB', fonte_aba: 'manual', header: 2, map: {
+            codigo:              ['N PROTOC','PROTOCOLO','N PROTOCOLO'],
+            natureza:            ['MODALIDADE DO ACIDENTE','MODALIDADE'],
+            info_complementares: ['PRODUTO'],
+            municipio:           ['MUNICIPIO'],
+            fracao_responsavel:  ['GRUPAMENTO'],
+            data_gerada:         ['DATA'],
+            data_atendimento:    ['DATA DO ATENDIMENTO','DATA ATENDIMENTO'],
+            status_prazo:        ['SITUACAO'],
+            numero_gaia:         ['SISFIS'],
+            numero_reds:         ['REDS'],
+            status_atendimento:  ['STATUS']
+        }}
+      ]
     }
   };
 
@@ -155,7 +218,9 @@ var AutomacaoCastro = (function () {
           fonte_aba:           cfg.fonte_aba,
           raw:                 { aba: cfg.nome }
         };
-        if (!obj.data_vencimento && obj.data_envio) obj.data_vencimento = addDias(obj.data_envio, COMUM.PRAZO_DIAS);
+        var _base = obj.data_envio || obj.data_gerada;
+        var _prazo = F.prazoDias || COMUM.PRAZO_DIAS;
+        if (!obj.data_vencimento && _base) obj.data_vencimento = addDias(_base, _prazo);
         var anx = acharAnexos(drive, cod); if (anx) obj.anexos = anx;
         var ja = porCodigo[cod];
         if (!ja || cfg.fonte_aba === 'robo') porCodigo[cod] = obj;
@@ -197,7 +262,7 @@ var AutomacaoCastro = (function () {
   function instalarGatilho() {
     ScriptApp.getProjectTriggers().forEach(function (t) {
       var h = t.getHandlerFunction();
-      if (h === 'sincronizarTudo' || h === 'nudenSyncAgora' || h === 'dduSyncAgora') ScriptApp.deleteTrigger(t);
+      if (['sincronizarTudo','nudenSyncAgora','dduSyncAgora','riSyncAgora','emergenciaSyncAgora'].indexOf(h) >= 0) ScriptApp.deleteTrigger(t);
     });
     ScriptApp.newTrigger('sincronizarTudo').timeBased().everyHours(COMUM.FREQ_HORAS).create();
     Logger.log('Gatilho instalado: sincronizarTudo a cada ' + COMUM.FREQ_HORAS + 'h.');
@@ -258,7 +323,7 @@ var AutomacaoCastro = (function () {
   // ─── HELPERS ──────────────────────────────────────────────────────────
   function normHead(s) {
     return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '')
-      .toUpperCase().replace(/[.º°]/g, '').replace(/\s+/g, ' ').trim();
+      .toUpperCase().replace(/[.ºª°]/g, '').replace(/\s+/g, ' ').trim();
   }
   function acharCol(cabec, aliases) {
     var al = aliases.map(normHead);
@@ -285,5 +350,130 @@ var AutomacaoCastro = (function () {
   function pad(n) { return String(n).length < 2 ? '0' + n : String(n); }
   function addDias(isoStr, n) { var p = isoStr.split('-').map(Number); return iso(new Date(p[0], p[1] - 1, p[2] + n)); }
 
-  return { run: run, instalarGatilho: instalarGatilho };
+  // ─── WEB APP: lançamento manual / espelho da baixa ───────────────────
+  function jsonOut(obj) {
+    return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+  }
+  function doGet(e) {
+    return jsonOut({ ok: true, service: 'AutomacaoCastro', fontes: Object.keys(FONTES) });
+  }
+  function doPost(e) {
+    var p = {};
+    try { p = JSON.parse((e && e.postData && e.postData.contents) || '{}'); }
+    catch (err) { return jsonOut({ ok: false, error: 'JSON inválido' }); }
+    try {
+      if (p.action === 'lancar') return jsonOut(lancar(p));
+      if (p.action === 'baixar') return jsonOut(baixarSheet(p));
+      return jsonOut({ ok: false, error: 'ação desconhecida: ' + p.action });
+    } catch (err2) {
+      return jsonOut({ ok: false, error: String(err2 && err2.message || err2) });
+    }
+  }
+
+  // resolve a aba principal (manual) + cabeçalho + índices de todas as colunas
+  function _mainSheet(F) {
+    var cfg = F.abas[0];
+    var sh = SpreadsheetApp.openById(F.sheetId).getSheetByName(cfg.nome);
+    if (!sh) throw new Error('aba não encontrada: ' + cfg.nome);
+    var cabec = sh.getRange(cfg.header, 1, 1, sh.getLastColumn()).getValues()[0].map(normHead);
+    return { sh: sh, cfg: cfg, cabec: cabec, header: cfg.header };
+  }
+  // escreve, numa linha, os campos cujo alias casa no cabeçalho (datas viram Date)
+  function _escreverCampos(ctx, rowIndex, campos) {
+    Object.keys(campos).forEach(function (campo) {
+      var aliases = ctx.cfg.map[campo]; if (!aliases) return;
+      var c = acharCol(ctx.cabec, aliases); if (c < 0) return;
+      var v = campos[campo]; if (v == null || v === '') return;
+      if (/^\d{4}-\d{2}-\d{2}/.test(String(v))) { var q = String(v).slice(0,10).split('-'); v = new Date(+q[0], +q[1]-1, +q[2]); }
+      ctx.sh.getRange(rowIndex, c + 1).setValue(v);
+    });
+  }
+  // próximo código 'NNN/ANO' olhando a coluna de código da aba principal
+  function gerarCodigo(F, ano) {
+    var ctx = _mainSheet(F);
+    var cc = acharCol(ctx.cabec, ctx.cfg.map.codigo);
+    var max = 0;
+    if (cc >= 0) {
+      var vals = ctx.sh.getRange(ctx.header + 1, cc + 1, Math.max(0, ctx.sh.getLastRow() - ctx.header), 1).getValues();
+      for (var i = 0; i < vals.length; i++) {
+        var m = String(vals[i][0] == null ? '' : vals[i][0]).match(/^\s*(\d+)\s*\/\s*(\d{4})\s*$/);
+        if (m && m[2] === String(ano) && +m[1] > max) max = +m[1];
+      }
+    }
+    return (max + 1) + '/' + ano;
+  }
+  function uploadPdf(F, codigo, pdf) {
+    if (!pdf || !pdf.dataBase64) return null;
+    var bytes = Utilities.base64Decode(pdf.dataBase64);
+    var nome = (pdf.name || (codigo.replace(/\//g, '_') + '.pdf'));
+    var blob = Utilities.newBlob(bytes, pdf.mime || 'application/pdf', nome);
+    var file = DriveApp.getFolderById(F.driveFolder).createFile(blob);
+    try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (e) {}
+    return { tipo: 'arquivo', nome: nome, web_view_link: fileUrl(file.getId()) };
+  }
+
+  function lancar(p) {
+    var F = FONTES[p.fonte]; if (!F) throw new Error('fonte inválida: ' + p.fonte);
+    var d = p.dados || {};
+    var ano = p.ano || (d.data_gerada ? String(d.data_gerada).slice(0,4) : new Date().getFullYear());
+    var codigo = (p.codigo && String(p.codigo).trim()) || gerarCodigo(F, ano);
+
+    // vencimento: usa o informado, senão base (envio/gerada) + prazo
+    var venc = d.data_vencimento || '';
+    if (!venc) { var base = d.data_envio || d.data_gerada; if (base) venc = addDias(String(base).slice(0,10), F.prazoDias || COMUM.PRAZO_DIAS); }
+
+    // 1) PDF → Drive
+    var anexo = null;
+    try { anexo = uploadPdf(F, codigo, p.pdf); } catch (e) { Logger.log('upload falhou: ' + e); }
+
+    // 2) grava a linha na planilha (espelho) + link do PDF em "CLIQUE PARA BAIXAR"
+    var ctx = _mainSheet(F);
+    var rowIndex = ctx.sh.getLastRow() + 1;
+    var campos = {
+      codigo: codigo, tipo_demanda: d.tipo_demanda || F.tipoDefault,
+      natureza: d.natureza, endereco: d.endereco, municipio: d.municipio,
+      fracao_responsavel: d.fracao_responsavel,
+      data_gerada: d.data_gerada, data_envio: d.data_envio,
+      data_vencimento: venc, info_complementares: d.info_complementares
+    };
+    try {
+      _escreverCampos(ctx, rowIndex, campos);
+      if (anexo) { var cb = acharCol(ctx.cabec, ['CLIQUE PARA BAIXAR','BAIXAR','PDF']); if (cb >= 0) ctx.sh.getRange(rowIndex, cb + 1).setFormula('=HYPERLINK("' + anexo.web_view_link + '";"CLIQUE PARA BAIXAR")'); }
+    } catch (e) { Logger.log('append planilha falhou: ' + e); }
+
+    // 3) Supabase (upsert) — fonte da verdade do painel
+    var obj = {
+      codigo: codigo, tipo_demanda: d.tipo_demanda || F.tipoDefault,
+      data_gerada: d.data_gerada || '', natureza: d.natureza || '',
+      municipio: d.municipio || '', endereco: d.endereco || '',
+      fracao_responsavel: d.fracao_responsavel || '',
+      data_envio: d.data_envio || '', data_vencimento: venc || '',
+      info_complementares: d.info_complementares || '',
+      fonte_aba: 'painel', raw: { lancado_por: p.por || null, aba: ctx.cfg.nome }
+    };
+    if (anexo) obj.anexos = [anexo];
+    var r = enviarRpc(F.rpc, { linhas: [obj] });
+    if (!r) throw new Error('Supabase recusou o lançamento (verifique a migração ' + F.rpc + ').');
+    return { ok: true, codigo: codigo, anexo: anexo };
+  }
+
+  // espelha o atendimento de volta na planilha (a baixa no banco é do Relatório)
+  function baixarSheet(p) {
+    var F = FONTES[p.fonte]; if (!F) throw new Error('fonte inválida: ' + p.fonte);
+    var codigo = String(p.codigo || '').trim(); if (!codigo) throw new Error('código ausente');
+    var a = p.atendimento || {};
+    var ctx = _mainSheet(F);
+    var cc = acharCol(ctx.cabec, ctx.cfg.map.codigo); if (cc < 0) throw new Error('coluna de código não encontrada');
+    var vals = ctx.sh.getRange(ctx.header + 1, cc + 1, Math.max(0, ctx.sh.getLastRow() - ctx.header), 1).getValues();
+    var alvo = normCod(codigo), row = -1;
+    for (var i = 0; i < vals.length; i++) { if (normCod(vals[i][0]) === alvo) { row = ctx.header + 1 + i; break; } }
+    if (row < 0) return { ok: false, error: 'código não encontrado na planilha (nada a espelhar)' };
+    _escreverCampos(ctx, row, {
+      data_atendimento: a.data_atendimento, numero_reds: a.numero_reds,
+      numero_gaia: a.numero_gaia, status_atendimento: a.status_atendimento || 'RESPONDIDA'
+    });
+    return { ok: true, row: row };
+  }
+
+  return { run: run, instalarGatilho: instalarGatilho, doGet: doGet, doPost: doPost };
 })();

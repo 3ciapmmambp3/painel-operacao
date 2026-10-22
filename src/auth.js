@@ -64,6 +64,14 @@ const CARTAO_DRIVE_URL = 'https://script.google.com/macros/s/AKfycbwQ5EEfTk2Cswm
  * cole aqui a URL /exec. O Cartão Programa usa p/ anexar PDF/KML da demanda. */
 const CARTAO_P3_DRIVE_URL = 'https://script.google.com/macros/s/AKfycbyxarwT_68D2A9ygk4ItGLxRl5wR6L8nZ9QMqnKn-_pGjL0qtbuZPsh4GSgUsTLhls7pg/exec';
 
+/* Web App "AutomaçãoCastro" (conta 3ciapmmamb.p3) — lançamento manual de
+ * demandas FTP/RI e Emergência Ambiental pelo painel: sobe o PDF no Drive,
+ * grava a linha na planilha e faz o upsert no Supabase (espelho nos 3 lugares).
+ * Deixe '' enquanto o Web App não estiver publicado; então publique
+ * db/APPS-SCRIPT-AutomacaoCastro.gs (Implantar ▸ App da Web ▸ Executar como: Eu;
+ * Quem acessa: Qualquer pessoa) e cole aqui a URL /exec. */
+const AUTOMACAO_CASTRO_URL = '';
+
 /* Níveis de acesso em ordem crescente de permissão */
 const NIVEIS = ['operacional', 'admin_gp', 'admin_pelotao', 'admin', 'admin_geral'];
 
