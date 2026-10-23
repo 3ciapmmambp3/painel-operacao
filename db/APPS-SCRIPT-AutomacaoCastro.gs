@@ -686,7 +686,14 @@ var AutomacaoCastro = (function () {
     if ((m = s.match(/(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/)))      iso = m[1] + '-' + p2(m[2]) + '-' + p2(m[3]);
     else if ((m = s.match(/(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/))) iso = m[3] + '-' + p2(m[2]) + '-' + p2(m[1]);
     var empresa = s.replace(/\s*\d{1,4}[-\/.]\d{1,2}[-\/.]\d{1,4}.*$/, '').trim();
-    return { empresa: empresa, data: iso };
+    return { empresa: _mcEmpresaNorm(empresa), empresaRaw: empresa, data: iso };
+  }
+
+  // 8/12/15 CIA foram incorporadas à 3 CIA (junção) — arquivos antigos entram como 3 CIA
+  function _mcEmpresaNorm(emp) {
+    var m = String(emp || '').match(/^\s*(\d{1,3})\s*(?:ª|a)?\s*CIA\b/i);
+    if (m && (m[1] === '8' || m[1] === '12' || m[1] === '15')) return '3 CIA';
+    return String(emp || '').trim();
   }
 
   function mcListarLotes() {
@@ -710,7 +717,7 @@ var AutomacaoCastro = (function () {
     } catch (e) {}
     while (fo.hasNext()) {
       var f = fo.next(), nome = String(f.getName()).trim(), pn = _mcParseNome(nome);
-      out.push({ id: f.getId(), nome: nome, empresa: pn.empresa, data: pn.data,
+      out.push({ id: f.getId(), nome: nome, empresa: pn.empresa, empresaRaw: pn.empresaRaw, data: pn.data,
                  carregado: !!carregados[nome], qtd: carregados[nome] || 0 });
     }
     // por data desc; sem data por último; desempate por nome desc
