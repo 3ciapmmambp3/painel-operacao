@@ -7,11 +7,13 @@
 -- não o colaborador. Acrescenta `categoria <> 'colaborador'` (mesma regra do
 -- tta_listar_militares, db/135).
 --
--- NÃO altera a regra de QPR/QOR (reconvocados): segue como está (não contam no
--- percentual quando "contar reconvocados" está desmarcado).
+-- QPR/QOR (reconvocados): agora APARECEM no roster "falta escolher"
+-- (ferias_efetivo_escopo) — eles precisam escolher férias. Antes o roster
+-- excluía quem tinha "QPR"/"QOR" no posto (ex. "1º Sgt PM QPR"), então esses
+-- não apareciam. No PERCENTUAL (ferias_percentuais) eles SEGUEM sem contar.
 --
 -- Rodar no SQL editor do Supabase. Redefine ferias_efetivo_escopo (db/150) e
--- ferias_percentuais (db/119) só acrescentando o filtro de colaborador.
+-- ferias_percentuais (db/119).
 -- ============================================================================
 
 -- ── roster "falta escolher" / efetivo do escopo ────────────────────────────
@@ -50,8 +52,8 @@ begin
        and upper(coalesce(m.funcao,'')) not like '%ASPM%'
        and upper(public.unaccent_safe(coalesce(m.posto_graduacao,''))) not like '%CIVIL%'
        and coalesce(m.categoria,'militar') <> 'colaborador'   -- colaborador não é militar
-       and (v_reconv or (upper(coalesce(m.posto_graduacao,'')) not like '%QOR%'
-                         and upper(coalesce(m.posto_graduacao,'')) not like '%QPR%'))
+       -- QPR/QOR (reconvocados) APARECEM no roster (precisam escolher férias);
+       -- eles só não CONTAM no percentual (isso fica em ferias_percentuais).
        and (
             v_full
          or (coalesce(v_me.nivel_acesso,'') = 'admin_pelotao'
