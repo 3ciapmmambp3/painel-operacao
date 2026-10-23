@@ -1729,6 +1729,60 @@ async function carregarDemandasSupabase(){
   referenceCache['REQUISICAO'] = _merge(_scopePlan(referenceCache['REQUISICAO']), supReq);
 }
 
+// ── NUDEN (Controle de Demandas, tabela nuden_demandas — db/151) ──────────
+// ADITIVO: injeta as pendentes da NUDEN no card do Relatório SEM tocar no que
+// a planilha do Cartão já trouxe para referenceCache['NUDEN']. Rótulo começa
+// pelo CÓDIGO (D######), que a baixa (marcarDemandasAtendidas) extrai p/ chamar
+// nuden_baixar. Best-effort: falhou, mantém o que havia.
+async function carregarNudenControleSupabase(){ return carregarControleSupabase('nuden_demandas','NUDEN'); }
+async function carregarDduControleSupabase(){   return carregarControleSupabase('ddu_demandas','DDU181'); }
+async function carregarRiControleSupabase(){    return carregarControleSupabase('ri_demandas','RI'); }
+async function carregarEmergenciaControleSupabase(){ return carregarControleSupabase('emergencia_demandas','EMERGENCIA'); }
+async function carregarMcControleSupabase(){     return carregarControleSupabase('mc_demandas','MC'); }
+// Puxa as pendentes de uma tabela do Controle (nuden_demandas/ddu_demandas) e
+// injeta no card correspondente do Relatório (referenceCache[sourceKey]), ADITIVO.
+async function carregarControleSupabase(tabela, sourceKey){
+  if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
+  const S = (typeof getSessaoAtual === 'function') ? getSessaoAtual() : null;
+  if (!S) return;
+  const H = { apikey: SB_AUTH_KEY, Authorization:`Bearer ${SB_AUTH_KEY}`, 'Content-Type':'application/json' };
+  const gpN  = s => { const m=(s||'').match(/(\d+)\s*GP/i);  return m?+m[1]:null; };
+  const pelN = s => { const m=(s||'').match(/(\d+)\s*PEL/i); return m?+m[1]:null; };
+  const rg = await fetch(`${SB_AUTH_URL}/rest/v1/grupos?select=gp_responsavel,grupamento_completo`, { headers:H });
+  if (!rg.ok) return;
+  const GRUPOS = (await rg.json()).map(g => ({ gpr:g.gp_responsavel, gp:gpN(g.grupamento_completo), pel:pelN(g.grupamento_completo) }));
+  const nivel = S.nivel_acesso || 'operacional';
+  const meuGp = gpN(S.grupamento_id), meuPel = pelN(S.grupamento_id);
+  let ALLOWED;
+  if (nivel==='admin' || nivel==='admin_geral') ALLOWED = GRUPOS.slice();
+  else if (nivel==='admin_pelotao')             ALLOWED = GRUPOS.filter(g => g.pel===meuPel);
+  else {
+    ALLOWED = GRUPOS.filter(g => g.gp===meuGp && g.pel===meuPel);
+    if (!ALLOWED.length) ALLOWED = GRUPOS.filter(g => (S.grupamento_id||'').toUpperCase().includes((g.gpr||'').replace('GP ','')));
+  }
+  const gprs = [...new Set(ALLOWED.map(g=>g.gpr).filter(Boolean))];
+  if (!gprs.length) return;
+  const inList = '(' + gprs.map(v=>`"${String(v).replace(/"/g,'')}"`).join(',') + ')';
+  const sit = 'in.(' + ['"PENDENTE"','"EM ANDAMENTO"'].join(',') + ')';
+  const url = `${SB_AUTH_URL}/rest/v1/${tabela}?select=codigo,municipio,natureza,fracao_responsavel,grupamento_completo`
+            + `&gp_responsavel=in.${encodeURIComponent(inList)}&situacao=${encodeURIComponent(sit)}&ativo=eq.true`
+            + `&data_atendimento=is.null&order=data_vencimento.asc.nullslast&limit=3000`;
+  const rd = await fetch(url, { headers:H });
+  if (!rd.ok) return;   // ex.: 404 enquanto a migração (db/151|db/152) não rodou
+  const rows = await rd.json();
+  const itens = rows.map(d => {
+    const extras = [d.municipio, d.natureza].filter(Boolean).join(' · ');
+    return { value: extras ? `${d.codigo} — ${extras}` : `${d.codigo}`, fracao: d.grupamento_completo || d.fracao_responsavel || '' };
+  });
+  const atual = Array.isArray(referenceCache[sourceKey]) ? referenceCache[sourceKey] : [];
+  const seen = new Set(); const out = [];
+  [...atual, ...itens].forEach(it => {
+    const k = ((it && typeof it==='object') ? (it.value||'') : (it||'')).replace(/\s+/g,' ').trim();
+    if (k && !seen.has(k)) { seen.add(k); out.push(it); }
+  });
+  referenceCache[sourceKey] = out;
+}
+
 // Demandas EM ANDAMENTO (tabela de controle Supabase, db/134): mescla nos cards
 // marcando "em andamento" (⟲). Substitui a versão "limpa" da mesma demanda para
 // não duplicar — assim a demanda continua aparecendo como pendente, com contexto.
@@ -2006,6 +2060,17 @@ async function fetchReferenceData(){
     catch(e){ console.warn('[quesitos] catálogo indisponível:', e); }
     try { await carregarDemandasSupabase(); }
     catch(e){ console.warn('[supademandas] mantendo fonte da planilha para DEN_BALCAO/REQUISICAO:', e); }
+    // NUDEN/DDU (Controle de Demandas, db/151/152): injeta pendentes nos cards, aditivo.
+    try { await carregarNudenControleSupabase(); }
+    catch(e){ console.warn('[nuden] controle de demandas indisponível:', e); }
+    try { await carregarDduControleSupabase(); }
+    catch(e){ console.warn('[ddu] controle de demandas indisponível:', e); }
+    try { await carregarRiControleSupabase(); }
+    catch(e){ console.warn('[ri] controle de demandas indisponível:', e); }
+    try { await carregarEmergenciaControleSupabase(); }
+    catch(e){ console.warn('[emergencia] controle de demandas indisponível:', e); }
+    try { await carregarMcControleSupabase(); }
+    catch(e){ console.warn('[mc] controle de demandas indisponível:', e); }
     // Demandas EM ANDAMENTO (controle Supabase): reaparecem nos cards sinalizadas.
     try { await carregarDemandasAndamento(); }
     catch(e){ console.warn('[andamento] lista indisponível:', e); }
@@ -4717,6 +4782,51 @@ async function marcarDemandasAtendidas(payload, situMap){
         } catch(err){ console.warn('[baixa] falha em', numero, err); }
       }
     }
+    // ── NUDEN e DDU (Controle de Demandas, db/151/152): baixa por CÓDIGO via
+    // RPC (nuden_baixar / ddu_baixar). ADITIVO: dispara nos itens FINALIZADA
+    // cujo rótulo começa pelo código (antes do "—") — cobre D######, protocolo
+    // "2026.10.01.503…" e numérico do DDU; não mexe no fluxo do Cartão.
+    const atendNomeCtrl = (b1['Comandante'] || '').trim() || equipeTxt || null;
+    const baixarControle = async (catId, rpc, fonteKey) => {
+      try {
+        const catLabel = (CATEGORIES.find(c => c.id === catId) || {}).label;
+        const campo = _demandaLabelOf(catId);
+        const bloco = catLabel ? payload.categorias.find(c => c.categoria === catLabel) : null;
+        if (!catLabel || !campo || !bloco || !Array.isArray(bloco.itens)) return;
+        for (const item of bloco.itens){
+          if (_situacaoDoItem(situMap, catLabel, item) !== 'FINALIZADA') continue;
+          const codigo = _stripAndamento(String(item[campo]||'')).split(/\s+—\s+/)[0].replace(/\s+/g,' ').trim();
+          if (!codigo || !/\d{4,}/.test(codigo)) continue;   // sem código "de verdade" = não é nosso
+          const p_dados = {
+            codigo,
+            data_atendimento: _normalizarDataResp(item['Data de Atendimento'] || item['Data da Fiscalização']),
+            numero_reds: item['Nº REDS (BO/BOS/RAT)'] || null,
+            numero_gaia: item['Nº Ato de Fiscalização'] || null,   // GAIA == Ato de Fiscalização
+            numero_auto_infracao: item['Nº Auto de Infração'] || null,
+            observacoes_resposta: item['Observações'] || null,
+            equipe: equipeTxt, viatura: viaturaTxt,               // mesma equipe/viatura do Bloco 1
+            atendido_por_matricula: sess.matricula || null,
+            atendido_por_nome: atendNomeCtrl
+          };
+          try { await fetch(`${SB_AUTH_URL}/rest/v1/rpc/${rpc}`, { method:'POST', headers:H, body: JSON.stringify({ p_dados }) }); }
+          catch(err){ console.warn('[baixa '+catId+'] falha em', codigo, err); }
+          // Espelho na planilha (FTP/Emergência): escreve o atendimento de volta
+          // na aba via Web App AutomaçãoCastro. Best-effort, não bloqueia a baixa.
+          if (fonteKey && typeof AUTOMACAO_CASTRO_URL!=='undefined' && AUTOMACAO_CASTRO_URL){
+            try { await fetch(AUTOMACAO_CASTRO_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+              body: JSON.stringify({ action:'baixar', fonte:fonteKey, codigo, atendimento:{
+                data_atendimento:p_dados.data_atendimento, numero_reds:p_dados.numero_reds,
+                numero_gaia:p_dados.numero_gaia, status_atendimento:'RESPONDIDA' } }) }); }
+            catch(err){ console.warn('[espelho '+catId+']', err); }
+          }
+        }
+      } catch(err){ console.warn('[baixa '+catId+']', err); }
+    };
+    await baixarControle('nuden', 'nuden_baixar');
+    await baixarControle('ddu', 'ddu_baixar');
+    await baixarControle('ftp', 'ri_baixar', 'RI');
+    await baixarControle('emergencia', 'emergencia_baixar', 'EMERGENCIA');
+    await baixarControle('mc', 'mc_baixar', 'MC');
   } catch(e){ console.warn('[baixa] marcarDemandasAtendidas', e); }
 }
 

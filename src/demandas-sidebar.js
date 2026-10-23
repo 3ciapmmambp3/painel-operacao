@@ -28,6 +28,12 @@
     const qs = new URLSearchParams(location.search);
     let ativo = '';
     if (path === 'denuncias.html')                ativo = qs.get('tipo') === 'todos' ? 'todos' : (qs.get('tipo') === 'requisicao' ? 'req' : 'den');
+    else if (path === 'nuden.html')               ativo = 'nuden';
+    else if (path === 'ddu.html')                 ativo = 'ddu';
+    else if (path === 'ri.html')                  ativo = 'ri';
+    else if (path === 'emergencia.html')          ativo = 'emergencia';
+    else if (path === 'mc.html')                  ativo = 'mc';
+    else if (path === 'ima.html')                 ativo = 'ima';
     else if (path === 'nova-denuncia.html')       ativo = qs.get('tipo') === 'requisicao' ? 'req' : 'den';
     else if (path === 'materiais-tco-semad.html') ativo = qs.get('aba') === 'SEMAD' ? 'mat-semad' : 'mat-tco';
     else if (path === 'relatorio-demandas.html')  ativo = 'relatorio';
@@ -46,13 +52,14 @@
       ${item('todos','denuncias.html?tipo=todos','🗃️','Todos (por prioridade)')}
       ${item('den','denuncias.html?tipo=denuncia','📋','Denúncias de Balcão')}
       ${item('req','denuncias.html?tipo=requisicao','📨','Requisições')}
+      ${item('nuden','nuden.html','🌿','NUDEN / SEMAD')}
+      ${item('ddu','ddu.html','📣','DDU 181')}
+      ${item('ri','ri.html','🔥','FTP / RI')}
+      ${item('emergencia','emergencia.html','🚨','Emergência Amb.')}
+      ${item('mc','mc.html','🛰️','Monitoramento Contínuo')}
       ${item('mat-tco','materiais-tco-semad.html?aba=TCO','📦','Materiais Acautelados - TCO')}
       ${item('mat-semad','materiais-tco-semad.html?aba=SEMAD','♻️','Materiais Acautelados - SEMAD')}
-      ${soon('🌳','IEF / SISFIS')}
-      ${soon('🏞️','Unid. Conservação')}
-      ${soon('🚨','Emergências Amb.')}
-      ${soon('✉️','Ofícios Expedidos')}
-      ${soon('🗂️','DADOC / Protocolos')}
+      ${item('ima','ima.html','🛣️','Apoio ao IMA')}
       ${isAG ? item('relatorio','relatorio-demandas.html','📊','Relatório') : ''}`;
 
     // recolher (persistente, mesma chave das telas de Relatório Diário)

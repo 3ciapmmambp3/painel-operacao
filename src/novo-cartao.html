@@ -472,6 +472,32 @@ async function carregarPendentes(){
       }); });
     }
   }catch(e){ if(!PEND.length) erroP=(erroP?erroP+' · ':'')+'Planilha: '+(e.message||e); }
+  // 2b) Painel (Supabase) — NUDEN/DDU/RI/MC/Emergência PENDENTES das tabelas já
+  //     sincronizadas (fonte confiável). Dedupe contra a planilha (tipo+nº).
+  if(gprs.length){ try{
+    const inVal2=gprs.map(g=>'%22'+encodeURIComponent(g)+'%22').join(',');
+    const jaTem=new Set(PEND.map(p=>p.tipo+'|'+String(p.numero||'').replace(/\s/g,'')));
+    const SBM=[['MC','mc_demandas'],['NUDEN','nuden_demandas'],['RI','ri_demandas'],['DDU181','ddu_demandas'],['EMERGENCIA','emergencia_demandas']];
+    await Promise.all(SBM.map(async function(pair){
+      const cfg=SHEET_TIPOS[pair[0]], tb=pair[1]; if(!cfg) return;
+      try{
+        let off=0; const PG=1000;
+        for(;;){
+          const q=`${API}/rest/v1/${tb}?select=id,codigo,municipio,endereco,situacao,anexos&gp_responsavel=in.(${inVal2})&ativo=is.true&data_atendimento=is.null&order=data_vencimento.asc.nullslast`;
+          const r=await fetch(q,{headers:Object.assign({},H,{'Range-Unit':'items','Range':off+'-'+(off+PG-1)})});
+          if(!r.ok) break;
+          const arr=await r.json();
+          (Array.isArray(arr)?arr:[]).forEach(d=>{
+            const num=String(d.codigo||'').trim(); if(!num) return;
+            const key=cfg.tipo+'|'+num.replace(/\s/g,''); if(jaTem.has(key)) return; jaTem.add(key);
+            const anx=(Array.isArray(d.anexos)?d.anexos:[]).map(a=>({nome:a.nome||'anexo',link:a.link||a.web_view_link||null,status:'ok'})).filter(a=>a.link);
+            PEND.push({tipo:cfg.tipo, tipoLabel:cfg.label, numero:num, texto:_tplDemanda(cfg.kind,num,d.municipio||''), resumo:'', municipio:d.municipio||'', endereco:d.endereco||'', situacao:d.situacao||'', anexos:anx, fonte:'painel', folder:cfg.folder||null, id:d.id});
+          });
+          if(arr.length<PG || off>40000) break; off+=PG;
+        }
+      }catch(e){}
+    }));
+  }catch(e){} }
   // 3) Pendentes de diligência — demandas de cartões anteriores NÃO finalizadas
   //    (Em andamento/Não atendido). A planilha já as "solta" ao lançar o REDS,
   //    então ficam aqui para re-despacho.
