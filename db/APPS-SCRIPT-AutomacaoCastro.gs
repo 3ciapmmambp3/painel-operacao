@@ -740,6 +740,34 @@ var AutomacaoCastro = (function () {
     if (depth < 3) { var fo = folder.getFolders(); while (fo.hasNext()) { _mcWalkPdfs(fo.next(), map, depth + 1); } }
   }
 
+  // PDFs só dos GEOCODs desta página (busca no servidor do Drive) — bem mais
+  // rápido que varrer os ~370 PDFs toda página (o que estourava o tempo).
+  function _mcPdfsForGeocods(folder, geocods, depth) {
+    if (depth == null) depth = 2;
+    var map = {}, faltam = [];
+    for (var i = 0; i < geocods.length; i++) {
+      var g = String(geocods[i] || '').trim(); if (!g || map[g]) continue;
+      var it = null, achou = false;
+      try { it = folder.searchFiles('title contains "' + g + '" and title contains ".pdf"'); } catch (e) {}
+      while (it && it.hasNext()) {
+        var f = it.next(), nm = f.getName(); if (!/\.pdf$/i.test(nm)) continue;
+        if ((nm.match(/^(\d+)/) || [])[1] === g || nm.indexOf(g) === 0) {
+          map[g] = { tipo: 'arquivo', nome: nm, web_view_link: fileUrl(f.getId()) }; achou = true; break;
+        }
+      }
+      if (!achou) faltam.push(g);
+    }
+    if (faltam.length && depth > 0) {
+      var sub = folder.getFolders();
+      while (sub.hasNext() && faltam.length) {
+        var more = _mcPdfsForGeocods(sub.next(), faltam, depth - 1), rest = [];
+        for (var j = 0; j < faltam.length; j++) { if (more[faltam[j]]) map[faltam[j]] = more[faltam[j]]; else rest.push(faltam[j]); }
+        faltam = rest;
+      }
+    }
+    return map;
+  }
+
   // lista as pastas (lotes) do Drive MC p/ o painel escolher qual carregar
   // extrai {empresa, data(iso)} do nome da pasta — aceita AAAA-MM-DD e DD-MM-AAAA
   function _mcParseNome(nome) {
@@ -808,7 +836,8 @@ var AutomacaoCastro = (function () {
     var slice = pms.slice(offset, offset + limit);
     if (!slice.length) return { ok: true, done: true, total: total, processed: 0, nextOffset: total, lote: lote };
 
-    var pdfIdx = _mcIndexPdfs(folder), grupos = lerGrupos();
+    var _gcs = []; for (var _si = 0; _si < slice.length; _si++) { var _gg = String(_mcData(slice[_si]).GEOCOD_IEF || '').trim(); if (_gg) _gcs.push(_gg); }
+    var pdfIdx = _mcPdfsForGeocods(folder, _gcs), grupos = lerGrupos();
     var hoje = iso(new Date()), venc = addDias(hoje, F.prazoDias);
 
     var sh = SpreadsheetApp.openById(F.sheetId).getSheetByName(F.abas[0].nome);
