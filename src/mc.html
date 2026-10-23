@@ -693,22 +693,35 @@ async function gerarKmlsFaltantes(){
   const btn=document.getElementById('f-kml'); btn.disabled=true;
   const prog=document.getElementById('lote-prog'); prog.style.display='block';
   const bar=document.getElementById('lp-bar'), txt=document.getElementById('lp-txt');
-  const ids=alvo.map(l=>l.id); const BATCH=4;
-  let feitos=0, atualizadas=0, geocods=0; const semKml=[];
+  // 1 pasta por chamada: ler+varrer o KML mestre é pesado; mais de 1 por request
+  // estoura o tempo e o navegador derruba a conexão ("Failed to fetch").
+  const ids=alvo.map(l=>l.id); const BATCH=1;
+  let feitos=0, atualizadas=0, geocods=0, falhas=0; const semKml=[];
+  async function umaChamada(lote){
+    // tenta 2x: pastas grandes às vezes demoram e a 1ª conexão cai
+    for(let t=0;t<2;t++){
+      try{
+        const r=await fetch(AUTO_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'mc_kml_backfill', folderIds:lote})});
+        const j=await r.json();
+        if(!j||!j.ok) throw new Error((j&&j.erro)||(j&&j.error)||'falha no backfill de KML');
+        return j;
+      }catch(e){ if(t===1) throw e; await new Promise(res=>setTimeout(res,1500)); }
+    }
+  }
   try{
     for(let i=0;i<ids.length;i+=BATCH){
       const lote=ids.slice(i,i+BATCH);
-      const r=await fetch(AUTO_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'mc_kml_backfill', folderIds:lote})});
-      const j=await r.json();
-      if(!j||!j.ok) throw new Error((j&&j.erro)||(j&&j.error)||'falha no backfill de KML');
-      atualizadas+=j.atualizadas||0; geocods+=j.geocods||0; (j.semKml||[]).forEach(n=>semKml.push(n));
+      try{
+        const j=await umaChamada(lote);
+        atualizadas+=j.atualizadas||0; geocods+=j.geocods||0; (j.semKml||[]).forEach(n=>semKml.push(n));
+      }catch(e){ falhas++; }   // não aborta a varredura inteira por 1 pasta
       feitos=Math.min(i+BATCH, ids.length);
       bar.style.width=Math.round(feitos/ids.length*100)+'%';
-      txt.textContent=`Gerando KMLs… ${feitos}/${ids.length} pastas · ${atualizadas} GEOCOD preenchidos`;
+      txt.textContent=`Gerando KMLs… ${feitos}/${ids.length} pastas · ${atualizadas} KML preenchidos${falhas?` · ${falhas} falha(s)`:''}`;
     }
     bar.style.width='100%';
-    txt.textContent=`Concluído: ${atualizadas} KML(s) gerados em ${geocods} GEOCOD varridos.`+(semKml.length?` ${semKml.length} pasta(s) sem KML mestre.`:'');
-    toast(`KMLs gerados: ${atualizadas}.`);
+    txt.textContent=`Concluído: ${atualizadas} KML(s) gerados em ${geocods} GEOCOD varridos.`+(falhas?` ${falhas} pasta(s) falharam (rode de novo p/ completar).`:'')+(semKml.length?` ${semKml.length} pasta(s) sem KML mestre.`:'');
+    toast(`KMLs gerados: ${atualizadas}.`+(falhas?` ${falhas} pasta(s) falharam.`:''));
     await carregar();
   }catch(e){ toast('Erro: '+(e.message||e)); txt.textContent='Erro: '+(e.message||e); }
   finally{ btn.disabled=false; }
