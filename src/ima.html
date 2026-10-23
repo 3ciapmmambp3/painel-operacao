@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apoio ao IMA — 3ª Cia PM MAmb</title>
+<link rel="stylesheet" href="styles/global.css">
+<script src="auth.js"></script>
+<script src="topnav.js" data-ativo="p3"></script>
+<script src="demandas-sidebar.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  body{padding-bottom:40px}
+  .shell{display:flex;align-items:flex-start}
+  .shell .wrap{flex:1;min-width:0;max-width:none;margin:20px 22px 0;padding:0}
+  @media(max-width:760px){ .shell{flex-direction:column;align-items:stretch} .shell .wrap{margin:16px 14px 0} }
+  .pagehead{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:16px;gap:16px;flex-wrap:wrap}
+  .pagehead h2{font-size:20px;font-weight:700}
+  .scope{font-size:12px;color:var(--text-muted);margin-top:5px;display:flex;align-items:center;gap:7px}
+  .scope .pin{width:14px;height:14px;stroke:var(--gold);fill:none;stroke-width:1.8}
+  .scope b{color:var(--gold);font-weight:600}
+
+  .selbar{display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:11px 14px}
+  .selbar .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--gold);font-weight:700}
+  .selbar select{background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:8px 30px 8px 11px;color:var(--text-white);font-size:12.5px;outline:none;appearance:none;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239b8a5c' stroke-width='3'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
+  .selbar select:focus{border-color:var(--gold)}
+
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+  .kpi{background:var(--bg-card);border:1px solid var(--border);border-radius:11px;padding:15px 17px;position:relative;overflow:hidden;text-align:left;font:inherit;color:inherit;cursor:pointer}
+  .kpi:hover{background:var(--bg-hover)}
+  .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--border-mid)}
+  .kpi.on{border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold-border)}
+  .kpi.tot::before{background:var(--gold)} .kpi.okp::before{background:var(--success)}
+  .kpi.warn::before{background:#ffb74d} .kpi.done::before{background:var(--info)} .kpi.extk::before{background:#ba68c8}
+  .kpi .lbl{font-size:11px;color:var(--text-muted);font-weight:600;letter-spacing:.3px;text-transform:uppercase}
+  .kpi .val{font-size:27px;font-weight:800;margin-top:6px;font-variant-numeric:tabular-nums;line-height:1}
+  .kpi.tot .val{color:var(--gold-light)} .kpi.okp .val{color:var(--success)}
+  .kpi.warn .val{color:#ffb74d} .kpi.done .val{color:#90caf9} .kpi.extk .val{color:#ce93d8}
+  .kpi .sub{font-size:10.5px;color:var(--text-hint);margin-top:5px}
+  .kpi.info{cursor:default} .kpi.info:hover{background:var(--bg-card)}
+
+  .toolbar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  .search{flex:1;min-width:200px;position:relative}
+  .search svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:15px;height:15px;stroke:var(--text-hint);fill:none;stroke-width:2}
+  .search input{width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:8px;padding:10px 12px 10px 34px;color:var(--text-white);font-size:13px;outline:none}
+  .search input:focus{border-color:var(--gold)}
+  .yearsel{background:var(--bg-input);border:1px solid var(--border-mid);border-radius:8px;padding:10px 30px 10px 12px;color:var(--text-white);font-size:12.5px;font-weight:600;outline:none;appearance:none;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239b8a5c' stroke-width='3'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
+  .yearsel:focus{border-color:var(--gold)}
+
+  .tablewrap{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;overflow-x:auto}
+  table{width:100%;border-collapse:collapse}
+  .tablewrap table{min-width:760px}
+  thead th{background:var(--bg-dark);text-align:left;font-size:10.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);font-weight:700;padding:11px 14px;border-bottom:1px solid var(--border);white-space:nowrap}
+  tbody tr{cursor:pointer;transition:background .12s;border-bottom:1px solid var(--border)}
+  tbody tr:last-child{border-bottom:none}
+  tbody tr:nth-child(even){background:var(--bg-stripe)}
+  tbody tr:hover{background:var(--bg-hover)}
+  tbody td{padding:12px 14px;font-size:12.5px;vertical-align:middle}
+  .num{font-weight:700;color:var(--gold);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap}
+  .pill::before{content:"";width:6px;height:6px;border-radius:50%}
+  .t-Fixo{background:var(--info-bg);color:#90caf9} .t-Fixo::before{background:var(--info)}
+  .t-Movel{background:rgba(186,104,200,.15);color:#ce93d8} .t-Movel::before{background:#ba68c8}
+  .muni{color:var(--text-white)} .tema{color:var(--text-muted)}
+  .empty{padding:40px;text-align:center;color:var(--text-hint);font-size:13px}
+  @media(max-width:900px){.colhide{display:none}}
+
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:none;justify-content:flex-end}
+  .overlay.show{display:flex}
+  .panel{width:min(640px,100%);background:var(--bg-page);border-left:1px solid var(--border);height:100%;overflow-y:auto;box-shadow:-10px 0 40px rgba(0,0,0,.5)}
+  .p-head{position:sticky;top:0;background:#111;border-bottom:1px solid var(--border);padding:16px 22px;display:flex;align-items:center;justify-content:space-between;gap:12px;z-index:2}
+  .p-head .pn b{font-size:17px;color:var(--gold);font-weight:800}
+  .pclose{background:var(--bg-hover);border:1px solid var(--border-mid);color:var(--text-muted);width:32px;height:32px;border-radius:7px;cursor:pointer;font-size:16px;flex-shrink:0}
+  .pclose:hover{color:var(--text-white)}
+  .p-body{padding:20px 22px 30px}
+  .dl{display:grid;grid-template-columns:1fr 1fr;gap:14px 20px;margin-bottom:8px}
+  .di{display:flex;flex-direction:column;gap:4px} .di.full{grid-column:1/-1}
+  .di dt{font-size:10.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--gold);font-weight:700}
+  .di dd{font-size:13.5px;color:var(--text-white);line-height:1.5}
+  .di dd.desc{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:11px 13px;color:#ddd;white-space:pre-wrap}
+  .sec-t{font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);font-weight:700;margin:22px 0 11px;display:flex;align-items:center;gap:8px}
+  .sec-t::after{content:"";flex:1;height:1px;background:var(--border)}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:#111;border:1px solid var(--gold-border);color:var(--text-white);padding:12px 20px;border-radius:10px;font-size:13px;z-index:60;box-shadow:0 8px 30px rgba(0,0,0,.6);opacity:0;transition:.28s}
+  .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+  .obs-fase2{font-size:11px;color:var(--text-hint);margin-top:10px;font-style:italic}
+</style>
+<script src="pwa.js" defer></script>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <div class="header-shields"><img src="assets/escudo-cpe.png" alt="CPE" onerror="this.style.display='none'"><img src="assets/escudo-pmmg.png" alt="PMMG" onerror="this.style.display='none'"><img src="assets/brasao-bpmmamb.png" alt="BPM MAMB" onerror="this.style.display='none'"></div><div class="header-div"></div>
+    <div class="header-title"><div class="header-kicker">CPE · BPM MAmb · 3ª Cia PM MAmb</div><h1>PAINEL DE GESTÃO OPERACIONAL</h1><p id="hdr-sub">Controle de Demandas · Apoio ao IMA</p></div>
+  </div>
+  <div class="header-right"><span class="last-update" id="who"></span></div>
+</header>
+
+<div class="shell">
+<aside class="rd-sidebar" id="demandas-sidebar"></aside>
+
+<div class="wrap">
+  <div class="pagehead">
+    <div>
+      <h2 id="pagettl">🛣️ Apoio ao IMA</h2>
+      <div class="scope">
+        <svg class="pin" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        <span id="scope-txt">Carregando…</span>
+      </div>
+    </div>
+    <button class="btn-gold btn-sm" onclick="exportarExcel()"><svg viewBox="0 0 24 24" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.4"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Exportar Excel</button>
+  </div>
+
+  <div class="selbar" id="selbar" style="display:none">
+    <span class="lbl">Escopo:</span>
+    <select id="sel-pel" onchange="onPelChange()"></select>
+    <select id="sel-grp" onchange="aplicar()"></select>
+  </div>
+
+  <div class="kpis" id="kpis">
+    <button class="kpi tot on" data-f="todas" onclick="setFiltroKpi(this)"><div class="lbl">Lançamentos</div><div class="val" id="k-tot">—</div><div class="sub">apoios ao IMA</div></button>
+    <button class="kpi done"   data-f="fixo"  onclick="setFiltroKpi(this)"><div class="lbl">Fixo</div><div class="val" id="k-fixo">—</div><div class="sub">posto fixo</div></button>
+    <button class="kpi extk"   data-f="movel" onclick="setFiltroKpi(this)"><div class="lbl">Móvel</div><div class="val" id="k-movel">—</div><div class="sub">na rodovia</div></button>
+    <button class="kpi okp"    data-f="reds"  onclick="setFiltroKpi(this)"><div class="lbl">Com REDS</div><div class="val" id="k-reds">—</div><div class="sub">registro vinculado</div></button>
+    <div class="kpi info warn"><div class="lbl">Militares</div><div class="val" id="k-mil">—</div><div class="sub">somados (no filtro)</div></div>
+  </div>
+
+  <div class="toolbar">
+    <div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="busca" placeholder="Buscar por grupamento, comandante, local, REDS…" oninput="render()"></div>
+    <select id="ano" class="yearsel" onchange="render()"><option value="all">Todos os anos</option></select>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr>
+        <th>Data</th><th>Grupamento</th><th class="colhide">Comandante</th><th>Tipo</th>
+        <th>Local da Fiscalização</th><th>Militares</th><th>Nº REDS</th>
+      </tr></thead>
+      <tbody id="tb"><tr><td colspan="7" class="empty">Carregando…</td></tr></tbody>
+    </table>
+  </div>
+  <div id="pager" style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:12px;font-size:12.5px;color:var(--text-muted);flex-wrap:wrap"></div>
+  <p class="obs-fase2">Lançamentos de <b>Apoio ao IMA</b> feitos no <b>Relatório de Serviço</b>, para visualização e controle do Grupamento. A edição é feita no próprio Relatório.</p>
+</div>
+</div>
+
+<div class="overlay" id="ov" onclick="if(event.target===this)fechar()">
+  <div class="panel">
+    <div class="p-head">
+      <div class="pn"><b id="d-num"></b></div>
+      <button class="pclose" onclick="fechar()">✕</button>
+    </div>
+    <div class="p-body" id="d-body"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ── sessão / config ─────────────────────────────────────────────── */
+const S = (typeof sessaoLer === 'function') ? sessaoLer() : null;
+if (!S) location.href = 'index.html';
+const API  = (typeof SB_AUTH_URL !== 'undefined') ? SB_AUTH_URL : '';
+const AKEY = (typeof SB_AUTH_KEY !== 'undefined') ? SB_AUTH_KEY : '';
+const H = { 'apikey': AKEY, 'Authorization': `Bearer ${AKEY}`, 'Content-Type': 'application/json' };
+const MILITAR = S ? `${S.matricula} — ${S.pg||''} ${S.guerra||S.nome||''}`.replace(/\s+/g,' ').trim() : '';
+if (S) document.getElementById('who').textContent = MILITAR;
+
+const gpNum  = s => { const m=(s||'').match(/(\d+)\s*GP/i);  return m?+m[1]:null; };
+const pelNum = s => { const m=(s||'').match(/(\d+)\s*PEL/i); return m?+m[1]:null; };
+const nivel = S ? S.nivel_acesso : 'operacional';
+const isAdminTotal = nivel==='admin' || nivel==='admin_geral';
+const isAdminPel   = nivel==='admin_pelotao';
+const isAdminGeral = nivel==='admin_geral';
+const _func = (S && S.funcao || '').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+const isAuxGestor = /AUX\s*P?\s*3/.test(_func);
+const GERIR = isAdminGeral || isAuxGestor;   // Aux P3 / Admin vê toda a 3ª Cia
+
+let GRUPOS = [], ALLOWED = [], DADOS = [], atual = null, filtro = 'todas';
+const _grafiaGP = s => String(s==null?'':s).replace(/MARILIERIA/gi,'MARLIERIA').replace(/MOLEVADE/gi,'MONLEVADE');
+const _nf = s => String(s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim();
+const byId = id => DADOS.find(x=>String(x.id)===String(id));
+function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2600); }
+
+/* ── boot ────────────────────────────────────────────────────────── */
+(async function init(){
+  try {
+    const r = await fetch(`${API}/rest/v1/grupos?select=gp_responsavel,grupamento_completo,pelotao&order=grupamento_completo`, { headers:H });
+    GRUPOS = (await r.json()).map(g => ({ gpr:g.gp_responsavel, comp:g.grupamento_completo, gp:gpNum(g.grupamento_completo), pel:pelNum(g.grupamento_completo) }));
+  } catch(e){ console.error('grupos',e); }
+  const meuGp = gpNum(S.grupamento_id), meuPel = pelNum(S.grupamento_id);
+  if (isAdminTotal) ALLOWED = GRUPOS.slice();
+  else if (isAdminPel) ALLOWED = GRUPOS.filter(g => g.pel===meuPel);
+  else {
+    ALLOWED = GRUPOS.filter(g => g.gp===meuGp && g.pel===meuPel);
+    if (!ALLOWED.length) ALLOWED = GRUPOS.filter(g => (S.grupamento_id||'').toUpperCase().includes(g.gpr.replace('GP ','')));
+  }
+  if (GERIR) ALLOWED = GRUPOS.slice();
+  montarSeletor(meuPel);
+  await carregar();
+})();
+
+function montarSeletor(meuPel){
+  if (!(isAdminTotal || isAdminPel || GERIR)) return;
+  document.getElementById('selbar').style.display = 'flex';
+  const selPel = document.getElementById('sel-pel');
+  const pels = [...new Set(ALLOWED.map(g=>g.pel))].sort((a,b)=>a-b);
+  selPel.innerHTML = (isAdminTotal ? '<option value="all">Todos os pelotões</option>' : '')
+    + pels.map(p=>`<option value="${p}"${p===meuPel&&isAdminPel?' selected':''}>${p}º Pelotão</option>`).join('');
+  preencherGrupamentos();
+}
+function preencherGrupamentos(){
+  const selPel = document.getElementById('sel-pel').value;
+  const selGrp = document.getElementById('sel-grp'); const prev = selGrp.value;
+  let lista = ALLOWED.slice();
+  if (selPel!=='all') lista = lista.filter(g=>String(g.pel)===String(selPel));
+  const pels = [...new Set(lista.map(g=>g.pel))].sort((a,b)=>a-b);
+  let html = '<option value="all">Todos os grupamentos</option>';
+  pels.forEach(p=>{
+    const doPel = lista.filter(g=>g.pel===p).sort((a,b)=>_grafiaGP(a.comp).localeCompare(_grafiaGP(b.comp),'pt-BR'));
+    html += `<optgroup label="${(p||'?')}º Pelotão">${doPel.map(g=>`<option value="${g.gpr}">${_grafiaGP(g.comp)}</option>`).join('')}</optgroup>`;
+  });
+  selGrp.innerHTML = html;
+  if ([...selGrp.options].some(o=>o.value===prev)) selGrp.value = prev;
+}
+function onPelChange(){ preencherGrupamentos(); aplicar(); }
+function aplicar(){ render(); kpis(); atualizarScope(); }
+function _selVal(id){ const e=document.getElementById(id); return e?e.value:'all'; }
+function gprEscopo(){
+  let lista = ALLOWED.slice();
+  if (document.getElementById('selbar').style.display!=='none'){
+    const p=_selVal('sel-pel'), g=_selVal('sel-grp');
+    if (p!=='all') lista = lista.filter(x=>String(x.pel)===String(p));
+    if (g!=='all') lista = lista.filter(x=>x.gpr===g);
+  }
+  return lista.map(x=>x.gpr);
+}
+function verTudoSemFiltro(){ return (isAdminTotal || GERIR) && _selVal('sel-pel')==='all' && _selVal('sel-grp')==='all'; }
+
+/* resolve a fração do relatório (ex. "1 GP / 4 PEL / 3 CIA PM MAMB / TEOFILO OTONI")
+   no gp_responsavel do cadastro (ex. "GP TEOFILO OTONI") p/ casar com o escopo. */
+function fracaoParaGpr(fr){
+  const seg = _nf(_grafiaGP(String(fr||'').split('/').pop()));   // último segmento = nome do GP/município
+  if (!seg) return '';
+  const g = GRUPOS.find(x => _nf(_grafiaGP(x.comp)).endsWith(seg) || _nf(_grafiaGP(x.gpr)).endsWith(seg));
+  return g ? g.gpr : ('GP ' + String(fr||'').split('/').pop().trim().toUpperCase());
+}
+
+async function carregar(){
+  const tb = document.getElementById('tb');
+  tb.innerHTML = '<tr><td colspan="7" class="empty">Carregando…</td></tr>';
+  try {
+    const sel = 'id,nr_item,dados,relatorios(data,ano,mes,fracao_atuacao,comandante,ativo)';
+    const url = `${API}/rest/v1/relatorio_itens?select=${encodeURIComponent(sel)}&categoria=eq.${encodeURIComponent('Apoio ao IMA')}`;
+    const PAGE = 1000; let offset = 0; const todas = [];
+    for (;;){
+      const r = await fetch(url, { headers: Object.assign({}, H, { 'Range-Unit':'items', 'Range': `${offset}-${offset+PAGE-1}` }) });
+      if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+      const chunk = await r.json(); todas.push(...chunk);
+      if (chunk.length < PAGE || todas.length >= 20000) break;
+      offset += PAGE;
+    }
+    DADOS = todas.filter(it => !it.relatorios || it.relatorios.ativo !== false).map(it => {
+      const rel = it.relatorios||{}, d = it.dados||{}, fr = rel.fracao_atuacao||'';
+      return {
+        id: it.id, data: rel.data||'', ano: rel.ano||null, mes: rel.mes||null,
+        comandante: rel.comandante||'', fracao_atuacao: fr, pel: pelNum(fr),
+        gp_responsavel: fracaoParaGpr(fr), grupamento_completo: fr,
+        tipo: d['Tipo de Fiscalização']||'', local: d['Local da Fiscalização (Endereço)']||'',
+        efetivo_ima: d['Efetivo IMA']||'', total_militares: d['Total de Militares']||'', vp: d['VP Empregadas']||'',
+        hora_ini: d['Hora de Início']||'', hora_fim: d['Hora de Término']||'', duracao: d['Tempo (Duração)']||'',
+        reds: d['Nº REDS (BO/BOS/RAT)']||'', obs: d['Observação']||''
+      };
+    });
+    popularAnos(); render(); kpis(); atualizarScope();
+  } catch(e){
+    console.error('ima',e);
+    tb.innerHTML = `<tr><td colspan="7" class="empty">Erro ao carregar: ${e.message}</td></tr>`;
+  }
+}
+
+function atualizarScope(){
+  const n = DADOS.filter(passa).length;
+  const el = document.getElementById('scope-txt');
+  if (verTudoSemFiltro()) el.innerHTML = `<b>${n}</b> lançamento(s) de <b>toda a 3ª Cia</b>`;
+  else {
+    const g = _selVal('sel-grp');
+    el.innerHTML = g!=='all'
+      ? `<b>${n}</b> lançamento(s) de <b>${_grafiaGP((ALLOWED.find(x=>x.gpr===g)||{}).comp||g)}</b>`
+      : `<b>${n}</b> lançamento(s) no escopo selecionado`;
+  }
+}
+
+/* ── filtros / escopo ────────────────────────────────────────────── */
+const anoDe = d => d.ano || (d.data?+String(d.data).slice(0,4):null);
+const temReds = d => !!String(d.reds||'').trim();
+const normTipo = d => (/m[óo]vel/i.test(d.tipo)) ? 'Movel' : (/fix/i.test(d.tipo)?'Fixo':'');
+function fmtData(iso){ if(!iso) return '—'; const p=String(iso).slice(0,10).split('-'); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:iso; }
+function baseScope(d){
+  if (!verTudoSemFiltro()){ const gprs=gprEscopo(); if(!gprs.includes(d.gp_responsavel)) return false; }
+  const ano=document.getElementById('ano').value;
+  if (ano!=='all' && String(anoDe(d))!==String(ano)) return false;
+  const q=document.getElementById('busca').value.trim().toLowerCase();
+  if (q){ const hay=`${d.gp_responsavel} ${d.fracao_atuacao} ${d.comandante} ${d.local} ${d.reds} ${d.tipo}`.toLowerCase(); if(!hay.includes(q)) return false; }
+  return true;
+}
+function passa(d){
+  if (!baseScope(d)) return false;
+  if (filtro==='fixo')  return normTipo(d)==='Fixo';
+  if (filtro==='movel') return normTipo(d)==='Movel';
+  if (filtro==='reds')  return temReds(d);
+  return true;
+}
+function setFiltroKpi(btn){ document.querySelectorAll('.kpi').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); filtro=btn.dataset.f; render(); atualizarScope(); }
+function popularAnos(){
+  const sel=document.getElementById('ano'); const atualVal=sel.value;
+  const anos=[...new Set(DADOS.map(anoDe).filter(Boolean))].sort((a,b)=>b-a);
+  sel.innerHTML='<option value="all">Todos os anos</option>'+anos.map(a=>`<option value="${a}">${a}</option>`).join('');
+  if (anos.includes(+atualVal)) sel.value=atualVal;
+}
+function kpis(){
+  const A=DADOS.filter(baseScope);
+  document.getElementById('k-tot').textContent   = A.length;
+  document.getElementById('k-fixo').textContent  = A.filter(d=>normTipo(d)==='Fixo').length;
+  document.getElementById('k-movel').textContent = A.filter(d=>normTipo(d)==='Movel').length;
+  document.getElementById('k-reds').textContent  = A.filter(temReds).length;
+  const mil = A.reduce((s,d)=>s+(parseInt(d.total_militares,10)||0),0);
+  document.getElementById('k-mil').textContent   = mil;
+}
+
+/* ── lista ───────────────────────────────────────────────────────── */
+let PAGE=1; const PAGE_SIZE=20; let _sig='';
+function irPagina(p){ PAGE=p; render(); }
+function render(){
+  kpis();
+  const tb=document.getElementById('tb'); tb.innerHTML='';
+  const pager=document.getElementById('pager');
+  const rows=DADOS.filter(passa).sort((a,b)=>String(b.data||'').localeCompare(String(a.data||'')));
+  const gel=id=>document.getElementById(id)||{};
+  const sig=[filtro, gel('busca').value, gel('ano').value, _selVal('sel-pel'), _selVal('sel-grp')].join('|');
+  if(sig!==_sig){ PAGE=1; _sig=sig; }
+  if(!rows.length){ tb.innerHTML='<tr><td colspan="7" class="empty">Nenhum lançamento de Apoio ao IMA neste filtro.</td></tr>'; if(pager)pager.innerHTML=''; return; }
+  const totalPag=Math.ceil(rows.length/PAGE_SIZE); if(PAGE>totalPag)PAGE=totalPag; if(PAGE<1)PAGE=1;
+  const ini=(PAGE-1)*PAGE_SIZE;
+  rows.slice(ini, ini+PAGE_SIZE).forEach(d=>{
+    const t=normTipo(d);
+    const tr=document.createElement('tr'); tr.onclick=()=>abrir(d.id);
+    tr.innerHTML =
+      `<td class="num">${fmtData(d.data)}</td>`+
+      `<td class="muni">${_grafiaGP(d.gp_responsavel)||'—'}${d.pel?` <span style="color:var(--text-hint);font-weight:400">· ${d.pel}º Pel</span>`:''}</td>`+
+      `<td class="colhide tema">${_nomeCurto(d.comandante)||'—'}</td>`+
+      `<td>${t?`<span class="pill t-${t}">${t==='Movel'?'Móvel':'Fixo'}</span>`:'—'}</td>`+
+      `<td class="tema">${d.local||'—'}</td>`+
+      `<td>${d.total_militares||'—'}</td>`+
+      `<td class="num" style="color:var(--text-white);font-weight:600">${d.reds||'—'}</td>`;
+    tb.appendChild(tr);
+  });
+  if(pager){
+    if(totalPag<=1){ pager.innerHTML=`<span>${rows.length} lançamento(s)</span>`; }
+    else{
+      const btn=(lbl,p,dis)=>`<button onclick="irPagina(${p})" ${dis?'disabled':''} style="background:var(--bg-input);border:1px solid var(--border-mid);color:var(--text-white);border-radius:6px;padding:6px 12px;font-size:12px;cursor:${dis?'not-allowed':'pointer'};opacity:${dis?'.5':'1'}">${lbl}</button>`;
+      pager.innerHTML=`<span>${rows.length} lançamento(s) · mostrando ${ini+1}–${Math.min(ini+PAGE_SIZE,rows.length)}</span>`+
+        `<span style="display:flex;gap:8px;align-items:center">${btn('‹ Anterior',PAGE-1,PAGE===1)}<b style="color:var(--gold-light)">Página ${PAGE} de ${totalPag}</b>${btn('Próxima ›',PAGE+1,PAGE===totalPag)}</span>`;
+    }
+  }
+}
+function _nomeCurto(c){ const p=String(c||'').split(' - '); return p.length>=3 ? p[2] : (c||''); }
+
+/* ── gaveta ──────────────────────────────────────────────────────── */
+function abrir(id){
+  const d=byId(id); if(!d) return;
+  atual=d;
+  document.getElementById('d-num').textContent = 'Apoio ao IMA · '+fmtData(d.data);
+  const t=normTipo(d);
+  const di=(rot,val,full)=>`<div class="di${full?' full':''}"><dt>${rot}</dt><dd>${val||'—'}</dd></div>`;
+  document.getElementById('d-body').innerHTML =
+    `<div class="dl">`+
+      di('Data', fmtData(d.data))+
+      di('Tipo de Fiscalização', t?(t==='Movel'?'Móvel':'Fixo'):'—')+
+      di('Grupamento', _grafiaGP(d.gp_responsavel))+
+      di('Pelotão', d.pel?`${d.pel}º Pelotão`:'—')+
+      di('Comandante', d.comandante, true)+
+      di('Local da Fiscalização', d.local, true)+
+    `</div>`+
+    `<div class="sec-t">Dados do apoio</div>`+
+    `<div class="dl">`+
+      di('Efetivo do IMA', d.efetivo_ima)+
+      di('Total de Militares', d.total_militares)+
+      di('VP Empregadas', d.vp)+
+      di('Duração', d.duracao)+
+      di('Hora de Início', d.hora_ini)+
+      di('Hora de Término', d.hora_fim)+
+      di('Nº REDS (BO/BOS/RAT)', d.reds, true)+
+    `</div>`+
+    (d.obs?`<div class="sec-t">Observação</div><div class="di full"><dd class="desc">${d.obs}</dd></div>`:'');
+  document.getElementById('ov').classList.add('show');
+}
+function fechar(){ document.getElementById('ov').classList.remove('show'); }
+
+/* ── exportar Excel ──────────────────────────────────────────────── */
+function exportarExcel(){
+  const rows=DADOS.filter(passa).sort((a,b)=>String(b.data||'').localeCompare(String(a.data||''))).map(d=>({
+    'Data':fmtData(d.data), 'Grupamento':_grafiaGP(d.gp_responsavel), 'Pelotão':d.pel?`${d.pel}º Pel`:'',
+    'Comandante':d.comandante, 'Tipo':normTipo(d)==='Movel'?'Móvel':(normTipo(d)==='Fixo'?'Fixo':''),
+    'Local da Fiscalização':d.local, 'Efetivo IMA':d.efetivo_ima, 'Total de Militares':d.total_militares,
+    'VP Empregadas':d.vp, 'Hora Início':d.hora_ini, 'Hora Término':d.hora_fim, 'Duração':d.duracao,
+    'Nº REDS':d.reds, 'Observação':d.obs
+  }));
+  if(!rows.length) return toast('Nenhum lançamento neste filtro para exportar.');
+  const ws=XLSX.utils.json_to_sheet(rows); const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Apoio ao IMA');
+  XLSX.writeFile(wb, 'Apoio_IMA_'+new Date().toISOString().slice(0,10)+'.xlsx');
+  toast(rows.length+' lançamento(s) exportado(s).');
+}
+</script>
+</body>
+</html>
