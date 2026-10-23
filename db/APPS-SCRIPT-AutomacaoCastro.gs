@@ -265,10 +265,10 @@ var AutomacaoCastro = (function () {
         var _clo = (idx.coord_lon != null && idx.coord_lon >= 0) ? cel(linha, idx.coord_lon) : '';
         if (_cla && _clo) {
           var _la = _riOne(_cla), _lo = _riOne(_clo);
-          if (_la != null && _lo != null && !(Math.abs(_la) < 1e-4 && Math.abs(_lo) < 1e-4)) obj._coord = { lon: _lo, lat: _la };
+          if (_coordOk(_la, _lo)) obj._coord = { lon: _lo, lat: _la };
         } else {
           var _cb = (idx.coord_bruta != null && idx.coord_bruta >= 0) ? cel(linha, idx.coord_bruta) : '';
-          if (_cb) { var _cc = _riParseCoord(_cb); if (_cc && !(Math.abs(_cc.lat) < 1e-4 && Math.abs(_cc.lon) < 1e-4)) obj._coord = { lon: _cc.lon, lat: _cc.lat }; }
+          if (_cb) { var _cc = _riParseCoord(_cb); if (_cc && _coordOk(_cc.lat, _cc.lon)) obj._coord = { lon: _cc.lon, lat: _cc.lat }; }
         }
         var _base = obj.data_envio || obj.data_gerada;
         var _prazo = F.prazoDias || COMUM.PRAZO_DIAS;
@@ -899,6 +899,11 @@ var AutomacaoCastro = (function () {
     if (!isFinite(d)) return null;
     if ((hemi === 'S' || hemi === 'O' || hemi === 'W') && d > 0) d = -d;
     return d;
+  }
+  // coordenada plausível? (evita lixo: DMS digitado sem símbolos vira nº gigante)
+  function _coordOk(la, lo) {
+    return la != null && lo != null && isFinite(la) && isFinite(lo) &&
+           Math.abs(la) <= 90 && Math.abs(lo) <= 180 && !(Math.abs(la) < 1e-4 && Math.abs(lo) < 1e-4);
   }
   function _riDocId(url) {
     var u = String(url || ''), m = u.match(/\/d\/([-\w]{20,})/) || u.match(/[?&]id=([-\w]{20,})/) || u.match(/([-\w]{25,})/);
