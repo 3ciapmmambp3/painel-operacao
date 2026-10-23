@@ -150,7 +150,7 @@
     <div style="display:flex;gap:9px;flex-wrap:wrap">
       <button class="btn-gold btn-sm" id="btn-novo" onclick="abrirLote()" style="display:none"><svg viewBox="0 0 24 24" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.4"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Carregar lote</button>
       <button class="btn-outline btn-sm" onclick="exportarExcel()"><svg viewBox="0 0 24 24" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.4"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Exportar Excel</button>
-      <button class="btn-outline btn-sm" onclick="exportarBaixaSemad()" title="Só as demandas já fiscalizadas, nas colunas da planilha SEMAD (DATA ATENDIMENTO · REDS · AUTO DE INFRAÇÃO · ATO DE FISCALIZAÇÃO · OBSERVAÇÃO), ordenadas por GEOCOD — para copiar e colar."><svg viewBox="0 0 24 24" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.4"><path d="M8 2h8l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M9 13h6M9 17h6M9 9h2"/></svg> Exportar p/ baixa (SEMAD)</button>
+      <button class="btn-outline btn-sm" onclick="exportarBaixaSemad()" title="Exporta o filtro atual no formato EXATO da planilha SEMAD: A–W (dados da SEMAD, do KML) + DATA ATENDIMENTO · REDS · AUTO DE INFRAÇÃO · Nº ATO DE FISCALIZAÇÃO · OBSERVAÇÃO. Pronto p/ copiar e colar."><svg viewBox="0 0 24 24" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.4"><path d="M8 2h8l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M9 13h6M9 17h6M9 9h2"/></svg> Exportar p/ baixa (SEMAD)</button>
     </div>
   </div>
 
@@ -805,27 +805,44 @@ function exportarExcel(){
   XLSX.writeFile(wb, 'MonitoramentoContinuo_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 
-/* ── exportar no formato da planilha SEMAD (copiar/colar a baixa) ──────
-   Colunas exatas da aba: DATA ATENDIMENTO · REDS · AUTO DE INFRAÇÃO ·
-   ATO DE FISCALIZAÇÃO (nova, = ID SISFIS) · OBSERVAÇÃO. 1ª coluna GEOCOD_IEF
-   é só a chave p/ localizar/alinhar a linha. Só demandas já fiscalizadas. */
+/* ── exportar no formato EXATO da planilha de controle SEMAD ───────────
+   A–W = dados da SEMAD (lidos direto do KML; 7 do CAR ficam em branco e são
+   preenchidas à mão se precisar) · X=DATA ATENDIMENTO · Y=REDS ·
+   Z=AUTO DE INFRAÇÃO · AA=Nº ATO DE FISCALIZAÇÃO (=ID SISFIS) · AB=OBSERVAÇÃO.
+   Exporta o que está no filtro atual (município/lote/cards), ordenado por GEOCOD. */
 function exportarBaixaSemad(){
   const dOut = iso => { if(!iso) return ''; const p=String(iso).slice(0,10).split('-'); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:String(iso); };
-  const rows = DADOS.filter(passa).filter(d=>d.data_atendimento)
+  const kmlData = kml => { const o={}; const re=/<SimpleData name="([^"]+)">([\s\S]*?)<\/SimpleData>/g; let m; while((m=re.exec(String(kml||'')))) o[m[1]]=m[2]; return o; };
+  const HEAD = ['ID','CENA_INIC','DATA_INIC','CENA_FINAL','DATA_FINAL','HECTARES','SATELITE_I','SATELITE_F',
+    'MES_REF','ANO_REF','X','Y','MUNICIPIO','NUFIS','CIA_PM','BIOMA_IBGE','BIO_LEI_MA','GEOCOD_IEF',
+    'ID_EVOLUCAO','% Veg Nativa','UC/ZA','Registro_Car','DAIA_CAR',
+    'DATA ATENDIMENTO','REDS','AUTO DE INFRAÇÃO','Nº ATO DE FISCALIZAÇÃO','OBSERVAÇÃO'];
+  const rows = DADOS.filter(passa)
     .sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo),undefined,{numeric:true}))
-    .map(d=>({
-      'GEOCOD_IEF': d.codigo,
-      'DATA ATENDIMENTO': dOut(d.data_atendimento),
-      'REDS': d.numero_reds||'',
-      'AUTO DE INFRAÇÃO': d.numero_auto_infracao||'',
-      'ATO DE FISCALIZAÇÃO': d.numero_gaia||'',
-      'OBSERVAÇÃO': d.observacoes_resposta||''
-    }));
-  if(!rows.length) return toast('Nenhuma demanda fiscalizada neste filtro para exportar.');
-  const ws=XLSX.utils.json_to_sheet(rows); const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Baixa SEMAD');
-  XLSX.writeFile(wb, 'MC_baixa_SEMAD_'+new Date().toISOString().slice(0,10)+'.xlsx');
-  toast(rows.length+' demanda(s) fiscalizada(s) exportada(s).');
+    .map(d=>{
+      const k=kmlData(d.kml_content), o={}; HEAD.forEach(h=>o[h]='');
+      o['ID']=k.ID||d.id_semad||'';
+      o['DATA_INIC']=k.DATA_INIC||dOut(d.data_inic);
+      o['DATA_FINAL']=k.DATA_FINAL||dOut(d.data_final);
+      o['HECTARES']=k.HECTARES||d.hectares||'';
+      o['SATELITE_I']=k.SATELITE_I||''; o['SATELITE_F']=k.SATELITE_F||'';
+      o['MES_REF']=k.MES_REF||d.mes_ref||''; o['ANO_REF']=k.ANO_REF||d.ano_ref||'';
+      o['X']=k.X||d.coord_x||''; o['Y']=k.Y||d.coord_y||'';
+      o['MUNICIPIO']=k.MUNICIPIO||d.municipio||''; o['NUFIS']=k.NUFIS||d.regional||'';
+      o['CIA_PM']=k.CIA_PM||''; o['BIOMA_IBGE']=k.BIOMA_IBGE||d.bioma||''; o['BIO_LEI_MA']=k.BIO_LEI_MA||'';
+      o['GEOCOD_IEF']=k.GEOCOD_IEF||d.codigo||'';
+      o['DATA ATENDIMENTO']=dOut(d.data_atendimento);
+      o['REDS']=d.numero_reds||'';
+      o['AUTO DE INFRAÇÃO']=d.numero_auto_infracao||'';
+      o['Nº ATO DE FISCALIZAÇÃO']=d.numero_gaia||'';
+      o['OBSERVAÇÃO']=d.observacoes_resposta||'';
+      return o;
+    });
+  if(!rows.length) return toast('Nenhuma demanda neste filtro para exportar.');
+  const ws=XLSX.utils.json_to_sheet(rows,{header:HEAD}); const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'MC SEMAD');
+  XLSX.writeFile(wb, 'MC_SEMAD_'+new Date().toISOString().slice(0,10)+'.xlsx');
+  toast(rows.length+' demanda(s) exportada(s) no formato SEMAD.');
 }
 </script>
 <script src="demandas-gestao.js"></script>
