@@ -478,6 +478,7 @@ var AutomacaoCastro = (function () {
       if (p.action === 'mc_lote')          return jsonOut(mcLote(p));
       if (p.action === 'mc_importar')      return jsonOut(runMC() || { ok: true });
       if (p.action === 'mc_kml_backfill')  return jsonOut(mcKmlBackfill(p));
+      if (p.action === 'ri_coord_backfill') return jsonOut(riCoordBackfill(p));
       return jsonOut({ ok: false, error: 'ação desconhecida: ' + p.action });
     } catch (err2) {
       return jsonOut({ ok: false, error: String(err2 && err2.message || err2) });
@@ -847,6 +848,71 @@ var AutomacaoCastro = (function () {
   // BACKFILL de KML individual: varre o KML mestre das pastas (folderIds) e preenche
   // kml_content das linhas já existentes (via mc_set_kml, só UPDATE — não mexe em data/baixa).
   // O painel pagina por pasta e manda um lote de folderIds por chamada.
+  // ── FTP/RI: coordenada do INCÊNDIO (DMS dentro do doc do RI) → coord_x/coord_y
+  // ex.: "COORDENADAS/INCÊNDIO: Lat. 17°33'48,5"S Long. 41°54'40,8"O"
+  function _riParseCoord(txt) {
+    var t = String(txt || ''), lat = null, lon = null, m;
+    var re = /(\d{1,3})\s*[°º]\s*(\d{1,2})\s*['’´]\s*([\d.,]+)\s*["”″]?\s*([NSLOEWnsloew])/g;
+    while ((m = re.exec(t))) {
+      var dec = parseFloat(m[1]) + parseFloat(m[2]) / 60 + parseFloat(String(m[3]).replace(',', '.')) / 3600;
+      var h = m[4].toUpperCase();
+      if (h === 'N' || h === 'S') { if (h === 'S') dec = -dec; if (lat === null) lat = dec; }   // N/S = latitude
+      else { if (h === 'O' || h === 'W') dec = -dec; if (lon === null) lon = dec; }             // L/O/E/W = longitude (O=Oeste, W=West → neg)
+    }
+    return (lat === null || lon === null) ? null : { lat: lat, lon: lon };
+  }
+  function _riDocId(url) {
+    var u = String(url || ''), m = u.match(/\/d\/([-\w]{20,})/) || u.match(/[?&]id=([-\w]{20,})/) || u.match(/([-\w]{25,})/);
+    return m ? m[1] : '';
+  }
+  function _riDocTexto(id) {
+    try { return DocumentApp.openById(id).getBody().getText(); } catch (e) {}
+    try { return DriveApp.getFileById(id).getBlob().getDataAsString('UTF-8'); } catch (e) {}
+    return '';
+  }
+  function riCoordBackfill(p) {
+    var start = parseInt(p && p.start, 10) || 0;
+    var limit = parseInt(p && p.limit, 10) || 25;
+    var peek  = !!(p && p.peek);
+    var F = FONTES.RI;
+    var sh = SpreadsheetApp.openById(F.sheetId).getSheetByName('FTP 3ª CIA MAMB');
+    if (!sh) return { ok: false, erro: 'aba FTP 3ª CIA MAMB não encontrada' };
+    var lastRow = sh.getLastRow(), lastCol = sh.getLastColumn();
+    if (lastRow < 2) return { ok: true, total: 0, lidas: 0, comCoord: 0 };
+    // acha a linha de cabeçalho (tem CLIQUE PARA BAIXAR) e as colunas
+    var hRow = 0, cCod = -1, cLink = -1, topo = sh.getRange(1, 1, Math.min(6, lastRow), lastCol).getValues();
+    for (var h = 0; h < topo.length; h++) {
+      var cab = topo[h].map(normHead), cl = acharCol(cab, ['CLIQUE PARA BAIXAR', 'BAIXAR', 'DOCUMENTO']);
+      if (cl >= 0) { hRow = h + 1; cLink = cl; cCod = acharCol(cab, ['RI/ANO', 'RI ANO', 'RI']); break; }
+    }
+    if (cLink < 0 || cCod < 0) return { ok: false, erro: 'colunas RI/ANO ou CLIQUE PARA BAIXAR não encontradas' };
+    var dataIni = hRow + 1, nTotal = lastRow - dataIni + 1;
+    if (start >= nTotal) return { ok: true, total: nTotal, lidas: 0, comCoord: 0, fim: true };
+    var nRows = Math.min(limit, nTotal - start), r0 = dataIni + start;
+    var vals = sh.getRange(r0, 1, nRows, lastCol).getValues();
+    var rich = sh.getRange(r0, cLink + 1, nRows, 1).getRichTextValues();
+    var fml  = sh.getRange(r0, cLink + 1, nRows, 1).getFormulas();
+    var rows = [], amostra = [], semDoc = 0, semCoord = 0;
+    for (var i = 0; i < nRows; i++) {
+      var cod = cel(vals[i], cCod); if (!cod) continue;
+      var url = '';
+      try { url = rich[i][0].getLinkUrl() || ''; } catch (e) {}
+      if (!url) { var fm = String(fml[i][0] || ''), mm = fm.match(/"(https?:\/\/[^"]+)"/); if (mm) url = mm[1]; else if (/^https?:\/\//.test(cel(vals[i], cLink))) url = cel(vals[i], cLink); }
+      var id = _riDocId(url); if (!id) { semDoc++; continue; }
+      var texto = _riDocTexto(id); if (!texto) { semDoc++; continue; }
+      var c = _riParseCoord(texto);
+      if (!c) { semCoord++; if (amostra.length < 4) amostra.push({ codigo: cod, achou: false }); continue; }
+      rows.push({ codigo: cod, lon: c.lon, lat: c.lat });
+      if (amostra.length < 4) amostra.push({ codigo: cod, lon: c.lon, lat: c.lat });
+    }
+    var upd = 0;
+    if (!peek && rows.length) {
+      var rr = enviarRpc('ri_set_coord', { linhas: rows });
+      upd = (typeof rr === 'number') ? rr : (rr && rr.length ? (typeof rr[0] === 'number' ? rr[0] : 0) : 0);
+    }
+    return { ok: true, total: nTotal, start: start, lidas: nRows, comCoord: rows.length, atualizadas: upd,
+             semDoc: semDoc, semCoord: semCoord, nextStart: start + nRows, fim: (start + nRows >= nTotal), amostra: amostra };
+  }
   function mcKmlBackfill(p) {
     var ids = p.folderIds;
     if (typeof ids === 'string') { try { ids = JSON.parse(ids); } catch (e) { ids = ids ? [ids] : []; } }
@@ -923,5 +989,6 @@ var AutomacaoCastro = (function () {
 
   return { run: run, runMC: runMC, mcLote: mcLote, mcListarLotes: mcListarLotes,
            mcKmlBackfill: mcKmlBackfill,
+           riCoordBackfill: riCoordBackfill,
            instalarGatilho: instalarGatilho, doGet: doGet, doPost: doPost };
 })();
