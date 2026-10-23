@@ -189,7 +189,7 @@ var AutomacaoCastro = (function () {
       tipoDefault: 'MC',
       prazoDias: 45,
       abas: [
-        { nome: 'MC', fonte_aba: 'manual', header: 1, map: {
+        { nome: 'MC_SISTEMA', fonte_aba: 'manual', header: 1, map: {
             codigo:              ['GEOCOD_IEF','GEOCOD'],
             municipio:           ['MUNICIPIO'],
             fracao_responsavel:  ['N GRUPAMENTO','GRUPAMENTO'],
@@ -821,6 +821,22 @@ var AutomacaoCastro = (function () {
     return { ok: true, lotes: out };
   }
 
+  // garante a aba nova do SISTEMA (limpa, separada da aba MC antiga c/ fórmulas).
+  // cria com o cabeçalho que o painel precisa, se ainda não existir.
+  function _mcEnsureAba(ss) {
+    var nome = FONTES.MC.abas[0].nome, sh = ss.getSheetByName(nome);
+    if (!sh) {
+      sh = ss.insertSheet(nome);
+      var H = ['GEOCOD_IEF', 'MUNICIPIO', 'N GRUPAMENTO', 'PELOTAO', 'DATA GERADA',
+               'DATA RECEBIDO NA 3 CIA PMMAMB', 'DATA ENVIADO PARA O GRUPAMENTO', 'EXPIRACAO',
+               'SITUACAO', 'STATUS', 'DATA RESPOSTA', 'ID SISFIS', 'N REDS',
+               'CLIQUE NO ICONE PDF PARA BAIXAR', 'KML', 'PASTA DRIVE MC'];
+      sh.getRange(1, 1, 1, H.length).setValues([H]).setFontWeight('bold');
+      sh.setFrozenRows(1);
+    }
+    return sh;
+  }
+
   // CARGA DE LOTE (paginada): processa [offset, offset+limit) do KML mestre
   function mcLote(p) {
     var F = FONTES.MC;
@@ -840,7 +856,7 @@ var AutomacaoCastro = (function () {
     var pdfIdx = _mcPdfsForGeocods(folder, _gcs), grupos = lerGrupos();
     var hoje = iso(new Date()), venc = addDias(hoje, F.prazoDias);
 
-    var sh = SpreadsheetApp.openById(F.sheetId).getSheetByName(F.abas[0].nome);
+    var sh = _mcEnsureAba(SpreadsheetApp.openById(F.sheetId));
     var ncol = sh.getLastColumn();
     var cabec = sh.getRange(1, 1, 1, ncol).getValues()[0].map(normHead);
     function C(al) { return acharCol(cabec, al); }
