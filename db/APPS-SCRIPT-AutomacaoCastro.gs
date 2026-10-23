@@ -150,6 +150,8 @@ var AutomacaoCastro = (function () {
             numero_reds:         ['REDS'],
             status_atendimento:  ['STATUS'],
             info_complementares: ['PROTOCOLO DE ENVIO','PROTOCOLO'],
+            coord_lat:           ['LATITUDE','LAT'],
+            coord_lon:           ['LONGITUDE','LONG','LON'],
             coord_bruta:         ['COORDENADAS','COORDENADA','COORDENADAS/INCENDIO','COORDENADAS INCENDIO','COORD INCENDIO']
         }}
       ]
@@ -256,9 +258,18 @@ var AutomacaoCastro = (function () {
           fonte_aba:           cfg.fonte_aba,
           raw:                 { aba: cfg.nome }
         };
-        // coordenada do incêndio (coluna COORDENADAS, só no RI) → coord_x/coord_y
-        var _cb = (idx.coord_bruta != null && idx.coord_bruta >= 0) ? cel(linha, idx.coord_bruta) : '';
-        if (_cb) { var _cc = _riParseCoord(_cb); if (_cc && !(Math.abs(_cc.lat) < 1e-4 && Math.abs(_cc.lon) < 1e-4)) obj._coord = { lon: _cc.lon, lat: _cc.lat }; }
+        // coordenada do incêndio (só no RI) → coord_x/coord_y
+        // preferência: colunas LATITUDE/LONGITUDE (cada uma DMS ou decimal);
+        // fallback: coluna única COORDENADAS.
+        var _cla = (idx.coord_lat != null && idx.coord_lat >= 0) ? cel(linha, idx.coord_lat) : '';
+        var _clo = (idx.coord_lon != null && idx.coord_lon >= 0) ? cel(linha, idx.coord_lon) : '';
+        if (_cla && _clo) {
+          var _la = _riOne(_cla), _lo = _riOne(_clo);
+          if (_la != null && _lo != null && !(Math.abs(_la) < 1e-4 && Math.abs(_lo) < 1e-4)) obj._coord = { lon: _lo, lat: _la };
+        } else {
+          var _cb = (idx.coord_bruta != null && idx.coord_bruta >= 0) ? cel(linha, idx.coord_bruta) : '';
+          if (_cb) { var _cc = _riParseCoord(_cb); if (_cc && !(Math.abs(_cc.lat) < 1e-4 && Math.abs(_cc.lon) < 1e-4)) obj._coord = { lon: _cc.lon, lat: _cc.lat }; }
+        }
         var _base = obj.data_envio || obj.data_gerada;
         var _prazo = F.prazoDias || COMUM.PRAZO_DIAS;
         if (!obj.data_vencimento && _base) obj.data_vencimento = addDias(_base, _prazo);
@@ -876,6 +887,18 @@ var AutomacaoCastro = (function () {
       if (nums && nums.length >= 2) { lat = parseFloat(nums[0]); lon = parseFloat(nums[1]); }
     }
     return (lat === null || lon === null) ? null : { lat: lat, lon: lon };
+  }
+  // converte UM valor (lat ou lon) isolado: DMS ("17°33'48,5"S") ou decimal
+  // ("-17,5635" / "17.5635 S"). Hemisfério S/O/W → negativo.
+  function _riOne(s) {
+    s = String(s || '').trim(); if (!s) return null;
+    var hemi = (s.match(/[NSLOEWnsloew]\s*$/) || [''])[0].toUpperCase().trim();
+    var m = s.match(/(\d{1,3})\s*[°º˚⁰]\s*(\d{1,2})\s*['’´]\s*([\d.,]+)/), d;
+    if (m) d = parseFloat(m[1]) + parseFloat(m[2]) / 60 + parseFloat(String(m[3]).replace(',', '.')) / 3600;
+    else d = parseFloat(String(s).replace(/[NSLOEWnsloew]/g, '').replace(',', '.').replace(/[^0-9.\-]/g, ''));
+    if (!isFinite(d)) return null;
+    if ((hemi === 'S' || hemi === 'O' || hemi === 'W') && d > 0) d = -d;
+    return d;
   }
   function _riDocId(url) {
     var u = String(url || ''), m = u.match(/\/d\/([-\w]{20,})/) || u.match(/[?&]id=([-\w]{20,})/) || u.match(/([-\w]{25,})/);
