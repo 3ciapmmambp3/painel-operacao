@@ -208,6 +208,7 @@
   <div class="toolbar">
     <div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
       <input id="busca" placeholder="Buscar por nº, município, tema, origem, denunciante…" oninput="render()"></div>
+    <select id="muni" class="yearsel" onchange="render()"><option value="">Todos os municípios</option></select>
     <select id="ano" class="yearsel" onchange="render()"><option value="all">Todos os anos</option></select>
     <button class="fbtn on" data-f="todas" onclick="setFiltro(this)">Todas</button>
     <button class="fbtn" data-f="PENDENTE" onclick="setFiltro(this)">Pendentes</button>
@@ -486,9 +487,17 @@ function popularAnos(){
   const anos=[...new Set(DADOS.filter(naAba).map(d=>d.ano).filter(Boolean))].sort((a,b)=>b-a);
   sel.innerHTML='<option value="all">Todos os anos</option>'+anos.map(a=>`<option value="${a}">${a}</option>`).join('');
   if (anos.includes(+atualVal)) sel.value=atualVal;   // preserva seleção
+  const ms=document.getElementById('muni');
+  if (ms){ const mv=ms.value; const mus=[...new Set(DADOS.filter(naAba).map(d=>d.municipio).filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),'pt')); ms.innerHTML='<option value="">Todos os municípios</option>'+mus.map(m=>`<option value="${m}">${m}</option>`).join(''); if(mus.includes(mv)) ms.value=mv; }
 }
+let _nearKey='';
+// chave de "mesmo local" = município+endereço normalizado (>3 chars)
+function _nkey(d){const mu=String(d.municipio||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');const en=String(d.endereco||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z0-9]+/g,' ').trim();return en.length>3?mu+'|'+en:'';}
+function nearFiltrar(k){ _nearKey=(_nearKey===k?'':k); PAGE=1; render(); }
 function passa(d){
   if (!naAba(d)) return false;                  // a aba fixa o tipo (Todos = qualquer tipo)
+  const _mu=(document.getElementById('muni')||{}).value||''; if (_mu && (d.municipio||'')!==_mu) return false;
+  if (_nearKey && _nkey(d)!==_nearKey) return false;   // isola "mesmo local" ao clicar no +N
   const ano=document.getElementById('ano').value;
   if (ano!=='all' && String(d.ano)!==String(ano)) return false;
   const q=document.getElementById('busca').value.trim().toLowerCase();
@@ -532,12 +541,14 @@ function render(){
   // volta pra 1ª página quando muda filtro/busca/ano/escopo
   const gel=id=>document.getElementById(id)||{};
   const sig=[filtro, gel('busca').value, gel('ano').value, gel('sel-pel').value, gel('sel-grp').value].join('|');
-  if(sig!==_sig){ PAGE=1; _sig=sig; }
+  if(sig!==_sig){ PAGE=1; _sig=sig; _nearKey=''; }
   if(!rows.length){ tb.innerHTML='<tr><td colspan="9" class="empty">Nenhuma ocorrência neste filtro.</td></tr>'; if(pager)pager.innerHTML=''; return; }
   const totalPag=Math.ceil(rows.length/PAGE_SIZE);
   if(PAGE>totalPag)PAGE=totalPag; if(PAGE<1)PAGE=1;
   const ini=(PAGE-1)*PAGE_SIZE;
   const pageRows=rows.slice(ini, ini+PAGE_SIZE);
+  // índice de proximidade por ENDEREÇO (mesma aba) → badge "+N"
+  const _nc={}; DADOS.forEach(x=>{ if(x.ativo===false||!naAba(x))return; const k=_nkey(x); if(k)_nc[k]=(_nc[k]||0)+1; });
   pageRows.forEach(d=>{
     const pr=prazoInfo(d);
     const inativa=d.ativo===false;
@@ -547,7 +558,7 @@ function render(){
       `<td class="num">${d.numero}</td>`+
       `<td>${tipoCell(d)}</td>`+
       `<td>${d.origem||'—'}</td>`+
-      `<td class="muni">${d.municipio||'—'}</td>`+
+      `<td class="muni">${d.municipio||'—'}${(()=>{const k=_nkey(d);const n=k?(_nc[k]||0)-1:0;return n>0?` <span class="near" data-k="${k}" onclick="event.stopPropagation();nearFiltrar(this.dataset.k)" title="Ver as ${n+1} ocorrências neste endereço (clique p/ filtrar; de novo p/ limpar)" style="display:inline-block;margin-left:5px;padding:0 6px;border-radius:9px;background:${_nearKey===k?'#2563eb':'#b26b00'};color:#fff;font-size:11px;font-weight:700;vertical-align:middle;cursor:pointer">+${n}</span>`:'';})()}</td>`+
       `<td class="colhide tema">${d.tema||'—'}</td>`+
       `<td class="colhide tema">${_grafiaGP(d.grupamento_completo)||'—'}</td>`+
       `<td class="prazo" style="font-weight:500">${fmtData(recebDe(d))}</td>`+
