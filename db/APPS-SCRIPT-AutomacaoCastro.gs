@@ -916,10 +916,13 @@ var AutomacaoCastro = (function () {
         jaSet[geocod] = 1;
         var row = new Array(ncol); for (var c = 0; c < ncol; c++) row[c] = '';
         function S(ix, v) { if (ix >= 0) row[ix] = (v == null ? '' : v); }
+        // número de verdade (evita o Sheets pt-BR ler "1.98" como 1,98 bilhão):
+        // o KML traz HECTARES com ponto e X/Y com vírgula — normaliza p/ número.
+        function N(v) { var x = parseFloat(String(v == null ? '' : v).replace(',', '.')); return isFinite(x) ? x : ''; }
         // A–W (lidos direto do KML; 7 do CAR ficam em branco)
-        S(cID, d.ID); S(cDI, d.DATA_INIC); S(cDF, d.DATA_FINAL); S(cHA, d.HECTARES);
+        S(cID, d.ID); S(cDI, d.DATA_INIC); S(cDF, d.DATA_FINAL); S(cHA, N(d.HECTARES));
         S(cSI, d.SATELITE_I); S(cSF, d.SATELITE_F); S(cMR, d.MES_REF); S(cAR, d.ANO_REF);
-        S(cXX, d.X); S(cYY, d.Y); S(cM, municipio); S(cNU, d.NUFIS); S(cCP, d.CIA_PM);
+        S(cXX, N(d.X)); S(cYY, N(d.Y)); S(cM, municipio); S(cNU, d.NUFIS); S(cCP, d.CIA_PM);
         S(cBI, d.BIOMA_IBGE); S(cBL, d.BIO_LEI_MA); S(cN, geocod);
         // controle do sistema (X–AB da resposta ficam em branco; baixa é pelo Relatório)
         S(cK, g.gp || ''); S(cL, g.pel || ''); S(cB, _dt(hoje)); S(cG, _dt(venc));
