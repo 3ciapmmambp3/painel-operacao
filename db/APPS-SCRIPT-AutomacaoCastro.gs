@@ -190,17 +190,18 @@ var AutomacaoCastro = (function () {
       prazoDias: 45,
       abas: [
         { nome: 'MC_SISTEMA', fonte_aba: 'manual', header: 1, map: {
-            codigo:              ['GEOCOD_IEF','GEOCOD'],
-            municipio:           ['MUNICIPIO'],
-            fracao_responsavel:  ['N GRUPAMENTO','GRUPAMENTO'],
-            data_gerada:         ['DATA RECEBIDO NA 3 CIA PMMAMB','DATA RECEBIDO'],
-            data_envio:          ['DATA ENVIADO PARA O GRUPAMENTO','DATA ENVIADO'],
-            data_vencimento:     ['EXPIRACAO'],
-            status_prazo:        ['SITUACAO'],
-            data_atendimento:    ['DATA RESPOSTA','DATA_FISC_PMMG','DATA FISC PMMG'],
-            numero_gaia:         ['ID SISFIS','SISFIS'],
-            numero_reds:         ['N REDS','REDS'],
-            status_atendimento:  ['STATUS']
+            codigo:               ['GEOCOD_IEF','GEOCOD'],
+            municipio:            ['MUNICIPIO'],
+            fracao_responsavel:   ['N GRUPAMENTO','GRUPAMENTO'],
+            data_gerada:          ['DATA RECEBIDO NA 3 CIA PMMAMB','DATA RECEBIDO'],
+            data_envio:           ['DATA ENVIADO PARA O GRUPAMENTO','DATA ENVIADO'],
+            data_vencimento:      ['EXPIRACAO'],
+            status_prazo:         ['SITUACAO'],
+            data_atendimento:     ['DATA ATENDIMENTO','DATA RESPOSTA','DATA_FISC_PMMG','DATA FISC PMMG'],
+            numero_gaia:          ['Nº ATO DE FISCALIZAÇÃO','ID SISFIS','SISFIS'],
+            numero_reds:          ['REDS','N REDS'],
+            numero_auto_infracao: ['AUTO DE INFRAÇÃO'],
+            status_atendimento:   ['STATUS']
         }}
       ]
     }
@@ -827,10 +828,14 @@ var AutomacaoCastro = (function () {
     var nome = FONTES.MC.abas[0].nome, sh = ss.getSheetByName(nome);
     if (!sh) {
       sh = ss.insertSheet(nome);
-      var H = ['GEOCOD_IEF', 'MUNICIPIO', 'N GRUPAMENTO', 'PELOTAO', 'DATA GERADA',
-               'DATA RECEBIDO NA 3 CIA PMMAMB', 'DATA ENVIADO PARA O GRUPAMENTO', 'EXPIRACAO',
-               'SITUACAO', 'STATUS', 'DATA RESPOSTA', 'ID SISFIS', 'N REDS',
-               'CLIQUE NO ICONE PDF PARA BAIXAR', 'KML', 'PASTA DRIVE MC'];
+      // A–W = exatamente as colunas da planilha SEMAD; X–AB = resposta/baixa;
+      // AC+ = colunas de controle do sistema (grupamento, prazos, pasta, KML, PDF).
+      var H = ['ID','CENA_INIC','DATA_INIC','CENA_FINAL','DATA_FINAL','HECTARES','SATELITE_I','SATELITE_F',
+               'MES_REF','ANO_REF','X','Y','MUNICIPIO','NUFIS','CIA_PM','BIOMA_IBGE','BIO_LEI_MA','GEOCOD_IEF',
+               'ID_EVOLUCAO','% Veg Nativa','UC/ZA','Registro_Car','DAIA_CAR',
+               'DATA ATENDIMENTO','REDS','AUTO DE INFRAÇÃO','Nº ATO DE FISCALIZAÇÃO','OBSERVAÇÃO',
+               'N GRUPAMENTO','PELOTAO','DATA RECEBIDO NA 3 CIA PMMAMB','DATA ENVIADO PARA O GRUPAMENTO',
+               'EXPIRACAO','SITUACAO','STATUS','PASTA DRIVE MC','KML','CLIQUE NO ICONE PDF PARA BAIXAR'];
       sh.getRange(1, 1, 1, H.length).setValues([H]).setFontWeight('bold');
       sh.setFrozenRows(1);
     }
@@ -860,12 +865,18 @@ var AutomacaoCastro = (function () {
     var ncol = sh.getLastColumn();
     var cabec = sh.getRange(1, 1, 1, ncol).getValues()[0].map(normHead);
     function C(al) { return acharCol(cabec, al); }
-    var cA = C(['DATA GERADA']), cB = C(['DATA RECEBIDO NA 3 CIA PMMAMB', 'DATA RECEBIDO']),
-        cG = C(['EXPIRACAO']), cI = C(['SITUACAO']), cJ = C(['STATUS']),
-        cK = C(['N GRUPAMENTO', 'GRUPAMENTO']), cL = C(['PELOTAO']),
-        cM = C(['MUNICIPIO']), cN = C(['GEOCOD_IEF', 'GEOCOD']),
-        cT = C(['CLIQUE NO ICONE PDF PARA BAIXAR', 'CLIQUE NO ICONE PDF', 'CLIQUE PARA BAIXAR']),
-        cX = C(['KML']), cY = C(['PASTA DRIVE MC']);
+    // A–W (do KML) + controle. cT = coluna do link do PDF.
+    var cN  = C(['GEOCOD_IEF', 'GEOCOD']),
+        cID = C(['ID']), cDI = C(['DATA_INIC']), cDF = C(['DATA_FINAL']),
+        cHA = C(['HECTARES']), cSI = C(['SATELITE_I']), cSF = C(['SATELITE_F']),
+        cMR = C(['MES_REF']), cAR = C(['ANO_REF']), cXX = C(['X']), cYY = C(['Y']),
+        cM  = C(['MUNICIPIO']), cNU = C(['NUFIS']), cCP = C(['CIA_PM']),
+        cBI = C(['BIOMA_IBGE']), cBL = C(['BIO_LEI_MA']),
+        cK  = C(['N GRUPAMENTO', 'GRUPAMENTO']), cL = C(['PELOTAO']),
+        cB  = C(['DATA RECEBIDO NA 3 CIA PMMAMB', 'DATA RECEBIDO']),
+        cG  = C(['EXPIRACAO']), cJ = C(['STATUS']),
+        cX  = C(['KML']), cY = C(['PASTA DRIVE MC']),
+        cT  = C(['CLIQUE NO ICONE PDF PARA BAIXAR', 'CLIQUE NO ICONE PDF', 'CLIQUE PARA BAIXAR']);
 
     // idempotência do append: geocods já na planilha
     var jaSet = {};
@@ -904,16 +915,15 @@ var AutomacaoCastro = (function () {
       if (!jaSet[geocod]) {
         jaSet[geocod] = 1;
         var row = new Array(ncol); for (var c = 0; c < ncol; c++) row[c] = '';
-        if (cA >= 0 && dFim) row[cA] = _dt(dFim);
-        if (cB >= 0) row[cB] = _dt(hoje);
-        if (cG >= 0) row[cG] = _dt(venc);
-        if (cJ >= 0) row[cJ] = 'PENDENTE';
-        if (cK >= 0) row[cK] = g.gp || '';
-        if (cL >= 0) row[cL] = g.pel || '';
-        if (cM >= 0) row[cM] = municipio;
-        if (cN >= 0) row[cN] = geocod;
-        if (cX >= 0) row[cX] = 'KML gerado (painel)';
-        if (cY >= 0) row[cY] = lote;
+        function S(ix, v) { if (ix >= 0) row[ix] = (v == null ? '' : v); }
+        // A–W (lidos direto do KML; 7 do CAR ficam em branco)
+        S(cID, d.ID); S(cDI, d.DATA_INIC); S(cDF, d.DATA_FINAL); S(cHA, d.HECTARES);
+        S(cSI, d.SATELITE_I); S(cSF, d.SATELITE_F); S(cMR, d.MES_REF); S(cAR, d.ANO_REF);
+        S(cXX, d.X); S(cYY, d.Y); S(cM, municipio); S(cNU, d.NUFIS); S(cCP, d.CIA_PM);
+        S(cBI, d.BIOMA_IBGE); S(cBL, d.BIO_LEI_MA); S(cN, geocod);
+        // controle do sistema (X–AB da resposta ficam em branco; baixa é pelo Relatório)
+        S(cK, g.gp || ''); S(cL, g.pel || ''); S(cB, _dt(hoje)); S(cG, _dt(venc));
+        S(cJ, 'PENDENTE'); S(cY, lote); S(cX, 'KML gerado (painel)');
         novasSheet.push(row);
         pdfRows.push(pdf ? pdf.web_view_link : '');
       }
@@ -1082,6 +1092,7 @@ var AutomacaoCastro = (function () {
         data_atendimento: dataIso(linha, idx.data_atendimento),
         numero_gaia: cel(linha, idx.numero_gaia),
         numero_reds: cel(linha, idx.numero_reds),
+        numero_auto_infracao: cel(linha, idx.numero_auto_infracao),
         status_atendimento: cel(linha, idx.status_atendimento),
         lote: cY >= 0 ? cel(linha, cY) : '',
         fonte_aba: 'manual', raw: { aba: cfg.nome, pelotao: cL >= 0 ? cel(linha, cL) : '' }
