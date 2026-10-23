@@ -428,6 +428,10 @@ function popularAnos(){
 }
 // Escopo base (ativas + ano + busca), SEM o filtro dos cards — os quadros e a
 // lista partem daqui, então os cards já respeitam o ano/busca selecionados.
+let _nearKey='';
+// chave de "mesmo local" = município+endereço normalizado (>3 chars)
+function _nkey(d){const mu=String(d.municipio||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');const en=String(d.endereco||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z0-9]+/g,' ').trim();return en.length>3?mu+'|'+en:'';}
+function nearFiltrar(k){ _nearKey=(_nearKey===k?'':k); PAGE=1; render(); }
 function baseScope(d){
   if (gerFiltro==='inativas'){ if (d.ativo!==false) return false; }
   else if (d.ativo===false) return false;
@@ -441,6 +445,7 @@ function baseScope(d){
 }
 function passa(d){
   if (!baseScope(d)) return false;
+  if (_nearKey && _nkey(d)!==_nearKey) return false;   // isola "mesmo local" ao clicar no +N
   if (filtro==='todas') return true;
   if (filtro==='noprazo') return noPrazoN(d);
   if (filtro==='vence10') return venceLogo(d);
@@ -482,13 +487,12 @@ function render(){
   });
   const gel=id=>document.getElementById(id)||{};
   const sig=[filtro, gel('busca').value, gel('ano').value, _selVal('sel-pel'), _selVal('sel-grp')].join('|');
-  if(sig!==_sig){ PAGE=1; _sig=sig; }
+  if(sig!==_sig){ PAGE=1; _sig=sig; _nearKey=''; }
   if(!rows.length){ tb.innerHTML='<tr><td colspan="9" class="empty">Nenhuma demanda neste filtro.</td></tr>'; if(pager)pager.innerHTML=''; return; }
   const totalPag=Math.ceil(rows.length/PAGE_SIZE);
   if(PAGE>totalPag)PAGE=totalPag; if(PAGE<1)PAGE=1;
   const ini=(PAGE-1)*PAGE_SIZE;
   // índice de proximidade por ENDEREÇO (mesmo município+endereço) → badge "+N"
-  const _nkey=d=>{const mu=String(d.municipio||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');const en=String(d.endereco||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z0-9]+/g,' ').trim();return en.length>3?mu+'|'+en:'';};
   const _nc={}; DADOS.forEach(x=>{ if(x.ativo===false)return; const k=_nkey(x); if(k)_nc[k]=(_nc[k]||0)+1; });
   rows.slice(ini, ini+PAGE_SIZE).forEach(d=>{
     const pr=prazoInfo(d);
@@ -497,7 +501,7 @@ function render(){
     tr.innerHTML =
       `<td class="num">${d.codigo||'—'}</td>`+
       `<td class="tema">${d.natureza||'—'}</td>`+
-      `<td class="muni">${d.municipio||'—'}${(()=>{const k=_nkey(d);const n=k?(_nc[k]||0)-1:0;return n>0?` <span class="near" title="${n} outra(s) demanda(s) neste endereço" style="display:inline-block;margin-left:5px;padding:0 6px;border-radius:9px;background:#b26b00;color:#fff;font-size:11px;font-weight:700;vertical-align:middle">+${n}</span>`:'';})()}</td>`+
+      `<td class="muni">${d.municipio||'—'}${(()=>{const k=_nkey(d);const n=k?(_nc[k]||0)-1:0;return n>0?` <span class="near" data-k="${k}" onclick="event.stopPropagation();nearFiltrar(this.dataset.k)" title="Ver as ${n+1} demandas neste endereço (clique p/ filtrar; de novo p/ limpar)" style="display:inline-block;margin-left:5px;padding:0 6px;border-radius:9px;background:${_nearKey===k?'#2563eb':'#b26b00'};color:#fff;font-size:11px;font-weight:700;vertical-align:middle;cursor:pointer">+${n}</span>`:'';})()}</td>`+
       `<td class="colhide tema">${_grafiaGP(d.fracao_responsavel)||'—'}</td>`+
       `<td class="prazo" style="font-weight:500">${fmtData(d.data_gerada)}</td>`+
       `<td class="prazo" style="font-weight:500">${fmtData(d.data_vencimento)}</td>`+
