@@ -149,7 +149,8 @@ var AutomacaoCastro = (function () {
             numero_gaia:         ['ID SISFIS','SISFIS'],
             numero_reds:         ['REDS'],
             status_atendimento:  ['STATUS'],
-            info_complementares: ['PROTOCOLO DE ENVIO','PROTOCOLO']
+            info_complementares: ['PROTOCOLO DE ENVIO','PROTOCOLO'],
+            coord_bruta:         ['COORDENADAS','COORDENADA','COORDENADAS/INCENDIO','COORDENADAS INCENDIO','COORD INCENDIO']
         }}
       ]
     },
@@ -255,6 +256,9 @@ var AutomacaoCastro = (function () {
           fonte_aba:           cfg.fonte_aba,
           raw:                 { aba: cfg.nome }
         };
+        // coordenada do incêndio (coluna COORDENADAS, só no RI) → coord_x/coord_y
+        var _cb = (idx.coord_bruta != null && idx.coord_bruta >= 0) ? cel(linha, idx.coord_bruta) : '';
+        if (_cb) { var _cc = _riParseCoord(_cb); if (_cc && !(Math.abs(_cc.lat) < 1e-4 && Math.abs(_cc.lon) < 1e-4)) obj._coord = { lon: _cc.lon, lat: _cc.lat }; }
         var _base = obj.data_envio || obj.data_gerada;
         var _prazo = F.prazoDias || COMUM.PRAZO_DIAS;
         if (!obj.data_vencimento && _base) obj.data_vencimento = addDias(_base, _prazo);
@@ -304,6 +308,12 @@ var AutomacaoCastro = (function () {
     for (var j = 0; j < linhas.length; j += LOTE) {
       var r = enviarRpc(F.rpc, { linhas: linhas.slice(j, j + LOTE) });
       if (r && r[0]) { ins += r[0].inseridas || 0; upd += r[0].atualizadas || 0; }
+    }
+    if (fonteKey === 'RI') {
+      var _coords = [];
+      linhas.forEach(function (o) { if (o._coord) _coords.push({ codigo: o.codigo, lon: o._coord.lon, lat: o._coord.lat }); });
+      for (var _k = 0; _k < _coords.length; _k += 400) enviarRpc('ri_set_coord', { linhas: _coords.slice(_k, _k + 400) });
+      if (_coords.length) Logger.log('[RI] coords atualizadas: ' + _coords.length);
     }
     Logger.log('[' + fonteKey + '] OK — inseridas: ' + ins + ' · atualizadas: ' + upd);
   }
@@ -852,12 +862,18 @@ var AutomacaoCastro = (function () {
   // ex.: "COORDENADAS/INCÊNDIO: Lat. 17°33'48,5"S Long. 41°54'40,8"O"
   function _riParseCoord(txt) {
     var t = String(txt || ''), lat = null, lon = null, m;
-    var re = /(\d{1,3})\s*[°º]\s*(\d{1,2})\s*['’´]\s*([\d.,]+)\s*["”″]?\s*([NSLOEWnsloew])/g;
+    // DMS: "17°33'48,5"S" — grau pode vir como ° º ˚ ⁰ (PDF usa ⁰) ou faltar
+    var re = /(\d{1,3})\s*[°º˚⁰]?\s*(\d{1,2})\s*['’´]\s*([\d.,]+)\s*["”″]?\s*([NSLOEWnsloew])/g;
     while ((m = re.exec(t))) {
       var dec = parseFloat(m[1]) + parseFloat(m[2]) / 60 + parseFloat(String(m[3]).replace(',', '.')) / 3600;
       var h = m[4].toUpperCase();
       if (h === 'N' || h === 'S') { if (h === 'S') dec = -dec; if (lat === null) lat = dec; }   // N/S = latitude
-      else { if (h === 'O' || h === 'W') dec = -dec; if (lon === null) lon = dec; }             // L/O/E/W = longitude (O=Oeste, W=West → neg)
+      else { if (h === 'O' || h === 'W') dec = -dec; if (lon === null) lon = dec; }             // L/O/E/W = longitude (O/W → neg)
+    }
+    // fallback: par decimal digitado, ex. "-17.5635, -41.9113" ou "-17,5635 -41,9113"
+    if (lat === null || lon === null) {
+      var nums = t.replace(/(\d),(\d)/g, '$1.$2').match(/-?\d{1,3}\.\d{3,}/g);
+      if (nums && nums.length >= 2) { lat = parseFloat(nums[0]); lon = parseFloat(nums[1]); }
     }
     return (lat === null || lon === null) ? null : { lat: lat, lon: lon };
   }
