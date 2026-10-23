@@ -86,11 +86,13 @@
   .badge{display:inline-block;font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;letter-spacing:.3px;white-space:nowrap}
   .b-bal{background:var(--gold-bg);color:var(--gold-light);border:1px solid var(--gold-border)}
   .b-req{background:var(--info-bg);color:#90caf9}
+  .b-mod{background:rgba(186,104,200,.14);color:#ce93d8;border:1px solid rgba(186,104,200,.35)}
   .pill{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap}
   .pill::before{content:"";width:6px;height:6px;border-radius:50%}
   .s-PENDENTE{background:var(--warn-bg,rgba(255,183,77,.13));color:#ffb74d} .s-PENDENTE::before{background:#ffb74d}
   .s-EMANDAMENTO{background:var(--info-bg);color:#90caf9} .s-EMANDAMENTO::before{background:var(--info)}
-  .s-CONCLUIDA,.s-RESPONDIDA{background:var(--success-bg);color:var(--success)} .s-CONCLUIDA::before,.s-RESPONDIDA::before{background:var(--success)}
+  .s-CONCLUIDA,.s-RESPONDIDA,.s-FINALIZADA{background:var(--success-bg);color:var(--success)} .s-CONCLUIDA::before,.s-RESPONDIDA::before,.s-FINALIZADA::before{background:var(--success)}
+  .s-DEVOLVIDA{background:rgba(255,183,77,.13);color:#ffb74d} .s-DEVOLVIDA::before{background:#ffb74d}
   .s-INATIVADA{background:var(--danger-bg,rgba(239,83,80,.13));color:#ef9a9a} .s-INATIVADA::before{background:#ef5350}
   .prazo{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
   .prazo.ok{color:var(--success)} .prazo.warn{color:#ffb74d} .prazo.late{color:var(--danger)} .prazo.none{color:var(--text-hint)}
@@ -420,6 +422,64 @@ function gprEscopo(){
   return lista.map(x=>x.gpr);
 }
 
+/* ── "Todos": unifica os demais módulos do hub (colunas comuns) ──────── */
+const _MODS_TODOS = [
+  { key:'nuden', label:'NUDEN',           href:'nuden.html',      table:'nuden_demandas' },
+  { key:'ddu',   label:'DDU 181',         href:'ddu.html',        table:'ddu_demandas' },
+  { key:'ri',    label:'FTP / RI',        href:'ri.html',         table:'ri_demandas' },
+  { key:'emerg', label:'Emergência',      href:'emergencia.html', table:'emergencia_demandas' },
+  { key:'mc',    label:'Monit. Contínuo', href:'mc.html',         table:'mc_demandas' },
+];
+const _SEL_TODOS = 'id,codigo,municipio,endereco,natureza,data_gerada,data_vencimento,situacao,data_atendimento,numero_reds,gp_responsavel,grupamento_completo,ativo,created_at';
+function _normMod(d, m){
+  const recv = d.data_gerada || (d.created_at ? String(d.created_at).slice(0,10) : '');
+  return { _mod:m.label, _modKey:m.key, _href:m.href,
+    id: m.key+':'+d.id, numero: d.codigo||'—', tipo:'_'+m.key,
+    municipio: d.municipio||'', endereco: d.endereco||'', tema: d.natureza||'',
+    origem:'', denunciante:'', data_recebimento: recv, prazo: d.data_vencimento||'',
+    situacao: d.situacao||'', data_atendimento: d.data_atendimento||null,
+    ativo: d.ativo!==false, ano: recv ? +String(recv).slice(0,4) : null,
+    gp_responsavel: d.gp_responsavel||'', grupamento_completo: d.grupamento_completo||'',
+    numero_reds: d.numero_reds||'', _raw:d };
+}
+async function _carregarModulos(inList){
+  const out=[];
+  // PostgREST devolve no máx. 1000/req → pagina cada tabela via header Range.
+  await Promise.all(_MODS_TODOS.map(async m=>{
+    try{
+      const base = `${API}/rest/v1/${m.table}?select=${_SEL_TODOS}&gp_responsavel=in.${encodeURIComponent(inList)}&order=data_vencimento.asc.nullslast`;
+      let off=0; const PG=1000;
+      for(;;){
+        const r = await fetch(base, { headers: Object.assign({}, H, { 'Range-Unit':'items', 'Range':`${off}-${off+PG-1}` }) });
+        if(!r.ok) break;
+        const chunk = await r.json(); chunk.forEach(d=>out.push(_normMod(d, m)));
+        if(chunk.length < PG || off > 40000) break;
+        off += PG;
+      }
+    }catch(e){ console.error('mod '+m.key, e); }
+  }));
+  return out;
+}
+// gaveta read-only p/ itens de outros módulos (a edição/baixa é feita no módulo)
+function _abrirMod(d){
+  atual=d;
+  document.getElementById('d-num').textContent=d.numero;
+  document.getElementById('d-tipo').innerHTML=tipoCell(d);
+  const bs=document.getElementById('d-sit'); bs.className='pill '+sitCls(d.situacao); bs.textContent=SIT_LBL[d.situacao]||d.situacao;
+  const pr=prazoInfo(d);
+  const di=(t,v,full)=>`<div class="di${full?' full':''}"><dt>${t}</dt><dd>${v||'—'}</dd></div>`;
+  document.getElementById('d-body').innerHTML =
+    `<div class="grpline"><svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span style="flex:1"><b>${d._mod}</b> · ${_grafiaGP(d.grupamento_completo||d.gp_responsavel)||'—'}</span></div>`+
+    `<dl class="dl">`+
+      di('Nº / Código', d.numero)+ di('Município', d.municipio)+
+      di('Natureza', d.tema)+ di('Endereço', d.endereco, true)+
+      di('Recebido', fmtData(recebDe(d)))+ di('Vencimento', fmtData(d.prazo))+
+      di('Prazo', pr.txt)+ di('Nº REDS', d.numero_reds)+
+    `</dl>`+
+    `<div style="margin-top:18px"><a class="act done" href="${d._href}" style="text-decoration:none;display:inline-block">Abrir no módulo ${d._mod} ↗</a></div>`;
+  document.getElementById('ov').classList.add('show'); document.body.style.overflow='hidden';
+}
+
 async function carregar(){
   const gprs = gprEscopo();
   document.getElementById('scope-txt').innerHTML = gprs.length===1
@@ -434,6 +494,7 @@ async function carregar(){
     const r = await fetch(url, { headers:H });
     if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
     DADOS = await r.json();
+    if (ABA_TODOS){ try{ DADOS = DADOS.concat(await _carregarModulos(inList)); }catch(e){ console.error('todos-merge',e); } }
     popularAnos();
     render(); kpis();
     // Deep-link ?ficha=<id>: abre a demanda e gera a Ficha (usado pelo Cartão Programa)
@@ -447,17 +508,19 @@ async function carregar(){
 
 /* ── helpers de exibição ─────────────────────────────────────────── */
 const isBalcao = d => d.tipo==='denuncia';
-const atendida = d => d.situacao==='CONCLUIDA' || d.situacao==='RESPONDIDA';
+const atendida = d => d.situacao==='CONCLUIDA' || d.situacao==='RESPONDIDA' || d.situacao==='FINALIZADA' || !!d.data_atendimento;
 // Vencida = ainda não atendida (pendente/em andamento), ativa e com o prazo já ultrapassado.
 function vencida(d){
   if (atendida(d) || d.ativo===false || !d.prazo) return false;
   const hoje=new Date(); hoje.setHours(0,0,0,0);
   return new Date(d.prazo+'T00:00:00') < hoje;
 }
-function tipoCell(d){ return isBalcao(d)
+function tipoCell(d){
+  if (d._mod) return `<span class="badge b-mod">${d._mod}</span>`;
+  return isBalcao(d)
   ? '<span class="badge b-bal">DENÚNCIA · BALCÃO</span>'
   : '<span class="badge b-req">REQUISIÇÃO</span>'; }
-const SIT_LBL = { PENDENTE:'Pendente', 'EM ANDAMENTO':'Em andamento', CONCLUIDA:'Concluída', RESPONDIDA:'Respondida', INATIVADA:'Inativada' };
+const SIT_LBL = { PENDENTE:'Pendente', 'EM ANDAMENTO':'Em andamento', CONCLUIDA:'Concluída', RESPONDIDA:'Respondida', FINALIZADA:'Finalizada', DEVOLVIDA:'Devolvida', INATIVADA:'Inativada' };
 const sitCls = s => 's-'+String(s||'').replace(/\s/g,'');
 function fmtData(iso){ if(!iso) return '—'; const p=String(iso).slice(0,10).split('-'); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:iso; }
 // Data de recebimento: usa o campo próprio; registros antigos caem no created_at.
@@ -564,7 +627,9 @@ function render(){
       `<td class="prazo" style="font-weight:500">${fmtData(recebDe(d))}</td>`+
       `<td><span class="prazo ${pr.cls}">${pr.txt}</span></td>`+
       `<td><span class="pill ${sitCls(d.situacao)}">${SIT_LBL[d.situacao]||d.situacao}</span>${inativa&&d.situacao!=='INATIVADA'?'<span class="tag-inativa">INATIVADA</span>':''}</td>`+
-      `<td><button class="pdf-mini" title="Baixar Ficha (PDF)" onclick="event.stopPropagation();gerarPDF(byId('${d.id}'))"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>PDF</button></td>`;
+      `<td>${d._mod
+        ? `<a class="pdf-mini" href="${d._href}" title="Abrir no módulo ${d._mod}" onclick="event.stopPropagation()" style="text-decoration:none"><svg viewBox="0 0 24 24"><path d="M7 17 17 7M8 7h9v9"/></svg>Abrir</a>`
+        : `<button class="pdf-mini" title="Baixar Ficha (PDF)" onclick="event.stopPropagation();gerarPDF(byId('${d.id}'))"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>PDF</button>`}</td>`;
     tb.appendChild(tr);
   });
   if(pager){
@@ -694,6 +759,7 @@ function atendimentoForm(d){
 }
 
 function abrir(d){
+  if (d._mod) return _abrirMod(d);   // itens de outros módulos: gaveta read-only
   atual=d;
   document.getElementById('d-num').textContent=d.numero;
   const bt=document.getElementById('d-tipo'); bt.innerHTML=tipoCell(d);
