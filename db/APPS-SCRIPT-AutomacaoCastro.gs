@@ -635,8 +635,12 @@ var AutomacaoCastro = (function () {
   }
 
   // KML mestre = o .kml da pasta com mais placemarks (texto UTF-8)
+  // Usa searchFiles (filtro no servidor do Drive) p/ não iterar os ~370 PDFs
+  // da pasta — iterar getFiles() inteiro custava ~90s/pasta. Fallback: getFiles().
   function _mcMasterKml(folder) {
-    var it = folder.getFiles(), best = null, bestN = -1;
+    var it, best = null, bestN = -1;
+    try { it = folder.searchFiles('title contains ".kml"'); }
+    catch (e) { it = folder.getFiles(); }
     while (it.hasNext()) {
       var f = it.next(), nm = f.getName();
       if (!/\.kml$/i.test(nm)) continue;
