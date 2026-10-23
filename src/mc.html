@@ -752,24 +752,36 @@ async function carregarLote(){
   const btn=document.getElementById('f-carregar'); btn.disabled=true;
   const prog=document.getElementById('lote-prog'); prog.style.display='block';
   const bar=document.getElementById('lp-bar'), txt=document.getElementById('lp-txt');
-  let offset=0, total=0, ins=0, upd=0, guard=0;
+  // páginas pequenas (cada chamada rápida) + retry + não aborta a carga toda se
+  // uma página falhar (mcLote é idempotente → rodar de novo completa o que faltou)
+  const LIM=25;
+  let offset=0, total=0, ins=0, upd=0, guard=0, falhas=0;
+  async function umaPagina(off){
+    for(let t=0;t<2;t++){
+      try{
+        const r=await fetch(AUTO_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'mc_lote', loteId, offset:off, limit:LIM})});
+        const j=await r.json();
+        if(!j||!j.ok) throw new Error((j&&j.error)||'falha na carga do lote');
+        return j;
+      }catch(e){ if(t===1) throw e; await new Promise(res=>setTimeout(res,1500)); }
+    }
+  }
   try{
     for(;;){
-      const r=await fetch(AUTO_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'mc_lote', loteId, offset, limit:60})});
-      const j=await r.json();
-      if(!j||!j.ok) throw new Error((j&&j.error)||'falha na carga do lote');
+      let j=null;
+      try{ j=await umaPagina(offset); }
+      catch(e){ falhas++; offset+=LIM; if(total&&offset>=total) break; if(++guard>1000) throw new Error('excesso de páginas (interrompido)'); continue; }
       total=j.total||total; ins+=j.inseridas||0; upd+=j.atualizadas||0;
       const done=Math.min(j.nextOffset||total, total);
-      const pct= total? Math.round(done/total*100):100;
-      bar.style.width=pct+'%';
-      txt.textContent=`Processando ${loteNome}… ${done}/${total} GEOCOD`;
+      bar.style.width=(total?Math.round(done/total*100):100)+'%';
+      txt.textContent=`Processando ${loteNome}… ${done}/${total} GEOCOD${falhas?` · ${falhas} pág. a refazer`:''}`;
       if(j.done) break;
       offset=j.nextOffset;
-      if(++guard>400) throw new Error('excesso de páginas (interrompido)');
+      if(++guard>1000) throw new Error('excesso de páginas (interrompido)');
     }
     bar.style.width='100%';
-    txt.textContent=`Concluído: ${total} GEOCOD (novos ${ins} · atualizados ${upd}).`;
-    toast('Lote carregado: '+total+' GEOCOD.');
+    txt.textContent=`Concluído: ${total} GEOCOD (novos ${ins} · atualizados ${upd}).`+(falhas?` ${falhas} página(s) falharam — carregue de novo p/ completar.`:'');
+    toast('Lote carregado: '+total+' GEOCOD.'+(falhas?` ${falhas} a refazer.`:''));
     await carregar();
   }catch(e){ toast('Erro: '+(e.message||e)); txt.textContent='Erro: '+(e.message||e); }
   finally{ btn.disabled=false; }
