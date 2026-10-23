@@ -660,6 +660,19 @@ var AutomacaoCastro = (function () {
     while ((m = re.exec(pm))) { d[m[1]] = m[2]; }
     return d;
   }
+  // ponto representativo (média dos vértices) do placemark, p/ raio de proximidade
+  function _mcCentroid(pm) {
+    var re = /<coordinates>([\s\S]*?)<\/coordinates>/g, m, sx = 0, sy = 0, n = 0;
+    while ((m = re.exec(pm))) {
+      var toks = String(m[1]).trim().split(/\s+/);
+      for (var i = 0; i < toks.length; i++) {
+        var p = toks[i].split(','); if (p.length < 2) continue;
+        var x = parseFloat(p[0]), y = parseFloat(p[1]);
+        if (isFinite(x) && isFinite(y)) { sx += x; sy += y; n++; }
+      }
+    }
+    return n ? { lon: sx / n, lat: sy / n } : { lon: '', lat: '' };
+  }
   function _mcWrapKml(schema, geocod, pm) {
     return '<?xml version="1.0" encoding="utf-8" ?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n' +
            '<Document id="root_doc">\n' + schema + '\n<Folder><name>MC_' + geocod + '</name>\n' +
@@ -789,7 +802,7 @@ var AutomacaoCastro = (function () {
         hectares: String(d.HECTARES || '').replace(',', '.'),
         data_inic: dIni, data_final: dFim,
         mes_ref: String(d.MES_REF || '').trim(), ano_ref: String(d.ANO_REF || '').trim(),
-        coord_x: String(d.X || '').replace(',', '.'), coord_y: String(d.Y || '').replace(',', '.'),
+        coord_x: String(d.X || '').replace(',', '.') || _mcCentroid(pm).lon, coord_y: String(d.Y || '').replace(',', '.') || _mcCentroid(pm).lat,
         regional: String(d.NUFIS || '').trim(), bioma: String(d.BIOMA_IBGE || '').trim(),
         id_semad: String(d.ID || '').trim(), lote: lote,
         kml_content: _mcWrapKml(sp.schema, geocod, pm),
@@ -850,7 +863,8 @@ var AutomacaoCastro = (function () {
       for (var i = 0; i < pms.length; i++) {
         var d = _mcData(pms[i]), g = String(d.GEOCOD_IEF || '').trim();
         if (!g) continue;
-        rowsAll.push({ codigo: g, kml: _mcWrapKml(sp.schema, g, pms[i]) });
+        var ctr = _mcCentroid(pms[i]);
+        rowsAll.push({ codigo: g, kml: _mcWrapKml(sp.schema, g, pms[i]), lon: ctr.lon, lat: ctr.lat });
       }
     }
 
