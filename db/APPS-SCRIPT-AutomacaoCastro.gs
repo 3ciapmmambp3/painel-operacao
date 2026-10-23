@@ -898,12 +898,14 @@ var AutomacaoCastro = (function () {
       var url = '';
       try { url = rich[i][0].getLinkUrl() || ''; } catch (e) {}
       if (!url) { var fm = String(fml[i][0] || ''), mm = fm.match(/"(https?:\/\/[^"]+)"/); if (mm) url = mm[1]; else if (/^https?:\/\//.test(cel(vals[i], cLink))) url = cel(vals[i], cLink); }
-      var id = _riDocId(url); if (!id) { semDoc++; continue; }
-      var texto = _riDocTexto(id); if (!texto) { semDoc++; continue; }
+      var id = _riDocId(url);
+      if (!id) { semDoc++; if (peek && amostra.length < 6) amostra.push({ codigo: cod, erro: 'sem link', url: String(url).slice(0, 80) }); continue; }
+      var texto = _riDocTexto(id);
+      if (!texto) { semDoc++; if (peek && amostra.length < 6) amostra.push({ codigo: cod, id: id, erro: 'doc sem texto (PDF imagem?)' }); continue; }
       var c = _riParseCoord(texto);
-      if (!c) { semCoord++; if (amostra.length < 4) amostra.push({ codigo: cod, achou: false }); continue; }
+      if (!c) { semCoord++; if (peek && amostra.length < 6) { var ix = texto.search(/COORD/i); amostra.push({ codigo: cod, id: id, len: texto.length, trecho: ix >= 0 ? texto.substr(Math.max(0, ix - 5), 90) : texto.substr(0, 120) }); } continue; }
       rows.push({ codigo: cod, lon: c.lon, lat: c.lat });
-      if (amostra.length < 4) amostra.push({ codigo: cod, lon: c.lon, lat: c.lat });
+      if (amostra.length < 6) amostra.push({ codigo: cod, lon: c.lon, lat: c.lat });
     }
     var upd = 0;
     if (!peek && rows.length) {
