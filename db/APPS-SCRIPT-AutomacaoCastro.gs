@@ -659,8 +659,10 @@ var AutomacaoCastro = (function () {
   // KML mestre = o .kml da pasta com mais placemarks (texto UTF-8)
   // Usa searchFiles (filtro no servidor do Drive) p/ não iterar os ~370 PDFs
   // da pasta — iterar getFiles() inteiro custava ~90s/pasta. Fallback: getFiles().
-  function _mcMasterKml(folder) {
+  function _mcMasterKml(folder, depth) {
+    if (depth == null) depth = 2;
     var it, best = null, bestN = -1;
+    // 1) .kml direto (searchFiles = filtro no servidor, não itera os ~370 PDFs)
     try { it = folder.searchFiles('title contains ".kml"'); }
     catch (e) { it = folder.getFiles(); }
     while (it.hasNext()) {
@@ -669,6 +671,27 @@ var AutomacaoCastro = (function () {
       var t = f.getBlob().getDataAsString('UTF-8');
       var n = (t.match(/<Placemark/g) || []).length;
       if (n > bestN) { bestN = n; best = t; }
+    }
+    // 2) .kmz (KML zipado) → descompacta e lê o .kml de dentro
+    if (!best) {
+      var itz = null; try { itz = folder.searchFiles('title contains ".kmz"'); } catch (e) {}
+      while (itz && itz.hasNext()) {
+        var fz = itz.next(); if (!/\.kmz$/i.test(fz.getName())) continue;
+        try {
+          var parts = Utilities.unzip(fz.getBlob());
+          for (var pi = 0; pi < parts.length; pi++) {
+            if (!/\.kml$/i.test(parts[pi].getName())) continue;
+            var tt = parts[pi].getDataAsString('UTF-8');
+            var nn = (tt.match(/<Placemark/g) || []).length;
+            if (nn > bestN) { bestN = nn; best = tt; }
+          }
+        } catch (e) {}
+      }
+    }
+    // 3) procura em subpastas (zip extraído costuma aninhar 1 nível)
+    if (!best && depth > 0) {
+      var sub = folder.getFolders();
+      while (sub.hasNext()) { var r = _mcMasterKml(sub.next(), depth - 1); if (r) return r; }
     }
     return best;
   }
