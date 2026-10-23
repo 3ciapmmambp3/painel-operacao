@@ -86,7 +86,12 @@
   .badge{display:inline-block;font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;letter-spacing:.3px;white-space:nowrap}
   .b-bal{background:var(--gold-bg);color:var(--gold-light);border:1px solid var(--gold-border)}
   .b-req{background:var(--info-bg);color:#90caf9}
-  .b-mod{background:rgba(186,104,200,.14);color:#ce93d8;border:1px solid rgba(186,104,200,.35)}
+  /* uma cor por tipo de demanda (coluna TIPO do "Todos") */
+  .b-nuden{background:rgba(102,187,106,.15);color:#81c784;border:1px solid rgba(102,187,106,.35)}
+  .b-ddu{background:rgba(255,167,38,.15);color:#ffb74d;border:1px solid rgba(255,167,38,.35)}
+  .b-ri{background:rgba(239,83,80,.15);color:#ef9a9a;border:1px solid rgba(239,83,80,.35)}
+  .b-emerg{background:rgba(255,112,67,.18);color:#ffab91;border:1px solid rgba(255,112,67,.4)}
+  .b-mc{background:rgba(38,198,218,.15);color:#4dd0e1;border:1px solid rgba(38,198,218,.35)}
   .pill{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap}
   .pill::before{content:"";width:6px;height:6px;border-radius:50%}
   .s-PENDENTE{background:var(--warn-bg,rgba(255,183,77,.13));color:#ffb74d} .s-PENDENTE::before{background:#ffb74d}
@@ -442,12 +447,20 @@ function _normMod(d, m){
     gp_responsavel: d.gp_responsavel||'', grupamento_completo: d.grupamento_completo||'',
     numero_reds: d.numero_reds||'', _raw:d };
 }
-async function _carregarModulos(inList){
+// admin vendo TODA a Cia (sem filtrar pel/grp) → carrega só pendentes dos
+// módulos (o "inbox" por prioridade); as atendidas ficam em cada módulo.
+function _adminFull(){
+  if (!isAdminTotal) return false;
+  if (document.getElementById('selbar').style.display==='none') return true;
+  return (document.getElementById('sel-pel').value||'all')==='all'
+      && (document.getElementById('sel-grp').value||'all')==='all';
+}
+async function _carregarModulos(inList, abertas){
   const out=[];
   // PostgREST devolve no máx. 1000/req → pagina cada tabela via header Range.
   await Promise.all(_MODS_TODOS.map(async m=>{
     try{
-      const base = `${API}/rest/v1/${m.table}?select=${_SEL_TODOS}&gp_responsavel=in.${encodeURIComponent(inList)}&order=data_vencimento.asc.nullslast`;
+      const base = `${API}/rest/v1/${m.table}?select=${_SEL_TODOS}&gp_responsavel=in.${encodeURIComponent(inList)}${abertas?'&data_atendimento=is.null':''}&order=data_vencimento.asc.nullslast`;
       let off=0; const PG=1000;
       for(;;){
         const r = await fetch(base, { headers: Object.assign({}, H, { 'Range-Unit':'items', 'Range':`${off}-${off+PG-1}` }) });
@@ -494,7 +507,11 @@ async function carregar(){
     const r = await fetch(url, { headers:H });
     if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
     DADOS = await r.json();
-    if (ABA_TODOS){ try{ DADOS = DADOS.concat(await _carregarModulos(inList)); }catch(e){ console.error('todos-merge',e); } }
+    const _abertas = ABA_TODOS && _adminFull();   // admin vendo TUDO: só pendentes (desempenho)
+    if (ABA_TODOS){
+      try{ DADOS = DADOS.concat(await _carregarModulos(inList, _abertas)); }catch(e){ console.error('todos-merge',e); }
+      if (_abertas){ const el=document.getElementById('scope-txt'); if(el) el.innerHTML += ` · <span style="color:var(--text-hint)">módulos: só pendentes</span>`; }
+    }
     popularAnos();
     render(); kpis();
     // Deep-link ?ficha=<id>: abre a demanda e gera a Ficha (usado pelo Cartão Programa)
@@ -516,7 +533,7 @@ function vencida(d){
   return new Date(d.prazo+'T00:00:00') < hoje;
 }
 function tipoCell(d){
-  if (d._mod) return `<span class="badge b-mod">${d._mod}</span>`;
+  if (d._mod) return `<span class="badge b-${d._modKey}">${d._mod}</span>`;
   return isBalcao(d)
   ? '<span class="badge b-bal">DENÚNCIA · BALCÃO</span>'
   : '<span class="badge b-req">REQUISIÇÃO</span>'; }
