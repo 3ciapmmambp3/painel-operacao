@@ -303,20 +303,22 @@ document.addEventListener('click', () => {
           </div>
           <div class="mfg">
             <label>P/G</label>
+            <!-- Lista padrão: ver POSTOS_PADRAO em auth.js. Valor = texto exato. -->
             <select id="new-pg">
               <option value="">Selecione</option>
-              <option>CEL PM</option><option>TC PM</option><option>MAJ PM</option>
-              <option>CAP PM</option><option>1 TEN PM</option><option>2 TEN PM</option>
-              <option>SUBTEN PM</option><option>1 SGT PM</option><option>2 SGT PM</option>
-              <option>3 SGT PM</option><option>CB PM</option><option>SD PM</option><option>ASPM</option>
+              <option>Cel PM</option><option>Ten Cel PM</option><option>Maj PM</option>
+              <option>Cap PM</option><option>1º Ten PM</option><option>2º Ten PM</option>
+              <option>Asp PM</option><option>Sub Ten PM</option>
+              <option>1º Sgt PM</option><option>2º Sgt PM</option><option>3º Sgt PM</option>
+              <option>Cb PM</option><option>Sd PM</option>
+              <option value="ASPM">ASPM — Assistente Administrativo</option>
             </select>
           </div>
           <div class="mfg">
-            <label>Quadro <span style="color:var(--text-hint);font-weight:400">(reconvocado)</span></label>
+            <label>Situação <span style="color:var(--text-hint);font-weight:400">(quadro)</span></label>
             <div class="quadro-tog" id="new-quadro-tog">
-              <button type="button" class="qbtn active" data-q="" onclick="selQuadro(this)">Ativo</button>
-              <button type="button" class="qbtn" data-q="QPR" onclick="selQuadro(this)">QPR</button>
-              <button type="button" class="qbtn" data-q="QOR" onclick="selQuadro(this)">QOR</button>
+              <button type="button" class="qbtn active" data-r="0" onclick="selQuadro(this)">Ativo</button>
+              <button type="button" class="qbtn" data-r="1" onclick="selQuadro(this)">Reconvocado</button>
             </div>
           </div>
           <div class="mfg" style="grid-column:span 2;">
@@ -1117,20 +1119,22 @@ document.addEventListener('click', () => {
         </div>
         <div class="mfg">
           <label>P/G</label>
+          <!-- Lista padrão: ver POSTOS_PADRAO em auth.js. Valor = texto exato. -->
           <select id="edit-pg">
             <option value="">Selecione</option>
-            <option>CEL PM</option><option>TC PM</option><option>MAJ PM</option>
-            <option>CAP PM</option><option>1 TEN PM</option><option>2 TEN PM</option>
-            <option>SUBTEN PM</option><option>1 SGT PM</option><option>2 SGT PM</option>
-            <option>3 SGT PM</option><option>CB PM</option><option>SD PM</option><option>ASPM</option>
+            <option>Cel PM</option><option>Ten Cel PM</option><option>Maj PM</option>
+            <option>Cap PM</option><option>1º Ten PM</option><option>2º Ten PM</option>
+            <option>Asp PM</option><option>Sub Ten PM</option>
+            <option>1º Sgt PM</option><option>2º Sgt PM</option><option>3º Sgt PM</option>
+            <option>Cb PM</option><option>Sd PM</option>
+            <option value="ASPM">ASPM — Assistente Administrativo</option>
           </select>
         </div>
         <div class="mfg">
-          <label>Quadro <span style="color:var(--text-hint);font-weight:400">(reconvocado)</span></label>
+          <label>Situação <span style="color:var(--text-hint);font-weight:400">(quadro)</span></label>
           <div class="quadro-tog" id="edit-quadro-tog">
-            <button type="button" class="qbtn active" data-q="" onclick="selQuadro(this)">Ativo</button>
-            <button type="button" class="qbtn" data-q="QPR" onclick="selQuadro(this)">QPR</button>
-            <button type="button" class="qbtn" data-q="QOR" onclick="selQuadro(this)">QOR</button>
+            <button type="button" class="qbtn active" data-r="0" onclick="selQuadro(this)">Ativo</button>
+            <button type="button" class="qbtn" data-r="1" onclick="selQuadro(this)">Reconvocado</button>
           </div>
         </div>
         <div class="mfg" style="grid-column:1/-1;">
@@ -3151,20 +3155,16 @@ function renderTabela() {
 }
 
 /* ══ ADICIONAR ══ */
-// Toggle Quadro (reconvocado): Ativo / QPR / QOR. Marca o botão clicado.
+// Toggle Situação: Ativo / Reconvocado. Marca o botão clicado.
 function selQuadro(btn){
   Array.from(btn.parentNode.children).forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
 }
-function getQuadro(togId){ const a = document.querySelector('#' + togId + ' .qbtn.active'); return a ? (a.dataset.q || '') : ''; }
-function setQuadro(togId, q){
+// true quando "Reconvocado" está ativo. O quadro (QOR/QPR) é derivado da graduação.
+function getReconv(togId){ const a = document.querySelector('#' + togId + ' .qbtn.active'); return a ? (a.dataset.r === '1') : false; }
+function setReconv(togId, reconv){
   const tog = document.getElementById(togId); if(!tog) return;
-  Array.from(tog.children).forEach(b => b.classList.toggle('active', (b.dataset.q || '') === (q || '')));
-}
-// Junta P/G + quadro (QPR/QOR) num posto só: "1 SGT PM" + "QPR" -> "1 SGT PM QPR".
-function montarPostoComQuadro(pgBase, quadro){
-  const base = normNomeMil(pgBase);
-  return quadro ? (base + ' ' + quadro).trim() : base;
+  Array.from(tog.children).forEach(b => b.classList.toggle('active', (b.dataset.r === '1') === !!reconv));
 }
 
 // Normaliza nome de militar: MAIÚSCULAS + SEM acentos (padrão da tabela militares).
@@ -3178,7 +3178,7 @@ async function adicionarUsuario() {
   const categoria = (document.getElementById('new-categoria')||{}).value || 'militar';
   const ehColab = categoria === 'colaborador';
   const npm    = document.getElementById('new-npm').value.trim();
-  const pg     = montarPostoComQuadro(document.getElementById('new-pg').value, getQuadro('new-quadro-tog'));
+  const pg     = pgMontar(document.getElementById('new-pg').value, getReconv('new-quadro-tog'));
   const nome   = normNomeMil(document.getElementById('new-nome').value);
   const guerra = normNomeMil(document.getElementById('new-guerra').value);
   const funcao = normNomeMil(document.getElementById('new-funcao').value);
@@ -3219,7 +3219,7 @@ async function adicionarUsuario() {
 
   showMsg('msg-add','ok',`✔ ${nome} cadastrado. Senha padrão: Mudar@123`);
   ['new-npm','new-nome','new-guerra'].forEach(id => { const el = document.getElementById(id); if(el) el.value=''; });
-  setQuadro('new-quadro-tog','');
+  setReconv('new-quadro-tog', false);
   await carregarUsuarios();
 }
 
@@ -3266,12 +3266,9 @@ function abrirModal(id) {
   document.getElementById('edit-id').value      = id;
   document.getElementById('edit-npm').value     = u.matricula || '';
   // Separa o quadro (QPR/QOR) do posto pra preencher o toggle + o select base.
-  const postoRaw = (u.posto_graduacao || '').trim();
-  const mQuadro = postoRaw.match(/\s(QPR|QOR)$/);
-  const quadroEd = mQuadro ? mQuadro[1] : '';
-  const pgBase = quadroEd ? postoRaw.replace(/\s(QPR|QOR)$/, '').trim() : postoRaw;
-  document.getElementById('edit-pg').value      = pgBase;
-  setQuadro('edit-quadro-tog', quadroEd);
+  const _sep = pgSeparar(u.posto_graduacao);
+  document.getElementById('edit-pg').value      = _sep.base;
+  setReconv('edit-quadro-tog', _sep.reconvocado);
   document.getElementById('edit-nome').value    = u.nome_completo || '';
   document.getElementById('edit-guerra').value  = u.nome_guerra || '';
   document.getElementById('edit-funcao').value  = u.funcao || '';
@@ -3294,7 +3291,7 @@ function fecharModal() {
 async function salvarEdicao() {
   const id      = document.getElementById('edit-id').value;
   const nome    = normNomeMil(document.getElementById('edit-nome').value);
-  const pg      = montarPostoComQuadro(document.getElementById('edit-pg').value, getQuadro('edit-quadro-tog'));
+  const pg      = pgMontar(document.getElementById('edit-pg').value, getReconv('edit-quadro-tog'));
   const guerra  = normNomeMil(document.getElementById('edit-guerra').value);
   const funcao  = normNomeMil(document.getElementById('edit-funcao').value);
   const lotacao = normNomeMil(document.getElementById('edit-lotacao').value);

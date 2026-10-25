@@ -79,6 +79,51 @@ const NIVEIS = ['operacional', 'admin_gp', 'admin_pelotao', 'admin', 'admin_gera
    a menos que haja outro admin_geral) */
 const ADMIN_GERAIS_FIXOS = ['1463223', '1384841']; // matricula_clean
 
+/* ─── Posto/Graduação — lista ÚNICA e padronizada do painel ──────────
+   Usada no cadastro de Usuários (admin) e no Efetivo (RH). O valor GRAVADO
+   é exatamente o texto abaixo (ex.: "3º Sgt PM"), que é o formato esperado
+   pelo banco (ver _posto_rank, db/106). O reconvocado ganha sufixo de quadro:
+     • Oficiais (Cel → 2º Ten PM)  →  QOR   (ex.: "Cap PM QOR")
+     • Demais praças (Asp → Sd PM) →  QPR   (ex.: "3º Sgt PM QPR")
+   ASPM = Assistente Administrativo (NÃO é militar, não é reconvocável) e
+   fica fora da lista padrão — é adicionado à parte onde fizer sentido. */
+const POSTOS_PADRAO = [
+  'Cel PM', 'Ten Cel PM', 'Maj PM', 'Cap PM', '1º Ten PM', '2º Ten PM',
+  'Asp PM', 'Sub Ten PM', '1º Sgt PM', '2º Sgt PM', '3º Sgt PM', 'Cb PM', 'Sd PM'
+];
+const _POSTOS_OFICIAIS = new Set(['Cel PM', 'Ten Cel PM', 'Maj PM', 'Cap PM', '1º Ten PM', '2º Ten PM']);
+
+/* Quadro do reconvocado conforme a graduação base: oficial → QOR, resto → QPR. */
+function pgQuadroDe(base) { return _POSTOS_OFICIAIS.has(String(base || '').trim()) ? 'QOR' : 'QPR'; }
+
+/* Separa um posto gravado em base + flag de reconvocado.
+   "3º Sgt PM QPR" → { base:'3º Sgt PM', reconvocado:true, quadro:'QPR' } */
+function pgSeparar(posto) {
+  const s = String(posto || '').trim();
+  const m = s.match(/\s+(QPR|QOR)$/i);
+  return m
+    ? { base: s.replace(/\s+(QPR|QOR)$/i, '').trim(), reconvocado: true, quadro: m[1].toUpperCase() }
+    : { base: s, reconvocado: false, quadro: '' };
+}
+
+/* Monta o posto final a partir da base + flag reconvocado (QOR/QPR automático). */
+function pgMontar(base, reconvocado) {
+  const b = String(base || '').trim();
+  if (!b) return '';
+  return reconvocado ? (b + ' ' + pgQuadroDe(b)) : b;
+}
+
+/* Preenche um <select> com as opções padrão. Opções:
+     incluirASPM  → acrescenta "ASPM — Assistente Administrativo" (valor "ASPM")
+     placeholder  → texto da 1ª opção vazia (null = sem placeholder) */
+function pgPreencherSelect(sel, { incluirASPM = false, placeholder = 'Selecione' } = {}) {
+  if (!sel) return;
+  let html = placeholder != null ? `<option value="">${placeholder}</option>` : '';
+  html += POSTOS_PADRAO.map(p => `<option value="${p}">${p}</option>`).join('');
+  if (incluirASPM) html += `<option value="ASPM">ASPM — Assistente Administrativo</option>`;
+  sel.innerHTML = html;
+}
+
 /* ─── Hash simples (SHA-256 via WebCrypto) ─────────────────────── */
 async function hashSenha(senha) {
   const enc  = new TextEncoder();
