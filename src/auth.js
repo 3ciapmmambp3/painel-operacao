@@ -124,6 +124,48 @@ function pgPreencherSelect(sel, { incluirASPM = false, placeholder = 'Selecione'
   sel.innerHTML = html;
 }
 
+/* ─── Título militar (mesmo critério do _titEf do Efetivo) ───────────
+   Deixa o texto em formato título preservando siglas (PM, GP, PEL, SRAI…).
+   Usado p/ exibir nome/posto/função sem CAIXA ALTA, igual à tela Efetivo. */
+const _TITMIL_KEEP = new Set(['PM','GP','PEL','BPM','CPE','RPM','SIAD','SRAI','DDU','TCO','TC','MG','EB','ADM','AIMA','ASPM','QPM','QOPM','QOR','QPR','PAF','FAPI','GDO','CVPE','CVPA','IMV','IF','UF','II','III','IV']);
+const _TITMIL_CONN = new Set(['de','da','do','das','dos','e']);
+function tituloMil(s) {
+  if (s == null || s === '') return s;
+  return String(s).split(/(\s+|\/|-)/).map(tok => {
+    if (/^\s+$/.test(tok) || tok === '/' || tok === '-') return tok;
+    if (/\d/.test(tok)) return tok;                 // 3, 3º, P1… mantêm
+    const up = tok.toUpperCase();
+    if (up === 'MAMB' || up === 'MAMBI') return 'MAmb';
+    if (_TITMIL_KEEP.has(up)) return up;
+    const low = tok.toLowerCase();
+    if (_TITMIL_CONN.has(low)) return low;
+    return low.charAt(0).toUpperCase() + low.slice(1);
+  }).join('');
+}
+
+/* ─── Função — lista ÚNICA (Admin › Usuários e Efetivo) ──────────────
+   O VALOR gravado continua a sigla-chave (ex.: "AUX P1"), usada pelas
+   checagens de acesso (que já comparam sem diferenciar maiúsculas). Só a
+   EXIBIÇÃO vira título (via tituloMil), pra não ficar em caixa alta. */
+const FUNCOES_PADRAO = [
+  { v: 'CMT CIA' }, { v: 'CMT PEL' }, { v: 'CMT GP' },
+  { v: 'AUX P1' }, { v: 'AUX P2' }, { v: 'AUX P3' }, { v: 'AUX P4' }, { v: 'AUX P5' },
+  { v: 'SRAI' }, { v: 'ASPM', t: 'ASPM — Assistente Administrativo' }, { v: 'OPERACIONAL' }
+];
+/* Rótulo de exibição de uma função (usa o label fixo quando houver). */
+function funcRotulo(v) {
+  const k = String(v || '').toUpperCase().trim();
+  const f = FUNCOES_PADRAO.find(x => x.v === k);
+  return f ? (f.t || tituloMil(f.v)) : tituloMil(v);
+}
+/* Preenche um <select> de Função com a lista padrão (value = sigla-chave). */
+function funcPreencherSelect(sel, { placeholder = 'Selecione' } = {}) {
+  if (!sel) return;
+  let html = placeholder != null ? `<option value="">${placeholder}</option>` : '';
+  html += FUNCOES_PADRAO.map(f => `<option value="${f.v}">${f.t || tituloMil(f.v)}</option>`).join('');
+  sel.innerHTML = html;
+}
+
 /* ─── Hash simples (SHA-256 via WebCrypto) ─────────────────────── */
 async function hashSenha(senha) {
   const enc  = new TextEncoder();
