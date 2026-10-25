@@ -152,6 +152,11 @@
     .mfg input:focus,.mfg select:focus{border-color:var(--gold);}
     .mfg input:disabled{opacity:.5;}
     .mfg select option{background:var(--bg-card);}
+    /* Toggle Situação (Ativo / Reconvocado) — quadro QOR/QPR automático */
+    .quadro-tog{display:inline-flex;border:1px solid var(--border-hover);border-radius:5px;overflow:hidden;}
+    .quadro-tog .qbtn{background:var(--bg-input);border:none;color:var(--text-muted);padding:9px 12px;font-size:12.5px;cursor:pointer;font-family:inherit;}
+    .quadro-tog .qbtn+.qbtn{border-left:1px solid var(--border-hover);}
+    .quadro-tog .qbtn.active{background:var(--gold);color:#1a1000;font-weight:800;}
 
     /* SPINNER */
     .spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite;margin-right:6px;vertical-align:middle;}
@@ -242,6 +247,13 @@
               <option>SUBTEN PM</option><option>1 SGT PM</option><option>2 SGT PM</option>
               <option>3 SGT PM</option><option>CB PM</option><option>SD PM</option>
             </select>
+          </div>
+          <div class="mfg">
+            <label>Situação <span style="color:var(--text-hint);font-weight:400">(quadro)</span></label>
+            <div class="quadro-tog" id="new-quadro-tog">
+              <button type="button" class="qbtn active" data-r="0" onclick="selQuadro(this)">Ativo</button>
+              <button type="button" class="qbtn" data-r="1" onclick="selQuadro(this)">Reconvocado</button>
+            </div>
           </div>
           <div class="mfg" style="grid-column:span 2;">
             <label>Nome Completo *</label>
@@ -591,6 +603,13 @@
             <option>SUBTEN PM</option><option>1 SGT PM</option><option>2 SGT PM</option>
             <option>3 SGT PM</option><option>CB PM</option><option>SD PM</option>
           </select>
+        </div>
+        <div class="mfg">
+          <label>Situação <span style="color:var(--text-hint);font-weight:400">(quadro)</span></label>
+          <div class="quadro-tog" id="edit-quadro-tog">
+            <button type="button" class="qbtn active" data-r="0" onclick="selQuadro(this)">Ativo</button>
+            <button type="button" class="qbtn" data-r="1" onclick="selQuadro(this)">Reconvocado</button>
+          </div>
         </div>
         <div class="mfg" style="grid-column:1/-1;">
           <label>Nome Completo *</label>
@@ -1293,10 +1312,10 @@ function renderTabela() {
 
     return `<tr>
       <td style="font-family:monospace;font-size:11px;">${_escHtml(u.matricula)||'—'}${self?' <span style="color:var(--gold);font-size:10px;">(você)</span>':''}</td>
-      <td style="font-size:11px;">${_escHtml(u.posto_graduacao)||'—'}</td>
-      <td style="font-weight:600;color:var(--text-white);">${_escHtml(u.nome_completo)||'—'}</td>
-      <td style="font-size:11px;">${_escHtml(u.nome_guerra)||'—'}</td>
-      <td style="font-size:11px;">${_escHtml(u.funcao)||'—'}</td>
+      <td style="font-size:11px;">${_escHtml(tituloMil(u.posto_graduacao))||'—'}</td>
+      <td style="font-weight:600;color:var(--text-white);">${_escHtml(tituloMil(u.nome_completo))||'—'}</td>
+      <td style="font-size:11px;">${_escHtml(tituloMil(u.nome_guerra))||'—'}</td>
+      <td style="font-size:11px;">${_escHtml(funcRotulo(u.funcao))||'—'}</td>
       <td style="font-size:11px;">${_escHtml(u.grupamento_id)||'—'}</td>
       <td>${_badgeNivel(u.nivel_acesso)}</td>
       <td>${bStatus}</td>
@@ -1305,10 +1324,15 @@ function renderTabela() {
   }).join('');
 }
 
+/* Toggle Situação: Ativo / Reconvocado (quadro QOR/QPR derivado da graduação) */
+function selQuadro(btn){ Array.from(btn.parentNode.children).forEach(b=>b.classList.remove('active')); btn.classList.add('active'); }
+function getReconv(togId){ const a=document.querySelector('#'+togId+' .qbtn.active'); return a ? (a.dataset.r==='1') : false; }
+function setReconv(togId, reconv){ const t=document.getElementById(togId); if(!t) return; Array.from(t.children).forEach(b=>b.classList.toggle('active',(b.dataset.r==='1')===!!reconv)); }
+
 /* ══ ADICIONAR ══ */
 async function adicionarUsuario() {
   const npm    = document.getElementById('new-npm').value.trim();
-  const pg     = document.getElementById('new-pg').value;
+  const pg     = pgMontar(document.getElementById('new-pg').value, getReconv('new-quadro-tog'));
   const nome   = document.getElementById('new-nome').value.trim();
   const guerra = document.getElementById('new-guerra').value.trim();
   const funcao = document.getElementById('new-funcao').value.trim();
@@ -1336,6 +1360,7 @@ async function adicionarUsuario() {
 
   showMsg('msg-add','ok',`✔ ${nome} cadastrado. Senha padrão: Mudar@123`);
   ['new-npm','new-nome','new-guerra'].forEach(id => { const el = document.getElementById(id); if(el) el.value=''; });
+  setReconv('new-quadro-tog', false);
   await carregarUsuarios();
 }
 
@@ -1367,7 +1392,7 @@ function abrirModal(id) {
   if (!u) return;
   document.getElementById('edit-id').value      = id;
   document.getElementById('edit-npm').value     = u.matricula || '';
-  document.getElementById('edit-pg').value      = u.posto_graduacao || '';
+  { const _sep = pgSeparar(u.posto_graduacao); document.getElementById('edit-pg').value = _sep.base; setReconv('edit-quadro-tog', _sep.reconvocado); }
   document.getElementById('edit-nome').value    = u.nome_completo || '';
   document.getElementById('edit-guerra').value  = u.nome_guerra || '';
   document.getElementById('edit-funcao').value  = u.funcao || '';
@@ -1389,7 +1414,7 @@ function fecharModal() {
 async function salvarEdicao() {
   const id      = document.getElementById('edit-id').value;
   const nome    = document.getElementById('edit-nome').value.trim();
-  const pg      = document.getElementById('edit-pg').value;
+  const pg      = pgMontar(document.getElementById('edit-pg').value, getReconv('edit-quadro-tog'));
   const guerra  = document.getElementById('edit-guerra').value.trim();
   const funcao  = document.getElementById('edit-funcao').value.trim();
   const lotacao = document.getElementById('edit-lotacao').value.trim();
@@ -1445,6 +1470,13 @@ window.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('user-nome-hdr').textContent = sessao.nome || sessao.matricula;
   const initials = (sessao.nome||'A').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
   document.getElementById('user-avatar').textContent = initials;
+
+  /* Padroniza P/G e Função pelas listas únicas do auth.js (igual Admin/Efetivo).
+     A lotação já é <select> com os mesmos valores canônicos do Admin. */
+  pgPreencherSelect(document.getElementById('new-pg'),  { incluirASPM: true });
+  pgPreencherSelect(document.getElementById('edit-pg'), { incluirASPM: true });
+  funcPreencherSelect(document.getElementById('new-funcao'));
+  funcPreencherSelect(document.getElementById('edit-funcao'), { placeholder: 'Selecione a Função' });
 
   /* Mostra opção Admin Geral nos selects apenas para admin_geral */
   if (sessao.nivel_acesso === 'admin_geral') {
