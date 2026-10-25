@@ -166,6 +166,80 @@ function funcPreencherSelect(sel, { placeholder = 'Selecione' } = {}) {
   sel.innerHTML = html;
 }
 
+/* ─── Lotação / Grupamento — lista ÚNICA (mesma do Admin › Usuários) ──
+   O VALOR gravado é a string canônica COM município (igual à do Admin), que
+   é a chave de escopo (grupamento_id) usada nos filtros e em
+   auth_podeVerGrupamento. O RÓTULO exibido é a forma curta
+   ("1 GP / 4 PEL / 3 Cia PM MAmb" / "4 PEL / 3 Cia PM MAmb"). */
+const GRUPAMENTOS_PADRAO = [
+  'ADM',
+  '1 PEL / 3 CIA PM MAMB / GOVERNADOR VALADARES',
+  '1 GP / 1 PEL / 3 CIA PM MAMB / GOVERNADOR VALADARES',
+  '2 GP / 1 PEL / 3 CIA PM MAMB / MANTENA',
+  '3 GP / 1 PEL / 3 CIA PM MAMB / AIMORES',
+  '4 GP / 1 PEL / 3 CIA PM MAMB / CONSELHEIRO PENA',
+  '5 GP / 1 PEL / 3 CIA PM MAMB / GUANHAES',
+  '6 GP / 1 PEL / 3 CIA PM MAMB / SANTA MARIA DO SUACUI',
+  '7 GP / 1 PEL / 3 CIA PM MAMB / SAO JOAO EVANGELISTA',
+  '2 PEL / 3 CIA PM MAMB / IPATINGA',
+  '1 GP / 2 PEL / 3 CIA PM MAMB / IPATINGA',
+  '2 GP / 2 PEL / 3 CIA PM MAMB / MARILIERIA',
+  '3 GP / 2 PEL / 3 CIA PM MAMB / PINGO D AGUA',
+  '4 GP / 2 PEL / 3 CIA PM MAMB / JOAO MOLEVADE',
+  '5 GP / 2 PEL / 3 CIA PM MAMB / BARAO DE COCAIS',
+  '6 GP / 2 PEL / 3 CIA PM MAMB / ITABIRA',
+  '3 PEL / 3 CIA PM MAMB / MANHUACU',
+  '1 GP / 3 PEL / 3 CIA PM MAMB / MANHUACU',
+  '2 GP / 3 PEL / 3 CIA PM MAMB / ALTO CAPARAO',
+  '3 GP / 3 PEL / 3 CIA PM MAMB / MUTUM',
+  '4 GP / 3 PEL / 3 CIA PM MAMB / IPANEMA',
+  '5 GP / 3 PEL / 3 CIA PM MAMB / CARATINGA',
+  '6 GP / 3 PEL / 3 CIA PM MAMB / PONTE NOVA',
+  '7 GP / 3 PEL / 3 CIA PM MAMB / RAUL SOARES',
+  '4 PEL / 3 CIA PM MAMB / TEOFILO OTONI',
+  '1 GP / 4 PEL / 3 CIA PM MAMB / TEOFILO OTONI',
+  '2 GP / 4 PEL / 3 CIA PM MAMB / AGUAS FORMOSAS',
+  '3 GP / 4 PEL / 3 CIA PM MAMB / ITAMBACURI',
+  '4 GP / 4 PEL / 3 CIA PM MAMB / MALACACHETA',
+  '5 GP / 4 PEL / 3 CIA PM MAMB / NANUQUE',
+  '6 GP / 4 PEL / 3 CIA PM MAMB / NOVO CRUZEIRO',
+  '5 PEL / 3 CIA PM MAMB / ALMENARA',
+  '1 GP / 5 PEL / 3 CIA PM MAMB / ALMENARA',
+  '2 GP / 5 PEL / 3 CIA PM MAMB / ARACUAI',
+  '3 GP / 5 PEL / 3 CIA PM MAMB / ITAOBIM',
+  '4 GP / 5 PEL / 3 CIA PM MAMB / JEQUITINHONHA',
+  '5 GP / 5 PEL / 3 CIA PM MAMB / PEDRA AZUL',
+  '6 GP / 5 PEL / 3 CIA PM MAMB / RIO DO PRADO',
+  '7 GP / 5 PEL / 3 CIA PM MAMB / SALTO DA DIVISA'
+];
+/* Rótulo curto de uma lotação: "1 GP / 4 PEL / 3 Cia PM MAmb" (sem município). */
+function grupLabelCurto(v) {
+  const s = String(v || '').trim();
+  if (s.toUpperCase() === 'ADM') return 'ADM — Administração';
+  const gp = (s.match(/(\d+)\s*GP/i) || [])[1];
+  const pel = (s.match(/(\d+)\s*PEL/i) || [])[1];
+  if (!pel) return s;
+  return (gp ? gp + ' GP / ' : '') + pel + ' PEL / 3 Cia PM MAmb';
+}
+/* Preenche um <select> de Lotação (optgroups por pelotão). value = canônico. */
+function grupPreencherSelect(sel, { placeholder = 'Selecione a Lotação' } = {}) {
+  if (!sel) return;
+  const _e = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  const adm = [], byPel = {};
+  GRUPAMENTOS_PADRAO.forEach(v => {
+    if (String(v).toUpperCase() === 'ADM') { adm.push(v); return; }
+    const pel = (String(v).match(/(\d+)\s*PEL/i) || [])[1] || '?';
+    (byPel[pel] = byPel[pel] || []).push(v);
+  });
+  const opt = v => `<option value="${_e(v)}">${_e(grupLabelCurto(v))}</option>`;
+  let html = placeholder != null ? `<option value="">${placeholder}</option>` : '';
+  if (adm.length) html += `<optgroup label="Administração">${adm.map(opt).join('')}</optgroup>`;
+  Object.keys(byPel).sort((a, b) => (+a || 99) - (+b || 99)).forEach(pel => {
+    html += `<optgroup label="${pel}º Pelotão">${byPel[pel].map(opt).join('')}</optgroup>`;
+  });
+  sel.innerHTML = html;
+}
+
 /* ─── Hash simples (SHA-256 via WebCrypto) ─────────────────────── */
 async function hashSenha(senha) {
   const enc  = new TextEncoder();
