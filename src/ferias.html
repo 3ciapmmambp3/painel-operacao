@@ -13,7 +13,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Férias — 3ª Cia PM MAmb</title>
   <link rel="stylesheet" href="styles/global.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- xlsx-js-style: fork do SheetJS 0.18 com estilos de célula (cores/mesclagens
+       do "Plano de Férias"). API compatível — import e exports existentes seguem iguais. -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <script src="auth.js"></script>
   <style>
     body{display:flex;flex-direction:column;min-height:100vh;}
@@ -310,6 +312,7 @@
               <input type="file" id="ct-imp" accept=".xlsx,.xls" style="display:none;" onchange="importarFerias(this)">
             </label>
             <button class="btn-outline" onclick="exportarControle()">⬇ Exportar Excel</button>
+            <button class="btn-outline" onclick="exportarPlanoFerias()" title="Exporta no modelo CPE (períodos × 25/15/10 dias), conforme o filtro de Pelotão/Grupamento">📋 Exportar Plano de Férias</button>
           </div>
         </div>
         <div class="ct-chips" id="ct-chips">
@@ -1242,13 +1245,25 @@ function renderControle(){
   const totalPag=Math.max(1,Math.ceil(grupos.length/CT_POR_PAG));
   if(ctPagina>totalPag) ctPagina=totalPag; if(ctPagina<1) ctPagina=1;
   const pag=grupos.slice((ctPagina-1)*CT_POR_PAG, ctPagina*CT_POR_PAG).flat();
+  // ── DESTAQUE de coincidência: militares do MESMO grupamento (fração) com
+  //    período SOBREPOSTO. Índice montado sobre todo o modo atual (ignora os
+  //    filtros de tela e os REJEITADOS), p/ o alerta ser fiel mesmo filtrando.
+  const _confIdx={};
+  _ctDoModo().forEach(rr=>{ if(rr.situacao==='REJEITADO') return; const g=String(rr.fracao||''); if(!g) return;
+    (Array.isArray(rr.parcelas)?rr.parcelas:[]).forEach(xx=>{ const i=String(xx.ini||'').slice(0,10),f=String(xx.fim||'').slice(0,10);
+      if(i&&f) (_confIdx[g]=_confIdx[g]||[]).push({id:rr.id,nome:rr.nome,pg:rr.pg,ini:i,fim:f}); }); });
+  const _confDe=(r,x)=>{ if(!x||r.situacao==='REJEITADO') return []; const g=String(r.fracao||''),i=String(x.ini||'').slice(0,10),f=String(x.fim||'').slice(0,10);
+    if(!g||!i||!f) return []; const vis={}; (_confIdx[g]||[]).forEach(o=>{ if(o.id!==r.id && !vis[o.id] && apOverlap(i,f,o.ini,o.fim)) vis[o.id]=o; }); return Object.values(vis); };
   let _seq=(ctPagina-1)*CT_POR_PAG,_lastId=null;
   tb.innerHTML=pag.map(({r,x,primeira})=>{
     const dias = x?(x.parcela==='PREMIO'?'Prêmio':x.parcela):'—';
     if(r.id!==_lastId){ _seq++; _lastId=r.id; }
-    return `<tr>
-      <td class="miut">${primeira?_seq:''}</td>
-      <td><b>${esc(r.pg||'')}</b> ${esc(r.nome||'')}<div class="miut">${esc(r.matricula||'')}</div></td>
+    const _conf=_confDe(r,x), _nc=_conf.length;
+    const _confTit = _nc ? esc('Coincidem no mesmo período (grupamento '+(r.fracao||'—')+'):\n'+_conf.map(o=>`• ${(o.pg||'').trim()} ${(o.nome||'').trim()}`.replace(/\s+/g,' ').trim()+` (${fmtBR(o.ini)}–${fmtBR(o.fim)})`).join('\n')) : '';
+    const _confBadge = _nc ? ` <span title="${_confTit}" style="display:inline-block;margin-left:6px;padding:0 7px;border-radius:9px;background:#ffb74d;color:#1a1000;font-size:10.5px;font-weight:800;vertical-align:middle;cursor:help;white-space:nowrap;">⚠ ${_nc}</span>` : '';
+    return `<tr${_nc?' style="background:rgba(255,183,77,.10);"':''}>
+      <td class="miut"${_nc?' style="border-left:3px solid #ffb74d;"':''}>${primeira?_seq:''}</td>
+      <td><b>${esc(r.pg||'')}</b> ${esc(r.nome||'')}${_confBadge}<div class="miut">${esc(r.matricula||'')}</div></td>
       <td>${esc(r.cidade||'—')}</td>
       <td class="col-ano">${esc((x&&x.exercicio)||r.exercicio||'—')}</td>
       <td>${esc(dias)}</td>
@@ -1281,6 +1296,103 @@ function exportarControle(){
   const nome=ctModo==='PREMIO'?'Ferias-Premio':'Ferias-Anuais';
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, nome.slice(0,28)+' '+anoSel);
   XLSX.writeFile(wb, nome+'_'+anoSel+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
+
+// ── EXPORTAR "PLANO DE FÉRIAS" no modelo CPE (períodos × 25/15/10 dias) ──
+// Respeita o filtro da tela Controle: 3ª Cia (sem filtro), Pelotão (ct-pel) ou
+// Grupamento (ct-gp). Coluna FRAÇÃO = grupamento (r.fracao). Só férias ANUAIS.
+// Usa xlsx-js-style p/ as cores/mesclagens iguais ao modelo.
+function exportarPlanoFerias(){
+  const periodos = (cronograma && Array.isArray(cronograma.periodos) && cronograma.periodos.length)
+      ? cronograma.periodos : (CRONO_CPE_BY_YEAR[anoSel]||[]);
+  if(!periodos.length){ flash('Sem cronograma de '+anoSel+'. Carregue o cronograma CPE antes de exportar o plano.',false); return; }
+  const v=id=>{const e=document.getElementById(id);return e?e.value:'';};
+  const fp=v('ct-pel'), fg=v('ct-gp');
+  const escopo = fg ? String(fg) : (fp ? _pelRot(fp) : '3ª Cia PM MAmb');
+  const inScope=r=>{ if((r.tipo||'ANUAL')!=='ANUAL') return false; if(r.situacao==='REJEITADO') return false;
+    if(fp && String(r.pelotao||'')!==fp) return false; if(fg && String(r.fracao||'')!==fg) return false; return true; };
+  const militares = CTRL.filter(inScope);
+  if(!militares.length){ flash('Nenhuma férias anual nesse escopo para exportar.',false); return; }
+
+  const _fmtMat=m=>{ const d=String(m||'').replace(/\D/g,''); return d.length===7?`${d.slice(0,3)}.${d.slice(3,6)}-${d.slice(6)}`:(m||''); };
+  const _milCell=r=>`${_fmtMat(r.matricula)} ${(r.pg||'').trim()} ${(r.nome||'').trim()}`.replace(/\s+/g,' ').trim();
+  const _rng=(tipo,w)=>`${tipo} dias - ${fmtBR(w.ini)} a ${fmtBR(w.fim)}`;
+  const mkSeg=(tipo,w)=>({tipo, ini:String(w.ini).slice(0,10), fim:String(w.fim).slice(0,10), range:_rng(tipo,w), rows:[]});
+  const buckets = periodos.slice().sort((a,b)=>(a.ordem||0)-(b.ordem||0)).map(p=>({
+    ordem:p.ordem, s25:p['25']?mkSeg('25',p['25']):null, s15:(p['15']||[]).map(w=>mkSeg('15',w)), s10:(p['10']||[]).map(w=>mkSeg('10',w)) }));
+  const flat={'25':[],'15':[],'10':[]};
+  buckets.forEach(b=>{ if(b.s25) flat['25'].push(b.s25); b.s15.forEach(s=>flat['15'].push(s)); b.s10.forEach(s=>flat['10'].push(s)); });
+  const _ovl=(a1,a2,b1,b2)=>{ const lo=a1>b1?a1:b1, hi=a2<b2?a2:b2; if(lo>hi) return 0; return Date.parse(hi)-Date.parse(lo)+1; };
+  // casa cada parcela (25/15/10) na janela de MAIOR sobreposição do seu tipo
+  militares.forEach(r=>{ (Array.isArray(r.parcelas)?r.parcelas:[]).forEach(x=>{
+    const tipo=String(x.parcela||''); if(!flat[tipo]) return;
+    const pi=String(x.ini||'').slice(0,10), pf=String(x.fim||'').slice(0,10); if(!pi||!pf) return;
+    let best=null,bo=0; flat[tipo].forEach(seg=>{ const o=_ovl(pi,pf,seg.ini,seg.fim); if(o>bo){bo=o;best=seg;} });
+    if(best) best.rows.push({mil:_milCell(r), frac:r.fracao||'', exerc:String(x.exercicio||r.exercicio||''), reconv:/QOR|QPR/i.test(String(r.pg||''))});
+  }); });
+
+  const COLS=13, A=[], merges=[], sty={};
+  const setS=(r,c,s)=>{ sty[r+','+c]=Object.assign({}, sty[r+','+c]||{}, s); };
+  const row=()=>{ A.push(new Array(COLS).fill('')); return A.length-1; };
+  const BORDER={top:{style:'thin',color:{rgb:'808080'}},bottom:{style:'thin',color:{rgb:'808080'}},left:{style:'thin',color:{rgb:'808080'}},right:{style:'thin',color:{rgb:'808080'}}};
+  const HBASE={font:{bold:true,color:{rgb:'FFFFFF'},sz:11},alignment:{horizontal:'center',vertical:'center',wrapText:true},border:BORDER};
+  const hf=rgb=>Object.assign({},HBASE,{fill:{patternType:'solid',fgColor:{rgb}}});
+  const GREY='999999',GREEN='38761D',BLUE='0B5394',ORANGE='B45F06';
+  const RANGE={font:{bold:true,sz:10},alignment:{horizontal:'center',vertical:'center',wrapText:true},border:BORDER,fill:{patternType:'solid',fgColor:{rgb:'F3F3F3'}}};
+  const CELL={font:{sz:10},alignment:{vertical:'center',wrapText:true},border:BORDER};
+  const CELLc=Object.assign({},CELL,{alignment:{horizontal:'center',vertical:'center'}});
+  const CELLr=Object.assign({},CELL,{font:{sz:10,bold:true,color:{rgb:'FF0000'}}});  // militar RECONVOCADO (QOR/QPR) em vermelho
+
+  // 1ª linha: NOME do escopo (Cia / Pelotão / Grupamento do filtro). 2ª linha: data/hora da extração.
+  const tr0=row(); A[tr0][0]=escopo; merges.push({s:{r:tr0,c:0},e:{r:tr0,c:COLS-1}});
+  setS(tr0,0,{font:{bold:true,sz:14},alignment:{horizontal:'center',vertical:'center'}});
+  const _ag=new Date(), _p2=n=>String(n).padStart(2,'0');
+  const _dthr=`${_p2(_ag.getDate())}/${_p2(_ag.getMonth()+1)}/${_ag.getFullYear()} ${_p2(_ag.getHours())}:${_p2(_ag.getMinutes())}`;
+  const tr1=row(); A[tr1][0]=`Plano de Férias ${anoSel} · extraído em ${_dthr}`; merges.push({s:{r:tr1,c:0},e:{r:tr1,c:COLS-1}});
+  setS(tr1,0,{font:{italic:true,sz:10,color:{rgb:'555555'}},alignment:{horizontal:'center',vertical:'center'}});
+
+  const r0=row(), r1=row();
+  A[r0][0]=escopo;       merges.push({s:{r:r0,c:0},e:{r:r1,c:0}}); setS(r0,0,hf(GREY));
+  A[r0][1]='25 DIAS';    merges.push({s:{r:r0,c:1},e:{r:r0,c:3}}); [1,2,3].forEach(c=>setS(r0,c,hf(GREEN)));
+  A[r0][4]='EXERCÍCIO';  merges.push({s:{r:r0,c:4},e:{r:r1,c:4}}); setS(r0,4,hf(GREY));
+  A[r0][5]='PERÍODO';    merges.push({s:{r:r0,c:5},e:{r:r1,c:5}}); setS(r0,5,hf(GREY));
+  A[r0][6]='15 DIAS';    merges.push({s:{r:r0,c:6},e:{r:r0,c:7}}); [6,7].forEach(c=>setS(r0,c,hf(BLUE)));
+  A[r0][8]='EXERCÍCIO';  merges.push({s:{r:r0,c:8},e:{r:r1,c:8}}); setS(r0,8,hf(GREY));
+  A[r0][9]='PERÍODO';    merges.push({s:{r:r0,c:9},e:{r:r1,c:9}}); setS(r0,9,hf(GREY));
+  A[r0][10]='10 DIAS';   merges.push({s:{r:r0,c:10},e:{r:r0,c:11}}); [10,11].forEach(c=>setS(r0,c,hf(ORANGE)));
+  A[r0][12]='EXERCÍCIO'; merges.push({s:{r:r0,c:12},e:{r:r1,c:12}}); setS(r0,12,hf(GREY));
+  A[r1][1]='DATA'; setS(r1,1,hf(GREEN)); A[r1][2]='MILITAR'; setS(r1,2,hf(GREEN)); A[r1][3]='FRAÇÃO'; setS(r1,3,hf(GREEN));
+  A[r1][6]='MILITAR'; setS(r1,6,hf(BLUE)); A[r1][7]='FRAÇÃO'; setS(r1,7,hf(BLUE));
+  A[r1][10]='MILITAR'; setS(r1,10,hf(ORANGE)); A[r1][11]='FRAÇÃO'; setS(r1,11,hf(ORANGE));
+
+  buckets.forEach(b=>{
+    const n25=b.s25?b.s25.rows.length:0;
+    const sum15=b.s15.reduce((a,s)=>a+Math.max(1,s.rows.length),0);
+    const sum10=b.s10.reduce((a,s)=>a+Math.max(1,s.rows.length),0);
+    const Hp=Math.max(n25,sum15,sum10,1), top=A.length;
+    for(let i=0;i<Hp;i++) row();
+    A[top][0]=(b.ordem!=null?b.ordem+'º':''); if(Hp>1) merges.push({s:{r:top,c:0},e:{r:top+Hp-1,c:0}});
+    for(let i=0;i<Hp;i++) setS(top+i,0,{font:{bold:true,sz:12},alignment:{horizontal:'center',vertical:'center'},border:BORDER});
+    if(b.s25){ A[top][1]=b.s25.range; if(Hp>1) merges.push({s:{r:top,c:1},e:{r:top+Hp-1,c:1}}); setS(top,1,RANGE);
+      b.s25.rows.forEach((rw,i)=>{ A[top+i][2]=rw.mil; A[top+i][3]=rw.frac; A[top+i][4]=rw.exerc; setS(top+i,2,rw.reconv?CELLr:CELL);setS(top+i,3,CELL);setS(top+i,4,CELLc); }); }
+    let cur=top; b.s15.forEach(seg=>{ const h=Math.max(1,seg.rows.length);
+      A[cur][5]=seg.range; if(h>1) merges.push({s:{r:cur,c:5},e:{r:cur+h-1,c:5}}); setS(cur,5,RANGE);
+      seg.rows.forEach((rw,i)=>{ A[cur+i][6]=rw.mil; A[cur+i][7]=rw.frac; A[cur+i][8]=rw.exerc; setS(cur+i,6,rw.reconv?CELLr:CELL);setS(cur+i,7,CELL);setS(cur+i,8,CELLc); }); cur+=h; });
+    cur=top; b.s10.forEach(seg=>{ const h=Math.max(1,seg.rows.length);
+      A[cur][9]=seg.range; if(h>1) merges.push({s:{r:cur,c:9},e:{r:cur+h-1,c:9}}); setS(cur,9,RANGE);
+      seg.rows.forEach((rw,i)=>{ A[cur+i][10]=rw.mil; A[cur+i][11]=rw.frac; A[cur+i][12]=rw.exerc; setS(cur+i,10,rw.reconv?CELLr:CELL);setS(cur+i,11,CELL);setS(cur+i,12,CELLc); }); cur+=h; });
+    for(let i=0;i<Hp;i++) for(let c=0;c<COLS;c++) if(!sty[(top+i)+','+c]) setS(top+i,c,{border:BORDER});
+    const sr=row(); merges.push({s:{r:sr,c:0},e:{r:sr,c:COLS-1}}); setS(sr,0,{fill:{patternType:'solid',fgColor:{rgb:'D9D9D9'}},border:BORDER});
+  });
+
+  const ws=XLSX.utils.aoa_to_sheet(A);
+  Object.keys(sty).forEach(k=>{ const p=k.split(','),ad=XLSX.utils.encode_cell({r:+p[0],c:+p[1]}); if(!ws[ad]) ws[ad]={t:'s',v:''}; ws[ad].s=sty[k]; });
+  ws['!merges']=merges;
+  ws['!cols']=[6,16,42,16,10,14,42,16,10,14,42,16,10].map(w=>({wch:w}));
+  ws['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:A.length-1,c:COLS-1}});
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, ('Plano '+anoSel).slice(0,28));
+  const tag = fg?('GP_'+fg):(fp?('PEL_'+fp):'3Cia');
+  XLSX.writeFile(wb, 'PlanoFerias_'+anoSel+'_'+tag.replace(/[^\w]+/g,'_')+'.xlsx');
 }
 
 // ── IMPORTADOR da planilha da P1 (abas FERIAS-ANUAIS e FERIAS-PREMIO) ──
