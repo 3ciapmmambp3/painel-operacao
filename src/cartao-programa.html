@@ -30,6 +30,20 @@
     .chips{display:flex;gap:7px;flex-wrap:wrap}
     .chip{font-size:11.5px;font-weight:700;padding:6px 12px;border-radius:20px;border:1px solid var(--border-mid);background:transparent;color:var(--text-muted);cursor:pointer}
     .chip.on{background:var(--gold-bg);border-color:var(--gold-border);color:var(--gold-light)}
+    .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+    .kpi{background:var(--bg-card);border:1px solid var(--border);border-radius:11px;padding:14px 16px;position:relative;overflow:hidden;text-align:left;font:inherit;color:inherit;cursor:pointer}
+    .kpi:hover{background:var(--bg-hover)}
+    .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--border-mid)}
+    .kpi.on{border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold-border)}
+    .kpi.tot::before{background:var(--gold)} .kpi.emit::before{background:#ffb74d} .kpi.atend::before{background:var(--info)} .kpi.concl::before{background:var(--success)}
+    .kpi .lbl{font-size:11px;color:var(--text-muted);font-weight:600;letter-spacing:.3px;text-transform:uppercase}
+    .kpi .val{font-size:26px;font-weight:800;margin-top:6px;font-variant-numeric:tabular-nums;line-height:1}
+    .kpi.tot .val{color:var(--gold-light)} .kpi.emit .val{color:#ffb74d} .kpi.atend .val{color:#90caf9} .kpi.concl .val{color:var(--success)}
+    @media(max-width:560px){.kpis{grid-template-columns:repeat(2,1fr)}}
+    .pager{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:14px}
+    .pager button{font-size:12px;font-weight:700;padding:6px 14px;border-radius:7px;border:1px solid var(--border-mid);background:var(--bg-card);color:var(--text);cursor:pointer}
+    .pager button:disabled{opacity:.4;cursor:default}
+    .pager .pinfo{font-size:12px;color:var(--text-muted)}
     table{width:100%;border-collapse:collapse;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;overflow:hidden}
     th{font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-hint);text-align:left;padding:11px 13px;border-bottom:1px solid var(--border);background:var(--bg-dark)}
     td{padding:11px 13px;font-size:12.8px;color:var(--text-white);border-bottom:1px solid var(--border)}
@@ -131,7 +145,15 @@
     </div>
   </div>
 
+  <div class="kpis" id="kpis">
+    <button type="button" class="kpi tot on" onclick="cardStatus('')"><div class="lbl">Total</div><div class="val" id="k-tot">—</div></button>
+    <button type="button" class="kpi emit" onclick="cardStatus('EMITIDO')"><div class="lbl">Emitido</div><div class="val" id="k-emit">—</div></button>
+    <button type="button" class="kpi atend" onclick="cardStatus('EM_ATENDIMENTO')"><div class="lbl">Em atendimento</div><div class="val" id="k-atend">—</div></button>
+    <button type="button" class="kpi concl" onclick="cardStatus('CONCLUIDO')"><div class="lbl">Concluído</div><div class="val" id="k-concl">—</div></button>
+  </div>
+
   <div id="lista"><div class="empty">Carregando…</div></div>
+  <div class="pager" id="pager" style="display:none"></div>
 </div>
 
 <!-- Drawer -->
@@ -206,6 +228,7 @@ if(!PODE_EMITIR){ document.getElementById('btn-novo').style.display='none'; }
 let TODOS=[], CUR=null;
 let fStatus='';
 let fMeus=false;
+let PAGINA=1; const POR_PAGINA=10;
 
 // ano selector
 (function(){ const y=new Date().getFullYear(); const sel=document.getElementById('f-ano'); for(let a=y;a>=y-3;a--){ sel.insertAdjacentHTML('beforeend',`<option value="${a}">${a}</option>`); } sel.value=y; })();
@@ -219,12 +242,12 @@ let fMeus=false;
 }catch(e){} })();
 
 document.getElementById('f-ano').addEventListener('change',carregar);
-document.getElementById('f-grup').addEventListener('change',render);
-document.getElementById('f-data').addEventListener('change',render);
-document.getElementById('f-equipe').addEventListener('input',render);
-document.querySelectorAll('#f-status .chip').forEach(c=>c.addEventListener('click',()=>{ document.querySelectorAll('#f-status .chip').forEach(x=>x.classList.remove('on')); c.classList.add('on'); fStatus=c.dataset.s; render(); }));
-document.querySelectorAll('#f-meus .chip').forEach(c=>c.addEventListener('click',()=>{ document.querySelectorAll('#f-meus .chip').forEach(x=>x.classList.remove('on')); c.classList.add('on'); fMeus=(c.dataset.m==='meus'); render(); }));
-function limparFiltros(){ document.getElementById('f-grup').value=''; document.getElementById('f-data').value=''; document.getElementById('f-equipe').value=''; fStatus=''; fMeus=false; document.querySelectorAll('#f-status .chip').forEach((x,i)=>x.classList.toggle('on',i===0)); document.querySelectorAll('#f-meus .chip').forEach((x,i)=>x.classList.toggle('on',i===0)); render(); }
+document.getElementById('f-grup').addEventListener('change',aplicarFiltros);
+document.getElementById('f-data').addEventListener('change',aplicarFiltros);
+document.getElementById('f-equipe').addEventListener('input',aplicarFiltros);
+document.querySelectorAll('#f-status .chip').forEach(c=>c.addEventListener('click',()=>{ document.querySelectorAll('#f-status .chip').forEach(x=>x.classList.remove('on')); c.classList.add('on'); fStatus=c.dataset.s; PAGINA=1; render(); }));
+document.querySelectorAll('#f-meus .chip').forEach(c=>c.addEventListener('click',()=>{ document.querySelectorAll('#f-meus .chip').forEach(x=>x.classList.remove('on')); c.classList.add('on'); fMeus=(c.dataset.m==='meus'); PAGINA=1; render(); }));
+function limparFiltros(){ document.getElementById('f-grup').value=''; document.getElementById('f-data').value=''; document.getElementById('f-equipe').value=''; fStatus=''; fMeus=false; document.querySelectorAll('#f-status .chip').forEach((x,i)=>x.classList.toggle('on',i===0)); document.querySelectorAll('#f-meus .chip').forEach((x,i)=>x.classList.toggle('on',i===0)); PAGINA=1; render(); }
 
 async function carregar(){
   const ano=document.getElementById('f-ano').value;
@@ -288,15 +311,37 @@ function _cpBadge(c){
   }
   return {cls:'b-'+c.status, txt:STLAB[c.status]||c.status};
 }
+function cardStatus(st){
+  fStatus=st;
+  document.querySelectorAll('#f-status .chip').forEach(x=>x.classList.toggle('on',(x.dataset.s||'')===st));
+  PAGINA=1; render();
+}
+function aplicarFiltros(){ PAGINA=1; render(); }
+function irPagina(p){ PAGINA=p; render(); try{ document.getElementById('lista').scrollIntoView({behavior:'smooth',block:'start'}); }catch(e){} }
 function render(){
   const grp=document.getElementById('f-grup').value, data=document.getElementById('f-data').value, eq=document.getElementById('f-equipe').value.trim().toUpperCase();
-  let lista=TODOS.filter(c=>
-    (!fMeus||_souEu(c)) && (!fStatus||c.status===fStatus) && (!grp||c.grupamento_id===grp) && (!data||String(c.data_empenho).slice(0,10)===data) && (!eq||(c.equipe||'').toUpperCase()===eq));
+  // base = todos os filtros MENOS o status → os cards mostram o total por status no escopo atual
+  const base=TODOS.filter(c=>
+    (!fMeus||_souEu(c)) && (!grp||c.grupamento_id===grp) && (!data||String(c.data_empenho).slice(0,10)===data) && (!eq||(c.equipe||'').toUpperCase()===eq));
+  // cards (clicáveis → filtram por status, igual aos chips)
+  const cnt=s=>base.filter(c=>c.status===s).length;
+  const setv=(id,v)=>{const e=document.getElementById(id); if(e) e.textContent=v;};
+  setv('k-tot',base.length); setv('k-emit',cnt('EMITIDO')); setv('k-atend',cnt('EM_ATENDIMENTO')); setv('k-concl',cnt('CONCLUIDO'));
+  const mapCard={'':'tot','EMITIDO':'emit','EM_ATENDIMENTO':'atend','CONCLUIDO':'concl'};
+  document.querySelectorAll('#kpis .kpi').forEach(k=>k.classList.remove('on'));
+  const onCard=document.querySelector('#kpis .kpi.'+(mapCard[fStatus]||'tot')); if(onCard) onCard.classList.add('on');
+  let lista=base.filter(c=>(!fStatus||c.status===fStatus));
   lista.sort((a,b)=>(b.numero_seq||0)-(a.numero_seq||0));   // mais novo (maior número) primeiro
-  if(!lista.length){ document.getElementById('lista').innerHTML='<div class="empty">Nenhum cartão encontrado.</div>'; return; }
+  const pagerEl=document.getElementById('pager');
+  if(!lista.length){ document.getElementById('lista').innerHTML='<div class="empty">Nenhum cartão encontrado.</div>'; if(pagerEl) pagerEl.style.display='none'; return; }
+  // paginação: 10 por página
+  const totPag=Math.max(1,Math.ceil(lista.length/POR_PAGINA));
+  if(PAGINA>totPag) PAGINA=totPag; if(PAGINA<1) PAGINA=1;
+  const ini=(PAGINA-1)*POR_PAGINA;
+  const pagina=lista.slice(ini,ini+POR_PAGINA);
   document.getElementById('lista').innerHTML=`<table><thead><tr>
     <th>Nº</th><th>Data</th><th>Turno</th><th>Eq.</th><th>Grupamento</th><th>Comandante</th><th>Dem.</th><th>Status</th></tr></thead><tbody>${
-    lista.map(c=>{const nd=(c.demandas||[]).length; const nr=Object.keys(c.respostas||{}).length; const bd=_cpBadge(c); const resumo=_cpResumoHTML(c);
+    pagina.map(c=>{const nd=(c.demandas||[]).length; const nr=Object.keys(c.respostas||{}).length; const bd=_cpBadge(c); const resumo=_cpResumoHTML(c);
       const stCell = bd.hide
         ? `<div style="font-size:11px;line-height:1.45">${resumo||'—'}</div>`
         : `<span class="badge ${bd.cls}"${bd.title?` title="${_esc(bd.title)}"`:''}>${bd.txt}</span>${(c.status==='EM_ATENDIMENTO'&&resumo)?`<div style="font-size:10.5px;margin-top:4px;line-height:1.4">${resumo}</div>`:''}`;
@@ -306,6 +351,15 @@ function render(){
       <td data-label="Comandante">${_esc((c.comandante||'—').split(' - ').slice(2).join(' - ')||c.comandante||'—')}</td>
       <td data-label="Dem.">${nr}/${nd}</td><td data-label="Status">${stCell}</td></tr>`;
     }).join('')}</tbody></table>`;
+  if(pagerEl){
+    if(lista.length<=POR_PAGINA){ pagerEl.style.display='none'; pagerEl.innerHTML=''; }
+    else{
+      pagerEl.style.display='flex';
+      pagerEl.innerHTML=`<button onclick="irPagina(${PAGINA-1})" ${PAGINA<=1?'disabled':''}>← Anterior</button>`
+        +`<span class="pinfo">Página ${PAGINA} de ${totPag} · ${lista.length} cartões</span>`
+        +`<button onclick="irPagina(${PAGINA+1})" ${PAGINA>=totPag?'disabled':''}>Próxima →</button>`;
+    }
+  }
 }
 
 /* ── Drawer ── */
