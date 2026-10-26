@@ -4748,6 +4748,7 @@ async function marcarDemandasAtendidas(payload, situMap){
     const H = { apikey: SB_AUTH_KEY, Authorization: `Bearer ${SB_AUTH_KEY}`, 'Content-Type': 'application/json' };
     const sess = (typeof getSessaoAtual === 'function') ? (getSessaoAtual() || {}) : {};
     if (!sess.token) return; // sem sessão válida: mesmo comportamento de hoje (best-effort, não impede o relatório)
+    const falhasBaixa = [];   // códigos que o RPC de baixa não encontrou — p/ AVISAR o operador (não é mais silencioso)
     // Equipe e viatura vêm do Bloco 1 do relatório (mesmo p/ todas as demandas
     // atendidas neste relatório) — espelhadas na demanda p/ sair no PDF.
     const b1 = payload.bloco1 || {};
@@ -4808,8 +4809,11 @@ async function marcarDemandasAtendidas(payload, situMap){
             atendido_por_matricula: sess.matricula || null,
             atendido_por_nome: atendNomeCtrl
           };
-          try { await fetch(`${SB_AUTH_URL}/rest/v1/rpc/${rpc}`, { method:'POST', headers:H, body: JSON.stringify({ p_dados }) }); }
-          catch(err){ console.warn('[baixa '+catId+'] falha em', codigo, err); }
+          try {
+            const _rb = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/${rpc}`, { method:'POST', headers:H, body: JSON.stringify({ p_dados }) });
+            if (!_rb.ok){ falhasBaixa.push((catLabel||catId)+' '+codigo); console.warn('[baixa '+catId+'] não baixou', codigo, _rb.status); }
+          }
+          catch(err){ falhasBaixa.push((catLabel||catId)+' '+codigo); console.warn('[baixa '+catId+'] falha em', codigo, err); }
           // Espelho na planilha (FTP/Emergência): escreve o atendimento de volta
           // na aba via Web App AutomaçãoCastro. Best-effort, não bloqueia a baixa.
           if (fonteKey && typeof AUTOMACAO_CASTRO_URL!=='undefined' && AUTOMACAO_CASTRO_URL){
@@ -4827,6 +4831,10 @@ async function marcarDemandasAtendidas(payload, situMap){
     await baixarControle('ftp', 'ri_baixar', 'RI');
     await baixarControle('emergencia', 'emergencia_baixar', 'EMERGENCIA');
     await baixarControle('mc', 'mc_baixar', 'MC');
+    if (falhasBaixa.length){
+      console.warn('[baixa] não baixaram:', falhasBaixa);
+      alert('⚠ Atenção: estas demandas foram marcadas como Finalizada mas NÃO baixaram automaticamente (confira o número no Controle de Demandas):\n\n• ' + falhasBaixa.join('\n• '));
+    }
   } catch(e){ console.warn('[baixa] marcarDemandasAtendidas', e); }
 }
 
