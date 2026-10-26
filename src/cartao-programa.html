@@ -30,15 +30,17 @@
     .chips{display:flex;gap:7px;flex-wrap:wrap}
     .chip{font-size:11.5px;font-weight:700;padding:6px 12px;border-radius:20px;border:1px solid var(--border-mid);background:transparent;color:var(--text-muted);cursor:pointer}
     .chip.on{background:var(--gold-bg);border-color:var(--gold-border);color:var(--gold-light)}
-    .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+    .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}
+    @media(max-width:1000px){.kpis{grid-template-columns:repeat(3,1fr)}}
     .kpi{background:var(--bg-card);border:1px solid var(--border);border-radius:11px;padding:14px 16px;position:relative;overflow:hidden;text-align:left;font:inherit;color:inherit;cursor:pointer}
     .kpi:hover{background:var(--bg-hover)}
     .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--border-mid)}
     .kpi.on{border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold-border)}
-    .kpi.tot::before{background:var(--gold)} .kpi.emit::before{background:#ffb74d} .kpi.atend::before{background:var(--info)} .kpi.concl::before{background:var(--success)}
+    .kpi.tot::before{background:var(--gold)} .kpi.emit::before{background:#ffb74d} .kpi.atend::before{background:var(--info)} .kpi.concl::before{background:var(--success)} .kpi.venc::before{background:var(--danger)}
     .kpi .lbl{font-size:11px;color:var(--text-muted);font-weight:600;letter-spacing:.3px;text-transform:uppercase}
     .kpi .val{font-size:26px;font-weight:800;margin-top:6px;font-variant-numeric:tabular-nums;line-height:1}
-    .kpi.tot .val{color:var(--gold-light)} .kpi.emit .val{color:#ffb74d} .kpi.atend .val{color:#90caf9} .kpi.concl .val{color:var(--success)}
+    .kpi .sub{font-size:10px;color:var(--text-hint);margin-top:4px}
+    .kpi.tot .val{color:var(--gold-light)} .kpi.emit .val{color:#ffb74d} .kpi.atend .val{color:#90caf9} .kpi.concl .val{color:var(--success)} .kpi.venc .val{color:#ff8a80}
     @media(max-width:560px){.kpis{grid-template-columns:repeat(2,1fr)}}
     .pager{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:14px}
     .pager button{font-size:12px;font-weight:700;padding:6px 14px;border-radius:7px;border:1px solid var(--border-mid);background:var(--bg-card);color:var(--text);cursor:pointer}
@@ -150,6 +152,7 @@
     <button type="button" class="kpi emit" onclick="cardStatus('EMITIDO')"><div class="lbl">Emitido</div><div class="val" id="k-emit">—</div></button>
     <button type="button" class="kpi atend" onclick="cardStatus('EM_ATENDIMENTO')"><div class="lbl">Em atendimento</div><div class="val" id="k-atend">—</div></button>
     <button type="button" class="kpi concl" onclick="cardStatus('CONCLUIDO')"><div class="lbl">Concluído</div><div class="val" id="k-concl">—</div></button>
+    <button type="button" class="kpi venc" onclick="cardStatus('VENCIDO')" title="Emitidos com data vencida: sem relatório lançado (⏳ relatório pendente) ou com relatório mas sem demanda atendida (⛔ não atendido)"><div class="lbl">Vencidos</div><div class="val" id="k-venc">—</div><div class="sub">⏳ pend. + ⛔ não atend.</div></button>
   </div>
 
   <div id="lista"><div class="empty">Carregando…</div></div>
@@ -326,11 +329,11 @@ function render(){
   // cards (clicáveis → filtram por status, igual aos chips)
   const cnt=s=>base.filter(c=>c.status===s).length;
   const setv=(id,v)=>{const e=document.getElementById(id); if(e) e.textContent=v;};
-  setv('k-tot',base.length); setv('k-emit',cnt('EMITIDO')); setv('k-atend',cnt('EM_ATENDIMENTO')); setv('k-concl',cnt('CONCLUIDO'));
-  const mapCard={'':'tot','EMITIDO':'emit','EM_ATENDIMENTO':'atend','CONCLUIDO':'concl'};
+  setv('k-tot',base.length); setv('k-emit',cnt('EMITIDO')); setv('k-atend',cnt('EM_ATENDIMENTO')); setv('k-concl',cnt('CONCLUIDO')); setv('k-venc',base.filter(_cpVencido).length);
+  const mapCard={'':'tot','EMITIDO':'emit','EM_ATENDIMENTO':'atend','CONCLUIDO':'concl','VENCIDO':'venc'};
   document.querySelectorAll('#kpis .kpi').forEach(k=>k.classList.remove('on'));
   const onCard=document.querySelector('#kpis .kpi.'+(mapCard[fStatus]||'tot')); if(onCard) onCard.classList.add('on');
-  let lista=base.filter(c=>(!fStatus||c.status===fStatus));
+  let lista=base.filter(c=> fStatus==='VENCIDO' ? _cpVencido(c) : (!fStatus||c.status===fStatus));
   lista.sort((a,b)=>(b.numero_seq||0)-(a.numero_seq||0));   // mais novo (maior número) primeiro
   const pagerEl=document.getElementById('pager');
   if(!lista.length){ document.getElementById('lista').innerHTML='<div class="empty">Nenhum cartão encontrado.</div>'; if(pagerEl) pagerEl.style.display='none'; return; }
