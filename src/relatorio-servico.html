@@ -2091,6 +2091,10 @@ async function fetchReferenceData(){
     // Rascunho não enviado tem prioridade sobre o prefill do TTA (não sobrepõe).
     const _restaurou = (typeof window.__rsRestaurarRascunho === 'function') && window.__rsRestaurarRascunho();
     if (!_restaurou) preencherEquipeDoTTA(_params.get('chamada') || '');
+    // ...MAS o rascunho pode ter sido salvo ANTES de a viatura ser trocada no TTA
+    // (ex.: 33452 → 28145). Como o prefill não roda com rascunho, a viatura antiga
+    // ficaria no relatório. Reconcilia SÓ a viatura com o TTA ao vivo e avisa.
+    else reconciliarViaturaComTTA(_params.get('chamada') || '');
     renderGrid();   // reflete o estado dos quesitos (ex.: card Produtividade sem indicadores ativos)
   }catch(err){
     console.error('Erro ao buscar dados de referência da planilha:', err);
@@ -2258,6 +2262,44 @@ function mostrarAvisoTTA(html){
     if (form && form.parentNode) form.parentNode.insertBefore(b, form);
   }
   b.innerHTML='🎯 '+html;
+}
+
+// Reconcilia SOMENTE a viatura principal com a do TTA ao vivo. Chamada quando um
+// RASCUNHO foi restaurado: o prefill do TTA não roda nesse caso, então se a viatura
+// foi TROCADA no TTA depois de o rascunho ter sido salvo (ex.: 33452 → 28145), o
+// relatório restauraria a viatura ANTIGA. Aqui, se a viatura do relatório difere da
+// viatura ATUAL da equipe no TTA, atualiza o campo e avisa (re-puxando o hodômetro
+// da nova ficha). Best-effort e restrito à viatura — não mexe no resto do rascunho.
+async function reconciliarViaturaComTTA(chamadaId){
+  try{
+    const S = (typeof getSessaoAtual === 'function') ? getSessaoAtual() : null;
+    if (!S || !S.token || typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
+    const H = { apikey: SB_AUTH_KEY, Authorization: `Bearer ${SB_AUTH_KEY}`, 'Content-Type': 'application/json' };
+    const rpc  = chamadaId ? 'tta_chamada_por_id' : 'tta_chamada_do_militar_hoje';
+    const body = chamadaId ? { p_token: S.token, p_id: chamadaId } : { p_token: S.token };
+    const r = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/${rpc}`, { method:'POST', headers:H, body: JSON.stringify(body) });
+    if (!r.ok) return;
+    const chamada = await r.json();
+    if (!chamada || !chamada.id) return;
+    const equipes = Array.isArray(chamada.equipes) ? chamada.equipes : [];
+    if (!equipes.length) return;   // TTA antigo não auto-preenche viatura → nada a reconciliar
+    const soDigitos = s => (s||'').replace(/\D/g,'');
+    const meu = soDigitos(S.matricula || '');
+    const naEquipe = eq => [eq.comandante&&eq.comandante.matricula, eq.motorista&&eq.motorista.matricula]
+      .concat((eq.patrulheiros||[]).map(p=>p.matricula)).filter(Boolean).map(soDigitos).includes(meu);
+    const minha = equipes.find(naEquipe);
+    if (!minha || minha.sem_viatura) return;
+    const novo = (minha.prefixo_viatura || '').trim();
+    if (!novo) return;
+    const recNode = (typeof getOrCreatePanelNode === 'function') ? getOrCreatePanelNode('recursos') : panelCache['recursos'];
+    const vp = recNode && recNode.querySelector('[data-field="viaturaPrincipal"]');
+    if (!vp) return;
+    const atualPref = prefixoViatura(vp.value);
+    if (prefixoViatura(novo) === atualPref) return;   // já está igual → nada a fazer
+    vp.value = viaturaLabelCompleto(novo);
+    vp.dispatchEvent(new Event('change', { bubbles: true }));   // re-puxa o hodômetro da ficha nova
+    mostrarAvisoTTA('⚠ A viatura deste serviço foi <b>alterada no TTA</b>'+(atualPref?(' (de '+atualPref+')'):'')+' para <b>'+prefixoViatura(novo)+'</b>. Atualizamos em "Recursos Empregados"; confira o hodômetro da nova ficha.');
+  }catch(e){ console.warn('[TTA] reconciliação de viatura não aplicada:', e); }
 }
 
 document.addEventListener('change', (e) => {
