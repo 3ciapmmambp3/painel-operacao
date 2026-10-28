@@ -39,6 +39,7 @@ function emergenciaSyncAgora()  { return AutomacaoCastro.run('EMERGENCIA'); }
 function mcSyncAgora()          { return AutomacaoCastro.runMC(); }   // reconcilia aba MC → Supabase + casa PDF
 function sincronizarTudo()      { ['NUDEN','DDU','RI','EMERGENCIA'].forEach(function(k){ AutomacaoCastro.run(k); }); AutomacaoCastro.runMC(); }
 function instalarGatilhoNuden() { return AutomacaoCastro.instalarGatilho(); }
+function nudenCoordAgora()      { return AutomacaoCastro.nudenCoordLoop(); }   // extrai lat/long do PDF p/ coord_x/coord_y (OCR)
 
 // ─── WEB APP (lançamento manual / espelho da baixa, chamado pelo painel) ─
 function doPost(e)             { return AutomacaoCastro.doPost(e); }
@@ -502,6 +503,7 @@ var AutomacaoCastro = (function () {
       if (p.action === 'mc_kml_backfill')  return jsonOut(mcKmlBackfill(p));
       if (p.action === 'mc_lote_geocods')  return jsonOut(mcLoteGeocods(p));
       if (p.action === 'ri_coord_backfill') return jsonOut(riCoordBackfill(p));
+      if (p.action === 'nuden_coord_backfill') return jsonOut(nudenCoordBackfill(p));
       return jsonOut({ ok: false, error: 'ação desconhecida: ' + p.action });
     } catch (err2) {
       return jsonOut({ ok: false, error: String(err2 && err2.message || err2) });
@@ -1078,6 +1080,80 @@ var AutomacaoCastro = (function () {
     return { ok: true, total: nTotal, start: start, lidas: nRows, comCoord: rows.length, atualizadas: upd,
              semDoc: semDoc, semCoord: semCoord, nextStart: start + nRows, fim: (start + nRows >= nTotal), amostra: amostra };
   }
+  // ── NUDEN: coordenada de DENTRO do PDF da denúncia ───────────────────
+  // O PDF do NUDEN traz "Informações Geográficas / Latitude e Longitude:
+  // -18.66613936,-41.76145973" (latitude primeiro, longitude depois). PDF não
+  // entrega texto direto no Apps Script → converte via OCR (Drive API cria um
+  // Google Doc temporário), lê o texto, parseia o par e apaga o Doc. Grava em
+  // coord_x/coord_y via nuden_set_coord (db/163). Idempotente e resumível.
+  //   PRÉ-REQUISITO: ativar o serviço avançado "Drive API" (Serviços +).
+  //   Rodar: nudenCoordAgora()  (ou peek no doPost p/ validar o regex 1º).
+  function _nudenParseCoord(txt) {
+    var t = String(txt || '');
+    // alvo explícito do PDF: "Latitude e Longitude: <lat> , <lon>" (decimais)
+    var m = t.match(/Latitude\s*e\s*Longitude\s*[:\-]?\s*(-?\d{1,3}[.,]\d{3,})\s*[,;\s]\s*(-?\d{1,3}[.,]\d{3,})/i);
+    if (m) { var la = parseFloat(m[1].replace(',', '.')), lo = parseFloat(m[2].replace(',', '.')); if (_coordOk(la, lo)) return { lat: la, lon: lo }; }
+    var c = _riParseCoord(t); return (c && _coordOk(c.lat, c.lon)) ? c : null;   // fallback genérico (DMS/decimal)
+  }
+  function _pdfTextoOCR(fileId) {
+    if (typeof Drive === 'undefined') throw new Error('Ative o serviço avançado "Drive API" (menu Serviços +) para o OCR do PDF.');
+    var doc = null, texto = '';
+    try {
+      doc = Drive.Files.copy({ title: 'tmp_ocr_nuden', mimeType: 'application/vnd.google-apps.document' }, fileId, { ocr: true, ocrLanguage: 'pt' });
+      texto = DocumentApp.openById(doc.id).getBody().getText();
+    } catch (e) { texto = ''; }
+    finally { if (doc && doc.id) { try { Drive.Files.remove(doc.id); } catch (e2) {} } }
+    return texto;
+  }
+  // processa 1 página das demandas SEM coordenada (coord_y nulo). Resumível:
+  // avança o offset só pelas que NÃO preencheu (as preenchidas saem do conjunto).
+  function nudenCoordBackfill(p) {
+    var start = parseInt(p && p.start, 10) || 0;
+    var limit = parseInt(p && p.limit, 10) || 12;   // OCR é lento → lote pequeno
+    var peek  = !!(p && p.peek);
+    var url = COMUM.SUPABASE_URL + '/rest/v1/nuden_demandas?select=' + encodeURIComponent('codigo,anexos')
+            + '&coord_y=is.null&order=codigo.asc&offset=' + start + '&limit=' + limit;
+    var res = UrlFetchApp.fetch(url, { method: 'get', muteHttpExceptions: true,
+      headers: { apikey: COMUM.SUPABASE_ANON, Authorization: 'Bearer ' + COMUM.SUPABASE_ANON } });
+    if (res.getResponseCode() >= 300) return { ok: false, erro: 'Supabase ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 200) };
+    var lista = []; try { lista = JSON.parse(res.getContentText()) || []; } catch (e) {}
+    var rows = [], amostra = [], semDoc = 0, semCoord = 0;
+    for (var i = 0; i < lista.length; i++) {
+      var cod = String(lista[i].codigo || '').trim(); if (!cod) continue;
+      var anx = lista[i].anexos || [], link = '', fid = '';
+      for (var a = 0; a < anx.length; a++) {
+        if (!anx[a] || anx[a].tipo === 'pasta') continue;
+        link = anx[a].web_view_link || anx[a].link || ''; fid = anx[a].id || _riDocId(link);
+        if (fid) break;
+      }
+      if (!fid) { semDoc++; if (peek && amostra.length < 6) amostra.push({ codigo: cod, erro: 'sem PDF' }); continue; }
+      var texto = _pdfTextoOCR(fid);
+      if (!texto) { semDoc++; if (peek && amostra.length < 6) amostra.push({ codigo: cod, id: fid, erro: 'OCR vazio (PDF imagem?)' }); continue; }
+      var c = _nudenParseCoord(texto);
+      if (!c) { semCoord++; if (peek && amostra.length < 6) { var ix = texto.search(/Latitude/i); amostra.push({ codigo: cod, id: fid, len: texto.length, trecho: ix >= 0 ? texto.substr(Math.max(0, ix - 5), 100) : texto.substr(0, 120) }); } continue; }
+      rows.push({ codigo: cod, lon: c.lon, lat: c.lat });
+      if (amostra.length < 6) amostra.push({ codigo: cod, lon: c.lon, lat: c.lat });
+    }
+    var upd = 0;
+    if (!peek && rows.length) { var rr = enviarRpc('nuden_set_coord', { linhas: rows }); upd = (typeof rr === 'number') ? rr : (rr && rr.length ? (typeof rr[0] === 'number' ? rr[0] : 0) : 0); }
+    var avanco = peek ? lista.length : (lista.length - rows.length);   // preenchidas saem do conjunto is.null
+    return { ok: true, pagina: lista.length, start: start, comCoord: rows.length, atualizadas: upd,
+             semDoc: semDoc, semCoord: semCoord, nextStart: start + avanco, fim: (lista.length < limit), amostra: amostra };
+  }
+  // roda páginas em sequência até acabar ou bater ~4,5 min (limite do Apps Script).
+  function nudenCoordLoop() {
+    var t0 = Date.now(), start = 0, tot = { comCoord: 0, atualizadas: 0, semDoc: 0, semCoord: 0, paginas: 0, fim: true };
+    for (;;) {
+      var r = nudenCoordBackfill({ start: start, limit: 12 });
+      if (!r.ok) return r;
+      tot.comCoord += r.comCoord; tot.atualizadas += r.atualizadas; tot.semDoc += r.semDoc; tot.semCoord += r.semCoord; tot.paginas++;
+      start = r.nextStart;
+      if (r.fim) break;
+      if (Date.now() - t0 > 4.5 * 60 * 1000) { tot.fim = false; tot.pararEm = start; break; }
+    }
+    Logger.log('[NUDEN coord] ' + JSON.stringify(tot));
+    return Object.assign({ ok: true }, tot);
+  }
   function mcKmlBackfill(p) {
     var ids = p.folderIds;
     if (typeof ids === 'string') { try { ids = JSON.parse(ids); } catch (e) { ids = ids ? [ids] : []; } }
@@ -1156,5 +1232,6 @@ var AutomacaoCastro = (function () {
   return { run: run, runMC: runMC, mcLote: mcLote, mcListarLotes: mcListarLotes,
            mcKmlBackfill: mcKmlBackfill,
            riCoordBackfill: riCoordBackfill,
+           nudenCoordBackfill: nudenCoordBackfill, nudenCoordLoop: nudenCoordLoop,
            instalarGatilho: instalarGatilho, doGet: doGet, doPost: doPost };
 })();
