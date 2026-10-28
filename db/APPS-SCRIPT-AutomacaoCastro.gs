@@ -624,10 +624,31 @@ var AutomacaoCastro = (function () {
   // ═══════════════════════════════════════════════════════════════════════
 
   // acentos → letra base (p/ casar MUNICIPIO entre KML/planilha e GRUPOS)
+  // Já remove espaços, hífens e pontuação — então "SEM-PEIXE"/"SEM PEIXE" e
+  // "ABRE-CAMPO"/"ABRE CAMPO" JÁ casam sem precisar de alias (viram SEMPEIXE /
+  // ABRECAMPO). Só grafias com LETRA diferente ou palavra a mais/menos precisam
+  // de alias abaixo.
   function normMuni(s) {
     return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '')
       .toUpperCase().replace(/[^A-Z0-9]/g, '');
   }
+
+  // Grafias que o órgão externo (SEMAD/empresa) manda e que NÃO casam com a
+  // grafia oficial da aba GRUPOS — mapeadas p/ a grafia do GRUPOS, pra puxar o
+  // grupamento sem corrigir à mão a cada lote novo. Chave/valor são normalizados
+  // com normMuni. Caso novo? É só acrescentar ['COMO VEM NO ARQUIVO','COMO ESTÁ NO GRUPOS'].
+  var _MUNI_ALIAS_PARES = [
+    ['FELIZBURGO',            'FELISBURGO'],          // órgão troca S por Z
+    ['ITABIRINHA DE MANTENA', 'ITABIRINHA']           // nome antigo do município
+  ];
+  var MUNI_ALIAS = {};
+  for (var _ia = 0; _ia < _MUNI_ALIAS_PARES.length; _ia++) {
+    MUNI_ALIAS[normMuni(_MUNI_ALIAS_PARES[_ia][0])] = normMuni(_MUNI_ALIAS_PARES[_ia][1]);
+  }
+  // chave de município canônica (aplica o alias). Use no lugar de normMuni() ao
+  // buscar no mapa de GRUPOS.
+  function chaveMuni(s) { var k = normMuni(s); return MUNI_ALIAS[k] || k; }
+
   function _dt(isoStr) { var p = String(isoStr).slice(0, 10).split('-'); return new Date(+p[0], (+p[1]) - 1, +p[2]); }
 
   // lê a aba GRUPOS → { MUNICIPIOnorm: { gp, pel } }
@@ -890,7 +911,7 @@ var AutomacaoCastro = (function () {
       var pm = slice[i], d = _mcData(pm);
       var geocod = String(d.GEOCOD_IEF || '').trim(); if (!geocod) continue;
       var municipio = String(d.MUNICIPIO || '').trim();
-      var g = grupos[normMuni(municipio)] || { gp: '', pel: '' };
+      var g = grupos[chaveMuni(municipio)] || { gp: '', pel: '' };
       var pdf = pdfIdx[geocod] || null;
       var dFim = dataVal(d.DATA_FINAL), dIni = dataVal(d.DATA_INIC);
 
