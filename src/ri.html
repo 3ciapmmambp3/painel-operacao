@@ -606,16 +606,18 @@ function gestaoHtml(d){
   return `<div class="sec-t">Gestão · ${GERIR_LABEL}</div>`+
     (inativa
       ? `<div class="rs" style="background:var(--danger-bg);border-color:rgba(239,83,80,.4);color:#ef9a9a">
-           <b>INATIVADA</b> (fora das listas)${d.motivo_inativacao?` — ${d.motivo_inativacao}`:''}
-           <button class="anxbtn" style="margin-left:8px" onclick="reativarDemanda()">Reativar</button></div>`
+           <b>INATIVADA</b> — fora das listas da equipe (não aparece para atendimento).${d.motivo_inativacao?`<br><span style="color:#ffcdd2">Motivo: ${d.motivo_inativacao}</span>`:''}${d.inativado_por_nome?`<br><span style="font-size:11px;opacity:.85">Inativada por ${d.inativado_por_nome}${d.inativado_em?` em ${fmtData(d.inativado_em)}`:''}</span>`:''}
+           <div style="margin-top:8px"><button class="anxbtn" onclick="reativarDemanda()">Reativar demanda</button></div></div>`
       : `<div class="rs">
            <div style="margin-bottom:8px">Corrigir <b>grupamento responsável</b> (p/ escopar correto):</div>
            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
              <select id="ger-grp-sel" class="yearsel" style="flex:1;min-width:220px">${gestaoGrpOptions(d.gp_responsavel)}</select>
              <button class="anxbtn" onclick="salvarGrupamento()">Salvar</button>
            </div>
-           <div style="margin-top:12px">
-             <button class="anxbtn" style="background:var(--danger-bg);border-color:rgba(239,83,80,.4);color:#ef9a9a" onclick="excluirFora()">Excluir (não é da 3ª Cia)</button>
+           <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-mid)">
+             <div style="margin-bottom:6px">Inativar demanda <b>(tira da fila da equipe)</b> — sai das listas e dos indicadores; não aparece para atendimento. Dá pra reativar depois.</div>
+             <textarea id="ger-motivo" rows="2" placeholder="Motivo / observações (ex.: aguardando orientação, duplicada, não é da 3ª Cia…)" style="width:100%;resize:vertical;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:8px 10px;color:var(--text-white);font-family:inherit;font-size:13px;outline:none"></textarea>
+             <div style="margin-top:8px"><button class="anxbtn" style="background:var(--danger-bg);border-color:rgba(239,83,80,.4);color:#ef9a9a" onclick="inativarDemanda()">Inativar demanda</button></div>
            </div>
          </div>`);
 }
@@ -634,12 +636,12 @@ async function salvarGrupamento(){
     render(); abrir(atual); toast('Grupamento atualizado.'); }
   catch(e){ toast('Erro: '+e.message); }
 }
-async function excluirFora(){
-  const motivo = prompt('Motivo (ex.: não pertence à 3ª Cia):','Não pertence à 3ª Cia');
-  if(motivo===null) return;
-  try{ await _patchAtual({ ativo:false, motivo_inativacao:(motivo.trim()||'Não pertence à 3ª Cia'),
+async function inativarDemanda(){
+  const el = document.getElementById('ger-motivo');
+  const motivo = (el && el.value.trim()) || '';
+  try{ await _patchAtual({ ativo:false, motivo_inativacao:(motivo||null),
         inativado_por_matricula:(S&&S.matricula)||null, inativado_por_nome:MILITAR||null, inativado_em:new Date().toISOString() });
-    render(); kpis(); abrir(atual); toast('Demanda inativada (saiu das listas).'); }
+    render(); kpis(); abrir(atual); toast('Demanda inativada (saiu das listas da equipe).'); }
   catch(e){ toast('Erro: '+e.message); }
 }
 async function reativarDemanda(){
