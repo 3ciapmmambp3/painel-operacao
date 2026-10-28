@@ -175,6 +175,7 @@
     <select id="ano" class="yearsel" onchange="render()"><option value="all">Todos os anos</option></select>
     <span id="ger-tools" style="display:none;gap:8px;margin-left:auto">
       <button id="ger-semgp" class="gerbtn" onclick="toggleGer('sem-gp')">Sem grupamento</button>
+      <button id="ger-reproc" class="gerbtn" onclick="reprocessarGrupamentos()" title="Preenche o grupamento das demandas que ficaram SEM grupamento, casando o município (reconhece grafias como FELIZBURGO/FELISBURGO, ITABIRINHA DE MANTENA/ITABIRINHA, SEM-PEIXE/SEM PEIXE, ABRE-CAMPO/ABRE CAMPO). Não altera grupamento já definido à mão.">↻ Reprocessar grupamento</button>
       <button id="ger-inativas" class="gerbtn" onclick="toggleGer('inativas')">Inativadas</button>
     </span>
   </div>
@@ -654,6 +655,62 @@ async function reativarDemanda(){
   try{ await _patchAtual({ ativo:true, motivo_inativacao:null, inativado_em:null });
     render(); kpis(); abrir(atual); toast('Demanda reativada.'); }
   catch(e){ toast('Erro: '+e.message); }
+}
+
+/* ── Reprocessar grupamento das demandas SEM grupamento ──────────────────
+   O órgão externo manda alguns municípios com grafia que não casa com a tabela
+   municipios_grupos (ex.: FELIZBURGO/FELISBURGO, ITABIRINHA DE MANTENA/ITABIRINHA),
+   deixando a demanda sem grupamento no painel. Este botão recasa o município
+   (normalização forte + aliases) contra a view vw_municipio_grupamento e PREENCHE
+   o grupamento das que ficaram vazias — NÃO sobrescreve grupamento já definido.
+   100% no painel: usa a RLS de update anon do mc_demandas; não depende de Apps
+   Script nem de nova carga de lote. */
+const _MUNI_ALIAS_JS = (function(){
+  const norm = s => String(s==null?'':s).normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  // só grafias com LETRA diferente ou palavra a mais/menos precisam de alias;
+  // hífen vs espaço já é tratado pelo norm (remove tudo que não é A-Z0-9).
+  const pares = [
+    ['FELIZBURGO',            'FELISBURGO'],
+    ['ITABIRINHA DE MANTENA', 'ITABIRINHA']
+  ];
+  const map = {};
+  pares.forEach(p=>{ map[norm(p[0])] = norm(p[1]); });
+  return { norm:norm, map:map };
+})();
+function _chaveMuni(s){ const k=_MUNI_ALIAS_JS.norm(s); return _MUNI_ALIAS_JS.map[k] || k; }
+
+async function reprocessarGrupamentos(){
+  if (!GERIR) return;
+  const btn = document.getElementById('ger-reproc');
+  const txt0 = btn ? btn.textContent : '';
+  if (btn){ btn.disabled = true; btn.textContent = 'Reprocessando…'; }
+  try {
+    // 1) mapa município(normalizado) → { gp, comp } a partir da view (anon tem SELECT)
+    const rv = await fetch(`${API}/rest/v1/vw_municipio_grupamento?select=municipio_upper,gp_responsavel,grupamento_completo`, { headers: H });
+    if (!rv.ok) throw new Error(`view ${rv.status}`);
+    const view = await rv.json();
+    const mapa = {};
+    view.forEach(v=>{ const k=_MUNI_ALIAS_JS.norm(v.municipio_upper); if(k && v.gp_responsavel && !mapa[k]) mapa[k]={ gp:v.gp_responsavel, comp:v.grupamento_completo||v.gp_responsavel }; });
+    // 2) demandas MC que ficaram SEM grupamento (só preenche vazio, não mexe no resto)
+    const rd = await fetch(`${API}/rest/v1/${TBL}?select=id,municipio,gp_responsavel&gp_responsavel=is.null`, { headers: H });
+    if (!rd.ok) throw new Error(`demandas ${rd.status}`);
+    const semgp = await rd.json();
+    if (!semgp.length){ toast('Nenhuma demanda sem grupamento para reprocessar.'); return; }
+    // 3) resolve o município e atualiza
+    let ok=0, naoAchou=0;
+    for (const d of semgp){
+      const g = mapa[_chaveMuni(d.municipio)];
+      if (!g){ naoAchou++; continue; }
+      const r = await fetch(`${API}/rest/v1/${TBL}?id=eq.${encodeURIComponent(d.id)}`, {
+        method:'PATCH', headers:Object.assign({},H,{Prefer:'return=minimal'}),
+        body: JSON.stringify({ gp_responsavel:g.gp, grupamento_completo:g.comp, fracao_responsavel:g.comp })
+      });
+      if (r.ok) ok++; else naoAchou++;
+    }
+    toast(`Reprocessado: ${ok} atualizada(s)`+(naoAchou?` · ${naoAchou} sem correspondência de município`:'')+'.');
+    await carregar();
+  } catch(e){ toast('Erro ao reprocessar: '+(e.message||e)); }
+  finally { if (btn){ btn.disabled=false; btn.textContent=txt0||'↻ Reprocessar grupamento'; } }
 }
 
 /* ── Carregar lote (Drive MC → KML por GEOCOD + croqui → planilha+banco) ── */
