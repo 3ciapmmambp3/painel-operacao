@@ -30,6 +30,29 @@
 
 function _ge(id){ return document.getElementById(id) || {}; }
 
+/* ── Máscaras padrão de nº (MESMO padrão do Relatório de Serviço) ──
+   reds → Nº REDS (BO/BOS/RAT)        ex. 2026-030135292-001   [4-9-3]
+   ato  → Nº GAIA / Ato de Fiscaliz.  ex. 2026.07.01.362.0000466 [4.2.2.3.7]
+   PADRÃO DO SISTEMA: todo campo novo que receba Nº REDS ou Nº GAIA / Ato de
+   Fiscalização deve reutilizar estas máscaras — basta adicionar no input
+   inputmode="numeric" oninput="_maskInput(this,'reds')" (ou 'ato').
+   (Nº Auto de Infração não tem máscara: no Relatório é Número + Ano numéricos.) */
+const _MASKS_BAIXA = {
+  reds: { segments:[4,9,3],     seps:['-','-'],         placeholder:'2026-030135292-001'    },
+  ato:  { segments:[4,2,2,3,7], seps:['.','.','.','.'], placeholder:'2026.07.01.362.0000466' },
+};
+function _aplicarMascara(raw, key){
+  const cfg = _MASKS_BAIXA[key]; if (!cfg) return raw || '';
+  const total  = cfg.segments.reduce((a,b)=>a+b,0);
+  const digits = (raw||'').replace(/\D/g,'').slice(0,total);
+  let out = '', pos = 0;
+  cfg.segments.forEach((len,i)=>{
+    if (digits.length > pos){ out += (i>0?cfg.seps[i-1]:'') + digits.slice(pos,pos+len); pos += len; }
+  });
+  return out;
+}
+function _maskInput(el, key){ if (el) el.value = _aplicarMascara(el.value, key); }
+
 // HTML das seções extras da gaveta (baixa manual + resposta externa)
 function gestaoExtraHtml(d){
   if (typeof GERIR === 'undefined' || !GERIR) return '';
@@ -41,8 +64,8 @@ function gestaoExtraHtml(d){
       `<div class="rs">`+
         `<div class="bxgrid">`+
           `<label>Data do atendimento<input type="date" id="bx-data"></label>`+
-          `<label>Nº REDS (BO/BOS/RAT)<input id="bx-reds" placeholder="2026-000000000-000"></label>`+
-          `<label>Nº GAIA / Ato de Fiscalização<input id="bx-gaia"></label>`+
+          `<label>Nº REDS (BO/BOS/RAT)<input id="bx-reds" inputmode="numeric" oninput="_maskInput(this,'reds')" placeholder="${_MASKS_BAIXA.reds.placeholder}"></label>`+
+          `<label>Nº GAIA / Ato de Fiscalização<input id="bx-gaia" inputmode="numeric" oninput="_maskInput(this,'ato')" placeholder="${_MASKS_BAIXA.ato.placeholder}"></label>`+
           `<label>Nº Auto de Infração<input id="bx-auto"></label>`+
           `<label class="full">Resultado<input id="bx-result" placeholder="CONSTATADO / NÃO CONSTATADO…"></label>`+
           `<label class="full">Observações<textarea id="bx-obs" rows="2"></textarea></label>`+
