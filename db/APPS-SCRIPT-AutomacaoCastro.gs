@@ -502,6 +502,7 @@ var AutomacaoCastro = (function () {
       if (p.action === 'mc_importar')      return jsonOut(runMC() || { ok: true });
       if (p.action === 'mc_kml_backfill')  return jsonOut(mcKmlBackfill(p));
       if (p.action === 'mc_lote_geocods')  return jsonOut(mcLoteGeocods(p));
+      if (p.action === 'mc_arquivar_lotes') return jsonOut(mcArquivarLotes(p));
       if (p.action === 'ri_coord_backfill') return jsonOut(riCoordBackfill(p));
       if (p.action === 'nuden_coord_backfill') return jsonOut(nudenCoordBackfill(p));
       return jsonOut({ ok: false, error: 'ação desconhecida: ' + p.action });
@@ -832,6 +833,7 @@ var AutomacaoCastro = (function () {
     } catch (e) {}
     while (fo.hasNext()) {
       var f = fo.next(), nome = String(f.getName()).trim(), pn = _mcParseNome(nome);
+      if (nome === 'ARQUIVO - JÁ NO PAINEL') continue;   // subpasta de arquivo não é um lote
       out.push({ id: f.getId(), nome: nome, empresa: pn.empresa, empresaRaw: pn.empresaRaw, data: pn.data,
                  carregado: !!carregados[nome], qtd: carregados[nome] || 0 });
     }
@@ -880,6 +882,28 @@ var AutomacaoCastro = (function () {
       if (g && !set[g]) { set[g] = 1; arr.push(g); }
     }
     return { ok: true, lote: lote, geocods: arr };
+  }
+
+  // ARQUIVAR pastas já no painel: move p/ a subpasta "ARQUIVO - JÁ NO PAINEL"
+  // dentro do Drive MC (cria se não existir). Só move pastas — não toca em
+  // demanda nem em planilha. As movidas somem da lista de "Carregar lote".
+  function mcArquivarLotes(p) {
+    var ids = p.folderIds || (p.folderId ? [p.folderId] : []);
+    if (!ids || !ids.length) return { ok: true, movidas: 0 };
+    var root = DriveApp.getFolderById(FONTES.MC.driveFolder);
+    var NM = 'ARQUIVO - JÁ NO PAINEL', dest = null, fo = root.getFolders();
+    while (fo.hasNext()) { var f = fo.next(); if (f.getName().trim() === NM) { dest = f; break; } }
+    if (!dest) dest = root.createFolder(NM);
+    var destId = dest.getId(), movidas = 0, erros = [];
+    for (var i = 0; i < ids.length; i++) {
+      try {
+        var fld = DriveApp.getFolderById(ids[i]);
+        if (fld.getId() === destId) continue;
+        fld.moveTo(dest);
+        movidas++;
+      } catch (e) { erros.push(String(ids[i]) + ': ' + (e && e.message || e)); }
+    }
+    return { ok: true, movidas: movidas, destino: NM, erros: erros };
   }
 
   // CARGA DE LOTE (paginada): processa [offset, offset+limit) do KML mestre

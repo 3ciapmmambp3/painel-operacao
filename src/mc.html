@@ -728,6 +728,7 @@ function _linhaPend(l, total, novos, erro){
   const tag = novos>0 ? '' : ' <span style="color:#66bb6a">✓ já no painel</span>';
   return `<tr><td style="padding:4px 6px">${nome}${tag}</td><td style="padding:4px 6px">${total}</td><td style="padding:4px 6px;color:${cor};font-weight:700">${novos}</td><td style="padding:4px 6px">${total-novos}</td></tr>`;
 }
+let _pendJaNoPainel=[];   // pastas com 0 novas (dados já no painel) — p/ arquivar
 async function verificarPendencias(){
   if(!AUTO_URL) return toast('Verificação não configurada (Web App).');
   const btn=document.getElementById('f-verificar'), t0=btn?btn.textContent:'';
@@ -735,6 +736,7 @@ async function verificarPendencias(){
   if(btn){ btn.disabled=true; btn.textContent='Verificando…'; }
   rep.style.display='block'; rep.innerHTML='<div style="font-size:12.5px;color:var(--text-muted)">Lendo o painel…</div>';
   try{
+    _pendJaNoPainel=[];
     // 1) GEOCODs já no painel
     const existentes=new Set(); let off=0; const PG=1000;
     for(;;){
@@ -764,15 +766,36 @@ async function verificarPendencias(){
       if(erro){ html+=_linhaPend(l,null,null,erro); continue; }
       let ja=0; geocods.forEach(g=>{ if(existentes.has(String(g).trim())) ja++; });
       const novos=geocods.length-ja; somaNovos+=novos; somaJa+=ja;
+      if(geocods.length>0 && novos===0) _pendJaNoPainel.push({id:l.id, nome:l.nome});
       html+=_linhaPend(l, geocods.length, novos, null);
     }
     rep.innerHTML = `<div style="font-size:12.5px;margin-bottom:8px"><b>${pend.length}</b> pasta(s) pendente(s) · <b style="color:var(--gold)">${somaNovos}</b> demanda(s) nova(s) a carregar · ${somaJa} já no painel</div>`
       + `<table style="width:100%;border-collapse:collapse;font-size:12px">`
       + `<tr style="color:var(--text-muted);text-align:left"><th style="padding:4px 6px">Pasta</th><th style="padding:4px 6px">Total</th><th style="padding:4px 6px">Novas</th><th style="padding:4px 6px">No painel</th></tr>`
       + html + `</table>`
-      + `<div class="hint" style="margin-top:8px">Pastas com <b>0 novas</b> já estão no painel — não precisa recarregar.</div>`;
+      + `<div class="hint" style="margin-top:8px">Pastas com <b>0 novas</b> já estão no painel — não precisa recarregar.</div>`
+      + (_pendJaNoPainel.length ? `<div style="margin-top:10px"><button class="btn-outline btn-sm" id="f-arquivar" onclick="arquivarJaNoPainel()" title="Move as pastas com 0 novas para a subpasta ARQUIVO - JÁ NO PAINEL no Drive MC. Elas saem da lista de Carregar lote. Nada nas demandas é alterado (reversível).">🗂️ Arquivar as ${_pendJaNoPainel.length} já no painel</button></div>` : '');
   }catch(e){ rep.innerHTML=`<div style="color:#ef9a9a;font-size:12.5px">Erro: ${_escH(e.message||String(e))}</div>`; }
   finally{ if(btn){ btn.disabled=false; btn.textContent=t0||'🔎 Verificar pendências'; } }
+}
+
+async function arquivarJaNoPainel(){
+  if(!_pendJaNoPainel.length) return;
+  if(!AUTO_URL) return toast('Arquivamento não configurado (Web App).');
+  if(!confirm(`Mover ${_pendJaNoPainel.length} pasta(s) "já no painel" para a subpasta ARQUIVO - JÁ NO PAINEL no Drive MC?\n\nElas saem da lista de Carregar lote. Nada nas demandas é alterado — é reversível (é só mover de volta no Drive).`)) return;
+  const btn=document.getElementById('f-arquivar'), t0=btn?btn.textContent:'';
+  if(btn){ btn.disabled=true; btn.textContent='Arquivando…'; }
+  try{
+    const r=await fetch(AUTO_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'mc_arquivar_lotes', folderIds:_pendJaNoPainel.map(x=>x.id)})});
+    const j=await r.json(); if(!j||!j.ok) throw new Error((j&&(j.error||j.erro))||'falha ao arquivar');
+    toast(`${j.movidas||0} pasta(s) arquivada(s).`);
+    // atualiza a lista de pastas (as arquivadas saem)
+    try{ const rl=await fetch(AUTO_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'mc_listar_lotes'})}); const jl=await rl.json(); if(jl&&jl.ok){ LOTES_CACHE=jl.lotes||[]; renderLotes(); } }catch(e){}
+    const rep=document.getElementById('pend-report');
+    if(rep) rep.innerHTML=`<div style="font-size:12.5px;color:#66bb6a">✔ ${j.movidas||0} pasta(s) movida(s) para <b>ARQUIVO - JÁ NO PAINEL</b> no Drive MC. Saíram da lista de Carregar lote.</div>`;
+    _pendJaNoPainel=[];
+  }catch(e){ toast('Erro ao arquivar: '+(e.message||e)); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent=t0||'🗂️ Arquivar'; } }
 }
 
 /* ── Carregar lote (Drive MC → KML por GEOCOD + croqui → planilha+banco) ── */
