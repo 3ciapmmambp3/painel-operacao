@@ -41,6 +41,18 @@ function sincronizarTudo()      { ['NUDEN','DDU','RI','EMERGENCIA'].forEach(func
 function instalarGatilhoNuden() { return AutomacaoCastro.instalarGatilho(); }
 function nudenCoordAgora()      { return AutomacaoCastro.nudenCoordLoop(); }   // extrai lat/long do PDF p/ coord_x/coord_y (OCR)
 
+// Rode 1x no editor p/ CONCEDER a permissão de ESCRITA no Drive (criar/mover
+// pastas) usada pelo botão "Arquivar já no painel" do MC. Também já cria a
+// subpasta de arquivo. Pode apagar depois de autorizar — não é obrigatória.
+function autorizarDrive() {
+  var raiz = DriveApp.getFolderById('1vZRSSJQzQrVxDW8fBemqGGG_1B1bdSsV'); // Drive MC
+  var nome = 'ARQUIVO - JÁ NO PAINEL';
+  var it = raiz.getFoldersByName(nome);
+  var f = it.hasNext() ? it.next() : raiz.createFolder(nome);
+  Logger.log('OK: ' + f.getName() + ' / ' + f.getId());
+  return f.getId();
+}
+
 // ─── WEB APP (lançamento manual / espelho da baixa, chamado pelo painel) ─
 function doPost(e)             { return AutomacaoCastro.doPost(e); }
 function doGet(e)              { return AutomacaoCastro.doGet(e); }
