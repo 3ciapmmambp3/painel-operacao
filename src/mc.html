@@ -222,10 +222,12 @@
         <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px"><span id="lp-txt">Processando…</span></div>
         <div style="height:10px;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:6px;overflow:hidden"><div id="lp-bar" style="height:100%;width:0;background:var(--gold);transition:width .3s"></div></div>
       </div>
+      <div id="pend-report" style="display:none;margin-top:14px;max-height:320px;overflow:auto"></div>
       <div class="mfoot" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
         <span style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn-outline btn-sm" id="f-importar" onclick="importarPlanilha()" title="Traz para o painel os lotes que já estão lançados na aba MC (sem precisar recarregar as pastas)">↻ Importar da planilha</button>
           <button class="btn-outline btn-sm" id="f-kml" onclick="gerarKmlsFaltantes()" title="Gera o KML individual (por GEOCOD) das demandas que estão sem KML, varrendo os KML mestres das pastas da companhia selecionada. Não altera datas nem baixa.">🛰️ Gerar KMLs faltantes</button>
+          <button class="btn-outline btn-sm" id="f-verificar" onclick="verificarPendencias()" title="Lê os GEOCODs de cada pasta ainda NÃO carregada e compara com o que já está no painel. Mostra, por pasta, quantas demandas são NOVAS (faltam carregar) e quantas já estão lá — útil pra não reprocessar pastas antigas (2025) que já entraram.">🔎 Verificar pendências</button>
         </span>
         <span style="display:flex;gap:8px">
           <button class="btn-outline btn-sm" onclick="fecharLote()">Fechar</button>
@@ -711,6 +713,66 @@ async function reprocessarGrupamentos(){
     await carregar();
   } catch(e){ toast('Erro ao reprocessar: '+(e.message||e)); }
   finally { if (btn){ btn.disabled=false; btn.textContent=txt0||'↻ Reprocessar grupamento'; } }
+}
+
+/* ── Verificar pendências ────────────────────────────────────────────────
+   Lê os GEOCODs de cada pasta AINDA NÃO carregada (Apps Script lê só o KML
+   mestre — operação leve) e compara com os GEOCODs já no painel. Mostra, por
+   pasta, quantas demandas são NOVAS vs já estão no painel — assim dá pra
+   ignorar pastas antigas (2025) cujos dados já entraram. Não grava nada. */
+function _escH(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function _linhaPend(l, total, novos, erro){
+  const nome=_escH(l.nome);
+  if(erro) return `<tr><td style="padding:4px 6px">${nome}</td><td colspan="3" style="padding:4px 6px;color:#ef9a9a">erro: ${_escH(erro)}</td></tr>`;
+  const cor = novos>0 ? 'var(--gold)' : 'var(--text-muted)';
+  const tag = novos>0 ? '' : ' <span style="color:#66bb6a">✓ já no painel</span>';
+  return `<tr><td style="padding:4px 6px">${nome}${tag}</td><td style="padding:4px 6px">${total}</td><td style="padding:4px 6px;color:${cor};font-weight:700">${novos}</td><td style="padding:4px 6px">${total-novos}</td></tr>`;
+}
+async function verificarPendencias(){
+  if(!AUTO_URL) return toast('Verificação não configurada (Web App).');
+  const btn=document.getElementById('f-verificar'), t0=btn?btn.textContent:'';
+  const rep=document.getElementById('pend-report');
+  if(btn){ btn.disabled=true; btn.textContent='Verificando…'; }
+  rep.style.display='block'; rep.innerHTML='<div style="font-size:12.5px;color:var(--text-muted)">Lendo o painel…</div>';
+  try{
+    // 1) GEOCODs já no painel
+    const existentes=new Set(); let off=0; const PG=1000;
+    for(;;){
+      const r=await fetch(`${API}/rest/v1/${TBL}?select=codigo`, {headers:Object.assign({},H,{'Range-Unit':'items','Range':`${off}-${off+PG-1}`})});
+      if(!r.ok) throw new Error('painel '+r.status);
+      const rows=await r.json(); rows.forEach(x=>{ if(x.codigo) existentes.add(String(x.codigo).trim()); });
+      if(rows.length<PG) break; off+=PG;
+    }
+    // 2) pastas pendentes (não carregadas)
+    if(!LOTES_CACHE.length){
+      const r=await fetch(AUTO_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'mc_listar_lotes'})});
+      const j=await r.json(); if(j&&j.ok) LOTES_CACHE=j.lotes||[];
+    }
+    const emp=(document.getElementById('f-empresa')||{}).value||'';
+    const pend=LOTES_CACHE.filter(l=>!l.carregado && (!emp||l.empresa===emp));
+    if(!pend.length){ rep.innerHTML=`<div style="font-size:12.5px;color:var(--text-muted)">Nenhuma pasta pendente${emp?' nessa companhia':''}.</div>`; return; }
+    // 3) por pasta: lê GEOCODs do KML mestre e compara
+    let html='', somaNovos=0, somaJa=0;
+    for(let i=0;i<pend.length;i++){
+      const l=pend[i];
+      rep.innerHTML=`<div style="font-size:12.5px;color:var(--text-muted)">Lendo pasta ${i+1}/${pend.length}: ${_escH(l.nome)}…</div>`+(html?`<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px">${html}</table>`:'');
+      let geocods=null, erro=null;
+      try{
+        const r=await fetch(AUTO_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'mc_lote_geocods', loteId:l.id})});
+        const j=await r.json(); if(j&&j.ok) geocods=j.geocods||[]; else throw new Error((j&&(j.error||j.erro))||'falha ao ler KML');
+      }catch(e){ erro=e.message||String(e); }
+      if(erro){ html+=_linhaPend(l,null,null,erro); continue; }
+      let ja=0; geocods.forEach(g=>{ if(existentes.has(String(g).trim())) ja++; });
+      const novos=geocods.length-ja; somaNovos+=novos; somaJa+=ja;
+      html+=_linhaPend(l, geocods.length, novos, null);
+    }
+    rep.innerHTML = `<div style="font-size:12.5px;margin-bottom:8px"><b>${pend.length}</b> pasta(s) pendente(s) · <b style="color:var(--gold)">${somaNovos}</b> demanda(s) nova(s) a carregar · ${somaJa} já no painel</div>`
+      + `<table style="width:100%;border-collapse:collapse;font-size:12px">`
+      + `<tr style="color:var(--text-muted);text-align:left"><th style="padding:4px 6px">Pasta</th><th style="padding:4px 6px">Total</th><th style="padding:4px 6px">Novas</th><th style="padding:4px 6px">No painel</th></tr>`
+      + html + `</table>`
+      + `<div class="hint" style="margin-top:8px">Pastas com <b>0 novas</b> já estão no painel — não precisa recarregar.</div>`;
+  }catch(e){ rep.innerHTML=`<div style="color:#ef9a9a;font-size:12.5px">Erro: ${_escH(e.message||String(e))}</div>`; }
+  finally{ if(btn){ btn.disabled=false; btn.textContent=t0||'🔎 Verificar pendências'; } }
 }
 
 /* ── Carregar lote (Drive MC → KML por GEOCOD + croqui → planilha+banco) ── */

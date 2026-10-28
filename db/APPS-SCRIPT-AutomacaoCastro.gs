@@ -500,6 +500,7 @@ var AutomacaoCastro = (function () {
       if (p.action === 'mc_lote')          return jsonOut(mcLote(p));
       if (p.action === 'mc_importar')      return jsonOut(runMC() || { ok: true });
       if (p.action === 'mc_kml_backfill')  return jsonOut(mcKmlBackfill(p));
+      if (p.action === 'mc_lote_geocods')  return jsonOut(mcLoteGeocods(p));
       if (p.action === 'ri_coord_backfill') return jsonOut(riCoordBackfill(p));
       return jsonOut({ ok: false, error: 'ação desconhecida: ' + p.action });
     } catch (err2) {
@@ -861,6 +862,22 @@ var AutomacaoCastro = (function () {
       sh.setFrozenRows(1);
     }
     return sh;
+  }
+
+  // VERIFICAR PENDÊNCIAS: lê SÓ o KML mestre de uma pasta e devolve a lista de
+  // GEOCODs (sem gerar KML por GEOCOD, sem PDF, sem gravar). Leve — o painel
+  // chama pasta a pasta e compara com o que já está no painel.
+  function mcLoteGeocods(p) {
+    var folder = _mcFolder(p), lote = folder.getName().trim();
+    var kmlText = _mcMasterKml(folder);
+    if (!kmlText) return { ok: true, lote: lote, geocods: [], aviso: 'KML mestre não encontrado na pasta' };
+    var sp = _mcSplit(kmlText), pms = sp.placemarks || [];
+    var set = {}, arr = [];
+    for (var i = 0; i < pms.length; i++) {
+      var g = String(_mcData(pms[i]).GEOCOD_IEF || '').trim();
+      if (g && !set[g]) { set[g] = 1; arr.push(g); }
+    }
+    return { ok: true, lote: lote, geocods: arr };
   }
 
   // CARGA DE LOTE (paginada): processa [offset, offset+limit) do KML mestre
