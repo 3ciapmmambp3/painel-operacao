@@ -75,7 +75,7 @@
       const ord=d.ordem||(i+1);
       const r=respostas[String(d.ordem)]||respostas[String(i+1)]||null;
       const anx=(d.anexos||[]).filter(a=>a&&a.link);
-      const anexoCell=anx.length?anx.map(a=>`<a href="${String(a.link).replace(/"/g,'&quot;')}" target="_blank" rel="noopener">${E(a.nome||'anexo')}</a>`).join('<br>'):'';
+      const anexoCell=anx.length?anx.map(a=>a.kml?`🛰️ ${E(a.nome||'KML')} <span style="color:#777">(baixar no cartão online)</span>`:`<a href="${String(a.link).replace(/"/g,'&quot;')}" target="_blank" rel="noopener">${E(a.nome||'anexo')}</a>`).join('<br>'):'';
       const rota = mapsRota(d.coordenadas);
       const coordCell = d.coordenadas
         ? (rota?`<a href="${rota}" target="_blank" rel="noopener">Rota no Google Maps</a> (${E(d.coordenadas)})`:E(d.coordenadas))

@@ -486,7 +486,8 @@ async function carregarPendentes(){
       try{
         let off=0; const PG=1000;
         for(;;){
-          const q=`${API}/rest/v1/${tb}?select=id,codigo,municipio,endereco,situacao,anexos&gp_responsavel=in.(${inVal2})&ativo=is.true&data_atendimento=is.null&order=data_vencimento.asc.nullslast`;
+          const sel='id,codigo,municipio,endereco,situacao,anexos'+(tb==='mc_demandas'?',kml_content':'');   // MC: traz o KML por GEOCOD
+          const q=`${API}/rest/v1/${tb}?select=${sel}&gp_responsavel=in.(${inVal2})&ativo=is.true&data_atendimento=is.null&order=data_vencimento.asc.nullslast`;
           const r=await fetch(q,{headers:Object.assign({},H,{'Range-Unit':'items','Range':off+'-'+(off+PG-1)})});
           if(!r.ok) break;
           const arr=await r.json();
@@ -494,6 +495,7 @@ async function carregarPendentes(){
             const num=String(d.codigo||'').trim(); if(!num) return;
             const key=cfg.tipo+'|'+num.replace(/\s/g,'');
             const anx=(Array.isArray(d.anexos)?d.anexos:[]).map(a=>({nome:a.nome||'anexo',link:a.link||a.web_view_link||null,status:'ok'})).filter(a=>a.link);
+            if(d.kml_content){ const u=_kmlDataUrl(d.kml_content); if(u) anx.push({nome:(num||d.codigo||'geocod')+'.kml', link:u, kml:true, status:'ok'}); }   // KML do GEOCOD (banco) como anexo baixável
             const ex=byKey.get(key);
             if(ex){   // já veio da planilha (sem anexos): enriquece com os anexos/dados do banco
               if(anx.length){ ex.anexos=ex.anexos||[]; const have=new Set(ex.anexos.map(a=>a.link)); anx.forEach(a=>{ if(!have.has(a.link)) ex.anexos.push(a); }); }
@@ -675,11 +677,13 @@ function renderDemandas(){
     </div>`).join('');
   DEM.forEach((_,i)=>{ attCoord(i); attEndRota(i); });
 }
+// KML (texto do banco) → data URL baixável, sem precisar de arquivo no Drive.
+function _kmlDataUrl(txt){ try{ return 'data:application/vnd.google-earth.kml+xml;charset=utf-8;base64,'+btoa(unescape(encodeURIComponent(String(txt||'')))); }catch(e){ return ''; } }
 function renderAnx(anexos,di){
   return (anexos||[]).map((a,ai)=>{
     const st=a.status==='up'?'<span class="st up">enviando…</span>':a.status==='err'?`<span class="st err">erro</span>`:'<span class="st ok">ok</span>';
-    const nome=a.link&&a.status!=='up'?`<a href="${_esc(a.link)}" target="_blank" style="color:var(--gold-light)">${_esc(a.nome||'anexo')}</a>`:_esc(a.nome||'anexo');
-    return `<div class="anx-item">📄 ${nome} ${st}<button type="button" class="x" onclick="rmAnx(${di},${ai})">✕</button></div>`;
+    const nome=a.link&&a.status!=='up'?`<a href="${_esc(a.link)}" ${a.kml?`download="${_esc(a.nome||'arquivo.kml')}"`:'target="_blank"'} style="color:var(--gold-light)">${a.kml?'🛰️ ':''}${_esc(a.nome||'anexo')}</a>`:_esc(a.nome||'anexo');
+    return `<div class="anx-item">${a.kml?'🛰️':'📄'} ${nome} ${st}<button type="button" class="x" onclick="rmAnx(${di},${ai})">✕</button></div>`;
   }).join('');
 }
 function refreshAnx(di){ const el=document.getElementById('anx-'+di); if(el) el.innerHTML=renderAnx(DEM[di].anexos,di); }
