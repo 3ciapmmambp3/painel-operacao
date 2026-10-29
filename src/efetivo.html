@@ -585,9 +585,11 @@ function mostrarAba(qual){
   render();
 }
 // ── filtros por Pelotão e Grupamento ──
-function _pelDe(m){ const g=String(m.grupamento_id||''); const mm=g.match(/(\d)\s*PEL/i); if(mm) return mm[1]; if(g.trim().toUpperCase()==='ADM') return 'ADM'; return ''; }
+// Classifica o PELOTÃO igual ao agrupamento "Por Unidade" (pelotaoDe): considera
+// o grupamento_id E a coluna Unidade (nome_unidade). Assim, assistente adm. lotada
+// num pelotão (ex.: Unidade "1 GP / 4 PEL") conta no pelotão dela, não na ADM.
+function _pelDe(m){ const p=pelotaoDe(m); return p==null?'':String(p); }
 function _pelRotEf(p){ return p==='ADM'?'ADM / Comando':(p+'º Pelotão'); }
-function _gpCurto(g){ const c=String(g||'').split('/').pop().trim(); return c||String(g||'—'); }
 function popularPel(){
   const sel=document.getElementById('f-pel'); if(!sel) return; const atual=sel.value;
   const pels=[...new Set(LISTA.map(_pelDe).filter(Boolean))].sort((a,b)=>(a==='ADM'?-1:+a)-(b==='ADM'?-1:+b));
@@ -600,9 +602,8 @@ function popularGp(){
   const base=LISTA.filter(m=>!fpel || _pelDe(m)===fpel);
   // Dedup pela CIDADE (rótulo curto): variações do grupamento_id (com/sem "BPM MAMB/")
   // não podem virar opções duplicadas. Guarda pelotão + nº do GP p/ ordenar.
-  const info={}; base.forEach(m=>{ const g=String(m.grupamento_id||'').trim(); if(!g) return;
-    const cidade=_gpCurto(g); if(!cidade) return;
-    const mm=g.match(/(\d)\s*GP/i); const gp=mm?+mm[1]:null; const pel=_pelDe(m);
+  const info={}; base.forEach(m=>{ const pg=_parseGid(m); const cidade=pg.cidade; if(!cidade) return;
+    const gp=pg.gp; const pel=_pelDe(m);   // cidade/gp pela mesma leitura do "Por Unidade" (usa nome_unidade)
     const cur=info[cidade];
     if(!cur){ info[cidade]={pel:pel||'', gp: gp==null?99:gp}; }
     else { if(cur.gp===99 && gp!=null) cur.gp=gp;            // completa o nº do GP se faltava
@@ -643,7 +644,7 @@ function listaFiltrada(){
       if(!ehAtivo(m) || ehHipotecado(m)) return false;
     }
     if(fpel && _pelDe(m)!==fpel) return false;
-    if(fgp && _gpCurto(m.grupamento_id)!==fgp) return false;   // filtra pela CIDADE (dedup de variações)
+    if(fgp && _parseGid(m).cidade!==fgp) return false;   // filtra pela CIDADE (mesma leitura do "Por Unidade")
     if(q){ const hay=norm([m.nome_completo,m.nome_guerra,m.matricula,m.funcao,m.nome_unidade,m.cod_unidade,m.posto_graduacao].join(' ')); if(!hay.includes(q)) return false; }
     return true;
   });
@@ -656,7 +657,7 @@ function atualizarKpi(){
   const fgp =document.getElementById('f-gp') ?document.getElementById('f-gp').value :'';
   let base=LISTA;
   if(fpel) base=base.filter(m=>_pelDe(m)===fpel);
-  if(fgp)  base=base.filter(m=>_gpCurto(m.grupamento_id)===fgp);   // filtra pela CIDADE (dedup)
+  if(fgp)  base=base.filter(m=>_parseGid(m).cidade===fgp);   // filtra pela CIDADE (mesma leitura do "Por Unidade")
   const _contados=base.filter(m=>(m.integrante_ativo??m.ativo) || ehHipotecado(m));
   const _hipot=_contados.filter(ehHipotecado).length;
   const _assist=_contados.filter(m=>/func|civil|aspm/i.test(((m.posto_graduacao||'')+' '+(m.funcao||'')))).length;
