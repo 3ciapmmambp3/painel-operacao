@@ -477,6 +477,9 @@ async function carregarPendentes(){
   if(gprs.length){ try{
     const inVal2=gprs.map(g=>'%22'+encodeURIComponent(g)+'%22').join(',');
     const jaTem=new Set(PEND.map(p=>p.tipo+'|'+String(p.numero||'').replace(/\s/g,'')));
+    // Índice por chave p/ ENRIQUECER (não descartar) quando a mesma demanda já veio
+    // da planilha sem anexos — o banco (MC etc.) traz o croqui/pasta do Drive.
+    const byKey=new Map(); PEND.forEach(p=>{ const k=p.tipo+'|'+String(p.numero||'').replace(/\s/g,''); if(!byKey.has(k)) byKey.set(k,p); });
     const SBM=[['MC','mc_demandas'],['NUDEN','nuden_demandas'],['RI','ri_demandas'],['DDU181','ddu_demandas'],['EMERGENCIA','emergencia_demandas']];
     await Promise.all(SBM.map(async function(pair){
       const cfg=SHEET_TIPOS[pair[0]], tb=pair[1]; if(!cfg) return;
@@ -489,9 +492,20 @@ async function carregarPendentes(){
           const arr=await r.json();
           (Array.isArray(arr)?arr:[]).forEach(d=>{
             const num=String(d.codigo||'').trim(); if(!num) return;
-            const key=cfg.tipo+'|'+num.replace(/\s/g,''); if(jaTem.has(key)) return; jaTem.add(key);
+            const key=cfg.tipo+'|'+num.replace(/\s/g,'');
             const anx=(Array.isArray(d.anexos)?d.anexos:[]).map(a=>({nome:a.nome||'anexo',link:a.link||a.web_view_link||null,status:'ok'})).filter(a=>a.link);
-            PEND.push({tipo:cfg.tipo, tipoLabel:cfg.label, numero:num, texto:_tplDemanda(cfg.kind,num,d.municipio||''), resumo:'', municipio:d.municipio||'', endereco:d.endereco||'', situacao:d.situacao||'', anexos:anx, fonte:'painel', folder:cfg.folder||null, id:d.id});
+            const ex=byKey.get(key);
+            if(ex){   // já veio da planilha (sem anexos): enriquece com os anexos/dados do banco
+              if(anx.length){ ex.anexos=ex.anexos||[]; const have=new Set(ex.anexos.map(a=>a.link)); anx.forEach(a=>{ if(!have.has(a.link)) ex.anexos.push(a); }); }
+              if(!ex.municipio && d.municipio) ex.municipio=d.municipio;
+              if(!ex.endereco  && d.endereco)  ex.endereco =d.endereco;
+              if(!ex.situacao  && d.situacao)  ex.situacao =d.situacao;
+              if(!ex.id        && d.id)        ex.id       =d.id;
+              return;
+            }
+            jaTem.add(key);
+            const novo={tipo:cfg.tipo, tipoLabel:cfg.label, numero:num, texto:_tplDemanda(cfg.kind,num,d.municipio||''), resumo:'', municipio:d.municipio||'', endereco:d.endereco||'', situacao:d.situacao||'', anexos:anx, fonte:'painel', folder:cfg.folder||null, id:d.id};
+            PEND.push(novo); byKey.set(key,novo);
           });
           if(arr.length<PG || off>40000) break; off+=PG;
         }
