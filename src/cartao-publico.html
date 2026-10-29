@@ -46,7 +46,6 @@
 </head>
 <body>
 <div class="top">
-  <button id="btn-voltar" onclick="voltarPainel()" title="Voltar" style="display:none;background:transparent;border:1px solid var(--border-mid);color:var(--text-white);border-radius:8px;padding:8px 12px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;">← Voltar</button>
   <div class="sh"><img src="assets/escudo-pmmg.png" onerror="this.style.display='none'"><img src="assets/brasao-bpmmamb.png" onerror="this.style.display='none'"></div>
   <div class="t"><h1>CARTÃO PROGRAMA</h1><p>3ª Companhia de Polícia Militar de Meio Ambiente</p></div>
 </div>
@@ -59,20 +58,22 @@ const API=(typeof SB_AUTH_URL!=='undefined')?SB_AUTH_URL:'';
 const AKEY=(typeof SB_AUTH_KEY!=='undefined')?SB_AUTH_KEY:'';
 const H={'apikey':AKEY,'Authorization':`Bearer ${AKEY}`,'Content-Type':'application/json'};
 function _esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-// Botão "← Voltar": fecha a aba (se aberta pelo painel via window.open) ou volta
-// no histórico. Só aparece quando veio de dentro do painel — no link público do
-// WhatsApp (sem opener e sem referrer do mesmo site) fica oculto.
+// Botão "← Voltar" (fica ao lado do número do cartão, renderizado abaixo):
+// fecha a aba (se aberta pelo painel via window.open) ou volta no histórico. Só
+// aparece quando veio de dentro do painel — no link público do WhatsApp (sem
+// opener e sem referrer do mesmo site) fica oculto.
+const FROM_APP=(function(){
+  try{ return !!(window.opener && !window.opener.closed) ||
+       (!!document.referrer && new URL(document.referrer).origin===location.origin); }catch(e){ return false; }
+})();
 function voltarPainel(){
   try{ if(window.opener && !window.opener.closed){ window.close(); return; } }catch(e){}
   if(history.length>1){ history.back(); return; }
   location.href='supervisao-controle.html';
 }
-(function(){
-  var fromApp=false;
-  try{ fromApp = !!(window.opener && !window.opener.closed) ||
-       (!!document.referrer && new URL(document.referrer).origin===location.origin); }catch(e){}
-  if(fromApp){ var b=document.getElementById('btn-voltar'); if(b) b.style.display=''; }
-})();
+const BTN_VOLTAR_HTML = FROM_APP
+  ? '<button onclick="voltarPainel()" title="Voltar" style="background:transparent;border:1px solid var(--border-mid);color:var(--text-white);border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;">← Voltar</button>'
+  : '';
 function _grafiaGP(s){return String(s==null?'':s).replace(/MARILIERIA/gi,'MARLIERIA').replace(/MOLEVADE/gi,'MONLEVADE');}
 function _data(iso){ if(!iso) return '—'; const d=new Date(String(iso).slice(0,10)+'T00:00:00'); return isNaN(d)?String(iso):d.toLocaleDateString('pt-BR'); }
 function mapsRota(coord){ return (window.Coord?Coord.mapsRota(coord):''); }
@@ -109,7 +110,7 @@ function render(c){
   const patr=(Array.isArray(c.patrulheiros)?c.patrulheiros:[]).filter(Boolean);
   const dems=(c.demandas||[]).map((d,i)=>({d, r:(c.respostas||{})[String(d.ordem)]||(c.respostas||{})[String(i+1)]||null}));
   document.getElementById('conteudo').innerHTML=`
-    <div class="num"><h2>Nº ${_esc(c.numero)}</h2><span class="badge b-${c.status}">${STLAB[c.status]||c.status}</span></div>
+    <div class="num">${BTN_VOLTAR_HTML}<h2>Nº ${_esc(c.numero)}</h2><span class="badge b-${c.status}">${STLAB[c.status]||c.status}</span></div>
     <div class="card"><div class="kv">
       <div class="i"><div class="l">Grupamento</div><div class="v">${_esc(_grafiaGP(c.grupamento_completo))}</div></div>
       <div class="i"><div class="l">Data · Turno</div><div class="v">${_data(c.data_empenho)} · ${_esc(c.turno||'—')}</div></div>
