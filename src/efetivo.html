@@ -420,18 +420,12 @@ async function carregar(){
     LISTA.forEach((m,i)=>{ m.__ord=i; });   // posição = ordem de antiguidade (servidor)
     // RH = TODOS que não são inativos = efetivo ativo + hipotecados. O hipotecado
     // CONTA normalmente como militar; só o inativo (transferido/reserva) não conta.
-    const _contados = LISTA.filter(m=>(m.integrante_ativo??m.ativo) || ehHipotecado(m));
-    const _hipot    = LISTA.filter(ehHipotecado);
-    const _ehAssist = m => /func|civil|aspm/i.test(((m.posto_graduacao||'')+' '+(m.funcao||'')));
-    const _assist = _contados.filter(_ehAssist).length;
-    const _mil = _contados.length - _assist;
-    document.getElementById('k-total').textContent = _contados.length;
-    document.getElementById('k-sub').innerHTML = `${_mil} militares · ${_assist} assist. adm.${_hipot.length?` · <b style="color:#ffa726">${_hipot.length} hipotecado(s)</b>`:''}`;
+    const _hipot = LISTA.filter(ehHipotecado);
     popularPel(); popularGp();
     const nInat = LISTA.filter(m=>!(m.integrante_ativo??m.ativo) && !ehHipotecado(m)).length;
     document.getElementById('tab-inat-n').textContent = nInat?`(${nInat})`:'';
     document.getElementById('tab-hip-n').textContent = _hipot.length?`(${_hipot.length})`:'';
-    render();
+    render();   // render() chama atualizarKpi() — o KPI reflete o filtro Pelotão/Grupamento
   }catch(e){ document.getElementById('tbody').innerHTML=`<tr><td colspan="9"><div class="empty">${esc(e.message)}</div></td></tr>`; }
 }
 function tagSit(m){
@@ -654,7 +648,29 @@ function listaFiltrada(){
     return true;
   });
 }
+// KPI (canto sup. dir.): total do efetivo (RH = ativo + hipotecado) NO ESCOPO
+// dos filtros de Pelotão/Grupamento. Sem filtro = toda a Cia. Independe da
+// aba/busca/motivo — é sempre a contagem de RH da fração selecionada.
+function atualizarKpi(){
+  const fpel=document.getElementById('f-pel')?document.getElementById('f-pel').value:'';
+  const fgp =document.getElementById('f-gp') ?document.getElementById('f-gp').value :'';
+  let base=LISTA;
+  if(fpel) base=base.filter(m=>_pelDe(m)===fpel);
+  if(fgp)  base=base.filter(m=>_gpCurto(m.grupamento_id)===fgp);   // filtra pela CIDADE (dedup)
+  const _contados=base.filter(m=>(m.integrante_ativo??m.ativo) || ehHipotecado(m));
+  const _hipot=_contados.filter(ehHipotecado).length;
+  const _assist=_contados.filter(m=>/func|civil|aspm/i.test(((m.posto_graduacao||'')+' '+(m.funcao||'')))).length;
+  const _mil=_contados.length-_assist;
+  document.getElementById('k-total').textContent=_contados.length;
+  let sub=`${_mil} militares · ${_assist} assist. adm.${_hipot?` · <b style="color:#ffa726">${_hipot} hipotecado(s)</b>`:''}`;
+  if(fpel||fgp){   // sinaliza que o número é da fração filtrada, não da Cia
+    const escopo=[fpel?_pelRotEf(fpel):null, fgp||null].filter(Boolean).join(' · ');
+    sub=`<b style="color:var(--gold)">${esc(escopo)}</b> · `+sub;
+  }
+  document.getElementById('k-sub').innerHTML=sub;
+}
 function render(){
+  atualizarKpi();
   let arr=listaFiltrada();
   const tb=document.getElementById('tbody');
   if(!arr.length){ const _msg = ABA==='hipotecados' ? 'Nenhum militar hipotecado.' : (ABA==='inativos' ? 'Nenhum militar inativo'+(document.getElementById('f-motivo').value?' com esse motivo':'')+'.' : 'Nenhum militar.'); tb.innerHTML='<tr><td colspan="9"><div class="empty">'+_msg+'</div></td></tr>'; return; }
