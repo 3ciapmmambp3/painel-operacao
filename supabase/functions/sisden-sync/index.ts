@@ -38,6 +38,10 @@ const STATUS        = Deno.env.get("SISDEN_STATUS")    ?? "Encaminhada";  // pen
 const PAGE_SIZE     = Number(Deno.env.get("SISDEN_PAGE_SIZE") ?? "100");
 const MAX_PAGES     = Number(Deno.env.get("SISDEN_MAX_PAGES") ?? "200");  // trava de segurança
 const PRAZO_DIAS    = Number(Deno.env.get("SISDEN_PRAZO_DIAS") ?? "90");  // fallback p/ vencimento
+// Fase 1b: buscar o DETALHE das denúncias (natureza/data_gerada/info_complementar
+// não vêm na lista). Ligado por padrão; cap de segurança no nº de detalhes por run.
+const DETALHE_ON    = (Deno.env.get("SISDEN_DETALHE") ?? "true").toLowerCase() !== "false";
+const DETALHE_MAX   = Number(Deno.env.get("SISDEN_DETALHE_MAX") ?? "50");
 // PADRÃO = dry-run. Só escreve quando explicitamente DRY_RUN=false.
 const DRY_RUN       = (Deno.env.get("DRY_RUN") ?? "true").toLowerCase() !== "false";
 
@@ -145,6 +149,53 @@ async function puxarDenuncias(token: string): Promise<any[]> {
   return todas;
 }
 
+// ─── Fase 1b: DETALHE de 1 denúncia ────────────────────────────────────
+// A lista NÃO traz natureza / data_gerada / info_complementar — só o detalhe.
+// Ainda não confirmamos a URL exata do detalhe: tentamos os padrões REST mais
+// prováveis, memorizamos o que funcionou e logamos as chaves (p/ travar depois).
+let _detEndpoint: string | null = null;   // ex. "/sisden-api/api/backOffice/denuncias/{k}"
+let _detLogou = false;
+async function buscarDetalhe(token: string, item: any): Promise<any | null> {
+  const id = item?.id;
+  const proto = item?.protocolo;
+  const b64 = proto ? btoa(String(proto)) : null;
+  const paths: string[] = [];
+  if (_detEndpoint && id != null) paths.push(_detEndpoint.replace("{k}", String(id)));  // reusa o que já achou
+  if (id != null) {
+    paths.push(`/sisden-api/api/backOffice/denuncias/${id}`);
+    paths.push(`/sisden-api/api/backOffice/denuncia/${id}`);
+    paths.push(`/sisden-api/api/denuncias/${id}`);
+    paths.push(`/sisden-api/api/backOffice/denuncias/detalhe/${id}`);
+  }
+  if (b64) paths.push(`/sisden-api/api/backOffice/denuncias/${b64}`);
+  for (const p of [...new Set(paths)]) {
+    const r = await fetch(`${SISDEN_BASE}${p}`, {
+      headers: { "Authorization": `Bearer ${token}`, "Accept": "application/json" },
+    }).catch(() => null);
+    if (!r || !r.ok) continue;
+    const j = await r.json().catch(() => null);
+    const det = (j && typeof j === "object" && !Array.isArray(j)) ? (j.data ?? j.denuncia ?? j) : null;
+    if (det && typeof det === "object" && Object.keys(det).length) {
+      if (!_detEndpoint && id != null) { _detEndpoint = p.replace(String(id), "{k}"); console.log(`[detalhe] endpoint OK: ${p}`); }
+      if (!_detLogou) { console.log("[detalhe] campos do item:", Object.keys(det)); _detLogou = true; }
+      return det;
+    }
+  }
+  console.warn(`[detalhe] nenhum endpoint respondeu p/ id=${id} protocolo=${proto}`);
+  return null;
+}
+
+// funde os 3 campos de detalhe na linha, sem sobrescrever o que a lista já trouxe
+function enriquecerComDetalhe(linha: any, det: any) {
+  if (!det) return linha;
+  return {
+    ...linha,
+    natureza: linha.natureza ?? pick(det, "natureza", "tematica", "assunto", "naturezaInfracao", "tipoInfracao", "fato_denunciado"),
+    data_gerada: linha.data_gerada ?? soData(pick(det, "cadastrado_dtad", "created_at")),
+    info_complementares: linha.info_complementares ?? pick(det, "informacao_complementar", "informacoes_complementares", "descricao_complementar"),
+  };
+}
+
 // ─── Mapeia 1 denúncia do SISDEN → linha do nuden_sync ─────────────────
 // Campos confirmados na lista (dry-run 2026-10-31). natureza / data_gerada
 // (cadastrado_dtad|created_at) / informacao_complementar vêm só no DETALHE
@@ -194,8 +245,8 @@ function mapear(d: any) {
     codigo: pick(d, "protocolo", "codigo"),
     tipo_demanda: pick(d, "tipo_registro") ?? "DENÚNCIA",
     data_gerada,
-    // ⚠️ natureza NÃO vem na lista (só no detalhe). Fica null p/ NOVAS — o nuden_sync
-    // preserva a das existentes (coalesce). Buscar no detalhe é passo extra (TODO Fase 1b).
+    // ⚠️ natureza NÃO vem na lista (só no detalhe). Fica null aqui; a Fase 1b
+    // (buscarDetalhe + enriquecerComDetalhe, no handler) preenche as NOVAS.
     natureza: pick(d, "natureza", "tematica", "naturezaInfracao"),
     municipio: nomeMunicipio(d),
     endereco: montarEndereco(d),
@@ -236,6 +287,33 @@ Deno.serve(async (req) => {
     }
     const novas = protocolos.filter((p) => !existentes.has(p));
 
+    // ── Fase 1b: completa natureza/data_gerada/info_complementar via DETALHE ──
+    // índice protocolo -> item cru (p/ pegar o 'id' interno que o detalhe usa)
+    const porProtocolo = new Map<string, any>();
+    for (const d of brutas) { const p = pick(d, "protocolo", "codigo"); if (p) porProtocolo.set(String(p), d); }
+    let detalhe: any = { ativo: DETALHE_ON };
+    if (DETALHE_ON) {
+      // prod: todas as NOVAS (até o cap). dry-run sem novas: 1 amostra, só p/ validar o endpoint.
+      const alvos = novas.length ? novas
+                  : (DRY_RUN && brutas.length ? [String(pick(brutas[0], "protocolo", "codigo"))] : []);
+      const limitados = alvos.slice(0, DETALHE_MAX);
+      const presDet = { natureza: 0, data_gerada: 0, info_complementares: 0 } as Record<string, number>;
+      let ok = 0, falhou = 0;
+      for (const p of limitados) {
+        const item = porProtocolo.get(p);
+        if (!item) continue;
+        const det = await buscarDetalhe(token, item).catch(() => null);
+        if (!det) { falhou++; continue; }
+        ok++;
+        const idx = linhas.findIndex((l: any) => String(l.codigo) === p);
+        if (idx >= 0) {
+          linhas[idx] = enriquecerComDetalhe(linhas[idx], det);  // funde p/ a escrita real
+          for (const c of Object.keys(presDet)) if (linhas[idx][c] != null && linhas[idx][c] !== "") presDet[c]++;
+        }
+      }
+      detalhe = { ativo: true, endpoint: _detEndpoint, tentados: limitados.length, ok, falhou, preenchidos_detalhe: presDet };
+    }
+
     // conferência de preenchimento (presença dos campos, SEM expor valores/PII)
     const campos = ["codigo","tipo_demanda","data_gerada","natureza","municipio",
                     "endereco","data_envio","data_vencimento","info_complementares"] as const;
@@ -250,6 +328,7 @@ Deno.serve(async (req) => {
       novas: novas.length,
       exemplos_novas: novas.slice(0, 5),
       preenchidos: presenca,        // quantas das 'mapeadas' têm cada campo (confere o mapeamento)
+      detalhe,                      // Fase 1b: endpoint do detalhe + quantos campos preencheu
       ms: Date.now() - t0,
     };
 
