@@ -150,48 +150,69 @@ async function puxarDenuncias(token: string): Promise<any[]> {
 }
 
 // ─── Fase 1b: DETALHE de 1 denúncia ────────────────────────────────────
-// A lista NÃO traz natureza / data_gerada / info_complementar — só o detalhe.
-// Ainda não confirmamos a URL exata do detalhe: tentamos os padrões REST mais
-// prováveis, memorizamos o que funcionou e logamos as chaves (p/ travar depois).
-let _detEndpoint: string | null = null;   // ex. "/sisden-api/api/backOffice/denuncias/{k}"
+// Confirmado ao vivo (2026-10-31) abrindo a denúncia no SISDEN:
+//   endpoint  = GET /sisden-api/api/backOffice/denuncias/{PROTOCOLO}  (protocolo
+//               com pontos, NÃO o id interno nem base64)
+//   data_gerada         = det.created_at  (cadastrado_dtad é flag "F", não data!)
+//   info_complementar   = det.informacao_complementar | descricao_complementar
+//   natureza            = det.atividades_denuncias[].atividade_id → cruza com a
+//                         tabela /api/atividades (id → {tematica, descricao}).
 let _detLogou = false;
 async function buscarDetalhe(token: string, item: any): Promise<any | null> {
-  const id = item?.id;
-  const proto = item?.protocolo;
-  const b64 = proto ? btoa(String(proto)) : null;
-  const paths: string[] = [];
-  if (_detEndpoint && id != null) paths.push(_detEndpoint.replace("{k}", String(id)));  // reusa o que já achou
-  if (id != null) {
-    paths.push(`/sisden-api/api/backOffice/denuncias/${id}`);
-    paths.push(`/sisden-api/api/backOffice/denuncia/${id}`);
-    paths.push(`/sisden-api/api/denuncias/${id}`);
-    paths.push(`/sisden-api/api/backOffice/denuncias/detalhe/${id}`);
-  }
-  if (b64) paths.push(`/sisden-api/api/backOffice/denuncias/${b64}`);
-  for (const p of [...new Set(paths)]) {
-    const r = await fetch(`${SISDEN_BASE}${p}`, {
+  const proto = item?.protocolo ?? item?.codigo;
+  if (!proto) return null;
+  const url = `${SISDEN_BASE}/sisden-api/api/backOffice/denuncias/${encodeURIComponent(String(proto))}`;
+  const r = await fetch(url, {
+    headers: { "Authorization": `Bearer ${token}`, "Accept": "application/json" },
+  }).catch(() => null);
+  if (!r || !r.ok) { console.warn(`[detalhe] HTTP ${r?.status ?? "ERR"} p/ protocolo ${proto}`); return null; }
+  const j = await r.json().catch(() => null);
+  const det = (j && typeof j === "object" && !Array.isArray(j)) ? (j.data ?? j.denuncia ?? j) : null;
+  if (det && !_detLogou) { console.log("[detalhe] campos do item:", Object.keys(det)); _detLogou = true; }
+  return det;
+}
+
+// tabela de atividades (id → nome legível) — p/ traduzir a natureza. Puxa 1x por run.
+async function carregarAtividades(token: string): Promise<Map<number, string>> {
+  const m = new Map<number, string>();
+  try {
+    const r = await fetch(`${SISDEN_BASE}/sisden-api/api/atividades`, {
       headers: { "Authorization": `Bearer ${token}`, "Accept": "application/json" },
-    }).catch(() => null);
-    if (!r || !r.ok) continue;
-    const j = await r.json().catch(() => null);
-    const det = (j && typeof j === "object" && !Array.isArray(j)) ? (j.data ?? j.denuncia ?? j) : null;
-    if (det && typeof det === "object" && Object.keys(det).length) {
-      if (!_detEndpoint && id != null) { _detEndpoint = p.replace(String(id), "{k}"); console.log(`[detalhe] endpoint OK: ${p}`); }
-      if (!_detLogou) { console.log("[detalhe] campos do item:", Object.keys(det)); _detLogou = true; }
-      return det;
+    });
+    if (!r.ok) { console.warn(`[atividades] HTTP ${r.status}`); return m; }
+    const j = await r.json();
+    const arr = Array.isArray(j) ? j : (j.data ?? j.content ?? []);
+    for (const a of arr) {
+      if (a?.id == null) continue;
+      const nome = a.descricao ? (a.tematica ? `${a.tematica} - ${a.descricao}` : String(a.descricao)) : (a.codigo ?? null);
+      if (nome) m.set(Number(a.id), nome);
     }
+    console.log(`[atividades] carregadas: ${m.size}`);
+  } catch (e) { console.warn("[atividades] erro:", e); }
+  return m;
+}
+
+// monta a natureza a partir das atividades da denúncia (ids → nomes, dedup, join)
+function naturezaDeDetalhe(det: any, ativ: Map<number, string>): string | null {
+  let ad = det?.atividades_denuncias;
+  if (typeof ad === "string") { try { ad = JSON.parse(ad); } catch { ad = null; } }
+  if (!Array.isArray(ad) || ad.length === 0) return null;
+  const nomes: string[] = [];
+  for (const a of ad) {
+    const id = Number(a?.atividade_id ?? a?.id);
+    if (!id) continue;
+    nomes.push(ativ.get(id) ?? `#${id}`);
   }
-  console.warn(`[detalhe] nenhum endpoint respondeu p/ id=${id} protocolo=${proto}`);
-  return null;
+  return nomes.length ? [...new Set(nomes)].join("; ") : null;
 }
 
 // funde os 3 campos de detalhe na linha, sem sobrescrever o que a lista já trouxe
-function enriquecerComDetalhe(linha: any, det: any) {
+function enriquecerComDetalhe(linha: any, det: any, ativ: Map<number, string>) {
   if (!det) return linha;
   return {
     ...linha,
-    natureza: linha.natureza ?? pick(det, "natureza", "tematica", "assunto", "naturezaInfracao", "tipoInfracao", "fato_denunciado"),
-    data_gerada: linha.data_gerada ?? soData(pick(det, "cadastrado_dtad", "created_at")),
+    natureza: linha.natureza ?? naturezaDeDetalhe(det, ativ),
+    data_gerada: linha.data_gerada ?? soData(pick(det, "created_at")),
     info_complementares: linha.info_complementares ?? pick(det, "informacao_complementar", "informacoes_complementares", "descricao_complementar"),
   };
 }
@@ -236,8 +257,9 @@ function addDias(iso: string | null, dias: number): string | null {
   return d.toISOString().slice(0, 10);
 }
 function mapear(d: any) {
-  // campos reais da API /backOffice/denuncias (confirmados 2026-10-30)
-  const data_gerada = soData(pick(d, "cadastrado_dtad", "created_at"));
+  // campos reais da API /backOffice/denuncias (confirmados 2026-10-30/31)
+  // data_gerada = created_at; na LISTA vem null (só no detalhe) → Fase 1b preenche.
+  const data_gerada = soData(pick(d, "created_at"));
   const data_envio  = soData(pick(d, "data_encaminhamento"));
   // a lista não traz vencimento → calcula (envio||gerada + PRAZO_DIAS); igual ao countdown da tela
   const data_vencimento = addDias(data_envio ?? data_gerada, PRAZO_DIAS);
@@ -288,7 +310,7 @@ Deno.serve(async (req) => {
     const novas = protocolos.filter((p) => !existentes.has(p));
 
     // ── Fase 1b: completa natureza/data_gerada/info_complementar via DETALHE ──
-    // índice protocolo -> item cru (p/ pegar o 'id' interno que o detalhe usa)
+    // índice protocolo -> item cru (o detalhe é buscado pelo próprio protocolo)
     const porProtocolo = new Map<string, any>();
     for (const d of brutas) { const p = pick(d, "protocolo", "codigo"); if (p) porProtocolo.set(String(p), d); }
     let detalhe: any = { ativo: DETALHE_ON };
@@ -297,6 +319,7 @@ Deno.serve(async (req) => {
       const alvos = novas.length ? novas
                   : (DRY_RUN && brutas.length ? [String(pick(brutas[0], "protocolo", "codigo"))] : []);
       const limitados = alvos.slice(0, DETALHE_MAX);
+      const ativ = limitados.length ? await carregarAtividades(token) : new Map<number, string>();
       const presDet = { natureza: 0, data_gerada: 0, info_complementares: 0 } as Record<string, number>;
       let ok = 0, falhou = 0;
       for (const p of limitados) {
@@ -307,11 +330,11 @@ Deno.serve(async (req) => {
         ok++;
         const idx = linhas.findIndex((l: any) => String(l.codigo) === p);
         if (idx >= 0) {
-          linhas[idx] = enriquecerComDetalhe(linhas[idx], det);  // funde p/ a escrita real
+          linhas[idx] = enriquecerComDetalhe(linhas[idx], det, ativ);  // funde p/ a escrita real
           for (const c of Object.keys(presDet)) if (linhas[idx][c] != null && linhas[idx][c] !== "") presDet[c]++;
         }
       }
-      detalhe = { ativo: true, endpoint: _detEndpoint, tentados: limitados.length, ok, falhou, preenchidos_detalhe: presDet };
+      detalhe = { ativo: true, atividades: ativ.size, tentados: limitados.length, ok, falhou, preenchidos_detalhe: presDet };
     }
 
     // conferência de preenchimento (presença dos campos, SEM expor valores/PII)
