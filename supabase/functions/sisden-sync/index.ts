@@ -42,6 +42,11 @@ const PRAZO_DIAS    = Number(Deno.env.get("SISDEN_PRAZO_DIAS") ?? "90");  // fal
 // não vêm na lista). Ligado por padrão; cap de segurança no nº de detalhes por run.
 const DETALHE_ON    = (Deno.env.get("SISDEN_DETALHE") ?? "true").toLowerCase() !== "false";
 const DETALHE_MAX   = Number(Deno.env.get("SISDEN_DETALHE_MAX") ?? "50");
+// BACKFILL=true (rodar 1x): busca o detalhe de TODAS (não só as novas) p/ preencher
+// natureza/info nas que já estavam no banco. Depois, voltar o secret p/ false.
+const BACKFILL      = (Deno.env.get("BACKFILL") ?? "false").toLowerCase() === "true";
+const BACKFILL_MAX  = Number(Deno.env.get("BACKFILL_MAX") ?? "1000");
+const DET_CONC      = Number(Deno.env.get("SISDEN_DET_CONC") ?? "8");     // detalhes em paralelo
 // PADRÃO = dry-run. Só escreve quando explicitamente DRY_RUN=false.
 const DRY_RUN       = (Deno.env.get("DRY_RUN") ?? "true").toLowerCase() !== "false";
 
@@ -315,26 +320,34 @@ Deno.serve(async (req) => {
     for (const d of brutas) { const p = pick(d, "protocolo", "codigo"); if (p) porProtocolo.set(String(p), d); }
     let detalhe: any = { ativo: DETALHE_ON };
     if (DETALHE_ON) {
-      // prod: todas as NOVAS (até o cap). dry-run sem novas: 1 amostra, só p/ validar o endpoint.
-      const alvos = novas.length ? novas
+      // BACKFILL: TODAS (1x, preenche as antigas). Senão: as NOVAS (até o cap).
+      // dry-run sem novas e sem backfill: 1 amostra, só p/ validar o endpoint.
+      const alvos = BACKFILL ? protocolos
+                  : novas.length ? novas
                   : (DRY_RUN && brutas.length ? [String(pick(brutas[0], "protocolo", "codigo"))] : []);
-      const limitados = alvos.slice(0, DETALHE_MAX);
+      const limitados = alvos.slice(0, BACKFILL ? BACKFILL_MAX : DETALHE_MAX);
       const ativ = limitados.length ? await carregarAtividades(token) : new Map<number, string>();
       const presDet = { natureza: 0, data_gerada: 0, info_complementares: 0 } as Record<string, number>;
       let ok = 0, falhou = 0;
-      for (const p of limitados) {
-        const item = porProtocolo.get(p);
-        if (!item) continue;
-        const det = await buscarDetalhe(token, item).catch(() => null);
-        if (!det) { falhou++; continue; }
-        ok++;
-        const idx = linhas.findIndex((l: any) => String(l.codigo) === p);
-        if (idx >= 0) {
-          linhas[idx] = enriquecerComDetalhe(linhas[idx], det, ativ);  // funde p/ a escrita real
-          for (const c of Object.keys(presDet)) if (linhas[idx][c] != null && linhas[idx][c] !== "") presDet[c]++;
+      // busca os detalhes em paralelo (lotes de DET_CONC) p/ não estourar o tempo limite
+      for (let i = 0; i < limitados.length; i += DET_CONC) {
+        const lote = limitados.slice(i, i + DET_CONC);
+        const dets = await Promise.all(lote.map((p) => {
+          const item = porProtocolo.get(p);
+          return item ? buscarDetalhe(token, item).catch(() => null) : Promise.resolve(null);
+        }));
+        for (let k = 0; k < lote.length; k++) {
+          const p = lote[k], det = dets[k];
+          if (!det) { falhou++; continue; }
+          ok++;
+          const idx = linhas.findIndex((l: any) => String(l.codigo) === p);
+          if (idx >= 0) {
+            linhas[idx] = enriquecerComDetalhe(linhas[idx], det, ativ);  // funde p/ a escrita real
+            for (const c of Object.keys(presDet)) if (linhas[idx][c] != null && linhas[idx][c] !== "") presDet[c]++;
+          }
         }
       }
-      detalhe = { ativo: true, atividades: ativ.size, tentados: limitados.length, ok, falhou, preenchidos_detalhe: presDet };
+      detalhe = { ativo: true, backfill: BACKFILL, atividades: ativ.size, tentados: limitados.length, ok, falhou, preenchidos_detalhe: presDet };
     }
 
     // conferência de preenchimento (presença dos campos, SEM expor valores/PII)
