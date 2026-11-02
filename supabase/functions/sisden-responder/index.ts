@@ -130,6 +130,17 @@ async function enviarResposta(token: string, f: Fonte, encId: number | string, t
   return { ok: true, status: r.status };
 }
 
+// campos gravados no banco ao responder → o painel mostra "Respondida no
+// SEMAD · FINALIZADA" (mesmos campos do botão manual "Marcar como respondida").
+function marcaRespondida(nome: string, hoje: string) {
+  return {
+    respondida_sisden_em: new Date().toISOString(), // controle interno (dedup do robô)
+    data_resposta_externa: hoje,                    // painel: data da resposta no externo
+    situacao: "FINALIZADA",                         // painel: marcarExterno finaliza a demanda
+    respondido_externo_por_nome: `${nome} (robô)`,
+  };
+}
+
 // ─── Handler ───────────────────────────────────────────────────────────
 Deno.serve(async (_req) => {
   const t0 = Date.now();
@@ -196,7 +207,7 @@ Deno.serve(async (_req) => {
         if (!det) { falhas++; resultados.push({ codigo: c.codigo, ok: false, erro: "detalhe não encontrado" }); continue; }
         const status = (det.status ?? "").toString();
         if (status && status.toLowerCase() !== STATUS.toLowerCase()) {
-          await sb.from("nuden_demandas").update({ respondida_sisden_em: new Date().toISOString() }).eq("codigo", c.codigo);
+          await sb.from("nuden_demandas").update(marcaRespondida(nome, hoje)).eq("codigo", c.codigo);
           puladas++; resultados.push({ codigo: c.codigo, ok: true, pulada: true, motivo: `status ${status}` }); continue;
         }
         const enc = acharEncaminhamento(det);
@@ -204,7 +215,7 @@ Deno.serve(async (_req) => {
         await travar(token, c.f, c.codigo, nome);
         const env = await enviarResposta(token, c.f, enc.id, c.texto, hoje, nome);
         if (env.ok) {
-          await sb.from("nuden_demandas").update({ respondida_sisden_em: new Date().toISOString() }).eq("codigo", c.codigo);
+          await sb.from("nuden_demandas").update(marcaRespondida(nome, hoje)).eq("codigo", c.codigo);
           enviadas++; resultados.push({ codigo: c.codigo, ok: true });
         } else { falhas++; resultados.push({ codigo: c.codigo, ok: false, status: env.status, erro: env.erro }); }
       } catch (e) { falhas++; resultados.push({ codigo: c.codigo, ok: false, erro: String((e as any)?.message ?? e) }); }
