@@ -3,23 +3,23 @@
 //  Envia em LOTE as respostas ao SISDEN (status "Retorno da área Técnica").
 //  SEMPRE acionada pelo usuário (abrir a URL) — NUNCA pelo cron.
 //
-//  Candidatas = demandas em nuden_demandas com Nº GAIA (Ato) e Nº REDS
-//  preenchidos (baixa feita) e ainda NÃO respondidas no SISDEN (respondida_
-//  sisden_em null). Pra cada uma: login → detalhe (pega encaminhamento) →
-//  travar → POST resposta (FormData) → marca respondida_sisden_em.
+//  Candidatas = demandas que estão PENDENTES no SISDEN AGORA (status
+//  "Encaminhada", a mesma lista que o sync puxa) E que têm Nº GAIA (Ato) +
+//  Nº REDS preenchidos no banco (baixa feita) E ainda não respondidas
+//  (respondida_sisden_em null). Isso EXCLUI o histórico antigo (que não está
+//  mais pendente no SISDEN).
 //
+//  Pra cada: detalhe (encaminhamento) → travar → POST resposta (FormData) →
+//  marca respondida_sisden_em.
 //  Texto: "<Denúncia|Requisição> atendida conforme ato de fiscalização nº
 //  <GAIA> e REDS nº <REDS>".  data_retorno = hoje.
 //
-//  DRY_RUN=true (PADRÃO SEGURO): NÃO envia nada — só devolve a LISTA do que
-//  seria enviado (sua conferência). Vire DRY_RUN=false p/ enviar de verdade.
+//  RESPONDER_DRY_RUN=true (PADRÃO, secret PRÓPRIO — não o DRY_RUN do sync):
+//  NÃO envia — só devolve a LISTA do que seria enviado. false = envia.
 //
-//  API confirmada ao vivo (denúncia, 2026-11-02):
-//    POST /sisden-api/api/backOffice/denuncias/{protocolo}/travar
-//         {servidor_responsavel_nome, unidades_usuario:[221]}
-//    POST /sisden-api/api/backOffice/denuncias/encaminhamentos/{encId}/resposta
-//         FormData: data_retorno, retorno(<p>..</p>), status, servidor_responsavel_nome,
-//                   numeroProcesso="", status_do_ato="undefined"
+//  API confirmada (denúncia, 2026-11-02):
+//    POST .../backOffice/denuncias/{protocolo}/travar {servidor_responsavel_nome, unidades_usuario:[221]}
+//    POST .../backOffice/denuncias/encaminhamentos/{encId}/resposta  (FormData)
 //  Requisição = mesmo padrão sob /sisreq/api/.../requisicoes/... (a confirmar no 1º envio).
 // ══════════════════════════════════════════════════════════════════════
 
@@ -27,11 +27,11 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const HOST        = Deno.env.get("SISDEN_BASE")      ?? "https://ecosistemas.meioambiente.mg.gov.br";
 const ID_SUPRAM   = Deno.env.get("SISDEN_ID_SUPRAM") ?? "221";
-// IMPORTANTE: secret PRÓPRIO (não o DRY_RUN do sync, que é compartilhado e está
-// false). Assim o responder só envia quando você setar RESPONDER_DRY_RUN=false.
+const STATUS      = Deno.env.get("SISDEN_STATUS")    ?? "Encaminhada";
+const PAGE_SIZE   = Number(Deno.env.get("SISDEN_PAGE_SIZE") ?? "100");
+const MAX_PAGES   = Number(Deno.env.get("SISDEN_MAX_PAGES") ?? "200");
 const DRY_RUN     = (Deno.env.get("RESPONDER_DRY_RUN") ?? "true").toLowerCase() !== "false";
-const MAX         = Number(Deno.env.get("SISDEN_RESPONDER_MAX") ?? "200");
-// quais fontes responder (p/ 1º envio dá p/ limitar a denúncias, já confirmadas)
+const MAX         = Number(Deno.env.get("SISDEN_RESPONDER_MAX") ?? "500");
 const RESP_DEN    = (Deno.env.get("SISDEN_RESP_DENUNCIAS")   ?? "true").toLowerCase()  !== "false";
 const RESP_REQ    = (Deno.env.get("SISDEN_RESP_REQUISICOES") ?? "true").toLowerCase()  !== "false";
 const NOME_FIXO   = Deno.env.get("SISDEN_SERVIDOR_NOME") ?? "";
@@ -40,11 +40,9 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 type Fonte = { tipo: string; base: string; recurso: string; label: string };
-function fonteDe(tipo_demanda: string | null): Fonte {
-  const t = (tipo_demanda ?? "").toUpperCase();
-  if (t.includes("REQUIS")) return { tipo: "REQUISIÇÃO", base: "/sisreq/api", recurso: "requisicoes", label: "Requisição" };
-  return { tipo: "DENÚNCIA", base: "/sisden-api/api", recurso: "denuncias", label: "Denúncia" };
-}
+const FONTES: Fonte[] = [];
+if (RESP_DEN) FONTES.push({ tipo: "DENÚNCIA",   base: "/sisden-api/api", recurso: "denuncias",   label: "Denúncia" });
+if (RESP_REQ) FONTES.push({ tipo: "REQUISIÇÃO", base: "/sisreq/api",     recurso: "requisicoes", label: "Requisição" });
 
 // ─── Login (igual sisden-sync) ─────────────────────────────────────────
 type Conta = { cpf: string; senha: string };
@@ -76,7 +74,21 @@ async function loginComFailover(contas: Conta[]): Promise<{ token: string; cpf: 
 }
 function pick(o: any, ...ks: string[]) { for (const k of ks) if (o?.[k] != null && o[k] !== "") return o[k]; return null; }
 
-// nome do servidor (p/ assinar a resposta) — getUsuario, com fallback no secret
+// lista de PENDENTES de 1 fonte → set de protocolos (status Encaminhada)
+async function puxarPendentes(token: string, f: Fonte): Promise<Set<string>> {
+  const set = new Set<string>();
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const url = `${HOST}${f.base}/backOffice/${f.recurso}?page=${page}&pageSize=${PAGE_SIZE}&status=${encodeURIComponent(STATUS)}&idSupram=${ID_SUPRAM}&isTecnico=true`;
+    const r = await fetch(url, { headers: { "Authorization": `Bearer ${token}`, "Accept": "application/json" } });
+    if (!r.ok) throw new Error(`[${f.recurso}] HTTP ${r.status} pág ${page}`);
+    const j = await r.json(); const itens = Array.isArray(j) ? j : (j.content ?? j.data ?? j.items ?? j[f.recurso] ?? []);
+    if (!Array.isArray(itens) || itens.length === 0) break;
+    for (const it of itens) { const p = it?.protocolo ?? it?.codigo; if (p) set.add(String(p)); }
+    if (itens.length < PAGE_SIZE) break;
+  }
+  return set;
+}
+
 async function nomeServidor(token: string, cpf: string): Promise<string> {
   if (NOME_FIXO) return NOME_FIXO;
   try {
@@ -85,8 +97,6 @@ async function nomeServidor(token: string, cpf: string): Promise<string> {
   } catch {}
   return "";
 }
-
-// detalhe → acha o encaminhamento pendente p/ nossa unidade + status atual
 async function buscarDetalhe(token: string, f: Fonte, protocolo: string): Promise<any | null> {
   const r = await fetch(`${HOST}${f.base}/backOffice/${f.recurso}/${encodeURIComponent(protocolo)}`, { headers: { "Authorization": `Bearer ${token}`, "Accept": "application/json" } }).catch(() => null);
   if (!r || !r.ok) return null;
@@ -98,10 +108,8 @@ function acharEncaminhamento(det: any): any | null {
   if (typeof encs === "string") { try { encs = JSON.parse(encs); } catch { encs = null; } }
   if (!Array.isArray(encs) || encs.length === 0) return null;
   return encs.find((e) => e?.retorno == null && String(e?.idEstruturaOrganizacional) === ID_SUPRAM)
-      ?? encs.find((e) => e?.retorno == null)
-      ?? encs[encs.length - 1];
+      ?? encs.find((e) => e?.retorno == null) ?? encs[encs.length - 1];
 }
-
 async function travar(token: string, f: Fonte, protocolo: string, nome: string) {
   await fetch(`${HOST}${f.base}/backOffice/${f.recurso}/${encodeURIComponent(protocolo)}/travar`, {
     method: "POST", headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
@@ -116,8 +124,7 @@ async function enviarResposta(token: string, f: Fonte, encId: number | string, t
   fd.append("retorno", `<p>${texto}</p>`);
   fd.append("servidor_responsavel_nome", nome);
   fd.append("status", "Retorno da área Técnica");
-  const url = `${HOST}${f.base}/backOffice/${f.recurso}/encaminhamentos/${encId}/resposta`;
-  const r = await fetch(url, { method: "POST", headers: { "Authorization": `Bearer ${token}` }, body: fd }).catch(() => null);
+  const r = await fetch(`${HOST}${f.base}/backOffice/${f.recurso}/encaminhamentos/${encId}/resposta`, { method: "POST", headers: { "Authorization": `Bearer ${token}` }, body: fd }).catch(() => null);
   if (!r) return { ok: false, status: 0, erro: "sem resposta" };
   if (!r.ok) { const t = await r.text().catch(() => ""); return { ok: false, status: r.status, erro: t.slice(0, 200) }; }
   return { ok: true, status: r.status };
@@ -128,79 +135,79 @@ Deno.serve(async (_req) => {
   const t0 = Date.now();
   const hoje = new Date().toISOString().slice(0, 10);
   try {
+    const contas = carregarContas();
+    if (contas.length === 0) return json(500, { erro: "Nenhuma conta configurada." });
     const sb = createClient(SUPABASE_URL, SERVICE_KEY);
+    const { token, cpf } = await loginComFailover(contas);
 
-    // candidatas: têm Ato (numero_gaia) + REDS e ainda não respondidas no SISDEN
-    const { data, error } = await sb.from("nuden_demandas")
-      .select("codigo, tipo_demanda, numero_gaia, numero_reds, municipio, situacao")
-      .is("respondida_sisden_em", null)
-      .not("numero_gaia", "is", null)
-      .limit(2000);
-    if (error) throw new Error(`select: ${error.message}`);
+    // 1) pendentes AGORA no SISDEN (por fonte)
+    const pendPorFonte: { f: Fonte; protos: Set<string> }[] = [];
+    for (const f of FONTES) pendPorFonte.push({ f, protos: await puxarPendentes(token, f) });
+    const todosPend = pendPorFonte.flatMap((x) => [...x.protos]);
 
-    const candidatas = (data ?? []).filter((d: any) => {
-      const gaia = (d.numero_gaia ?? "").toString().trim();
-      const reds = (d.numero_reds ?? "").toString().trim();
-      if (!gaia || !reds) return false;
-      const f = fonteDe(d.tipo_demanda);
-      if (f.recurso === "denuncias" && !RESP_DEN) return false;
-      if (f.recurso === "requisicoes" && !RESP_REQ) return false;
-      return true;
-    }).map((d: any) => {
-      const f = fonteDe(d.tipo_demanda);
-      const texto = `${f.label} atendida conforme ato de fiscalização nº ${d.numero_gaia} e REDS nº ${d.numero_reds}`;
-      return { codigo: d.codigo, fonte: f, municipio: d.municipio, gaia: d.numero_gaia, reds: d.numero_reds, texto };
-    });
+    // 2) no banco, quais desses têm Ato+REDS e ainda não respondidos
+    const dados = new Map<string, any>();
+    for (let i = 0; i < todosPend.length; i += 300) {
+      const lote = todosPend.slice(i, i + 300);
+      const { data, error } = await sb.from("nuden_demandas")
+        .select("codigo, numero_gaia, numero_reds, municipio, respondida_sisden_em").in("codigo", lote);
+      if (error) throw new Error(`select: ${error.message}`);
+      for (const row of data ?? []) dados.set(row.codigo, row);
+    }
 
-    // DRY-RUN: só a lista do que seria enviado (conferência)
+    // 3) candidatas = pendente + tem Ato+REDS + não respondida
+    const candidatas: { codigo: string; f: Fonte; municipio: string; gaia: string; reds: string; texto: string }[] = [];
+    for (const { f, protos } of pendPorFonte) {
+      for (const p of protos) {
+        const d = dados.get(p);
+        if (!d) continue;
+        if (d.respondida_sisden_em) continue;
+        const gaia = (d.numero_gaia ?? "").toString().trim();
+        const reds = (d.numero_reds ?? "").toString().trim();
+        if (!gaia || !reds) continue;
+        candidatas.push({ codigo: p, f, municipio: d.municipio, gaia, reds, texto: `${f.label} atendida conforme ato de fiscalização nº ${gaia} e REDS nº ${reds}` });
+      }
+    }
+
+    const resumoPend = Object.fromEntries(pendPorFonte.map((x) => [x.f.recurso, x.protos.size]));
+
     if (DRY_RUN) {
       return json(200, {
         dry_run: true,
+        pendentes_no_sisden: resumoPend,
         total_candidatas: candidatas.length,
-        por_tipo: {
-          denuncias: candidatas.filter((c) => c.fonte.recurso === "denuncias").length,
-          requisicoes: candidatas.filter((c) => c.fonte.recurso === "requisicoes").length,
-        },
-        amostra: candidatas.slice(0, 15).map((c) => ({ codigo: c.codigo, tipo: c.fonte.label, municipio: c.municipio, texto: c.texto, data_retorno: hoje })),
-        aviso: "DRY_RUN ativo — NADA foi enviado. Confira a lista; p/ enviar, vire DRY_RUN=false.",
+        por_tipo: { denuncias: candidatas.filter((c) => c.f.recurso === "denuncias").length, requisicoes: candidatas.filter((c) => c.f.recurso === "requisicoes").length },
+        amostra: candidatas.slice(0, 20).map((c) => ({ codigo: c.codigo, tipo: c.f.label, municipio: c.municipio, texto: c.texto, data_retorno: hoje })),
+        aviso: "DRY_RUN ativo — NADA foi enviado. Confira; p/ enviar, RESPONDER_DRY_RUN=false.",
         ms: Date.now() - t0,
       });
     }
 
     // ENVIO REAL
-    const contas = carregarContas();
-    if (contas.length === 0) return json(500, { erro: "Nenhuma conta configurada." });
-    const { token, cpf } = await loginComFailover(contas);
     const nome = await nomeServidor(token, cpf);
     if (!nome) return json(500, { erro: "Não consegui o nome do servidor (defina SISDEN_SERVIDOR_NOME)." });
-
     const resultados: any[] = [];
     let enviadas = 0, puladas = 0, falhas = 0;
     for (const c of candidatas.slice(0, MAX)) {
       try {
-        const det = await buscarDetalhe(token, c.fonte, c.codigo);
+        const det = await buscarDetalhe(token, c.f, c.codigo);
         if (!det) { falhas++; resultados.push({ codigo: c.codigo, ok: false, erro: "detalhe não encontrado" }); continue; }
         const status = (det.status ?? "").toString();
-        if (status && status.toLowerCase() !== "encaminhada") {
-          // já respondida/movida no SISDEN → marca p/ não re-listar
+        if (status && status.toLowerCase() !== STATUS.toLowerCase()) {
           await sb.from("nuden_demandas").update({ respondida_sisden_em: new Date().toISOString() }).eq("codigo", c.codigo);
           puladas++; resultados.push({ codigo: c.codigo, ok: true, pulada: true, motivo: `status ${status}` }); continue;
         }
         const enc = acharEncaminhamento(det);
         if (!enc?.id) { falhas++; resultados.push({ codigo: c.codigo, ok: false, erro: "sem encaminhamento" }); continue; }
-        await travar(token, c.fonte, c.codigo, nome);
-        const env = await enviarResposta(token, c.fonte, enc.id, c.texto, hoje, nome);
+        await travar(token, c.f, c.codigo, nome);
+        const env = await enviarResposta(token, c.f, enc.id, c.texto, hoje, nome);
         if (env.ok) {
           await sb.from("nuden_demandas").update({ respondida_sisden_em: new Date().toISOString() }).eq("codigo", c.codigo);
           enviadas++; resultados.push({ codigo: c.codigo, ok: true });
-        } else {
-          falhas++; resultados.push({ codigo: c.codigo, ok: false, status: env.status, erro: env.erro });
-        }
-      } catch (e) {
-        falhas++; resultados.push({ codigo: c.codigo, ok: false, erro: String((e as any)?.message ?? e) });
-      }
+        } else { falhas++; resultados.push({ codigo: c.codigo, ok: false, status: env.status, erro: env.erro }); }
+      } catch (e) { falhas++; resultados.push({ codigo: c.codigo, ok: false, erro: String((e as any)?.message ?? e) }); }
     }
-    return json(200, { dry_run: false, total_candidatas: candidatas.length, enviadas, puladas, falhas, resultados: resultados.slice(0, 50), ms: Date.now() - t0 });
+    return json(200, { dry_run: false, pendentes_no_sisden: resumoPend, total_candidatas: candidatas.length, enviadas, puladas, falhas, resultados: resultados.slice(0, 80), ms: Date.now() - t0 });
   } catch (e) {
     console.error("[sisden-responder] erro:", e);
     return json(500, { erro: String((e as any)?.message ?? e) });
