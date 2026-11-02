@@ -30,7 +30,15 @@ const DETALHE_MAX   = Number(Deno.env.get("SISDEN_DETALHE_MAX") ?? "50");
 // BACKFILL=true (rodar 1x): detalhe de TODAS p/ preencher as que já estavam no banco.
 const BACKFILL      = (Deno.env.get("BACKFILL") ?? "false").toLowerCase() === "true";
 const BACKFILL_MAX  = Number(Deno.env.get("BACKFILL_MAX") ?? "1000");
+// SISDEN_BACKFILL_SO = lista de protocolos (vírgula) p/ limitar o backfill a eles
+// (teste controlado: processa detalhe + anexos só dessas denúncias).
+const BACKFILL_SO   = (Deno.env.get("SISDEN_BACKFILL_SO") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 const DET_CONC      = Number(Deno.env.get("SISDEN_DET_CONC") ?? "8");     // detalhes em paralelo
+// Fase 2 — ANEXOS no Drive: baixa os arquivos do SISDEN e sobe via Apps Script.
+// SISDEN_DRIVE_URL = URL /exec do Web App (APPS-SCRIPT-nuden-drive.gs). Sem ela, pula.
+const DRIVE_URL     = Deno.env.get("SISDEN_DRIVE_URL") ?? "";
+const ANEXOS_ON     = (Deno.env.get("SISDEN_ANEXOS") ?? "true").toLowerCase() !== "false";
+const ANEXOS_MAX    = Number(Deno.env.get("SISDEN_ANEXOS_MAX") ?? "20");  // arquivos por denúncia
 // PADRÃO = dry-run. Só escreve quando explicitamente DRY_RUN=false.
 const DRY_RUN       = (Deno.env.get("DRY_RUN") ?? "true").toLowerCase() !== "false";
 
@@ -202,6 +210,82 @@ function enriquecerComDetalhe(linha: any, det: any, ativ: Map<number, string>) {
   };
 }
 
+// ─── Fase 2: ANEXOS (baixa do SISDEN → sobe no Drive via Apps Script) ───
+const MIMES: Record<string, string> = {
+  pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
+  gif: "image/gif", webp: "image/webp", doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  mp4: "video/mp4", zip: "application/zip", txt: "text/plain",
+};
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = ""; const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  return btoa(bin);
+}
+// baixa 1 arquivo do SISDEN. Ainda NÃO confirmamos a URL de download: tenta os
+// padrões REST e memoriza/loga o que funciona (igual fizemos com o detalhe).
+let _dlEndpoint: string | null = null;
+async function baixarArquivo(token: string, a: any): Promise<{ nome: string; mime: string; base64: string } | null> {
+  const id = a?.id;
+  if (id == null) return null;
+  const nome = String(a?.nome_arquivo ?? a?.nome ?? `arquivo-${id}`);
+  const ext = String(a?.extensao ?? (nome.split(".").pop() ?? "")).toLowerCase();
+  const mimeFallback = MIMES[ext] ?? "application/octet-stream";
+  const paths: string[] = [];
+  if (_dlEndpoint) paths.push(_dlEndpoint.replace("{k}", String(id)));
+  paths.push(
+    `/sisden-api/api/arquivos/${id}`,
+    `/sisden-api/api/arquivos/download/${id}`,
+    `/sisden-api/api/arquivos/${id}/download`,
+    `/sisden-api/api/arquivo/${id}`,
+    `/sisden-api/api/backOffice/arquivos/${id}`,
+  );
+  for (const p of [...new Set(paths)]) {
+    const r = await fetch(`${SISDEN_BASE}${p}`, { headers: { "Authorization": `Bearer ${token}` } }).catch(() => null);
+    if (!r || !r.ok) continue;
+    const ct = (r.headers.get("content-type") || "").toLowerCase();
+    if (ct.includes("application/json") || ct.includes("text/html")) continue; // é erro/página, não o arquivo
+    const buf = new Uint8Array(await r.arrayBuffer());
+    if (buf.byteLength === 0) continue;
+    if (!_dlEndpoint) { _dlEndpoint = p.replace(String(id), "{k}"); console.log(`[anexo] endpoint OK: ${p}`); }
+    const mime = ct && !ct.includes("octet-stream") ? ct.split(";")[0].trim() : mimeFallback;
+    return { nome, mime, base64: bytesToBase64(buf) };
+  }
+  console.warn(`[anexo] download falhou p/ id=${id} nome=${nome}`);
+  return null;
+}
+// sobe 1 arquivo no Drive via o Web App do Apps Script (APPS-SCRIPT-nuden-drive.gs)
+async function subirDrive(protocolo: string, nome: string, mime: string, base64: string): Promise<any | null> {
+  const r = await fetch(DRIVE_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ protocolo, nome, mime, base64 }),
+  }).catch(() => null);
+  if (!r) return null;
+  return await r.json().catch(() => null);
+}
+// processa todos os anexos de 1 denúncia → devolve o array p/ nuden_demandas.anexos
+async function processarAnexos(token: string, det: any, protocolo: string): Promise<any[]> {
+  let arqs = det?.arquivos;
+  if (typeof arqs === "string") { try { arqs = JSON.parse(arqs); } catch { arqs = null; } }
+  if (!Array.isArray(arqs) || arqs.length === 0) return [];
+  const anexos: any[] = [];
+  for (const a of arqs.slice(0, ANEXOS_MAX)) {
+    const baixado = await baixarArquivo(token, a).catch(() => null);
+    if (!baixado) continue;
+    const up = await subirDrive(protocolo, baixado.nome, baixado.mime, baixado.base64).catch(() => null);
+    if (up?.ok && up.link) {
+      anexos.push({ nome: baixado.nome, mime: baixado.mime, tamanho: a?.tamanho ?? null,
+                    file_id: up.id, link: up.link, fonte: "sisden" });
+    } else {
+      console.warn(`[anexo] upload Drive falhou p/ ${protocolo}/${baixado.nome}:`, up?.erro ?? "sem resposta");
+    }
+  }
+  return anexos;
+}
+
 // ─── Mapeia 1 denúncia do SISDEN → linha do nuden_sync ─────────────────
 function pick(o: any, ...keys: string[]) {
   for (const k of keys) if (o?.[k] != null && o[k] !== "") return o[k];
@@ -292,13 +376,14 @@ Deno.serve(async (req) => {
     let detalhe: any = { ativo: DETALHE_ON };
     if (DETALHE_ON) {
       // BACKFILL: TODAS (1x). Senão: as NOVAS. dry-run sem novas: 1 amostra.
-      const alvos = BACKFILL ? protocolos
+      const alvos = BACKFILL ? (BACKFILL_SO.length ? protocolos.filter((p) => BACKFILL_SO.includes(p)) : protocolos)
                   : novas.length ? novas
                   : (DRY_RUN && brutas.length ? [String(pick(brutas[0], "protocolo", "codigo"))] : []);
       const limitados = alvos.slice(0, BACKFILL ? BACKFILL_MAX : DETALHE_MAX);
       const ativ = limitados.length ? await carregarAtividades(token) : new Map<number, string>();
       const presDet = { natureza: 0, data_gerada: 0, info_complementares: 0 } as Record<string, number>;
-      let ok = 0, falhou = 0;
+      const fazAnexos = ANEXOS_ON && !!DRIVE_URL;
+      let ok = 0, falhou = 0, anexosOk = 0;
       // busca os detalhes em paralelo (lotes de DET_CONC) p/ não estourar o tempo limite
       for (let i = 0; i < limitados.length; i += DET_CONC) {
         const lote = limitados.slice(i, i + DET_CONC);
@@ -314,10 +399,16 @@ Deno.serve(async (req) => {
           if (idx >= 0) {
             linhas[idx] = enriquecerComDetalhe(linhas[idx], det, ativ);
             for (const c of Object.keys(presDet)) if (linhas[idx][c] != null && linhas[idx][c] !== "") presDet[c]++;
+            // Fase 2: baixa anexos do SISDEN e sobe no Drive (só se configurado e NÃO em dry-run)
+            if (fazAnexos && !DRY_RUN) {
+              const ax = await processarAnexos(token, det, p).catch(() => []);
+              if (ax.length) { linhas[idx].anexos = ax; anexosOk += ax.length; }
+            }
           }
         }
       }
-      detalhe = { ativo: true, backfill: BACKFILL, atividades: ativ.size, tentados: limitados.length, ok, falhou, preenchidos_detalhe: presDet };
+      detalhe = { ativo: true, backfill: BACKFILL, atividades: ativ.size, tentados: limitados.length, ok, falhou,
+                  preenchidos_detalhe: presDet, anexos: { ativo: fazAnexos, endpoint: _dlEndpoint, subidos: anexosOk } };
     }
 
     // conferência de preenchimento (presença dos campos, SEM expor valores/PII)
