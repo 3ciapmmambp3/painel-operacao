@@ -39,6 +39,10 @@ const DET_CONC      = Number(Deno.env.get("SISDEN_DET_CONC") ?? "8");     // det
 const DRIVE_URL     = Deno.env.get("SISDEN_DRIVE_URL") ?? "";
 const ANEXOS_ON     = (Deno.env.get("SISDEN_ANEXOS") ?? "true").toLowerCase() !== "false";
 const ANEXOS_MAX    = Number(Deno.env.get("SISDEN_ANEXOS_MAX") ?? "20");  // arquivos por denúncia
+// Não sobe se a subpasta do protocolo já tiver arquivos (o fluxo atual já pôs) → evita duplicar.
+const ANEXOS_SKIP_SE_EXISTE = (Deno.env.get("SISDEN_ANEXOS_SKIP_EXISTE") ?? "true").toLowerCase() !== "false";
+// Teste: se setado, sobe tudo numa subpasta com ESTE nome (em vez do protocolo), p/ validar sem mexer nas reais.
+const ANEXOS_TESTE_PASTA = Deno.env.get("SISDEN_ANEXOS_TESTE_PASTA") ?? "";
 // PADRÃO = dry-run. Só escreve quando explicitamente DRY_RUN=false.
 const DRY_RUN       = (Deno.env.get("DRY_RUN") ?? "true").toLowerCase() !== "false";
 
@@ -257,30 +261,47 @@ async function baixarArquivo(token: string, a: any): Promise<{ nome: string; mim
   return null;
 }
 // sobe 1 arquivo no Drive via o Web App do Apps Script (APPS-SCRIPT-nuden-drive.gs)
-async function subirDrive(protocolo: string, nome: string, mime: string, base64: string): Promise<any | null> {
+async function subirDrive(pasta: string, nome: string, mime: string, base64: string): Promise<any | null> {
   const r = await fetch(DRIVE_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ protocolo, nome, mime, base64 }),
+    body: JSON.stringify({ protocolo: pasta, nome, mime, base64 }),
   }).catch(() => null);
   if (!r) return null;
   return await r.json().catch(() => null);
+}
+// pergunta ao Apps Script se a subpasta já tem arquivos (p/ pular e não duplicar)
+async function pastaJaTemArquivos(pasta: string): Promise<boolean> {
+  const r = await fetch(DRIVE_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "check", protocolo: pasta }),
+  }).catch(() => null);
+  if (!r) return false;
+  const j = await r.json().catch(() => null);
+  return !!(j && j.temArquivos);
 }
 // processa todos os anexos de 1 denúncia → devolve o array p/ nuden_demandas.anexos
 async function processarAnexos(token: string, det: any, protocolo: string): Promise<any[]> {
   let arqs = det?.arquivos;
   if (typeof arqs === "string") { try { arqs = JSON.parse(arqs); } catch { arqs = null; } }
   if (!Array.isArray(arqs) || arqs.length === 0) return [];
+  const pasta = ANEXOS_TESTE_PASTA || protocolo;   // teste sobe numa pasta separada
+  // pula a denúncia inteira se a pasta já tem arquivos (o fluxo atual já pôs)
+  if (ANEXOS_SKIP_SE_EXISTE && await pastaJaTemArquivos(pasta)) {
+    console.log(`[anexo] ${protocolo}: pasta já tem arquivos no Drive → pulando (sem duplicar)`);
+    return [];
+  }
   const anexos: any[] = [];
   for (const a of arqs.slice(0, ANEXOS_MAX)) {
     const baixado = await baixarArquivo(token, a).catch(() => null);
     if (!baixado) continue;
-    const up = await subirDrive(protocolo, baixado.nome, baixado.mime, baixado.base64).catch(() => null);
+    const up = await subirDrive(pasta, baixado.nome, baixado.mime, baixado.base64).catch(() => null);
     if (up?.ok && up.link) {
       anexos.push({ nome: baixado.nome, mime: baixado.mime, tamanho: a?.tamanho ?? null,
                     file_id: up.id, link: up.link, fonte: "sisden" });
     } else {
-      console.warn(`[anexo] upload Drive falhou p/ ${protocolo}/${baixado.nome}:`, up?.erro ?? "sem resposta");
+      console.warn(`[anexo] upload Drive falhou p/ ${pasta}/${baixado.nome}:`, up?.erro ?? "sem resposta");
     }
   }
   return anexos;

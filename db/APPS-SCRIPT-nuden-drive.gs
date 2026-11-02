@@ -48,10 +48,23 @@ function doPost(e) {
     var mime = String(body.mime || 'application/octet-stream');
     var b64  = String(body.base64 || '');
     var pastaId = String(body.pastaId || PASTA_PADRAO_ID || '');
+
+    var raizCheck = pastaId ? DriveApp.getFolderById(pastaId)
+                            : _garante(_garante(DriveApp.getRootFolder(), 'Painel - Anexos'), 'nuden');
+
+    // AÇÃO "check": a subpasta do protocolo já tem arquivos? (p/ o robô pular e
+    // não duplicar o que o fluxo atual já pôs). NÃO cria a subpasta.
+    if (body.action === 'check') {
+      var it = raizCheck.getFoldersByName(protocolo);
+      if (!it.hasNext()) return _json({ ok:true, existe:false, temArquivos:false, n:0 });
+      var pst = it.next();
+      var fs = pst.getFiles(); var n = 0; while (fs.hasNext()) { fs.next(); n++; }
+      return _json({ ok:true, existe:true, temArquivos:(n > 0), n:n });
+    }
+
     if (!b64) return _json({ ok:false, erro:'sem conteúdo (base64 vazio)' });
 
-    var raiz = pastaId ? DriveApp.getFolderById(pastaId)
-                       : _garante(_garante(DriveApp.getRootFolder(), 'Painel - Anexos'), 'nuden');
+    var raiz = raizCheck;
     var pasta = _garante(raiz, protocolo);   // subpasta por protocolo
 
     // DEDUP por nome dentro da subpasta do protocolo
