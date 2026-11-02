@@ -5,28 +5,14 @@
 //
 //  Fluxo:
 //    1) login no SISDEN  → POST /eco-ui/api/auth/login  (CPF + senha)  → token
-//       (failover: tenta a 1ª conta; se falhar, a 2ª, a 3ª… — ver SISDEN_ACCOUNTS)
 //    2) puxa as denúncias → GET /sisden-api/api/backOffice/denuncias (Bearer token)
 //    3) mapeia p/ o formato do nuden_sync e chama a RPC public.nuden_sync(jsonb)
-//       (upsert por CÓDIGO = Protocolo → só NOVAS inserem; as existentes são
-//        atualizadas sem apagar a baixa feita no painel.)
+//       (upsert por CÓDIGO = Protocolo → só NOVAS inserem; existentes atualizam
+//        sem apagar a baixa feita no painel.)
 //
-//  SEGURANÇA / credenciais: nada fica no código. Tudo vem de "secrets":
-//    supabase secrets set SISDEN_ACCOUNTS='[{"cpf":"...","senha":"..."},{"cpf":"...","senha":"..."}]'
-//  (ou pares SISDEN_CPF_1/SISDEN_SENHA_1, SISDEN_CPF_2/SISDEN_SENHA_2).
-//  Trocar uma conta = só editar o secret; usar duas = failover automático.
-//
-//  DRY_RUN=true (PADRÃO SEGURO): NÃO escreve nada — só compara os protocolos
-//  da API com os códigos já no banco e devolve um resumo (novas × já existentes).
-//  Vire DRY_RUN=false só quando o resumo estiver validado.
-//
-//  ✅ MAPEAMENTO CONFIRMADO (dry-run 2026-10-31): a API devolve os campos
-//  protocolo, tipo_registro, municipio, logradouro/numero/bairro/cep/
-//  ponto_referencia e data_encaminhamento — todos mapeados e preenchidos
-//  (366/366, endereço 290/366). Dedup confirmada (365 no banco / 1 nova).
-//  OBS: natureza, cadastrado_dtad/created_at (data_gerada) e
-//  informacao_complementar NÃO vêm na LISTA — só no DETALHE da denúncia;
-//  ficam null p/ as novas e serão preenchidos na Fase 1b (fetch do detalhe).
+//  SECRETS: SISDEN_CPF_1/SISDEN_SENHA_1 (ou SISDEN_ACCOUNTS).
+//  DRY_RUN=true (padrão) não grava. BACKFILL=true (rodar 1x) busca o detalhe de
+//  TODAS p/ preencher natureza das que já estavam no banco; depois volte p/ false.
 // ══════════════════════════════════════════════════════════════════════
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -38,12 +24,10 @@ const STATUS        = Deno.env.get("SISDEN_STATUS")    ?? "Encaminhada";  // pen
 const PAGE_SIZE     = Number(Deno.env.get("SISDEN_PAGE_SIZE") ?? "100");
 const MAX_PAGES     = Number(Deno.env.get("SISDEN_MAX_PAGES") ?? "200");  // trava de segurança
 const PRAZO_DIAS    = Number(Deno.env.get("SISDEN_PRAZO_DIAS") ?? "90");  // fallback p/ vencimento
-// Fase 1b: buscar o DETALHE das denúncias (natureza/data_gerada/info_complementar
-// não vêm na lista). Ligado por padrão; cap de segurança no nº de detalhes por run.
+// Fase 1b: buscar o DETALHE (natureza/data_gerada/info não vêm na lista).
 const DETALHE_ON    = (Deno.env.get("SISDEN_DETALHE") ?? "true").toLowerCase() !== "false";
 const DETALHE_MAX   = Number(Deno.env.get("SISDEN_DETALHE_MAX") ?? "50");
-// BACKFILL=true (rodar 1x): busca o detalhe de TODAS (não só as novas) p/ preencher
-// natureza/info nas que já estavam no banco. Depois, voltar o secret p/ false.
+// BACKFILL=true (rodar 1x): detalhe de TODAS p/ preencher as que já estavam no banco.
 const BACKFILL      = (Deno.env.get("BACKFILL") ?? "false").toLowerCase() === "true";
 const BACKFILL_MAX  = Number(Deno.env.get("BACKFILL_MAX") ?? "1000");
 const DET_CONC      = Number(Deno.env.get("SISDEN_DET_CONC") ?? "8");     // detalhes em paralelo
@@ -99,8 +83,6 @@ async function login(conta: Conta): Promise<string | null> {
   const cpfDig = conta.cpf.replace(/\D/g, "");          // só dígitos
   const cpfMask = conta.cpf;                             // como veio (pode ter máscara)
   const tag = `...${cpfDig.slice(-3)}`;
-  // TODO(confirmar): corpo do login. Tentamos os formatos mais prováveis até um dar certo;
-  // o log abaixo mostra qual funcionou (aí travamos só esse no código).
   const candidatos: Record<string, string>[] = [
     { cpf: cpfDig,  senha: conta.senha },
     { cpf: cpfMask, senha: conta.senha },
@@ -155,13 +137,11 @@ async function puxarDenuncias(token: string): Promise<any[]> {
 }
 
 // ─── Fase 1b: DETALHE de 1 denúncia ────────────────────────────────────
-// Confirmado ao vivo (2026-10-31) abrindo a denúncia no SISDEN:
-//   endpoint  = GET /sisden-api/api/backOffice/denuncias/{PROTOCOLO}  (protocolo
-//               com pontos, NÃO o id interno nem base64)
+// Confirmado ao vivo (2026-10-31):
+//   endpoint  = GET /sisden-api/api/backOffice/denuncias/{PROTOCOLO}
 //   data_gerada         = det.created_at  (cadastrado_dtad é flag "F", não data!)
 //   info_complementar   = det.informacao_complementar | descricao_complementar
-//   natureza            = det.atividades_denuncias[].atividade_id → cruza com a
-//                         tabela /api/atividades (id → {tematica, descricao}).
+//   natureza            = det.atividades_denuncias[].atividade_id → /api/atividades
 let _detLogou = false;
 async function buscarDetalhe(token: string, item: any): Promise<any | null> {
   const proto = item?.protocolo ?? item?.codigo;
@@ -223,10 +203,6 @@ function enriquecerComDetalhe(linha: any, det: any, ativ: Map<number, string>) {
 }
 
 // ─── Mapeia 1 denúncia do SISDEN → linha do nuden_sync ─────────────────
-// Campos confirmados na lista (dry-run 2026-10-31). natureza / data_gerada
-// (cadastrado_dtad|created_at) / informacao_complementar vêm só no DETALHE
-// da denúncia → null aqui, preenchidos na Fase 1b. O pick() abaixo já aponta
-// pro nome real de cada campo, então quando o detalhe for anexado eles entram.
 function pick(o: any, ...keys: string[]) {
   for (const k of keys) if (o?.[k] != null && o[k] !== "") return o[k];
   return null;
@@ -263,18 +239,14 @@ function addDias(iso: string | null, dias: number): string | null {
 }
 function mapear(d: any) {
   // campos reais da API /backOffice/denuncias (confirmados 2026-10-30/31)
-  // data_gerada = created_at; na LISTA vem null (só no detalhe) → Fase 1b preenche.
   const data_gerada = soData(pick(d, "created_at"));
   const data_envio  = soData(pick(d, "data_encaminhamento"));
-  // a lista não traz vencimento → calcula (envio||gerada + PRAZO_DIAS); igual ao countdown da tela
   const data_vencimento = addDias(data_envio ?? data_gerada, PRAZO_DIAS);
   return {
     codigo: pick(d, "protocolo", "codigo"),
     tipo_demanda: pick(d, "tipo_registro") ?? "DENÚNCIA",
     data_gerada,
-    // ⚠️ natureza NÃO vem na lista (só no detalhe). Fica null aqui; a Fase 1b
-    // (buscarDetalhe + enriquecerComDetalhe, no handler) preenche as NOVAS.
-    natureza: pick(d, "natureza", "tematica", "naturezaInfracao"),
+    natureza: pick(d, "natureza", "tematica", "naturezaInfracao"),  // null na lista; detalhe preenche
     municipio: nomeMunicipio(d),
     endereco: montarEndereco(d),
     fracao_responsavel: null,           // nuden_sync resolve o grupamento pelo município
@@ -314,14 +286,12 @@ Deno.serve(async (req) => {
     }
     const novas = protocolos.filter((p) => !existentes.has(p));
 
-    // ── Fase 1b: completa natureza/data_gerada/info_complementar via DETALHE ──
-    // índice protocolo -> item cru (o detalhe é buscado pelo próprio protocolo)
+    // ── Fase 1b: completa natureza/data_gerada/info via DETALHE ──
     const porProtocolo = new Map<string, any>();
     for (const d of brutas) { const p = pick(d, "protocolo", "codigo"); if (p) porProtocolo.set(String(p), d); }
     let detalhe: any = { ativo: DETALHE_ON };
     if (DETALHE_ON) {
-      // BACKFILL: TODAS (1x, preenche as antigas). Senão: as NOVAS (até o cap).
-      // dry-run sem novas e sem backfill: 1 amostra, só p/ validar o endpoint.
+      // BACKFILL: TODAS (1x). Senão: as NOVAS. dry-run sem novas: 1 amostra.
       const alvos = BACKFILL ? protocolos
                   : novas.length ? novas
                   : (DRY_RUN && brutas.length ? [String(pick(brutas[0], "protocolo", "codigo"))] : []);
@@ -342,7 +312,7 @@ Deno.serve(async (req) => {
           ok++;
           const idx = linhas.findIndex((l: any) => String(l.codigo) === p);
           if (idx >= 0) {
-            linhas[idx] = enriquecerComDetalhe(linhas[idx], det, ativ);  // funde p/ a escrita real
+            linhas[idx] = enriquecerComDetalhe(linhas[idx], det, ativ);
             for (const c of Object.keys(presDet)) if (linhas[idx][c] != null && linhas[idx][c] !== "") presDet[c]++;
           }
         }
@@ -363,13 +333,12 @@ Deno.serve(async (req) => {
       ja_no_banco: existentes.size,
       novas: novas.length,
       exemplos_novas: novas.slice(0, 5),
-      preenchidos: presenca,        // quantas das 'mapeadas' têm cada campo (confere o mapeamento)
-      detalhe,                      // Fase 1b: endpoint do detalhe + quantos campos preencheu
+      preenchidos: presenca,
+      detalhe,
       ms: Date.now() - t0,
     };
 
     if (DRY_RUN) {
-      // NÃO escreve nada — só o diagnóstico
       console.log("[DRY-RUN]", resumo);
       return json(200, { ...resumo, aviso: "DRY_RUN ativo — nada foi gravado." });
     }
