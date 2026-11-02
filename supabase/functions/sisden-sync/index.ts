@@ -240,11 +240,9 @@ async function baixarArquivo(token: string, a: any): Promise<{ nome: string; mim
   const paths: string[] = [];
   if (_dlEndpoint) paths.push(_dlEndpoint.replace("{k}", String(id)));
   paths.push(
-    `/sisden-api/api/arquivos/${id}`,
-    `/sisden-api/api/arquivos/download/${id}`,
+    `/sisden-api/api/backOffice/denuncias/anexos/${id}/download`,  // CONFIRMADO ao vivo 2026-11-02
     `/sisden-api/api/arquivos/${id}/download`,
-    `/sisden-api/api/arquivo/${id}`,
-    `/sisden-api/api/backOffice/arquivos/${id}`,
+    `/sisden-api/api/arquivos/${id}`,
   );
   for (const p of [...new Set(paths)]) {
     const r = await fetch(`${SISDEN_BASE}${p}`, { headers: { "Authorization": `Bearer ${token}` } }).catch(() => null);
