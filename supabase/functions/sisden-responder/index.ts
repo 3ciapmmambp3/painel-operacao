@@ -133,7 +133,9 @@ async function enviarResposta(token: string, f: Fonte, encId: number | string, t
 // ─── Handler ───────────────────────────────────────────────────────────
 Deno.serve(async (_req) => {
   const t0 = Date.now();
-  const hoje = new Date().toISOString().slice(0, 10);
+  // data_retorno = SEMPRE o dia de HOJE em Brasília (UTC-3), nunca a data do
+  // atendimento do Relatório. (Brasil sem horário de verão desde 2019.)
+  const hoje = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
   try {
     const contas = carregarContas();
     if (contas.length === 0) return json(500, { erro: "Nenhuma conta configurada." });
