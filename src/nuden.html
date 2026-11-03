@@ -138,7 +138,7 @@
       </div>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
-      <a class="btn-gold btn-sm" id="btn-responder-sisden" href="https://zrnbebjszwkmquzthjfa.supabase.co/functions/v1/sisden-responder" target="_blank" rel="noopener" title="Lança no SISDEN, em lote, as respostas das demandas já baixadas (Ato+REDS)" style="display:none;text-decoration:none;align-items:center;gap:6px">📤 Responder no SISDEN</a>
+      <button class="btn-gold btn-sm" id="btn-responder-sisden" onclick="responderSisden()" title="Lança no SISDEN, em lote, as respostas das demandas já baixadas (Ato+REDS)" style="display:none">📤 Responder no SISDEN</button>
       <button class="btn-gold btn-sm" id="btn-conta-sisden" onclick="abrirContaSisden()" title="Cadastrar/atualizar sua conta SISDEN p/ responder" style="display:none">⚙️ Minha conta SISDEN</button>
       <button class="btn-gold btn-sm" onclick="exportarExcel()"><svg viewBox="0 0 24 24" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.4"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Exportar Excel</button>
     </div>
@@ -275,6 +275,37 @@ async function removerContaSisden(){
   if(!confirm('Remover seu cadastro da conta SISDEN?')) return;
   try{ await _sbRpc('sisden_resp_remover', { p_token: S.token }); alert('Cadastro removido.'); abrirContaSisden(); }
   catch(e){ alert('Erro: '+(e.message||e)); }
+}
+// ── Responder em lote no SISDEN (sem abrir aba — caixa no painel) ──
+const RESPONDER_URL = 'https://zrnbebjszwkmquzthjfa.supabase.co/functions/v1/sisden-responder';
+async function responderSisden(){
+  const btn=document.getElementById('btn-responder-sisden'); const txt0=btn.textContent;
+  try{
+    btn.disabled=true; btn.textContent='Verificando…';
+    const pr=await fetch(RESPONDER_URL+'?acao=previa').then(r=>r.json());
+    btn.disabled=false; btn.textContent=txt0;
+    const n=pr.total_candidatas||0;
+    const pend=Object.entries(pr.pendentes_no_sisden||{}).map(([k,v])=>v+' '+k).join(' · ');
+    if(!n){ caixaResp('Nenhuma resposta pendente', 'Tudo que tem Ato + REDS já foi respondido no SISDEN.<br><span style="color:#999">Pendentes no SISDEN: '+pend+'.</span>'); return; }
+    const nd=pr.por_tipo?.denuncias||0, nq=pr.por_tipo?.requisicoes||0;
+    if(!confirm('Enviar '+n+' resposta(s) ao SISDEN?\n('+nd+' denúncia(s) e '+nq+' requisição(ões))\nSairão no SEU nome, com a data de hoje.')) return;
+    btn.disabled=true; btn.textContent='Enviando…';
+    const res=await fetch(RESPONDER_URL+'?acao=enviar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({painel_token:S.token})}).then(r=>r.json());
+    btn.disabled=false; btn.textContent=txt0;
+    if(res.erro){ caixaResp('Não foi possível enviar', res.msg||res.erro); return; }
+    const ed=res.por_tipo?.denuncias||0, eq=res.por_tipo?.requisicoes||0;
+    let msg='Foram respondidas <b>'+res.enviadas+'</b> demanda(s) no SISDEN — '+ed+' denúncia(s) e '+eq+' requisição(ões).';
+    if(res.puladas) msg+='<br><span style="color:#999">'+res.puladas+' já estavam respondidas.</span>';
+    if(res.falhas)  msg+='<br><span style="color:#e88">'+res.falhas+' falha(s) — tente de novo.</span>';
+    caixaResp('Respostas enviadas ✔', msg);
+    if(typeof carregar==='function') carregar();
+  }catch(e){ btn.disabled=false; btn.textContent=txt0; caixaResp('Erro', (e.message||e)+''); }
+}
+function caixaResp(titulo, html){
+  let m=document.getElementById('resp-caixa');
+  if(!m){ m=document.createElement('div'); m.id='resp-caixa'; m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000;display:flex;align-items:center;justify-content:center'; m.addEventListener('click',function(e){ if(e.target===m) m.style.display='none'; }); document.body.appendChild(m); }
+  m.innerHTML='<div style="background:#1b1b1f;color:#eee;border:1px solid #333;border-radius:12px;max-width:460px;width:92%;padding:22px;box-shadow:0 10px 40px rgba(0,0,0,.5)"><h3 style="margin:0 0 10px;font-size:17px">'+titulo+'</h3><div style="font-size:14px;line-height:1.55;color:#cfcfd4">'+html+'</div><div style="text-align:right;margin-top:16px"><button onclick="document.getElementById(\'resp-caixa\').style.display=\'none\'" class="btn-gold btn-sm">OK</button></div></div>';
+  m.style.display='flex';
 }
 const TBL = 'nuden_demandas';
 const RPC_BAIXAR = 'nuden_baixar';          // baixa manual pela gaveta (Aux P3/Admin)

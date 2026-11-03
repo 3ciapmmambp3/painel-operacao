@@ -197,6 +197,7 @@ async function calcular(sb: any, token: string): Promise<{ candidatas: Cand[]; r
 async function enviarLote(sb: any, token: string, nome: string, hoje: string, candidatas: Cand[]) {
   const resultados: any[] = [];
   let enviadas = 0, puladas = 0, falhas = 0;
+  const porTipo: Record<string, number> = { denuncias: 0, requisicoes: 0 };
   for (const c of candidatas.slice(0, MAX)) {
     try {
       const det = await buscarDetalhe(token, c.f, c.codigo);
@@ -210,11 +211,26 @@ async function enviarLote(sb: any, token: string, nome: string, hoje: string, ca
       if (!enc?.id) { falhas++; resultados.push({ codigo: c.codigo, ok: false, erro: "sem encaminhamento" }); continue; }
       await travar(token, c.f, c.codigo, nome);
       const env = await enviarResposta(token, c.f, enc.id, c.texto, hoje, nome);
-      if (env.ok) { await sb.from("nuden_demandas").update(marcaRespondida(nome, hoje)).eq("codigo", c.codigo); enviadas++; resultados.push({ codigo: c.codigo, ok: true }); }
+      if (env.ok) { await sb.from("nuden_demandas").update(marcaRespondida(nome, hoje)).eq("codigo", c.codigo); enviadas++; porTipo[c.f.recurso] = (porTipo[c.f.recurso] ?? 0) + 1; resultados.push({ codigo: c.codigo, ok: true }); }
       else { falhas++; resultados.push({ codigo: c.codigo, ok: false, status: env.status, erro: env.erro }); }
     } catch (e) { falhas++; resultados.push({ codigo: c.codigo, ok: false, erro: String((e as any)?.message ?? e) }); }
   }
-  return { enviadas, puladas, falhas, resultados };
+  return { enviadas, puladas, falhas, porTipo, resultados };
+}
+
+// valida o token de sessão do PAINEL → acha a conta SISDEN do militar (por matrícula)
+async function contaPorPainelToken(sb: any, painelToken: string): Promise<{ conta: Conta; nome: string } | null> {
+  if (!painelToken) return null;
+  const { data: ident } = await sb.rpc("auth_sso_validar", { p_token: painelToken });
+  const matricula = ident?.matricula;
+  if (!matricula) return null;
+  const { data } = await sb.from("sisden_responder_contas").select("cpf, senha, nome").eq("matricula", matricula).eq("ativo", true).limit(1);
+  const row = data?.[0];
+  return row ? { conta: { cpf: row.cpf, senha: row.senha }, nome: row.nome } : null;
+}
+const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "content-type, authorization, apikey", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
+function jsonCors(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
 
 // ─── Páginas HTML (modo navegador) ─────────────────────────────────────
@@ -274,13 +290,32 @@ Deno.serve(async (req) => {
   const hoje = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10); // hoje em Brasília
   const url = new URL(req.url);
   const aceitaHtml = (req.headers.get("accept") || "").includes("text/html");
-  const modoUI = url.searchParams.get("ui") === "1" || aceitaHtml || req.method === "POST";
+  const acao = url.searchParams.get("acao"); // "previa" | "enviar" (chamadas do painel, JSON+CORS)
+  const modoUI = !acao && (url.searchParams.get("ui") === "1" || aceitaHtml || req.method === "POST");
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   try {
     const contas = contasLeitura();
     if (contas.length === 0) return modoUI ? pagina("Erro", `<div class="box err">Nenhuma conta configurada.</div>`) : json(500, { erro: "Nenhuma conta configurada." });
     const sb = createClient(SUPABASE_URL, SERVICE_KEY);
     const { token, cpf } = await loginComFailover(contas);
     const { candidatas, resumoPend } = await calcular(sb, token);
+    const porTipoCand = { denuncias: candidatas.filter((c) => c.f.recurso === "denuncias").length, requisicoes: candidatas.filter((c) => c.f.recurso === "requisicoes").length };
+
+    // ── PAINEL: prévia (contagem) ──
+    if (acao === "previa") {
+      return jsonCors({ total_candidatas: candidatas.length, por_tipo: porTipoCand, pendentes_no_sisden: resumoPend });
+    }
+    // ── PAINEL: enviar (identifica pelo token da sessão do painel; sem PIN) ──
+    if (acao === "enviar") {
+      const body = await req.json().catch(() => ({} as any));
+      const quem = await contaPorPainelToken(sb, String(body?.painel_token ?? ""));
+      if (!quem) return jsonCors({ erro: "sem_cadastro", msg: "Você não cadastrou sua conta SISDEN (ou a sessão expirou). Use '⚙️ Minha conta SISDEN'." }, 403);
+      const lg = await login(quem.conta).catch(() => null);
+      if (!lg) return jsonCors({ erro: "login_falhou", msg: "Não consegui logar no SISDEN com a sua conta (confira CPF/senha em 'Minha conta SISDEN')." }, 400);
+      const nome = quem.nome || await nomeServidor(lg.token, lg.cpf);
+      const r = await enviarLote(sb, lg.token, nome, hoje, candidatas);
+      return jsonCors({ ok: true, enviadas: r.enviadas, puladas: r.puladas, falhas: r.falhas, por_tipo: r.porTipo });
+    }
 
     // ── ENVIO pela PÁGINA (POST com PIN) — responde na conta do militar do PIN ──
     if (req.method === "POST") {
@@ -310,6 +345,7 @@ Deno.serve(async (req) => {
   } catch (e) {
     const msg = String((e as any)?.message ?? e);
     console.error("[sisden-responder] erro:", msg);
+    if (acao) return jsonCors({ erro: "falha", msg }, 500);
     return modoUI ? pagina("Erro", `<h1>Erro</h1><div class="box err">${esc(msg)}</div>`) : json(500, { erro: msg });
   }
 });
