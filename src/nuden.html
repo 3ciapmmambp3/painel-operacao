@@ -139,7 +139,30 @@
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       <a class="btn-gold btn-sm" id="btn-responder-sisden" href="https://zrnbebjszwkmquzthjfa.supabase.co/functions/v1/sisden-responder" target="_blank" rel="noopener" title="Lança no SISDEN, em lote, as respostas das demandas já baixadas (Ato+REDS)" style="display:none;text-decoration:none;align-items:center;gap:6px">📤 Responder no SISDEN</a>
+      <button class="btn-gold btn-sm" id="btn-conta-sisden" onclick="abrirContaSisden()" title="Cadastrar/atualizar sua conta SISDEN p/ responder" style="display:none">⚙️ Minha conta SISDEN</button>
       <button class="btn-gold btn-sm" onclick="exportarExcel()"><svg viewBox="0 0 24 24" style="width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.4"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Exportar Excel</button>
+    </div>
+  </div>
+
+  <!-- Modal: cadastro da conta SISDEN do militar (self-service) -->
+  <div id="conta-sisden-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;align-items:center;justify-content:center" onclick="if(event.target===this)fecharContaSisden()">
+    <div style="background:var(--bg-card,#1b1b1f);color:var(--text-white,#eee);border:1px solid var(--border,#333);border-radius:12px;max-width:440px;width:92%;padding:20px;box-shadow:0 10px 40px rgba(0,0,0,.5)">
+      <h3 style="margin:0 0 4px;font-size:16px">Minha conta SISDEN (para responder)</h3>
+      <div id="conta-status" style="font-size:12.5px;color:var(--text-muted,#9a9aa2);margin-bottom:12px">—</div>
+      <label style="font-size:12px;color:#9a9aa2">CPF (login do SISDEN)</label>
+      <input id="conta-cpf" inputmode="numeric" placeholder="000.000.000-00" autocomplete="off" style="width:100%;box-sizing:border-box;margin:4px 0 10px;padding:9px;border-radius:7px;border:1px solid #444;background:#111;color:#eee">
+      <label style="font-size:12px;color:#9a9aa2">Senha do SISDEN</label>
+      <input id="conta-senha" type="password" placeholder="sua senha do SISDEN" autocomplete="new-password" style="width:100%;box-sizing:border-box;margin:4px 0 10px;padding:9px;border-radius:7px;border:1px solid #444;background:#111;color:#eee">
+      <label style="font-size:12px;color:#9a9aa2">PIN (você escolhe — usa pra confirmar o envio)</label>
+      <input id="conta-pin" placeholder="mín. 4 caracteres" autocomplete="off" style="width:100%;box-sizing:border-box;margin:4px 0 14px;padding:9px;border-radius:7px;border:1px solid #444;background:#111;color:#eee">
+      <div style="display:flex;gap:8px;justify-content:space-between;align-items:center">
+        <button onclick="removerContaSisden()" style="background:transparent;border:1px solid #a33;color:#e88;padding:8px 12px;border-radius:7px;cursor:pointer;font-size:12px">Remover</button>
+        <div style="display:flex;gap:8px">
+          <button onclick="fecharContaSisden()" style="background:transparent;border:1px solid #555;color:#ccc;padding:8px 14px;border-radius:7px;cursor:pointer;font-size:12px">Fechar</button>
+          <button onclick="salvarContaSisden()" class="btn-gold btn-sm">Salvar</button>
+        </div>
+      </div>
+      <div style="font-size:11px;color:#888;margin-top:12px">🔒 A senha fica protegida no servidor (ninguém lê pelo painel) e só é usada pra lançar as suas respostas no SISDEN, no seu nome.</div>
     </div>
   </div>
 
@@ -221,8 +244,38 @@ const GERIR_LABEL = 'Aux P3 / Admin';
 // O card "A lançar · SEMAD" (aguarda resposta externa) só aparece p/ quem lança no
 // órgão externo: Aux P3 + Admin Geral. Demais perfis não veem esse KPI.
 if(!GERIR){ const _c=document.getElementById('k-ext')?.closest('.kpi'); if(_c) _c.style.display='none'; document.getElementById('kpis')?.classList.add('cols5'); }
-// Botão "Responder no SISDEN" (envio em lote) só p/ quem lança no SEMAD (Aux P3/Admin).
-if(GERIR){ const _rb=document.getElementById('btn-responder-sisden'); if(_rb) _rb.style.display='inline-flex'; }
+// Botões "Responder no SISDEN" + "Minha conta SISDEN" só p/ quem lança no SEMAD (Aux P3/Admin).
+if(GERIR){
+  const _rb=document.getElementById('btn-responder-sisden'); if(_rb) _rb.style.display='inline-flex';
+  const _cb=document.getElementById('btn-conta-sisden');     if(_cb) _cb.style.display='inline-flex';
+}
+// ── Cadastro self-service da conta SISDEN (modal) ──
+async function abrirContaSisden(){
+  document.getElementById('conta-sisden-modal').style.display='flex';
+  const st=document.getElementById('conta-status'); st.textContent='Carregando…';
+  try{
+    const r = await _sbRpc('sisden_resp_meu', { p_token: S.token });
+    if(r && r.cadastrado){ st.innerHTML = `✔ Cadastrado: <b>${r.nome}</b> · CPF ${r.cpf_mascarado} · PIN ${r.tem_pin?'definido':'—'}. Preencha abaixo p/ atualizar.`; }
+    else { st.textContent='Você ainda não cadastrou sua conta SISDEN. Preencha abaixo.'; }
+  }catch(e){ st.textContent='Erro ao carregar o cadastro.'; }
+}
+function fecharContaSisden(){ document.getElementById('conta-sisden-modal').style.display='none'; }
+async function salvarContaSisden(){
+  const cpf=document.getElementById('conta-cpf').value.trim();
+  const senha=document.getElementById('conta-senha').value;
+  const pin=document.getElementById('conta-pin').value.trim();
+  if(!cpf||!senha||!pin){ alert('Preencha CPF, senha e PIN.'); return; }
+  try{
+    const r = await _sbRpc('sisden_resp_salvar', { p_token: S.token, p_cpf: cpf, p_senha: senha, p_pin: pin });
+    if(r && r.ok){ alert('Cadastro salvo! Agora você responde com o seu PIN.'); document.getElementById('conta-senha').value=''; abrirContaSisden(); }
+    else { alert('Não foi possível salvar.'); }
+  }catch(e){ let m=(e.message||e)+''; const j=m.match(/\{.*\}/); if(j){ try{ m=JSON.parse(j[0]).message||m; }catch(_){} } alert('Erro: '+m); }
+}
+async function removerContaSisden(){
+  if(!confirm('Remover seu cadastro da conta SISDEN?')) return;
+  try{ await _sbRpc('sisden_resp_remover', { p_token: S.token }); alert('Cadastro removido.'); abrirContaSisden(); }
+  catch(e){ alert('Erro: '+(e.message||e)); }
+}
 const TBL = 'nuden_demandas';
 const RPC_BAIXAR = 'nuden_baixar';          // baixa manual pela gaveta (Aux P3/Admin)
 const SISTEMA_EXTERNO = 'SEMAD';            // controle da resposta no órgão externo

@@ -66,12 +66,21 @@ function contasLeitura(): Conta[] {
   for (const c of [...base, ...us]) { const k = c.cpf.replace(/\D/g, ""); if (!vistos.has(k)) { vistos.add(k); out.push(c); } }
   return out;
 }
-// identifica quem está respondendo pelo PIN → conta SISDEN + nome que assina
+// identifica quem está respondendo pelo PIN (secret) → conta SISDEN + nome
 function quemResponde(pin: string): { conta: Conta; nome: string } | null {
   const u = carregarUsuarios().find((x) => x.pin === pin);
   if (u) return { conta: { cpf: u.cpf, senha: u.senha }, nome: u.nome };
   if (PIN && pin === PIN) { const c = carregarContas()[0]; if (c) return { conta: c, nome: NOME_FIXO }; }
   return null;
+}
+// identifica pelo PIN cadastrado NO PAINEL (tabela sisden_responder_contas, via service_role)
+async function quemRespondeDb(sb: any, pin: string): Promise<{ conta: Conta; nome: string } | null> {
+  if (!pin) return null;
+  const { data, error } = await sb.from("sisden_responder_contas")
+    .select("cpf, senha, nome").eq("pin", pin).eq("ativo", true).limit(1);
+  if (error) { console.warn("[responder] leitura contas:", error.message); return null; }
+  const row = data?.[0];
+  return row ? { conta: { cpf: row.cpf, senha: row.senha }, nome: row.nome } : null;
 }
 function extrairToken(j: any): string | null {
   if (!j || typeof j !== "object") return null;
@@ -277,7 +286,8 @@ Deno.serve(async (req) => {
     if (req.method === "POST") {
       const form = await req.formData().catch(() => null);
       const pinEnviado = form ? String(form.get("pin") ?? "") : "";
-      const quem = quemResponde(pinEnviado);
+      // 1º tenta o cadastro do painel (tabela); depois o secret (fallback)
+      const quem = (await quemRespondeDb(sb, pinEnviado)) ?? quemResponde(pinEnviado);
       if (!quem) return pagina("PIN inválido", `<h1>PIN inválido</h1><div class="box err">PIN não confere com nenhum militar cadastrado.</div><div class="box"><a href="?ui=1">← Voltar</a></div>`);
       const lg = await login(quem.conta).catch(() => null);
       if (!lg) return pagina("Erro", `<h1>Erro</h1><div class="box err">Não consegui logar no SISDEN com a conta desse militar (confira CPF/senha em RESPONDER_USUARIOS).</div>`);
