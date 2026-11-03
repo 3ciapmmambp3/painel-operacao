@@ -1,26 +1,22 @@
 // ══════════════════════════════════════════════════════════════════════
 //  Edge Function: sisden-responder
 //  Envia em LOTE as respostas ao SISDEN (status "Retorno da área Técnica").
-//  SEMPRE acionada pelo usuário (abrir a URL) — NUNCA pelo cron.
+//  SEMPRE acionada pelo usuário — NUNCA pelo cron.
 //
-//  Candidatas = demandas que estão PENDENTES no SISDEN AGORA (status
-//  "Encaminhada", a mesma lista que o sync puxa) E que têm Nº GAIA (Ato) +
-//  Nº REDS preenchidos no banco (baixa feita) E ainda não respondidas
-//  (respondida_sisden_em null). Isso EXCLUI o histórico antigo (que não está
-//  mais pendente no SISDEN).
+//  DUAS formas de usar:
+//   • NAVEGADOR (recomendado): abrir a URL mostra uma PÁGINA com a lista das
+//     prontas e um botão "Responder". Você digita um PIN (uma vez — fica
+//     salvo no navegador) e clica. Nada de trocar segredo.
+//   • API/JSON: chamada programática; nesse modo RESPONDER_DRY_RUN controla
+//     (true=só lista, false=envia). O modo página NÃO usa isso (o PIN é a trava).
 //
-//  Pra cada: detalhe (encaminhamento) → travar → POST resposta (FormData) →
-//  marca respondida_sisden_em.
-//  Texto: "<Denúncia|Requisição> atendida conforme ato de fiscalização nº
-//  <GAIA> e REDS nº <REDS>".  data_retorno = hoje.
+//  Candidatas = PENDENTES no SISDEN agora (status Encaminhada) ∩ banco com
+//  Nº GAIA(Ato)+Nº REDS ∩ respondida_sisden_em null. Exclui o histórico.
+//  Pra cada: detalhe→encaminhamento→travar→POST resposta(FormData, data=hoje)→
+//  marca no banco (data_resposta_externa/FINALIZADA, como o botão do painel).
 //
-//  RESPONDER_DRY_RUN=true (PADRÃO, secret PRÓPRIO — não o DRY_RUN do sync):
-//  NÃO envia — só devolve a LISTA do que seria enviado. false = envia.
-//
-//  API confirmada (denúncia, 2026-11-02):
-//    POST .../backOffice/denuncias/{protocolo}/travar {servidor_responsavel_nome, unidades_usuario:[221]}
-//    POST .../backOffice/denuncias/encaminhamentos/{encId}/resposta  (FormData)
-//  Requisição = mesmo padrão sob /sisreq/api/.../requisicoes/... (a confirmar no 1º envio).
+//  SECRETS: SISDEN_* (login), SISDEN_SERVIDOR_NOME, e RESPONDER_PIN (a senha
+//  do botão — defina uma vez). SISDEN_RESP_DENUNCIAS/REQUISICOES, RESPONDER_MAX.
 // ══════════════════════════════════════════════════════════════════════
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -35,6 +31,7 @@ const MAX         = Number(Deno.env.get("SISDEN_RESPONDER_MAX") ?? "500");
 const RESP_DEN    = (Deno.env.get("SISDEN_RESP_DENUNCIAS")   ?? "true").toLowerCase()  !== "false";
 const RESP_REQ    = (Deno.env.get("SISDEN_RESP_REQUISICOES") ?? "true").toLowerCase()  !== "false";
 const NOME_FIXO   = Deno.env.get("SISDEN_SERVIDOR_NOME") ?? "";
+const PIN         = Deno.env.get("RESPONDER_PIN") ?? "";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -44,7 +41,6 @@ const FONTES: Fonte[] = [];
 if (RESP_DEN) FONTES.push({ tipo: "DENÚNCIA",   base: "/sisden-api/api", recurso: "denuncias",   label: "Denúncia" });
 if (RESP_REQ) FONTES.push({ tipo: "REQUISIÇÃO", base: "/sisreq/api",     recurso: "requisicoes", label: "Requisição" });
 
-// ─── Login (igual sisden-sync) ─────────────────────────────────────────
 type Conta = { cpf: string; senha: string };
 function carregarContas(): Conta[] {
   const raw = Deno.env.get("SISDEN_ACCOUNTS");
@@ -74,7 +70,6 @@ async function loginComFailover(contas: Conta[]): Promise<{ token: string; cpf: 
 }
 function pick(o: any, ...ks: string[]) { for (const k of ks) if (o?.[k] != null && o[k] !== "") return o[k]; return null; }
 
-// lista de PENDENTES de 1 fonte → set de protocolos (status Encaminhada)
 async function puxarPendentes(token: string, f: Fonte): Promise<Set<string>> {
   const set = new Set<string>();
   for (let page = 1; page <= MAX_PAGES; page++) {
@@ -88,7 +83,6 @@ async function puxarPendentes(token: string, f: Fonte): Promise<Set<string>> {
   }
   return set;
 }
-
 async function nomeServidor(token: string, cpf: string): Promise<string> {
   if (NOME_FIXO) return NOME_FIXO;
   try {
@@ -129,101 +123,157 @@ async function enviarResposta(token: string, f: Fonte, encId: number | string, t
   if (!r.ok) { const t = await r.text().catch(() => ""); return { ok: false, status: r.status, erro: t.slice(0, 200) }; }
   return { ok: true, status: r.status };
 }
-
-// campos gravados no banco ao responder → o painel mostra "Respondida no
-// SEMAD · FINALIZADA" (mesmos campos do botão manual "Marcar como respondida").
 function marcaRespondida(nome: string, hoje: string) {
   return {
-    respondida_sisden_em: new Date().toISOString(), // controle interno (dedup do robô)
-    data_resposta_externa: hoje,                    // painel: data da resposta no externo
-    situacao: "FINALIZADA",                         // painel: marcarExterno finaliza a demanda
+    respondida_sisden_em: new Date().toISOString(),
+    data_resposta_externa: hoje,
+    situacao: "FINALIZADA",
     respondido_externo_por_nome: `${nome} (robô)`,
   };
 }
 
+type Cand = { codigo: string; f: Fonte; municipio: string; gaia: string; reds: string; texto: string };
+
+// calcula as candidatas (pendentes no SISDEN ∩ banco com Ato+REDS não respondido)
+async function calcular(sb: any, token: string): Promise<{ candidatas: Cand[]; resumoPend: Record<string, number> }> {
+  const pend: { f: Fonte; protos: Set<string> }[] = [];
+  for (const f of FONTES) pend.push({ f, protos: await puxarPendentes(token, f) });
+  const todos = pend.flatMap((x) => [...x.protos]);
+  const dados = new Map<string, any>();
+  for (let i = 0; i < todos.length; i += 300) {
+    const lote = todos.slice(i, i + 300);
+    const { data, error } = await sb.from("nuden_demandas").select("codigo, numero_gaia, numero_reds, municipio, respondida_sisden_em").in("codigo", lote);
+    if (error) throw new Error(`select: ${error.message}`);
+    for (const row of data ?? []) dados.set(row.codigo, row);
+  }
+  const candidatas: Cand[] = [];
+  for (const { f, protos } of pend) {
+    for (const p of protos) {
+      const d = dados.get(p);
+      if (!d || d.respondida_sisden_em) continue;
+      const gaia = (d.numero_gaia ?? "").toString().trim();
+      const reds = (d.numero_reds ?? "").toString().trim();
+      if (!gaia || !reds) continue;
+      candidatas.push({ codigo: p, f, municipio: d.municipio, gaia, reds, texto: `${f.label} atendida conforme ato de fiscalização nº ${gaia} e REDS nº ${reds}` });
+    }
+  }
+  return { candidatas, resumoPend: Object.fromEntries(pend.map((x) => [x.f.recurso, x.protos.size])) };
+}
+
+// envia o lote; devolve o relatório
+async function enviarLote(sb: any, token: string, nome: string, hoje: string, candidatas: Cand[]) {
+  const resultados: any[] = [];
+  let enviadas = 0, puladas = 0, falhas = 0;
+  for (const c of candidatas.slice(0, MAX)) {
+    try {
+      const det = await buscarDetalhe(token, c.f, c.codigo);
+      if (!det) { falhas++; resultados.push({ codigo: c.codigo, ok: false, erro: "detalhe não encontrado" }); continue; }
+      const status = (det.status ?? "").toString();
+      if (status && status.toLowerCase() !== STATUS.toLowerCase()) {
+        await sb.from("nuden_demandas").update(marcaRespondida(nome, hoje)).eq("codigo", c.codigo);
+        puladas++; resultados.push({ codigo: c.codigo, ok: true, pulada: true }); continue;
+      }
+      const enc = acharEncaminhamento(det);
+      if (!enc?.id) { falhas++; resultados.push({ codigo: c.codigo, ok: false, erro: "sem encaminhamento" }); continue; }
+      await travar(token, c.f, c.codigo, nome);
+      const env = await enviarResposta(token, c.f, enc.id, c.texto, hoje, nome);
+      if (env.ok) { await sb.from("nuden_demandas").update(marcaRespondida(nome, hoje)).eq("codigo", c.codigo); enviadas++; resultados.push({ codigo: c.codigo, ok: true }); }
+      else { falhas++; resultados.push({ codigo: c.codigo, ok: false, status: env.status, erro: env.erro }); }
+    } catch (e) { falhas++; resultados.push({ codigo: c.codigo, ok: false, erro: String((e as any)?.message ?? e) }); }
+  }
+  return { enviadas, puladas, falhas, resultados };
+}
+
+// ─── Páginas HTML (modo navegador) ─────────────────────────────────────
+function esc(s: any): string { return String(s ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" } as any)[m]); }
+const CSS = `body{font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:900px;margin:0 auto;padding:16px;color:#222;background:#f7f7f8}
+h1{font-size:20px;color:#8a1b1b} .box{background:#fff;border:1px solid #e3e3e6;border-radius:10px;padding:16px;margin:12px 0}
+.big{font-size:34px;font-weight:700} .muted{color:#777;font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:13px} th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #eee}
+th{color:#666;font-weight:600} .btn{background:#8a1b1b;color:#fff;border:0;border-radius:8px;padding:12px 20px;font-size:16px;font-weight:700;cursor:pointer}
+.btn:disabled{background:#bbb;cursor:default} input{padding:10px;border:1px solid #ccc;border-radius:8px;font-size:15px}
+.ok{color:#1b7a2f} .err{color:#b00}`;
+function pagina(titulo: string, corpo: string): Response {
+  return new Response(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(titulo)}</title><style>${CSS}</style></head><body>${corpo}</body></html>`, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+}
+function paginaPrevia(candidatas: Cand[], resumoPend: Record<string, number>): Response {
+  const nDen = candidatas.filter((c) => c.f.recurso === "denuncias").length;
+  const nReq = candidatas.filter((c) => c.f.recurso === "requisicoes").length;
+  const pend = Object.entries(resumoPend).map(([k, v]) => `${v} ${k}`).join(" · ");
+  const linhas = candidatas.slice(0, 500).map((c) => `<tr><td>${esc(c.codigo)}</td><td>${esc(c.f.label)}</td><td>${esc(c.municipio)}</td><td>${esc(c.texto)}</td></tr>`).join("");
+  const temPin = PIN ? "" : `<div class="box err">⚠️ Defina o segredo <b>RESPONDER_PIN</b> no Supabase (uma senha sua) p/ liberar o botão.</div>`;
+  const vazio = candidatas.length === 0;
+  const form = vazio ? `<div class="box"><div class="big ok">Nenhuma resposta pendente 🎉</div><div class="muted">Pendentes no SISDEN: ${esc(pend)}.</div></div>`
+    : `<div class="box">
+        <div class="big">${candidatas.length} respostas prontas</div>
+        <div class="muted">${nDen} denúncias · ${nReq} requisições · pendentes no SISDEN: ${esc(pend)}</div>
+        <form method="POST" id="frm" style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <input type="password" id="pin" name="pin" placeholder="PIN" autocomplete="off" style="width:140px">
+          <button class="btn" type="submit"${PIN ? "" : " disabled"}>Responder ${candidatas.length} ao SISDEN</button>
+          <span class="muted">A data será a de hoje.</span>
+        </form>
+        ${temPin}
+       </div>
+       <div class="box"><table><thead><tr><th>Protocolo</th><th>Tipo</th><th>Município</th><th>Resposta</th></tr></thead><tbody>${linhas}</tbody></table></div>`;
+  const js = `<script>
+    var pf=document.getElementById('pin'); if(pf){ pf.value=localStorage.getItem('resp_pin')||''; }
+    var frm=document.getElementById('frm'); if(frm){ frm.addEventListener('submit',function(e){
+      if(!pf.value){ alert('Digite o PIN.'); e.preventDefault(); return; }
+      if(!confirm('Enviar ${candidatas.length} respostas ao SISDEN? É uma ação oficial, no seu nome.')){ e.preventDefault(); return; }
+      localStorage.setItem('resp_pin', pf.value);
+      var b=frm.querySelector('button'); b.disabled=true; b.textContent='Enviando… aguarde';
+    }); }
+  </script>`;
+  return pagina("Responder NUDEN/SISDEN", `<h1>Responder NUDEN/SISDEN</h1>${form}${vazio ? "" : js}`);
+}
+function paginaResultado(res: { enviadas: number; puladas: number; falhas: number; resultados: any[] }): Response {
+  const falhasLista = res.resultados.filter((r) => !r.ok).slice(0, 50).map((r) => `<tr><td>${esc(r.codigo)}</td><td class="err">${esc(r.erro || r.status)}</td></tr>`).join("");
+  return pagina("Respostas enviadas", `<h1>Respostas enviadas</h1>
+    <div class="box"><div class="big ok">${res.enviadas} enviadas</div>
+    <div class="muted">${res.puladas} já respondidas (puladas) · ${res.falhas} falhas</div></div>
+    ${res.falhas ? `<div class="box"><b>Falhas:</b><table>${falhasLista}</table></div>` : ""}
+    <div class="box"><a href="?ui=1">← Voltar / atualizar a lista</a></div>`);
+}
+
 // ─── Handler ───────────────────────────────────────────────────────────
-Deno.serve(async (_req) => {
+Deno.serve(async (req) => {
   const t0 = Date.now();
-  // data_retorno = SEMPRE o dia de HOJE em Brasília (UTC-3), nunca a data do
-  // atendimento do Relatório. (Brasil sem horário de verão desde 2019.)
-  const hoje = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+  const hoje = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10); // hoje em Brasília
+  const url = new URL(req.url);
+  const aceitaHtml = (req.headers.get("accept") || "").includes("text/html");
+  const modoUI = url.searchParams.get("ui") === "1" || aceitaHtml || req.method === "POST";
   try {
     const contas = carregarContas();
-    if (contas.length === 0) return json(500, { erro: "Nenhuma conta configurada." });
+    if (contas.length === 0) return modoUI ? pagina("Erro", `<div class="box err">Nenhuma conta configurada.</div>`) : json(500, { erro: "Nenhuma conta configurada." });
     const sb = createClient(SUPABASE_URL, SERVICE_KEY);
     const { token, cpf } = await loginComFailover(contas);
+    const { candidatas, resumoPend } = await calcular(sb, token);
 
-    // 1) pendentes AGORA no SISDEN (por fonte)
-    const pendPorFonte: { f: Fonte; protos: Set<string> }[] = [];
-    for (const f of FONTES) pendPorFonte.push({ f, protos: await puxarPendentes(token, f) });
-    const todosPend = pendPorFonte.flatMap((x) => [...x.protos]);
-
-    // 2) no banco, quais desses têm Ato+REDS e ainda não respondidos
-    const dados = new Map<string, any>();
-    for (let i = 0; i < todosPend.length; i += 300) {
-      const lote = todosPend.slice(i, i + 300);
-      const { data, error } = await sb.from("nuden_demandas")
-        .select("codigo, numero_gaia, numero_reds, municipio, respondida_sisden_em").in("codigo", lote);
-      if (error) throw new Error(`select: ${error.message}`);
-      for (const row of data ?? []) dados.set(row.codigo, row);
+    // ── ENVIO pela PÁGINA (POST com PIN) ──
+    if (req.method === "POST") {
+      const form = await req.formData().catch(() => null);
+      const pinEnviado = form ? String(form.get("pin") ?? "") : "";
+      if (!PIN || pinEnviado !== PIN) return pagina("PIN inválido", `<h1>PIN inválido</h1><div class="box err">PIN incorreto ou RESPONDER_PIN não definido.</div><div class="box"><a href="?ui=1">← Voltar</a></div>`);
+      const nome = await nomeServidor(token, cpf);
+      if (!nome) return pagina("Erro", `<div class="box err">Sem nome do servidor (defina SISDEN_SERVIDOR_NOME).</div>`);
+      const res = await enviarLote(sb, token, nome, hoje, candidatas);
+      return paginaResultado(res);
     }
 
-    // 3) candidatas = pendente + tem Ato+REDS + não respondida
-    const candidatas: { codigo: string; f: Fonte; municipio: string; gaia: string; reds: string; texto: string }[] = [];
-    for (const { f, protos } of pendPorFonte) {
-      for (const p of protos) {
-        const d = dados.get(p);
-        if (!d) continue;
-        if (d.respondida_sisden_em) continue;
-        const gaia = (d.numero_gaia ?? "").toString().trim();
-        const reds = (d.numero_reds ?? "").toString().trim();
-        if (!gaia || !reds) continue;
-        candidatas.push({ codigo: p, f, municipio: d.municipio, gaia, reds, texto: `${f.label} atendida conforme ato de fiscalização nº ${gaia} e REDS nº ${reds}` });
-      }
-    }
+    // ── PÁGINA de prévia (navegador) ──
+    if (modoUI) return paginaPrevia(candidatas, resumoPend);
 
-    const resumoPend = Object.fromEntries(pendPorFonte.map((x) => [x.f.recurso, x.protos.size]));
-
-    if (DRY_RUN) {
-      return json(200, {
-        dry_run: true,
-        pendentes_no_sisden: resumoPend,
-        total_candidatas: candidatas.length,
-        por_tipo: { denuncias: candidatas.filter((c) => c.f.recurso === "denuncias").length, requisicoes: candidatas.filter((c) => c.f.recurso === "requisicoes").length },
-        amostra: candidatas.slice(0, 20).map((c) => ({ codigo: c.codigo, tipo: c.f.label, municipio: c.municipio, texto: c.texto, data_retorno: hoje })),
-        aviso: "DRY_RUN ativo — NADA foi enviado. Confira; p/ enviar, RESPONDER_DRY_RUN=false.",
-        ms: Date.now() - t0,
-      });
-    }
-
-    // ENVIO REAL
+    // ── API/JSON (programático) ──
+    const resumoJson = { pendentes_no_sisden: resumoPend, total_candidatas: candidatas.length, por_tipo: { denuncias: candidatas.filter((c) => c.f.recurso === "denuncias").length, requisicoes: candidatas.filter((c) => c.f.recurso === "requisicoes").length } };
+    if (DRY_RUN) return json(200, { dry_run: true, ...resumoJson, amostra: candidatas.slice(0, 20).map((c) => ({ codigo: c.codigo, tipo: c.f.label, municipio: c.municipio, texto: c.texto, data_retorno: hoje })), aviso: "DRY_RUN — nada enviado.", ms: Date.now() - t0 });
     const nome = await nomeServidor(token, cpf);
-    if (!nome) return json(500, { erro: "Não consegui o nome do servidor (defina SISDEN_SERVIDOR_NOME)." });
-    const resultados: any[] = [];
-    let enviadas = 0, puladas = 0, falhas = 0;
-    for (const c of candidatas.slice(0, MAX)) {
-      try {
-        const det = await buscarDetalhe(token, c.f, c.codigo);
-        if (!det) { falhas++; resultados.push({ codigo: c.codigo, ok: false, erro: "detalhe não encontrado" }); continue; }
-        const status = (det.status ?? "").toString();
-        if (status && status.toLowerCase() !== STATUS.toLowerCase()) {
-          await sb.from("nuden_demandas").update(marcaRespondida(nome, hoje)).eq("codigo", c.codigo);
-          puladas++; resultados.push({ codigo: c.codigo, ok: true, pulada: true, motivo: `status ${status}` }); continue;
-        }
-        const enc = acharEncaminhamento(det);
-        if (!enc?.id) { falhas++; resultados.push({ codigo: c.codigo, ok: false, erro: "sem encaminhamento" }); continue; }
-        await travar(token, c.f, c.codigo, nome);
-        const env = await enviarResposta(token, c.f, enc.id, c.texto, hoje, nome);
-        if (env.ok) {
-          await sb.from("nuden_demandas").update(marcaRespondida(nome, hoje)).eq("codigo", c.codigo);
-          enviadas++; resultados.push({ codigo: c.codigo, ok: true });
-        } else { falhas++; resultados.push({ codigo: c.codigo, ok: false, status: env.status, erro: env.erro }); }
-      } catch (e) { falhas++; resultados.push({ codigo: c.codigo, ok: false, erro: String((e as any)?.message ?? e) }); }
-    }
-    return json(200, { dry_run: false, pendentes_no_sisden: resumoPend, total_candidatas: candidatas.length, enviadas, puladas, falhas, resultados: resultados.slice(0, 80), ms: Date.now() - t0 });
+    if (!nome) return json(500, { erro: "Sem nome do servidor (SISDEN_SERVIDOR_NOME)." });
+    const res = await enviarLote(sb, token, nome, hoje, candidatas);
+    return json(200, { dry_run: false, ...resumoJson, ...res, resultados: res.resultados.slice(0, 80), ms: Date.now() - t0 });
   } catch (e) {
-    console.error("[sisden-responder] erro:", e);
-    return json(500, { erro: String((e as any)?.message ?? e) });
+    const msg = String((e as any)?.message ?? e);
+    console.error("[sisden-responder] erro:", msg);
+    return modoUI ? pagina("Erro", `<h1>Erro</h1><div class="box err">${esc(msg)}</div>`) : json(500, { erro: msg });
   }
 });
 
