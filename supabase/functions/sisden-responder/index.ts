@@ -49,6 +49,30 @@ function carregarContas(): Conta[] {
   for (let i = 1; i <= 5; i++) { const cpf = Deno.env.get(`SISDEN_CPF_${i}`); const senha = Deno.env.get(`SISDEN_SENHA_${i}`); if (cpf && senha) c.push({ cpf, senha }); }
   return c;
 }
+
+// Militares que respondem: cada um com seu PIN + conta SISDEN + nome.
+// Secret RESPONDER_USUARIOS = [{"pin":"1234","cpf":"...","senha":"...","nome":"FULANO"}, ...]
+type Usuario = { pin: string; cpf: string; senha: string; nome: string };
+function carregarUsuarios(): Usuario[] {
+  const raw = Deno.env.get("RESPONDER_USUARIOS");
+  if (raw) { try { const a = JSON.parse(raw); if (Array.isArray(a)) return a.filter((u) => u?.pin && u?.cpf && u?.senha && u?.nome); } catch {} }
+  return [];
+}
+// contas p/ a LEITURA (prévia/pendentes) — qualquer uma serve: as do sync + as dos usuários
+function contasLeitura(): Conta[] {
+  const base = carregarContas();
+  const us = carregarUsuarios().map((u) => ({ cpf: u.cpf, senha: u.senha }));
+  const vistos = new Set<string>(); const out: Conta[] = [];
+  for (const c of [...base, ...us]) { const k = c.cpf.replace(/\D/g, ""); if (!vistos.has(k)) { vistos.add(k); out.push(c); } }
+  return out;
+}
+// identifica quem está respondendo pelo PIN → conta SISDEN + nome que assina
+function quemResponde(pin: string): { conta: Conta; nome: string } | null {
+  const u = carregarUsuarios().find((x) => x.pin === pin);
+  if (u) return { conta: { cpf: u.cpf, senha: u.senha }, nome: u.nome };
+  if (PIN && pin === PIN) { const c = carregarContas()[0]; if (c) return { conta: c, nome: NOME_FIXO }; }
+  return null;
+}
 function extrairToken(j: any): string | null {
   if (!j || typeof j !== "object") return null;
   return j.token ?? j.accessToken ?? j.access_token ?? j.jwt ?? j.data?.token ?? j.data?.accessToken ?? null;
@@ -243,20 +267,23 @@ Deno.serve(async (req) => {
   const aceitaHtml = (req.headers.get("accept") || "").includes("text/html");
   const modoUI = url.searchParams.get("ui") === "1" || aceitaHtml || req.method === "POST";
   try {
-    const contas = carregarContas();
+    const contas = contasLeitura();
     if (contas.length === 0) return modoUI ? pagina("Erro", `<div class="box err">Nenhuma conta configurada.</div>`) : json(500, { erro: "Nenhuma conta configurada." });
     const sb = createClient(SUPABASE_URL, SERVICE_KEY);
     const { token, cpf } = await loginComFailover(contas);
     const { candidatas, resumoPend } = await calcular(sb, token);
 
-    // ── ENVIO pela PÁGINA (POST com PIN) ──
+    // ── ENVIO pela PÁGINA (POST com PIN) — responde na conta do militar do PIN ──
     if (req.method === "POST") {
       const form = await req.formData().catch(() => null);
       const pinEnviado = form ? String(form.get("pin") ?? "") : "";
-      if (!PIN || pinEnviado !== PIN) return pagina("PIN inválido", `<h1>PIN inválido</h1><div class="box err">PIN incorreto ou RESPONDER_PIN não definido.</div><div class="box"><a href="?ui=1">← Voltar</a></div>`);
-      const nome = await nomeServidor(token, cpf);
-      if (!nome) return pagina("Erro", `<div class="box err">Sem nome do servidor (defina SISDEN_SERVIDOR_NOME).</div>`);
-      const res = await enviarLote(sb, token, nome, hoje, candidatas);
+      const quem = quemResponde(pinEnviado);
+      if (!quem) return pagina("PIN inválido", `<h1>PIN inválido</h1><div class="box err">PIN não confere com nenhum militar cadastrado.</div><div class="box"><a href="?ui=1">← Voltar</a></div>`);
+      const lg = await login(quem.conta).catch(() => null);
+      if (!lg) return pagina("Erro", `<h1>Erro</h1><div class="box err">Não consegui logar no SISDEN com a conta desse militar (confira CPF/senha em RESPONDER_USUARIOS).</div>`);
+      const nome = quem.nome || await nomeServidor(lg.token, lg.cpf);
+      if (!nome) return pagina("Erro", `<div class="box err">Sem nome do servidor.</div>`);
+      const res = await enviarLote(sb, lg.token, nome, hoje, candidatas);
       return paginaResultado(res);
     }
 
