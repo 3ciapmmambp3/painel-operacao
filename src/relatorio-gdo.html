@@ -44,6 +44,17 @@
     .rg-fg{display:flex;flex-direction:column;gap:4px;}
     .rg-fg label{font-size:10px;color:var(--text-muted);text-transform:uppercase;font-weight:700;}
     .rg-fg select{background:var(--bg-dark);color:var(--text-white);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:12px;min-width:150px;}
+    /* ---- Filtro multi-seleção (checkbox dropdown) p/ Mês e Pelotão ---- */
+    .rg-multi{position:relative;display:inline-block;}
+    .rg-multi-btn{background:var(--bg-dark);color:var(--text-white);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:12px;min-width:150px;max-width:220px;text-align:left;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .rg-multi-btn:hover{border-color:var(--gold,#9b8a5c);}
+    .rg-multi-menu{display:none;position:absolute;z-index:60;top:calc(100% + 4px);left:0;min-width:190px;max-height:280px;overflow:auto;background:var(--bg-dark,#1a1a1a);border:1px solid var(--border);border-radius:6px;padding:6px;box-shadow:0 10px 28px rgba(0,0,0,.45);}
+    .rg-multi.open .rg-multi-menu{display:block;}
+    .rg-multi-menu label{display:flex;align-items:center;gap:8px;padding:5px 7px;font-size:12px;color:var(--text-white);cursor:pointer;border-radius:4px;white-space:nowrap;}
+    .rg-multi-menu label:hover{background:rgba(255,255,255,.06);}
+    .rg-multi-menu input[type=checkbox]{width:auto;margin:0;accent-color:var(--gold,#9b8a5c);cursor:pointer;}
+    .rg-multi-menu .rg-multi-all{font-weight:700;color:var(--gold,#c7a25a);}
+    .rg-multi-sep{border-top:1px solid var(--border);margin:5px 2px;}
 
     /* ---- Resumo executivo (igual Produtividade: .resumo-exec) ---- */
     .resumo-exec{background:linear-gradient(135deg, rgba(155,138,92,.12), rgba(155,138,92,.03));border:1px solid var(--gold-border,rgba(155,138,92,.35));border-radius:8px;padding:16px 20px;margin-bottom:20px;font-size:13.5px;line-height:1.7;color:var(--text-white);}
@@ -120,6 +131,7 @@
       .rg-filtros{align-items:stretch;}
       .rg-acoes{margin-left:0;}
       .rg-fg select{min-width:0;width:100%;}
+      .rg-fg .rg-multi,.rg-fg .rg-multi-btn{min-width:0;max-width:none;width:100%;}
     }
 
     /* ---- Impressão / PDF ---- */
@@ -207,11 +219,17 @@
       </div>
       <div class="rg-fg">
         <label>Mês</label>
-        <select id="f-mes"><option value="">Ano inteiro</option></select>
+        <div class="rg-multi" id="f-mes-wrap">
+          <button type="button" class="rg-multi-btn" id="f-mes-btn">Ano inteiro ▾</button>
+          <div class="rg-multi-menu" id="f-mes-menu"></div>
+        </div>
       </div>
       <div class="rg-fg">
         <label>Pelotão</label>
-        <select id="f-pel"><option value="">Todos os pelotões</option></select>
+        <div class="rg-multi" id="f-pel-wrap">
+          <button type="button" class="rg-multi-btn" id="f-pel-btn">Todos os pelotões ▾</button>
+          <div class="rg-multi-menu" id="f-pel-menu"></div>
+        </div>
       </div>
       <div class="rg-fg">
         <label>Grupamento</label>
@@ -549,26 +567,35 @@ async function carregarOps(){
    FILTRO DE PERÍODO + CÁLCULO
 ════════════════════════════════════════════════════════════════ */
 function anoSel(){ return document.getElementById('f-ano').value; }
-function mesSel(){ return document.getElementById('f-mes').value; }
-function pelSel(){ return document.getElementById('f-pel').value; }
 function gpSel(){ return document.getElementById('f-gp').value; }
+/* Mês e Pelotão agora são multi-seleção (checkbox). Array vazio = todos. */
+function mesSelArr(){
+  return [...document.querySelectorAll('#f-mes-menu input[type=checkbox]:checked')]
+    .map(i=>i.value).filter(v=>v!=='__all');
+}
+function pelSelArr(){
+  /* usuário fora do escopo da Cia fica travado no próprio pelotão */
+  if(ESCOPO.tipo!=='cia' && ESCOPO.pel!=='') return [String(ESCOPO.pel)];
+  return [...document.querySelectorAll('#f-pel-menu input[type=checkbox]:checked')]
+    .map(i=>i.value).filter(v=>v!=='__all');
+}
 
 /* Crime passa no recorte de período/pelotão/grupamento */
 function crimeNoRecorte(c){
   if(!colKNoEscopo(c.grupamento||'')) return false;   /* trava por papel */
-  const a = anoSel(), m = mesSel(), p = pelSel(), g = gpSel();
+  const a = anoSel(), mArr = mesSelArr(), pArr = pelSelArr(), g = gpSel();
   if(a && (c.ano||anoDaData(c.data)) !== a) return false;
-  if(m && c.mes !== m) return false;
-  if(p && pelDoColk(c.grupamento) !== parseInt(p)) return false;
+  if(mArr.length && !mArr.includes(c.mes)) return false;
+  if(pArr.length && !pArr.includes(String(pelDoColk(c.grupamento)))) return false;
   if(g && (c.grupamento||'') !== g) return false;
   return true;
 }
 function opNoRecorte(o){
   if(!colKNoEscopo(o.grupamento||'')) return false;   /* trava por papel */
-  const a = anoSel(), m = mesSel(), p = pelSel(), g = gpSel();
+  const a = anoSel(), mArr = mesSelArr(), pArr = pelSelArr(), g = gpSel();
   if(a && anoDaData(o.data) !== a) return false;
-  if(m && mesDaData(o.data) !== m) return false;
-  if(p && pelDoColk(o.grupamento) !== parseInt(p)) return false;
+  if(mArr.length && !mArr.includes(mesDaData(o.data))) return false;
+  if(pArr.length && !pArr.includes(String(pelDoColk(o.grupamento)))) return false;
   if(g && (o.grupamento||'') !== g) return false;
   return true;
 }
@@ -676,9 +703,26 @@ function pill(n, bom){
   if(!n) return '<span class="pill pill-zero">0</span>';
   return `<span class="pill ${bom?'pill-green':'pill-red'}">${n}</span>`;
 }
+const _cap = s => s.charAt(0)+s.slice(1).toLowerCase();
 function periodoLabel(){
-  const a = anoSel() || 'todos', m = mesSel();
-  return (m ? (m.charAt(0)+m.slice(1).toLowerCase()) : 'Ano inteiro') + ' / ' + a;
+  const a = anoSel() || 'todos';
+  const mArr = mesSelArr().slice().sort((x,y)=>MESES.indexOf(x)-MESES.indexOf(y));
+  let mLbl;
+  if(!mArr.length)        mLbl = 'Ano inteiro';
+  else if(mArr.length===1) mLbl = _cap(mArr[0]);
+  else                    mLbl = mArr.map(m=>_cap(m.slice(0,3))).join(', ');
+  return mLbl + ' / ' + a;
+}
+/* Rótulo dos pelotões selecionados ('' = todos) p/ resumo e PDF */
+function pelLabelTxt(){
+  const p = pelSelArr().slice().sort((a,b)=>(+a)-(+b));
+  if(!p.length) return '';
+  return p.length===1 ? `${p[0]}º Pelotão` : `${p.join('º, ')}º Pelotões`;
+}
+/* Sufixo para nome de arquivo (Excel/PDF) */
+function mesFileTag(){
+  const m = mesSelArr();
+  return !m.length ? 'Ano' : (m.length===1 ? m[0] : m.length+'meses');
 }
 
 /* Conteúdo do balão (tooltip) com as ocorrências */
@@ -735,7 +779,7 @@ function render(){
 
   let html = `
     <div class="resumo-exec">
-      No período <b>${periodoLabel()}</b>${pelSel()?` · <b>${pelSel()}º Pelotão</b>`:''}, a 3ª Cia PM MAmb registrou
+      No período <b>${periodoLabel()}</b>${pelLabelTxt()?` · <b>${pelLabelTxt()}</b>`:''}, a 3ª Cia PM MAmb registrou
       <b>${tot.viol}</b> crime(s) violento(s) e <b>${tot.ifz}</b> furto(s) (IF) em zona rural, distribuídos por <b>${lista.length}</b> grupamento(s).
       Das <b>${tot.exige}</b> visita(s) tranquilizadora(s) devida(s), <b>${tot.feitas}</b> foram realizada(s) (<b>${pctFeitas}%</b>)
       e <b>${tot.pend}</b> segue(m) <b>pendente(s)</b>. No mesmo período foram <b>${tot.ops}</b> operação(ões) GDO Rural, sendo <b>${tot.opsValidas}</b> válida(s).
@@ -954,7 +998,7 @@ function exportarExcel(){
   ws3['!cols'] = [{wch:28},{wch:20},{wch:12},{wch:22},{wch:10},{wch:16}];
   XLSX.utils.book_append_sheet(wb, ws3, 'Pendências');
 
-  const nome = 'Relatorio-GDO_' + (mesSel()||'Ano') + '-' + (anoSel()||'') + '.xlsx';
+  const nome = 'Relatorio-GDO_' + mesFileTag() + '-' + (anoSel()||'') + '.xlsx';
   XLSX.writeFile(wb, nome);
 }
 
@@ -1030,7 +1074,7 @@ async function exportarPDF(){
     doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(...OURO);
     doc.text('PERÍODO: ' + periodoLabel().toUpperCase(), pageW/2, hy, { align:'center' }); hy += 5.5;
     doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...TXT);
-    const pelTxt = pelSel() ? `${pelSel()}º Pelotão` : 'Todos os pelotões';
+    const pelTxt = pelLabelTxt() || 'Todos os pelotões';
     const gpTxt = gpSel() ? (document.getElementById('f-gp').selectedOptions[0]?.text || gpSel()) : 'Todos os grupamentos';
     doc.text(`Pelotão: ${pelTxt}    |    Grupamento: ${gpTxt}`, pageW/2, hy, { align:'center' }); hy += 4.5;
     doc.setFontSize(7.5); doc.setTextColor(...MUTED);
@@ -1039,7 +1083,7 @@ async function exportarPDF(){
     y = hy + 7;
 
     /* ---- Resumo do período ---- */
-    const resumo = `No período ${periodoLabel()}${pelSel()?` (${pelSel()}º Pelotão)`:''}, a 3ª Cia PM MAmb registrou `
+    const resumo = `No período ${periodoLabel()}${pelLabelTxt()?` (${pelLabelTxt()})`:''}, a 3ª Cia PM MAmb registrou `
       + `${tot.viol} crime(s) violento(s) e ${tot.ifz} furto(s) (IF) em zona rural, em ${lista.length} grupamento(s). `
       + `Das ${tot.exige} visita(s) tranquilizadora(s) devida(s), ${tot.feitas} foram realizada(s) (${pct}%) e ${tot.pend} segue(m) pendente(s). `
       + `No mesmo período foram ${tot.ops} operação(ões) GDO Rural, sendo ${tot.opsValidas} válida(s).`;
@@ -1129,7 +1173,7 @@ async function exportarPDF(){
       doc.text(`Página ${p} de ${totalPg}`, pageW - MARGIN, pageH - 8, { align:'right' });
     }
 
-    doc.save('Relatorio-GDO_' + (mesSel()||'Ano') + '-' + (anoSel()||'') + '.pdf');
+    doc.save('Relatorio-GDO_' + mesFileTag() + '-' + (anoSel()||'') + '.pdf');
   } catch(e){
     console.error(e);
     alert('Erro ao gerar o PDF: ' + e.message);
@@ -1153,27 +1197,66 @@ function popularFiltros(){
   /* Meses do ano selecionado */
   atualizarMeses();
 
-  /* Pelotões presentes (restritos ao escopo do usuário) */
+  /* Pelotões presentes (restritos ao escopo do usuário) — checkbox multi */
   let pels = [...new Set(dadosCrimes.map(c => pelDoColk(c.grupamento)).filter(n=>n && n!==99))].sort((a,b)=>a-b);
   if(ESCOPO.tipo!=='cia' && ESCOPO.pel!=='') pels = pels.filter(p=>String(p)===String(ESCOPO.pel));
-  const selPel = document.getElementById('f-pel');
-  selPel.innerHTML = (ESCOPO.tipo==='cia' ? '<option value="">Todos os pelotões</option>' : '') +
-    pels.map(p=>`<option value="${p}">${p}º Pelotão</option>`).join('');
-  if(ESCOPO.tipo!=='cia' && ESCOPO.pel!=='') selPel.value = ESCOPO.pel;
+  const menuPel = document.getElementById('f-pel-menu');
+  menuPel.innerHTML =
+    (ESCOPO.tipo==='cia' ? `<label class="rg-multi-all"><input type="checkbox" value="__all"><span>Todos os pelotões</span></label><div class="rg-multi-sep"></div>` : '') +
+    pels.map(p=>`<label><input type="checkbox" value="${p}"><span>${p}º Pelotão</span></label>`).join('');
+  if(ESCOPO.tipo!=='cia' && ESCOPO.pel!==''){
+    const cb = menuPel.querySelector(`input[value="${ESCOPO.pel}"]`); if(cb) cb.checked = true;
+  }
+  wireMultiMenu('f-pel', 'Todos os pelotões', () => { atualizarGPs(); render(); });
 
   atualizarGPs();
   aplicarEscopoFiltros();
 }
 
+/* ── Infra do filtro multi-seleção (checkbox dropdown) ── */
+function multiBtnLabel(prefix, allLabel){
+  const menu = document.getElementById(prefix+'-menu');
+  const sel = [...menu.querySelectorAll('input[type=checkbox]:checked')].filter(i=>i.value!=='__all');
+  const allCb = menu.querySelector('input[value="__all"]');
+  if(allCb) allCb.checked = (sel.length===0);
+  const btn = document.getElementById(prefix+'-btn');
+  if(!sel.length){ btn.textContent = allLabel + ' ▾'; return; }
+  const labels = sel.map(i=>i.parentElement.querySelector('span').textContent);
+  btn.textContent = (labels.length<=2 ? labels.join(', ') : labels.length+' selecionados') + ' ▾';
+}
+function wireMultiMenu(prefix, allLabel, onChange){
+  const menu = document.getElementById(prefix+'-menu');
+  menu.querySelectorAll('input[type=checkbox]').forEach(cb => {
+    cb.onchange = () => {
+      if(cb.value==='__all'){
+        menu.querySelectorAll('input[type=checkbox]').forEach(x=>{ if(x.value!=='__all') x.checked=false; });
+      }
+      multiBtnLabel(prefix, allLabel);
+      if(onChange) onChange();
+    };
+  });
+  multiBtnLabel(prefix, allLabel);
+}
+function initMultiToggles(){
+  document.querySelectorAll('.rg-multi').forEach(w => {
+    const btn = w.querySelector('.rg-multi-btn');
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const wasOpen = w.classList.contains('open');
+      document.querySelectorAll('.rg-multi.open').forEach(o=>o.classList.remove('open'));
+      if(!wasOpen) w.classList.add('open');
+    });
+  });
+  document.querySelectorAll('.rg-multi-menu').forEach(m => m.addEventListener('click', e=>e.stopPropagation()));
+  document.addEventListener('click', () => document.querySelectorAll('.rg-multi.open').forEach(o=>o.classList.remove('open')));
+}
+
 /* Trava/oculta os seletores conforme o escopo do usuário + aviso */
 function aplicarEscopoFiltros(){
   if(ESCOPO.tipo==='cia') return;
-  const fgPel = document.getElementById('f-pel');
-  if(fgPel){
-    if(ESCOPO.pel!=='') fgPel.value = ESCOPO.pel;
-    fgPel.disabled = true;
-    const fg = fgPel.closest('.rg-fg'); if(fg) fg.style.display = 'none';
-  }
+  /* fora da Cia → pelotão travado no próprio (pelSelArr já força); oculta o filtro */
+  const wrapPel = document.getElementById('f-pel-wrap');
+  if(wrapPel){ const fg = wrapPel.closest('.rg-fg'); if(fg) fg.style.display = 'none'; }
   if(ESCOPO.tipo==='gp'){
     const fgGp = document.getElementById('f-gp');
     if(fgGp){
@@ -1200,11 +1283,11 @@ function aplicarEscopoFiltros(){
 }
 /* Lista de grupamentos (afunila pelo pelotão selecionado) */
 function atualizarGPs(){
-  const p = pelSel();
+  const pArr = pelSelArr();
   const mapa = new Map(); /* colK → rótulo */
   const add = colK => {
     if(!colK) return;
-    if(p && pelDoColk(colK) !== parseInt(p)) return;
+    if(pArr.length && !pArr.includes(String(pelDoColk(colK)))) return;
     if(!mapa.has(colK)){ const r = rotuloGP(colK); mapa.set(colK, r.nome + (r.sub?` (${r.sub})`:'')); }
   };
   dadosCrimes.forEach(c => add(c.grupamento));
@@ -1221,27 +1304,30 @@ function atualizarMeses(){
   const a = anoSel();
   const mesAtual = MESES[new Date().getMonth()];
   const anoCorrente = String(new Date().getFullYear());
-  const selMes = document.getElementById('f-mes');
-  /* só preserva a escolha depois que o seletor já foi inicializado uma vez
-     (no 1º carregamento o valor é vazio e não deve ser confundido com "Ano inteiro") */
-  const anterior = _mesJaInit ? selMes.value : null;
+  const menu = document.getElementById('f-mes-menu');
+  /* preserva a escolha só depois da 1ª montagem */
+  const anteriores = _mesJaInit ? mesSelArr() : null;
 
   const presentes = MESES.filter(m => dadosCrimes.some(c => (c.ano||anoDaData(c.data))===a && c.mes===m));
   /* no ano corrente, garante o mês atual como opção mesmo sem dados ainda */
   let opcoes = presentes.slice();
   if(a === anoCorrente && !opcoes.includes(mesAtual)) opcoes = MESES.filter(m => opcoes.includes(m) || m===mesAtual);
 
-  selMes.innerHTML = '<option value="">Ano inteiro</option>' +
-    opcoes.map(m=>`<option value="${m}">${m.charAt(0)+m.slice(1).toLowerCase()}</option>`).join('');
+  menu.innerHTML =
+    `<label class="rg-multi-all"><input type="checkbox" value="__all"><span>Ano inteiro (todos)</span></label><div class="rg-multi-sep"></div>` +
+    opcoes.map(m=>`<label><input type="checkbox" value="${m}"><span>${m.charAt(0)+m.slice(1).toLowerCase()}</span></label>`).join('');
 
-  /* 1) mantém a escolha do usuário se ainda existir; 2) senão abre no mês atual;
-     3) senão, mês mais recente com dados */
+  /* 1) mantém a escolha anterior que ainda existe; 2) senão abre no mês atual;
+     3) senão fica vazio (= ano inteiro) */
   let alvo;
-  if(anterior !== null && [...selMes.options].some(o=>o.value===anterior)) alvo = anterior;
-  else if(opcoes.includes(mesAtual)) alvo = mesAtual;
-  else alvo = opcoes.length ? opcoes[opcoes.length-1] : '';
-  selMes.value = alvo;
+  if(anteriores) alvo = anteriores.filter(m=>opcoes.includes(m));
+  else if(opcoes.includes(mesAtual)) alvo = [mesAtual];
+  else alvo = [];
+  menu.querySelectorAll('input[type=checkbox]').forEach(cb=>{
+    if(cb.value!=='__all') cb.checked = alvo.includes(cb.value);
+  });
   _mesJaInit = true;
+  wireMultiMenu('f-mes', 'Ano inteiro', render);
 }
 
 async function carregarTudo(){
@@ -1257,9 +1343,9 @@ async function carregarTudo(){
   }
 }
 
+initMultiToggles();
 document.getElementById('f-ano').addEventListener('change', () => { atualizarMeses(); render(); });
-document.getElementById('f-mes').addEventListener('change', render);
-document.getElementById('f-pel').addEventListener('change', () => { atualizarGPs(); render(); });
+/* Mês e Pelotão (multi-checkbox) são religados em cada rebuild por wireMultiMenu */
 document.getElementById('f-gp').addEventListener('change', render);
 document.getElementById('btn-excel').addEventListener('click', exportarExcel);
 document.getElementById('btn-print').addEventListener('click', exportarPDF);
