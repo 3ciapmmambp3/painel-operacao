@@ -902,7 +902,13 @@ function renderPedidos(){
 }
 async function garantirEfetivo(){
   if(efetivo.length) return;
-  try{ efetivo = await rpc('tta_listar_militares',{p_token:sessao.token}) || []; }catch(e){ efetivo=[]; }
+  // RPC dedicado: inclui HIPOTECADOS (mesmo sem acesso ao painel) p/ o Aux P1
+  // poder lançar as férias deles manualmente — db/170. Fallback ao roster do
+  // TTA caso a função ainda não esteja no banco (deploy pendente).
+  try{ efetivo = await rpc('ferias_efetivo_lancamento',{p_token:sessao.token}) || []; }
+  catch(e){
+    try{ efetivo = await rpc('tta_listar_militares',{p_token:sessao.token}) || []; }catch(_){ efetivo=[]; }
+  }
 }
 // ── picker de militar pesquisável (nº + nome completo, padrão do Relatório) ──
 function _milLabel(m){ return `${(m.posto_graduacao||'').toUpperCase()} ${(m.nome_completo||m.nome_guerra||'').toUpperCase()} · ${m.matricula||''}`; }
@@ -918,7 +924,8 @@ function milBuscaInput(){
     return termos.every(t=>alvo.includes(t));
   }).slice(0,40);
   drop.innerHTML = lista.length
-    ? lista.map(m=>`<div class="mil-opt" data-id="${m.id}" data-lbl="${esc(_milLabel(m))}"><b>${esc((m.posto_graduacao||'').toUpperCase())} ${esc(m.nome_completo||m.nome_guerra||'')}</b><br><small>${esc(m.matricula||'')}${m.grupamento_id?' · '+esc(m.grupamento_id):''}</small></div>`).join('')
+    ? lista.map(m=>{ const hip=(String(m.situacao_efetivo||'').toUpperCase()==='HIPOTECADO');
+        return `<div class="mil-opt" data-id="${m.id}" data-lbl="${esc(_milLabel(m))}"><b>${esc((m.posto_graduacao||'').toUpperCase())} ${esc(m.nome_completo||m.nome_guerra||'')}</b>${hip?' <span style="font-size:10px;color:#ffa726;border:1px solid rgba(255,167,38,.5);border-radius:4px;padding:0 4px;">HIPOTECADO</span>':''}<br><small>${esc(m.matricula||'')}${m.grupamento_id?' · '+esc(m.grupamento_id):''}</small></div>`; }).join('')
     : '<div class="mil-empty">Nenhum militar encontrado</div>';
   drop.classList.add('open');
 }
