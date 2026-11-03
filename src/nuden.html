@@ -278,6 +278,17 @@ async function removerContaSisden(){
 }
 // ── Responder em lote no SISDEN (sem abrir aba — caixa no painel) ──
 const RESPONDER_URL = 'https://zrnbebjszwkmquzthjfa.supabase.co/functions/v1/sisden-responder';
+// Busca a prévia ao vivo (o que o robô REALMENTE vai responder) e reflete no card.
+// Só p/ quem lança no SEMAD (GERIR). Se falhar, mantém a heurística de banco.
+async function carregarPreviaSemad(){
+  if(typeof GERIR!=='undefined' && !GERIR) return;
+  const ke=document.getElementById('k-ext'); if(ke) ke.textContent='…';
+  try{
+    const pr=await fetch(RESPONDER_URL+'?acao=previa').then(r=>r.json());
+    _previaCods = Array.isArray(pr.codigos) ? new Set(pr.codigos.map(String)) : null;
+  }catch(e){ _previaCods=null; }
+  kpis(); if(filtro==='externo') render();
+}
 async function responderSisden(){
   const btn=document.getElementById('btn-responder-sisden'); const txt0=btn.textContent;
   try{
@@ -432,6 +443,7 @@ async function carregar(){
     }
     DADOS = todas;
     popularAnos(); render(); kpis();
+    carregarPreviaSemad();   // atualiza o card "A lançar · SEMAD" com a prévia ao vivo do robô
   } catch(e){
     console.error('nuden',e);
     tb.innerHTML = `<tr><td colspan="9" class="empty">Erro ao carregar: ${e.message}</td></tr>`;
@@ -453,7 +465,14 @@ const atendidaN = d => !!d.data_atendimento || d.situacao==='RESPONDIDA' || d.si
 const novoSisden   = d => String(d.fonte_aba||'').toLowerCase() !== 'manual';
 const temAtoReds   = d => !!String(d.numero_gaia||'').trim() && !!String(d.numero_reds||'').trim();
 const respNoSisden = d => !!d.respondida_sisden_em || !!d.data_resposta_externa;
-const aLancarSemad = d => novoSisden(d) && atendidaN(d) && temAtoReds(d) && !respNoSisden(d);
+// Heurística de banco (usada enquanto a prévia ao vivo não chega / se o SISDEN estiver fora).
+const aLancarSemadHeur = d => novoSisden(d) && atendidaN(d) && temAtoReds(d) && !respNoSisden(d);
+// Prévia AO VIVO: o robô (sisden-responder ?acao=previa) devolve os códigos que
+// ele realmente vai responder (pendentes = "Encaminhada" no SISDEN AGORA ∩ Ato+REDS).
+// Muitas respondidas foram baixadas direto no sistema antigo e não estão mais
+// abertas no SISDEN — por isso o card ao vivo bate com a prévia do botão.
+let _previaCods = null;  // Set de códigos da prévia (null = ainda não carregou / falhou → usa heurística)
+const aLancarSemad = d => _previaCods ? _previaCods.has(String(d.codigo)) : aLancarSemadHeur(d);
 function emAtraso(d){ if(atendidaN(d)) return false; const dv=diasVenc(d); if(dv!=null && dv<0) return true; return /ATRAS/i.test(d.status_prazo||''); }
 const noPrazoN = d => !atendidaN(d) && !emAtraso(d);
 function venceLogo(d){ if(atendidaN(d)) return false; const dv=diasVenc(d); return dv!=null && dv>=0 && dv<=10; }

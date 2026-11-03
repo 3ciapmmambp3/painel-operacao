@@ -303,7 +303,8 @@ Deno.serve(async (req) => {
 
     // ── PAINEL: prévia (contagem) ──
     if (acao === "previa") {
-      return jsonCors({ total_candidatas: candidatas.length, por_tipo: porTipoCand, pendentes_no_sisden: resumoPend });
+      return jsonCors({ total_candidatas: candidatas.length, por_tipo: porTipoCand, pendentes_no_sisden: resumoPend,
+        codigos: candidatas.map((c) => c.codigo) });   // p/ o painel casar o card/lista "A lançar · SEMAD"
     }
     // ── PAINEL: enviar (identifica pelo token da sessão do painel; sem PIN) ──
     if (acao === "enviar") {
