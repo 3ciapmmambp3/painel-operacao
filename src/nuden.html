@@ -442,12 +442,18 @@ async function carregar(){
 function hoje0(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
 function diasVenc(d){ if(!d.data_vencimento) return null; const p=new Date(d.data_vencimento+'T00:00:00'); return Math.round((p-hoje0())/86400000); }
 const atendidaN = d => !!d.data_atendimento || d.situacao==='RESPONDIDA' || d.situacao==='FINALIZADA';
-// "A lançar · SEMAD" conta SÓ as demandas do NOVO sistema SISDEN (fonte robô/
-// painel/sisden/sisreq). O backlog antigo (fonte_aba='manual', aba histórica
-// NUDEN_03CIAMAMB) já foi respondido no sistema anterior e o controle dele está
-// em outra planilha — não deve aparecer aqui.
-const novoSisden = d => String(d.fonte_aba||'').toLowerCase() !== 'manual';
-const aLancarSemad = d => atendidaN(d) && !d.data_resposta_externa && novoSisden(d);
+// "A lançar · SEMAD" = demandas do NOVO sistema SISDEN que JÁ FORAM RESPONDIDAS
+// (atendidas, com Ato de Fiscalização [Nº GAIA] + Nº REDS) mas AINDA NÃO tiveram
+// a resposta lançada no SISDEN. É o mesmo critério de banco da função
+// sisden-responder (Ato+REDS ∩ respondida_sisden_em null). Exclui:
+//  • o backlog antigo (fonte_aba='manual', aba histórica NUDEN_03CIAMAMB), já
+//    respondido no sistema anterior e controlado em outra planilha;
+//  • as atendidas sem Ato/REDS (ainda sem resposta pronta pra enviar);
+//  • as que já foram respondidas no SISDEN (têm respondida_sisden_em ou data_resposta_externa).
+const novoSisden   = d => String(d.fonte_aba||'').toLowerCase() !== 'manual';
+const temAtoReds   = d => !!String(d.numero_gaia||'').trim() && !!String(d.numero_reds||'').trim();
+const respNoSisden = d => !!d.respondida_sisden_em || !!d.data_resposta_externa;
+const aLancarSemad = d => novoSisden(d) && atendidaN(d) && temAtoReds(d) && !respNoSisden(d);
 function emAtraso(d){ if(atendidaN(d)) return false; const dv=diasVenc(d); if(dv!=null && dv<0) return true; return /ATRAS/i.test(d.status_prazo||''); }
 const noPrazoN = d => !atendidaN(d) && !emAtraso(d);
 function venceLogo(d){ if(atendidaN(d)) return false; const dv=diasVenc(d); return dv!=null && dv>=0 && dv<=10; }
