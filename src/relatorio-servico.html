@@ -1770,8 +1770,10 @@ async function carregarControleSupabase(tabela, sourceKey){
   const rd = await fetch(url, { headers:H });
   if (!rd.ok) return;   // ex.: 404 enquanto a migração (db/151|db/152) não rodou
   const rows = await rd.json();
-  // NUDEN e DDU gravam SÓ O NÚMERO (a baixa cai noutra planilha que lê só a
-  // numeração). Os demais (RI/Emergência/MC) seguem com o contexto no rótulo.
+  // NUDEN e DDU mostram SÓ O NÚMERO no dropdown. RI/Emergência/MC mantêm o
+  // contexto "— município · natureza" no dropdown (ajuda o militar a não errar);
+  // o corte p/ só-número é feito no ENVIO à planilha (filtrarPayloadParaPlanilha),
+  // porque a baixa cai noutra planilha que casa por número (2026-11-04).
   const soNumero = (sourceKey === 'NUDEN' || sourceKey === 'DDU181');
   const itens = rows.map(d => {
     const extras = soNumero ? '' : [d.municipio, d.natureza].filter(Boolean).join(' · ');
@@ -4747,6 +4749,16 @@ function filtrarPayloadParaPlanilha(payload, situMap){
   }).filter(cat => !situMap || !situMap[cat.categoria] || (Array.isArray(cat.itens) && cat.itens.length));
   // A situação é só p/ exibição/controle — não vira coluna na planilha.
   (clone.categorias || []).forEach(cat => (cat.itens || []).forEach(it => { if (it && typeof it === 'object') delete it[SITUACAO_ROTULO_KEY]; }));
+  // A demanda vai p/ a planilha SÓ COM O NÚMERO (a baixa cai noutra planilha que
+  // casa por número; o contexto "— município · natureza" mantido no dropdown/
+  // Supabase/PDF quebraria esse casamento). Corta aqui, depois do filtro de
+  // situação (que usa o valor cheio), p/ não afetar o casamento. Cobre a demanda
+  // principal e as extras (+2/+3), que entram sob o mesmo rótulo. (2026-11-04)
+  const _demLabels = {}; Object.keys(CAT_SITUACAO).forEach(cid => { const l = _demandaLabelOf(cid); if (l) _demLabels[l] = 1; });
+  const _soCodigo = v => _stripAndamento(v).split(/\s+—\s+/)[0].replace(/\s+/g, ' ').trim();
+  (clone.categorias || []).forEach(cat => (cat.itens || []).forEach(it => {
+    if (it && typeof it === 'object') Object.keys(_demLabels).forEach(lab => { if (it[lab]) it[lab] = _soCodigo(it[lab]); });
+  }));
   return clone;
 }
 // Registra as EM ANDAMENTO na tabela de controle e tira as FINALIZADAS (best-effort).
