@@ -236,12 +236,21 @@ let PAGINA=1; const POR_PAGINA=10;
 // ano selector
 (function(){ const y=new Date().getFullYear(); const sel=document.getElementById('f-ano'); for(let a=y;a>=y-3;a--){ sel.insertAdjacentHTML('beforeend',`<option value="${a}">${a}</option>`); } sel.value=y; })();
 
-// grupamentos filtro
+// grupamentos filtro — organizado por PELOTÃO (optgroup), igual ao filtro das demandas
 (async function(){ try{
   const r=await fetch(`${API}/rest/v1/rpc/grupamentos_listar`,{method:'POST',headers:H,body:'{}'});
   const rows=await r.json()||[];
   const sel=document.getElementById('f-grup');
-  rows.forEach(g=>sel.insertAdjacentHTML('beforeend',`<option value="${_esc(g.grupamento_completo)}">${_esc(_grafiaGP(g.grupamento_completo))}</option>`));
+  const pelNum=s=>{ const m=String(s||'').match(/(\d+)/); return m?+m[1]:99; };
+  const pels=[...new Set(rows.map(g=>pelNum(g.pelotao)))].sort((a,b)=>a-b);
+  let html='<option value="">Todos os grupamentos</option>';
+  pels.forEach(p=>{
+    const doPel=rows.filter(g=>pelNum(g.pelotao)===p)
+      .sort((a,b)=>_grafiaGP(a.grupamento_completo).localeCompare(_grafiaGP(b.grupamento_completo),'pt-BR'));
+    const opts=doPel.map(g=>`<option value="${_esc(g.grupamento_completo)}">${_esc(_grafiaGP(g.grupamento_completo))}</option>`).join('');
+    html+=`<optgroup label="${p===99?'Sem pelotão':p+'º Pelotão'}">${opts}</optgroup>`;
+  });
+  sel.innerHTML=html;
 }catch(e){} })();
 
 document.getElementById('f-ano').addEventListener('change',carregar);
