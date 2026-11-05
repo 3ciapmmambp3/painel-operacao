@@ -155,7 +155,7 @@
         <tbody id="tbody"><tr><td colspan="9"><div class="empty">Carregando…</div></td></tr></tbody>
       </table>
     </div>
-    <div class="miut" style="margin-top:8px;">Ordem = antiguidade (ordem manual → posto → última promoção). O importador casa pela matrícula: existente <b>atualiza</b>, novo é <b>criado</b> (senha padrão <b>Mudar@123</b>, 1º acesso). Não traz dados pessoais sensíveis (RG/CPF/endereços).</div>
+    <div class="miut" style="margin-top:8px;">Ordem = antiguidade (ordem manual → posto → última promoção). O importador casa pela matrícula: existente <b>atualiza</b>, novo é <b>criado</b> (senha padrão <b>Mudar@123</b>, 1º acesso). Importa também os <b>dados pessoais</b> (filiação, ingresso, RG/órgão/emissão, CPF, CNH, contatos e endereço residencial) quando as colunas estiverem no modelo. O <b>Exportar Excel</b> gera a ficha completa com esses mesmos campos.</div>
   </div>
 </div>
 
@@ -994,16 +994,29 @@ async function exportar(){
   if(porUnid) await carregarMapaGp();
   const base = listaFiltrada();                       // respeita os filtros ativos (pelotão/grupamento/aba/busca)
   const lista = porUnid ? base.slice().sort(cmpUnidade) : base;
+  const dBR=d=>d?fmtBR(d):'';   // data só quando existir (evita "—" no Excel)
   const hdr=(porUnid?['Unidade']:[]).concat(['Ordem','Nº PM','Posto/Grad','Nome completo','Nome de guerra','Função',
     'COD_RPM','NOME_RPM','COD_UNIDADE_PRINCIPAL','NOME_UNIDADE_PRINCIPAL','COD_UNIDADE','NOME_UNIDADE',
     'COD_SIAD','TIPO_ATIVIDADE','COD_MUNICIPIO','Última promoção','Classificação curso','Situação','Ativo',
-    'Transf. destino','Pasta funcional','Data envio','Nº ofício']);
+    'Transf. destino','Pasta funcional','Data envio','Nº ofício',
+    // ── dados pessoais / ficha completa ──
+    'Nome da mãe','Nome do pai','Data de ingresso','Tempo de serviço','Nascimento','Sexo',
+    'RG','Órgão expedidor do RG','Emissão do RG','CPF','Título de eleitor','Nº CNH','CNH categoria','CNH validade',
+    'Tel. funcional','Tel. pessoal 1','Tel. pessoal 2','E-mail pessoal','E-mail funcional',
+    'Residencial — Rua/Av','Residencial — Número','Residencial — Complemento','Residencial — Bairro','Residencial — Cidade','Residencial — CEP',
+    'Endereço funcional','Residencial (legado)','Residencial 2 (legado)','Grupamento / Lotação']);
   const aoa=[hdr];
   lista.forEach(m=>aoa.push((porUnid?[rotuloUnidade(m)]:[]).concat([m.antiguidade_ordem||'',m.matricula||'',_titEf(m.posto_graduacao)||'',_titEf(m.nome_completo)||'',_titEf(m.nome_guerra)||'',_titEf(porUnid?funcaoExibicao(m):(m.funcao||'')),
     m.cod_rpm||'',_titEf(m.nome_rpm)||'',m.cod_unidade_principal||'',_titEf(m.nome_unidade_principal)||'',m.cod_unidade||'',_titEf(m.nome_unidade)||'',
     m.cod_siad||'',_titEf(m.tipo_atividade)||'',m.cod_municipio||'',fmtBR(m.ultima_promocao),m.classificacao_curso||'',
     m.situacao_efetivo||'',m.ativo?'Sim':'Não',m.transf_destino||'',m.transf_pasta_funcional==null?'':(m.transf_pasta_funcional?'Sim':'Não'),
-    fmtBR(m.transf_data_envio),m.transf_oficio_numero||''])));
+    fmtBR(m.transf_data_envio),m.transf_oficio_numero||'',
+    // ── dados pessoais / ficha completa ──
+    m.nome_mae||'',m.nome_pai||'',dBR(m.data_ingresso),m.data_ingresso?tempoServico(m.data_ingresso):'',dBR(m.data_nascimento),m.sexo||'',
+    m.rg||'',m.rg_orgao_expedidor||'',dBR(m.rg_emissao),m.cpf||'',m.titulo_eleitor||'',m.cnh_numero||'',m.cnh_categoria||'',dBR(m.cnh_validade),
+    m.telefone_funcional||'',m.telefone_pessoal1||'',m.telefone_pessoal2||'',m.email_pessoal||'',m.email_funcional||'',
+    m.end_res_logradouro||'',m.end_res_numero||'',m.end_res_complemento||'',m.end_res_bairro||'',m.end_res_cidade||'',m.end_res_cep||'',
+    m.endereco_funcional||'',m.endereco_residencial1||'',m.endereco_residencial2||'',_titEf(m.grupamento_id)||''])));
   const ws=XLSX.utils.aoa_to_sheet(aoa); const wb=XLSX.utils.book_new();
   const _fpel=document.getElementById('f-pel')?.value||'', _fgp=document.getElementById('f-gp')?.value||'';
   const _sufFiltro=[ _fpel?_fpel+'PEL':'', _fgp?_fgp.replace(/[^\wÀ-ÿ]+/g,'-'):'' ].filter(Boolean).join('_');
