@@ -516,8 +516,9 @@ function renderCampBody(){
   }
   // campanha aberta → status + progresso + encerrar
   const pel=CAMP.escopo_pel; const base=_escopoCamp(pel);
-  const conf=base.filter(m=>m.dados_confirmados_campanha===CAMP.id);
-  const pend=base.filter(m=>m.dados_confirmados_campanha!==CAMP.id);
+  const _antig=(a,b)=>(a.__ord??9e9)-(b.__ord??9e9);   // ordem de antiguidade (índice da LISTA do servidor)
+  const conf=base.filter(m=>m.dados_confirmados_campanha===CAMP.id).sort(_antig);
+  const pend=base.filter(m=>m.dados_confirmados_campanha!==CAMP.id).sort(_antig);
   const pct=base.length?Math.round(conf.length*100/base.length):0;
   const escTxt=pel?(pel+'º Pelotão'):'Companhia inteira';
   const nomeCurto=m=>esc(_titEf((m.posto_graduacao||'')+' '+(m.nome_guerra||m.nome_completo||'')));
@@ -531,9 +532,21 @@ function renderCampBody(){
       <div style="height:100%;width:${pct}%;background:var(--success);min-width:${pct?'2%':'0'};"></div>
     </div>
     <div class="miut" style="margin-bottom:12px;"><b style="color:var(--success)">${conf.length} confirmaram</b> · <b>${pend.length} pendente(s)</b> · ${pct}% de ${base.length}</div>
-    <div class="sec">Pendentes (${pend.length})</div>
-    <div style="max-height:180px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:6px 10px;margin-bottom:14px;font-size:12.5px;color:var(--text-muted);">
-      ${pend.length? pend.slice(0,200).map(m=>`<div style="padding:3px 0;border-bottom:1px solid var(--border);">${nomeCurto(m)} <span class="miut">· ${esc(m.matricula||'')}</span></div>`).join('') : '<div style="color:var(--success);padding:4px 0;">Todos confirmaram 🎉</div>'}
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+      <div style="flex:1;min-width:230px;">
+        <div class="sec" style="color:var(--success);display:flex;justify-content:space-between;align-items:center;">Já preencheram (${conf.length})
+          <button class="minibtn" style="padding:3px 7px;" onclick="copiarCamp('conf')" ${conf.length?'':'disabled'}>📋</button></div>
+        <div style="max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:12.5px;color:var(--text-muted);">
+          ${conf.length? conf.map(m=>`<div style="padding:3px 0;border-bottom:1px solid var(--border);">✅ ${nomeCurto(m)} <span class="miut">· ${esc(m.matricula||'')}${m.dados_confirmados_em?' · '+_dthEf(m.dados_confirmados_em):''}</span></div>`).join('') : '<div style="padding:4px 0;">Ninguém confirmou ainda.</div>'}
+        </div>
+      </div>
+      <div style="flex:1;min-width:230px;">
+        <div class="sec" style="color:#ffb74d;display:flex;justify-content:space-between;align-items:center;">Ainda não preencheram (${pend.length})
+          <button class="minibtn" style="padding:3px 7px;" onclick="copiarCamp('pend')" ${pend.length?'':'disabled'}>📋</button></div>
+        <div style="max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:12.5px;color:var(--text-muted);">
+          ${pend.length? pend.map(m=>`<div style="padding:3px 0;border-bottom:1px solid var(--border);">⏳ ${nomeCurto(m)} <span class="miut">· ${esc(m.matricula||'')}</span></div>`).join('') : '<div style="color:var(--success);padding:4px 0;">Todos confirmaram 🎉</div>'}
+        </div>
+      </div>
     </div>
     ${linkBloco}
     <div class="row-actions" style="justify-content:space-between;margin-top:16px;align-items:center;">
@@ -542,6 +555,17 @@ function renderCampBody(){
     </div>`;
 }
 function copiarLinkDados(){ const t=_linkMeusDados(); navigator.clipboard?.writeText(t).then(()=>flash('Link copiado.',true),()=>flash('Copie manualmente: '+t,false)); }
+function _dthEf(d){ if(!d) return ''; const x=new Date(d); if(isNaN(x)) return fmtBR(d); return x.toLocaleDateString('pt-BR')+' '+x.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
+function copiarCamp(tipo){
+  if(!CAMP) return;
+  const base=_escopoCamp(CAMP.escopo_pel);
+  const _antig=(a,b)=>(a.__ord??9e9)-(b.__ord??9e9);
+  const arr = (tipo==='conf' ? base.filter(m=>m.dados_confirmados_campanha===CAMP.id) : base.filter(m=>m.dados_confirmados_campanha!==CAMP.id)).sort(_antig);
+  const titulo = (tipo==='conf'?'Já preencheram':'Ainda não preencheram')+(CAMP.escopo_pel?` — ${CAMP.escopo_pel}º Pelotão`:'');
+  const linhas = arr.map(m=>`• ${_titEf((m.posto_graduacao||'')+' '+(m.nome_guerra||m.nome_completo||''))} (${m.matricula||''})${tipo==='conf'&&m.dados_confirmados_em?' — '+_dthEf(m.dados_confirmados_em):''}`);
+  const txt = `${titulo} (${arr.length}):\n`+linhas.join('\n');
+  navigator.clipboard?.writeText(txt).then(()=>flash('Lista copiada.',true),()=>flash('Não consegui copiar — copie da tela.',false));
+}
 async function salvarCampanha(){
   const prazo=document.getElementById('camp-prazo').value||null;
   const pel=document.getElementById('camp-pel').value||null;
