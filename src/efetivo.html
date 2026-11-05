@@ -138,6 +138,7 @@
       <button class="minibtn" onclick="exportar()">⬇ Exportar Excel</button>
       <button class="minibtn ef-only-ativos" id="btn-ordenar" onclick="toggleOrdenar()">↕ Ordenar antiguidade</button>
       <button class="minibtn ef-only-ativos" id="btn-unidade" onclick="toggleUnidade()">🏛️ Ordenar por Unidade</button>
+      <button class="minibtn" id="btn-campanha" onclick="abrirCampanha()">🪪 Solicitar atualização de dados</button>
     </div>
     <div id="inat-aviso" class="miut" style="display:none;margin:-4px 0 12px;">Militares fora do efetivo ativo — <b>não</b> contam nos indicadores e <b>não</b> acessam o painel. Use <b>reativar</b> para trazer de volta (inclusive reconvocação da reserva).</div>
     <div id="ordenar-bar" style="display:none;margin-bottom:10px;padding:9px 13px;background:var(--acc-bg);border:1px solid var(--acc);border-radius:8px;font-size:12px;color:var(--text-white);">
@@ -289,6 +290,18 @@
       <button class="btn-outline" onclick="fechar('modal-detalhe');editar(curId)">✏️ Editar</button>
       <button class="btn-gold" onclick="fechar('modal-detalhe')">OK</button>
     </div>
+  </div>
+</div>
+
+<!-- MODAL CAMPANHA DE ATUALIZAÇÃO CADASTRAL -->
+<div class="modal-bg" id="modal-camp">
+  <div class="modal" style="max-width:640px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+      <h2 style="margin:0;">🪪 Atualização de dados pelos militares</h2>
+      <button class="minibtn" onclick="fechar('modal-camp')">fechar</button>
+    </div>
+    <div class="miut" style="margin:8px 0 14px;">O militar entra no painel (login normal) e confere/atualiza os próprios dados em <b>Meus dados</b> — telefone, endereço, documentos, filiação. Cada um vê e altera <b>somente os seus</b>. Enquanto a solicitação estiver aberta, aparece um aviso no <b>Meu Dia</b> dele.</div>
+    <div id="camp-body"></div>
   </div>
 </div>
 
@@ -448,7 +461,7 @@ async function importar(inp){
 }
 
 // ── dados / render ──
-let LISTA=[];
+let LISTA=[], CAMP=null;
 async function carregar(){
   try{
     LISTA = await rpc('efetivo_listar',{p_token:sessao.token,p_incluir_inativos:true}) || [];
@@ -463,8 +476,86 @@ async function carregar(){
     const nInat = LISTA.filter(m=>!(m.integrante_ativo??m.ativo) && !ehHipotecado(m)).length;
     document.getElementById('tab-inat-n').textContent = nInat?`(${nInat})`:'';
     document.getElementById('tab-hip-n').textContent = _hipot.length?`(${_hipot.length})`:'';
+    try{ CAMP = await rpc('efetivo_att_atual',{p_token:sessao.token}); }catch(_){ CAMP=null; }
+    _marcaCampanhaBtn();
     render();   // render() chama atualizarKpi() — o KPI reflete o filtro Pelotão/Grupamento
   }catch(e){ document.getElementById('tbody').innerHTML=`<tr><td colspan="9"><div class="empty">${esc(e.message)}</div></td></tr>`; }
+}
+// ── campanha de atualização cadastral (controle do Aux P1) ──
+function _marcaCampanhaBtn(){
+  const b=document.getElementById('btn-campanha'); if(!b) return;
+  b.textContent = CAMP ? '🪪 Atualização de dados — ABERTA' : '🪪 Solicitar atualização de dados';
+  b.style.borderColor = CAMP?'var(--gold)':''; b.style.color = CAMP?'var(--gold)':'';
+}
+function _linkMeusDados(){ return location.origin + location.pathname.replace(/[^/]*$/,'') + 'meus-dados.html'; }
+function _escopoCamp(pel){ return LISTA.filter(m=>(m.integrante_ativo??m.ativo) && !ehHipotecado(m) && (!pel || _pelDe(m)===String(pel))); }
+function abrirCampanha(){ renderCampBody(); document.getElementById('modal-camp').classList.add('open'); }
+function renderCampBody(){
+  const box=document.getElementById('camp-body'); const link=esc(_linkMeusDados());
+  const linkBloco=`<div class="sec">Link para enviar</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <input readonly value="${link}" onclick="this.select()" style="flex:1;min-width:220px;background:var(--bg-dark);border:1px solid var(--border);border-radius:6px;color:var(--text-white);padding:8px 10px;font-size:12px;">
+      <button class="minibtn" onclick="copiarLinkDados()">📋 Copiar</button>
+      <a class="minibtn" href="https://wa.me/?text=${encodeURIComponent('Atualize seus dados pessoais no painel (telefone, endereço, documentos). Faça login e confira: '+_linkMeusDados())}" target="_blank" rel="noopener" style="text-decoration:none;">🟢 WhatsApp</a>
+    </div>
+    <div class="miut" style="margin-top:6px;">O militar precisa <b>fazer login</b> para abrir (os dados são pessoais). O link leva direto à ficha dele.</div>`;
+  if(!CAMP){
+    const pels=[...new Set(LISTA.map(_pelDe).filter(p=>p&&/^\d+$/.test(p)))].sort((a,b)=>a-b);
+    box.innerHTML=`
+      <div class="sec">Abrir solicitação</div>
+      <div class="grid">
+        <div class="fld"><label>Prazo</label><input type="date" id="camp-prazo"></div>
+        <div class="fld"><label>Escopo</label><select id="camp-pel"><option value="">Companhia inteira</option>${pels.map(p=>`<option value="${p}">${p}º Pelotão</option>`).join('')}</select></div>
+        <div class="fld" style="grid-column:1/-1;"><label>Mensagem (opcional)</label><input id="camp-msg" placeholder="ex.: Conferência semestral — confirmem até o prazo."></div>
+      </div>
+      <div class="row-actions" style="justify-content:flex-end;margin-top:14px;">
+        <button class="btn-gold" onclick="salvarCampanha()">Abrir solicitação</button>
+      </div>
+      <div style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">${linkBloco}</div>`;
+    return;
+  }
+  // campanha aberta → status + progresso + encerrar
+  const pel=CAMP.escopo_pel; const base=_escopoCamp(pel);
+  const conf=base.filter(m=>m.dados_confirmados_campanha===CAMP.id);
+  const pend=base.filter(m=>m.dados_confirmados_campanha!==CAMP.id);
+  const pct=base.length?Math.round(conf.length*100/base.length):0;
+  const escTxt=pel?(pel+'º Pelotão'):'Companhia inteira';
+  const nomeCurto=m=>esc(_titEf((m.posto_graduacao||'')+' '+(m.nome_guerra||m.nome_completo||'')));
+  box.innerHTML=`
+    <div class="banner" style="border:1px solid var(--gold-border);border-left:3px solid var(--gold);background:linear-gradient(180deg,var(--gold-bg),transparent);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--text-white);">
+      Solicitação <b>ABERTA</b> · ${escTxt}${CAMP.prazo?` · prazo <b>${fmtBR(CAMP.prazo)}</b>`:''}${CAMP.criada_em?` · desde ${fmtBR(CAMP.criada_em)}`:''}
+      ${CAMP.mensagem?`<div class="miut" style="margin-top:4px;">“${esc(CAMP.mensagem)}”</div>`:''}
+    </div>
+    <div class="sec">Progresso${pel?' ('+escTxt+')':''}</div>
+    <div style="background:var(--bg-dark);border:1px solid var(--border);border-radius:8px;height:22px;overflow:hidden;margin-bottom:6px;">
+      <div style="height:100%;width:${pct}%;background:var(--success);min-width:${pct?'2%':'0'};"></div>
+    </div>
+    <div class="miut" style="margin-bottom:12px;"><b style="color:var(--success)">${conf.length} confirmaram</b> · <b>${pend.length} pendente(s)</b> · ${pct}% de ${base.length}</div>
+    <div class="sec">Pendentes (${pend.length})</div>
+    <div style="max-height:180px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:6px 10px;margin-bottom:14px;font-size:12.5px;color:var(--text-muted);">
+      ${pend.length? pend.slice(0,200).map(m=>`<div style="padding:3px 0;border-bottom:1px solid var(--border);">${nomeCurto(m)} <span class="miut">· ${esc(m.matricula||'')}</span></div>`).join('') : '<div style="color:var(--success);padding:4px 0;">Todos confirmaram 🎉</div>'}
+    </div>
+    ${linkBloco}
+    <div class="row-actions" style="justify-content:space-between;margin-top:16px;align-items:center;">
+      <span class="miut">Para abrir uma nova (outro prazo/escopo), encerre esta primeiro.</span>
+      <button class="btn-outline" onclick="encerrarCampanha()">Encerrar solicitação</button>
+    </div>`;
+}
+function copiarLinkDados(){ const t=_linkMeusDados(); navigator.clipboard?.writeText(t).then(()=>flash('Link copiado.',true),()=>flash('Copie manualmente: '+t,false)); }
+async function salvarCampanha(){
+  const prazo=document.getElementById('camp-prazo').value||null;
+  const pel=document.getElementById('camp-pel').value||null;
+  const msg=(document.getElementById('camp-msg').value||'').trim()||null;
+  try{
+    await rpc('efetivo_att_abrir',{p_token:sessao.token,p_prazo:prazo,p_escopo_pel:pel,p_mensagem:msg});
+    flash('Solicitação aberta. Os militares verão o aviso no Meu Dia.',true);
+    await carregar(); renderCampBody();
+  }catch(e){ flash(e.message||'Erro ao abrir a solicitação.',false); }
+}
+async function encerrarCampanha(){
+  if(!confirm('Encerrar a solicitação de atualização? O aviso some do Meu Dia dos militares (os dados já confirmados ficam salvos).')) return;
+  try{ await rpc('efetivo_att_fechar',{p_token:sessao.token}); flash('Solicitação encerrada.',true); await carregar(); renderCampBody(); }
+  catch(e){ flash(e.message||'Erro ao encerrar.',false); }
 }
 function tagSit(m){
   if(ehHipotecado(m)) return '<span class="tag" style="background:rgba(255,152,0,.15);color:#ffa726;border:1px solid rgba(255,152,0,.4)">Hipotecado'+((m.integrante_ativo??m.ativo)?'':' · sem acesso')+'</span>';

@@ -474,6 +474,18 @@ async function carregarAvisosMeuDia(){
   const _fmtD=s=>{ if(!s) return ''; const m=String(s).match(/^(\d{4})-(\d{2})-(\d{2})/); if(m) return `${m[3]}/${m[2]}/${m[1]}`; const d=new Date(s); return isNaN(d.getTime())?String(s).slice(0,10):d.toLocaleDateString('pt-BR'); };
   const _esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const avisos=[];
+  /* 0.z) Atualização cadastral solicitada pela Aux P1 — aparece enquanto a
+     campanha estiver aberta e o militar ainda não tiver confirmado. É pessoal:
+     meus_dados_ler devolve só o próprio registro. */
+  try{
+    const rd=await fetch(`${SB_AUTH_URL}/rest/v1/rpc/meus_dados_ler`,{method:'POST',headers:{...H,'Content-Type':'application/json'},body:JSON.stringify({p_token:sessao.token})});
+    if(rd.ok){ const md=await rd.json(); const c=md&&md.campanha;
+      if(c && !c.confirmado){
+        const prazo=c.prazo?` — prazo até <b>${_fmtD(c.prazo)}</b>`:'';
+        avisos.push({ic:'🪪',txt:`<b>Confira e atualize seus dados pessoais</b> (telefone, endereço, documentos…)${prazo}. A Aux P1 solicitou a conferência.`,lk:'meus-dados.html',lkTxt:'Atualizar →'});
+      }
+    }
+  }catch(e){ /* silencioso */ }
   // 0) Cartão Programa do dia — mesma informação enviada por WhatsApp à equipe.
   try{
     const rc=await fetch(`${SB_AUTH_URL}/rest/v1/rpc/cartao_meus_do_dia`,{method:'POST',headers:{...H,'Content-Type':'application/json'},body:JSON.stringify({p_token:sessao.token})});
