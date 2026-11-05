@@ -192,6 +192,12 @@
     </table>
   </div>
   <div id="pager" style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:12px;font-size:12.5px;color:var(--text-muted);flex-wrap:wrap"></div>
+  <p class="obs-fase2" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">
+    <span style="display:inline-block;padding:0 6px;border-radius:9px;background:#b26b00;color:#fff;font-size:11px;font-weight:700">+N</span> = outras demandas no <b>mesmo ponto e mesmo grupamento</b>
+    <span style="margin:0 2px;color:var(--text-hint)">·</span>
+    <span style="display:inline-block;padding:0 6px;border-radius:9px;background:#7c3aed;color:#fff;font-size:11px;font-weight:700">↔N</span> = demandas <b>próximas</b> (até 5 km, em outro ponto)
+    <span style="color:var(--text-hint)">— clique no número p/ filtrar; de novo p/ limpar.</span>
+  </p>
   <p class="obs-fase2">Prazo do Monitoramento Contínuo = <b>45 dias</b>. A baixa (atendimento) é feita pelo <b>Relatório de Serviço</b>; um novo lote entra por <b>Carregar lote</b> (lê o KML mestre, gera o KML por GEOCOD e casa o croqui PDF). Aux P3 pode dar baixa manual na gaveta.</p>
 </div>
 </div>
@@ -432,6 +438,10 @@ function popularAnos(){
 let _nearKey='';
 function _nkey(d){const mu=String(d.municipio||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');const en=String(d.endereco||d.regional||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z0-9]+/g,' ').trim();return en.length>3?mu+'|'+en:'';}
 function _locKey(d){const la=parseFloat(d.coord_y),lo=parseFloat(d.coord_x);if(isFinite(la)&&isFinite(lo))return 'C|'+la.toFixed(4)+'|'+lo.toFixed(4);return _nkey(d);}
+// grupamento responsável (normalizado) — p/ o +N agrupar só DENTRO do mesmo grupamento
+function _grpKey(d){return String(d.gp_responsavel||d.grupamento_completo||d.fracao_responsavel||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z0-9]+/g,' ').trim();}
+// chave do +N = MESMO PONTO (coordenada/endereço) + MESMO GRUPAMENTO. '' quando não há ponto (sem badge).
+function _pgKey(d){const lk=_locKey(d);return lk?lk+'|G|'+_grpKey(d):'';}
 function nearFiltrar(k){ _nearKey=(_nearKey===k?'':k); PAGE=1; render(); }
 // proximidade por RAIO (5 km): clicar no ↔N isola as demandas MC perto da âncora
 let _nearAnchorPt=null, _nearAnchorCod='';
@@ -457,7 +467,7 @@ function passa(d){
   // "Mesmo local" (+N) e "raio 5 km" (↔N): ao clicar, mostra TODAS as demandas
   // ATIVAS daquele ponto, ignorando status/ano/município/busca — senão o badge
   // conta N mas os filtros ativos escondem as outras, em geral já atendidas.
-  if (_nearKey)       return d.ativo!==false && _locKey(d)===_nearKey;
+  if (_nearKey)       return d.ativo!==false && _pgKey(d)===_nearKey;
   if (_nearAnchorPt){ if(d.ativo===false) return false; const la=parseFloat(d.coord_y),lo=parseFloat(d.coord_x); return isFinite(la)&&isFinite(lo)&&_hav(la,lo,_nearAnchorPt.la,_nearAnchorPt.lo)<=5; }
   if (!baseScope(d)) return false;
   if (filtro==='todas') return true;
@@ -506,8 +516,8 @@ function render(){
   // índice de proximidade ESPACIAL (raio 5 km) p/ badge "+N" — usa coord do KML (coord_x=lon, coord_y=lat)
   const _CELL=0.05, _grid={}, _ck=(la,lo)=>Math.floor(la/_CELL)+'_'+Math.floor(lo/_CELL);
   DADOS.forEach(x=>{const la=parseFloat(x.coord_y),lo=parseFloat(x.coord_x);if(isFinite(la)&&isFinite(lo)){(_grid[_ck(la,lo)]=_grid[_ck(la,lo)]||[]).push({x,la,lo});}});
-  // contagem "mesmo local" (mesma coordenada/endereço) p/ o badge +N
-  const _nc={}; DADOS.forEach(x=>{ if(x.ativo===false)return; const k=_locKey(x); if(k)_nc[k]=(_nc[k]||0)+1; });
+  // contagem do +N = mesmo ponto + mesmo grupamento (ignora quem não tem ponto)
+  const _nc={}; DADOS.forEach(x=>{ if(x.ativo===false)return; const k=_pgKey(x); if(k)_nc[k]=(_nc[k]||0)+1; });
   // ↔N conta só demandas em OUTROS locais dentro de 5 km (não repete as do +N)
   const _near5=d=>{const la=parseFloat(d.coord_y),lo=parseFloat(d.coord_x);if(!isFinite(la)||!isFinite(lo))return 0;const lk=_locKey(d);const ci=Math.floor(la/_CELL),cj=Math.floor(lo/_CELL);let n=0;for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){const arr=_grid[(ci+a)+'_'+(cj+b)];if(!arr)continue;for(const p of arr){if(p.x===d)continue;if(_locKey(p.x)===lk)continue;if(_hav(la,lo,p.la,p.lo)<=5)n++;}}return n;};
   rows.slice(ini, ini+PAGE_SIZE).forEach(d=>{
@@ -517,7 +527,7 @@ function render(){
     tr.innerHTML =
       `<td class="num">${d.codigo||'—'}</td>`+
       `<td class="tema">${d.bioma||d.natureza||'—'}</td>`+
-      `<td class="muni">${d.municipio||'—'}${(()=>{let out='';const la=parseFloat(d.coord_y),lo=parseFloat(d.coord_x),hc=isFinite(la)&&isFinite(lo);const k=_locKey(d);const nm=k?(_nc[k]||0)-1:0;if(nm>0)out+=` <span class="near" data-k="${k}" onclick="event.stopPropagation();nearFiltrar(this.dataset.k)" title="Ver as ${nm+1} demandas MC no mesmo local (${hc?'mesma coordenada':'mesmo endereço'}) — clique p/ filtrar; de novo p/ limpar" style="display:inline-block;margin-left:5px;padding:0 6px;border-radius:9px;background:${_nearKey===k?'#2563eb':'#b26b00'};color:#fff;font-size:11px;font-weight:700;vertical-align:middle;cursor:pointer">+${nm}</span>`;if(hc){const np=_near5(d);if(np>0)out+=` <span class="near" onclick="event.stopPropagation();nearFiltrar5('${d.codigo}')" title="Ver ${np} demanda(s) MC a até 5 km — clique p/ filtrar; de novo p/ limpar" style="display:inline-block;margin-left:5px;padding:0 6px;border-radius:9px;background:${_nearAnchorCod===String(d.codigo)?'#0b4fc0':'#1f6feb'};color:#fff;font-size:11px;font-weight:700;vertical-align:middle;cursor:pointer">↔${np}</span>`;}return out;})()}</td>`+
+      `<td class="muni">${d.municipio||'—'}${(()=>{let out='';const la=parseFloat(d.coord_y),lo=parseFloat(d.coord_x),hc=isFinite(la)&&isFinite(lo);const k=_pgKey(d);const nm=k?(_nc[k]||0)-1:0;if(nm>0)out+=` <span class="near" data-k="${k}" onclick="event.stopPropagation();nearFiltrar(this.dataset.k)" title="Ver as ${nm+1} demandas MC no MESMO PONTO e MESMO GRUPAMENTO (${hc?'mesma coordenada':'mesmo endereço'}) — clique p/ filtrar; de novo p/ limpar" style="display:inline-block;margin-left:5px;padding:0 6px;border-radius:9px;background:${_nearKey===k?'#e08600':'#b26b00'};color:#fff;font-size:11px;font-weight:700;vertical-align:middle;cursor:pointer">+${nm}</span>`;if(hc){const np=_near5(d);if(np>0)out+=` <span class="near" onclick="event.stopPropagation();nearFiltrar5('${d.codigo}')" title="Ver ${np} demanda(s) MC próxima(s), em outro ponto, a até 5 km — clique p/ filtrar; de novo p/ limpar" style="display:inline-block;margin-left:5px;padding:0 6px;border-radius:9px;background:${_nearAnchorCod===String(d.codigo)?'#5b21b6':'#7c3aed'};color:#fff;font-size:11px;font-weight:700;vertical-align:middle;cursor:pointer">↔${np}</span>`;}return out;})()}</td>`+
       `<td class="colhide tema">${_grafiaGP(d.fracao_responsavel)||'—'}</td>`+
       `<td class="prazo" style="font-weight:500">${fmtData(d.data_gerada)}</td>`+
       `<td class="prazo" style="font-weight:500">${fmtData(d.data_vencimento)}</td>`+
