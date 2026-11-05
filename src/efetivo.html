@@ -207,7 +207,10 @@
     <div class="sec">Documentos</div>
     <div class="grid">
       <div class="fld"><label>RG</label><input id="e-rg"></div>
-      <div class="fld"><label>Órgão expedidor <span class="miut">(ex.: PC/MG)</span></label><input id="e-rg-orgao"></div>
+      <div class="fld"><label>Órgão expedidor <span class="miut">(ex.: SSP)</span></label><input id="e-rg-orgao" placeholder="SSP"></div>
+      <div class="fld"><label>Estado (UF)</label>
+        <select id="e-rg-uf"><option value="">—</option><option>AC</option><option>AL</option><option>AP</option><option>AM</option><option>BA</option><option>CE</option><option>DF</option><option>ES</option><option>GO</option><option>MA</option><option>MT</option><option>MS</option><option>MG</option><option>PA</option><option>PB</option><option>PR</option><option>PE</option><option>PI</option><option>RJ</option><option>RN</option><option>RS</option><option>RO</option><option>RR</option><option>SC</option><option>SP</option><option>SE</option><option>TO</option></select>
+      </div>
       <div class="fld"><label>Data de emissão (RG)</label><input type="date" id="e-rg-emissao"></div>
       <div class="fld"><label>CPF</label><input id="e-cpf"></div>
       <div class="fld"><label>Título de eleitor</label><input id="e-titulo"></div>
@@ -956,7 +959,7 @@ function openDetalhe(id){
   h+=detLinha('Data de ingresso', m.data_ingresso?`${fmtBR(m.data_ingresso)} <span class="miut">(${tempoServico(m.data_ingresso)} de serviço)</span>`:'')
     +detLinha('Última promoção',fmtBR(m.ultima_promocao))+detLinha('Classificação do curso',j(m.classificacao_curso))+detLinha('Ordem',j(m.antiguidade_ordem));
   h+='<div class="sec">Documentos</div>';
-  h+=detLinha('RG',[j(m.rg),j(m.rg_orgao_expedidor)].filter(Boolean).join(' · ')+(m.rg_emissao?` <span class="miut">(emitido em ${fmtBR(m.rg_emissao)})</span>`:''))
+  h+=detLinha('RG',[j(m.rg),j([m.rg_orgao_expedidor,m.rg_orgao_uf].filter(Boolean).join('/'))].filter(Boolean).join(' · ')+(m.rg_emissao?` <span class="miut">(emitido em ${fmtBR(m.rg_emissao)})</span>`:''))
     +detLinha('CPF',j(m.cpf))+detLinha('Título de eleitor',j(m.titulo_eleitor))
     +detLinha('CNH',[m.cnh_numero,m.cnh_categoria].filter(Boolean).map(j).join(' · '))
     +detLinha('CNH validade', m.cnh_validade?`${fmtBR(m.cnh_validade)} ${cnhSituacao(m.cnh_validade)}`:'');
@@ -997,7 +1000,8 @@ function editar(id){
   S('e-cod_up',m.cod_unidade_principal); S('e-nome_up',m.nome_unidade_principal); S('e-cod_siad',m.cod_siad); S('e-tipo_atv',m.tipo_atividade); S('e-cod_mun',m.cod_municipio);
   S('e-ingresso',(m.data_ingresso||'').slice(0,10)); atualizarTempoServico();
   S('e-promo',(m.ultima_promocao||'').slice(0,10)); S('e-classif',m.classificacao_curso); S('e-ordem',m.antiguidade_ordem);
-  S('e-rg',m.rg); S('e-rg-orgao',m.rg_orgao_expedidor); S('e-rg-emissao',(m.rg_emissao||'').slice(0,10));
+  { let _o=m.rg_orgao_expedidor||'', _u=m.rg_orgao_uf||''; if(!_u){ const mm=_o.match(/^(.*?)[\/\-]\s*([A-Za-z]{2})\s*$/); if(mm){ _o=mm[1].trim(); _u=mm[2].toUpperCase(); } }
+    S('e-rg',m.rg); S('e-rg-orgao',_o); document.getElementById('e-rg-uf').value=_u; S('e-rg-emissao',(m.rg_emissao||'').slice(0,10)); }
   S('e-cpf',m.cpf); S('e-titulo',m.titulo_eleitor); S('e-cnh',m.cnh_numero); S('e-cnhcat',m.cnh_categoria);
   S('e-cnhval',(m.cnh_validade||'').slice(0,10)); S('e-nasc',(m.data_nascimento||'').slice(0,10)); S('e-sexo',m.sexo);
   S('e-telf',m.telefone_funcional); S('e-telp1',m.telefone_pessoal1); S('e-telp2',m.telefone_pessoal2);
@@ -1018,7 +1022,7 @@ async function salvarEdit(){
       tipo_atividade:g('e-tipo_atv'), cod_municipio:g('e-cod_mun'),
       data_ingresso:g('e-ingresso')||null,
       ultima_promocao:g('e-promo')||null, classificacao_curso:g('e-classif'), antiguidade_ordem:g('e-ordem')||null,
-      rg:g('e-rg'), rg_orgao_expedidor:g('e-rg-orgao'), rg_emissao:g('e-rg-emissao')||null,
+      rg:g('e-rg'), rg_orgao_expedidor:g('e-rg-orgao'), rg_orgao_uf:g('e-rg-uf'), rg_emissao:g('e-rg-emissao')||null,
       cpf:g('e-cpf'), titulo_eleitor:g('e-titulo'), cnh_numero:g('e-cnh'), cnh_categoria:g('e-cnhcat'),
       cnh_validade:g('e-cnhval')||null, data_nascimento:g('e-nasc')||null, sexo:g('e-sexo'),
       telefone_funcional:g('e-telf'), telefone_pessoal1:g('e-telp1'), telefone_pessoal2:g('e-telp2'),
@@ -1128,7 +1132,7 @@ async function exportar(){
     fmtBR(m.transf_data_envio),m.transf_oficio_numero||'',
     // ── dados pessoais / ficha completa ──
     m.nome_mae||'',m.nome_pai||'',dBR(m.data_ingresso),m.data_ingresso?tempoServico(m.data_ingresso):'',dBR(m.data_nascimento),m.sexo||'',
-    m.rg||'',m.rg_orgao_expedidor||'',dBR(m.rg_emissao),m.cpf||'',m.titulo_eleitor||'',m.cnh_numero||'',m.cnh_categoria||'',dBR(m.cnh_validade),
+    m.rg||'',[m.rg_orgao_expedidor,m.rg_orgao_uf].filter(Boolean).join('/'),dBR(m.rg_emissao),m.cpf||'',m.titulo_eleitor||'',m.cnh_numero||'',m.cnh_categoria||'',dBR(m.cnh_validade),
     m.telefone_funcional||'',m.telefone_pessoal1||'',m.telefone_pessoal2||'',m.email_pessoal||'',m.email_funcional||'',
     m.end_res_logradouro||'',m.end_res_numero||'',m.end_res_complemento||'',m.end_res_bairro||'',m.end_res_cidade||'',m.end_res_cep||'',
     m.endereco_funcional||'',m.endereco_residencial1||'',m.endereco_residencial2||'',_titEf(m.grupamento_id)||''])));
