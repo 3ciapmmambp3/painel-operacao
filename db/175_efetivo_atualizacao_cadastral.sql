@@ -67,7 +67,7 @@ begin
            m.nome_mae, m.nome_pai, m.data_ingresso, m.rg_orgao_expedidor, m.rg_emissao,
            m.end_res_logradouro, m.end_res_numero, m.end_res_complemento,
            m.end_res_bairro, m.end_res_cidade, m.end_res_cep,
-           m.dados_confirmados_em, m.dados_confirmados_campanha,
+           m.dados_confirmados_em, m.dados_confirmados_campanha, m.categoria,
            coalesce(m.situacao_efetivo,'ATIVO') as situacao_efetivo,
            m.transf_destino, m.transf_pasta_funcional, m.transf_data_envio,
            m.transf_oficio_numero, m.transf_obs, m.transf_anexo,
@@ -95,8 +95,9 @@ begin
 
   -- campanha aberta mais recente
   select * into c from public.efetivo_att_campanha where aberta = true order by criada_em desc limit 1;
-  -- a campanha alcança este militar? (null = Cia toda; senão compara o nº do pelotão)
-  v_scope_ok := c.id is not null and (
+  -- a campanha alcança este militar? (null = Cia toda; senão compara o nº do pelotão).
+  -- Colaborador não é da Cia → não entra na campanha (nem no aviso do Meu Dia).
+  v_scope_ok := c.id is not null and coalesce(m.categoria,'militar') <> 'colaborador' and (
        c.escopo_pel is null
     or c.escopo_pel = coalesce(substring(upper(coalesce(m.grupamento_id,'')||' '||coalesce(m.nome_unidade,'')) from '([0-9]+)\s*(?:º|O|ª)?\s*PEL'), '')
   );
