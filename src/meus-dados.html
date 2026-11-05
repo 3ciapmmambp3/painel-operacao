@@ -82,10 +82,20 @@
         <div class="fld"><label>Nome de guerra</label><input id="v-guerra" disabled></div>
         <div class="fld"><label>Função</label><input id="v-funcao" disabled></div>
         <div class="fld full"><label>Lotação</label><input id="v-lotacao" disabled></div>
-        <div class="fld"><label>Data de ingresso</label><input id="v-ingresso" disabled></div>
-        <div class="fld"><label>Tempo de serviço</label><input id="v-tempo" disabled></div>
+        <div class="fld" id="fld-v-ingresso"><label>Data de ingresso</label><input id="v-ingresso" disabled></div>
+        <div class="fld" id="fld-v-tempo"><label>Tempo de serviço</label><input id="v-tempo" disabled></div>
         <div class="fld full"><label>E-mail funcional</label><input id="v-emailf" disabled></div>
       </div>
+    </div>
+
+    <!-- DATA DE INGRESSO (só aparece quando ainda não está preenchida) -->
+    <div class="card" id="card-ingresso" style="display:none;border-color:var(--gold-border);">
+      <div class="sec" style="color:var(--gold)">📅 Data de ingresso (praça)</div>
+      <div class="grid">
+        <div class="fld"><label>Data de ingresso</label><input type="date" id="e-ingresso" onchange="calcTempo()"></div>
+        <div class="fld"><label>Tempo de serviço</label><input id="e-tempo2" disabled placeholder="—"></div>
+      </div>
+      <div class="miut" style="margin-top:8px;">Informe a <b>data em que você ingressou na corporação</b> (praça). Ainda não temos esse dado no sistema. <b>Depois de salva, ela fica fixa</b> e não muda mais.</div>
     </div>
 
     <!-- FILIAÇÃO -->
@@ -188,8 +198,14 @@ async function carregar(){
     const d=DADOS; const S=(id,v)=>{ const el=document.getElementById(id); if(el) el.value=(v==null?'':v); };
     // identificação (read-only)
     S('v-matricula',d.matricula); S('v-pg',d.posto_graduacao); S('v-nome',d.nome_completo); S('v-guerra',d.nome_guerra);
-    S('v-funcao',d.funcao); S('v-lotacao',d.grupamento_id||d.nome_unidade); S('v-ingresso',d.data_ingresso?fmtBR(d.data_ingresso):'');
-    S('v-tempo', d.data_ingresso?(tempoServico(d.data_ingresso)||'—'):''); S('v-emailf',d.email_funcional);
+    S('v-funcao',d.funcao); S('v-lotacao',d.grupamento_id||d.nome_unidade); S('v-emailf',d.email_funcional);
+    // Data de ingresso: se já existe → só-leitura na identificação; se falta → campo editável (preenche uma vez).
+    const temIng = !!d.data_ingresso;
+    document.getElementById('fld-v-ingresso').style.display = temIng?'':'none';
+    document.getElementById('fld-v-tempo').style.display    = temIng?'':'none';
+    document.getElementById('card-ingresso').style.display  = temIng?'none':'';
+    if(temIng){ S('v-ingresso',fmtBR(d.data_ingresso)); S('v-tempo', tempoServico(d.data_ingresso)||'—'); }
+    else { S('e-ingresso',''); calcTempo(); }
     // editáveis
     S('e-mae',d.nome_mae); S('e-pai',d.nome_pai);
     S('e-telf',d.telefone_funcional); S('e-telp1',d.telefone_pessoal1); S('e-telp2',d.telefone_pessoal2); S('e-emailp',d.email_pessoal);
@@ -202,6 +218,10 @@ async function carregar(){
     renderBanner(); renderStatus();
     document.getElementById('conteudo').style.display='';
   }catch(e){ flash('Não foi possível carregar seus dados: '+(e.message||e), false); }
+}
+function calcTempo(){
+  const el=document.getElementById('e-ingresso'); const out=document.getElementById('e-tempo2');
+  if(!el||!out) return; out.value = el.value ? (tempoServico(el.value)||'—') : '';
 }
 function renderBanner(){
   const box=document.getElementById('banner-camp'); const c=DADOS&&DADOS.campanha;
@@ -220,6 +240,12 @@ function renderStatus(){
 }
 async function confirmar(){
   const g=id=>{ const el=document.getElementById(id); return el?el.value.trim():''; };
+  // data de ingresso: só é enviada na 1ª vez (quando ainda não existe).
+  const precisaIngresso = !(DADOS && DADOS.data_ingresso);
+  const ingresso = precisaIngresso ? g('e-ingresso') : '';
+  if(precisaIngresso && !ingresso){
+    if(!confirm('Você não preencheu a Data de ingresso (praça). Ela é importante e ainda não está no sistema. Deseja confirmar mesmo assim e preencher depois?')) return;
+  }
   const dados={
     nome_mae:g('e-mae'), nome_pai:g('e-pai'),
     telefone_funcional:g('e-telf'), telefone_pessoal1:g('e-telp1'), telefone_pessoal2:g('e-telp2'), email_pessoal:g('e-emailp'),
@@ -229,13 +255,12 @@ async function confirmar(){
     cpf:g('e-cpf'), titulo_eleitor:g('e-titulo'), data_nascimento:g('e-nasc')||null, sexo:g('e-sexo'),
     cnh_numero:g('e-cnh'), cnh_categoria:g('e-cnhcat'), cnh_validade:g('e-cnhval')||null
   };
+  if(precisaIngresso && ingresso) dados.data_ingresso = ingresso;   // 1ª vez: grava; servidor não deixa sobrescrever depois
   const btn=document.getElementById('btn-salvar'); btn.disabled=true; const _t=btn.textContent; btn.textContent='Salvando…';
   try{
-    const r=await rpc('meus_dados_salvar',{p_token:sessao.token,p_dados:dados});
-    if(DADOS){ DADOS.dados_confirmados_em = (r&&r.confirmado_em) || new Date().toISOString();
-      if(DADOS.campanha) DADOS.campanha.confirmado=true; }
-    renderBanner(); renderStatus();
+    await rpc('meus_dados_salvar',{p_token:sessao.token,p_dados:dados});
     flash('Dados confirmados e salvos. Obrigado! ✅', true);
+    await carregar();   // recarrega: trava a data de ingresso recém-preenchida e atualiza o status
   }catch(e){ flash('Erro ao salvar: '+(e.message||e), false); }
   finally{ btn.disabled=false; btn.textContent=_t; }
 }

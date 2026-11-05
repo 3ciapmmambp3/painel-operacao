@@ -156,6 +156,9 @@ begin
     cnh_validade        = case when p_dados ? 'cnh_validade'        then nullif(p_dados->>'cnh_validade','')::date  else cnh_validade        end,
     data_nascimento     = case when p_dados ? 'data_nascimento'     then nullif(p_dados->>'data_nascimento','')::date else data_nascimento   end,
     sexo                = case when p_dados ? 'sexo'                then nullif(p_dados->>'sexo','')                else sexo                end,
+    -- data de ingresso: o militar só pode PREENCHER quando ainda está vazia.
+    -- Depois de salva, fica FIXA (não dá para o militar sobrescrever; só a P1).
+    data_ingresso       = case when (p_dados ? 'data_ingresso') and data_ingresso is null then nullif(p_dados->>'data_ingresso','')::date else data_ingresso end,
     end_res_logradouro  = case when p_dados ? 'end_res_logradouro'  then nullif(p_dados->>'end_res_logradouro','')  else end_res_logradouro  end,
     end_res_numero      = case when p_dados ? 'end_res_numero'      then nullif(p_dados->>'end_res_numero','')      else end_res_numero      end,
     end_res_complemento = case when p_dados ? 'end_res_complemento' then nullif(p_dados->>'end_res_complemento','') else end_res_complemento end,
