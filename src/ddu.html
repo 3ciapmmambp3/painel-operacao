@@ -378,7 +378,15 @@ function popularAnos(){
   sel.innerHTML='<option value="all">Todos os anos</option>'+anos.map(a=>`<option value="${a}">${a}</option>`).join('');
   if (anos.includes(+atualVal)) sel.value=atualVal;
   const ms=document.getElementById('muni');
-  if (ms){ const mv=ms.value; const mus=[...new Set(DADOS.map(d=>d.municipio).filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),'pt')); ms.innerHTML='<option value="">Todos os municípios</option>'+mus.map(m=>`<option value="${m}">${m}</option>`).join(''); if(mus.includes(mv)) ms.value=mv; }
+  if (ms){
+    const mv=ms.value;
+    const _score=s=>(/[À-ÿ]/.test(s)?2:0)+(/[a-zà-ÿ]/.test(s)?1:0);
+    const grupos={};
+    DADOS.forEach(d=>{ const raw=(d.municipio||'').trim(); if(!raw) return; const k=_chaveMuni(raw); if(!k) return; if(!grupos[k] || _score(raw)>_score(grupos[k])) grupos[k]=raw; });
+    const itens=Object.keys(grupos).map(k=>({k,label:_tituloMuni(grupos[k])})).sort((a,b)=>a.label.localeCompare(b.label,'pt'));
+    ms.innerHTML='<option value="">Todos os municípios</option>'+itens.map(it=>`<option value="${it.k}">${it.label}</option>`).join('');
+    if(itens.some(it=>it.k===mv)) ms.value=mv;
+  }
 }
 // Escopo base (ativas + ano + busca), SEM o filtro dos cards — os quadros e a
 // lista partem daqui, então os cards já respeitam o ano/busca selecionados.
@@ -386,11 +394,24 @@ let _nearKey='';
 // chave de "mesmo local" = município+endereço normalizado (>3 chars)
 function _nkey(d){const mu=String(d.municipio||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');const en=String(d.endereco||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z0-9]+/g,' ').trim();return en.length>3?mu+'|'+en:'';}
 function nearFiltrar(k){ _nearKey=(_nearKey===k?'':k); PAGE=1; render(); }
+/* ── padronização do município (igual ao Monitoramento Contínuo) ── */
+const _MUNI_ALIAS_JS = (function(){
+  const norm = s => String(s==null?'':s).normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const pares = [ ['FELIZBURGO','FELISBURGO'], ['ITABIRINHA DE MANTENA','ITABIRINHA'] ];
+  const map = {}; pares.forEach(p=>{ map[norm(p[0])]=norm(p[1]); });
+  return { norm:norm, map:map };
+})();
+function _chaveMuni(s){ const k=_MUNI_ALIAS_JS.norm(s); return _MUNI_ALIAS_JS.map[k] || k; }
+function _tituloMuni(s){
+  const low=new Set(['de','da','do','das','dos','e','di','du']);
+  return String(s==null?'':s).trim().toLowerCase()
+    .replace(/[0-9a-zà-ÿ][0-9a-zà-ÿ'’-]*/gi,(w,i)=> (i>0 && low.has(w)) ? w : w.charAt(0).toUpperCase()+w.slice(1));
+}
 function baseScope(d){
   if (gerFiltro==='inativas'){ if (d.ativo!==false) return false; }
   else if (d.ativo===false) return false;
   if (gerFiltro==='sem-gp' && d.gp_responsavel) return false;
-  const _mu=(document.getElementById('muni')||{}).value||''; if (_mu && (d.municipio||'')!==_mu) return false;
+  const _mu=(document.getElementById('muni')||{}).value||''; if (_mu && _chaveMuni(d.municipio)!==_mu) return false;
   const ano=document.getElementById('ano').value;
   if (ano!=='all' && String(anoDe(d))!==String(ano)) return false;
   const q=document.getElementById('busca').value.trim().toLowerCase();
