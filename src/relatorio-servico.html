@@ -4663,10 +4663,22 @@ async function gravarRelatorioSupabase(payload){
     if (!S || !S.token) return;
     const ehEdicao = payload.modo === 'atualizarRelatorio';
     if (ehEdicao && !supabaseIdEdicao) return;   // sem id do Supabase, não há o que atualizar
+    // prefixos das viaturas (principal + apoios) → permite casar a pendência do
+    // relatório pelo DIA + VIATURA da equipe do TTA, mesmo lançado "por fora".
+    const _prefs = (function(){
+      const out=[];
+      try{
+        const p = prefixoViatura(getViaturaPrincipal()); if(p) out.push(p);
+        document.querySelectorAll('#apoioList [data-apoio-entry]').forEach(entry=>{
+          const v = prefixoViatura((entry.querySelector('[data-field="apoioViatura"]')||{}).value||''); if(v) out.push(v);
+        });
+      }catch(_){}
+      return [...new Set(out.filter(Boolean))];
+    })();
     const p_dados = ehEdicao
       ? { modo:'atualizar', id: supabaseIdEdicao, sheet_id: (modoEdicaoIdRelatorio||null),
-          bloco1: payload.bloco1||{}, categorias: payload.categorias||[] }
-      : { modo:'criar', bloco1: payload.bloco1||{}, categorias: payload.categorias||[] };
+          bloco1: payload.bloco1||{}, categorias: payload.categorias||[], viatura_prefixos: _prefs }
+      : { modo:'criar', bloco1: payload.bloco1||{}, categorias: payload.categorias||[], viatura_prefixos: _prefs };
     const H = { apikey: SB_AUTH_KEY, Authorization: `Bearer ${SB_AUTH_KEY}`, 'Content-Type': 'application/json' };
     const r = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/relatorio_salvar`, {
       method: 'POST', headers: H, body: JSON.stringify({ p_token: S.token, p_dados })
