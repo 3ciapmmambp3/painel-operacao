@@ -436,6 +436,8 @@ window.addEventListener('load', function(){
 
   <div id="poe-sub-analise">
 
+  <div id="aviso-su-poe" style="display:none;"></div>
+
   <div class="status-bar">
     <span class="s-load" id="status-msg">Carregando dados...</span>
     <span style="font-size:11px;color:var(--text-hint);display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
@@ -658,6 +660,8 @@ window.addEventListener('load', function(){
   </div>
 
   <div id="gdo-sub-analise">
+
+  <div id="aviso-su-gdo" style="display:none;"></div>
 
   <div class="status-bar">
     <span class="s-load" id="gdo-status-msg">Carregando dados...</span>
@@ -2796,6 +2800,35 @@ function pelDoColk(colK){
   return m?parseInt(m[1]):99;
 }
 
+/* ── Atribuição pela MENOR unidade (GP/PEL) do unid_registro ───────────────
+   O grupamento de um RAT/BOS é resolvido SEMPRE pela menor unidade declarada
+   no próprio registro (ex.: "1 GP/1 PEL MAMB/3 CIA PM MAMB/BPM MAMB"), e NUNCA
+   por município — uma operação que um grupamento faz em OUTRO município não
+   pode ser contabilizada ao município. Quando o unid_registro vem genérico
+   (sem GP+PEL, ex.: "3 CIA PM MAMB/BPM MAMB/CPE" ou só "4 PEL …/CPE"), não há
+   como individualizar o grupamento → `_unidGpPel` retorna null e o registro
+   fica "sem unidade" (a corrigir, dentro do prazo de 5 dias). */
+let _gpPelMap = {};   /* "gpNum|pelNum" -> { gpResp, colK } */
+function _construirGpPelMap(){
+  _gpPelMap = {};
+  (dadosGrupos||[]).forEach(g => {
+    if(!g.gpResp) return;
+    const gpNum  = gpNumDoColk(g.colK || g.grupamento || '');
+    const pelNum = g.pelNum;
+    if(gpNum && gpNum !== 99 && pelNum){
+      const k = gpNum + '|' + pelNum;
+      if(!_gpPelMap[k]) _gpPelMap[k] = { gpResp: g.gpResp, colK: g.colKBpm || g.colK || g.grupamento };
+    }
+  });
+}
+/* Retorna {gpResp, colK} pela menor unidade do unid_registro, ou null se genérico. */
+function _unidGpPel(unidReg){
+  const g = (unidReg||'').match(/(\d+)\s*GP/i);
+  const p = (unidReg||'').match(/(\d+)\s*PEL/i);
+  if(!g || !p) return null;
+  return _gpPelMap[g[1] + '|' + p[1]] || null;
+}
+
 /** Extrai o gpResp curto (ex: "GP TEOFILO OTONI") a partir do formato longo
  *  salvo no crime (ex: "1 GP / 4 PEL / 3 CIA PM MAMB / TEOFILO OTONI").
  *  O último segmento separado por "/" é o nome do município/GP. */
@@ -2859,6 +2892,8 @@ async function recarregarTudo(){
     try{ renderGdoRural(); } catch(e){ console.warn('renderGdoRural:', e); }
     /* Refresca a sub-aba "Registros (RAT)" (POE/GDO) caso esteja aberta */
     try{ registrosPosLoad(); } catch(e){ console.warn('registrosPosLoad:', e); }
+    /* Aviso de registros (RAT/BOS) sem unidade (GP/PEL) — a corrigir em 5 dias */
+    try{ renderAvisoSemUnidade(); } catch(e){ console.warn('renderAvisoSemUnidade:', e); }
     /* Atualiza a aba Início com os dados recém-carregados (se estiver com dados pendentes) */
     try{ initInicio(); } catch(e){ console.warn('initInicio:', e); }
     /* Re-renderiza Relatórios para não-admin: agora dadosGrupos está carregado,
@@ -3091,6 +3126,9 @@ async function loadRatreds(){
     /* console.log('[unidToGpResp]', bpmNorm, '→', g.gpResp); */
   });
 
+  /* Mapa (GP,PEL) → grupamento, para resolver pela MENOR unidade do unid_registro. */
+  _construirGpPelMap();
+
   rows.forEach(r => {
     const rat       = (r.numero_rat       || '').toString().trim();
     const municipio = (r.municipio        || '').toString().trim();
@@ -3114,16 +3152,11 @@ async function loadRatreds(){
     const mes = (mesIdx >= 0 && mesIdx < MESES.length) ? MESES[mesIdx] : '';
     if(!mes) return;
 
-    /* ── Resolve grupamento: PRIORIDADE = unid_registro; fallback = municipio ── */
-    let gpResp = '';
-    if(unidReg){
-      const unidNorm = _normUnid(unidReg);
-      gpResp = unidToGpResp[unidNorm] || '';
-    }
-    if(!gpResp && municipio){
-      gpResp = munParaGrup[norm(municipio)] || '';
-    }
-    if(!gpResp) return;
+    /* ── Resolve grupamento SEMPRE pela MENOR unidade (GP/PEL) do unid_registro,
+          SEM fallback por município. Genérico (sem GP+PEL) não é contabilizado. ── */
+    const u = _unidGpPel(unidReg);
+    if(!u) return;                 /* sem unidade individualizável → não conta (vai p/ aviso) */
+    const gpResp = u.gpResp;
 
     /* Usa gpResp como chave — consistente com getReal(gp,nat,mes) */
     const key = gpResp + '|' + nat + '|' + mes;
@@ -3149,11 +3182,10 @@ async function loadRatreds(){
   window._dadosBrutos = rows.map(r => {
     const municipio  = (r.municipio || '').toString().trim();
     const unidReg    = (r.unid_registro || '').toString().trim();
-    /* Resolve gpResp: unid_registro primeiro, fallback municipio */
-    let gpResp = '';
-    if(unidReg){ gpResp = unidToGpResp[_normUnid(unidReg)] || ''; }
-    if(!gpResp && municipio){ gpResp = munParaGrup[norm(municipio)] || ''; }
-    const colK       = gpRespToColK[gpResp] || gpResp;
+    /* Resolve SEMPRE pela menor unidade (GP/PEL); genérico → sem unidade (não atribui). */
+    const u          = _unidGpPel(unidReg);
+    const gpResp     = u ? u.gpResp : '';
+    const colK       = u ? (gpRespToColK[gpResp] || u.colK || gpResp) : '';
     const dataStr    = (r.data_fato || '').toString().trim();
     let mesIdx = -1;
     const p1 = dataStr.match(/(\d{2})\/(\d{2})\/(\d{4})/);
@@ -3175,6 +3207,8 @@ async function loadRatreds(){
       lng:          (() => { let lv=parseFloat((r.latitude||'').toString().replace(',','.'))||null, gv=parseFloat((r.longitude||'').toString().replace(',','.'))||null; if(lv!==null&&gv!==null){const lo=lv>=-35&&lv<=6,go=gv>=-75&&gv<=-28;if(!lo&&!go){if(gv>=-35&&gv<=6&&lv>=-75&&lv<=-28)return lv;return null;}if(!lo||!go)return null;} return gv; })(),
       grupamento:   colK,
       gpResp,
+      unidReg,
+      semUnidade:   !u,   /* true = unid_registro genérico (sem GP/PEL) → a corrigir */
       tempo,
       /* Extrai campos de validação GDO dos dados brutos */
       militares: (function(){
@@ -11077,6 +11111,145 @@ function registrosPosLoad(){
     if(document.getElementById('poe-sub-registros')?.style.display !== 'none') renderPoeRegistros();
     if(document.getElementById('gdo-sub-registros')?.style.display !== 'none') renderGdoRegistros();
   }catch(e){ console.warn('registrosPosLoad:', e); }
+}
+</script>
+
+<!-- ════════════════════════════════════════════════════════════════
+     AVISO — Registros (RAT/BOS) SEM UNIDADE (GP/PEL)
+     Lista os registros cujo unid_registro é genérico (sem a menor unidade),
+     que por isso não são atribuídos a nenhum grupamento. Destaca os que ainda
+     estão no prazo de correção (≤ 5 dias do fato). Exporta para Excel.
+════════════════════════════════════════════════════════════════ -->
+<div id="su-modal" style="display:none;position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.6);align-items:flex-start;justify-content:center;padding:36px 16px;overflow:auto;" onclick="if(event.target===this)fecharAvisoSemUnidade()">
+  <div style="background:var(--bg-card,#1a1a1a);border:1px solid var(--gold-border);border-radius:12px;max-width:1040px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.6);">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);">
+      <span style="font-size:14px;font-weight:800;color:#ff9800;">⚠ Registros sem unidade (GP/PEL) — a corrigir</span>
+      <button onclick="fecharAvisoSemUnidade()" style="background:none;border:none;color:#888;font-size:22px;cursor:pointer;line-height:1;">×</button>
+    </div>
+    <div style="padding:12px 18px;">
+      <div id="su-resumo" style="font-size:12px;color:var(--text-muted);margin-bottom:10px;"></div>
+      <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
+        <button class="btn-gold" onclick="exportarSemUnidadeExcel()">⬇ Exportar Excel</button>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);cursor:pointer;"><input type="checkbox" id="su-so-prazo" onchange="renderSemUnidadeModal()"> Só os no prazo (≤5 dias)</label>
+      </div>
+      <div style="overflow:auto;max-height:62vh;border:1px solid var(--border);border-radius:8px;">
+        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+          <thead><tr style="background:#1e1e1e;position:sticky;top:0;z-index:1;">
+            <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;">Tipo</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;">Número</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;">Data</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;">Município</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;">Unid. atual (genérica)</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;">Natureza</th>
+            <th style="padding:7px 10px;text-align:center;color:var(--text-muted);font-size:10px;text-transform:uppercase;">Prazo (5d)</th>
+          </tr></thead>
+          <tbody id="su-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* dias inteiros entre o fato e hoje (>=0); null se data inválida */
+function _diasDesde(dataStr){
+  if(!dataStr) return null;
+  let d=null;
+  const a=dataStr.match(/(\d{2})\/(\d{2})\/(\d{4})/), b=dataStr.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if(a) d=new Date(+a[3],+a[2]-1,+a[1]); else if(b) d=new Date(+b[1],+b[2]-1,+b[3]);
+  if(!d || isNaN(d)) return null;
+  const hoje=new Date(); hoje.setHours(0,0,0,0); d.setHours(0,0,0,0);
+  return Math.round((hoje-d)/86400000);
+}
+
+/* RAT genéricos vêm de _dadosBrutos (semUnidade=true) */
+function _ratSemUnidade(){
+  return (window._dadosBrutos||[]).filter(d=>d.semUnidade).map(d=>({
+    tipo:'RAT', numero:d.rat, data:d.data, municipio:d.municipio, unidReg:d.unidReg, natureza:d.natureza
+  }));
+}
+/* BOS genéricos: busca bd_visitas e filtra pelos sem GP/PEL */
+let _bosSemUnidCache=null;
+async function _bosSemUnidade(){
+  if(_bosSemUnidCache) return _bosSemUnidCache;
+  try{
+    let rows=[],off=0,B=1000;
+    while(true){
+      const r=await fetch(`${SB_URL}/rest/v1/bd_visitas?select=numero_bos,unid_registro,data_fato,municipio,desc_natureza&limit=${B}&offset=${off}`,
+        {headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY}});
+      if(!r.ok) break; const p=await r.json(); rows=rows.concat(p); if(p.length<B)break; off+=B;
+    }
+    _bosSemUnidCache = rows.filter(r=>!_unidGpPel(r.unid_registro)).map(r=>({
+      tipo:'BOS', numero:r.numero_bos, data:r.data_fato, municipio:r.municipio, unidReg:r.unid_registro, natureza:r.desc_natureza
+    }));
+  }catch(e){ console.warn('[aviso-su] bd_visitas:',e); _bosSemUnidCache=[]; }
+  return _bosSemUnidCache;
+}
+
+let _suDados=[];
+async function _coletarSemUnidade(){
+  const bos=await _bosSemUnidade();
+  _suDados=[..._ratSemUnidade(), ...bos].map(x=>{
+    const dias=_diasDesde(x.data);
+    return {...x, dias, noPrazo: dias!==null && dias>=0 && dias<=5};
+  });
+  _suDados.sort((a,b)=>{ if(a.noPrazo!==b.noPrazo) return a.noPrazo?-1:1; return (a.dias??99999)-(b.dias??99999); });
+  return _suDados;
+}
+
+/* Atualiza o(s) banner(s) de aviso no topo das abas POE e GDO. */
+async function renderAvisoSemUnidade(){
+  _bosSemUnidCache=null;              /* revalida a cada carga */
+  await _coletarSemUnidade();
+  const total=_suDados.length, noPrazo=_suDados.filter(x=>x.noPrazo).length;
+  ['aviso-su-poe','aviso-su-gdo'].forEach(id=>{
+    const el=document.getElementById(id); if(!el) return;
+    if(!total){ el.style.display='none'; el.innerHTML=''; return; }
+    el.style.display='block';
+    el.innerHTML=`<div style="background:rgba(255,152,0,.12);border:1px solid rgba(255,152,0,.4);border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <span style="font-size:18px;">⚠</span>
+      <span style="font-size:12px;color:#ffb74d;font-weight:700;">${total} registro(s) sem unidade (GP/PEL) — não contam p/ nenhum grupamento${noPrazo?` · <span style="color:#ff9800;">${noPrazo} ainda no prazo de correção (≤5 dias)</span>`:' · nenhum no prazo'}</span>
+      <button class="btn-outline" style="margin-left:auto;padding:5px 12px;font-size:11px;" onclick="abrirAvisoSemUnidade()">Ver / corrigir</button>
+    </div>`;
+  });
+}
+
+function abrirAvisoSemUnidade(){ document.getElementById('su-modal').style.display='flex'; renderSemUnidadeModal(); }
+function fecharAvisoSemUnidade(){ document.getElementById('su-modal').style.display='none'; }
+
+function renderSemUnidadeModal(){
+  const soPrazo=document.getElementById('su-so-prazo')?.checked;
+  const noPrazo=_suDados.filter(x=>x.noPrazo).length;
+  const lista=soPrazo?_suDados.filter(x=>x.noPrazo):_suDados;
+  const res=document.getElementById('su-resumo');
+  if(res) res.innerHTML=`Total: <b style="color:#fff;">${_suDados.length}</b> · no prazo (≤5 dias): <b style="color:#ff9800;">${noPrazo}</b>. `+
+    `Corrija a <b>unidade responsável</b> no registro (menor unidade — ex.: "1 GP/1 PEL MAMB/3 CIA PM MAMB/BPM MAMB") e reimporte o arquivo. `+
+    `Registros fora do prazo não podem mais ser corrigidos e não entram em nenhum grupamento.`;
+  const tb=document.getElementById('su-tbody'); if(!tb) return;
+  if(!lista.length){ tb.innerHTML='<tr><td colspan="7" style="padding:18px;text-align:center;color:var(--text-muted);">Nenhum registro.</td></tr>'; return; }
+  tb.innerHTML=lista.map(x=>`<tr style="border-bottom:1px solid #1e1e1e;${x.noPrazo?'background:rgba(255,152,0,.06);':''}">
+    <td style="padding:6px 10px;font-weight:700;color:${x.tipo==='RAT'?'#4caf50':'#42a5f5'};">${x.tipo}</td>
+    <td style="padding:6px 10px;font-family:monospace;font-size:10px;color:#aaa;white-space:nowrap;">${x.numero||'—'}</td>
+    <td style="padding:6px 10px;white-space:nowrap;">${x.data||'—'}</td>
+    <td style="padding:6px 10px;">${x.municipio||'—'}</td>
+    <td style="padding:6px 10px;font-size:10px;color:var(--text-muted);">${x.unidReg||'(vazio)'}</td>
+    <td style="padding:6px 10px;font-size:10px;color:var(--text-muted);">${x.natureza||'—'}</td>
+    <td style="padding:6px 10px;text-align:center;white-space:nowrap;">${
+      x.dias===null?'—':
+      x.noPrazo?`<span style="color:#ff9800;font-weight:700;">✅ ${Math.max(0,5-x.dias)}d restante(s)</span>`:
+      `<span style="color:#888;">⌛ expirado (${x.dias}d)</span>`}</td>
+  </tr>`).join('');
+}
+
+function exportarSemUnidadeExcel(){
+  if(typeof XLSX==='undefined'){ alert('Componente do Excel ainda carregando — tente novamente.'); return; }
+  if(!_suDados.length){ alert('Nenhum registro sem unidade.'); return; }
+  const head=['Tipo','Número','Data','Município','Unidade atual (unid_registro)','Natureza','Dias desde o fato','No prazo (<=5d)'];
+  const aoa=[head];
+  _suDados.forEach(x=>aoa.push([x.tipo,x.numero||'',x.data||'',x.municipio||'',x.unidReg||'',x.natureza||'',x.dias===null?'':x.dias,x.noPrazo?'Sim':'Não']));
+  const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=head.map((h,i)=>({wch:i===4?36:Math.max(10,h.length+2)}));
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Sem unidade');
+  XLSX.writeFile(wb,`Registros_sem_unidade_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 </script>
 
