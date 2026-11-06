@@ -21,6 +21,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     body{display:flex;flex-direction:column;min-height:100vh;}
     /* Anel pulsante nos marcadores próximos */
@@ -421,6 +422,20 @@ window.addEventListener('load', function(){
 
 <div class="tab-pane" id="tab-operacoes">
 
+  <!-- Sub-abas internas: Metas (padrão) × Registros (RAT) -->
+  <div style="display:flex;gap:8px;margin-bottom:14px;">
+    <button type="button" id="poe-subtab-btn-analise" onclick="poeSwitchSub('analise')"
+      style="padding:8px 16px;border-radius:6px;border:1px solid var(--gold-border);background:rgba(155,138,92,.15);color:var(--gold);font-size:12px;font-weight:700;cursor:pointer;">
+      📊 Metas
+    </button>
+    <button type="button" id="poe-subtab-btn-registros" onclick="poeSwitchSub('registros')"
+      style="padding:8px 16px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--text-muted);font-size:12px;font-weight:700;cursor:pointer;">
+      📋 Registros (RAT)
+    </button>
+  </div>
+
+  <div id="poe-sub-analise">
+
   <div class="status-bar">
     <span class="s-load" id="status-msg">Carregando dados...</span>
     <span style="font-size:11px;color:var(--text-hint);display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
@@ -549,6 +564,79 @@ window.addEventListener('load', function(){
     <div class="loading-state"><span class="spinner"></span>Carregando dados da planilha...</div>
   </div>
 
+  </div><!-- /poe-sub-analise -->
+
+  <!-- ════ SUB-ABA: REGISTROS (RAT) — POE ════ -->
+  <div id="poe-sub-registros" style="display:none;">
+    <div class="filter-box">
+      <div class="filter-box-title">📋 Filtros — Registros (RAT) · POE</div>
+      <div class="filter-row">
+        <div class="fg" style="max-width:180px;">
+          <label>Mês</label>
+          <select id="poereg-mes" onchange="renderPoeRegistros()">
+            <option value="">Todos os meses</option>
+            <option value="JANEIRO">Janeiro</option><option value="FEVEREIRO">Fevereiro</option>
+            <option value="MARÇO">Março</option><option value="ABRIL">Abril</option>
+            <option value="MAIO">Maio</option><option value="JUNHO">Junho</option>
+            <option value="JULHO">Julho</option><option value="AGOSTO">Agosto</option>
+            <option value="SETEMBRO">Setembro</option><option value="OUTUBRO">Outubro</option>
+            <option value="NOVEMBRO">Novembro</option><option value="DEZEMBRO">Dezembro</option>
+          </select>
+        </div>
+        <div class="fg" style="max-width:170px;">
+          <label>Pelotão</label>
+          <select id="poereg-pel" onchange="_popularGpSelect('poereg-gp','poereg-pel');renderPoeRegistros()">
+            <option value="">Todos os pelotões</option>
+            <option value="1">1º Pelotão</option><option value="2">2º Pelotão</option>
+            <option value="3">3º Pelotão</option><option value="4">4º Pelotão</option>
+            <option value="5">5º Pelotão</option>
+          </select>
+        </div>
+        <div class="fg" style="min-width:200px;max-width:260px;">
+          <label>Grupamento</label>
+          <select id="poereg-gp" onchange="renderPoeRegistros()"><option value="">Todos os grupamentos</option></select>
+        </div>
+        <div class="fg" style="min-width:240px;">
+          <label>Natureza</label>
+          <select id="poereg-nat" onchange="renderPoeRegistros()"><option value="">Todas</option></select>
+        </div>
+        <div class="fg" style="min-width:170px;">
+          <label>Buscar (Nº RAT)</label>
+          <input type="text" id="poereg-busca" placeholder="Ex: 2026-020361740-001" oninput="renderPoeRegistros()">
+        </div>
+        <div style="align-self:flex-end;display:flex;gap:6px;">
+          <button class="btn-gold" onclick="exportarRegistrosExcel('poereg')">⬇ Exportar Excel</button>
+          <button class="btn-outline" onclick="limparRegistros('poereg')">✕ Limpar</button>
+        </div>
+      </div>
+    </div>
+    <div style="background:var(--bg-card);border-radius:8px;overflow:hidden;border:1px solid var(--border);">
+      <div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:13px;font-weight:700;color:var(--gold);">Registros de Operações — POE</span>
+        <span id="poereg-count" style="font-size:11px;color:var(--text-muted);"></span>
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+          <thead><tr style="background:#1e1e1e;">
+            <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Nº RAT</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Data</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Município</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Natureza</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Localização</th>
+            <th style="padding:7px 10px;text-align:center;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Pel</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Grupamento</th>
+            <th style="padding:7px 10px;text-align:center;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);" title="Tempo total em minutos">Tempo</th>
+            <th style="padding:7px 10px;text-align:center;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);" title="Militares empregados">Mil.</th>
+            <th style="padding:7px 10px;text-align:center;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Vtr.</th>
+            <th style="padding:7px 10px;text-align:center;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);" title="Pessoas abordadas">Pess.</th>
+            <th style="padding:7px 10px;text-align:center;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);" title="Veículos fiscalizados">Veíc.</th>
+          </tr></thead>
+          <tbody id="poereg-tbody"><tr><td colspan="12" style="padding:20px;text-align:center;color:var(--text-muted);">Carregue os dados primeiro (clique em Atualizar).</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div><!-- /poe-sub-registros -->
+
 </div>
 
 <!-- ===== ABA GRUPAMENTOS ===== -->
@@ -556,6 +644,20 @@ window.addEventListener('load', function(){
      ABA: OP GDO RURAL
      ════════════════════════════════════════════ -->
 <div class="tab-pane" id="tab-gdo-rural">
+
+  <!-- Sub-abas internas: Operações (padrão) × Registros (RAT) -->
+  <div style="display:flex;gap:8px;margin-bottom:14px;">
+    <button type="button" id="gdo-subtab-btn-analise" onclick="gdoSwitchSub('analise')"
+      style="padding:8px 16px;border-radius:6px;border:1px solid var(--gold-border);background:rgba(155,138,92,.15);color:var(--gold);font-size:12px;font-weight:700;cursor:pointer;">
+      📊 Operações
+    </button>
+    <button type="button" id="gdo-subtab-btn-registros" onclick="gdoSwitchSub('registros')"
+      style="padding:8px 16px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--text-muted);font-size:12px;font-weight:700;cursor:pointer;">
+      📋 Registros (RAT)
+    </button>
+  </div>
+
+  <div id="gdo-sub-analise">
 
   <div class="status-bar">
     <span class="s-load" id="gdo-status-msg">Carregando dados...</span>
@@ -695,6 +797,80 @@ window.addEventListener('load', function(){
     </div>
     <div id="gdo-mapa-legenda" style="margin-top:8px;display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--text-muted);"></div>
   </div>
+
+  </div><!-- /gdo-sub-analise -->
+
+  <!-- ════ SUB-ABA: REGISTROS (RAT) — GDO RURAL ════ -->
+  <div id="gdo-sub-registros" style="display:none;">
+    <div class="filter-box">
+      <div class="filter-box-title">📋 Filtros — Registros (RAT) · GDO Rural</div>
+      <div class="filter-row">
+        <div class="fg" style="max-width:180px;">
+          <label>Mês</label>
+          <select id="gdoreg-mes" onchange="renderGdoRegistros()">
+            <option value="">Todos os meses</option>
+            <option value="JANEIRO">Janeiro</option><option value="FEVEREIRO">Fevereiro</option>
+            <option value="MARÇO">Março</option><option value="ABRIL">Abril</option>
+            <option value="MAIO">Maio</option><option value="JUNHO">Junho</option>
+            <option value="JULHO">Julho</option><option value="AGOSTO">Agosto</option>
+            <option value="SETEMBRO">Setembro</option><option value="OUTUBRO">Outubro</option>
+            <option value="NOVEMBRO">Novembro</option><option value="DEZEMBRO">Dezembro</option>
+          </select>
+        </div>
+        <div class="fg" style="max-width:170px;">
+          <label>Pelotão</label>
+          <select id="gdoreg-pel" onchange="_popularGpSelect('gdoreg-gp','gdoreg-pel');renderGdoRegistros()">
+            <option value="">Todos os pelotões</option>
+            <option value="1">1º Pelotão</option><option value="2">2º Pelotão</option>
+            <option value="3">3º Pelotão</option><option value="4">4º Pelotão</option>
+            <option value="5">5º Pelotão</option>
+          </select>
+        </div>
+        <div class="fg" style="min-width:200px;max-width:260px;">
+          <label>Grupamento</label>
+          <select id="gdoreg-gp" onchange="renderGdoRegistros()"><option value="">Todos os grupamentos</option></select>
+        </div>
+        <div class="fg" style="min-width:240px;">
+          <label>Natureza</label>
+          <select id="gdoreg-nat" onchange="renderGdoRegistros()"><option value="">Todas</option></select>
+        </div>
+        <div class="fg" style="min-width:170px;">
+          <label>Buscar (Nº RAT)</label>
+          <input type="text" id="gdoreg-busca" placeholder="Ex: 2026-020361740-001" oninput="renderGdoRegistros()">
+        </div>
+        <div style="align-self:flex-end;display:flex;gap:6px;">
+          <button class="btn-gold" onclick="exportarRegistrosExcel('gdoreg')">⬇ Exportar Excel</button>
+          <button class="btn-outline" onclick="limparRegistros('gdoreg')">✕ Limpar</button>
+        </div>
+      </div>
+    </div>
+    <div style="background:var(--bg-card);border-radius:8px;overflow:hidden;border:1px solid var(--border);">
+      <div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:13px;font-weight:700;color:var(--gold);">Registros de Operações — GDO Rural</span>
+        <span id="gdoreg-count" style="font-size:11px;color:var(--text-muted);"></span>
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+          <thead><tr style="background:#1e1e1e;">
+            <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Nº RAT</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Data</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Município</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Natureza</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Localização</th>
+            <th style="padding:7px 10px;text-align:center;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Pel</th>
+            <th style="padding:7px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Grupamento</th>
+            <th style="padding:7px 10px;text-align:center;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);" title="Tempo total em minutos">Tempo</th>
+            <th style="padding:7px 10px;text-align:center;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);" title="Militares empregados">Mil.</th>
+            <th style="padding:7px 10px;text-align:center;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);">Vtr.</th>
+            <th style="padding:7px 10px;text-align:center;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);" title="Pessoas abordadas">Pess.</th>
+            <th style="padding:7px 10px;text-align:center;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);" title="Veículos fiscalizados">Veíc.</th>
+            <th style="padding:7px 10px;text-align:center;color:var(--text-muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);" title="Validação GDO: tempo ≥ 30min, efetivo ≥ 2, viatura ≥ 1 (e, p/ Y07001/Y07002, ≥ 2 pessoas e ≥ 1 veículo)">Validada</th>
+          </tr></thead>
+          <tbody id="gdoreg-tbody"><tr><td colspan="13" style="padding:20px;text-align:center;color:var(--text-muted);">Carregue os dados primeiro (clique em Atualizar).</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div><!-- /gdo-sub-registros -->
 
 </div>
 
@@ -2681,6 +2857,8 @@ async function recarregarTudo(){
     renderOperacoes();
     /* Renderiza GDO Rural — envolvido em try para não bloquear POE em caso de erro */
     try{ renderGdoRural(); } catch(e){ console.warn('renderGdoRural:', e); }
+    /* Refresca a sub-aba "Registros (RAT)" (POE/GDO) caso esteja aberta */
+    try{ registrosPosLoad(); } catch(e){ console.warn('registrosPosLoad:', e); }
     /* Atualiza a aba Início com os dados recém-carregados (se estiver com dados pendentes) */
     try{ initInicio(); } catch(e){ console.warn('initInicio:', e); }
     /* Re-renderiza Relatórios para não-admin: agora dadosGrupos está carregado,
@@ -10694,6 +10872,200 @@ async function wizSalvarTudo(){
     <div id="cu-gp-lista" style="overflow-y:auto;flex:1;padding:6px 0;"></div>
   </div>
 </div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     REGISTROS (RAT) — sub-abas de OP POE e OP GDO RURAL
+     Lista, filtra e exporta (Excel) os RATs de cada aba, separados
+     pelas naturezas monitoradas de cada uma (POE = `naturezas`;
+     GDO Rural = `gdoNats`). Fonte única: window._dadosBrutos.
+════════════════════════════════════════════════════════════════ -->
+<script>
+/* Alterna entre o conteúdo padrão da aba e a sub-aba Registros (RAT). */
+function _regSubToggle(qual, pfx){
+  const a  = document.getElementById(pfx+'-sub-analise');
+  const r  = document.getElementById(pfx+'-sub-registros');
+  const ba = document.getElementById(pfx+'-subtab-btn-analise');
+  const br = document.getElementById(pfx+'-subtab-btn-registros');
+  const on  = 'padding:8px 16px;border-radius:6px;border:1px solid var(--gold-border);background:rgba(155,138,92,.15);color:var(--gold);font-size:12px;font-weight:700;cursor:pointer;';
+  const off = 'padding:8px 16px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--text-muted);font-size:12px;font-weight:700;cursor:pointer;';
+  const reg = qual === 'registros';
+  if(a) a.style.display = reg ? 'none' : '';
+  if(r) r.style.display = reg ? '' : 'none';
+  if(ba) ba.style.cssText = reg ? off : on;
+  if(br) br.style.cssText = reg ? on  : off;
+}
+function poeSwitchSub(q){ _regSubToggle(q,'poe'); if(q==='registros') renderPoeRegistros(); }
+function gdoSwitchSub(q){ _regSubToggle(q,'gdo'); if(q==='registros') renderGdoRegistros(); }
+
+/* Parse de data BR (DD/MM/AAAA) ou ISO (AAAA-MM-DD) → epoch (ms) p/ ordenar. */
+function _parseDataBR(s){
+  if(!s) return 0;
+  const a = s.match(/(\d{2})\/(\d{2})\/(\d{4})/); if(a) return new Date(+a[3],+a[2]-1,+a[1]).getTime();
+  const b = s.match(/(\d{4})-(\d{2})-(\d{2})/);   if(b) return new Date(+b[1],+b[2]-1,+b[3]).getTime();
+  return 0;
+}
+
+/* Mapa gpResp → nº do pelotão (a partir de dadosGrupos). */
+function _registrosPelMap(){
+  const m = {};
+  (dadosGrupos||[]).forEach(r => { if(r.gpResp && m[r.gpResp]==null) m[r.gpResp] = r.pelNum; });
+  return m;
+}
+
+/* Popula um <select> de grupamento (optgroups por pelotão), afunilando pelo
+   pelotão selecionado — mesmo padrão de popularFiltroGP/popularFiltroGdoGP. */
+function _popularGpSelect(selId, pelId){
+  const el = document.getElementById(selId); if(!el) return;
+  const pelF = document.getElementById(pelId)?.value || '';
+  const cur  = el.value;
+  const pelMap = {}, numMap = {};
+  (dadosGrupos||[]).forEach(r => { if(r.gpResp){ pelMap[r.gpResp]=r.pelNum; numMap[r.gpResp]=gpNumDoColk(r.colK||r.grupamento); } });
+  let gps = [...new Set((dadosGrupos||[]).map(r=>r.gpResp))].filter(Boolean);
+  if(pelF) gps = gps.filter(g => String(pelMap[g]) === String(pelF));
+  const byPel = {};
+  gps.forEach(g => { const p=pelMap[g]; const k=(p==null||isNaN(p))?'':String(p); (byPel[k]=byPel[k]||[]).push(g); });
+  Object.keys(byPel).forEach(k => byPel[k].sort((a,b)=>(numMap[a]||99)-(numMap[b]||99)));
+  el.innerHTML = '<option value="">Todos os grupamentos</option>' +
+    Object.keys(byPel).sort((a,b)=>{ const na=a===''?999:+a, nb=b===''?999:+b; return na-nb; }).map(k =>
+      `<optgroup label="${k===''?'Sem pelotão':k+'º Pelotão'}">`+byPel[k].map(g=>`<option value="${g}">${g.replace('GP ','')}</option>`).join('')+'</optgroup>'
+    ).join('');
+  if([...el.options].some(o=>o.value===cur)) el.value = cur;
+}
+
+/* Popula o <select> de natureza com as naturezas monitoradas da aba. */
+function _popularNatSelect(selId, nats){
+  const el = document.getElementById(selId); if(!el) return;
+  const cur = el.value;
+  el.innerHTML = '<option value="">Todas</option>' +
+    (nats||[]).map(n => `<option value="${n}"${n===cur?' selected':''}>${n}${NATUREZA_DESC[n]?' — '+NATUREZA_DESC[n]:''}</option>`).join('');
+}
+
+/* Aplica os filtros da sub-aba e devolve os RATs (de _dadosBrutos) das naturezas
+   informadas, já ordenados por data (mais recente primeiro). */
+function _registrosFiltrar(nats, pfx){
+  const mes   = document.getElementById(pfx+'-mes')?.value   || '';
+  const pel   = document.getElementById(pfx+'-pel')?.value   || '';
+  const gp    = document.getElementById(pfx+'-gp')?.value    || '';
+  const nat   = document.getElementById(pfx+'-nat')?.value   || '';
+  const busca = norm(document.getElementById(pfx+'-busca')?.value || '');
+  const pelMap = _registrosPelMap();
+  const setNats = new Set(nats||[]);
+  let ops = (window._dadosBrutos||[]).filter(d => setNats.has(d.natureza));
+  if(mes)   ops = ops.filter(d => d.mes === mes);
+  if(nat)   ops = ops.filter(d => d.natureza === nat);
+  if(pel)   ops = ops.filter(d => String(pelMap[d.gpResp] ?? pelDoColk(d.grupamento||'')) === String(pel));
+  if(gp)    ops = ops.filter(d => d.gpResp === gp);
+  if(busca) ops = ops.filter(d => norm(d.rat||'').includes(busca));
+  ops.sort((a,b) => _parseDataBR(b.data) - _parseDataBR(a.data));
+  return ops;
+}
+
+/* Renderiza a tabela de registros (compartilhada POE/GDO).
+   comValidacao=true (só GDO Rural) acrescenta a coluna "Validada" (gdoValidaOp):
+   as NÃO validadas saem em vermelho (status + linha realçada) com o motivo no
+   tooltip — mostram que foram feitas, mas não validadas para o indicador. */
+function _registrosRender(ops, pfx, comValidacao){
+  const tbody = document.getElementById(pfx+'-tbody');
+  const lbl   = document.getElementById(pfx+'-count');
+  const nCols = comValidacao ? 13 : 12;
+  if(lbl){
+    if(comValidacao){
+      const nInval = ops.filter(d => !gdoValidaOp(d)).length;
+      lbl.textContent = ops.length + ' registro(s)' + (nInval ? ' · ' + nInval + ' não validada(s)' : '');
+    } else {
+      lbl.textContent = ops.length + ' registro(s)';
+    }
+  }
+  if(!tbody) return;
+  if(!ops.length){
+    tbody.innerHTML = `<tr><td colspan="${nCols}" style="padding:20px;text-align:center;color:var(--text-muted);">Nenhum registro encontrado para os filtros selecionados.</td></tr>`;
+    return;
+  }
+  const pelMap = _registrosPelMap();
+  tbody.innerHTML = ops.map(d => {
+    const pel = pelMap[d.gpResp] ?? pelDoColk(d.grupamento||'');
+    const valida = comValidacao ? gdoValidaOp(d) : null;
+    const rowBg  = (comValidacao && !valida) ? 'background:rgba(239,83,80,.07);' : '';
+    const validaCell = !comValidacao ? '' : (valida
+      ? '<td style="padding:6px 10px;text-align:center;white-space:nowrap;"><span style="color:#4caf50;font-size:10px;font-weight:700;">✔ Válida</span></td>'
+      : `<td style="padding:6px 10px;text-align:center;white-space:nowrap;"><span style="color:#ef5350;font-size:10px;font-weight:700;cursor:help;" title="${escAttr('Não validada — '+(gdoMotivoRejeicao(d)||'não atende aos critérios GDO'))}">⚠ Não validada</span></td>`);
+    return `<tr style="border-bottom:1px solid #1e1e1e;${rowBg}">
+      <td style="font-family:monospace;font-size:10px;color:#888;padding:6px 10px;white-space:nowrap;">${d.rat||'—'}</td>
+      <td style="padding:6px 10px;white-space:nowrap;">${d.data||'—'}</td>
+      <td style="padding:6px 10px;">${d.municipio||'—'}</td>
+      <td style="padding:6px 10px;white-space:nowrap;"><span style="font-weight:700;color:var(--gold);font-size:10px;"${natTitleAttr(d.natureza)}>${d.natureza||'—'}</span></td>
+      <td style="padding:6px 10px;font-size:10px;color:var(--text-muted);">${d.localizacao||'—'}</td>
+      <td style="padding:6px 10px;text-align:center;color:var(--text-muted);">${pel && pel!==99 ? pel+'º' : '—'}</td>
+      <td style="padding:6px 10px;font-size:10px;color:var(--text-muted);">${(d.gpResp||'').replace('GP ','')||'—'}</td>
+      <td style="padding:6px 10px;text-align:center;">${d.tempo||0}</td>
+      <td style="padding:6px 10px;text-align:center;">${d.militares||0}</td>
+      <td style="padding:6px 10px;text-align:center;">${d.viaturas||0}</td>
+      <td style="padding:6px 10px;text-align:center;">${d.pessoas||0}</td>
+      <td style="padding:6px 10px;text-align:center;">${d.veiculos||0}</td>
+      ${validaCell}
+    </tr>`;
+  }).join('');
+}
+
+function renderPoeRegistros(){
+  _popularNatSelect('poereg-nat', naturezas);
+  _popularGpSelect('poereg-gp','poereg-pel');
+  _registrosRender(_registrosFiltrar(naturezas, 'poereg'), 'poereg', false);
+}
+function renderGdoRegistros(){
+  _popularNatSelect('gdoreg-nat', gdoNats);
+  _popularGpSelect('gdoreg-gp','gdoreg-pel');
+  _registrosRender(_registrosFiltrar(gdoNats, 'gdoreg'), 'gdoreg', true);
+}
+
+function limparRegistros(pfx){
+  ['-mes','-pel','-gp','-nat','-busca'].forEach(s => { const el=document.getElementById(pfx+s); if(el) el.value=''; });
+  (pfx==='poereg' ? renderPoeRegistros : renderGdoRegistros)();
+}
+
+/* Exporta os registros filtrados para .xlsx (SheetJS).
+   Resolve naturezas/nome pelo prefixo — NÃO receber `naturezas`/`gdoNats` como
+   argumento inline, pois são bindings `let` e não existem no escopo do onclick. */
+function exportarRegistrosExcel(pfx){
+  const nats = (pfx === 'poereg') ? naturezas : gdoNats;
+  const nome = (pfx === 'poereg') ? 'POE' : 'GDO_Rural';
+  if(typeof XLSX === 'undefined'){ alert('Componente do Excel ainda carregando — tente novamente em instantes.'); return; }
+  const comValidacao = (pfx === 'gdoreg');
+  const ops = _registrosFiltrar(nats, pfx);
+  if(!ops.length){ alert('Nenhum registro para exportar com os filtros atuais.'); return; }
+  const pelMap = _registrosPelMap();
+  const head = ['Nº RAT','Data','Município','Natureza','Descrição da Natureza','Localização','Pelotão','Grupamento','Tempo (min)','Militares','Viaturas','Pessoas Abordadas','Veículos Fiscalizados'];
+  if(comValidacao) head.push('Validada (GDO)','Motivo (se não validada)');
+  const aoa = [head];
+  ops.forEach(d => {
+    const pel = pelMap[d.gpResp] ?? pelDoColk(d.grupamento||'');
+    const linha = [
+      d.rat||'', d.data||'', d.municipio||'', d.natureza||'',
+      NATUREZA_DESC[d.natureza]||d.descrNatureza||'', d.localizacao||'',
+      (pel && pel!==99) ? pel+'º' : '', (d.gpResp||'').replace('GP ',''),
+      d.tempo||0, d.militares||0, d.viaturas||0, d.pessoas||0, d.veiculos||0
+    ];
+    if(comValidacao){
+      const ok = gdoValidaOp(d);
+      linha.push(ok ? 'Sim' : 'Não', ok ? '' : (gdoMotivoRejeicao(d)||'não atende aos critérios GDO'));
+    }
+    aoa.push(linha);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = head.map((h,i) => ({ wch: i===0?20 : i===2?22 : i===4?42 : (comValidacao && i===head.length-1)?34 : Math.max(10, h.length+2) }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, nome.slice(0,28));
+  XLSX.writeFile(wb, `Registros_RAT_${nome}_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+/* Chamado ao fim do carregamento (recarregarTudo) p/ refrescar a sub-aba aberta. */
+function registrosPosLoad(){
+  try{
+    if(document.getElementById('poe-sub-registros')?.style.display !== 'none') renderPoeRegistros();
+    if(document.getElementById('gdo-sub-registros')?.style.display !== 'none') renderGdoRegistros();
+  }catch(e){ console.warn('registrosPosLoad:', e); }
+}
+</script>
 
 </body>
 </html>
