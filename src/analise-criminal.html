@@ -3263,6 +3263,32 @@ function mascaraBO(input){
 function pelDoColk(colK){ const m=(colK||'').match(/(\d+)\s*PEL/i); return m?parseInt(m[1]):99; }
 function gpNumDoColk(colK){ const m=(colK||'').match(/^(\d+)\s*GP/i); return m?parseInt(m[1]):99; }
 
+/* ── Atribuição pela MENOR unidade (GP/PEL) do unid_registro ──
+   Resolve o grupamento de um RAT SEMPRE pela menor unidade declarada no próprio
+   registro (ex.: "1 GP/1 PEL MAMB/3 CIA PM MAMB/BPM MAMB"), NUNCA por município
+   (uma operação feita em outro município não pode ser contabilizada ao município).
+   unid_registro genérico (sem GP+PEL) → retorna null (sem grupamento). */
+let _gpPelMapAC = null, _gpPelMapACLen = -1;
+function _unidGpPel(unidReg){
+  const nGrupos = (typeof dadosGrupos !== 'undefined' && dadosGrupos) ? dadosGrupos.length : 0;
+  if(_gpPelMapAC === null || _gpPelMapACLen !== nGrupos){
+    _gpPelMapAC = {}; _gpPelMapACLen = nGrupos;
+    ((typeof dadosGrupos !== 'undefined' && dadosGrupos) ? dadosGrupos : []).forEach(g => {
+      if(!g || !g.gpResp) return;
+      const gpNum  = gpNumDoColk(g.colK || g.grupamento || '');
+      const pelNum = g.pelNum || pelDoColk(g.colK || g.grupamento || '');
+      if(gpNum && gpNum !== 99 && pelNum && pelNum !== 99){
+        const k = gpNum + '|' + pelNum;
+        if(!_gpPelMapAC[k]) _gpPelMapAC[k] = { gpResp: g.gpResp, colK: g.colKBpm || g.colK || g.grupamento };
+      }
+    });
+  }
+  const g = (unidReg||'').match(/(\d+)\s*GP/i);
+  const p = (unidReg||'').match(/(\d+)\s*PEL/i);
+  if(!g || !p) return null;
+  return _gpPelMapAC[g[1] + '|' + p[1]] || null;
+}
+
 /* Retorna o nome completo do grupamento (coluna K) — ex: "1 GP / 1 PEL / 3 CIA PM MAMB / GOVERNADOR VALADARES"
    Recebe a própria coluna K como argumento — retorna diretamente */
 function gpDoColk(colK){
@@ -3947,14 +3973,17 @@ async function carregarOpsGdo(){
       const _pessoas   = _mPess ? parseInt(_mPess[1]) : 0;
       const _veiculos  = _mVeic ? parseInt(_mVeic[1]) : 0;
 
+      const _uOp = _unidGpPel((r.unid_registro || '').toString());
       dadosGdoRural.push({
         rat:        (r.numero_rat || '').toString().trim(),
         mes, data:  dataStr, municipio,
         lat:        parseFloat((r.latitude  || '').toString().replace(',','.')) || null,
         lng:        parseFloat((r.longitude || '').toString().replace(',','.')) || null,
         natureza:   nat,
-        grupamento: munMap[norm(municipio)]      || '',
-        gpCurto:    munMapCurto[norm(municipio)] || '',
+        /* Atribuição SEMPRE pela menor unidade (GP/PEL); genérico → sem grupamento */
+        grupamento: _uOp ? _uOp.colK   : '',
+        gpCurto:    _uOp ? _uOp.gpResp : '',
+        semUnidade: !_uOp,
         tempo:      _tempo,
         militares:  _militares,
         viaturas:   _viaturas,
