@@ -864,12 +864,21 @@ const REPEATABLE_CONFIGS = {
   registro: {
     entryLabel: 'Registro', vincularCartao: true,
     fields: [
-      { label: 'Tipo de atividade', type: 'select', options: ['Acionado pelo COPOM','Ocorrência Iniciativa','Operação','Palestra','Atividade educativa','Atividade extraordinária','Reunião','Apoio','Outra atividade'],
+      { label: 'Tipo de atividade', type: 'select', options: ['Acionado pelo COPOM','Ocorrência Iniciativa','Operação','Visita Tranquilizadora','Palestra','Atividade educativa','Atividade extraordinária','Reunião','Apoio','Outra atividade'],
         allowOutroLivre: true, outroValor: 'Outra atividade', outroPlaceholder: 'Qual atividade? Descreva' },
       [
         { label: 'Nº do REDS / Registro', type: 'text', mask: 'reds', required: true },
         { label: 'Data', type: 'date', required: true },
       ],
+      // Vínculo de crime (só aparece p/ Operação ou Visita Tranquilizadora). O
+      // nº próprio (RAT/BOS) já é o "Nº do REDS / Registro" acima; aqui entra o
+      // REDS do CRIME (BO). Fica como indicação PENDENTE até o RAT/BOS e o crime
+      // serem importados — aí a RPC vincular_reds_pendentes efetiva (db/181).
+      { label: 'Crime relacionado (REDS)', type: 'text', mask: 'reds', requiredWhenShown: true,
+        showWhen: { field: 'Tipo de atividade', in: ['Operação','Visita Tranquilizadora'] },
+        extraNote: 'Obrigatório — nº do REDS do CRIME (BO), no padrão completo. O vínculo é feito automaticamente após a importação do RAT/BOS.' },
+      { label: 'Observação do vínculo', type: 'textarea',
+        showWhen: { field: 'Tipo de atividade', in: ['Operação','Visita Tranquilizadora'] } },
       // Auto de Infração (múltiplos via "+ Adicionar") + Ato de Fiscalização.
       // O Ato só é obrigatório quando há Auto preenchido (regra genérica em
       // validarModalAtual: data-auto-infracao + "Nº Ato de Fiscalização").
@@ -1445,6 +1454,31 @@ document.addEventListener('change', (e) => {
   const ehOutro = (el.value || '').trim().toLowerCase() === (el.dataset.outroValor || 'outro:');
   outroInput.style.display = ehOutro ? 'block' : 'none';
   if (!ehOutro) outroInput.value = '';
+});
+
+// Campos condicionais (data-show-when): um select-controlador (identificado pelo
+// seu data-label) mostra/esconde os campos marcados dentro da MESMA entrada,
+// conforme o valor escolhido esteja na lista data-show-when-values. Ao esconder,
+// limpa o conteúdo (para não vazar valor oculto na coleta/validação).
+document.addEventListener('change', (e) => {
+  const el = e.target;
+  if (!el || !el.dataset || !el.dataset.label || el.tagName !== 'SELECT') return;
+  const entry = el.closest('[data-repeat-entry]'); if (!entry) return;
+  const controller = el.dataset.label;
+  const alvos = entry.querySelectorAll(`[data-show-when="${controller}"]`);
+  if (!alvos.length) return;
+  const atual = (el.value || '').trim();
+  alvos.forEach(div => {
+    const vals = (div.dataset.showWhenValues || '').split('|');
+    const mostrar = vals.includes(atual);
+    div.style.display = mostrar ? '' : 'none';
+    // Obrigatoriedade condicional: só exige o campo enquanto ele estiver visível.
+    div.querySelectorAll('[data-req-when-shown="1"]').forEach(inp => {
+      if (mostrar) inp.setAttribute('data-required', '1');
+      else inp.removeAttribute('data-required');
+    });
+    if (!mostrar) div.querySelectorAll('input, textarea, select').forEach(i => { i.value = ''; });
+  });
 });
 
 // CEMIG Subestações: quando o "Local" é escolhido, o texto já traz o tipo
@@ -2759,6 +2793,14 @@ function refreshAutoCalcFields(root){
 // ---------- Motor genérico: blocos repetíveis (NUDEN, DDU, BALCÃO, PAF, FAPI, IMA) ----------
 function fieldInputHTML(field, idx){
   const note = field.sourceNote ? ` (${field.sourceNote})` : '';
+  // Campo condicional: aparece só quando um select-controlador (por label) está
+  // num dos valores de `showWhen.in`. Começa oculto; o toggle global revela.
+  const _sw = field.showWhen;
+  const showWhenAttr = _sw ? ` data-show-when="${_sw.field}" data-show-when-values="${(_sw.in || []).join('|')}"` : '';
+  const showWhenStyle = _sw ? ' style="display:none;"' : '';
+  // Obrigatório SÓ quando visível — o toggle (data-show-when) liga/desliga o
+  // data-required conforme o campo aparece/some, senão travaria os outros tipos.
+  const reqWhenShownAttr = field.requiredWhenShown ? ' data-req-when-shown="1"' : '';
   if (field.type === 'select'){
     const opts = (field.options || []).map(o => `<option>${o}</option>`).join('');
     const keyAttr = field.key ? ` data-field="${field.key}"` : '';
@@ -2790,7 +2832,7 @@ function fieldInputHTML(field, idx){
     const requiredAttr = field.required ? ' data-required="1"' : '';
     const labelAttr = ` data-label="${field.label}"`;
     return `
-      <div class="field">
+      <div class="field"${showWhenAttr}${showWhenStyle}>
         <label>${field.label}</label>
         <textarea rows="3" placeholder="${field.label}"${requiredAttr}${labelAttr}></textarea>
       </div>`;
@@ -2902,9 +2944,9 @@ function fieldInputHTML(field, idx){
   const extraClass = (field.readonly ? ' input-readonly' : '') + (isNarrow ? ' input-narrow' : '');
   const placeholder = field.mask ? MASKS[field.mask].placeholder : field.label;
   return `
-    <div class="field">
+    <div class="field"${showWhenAttr}${showWhenStyle}>
       <label>${field.label}</label>
-      <input type="${inputType}" class="${extraClass}" placeholder="${placeholder}"${maskAttr}${readonlyAttr}${autoCalcAttr}${keyAttr}${numericAttr}${requiredAttr}${labelAttr}${maxDateAttr}${allowFutureAttr}>
+      <input type="${inputType}" class="${extraClass}" placeholder="${placeholder}"${maskAttr}${readonlyAttr}${autoCalcAttr}${keyAttr}${numericAttr}${requiredAttr}${reqWhenShownAttr}${labelAttr}${maxDateAttr}${allowFutureAttr}>
       ${field.extraNote ? `<p class="field-note">${field.extraNote}</p>` : ''}
     </div>`;
 }
@@ -4242,6 +4284,14 @@ function collectCategoryEntries(id){
     const campos = Object.assign({}, preCampos);
     Array.from(entry.querySelectorAll(':scope > .field, :scope .row2 .field, :scope .row3 .field, :scope .cemig-variant-fields .field'))
       .forEach(f => {
+        // Campo condicional (data-show-when): só coleta quando o controlador
+        // (por data-label) está num valor que o exibe; senão ignora (não vira
+        // linha "não preenchido" nem gera indicação de vínculo).
+        if (f.dataset && f.dataset.showWhen){
+          const ctrl = entry.querySelector(`[data-label="${f.dataset.showWhen}"]`);
+          const vals = (f.dataset.showWhenValues || '').split('|');
+          if (!ctrl || !vals.includes((ctrl.value || '').trim())) return;
+        }
         // "Descreva o nome da operação" (.op-outra) só faz sentido — e só deve
         // aparecer no resumo/PDF — quando a operação escolhida é a avulsa
         // "OUTRA OPERAÇÃO NÃO DESCRITA ACIMA". Nos demais casos o campo fica
@@ -4642,6 +4692,8 @@ hiddenIframeRelatorio.addEventListener('load', async () => {
   try{ await sincronizarDemandasAndamento(ultimoPayloadEnviado, ultimaSituMap, ultimoPayloadEnviado && ultimoPayloadEnviado.idRelatorio); }catch(e){ console.warn('[andamento] sync', e); }
   // Fecha também o Cartão Programa do dia (se a equipe respondeu demandas no bloco). Best-effort.
   try{ if (typeof window.marcarCartaoAtendido === 'function') await window.marcarCartaoAtendido(ultimoPayloadEnviado && ultimoPayloadEnviado.idRelatorio); }catch(e){ console.warn('[cartao] baixa', e); }
+  // Vínculo de crime (db/181): cria as indicações pendentes do Relatório. Best-effort.
+  try{ await criarVinculosCrime(ultimoPayloadEnviado && ultimoPayloadEnviado.idRelatorio); }catch(e){ console.warn('[vinculo-crime] sync', e); }
   ultimoPayloadEnviado = null;
   ultimaSituMap = null;
   try{ if (typeof window.__rsLimparRascunho === 'function') window.__rsLimparRascunho(); }catch(e){}
@@ -4688,6 +4740,43 @@ async function gravarRelatorioSupabase(payload){
     console.log('[relatorio→supabase] ' + (ehEdicao ? 'atualizado' : 'gravado') + '.');
     return (j && j.id) ? j.id : null;   // uuid (usado no CREATE p/ unificar o id com a planilha)
   }catch(e){ console.warn('[relatorio→supabase] falhou (best-effort):', e); return null; }
+}
+
+/* ── Vínculo de crime (db/181) ──────────────────────────────────────────
+   Cria as indicações PENDENTES a partir da categoria Registro quando o
+   "Tipo de atividade" é Operação ou Visita Tranquilizadora e o campo
+   "Crime relacionado (REDS)" foi preenchido. A RPC vinculo_crime_indicar
+   grava a pendência e já tenta efetivar se o RAT/BOS e o crime estiverem
+   importados (senão fica pendente até o Aux P3 importar). O nº próprio
+   (RAT da operação / BOS da visita) é o "Nº do REDS / Registro". Best-effort:
+   nunca atrapalha o envio. */
+async function criarVinculosCrime(relatorioId){
+  try{
+    if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
+    const S = (typeof getSessaoAtual === 'function') ? getSessaoAtual() : null;
+    if (!S || !S.token) return;
+    const TIPO_MAP = { 'Operação':'op', 'Visita Tranquilizadora':'visita' };
+    const itens = collectCategoryEntries('registro') || [];
+    const uuidOk = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(relatorioId || ''));
+    const relId = uuidOk ? relatorioId : null;
+    const alvos = itens.map(it => ({
+      tipo:    TIPO_MAP[(it['Tipo de atividade'] || '').trim()],
+      proprio: (it['Nº do REDS / Registro'] || '').trim(),
+      crime:   (it['Crime relacionado (REDS)'] || '').trim(),
+      obs:     (it['Observação do vínculo'] || '').trim(),
+    })).filter(a => a.tipo && a.proprio && a.crime);
+    if (!alvos.length) return;
+    const H = { apikey: SB_AUTH_KEY, Authorization: `Bearer ${SB_AUTH_KEY}`, 'Content-Type': 'application/json' };
+    for (const a of alvos){
+      const body = { p_token: S.token, p_tipo: a.tipo, p_numero_proprio: a.proprio,
+                     p_crime_reds: a.crime, p_observacao: a.obs || null, p_relatorio_id: relId };
+      try{
+        const r = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/vinculo_crime_indicar`, { method:'POST', headers:H, body: JSON.stringify(body) });
+        if (!r.ok) console.warn('[vinculo-crime] HTTP ' + r.status + ': ' + (await r.text()));
+        else console.log('[vinculo-crime] indicado', a.tipo, a.proprio, '→', a.crime);
+      }catch(e){ console.warn('[vinculo-crime] falhou', e); }
+    }
+  }catch(e){ console.warn('[vinculo-crime] erro geral', e); }
 }
 
 /* ── Baixa automática das demandas (Denúncia de Balcão / Requisição) ──

@@ -6958,6 +6958,22 @@ function impConfirmar(){
         } catch(_excE){ console.warn('[RCR] Erro ao aplicar lista negra:', _excE.message); }
       }
 
+      /* ── Vínculo de crime (db/181): reconcilia as indicações pendentes do
+         Relatório de Serviço. Roda após QUALQUER importação (RAT, BOS ou crime)
+         porque a efetivação exige o documento próprio E o crime importados —
+         então tanto importar o RAT/BOS quanto importar o crime pode completar
+         uma indicação. Idempotente (só efetiva status='pendente' que casam).
+         Best-effort: não atrapalha a importação. ── */
+      try {
+        const _vc = await fetch(`${SB_URL}/rest/v1/rpc/vincular_reds_pendentes`, {
+          method:'POST',
+          headers:{ 'apikey':SB_KEY, 'Authorization':'Bearer '+SB_KEY, 'Content-Type':'application/json' },
+          body:'{}'
+        });
+        if(_vc.ok){ console.log('[vinculo-crime] reconciliação pós-import:', await _vc.json()); }
+        else console.warn('[vinculo-crime] reconciliação HTTP '+_vc.status+': '+(await _vc.text()));
+      } catch(_vce){ console.warn('[vinculo-crime] reconciliação falhou (best-effort):', _vce); }
+
       const hist = JSON.parse(localStorage.getItem(_IMP_HIST_KEY)||'[]');
       hist.unshift({ data:new Date().toLocaleString('pt-BR'), indicador:_impInd,
         novos:novos.length, atualizados:atualizados.length,
