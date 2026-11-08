@@ -880,8 +880,9 @@ const REPEATABLE_CONFIGS = {
         showWhen: { field: 'Tipo de atividade', in: ['Operação','Visita Tranquilizadora'] },
         extraNote: 'Marque "Sim" para vincular o REDS (BO) do crime a esta operação/visita.' },
       { label: 'Crime relacionado (REDS)', type: 'text', mask: 'reds', requiredWhenShown: true,
+        listId: 'dl-crimes-reds', crimeAutocomplete: true,
         showWhen: { field: 'Relacionada a algum crime?', in: ['Sim'] },
-        extraNote: 'Nº do REDS do CRIME (BO), no padrão completo. O vínculo é feito automaticamente após a importação do RAT/BOS.' },
+        extraNote: 'Comece a digitar o nº para buscar o crime (BO) já no banco — mostra município · natureza · data. O vínculo é feito automaticamente após a importação do RAT/BOS.' },
       { label: 'Observação do vínculo', type: 'textarea',
         showWhen: { field: 'Relacionada a algum crime?', in: ['Sim'] } },
       // Auto de Infração (múltiplos via "+ Adicionar") + Ato de Fiscalização.
@@ -1459,6 +1460,60 @@ document.addEventListener('change', (e) => {
   const ehOutro = (el.value || '').trim().toLowerCase() === (el.dataset.outroValor || 'outro:');
   outroInput.style.display = ehOutro ? 'block' : 'none';
   if (!ehOutro) outroInput.value = '';
+});
+
+// ── Autocomplete do "Crime relacionado (REDS)" ──────────────────────────
+//  Carrega os REDS de bd_crimes (com município · natureza · data) num
+//  <datalist> nativo, UMA vez e sob demanda (no 1º foco do campo). O próprio
+//  navegador filtra conforme o militar digita. Continua aceitando digitação
+//  livre (crime ainda não importado → fica pendente).
+let _crimesDatalistCarregado = false;
+let _crimesDatalistCarregando = null;
+async function carregarCrimesDatalist(){
+  if (_crimesDatalistCarregado) return;
+  if (_crimesDatalistCarregando) return _crimesDatalistCarregando;
+  _crimesDatalistCarregando = (async () => {
+    try{
+      if (typeof SB_AUTH_URL === 'undefined' || typeof SB_AUTH_KEY === 'undefined') return;
+      let dl = document.getElementById('dl-crimes-reds');
+      if (!dl){ dl = document.createElement('datalist'); dl.id = 'dl-crimes-reds'; document.body.appendChild(dl); }
+      const H = { apikey: SB_AUTH_KEY, Authorization: `Bearer ${SB_AUTH_KEY}` };
+      const LOTE = 1000; let off = 0; const linhas = [];
+      for(;;){
+        const url = `${SB_AUTH_URL}/rest/v1/bd_crimes?select=numero_reds,municipio,descr_natureza_principal,data_fato`
+          + `&numero_reds=not.is.null&order=data_fato.desc&offset=${off}&limit=${LOTE}`;
+        const r = await fetch(url, { headers: H });
+        if(!r.ok){ console.warn('[crime-ac] HTTP ' + r.status); break; }
+        const parte = await r.json();
+        linhas.push(...parte);
+        if (parte.length < LOTE) break;
+        off += LOTE;
+        if (off > 20000) break; // guarda de segurança
+      }
+      const esc = (s)=> String(s==null?'':s).replace(/[&<>"]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+      const fmtData = (d)=>{ const m = String(d||'').slice(0,10).match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? `${m[3]}/${m[2]}/${m[1]}` : ''; };
+      const vistos = new Set();
+      dl.innerHTML = linhas
+        .filter(c => c.numero_reds && !vistos.has(c.numero_reds) && vistos.add(c.numero_reds))
+        .map(c => {
+          const ctx = [c.municipio, c.descr_natureza_principal, fmtData(c.data_fato)].filter(Boolean).join(' · ');
+          return `<option value="${esc(c.numero_reds)}">${esc(ctx)}</option>`;
+        }).join('');
+      _crimesDatalistCarregado = true;
+      console.log('[crime-ac] datalist carregado:', dl.children.length, 'crimes');
+    }catch(e){ console.warn('[crime-ac] falhou:', e); }
+    finally { _crimesDatalistCarregando = null; }
+  })();
+  return _crimesDatalistCarregando;
+}
+// Garante o <datalist> no DOM desde o início (p/ o input associar por id).
+if (!document.getElementById('dl-crimes-reds')){
+  try{ const _d = document.createElement('datalist'); _d.id = 'dl-crimes-reds'; (document.body || document.documentElement).appendChild(_d); }catch(_){}
+}
+// Lazy: popula quando o militar focar no campo do crime pela 1ª vez.
+document.addEventListener('focusin', (e) => {
+  const el = e.target;
+  if (el && el.dataset && el.dataset.crimeAc === '1') carregarCrimesDatalist();
 });
 
 // Lê o valor ATUAL de um campo-controlador (por data-label) dentro de um escopo.
@@ -2985,10 +3040,12 @@ function fieldInputHTML(field, idx){
   const isNarrow = field.narrow || field.type === 'time' || field.mask === 'pm';
   const extraClass = (field.readonly ? ' input-readonly' : '') + (isNarrow ? ' input-narrow' : '');
   const placeholder = field.mask ? MASKS[field.mask].placeholder : field.label;
+  const listAttr = field.listId ? ` list="${field.listId}" autocomplete="off"` : '';
+  const acAttr = field.crimeAutocomplete ? ' data-crime-ac="1"' : '';
   return `
     <div class="field"${showWhenAttr}${showWhenStyle}>
       <label>${field.label}</label>
-      <input type="${inputType}" class="${extraClass}" placeholder="${placeholder}"${maskAttr}${readonlyAttr}${autoCalcAttr}${keyAttr}${numericAttr}${requiredAttr}${reqWhenShownAttr}${labelAttr}${maxDateAttr}${allowFutureAttr}>
+      <input type="${inputType}" class="${extraClass}" placeholder="${placeholder}"${maskAttr}${listAttr}${acAttr}${readonlyAttr}${autoCalcAttr}${keyAttr}${numericAttr}${requiredAttr}${reqWhenShownAttr}${labelAttr}${maxDateAttr}${allowFutureAttr}>
       ${field.extraNote ? `<p class="field-note">${field.extraNote}</p>` : ''}
     </div>`;
 }
