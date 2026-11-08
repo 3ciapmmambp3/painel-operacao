@@ -3523,7 +3523,7 @@ async function recarregarTudo(forcar){
     }catch(e){ console.warn('Erro ao salvar crimes no storage:', e); }
 
     /* 4. Carrega ops, visitas e missões em background sem bloquear a UI */
-    Promise.all([carregarOpsGdo(), carregarVisitas(), carregarSituacoes(), carregarSituacoesCorr()])
+    Promise.all([carregarOpsGdo(), carregarVisitas(), carregarSituacoes(), carregarSituacoesCorr(), carregarVinculosPendentes()])
       .then(() => {
         window._acOpsVisitasProntas = true;   /* sinaliza que ops/visitas já carregaram */
         /* Atualiza abas que dependem de ops/visitas */
@@ -7116,21 +7116,80 @@ function _abrirModalVinculo(boCrime) {
 
   document.body.appendChild(modal);
   _vincRenderLista(boCrime, visitasVinculadas);
+  carregarVinculosPendentes().then(()=> _vincRenderLista(boCrime, dadosVisitas.filter(v => v.boRefs && v.boRefs.includes(boCrime))));
   modal.addEventListener('click', e => { if(e.target === modal) modal.remove(); });
 
   /* Foca no input */
   setTimeout(() => document.getElementById('_vinc-input')?.focus(), 100);
 }
 
+/* ══════════════════════════════════
+   Estado do vínculo crime↔operação/visita (db/181): auto / pendente / manual
+   — auto: há linha vinculo_crime_pendente status='auto' p/ o par.
+   — pendente: indicado no Relatório, ainda não efetivado (não está nos refs).
+   — manual: vínculo existe nos refs mas sem linha auto (feito pelos botões).
+══════════════════════════════════ */
+let _vcByPair = null;        // `${tipo}|${ndProprio}|${ndCrime}` → status
+let _vcPendByCrime = null;   // ndCrime → [linhas pendentes]
+let _vcCarregando = null;
+function _nd(s){ return String(s==null?'':s).replace(/\D/g,''); }
+async function carregarVinculosPendentes(){
+  if(_vcCarregando) return _vcCarregando;
+  _vcCarregando = (async () => {
+    try{
+      const r = await fetch(`${SB_URL}/rest/v1/vinculo_crime_pendente?select=tipo,numero_proprio,crime_reds,status,nome,data_servico`,
+        { headers:{ apikey:SB_KEY, Authorization:'Bearer '+SB_KEY } });
+      if(!r.ok){ console.warn('[vc] HTTP '+r.status); return; }
+      const rows = await r.json();
+      const byPair = {}; const pendByCrime = {};
+      rows.forEach(x => {
+        byPair[`${x.tipo}|${_nd(x.numero_proprio)}|${_nd(x.crime_reds)}`] = x.status;
+        if(x.status === 'pendente'){
+          const k = _nd(x.crime_reds);
+          (pendByCrime[k] = pendByCrime[k] || []).push(x);
+        }
+      });
+      _vcByPair = byPair; _vcPendByCrime = pendByCrime;
+    }catch(e){ console.warn('[vc] falhou', e); }
+    finally { _vcCarregando = null; }
+  })();
+  return _vcCarregando;
+}
+function _vcEstado(tipo, numProprio, crime){
+  if(!_vcByPair) return null;
+  return _vcByPair[`${tipo}|${_nd(numProprio)}|${_nd(crime)}`] || null;
+}
+/* Badge p/ um vínculo JÁ efetivado: 🔵 AUTO (veio do Relatório) vs 🔗 MANUAL. */
+function _vcBadge(tipo, numProprio, crime){
+  const st = _vcEstado(tipo, numProprio, crime);
+  if(st === 'auto')
+    return ' <span title="Vínculo automático — indicado no Relatório de Serviço" style="background:rgba(66,165,245,.15);color:#42a5f5;border:1px solid rgba(66,165,245,.4);padding:0 5px;border-radius:3px;font-size:9px;font-weight:700;">🔵 AUTO</span>';
+  return ' <span title="Vínculo manual" style="background:rgba(155,138,92,.12);color:var(--gold);border:1px solid var(--gold-border);padding:0 5px;border-radius:3px;font-size:9px;font-weight:700;">🔗 MANUAL</span>';
+}
+/* Bloco 🟡 com as indicações pendentes (RAT/BOS ainda não importado) de um crime. */
+function _vcPendentesHTML(crimeBo, tipo){
+  if(!_vcPendByCrime) return '';
+  const lista = (_vcPendByCrime[_nd(crimeBo)] || []).filter(p => !tipo || p.tipo === tipo);
+  if(!lista.length) return '';
+  const linhas = lista.map(p => {
+    const tp = p.tipo === 'visita' ? 'BOS' : 'RAT';
+    const extra = [p.nome, p.data_servico].filter(Boolean).join(' · ');
+    return `<div style="font-size:10px;color:#ffca28;"><span style="font-family:monospace;">${p.numero_proprio}</span> <span style="color:var(--text-muted);">(${tp}${extra?' · '+extra:''})</span></div>`;
+  }).join('');
+  return `<div style="margin-bottom:10px;background:rgba(255,202,40,.08);border:1px solid rgba(255,202,40,.35);border-radius:4px;padding:6px 10px;">
+    <div style="font-size:10px;font-weight:700;color:#ffca28;margin-bottom:3px;">🟡 Indicado no Relatório — aguardando importação do ${tipo==='visita'?'BOS':'RAT'}:</div>${linhas}</div>`;
+}
+
 /** Renderiza lista de visitas já vinculadas ao crime */
 function _vincRenderLista(boCrime, visitasVinc) {
   const el = document.getElementById('_vinc-lista');
   if(!el) return;
+  const pend = _vcPendentesHTML(boCrime, 'visita');
   if(!visitasVinc.length) {
-    el.innerHTML = '<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Nenhuma visita vinculada ainda.</div>';
+    el.innerHTML = pend + '<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Nenhuma visita vinculada ainda.</div>';
     return;
   }
-  el.innerHTML = `
+  el.innerHTML = pend + `
     <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">BOS vinculados a este crime:</div>
     <div style="display:flex;flex-direction:column;gap:4px;">
       ${visitasVinc.map(v => {
@@ -7139,7 +7198,7 @@ function _vincRenderLista(boCrime, visitasVinc) {
           : '<span style="background:rgba(255,152,0,.15);color:#ff9800;border:1px solid rgba(255,152,0,.4);padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;">🏙 URBANO</span>';
         return `<div style="display:flex;justify-content:space-between;align-items:center;background:#1a2a1a;border:1px solid rgba(102,187,106,.3);border-radius:4px;padding:6px 10px;gap:8px;">
           <div style="display:flex;flex-direction:column;gap:2px;">
-            <span style="font-family:monospace;font-size:11px;color:var(--success);font-weight:700;">${v.bo}</span>
+            <span style="font-family:monospace;font-size:11px;color:var(--success);font-weight:700;">${v.bo}${_vcBadge('visita', v.bo, boCrime)}</span>
             <span style="font-size:10px;color:var(--text-muted);">${v.data||'—'} · ${v.municipio||'—'} ${locBadge}</span>
           </div>
           <button onclick="_vincRemover('${v.bo}','${boCrime}')"
@@ -7327,6 +7386,7 @@ function _abrirModalVinculoRat(boCrime) {
 
   document.body.appendChild(modal);
   _vratRenderLista(boCrime, opsVinculadas);
+  carregarVinculosPendentes().then(()=> _vratRenderLista(boCrime, dadosGdoRural.filter(op => op.ratRefs && op.ratRefs.includes(boCrime))));
   modal.addEventListener('click', e => { if(e.target === modal) modal.remove(); });
   setTimeout(() => document.getElementById('_vrat-input')?.focus(), 100);
 }
@@ -7334,17 +7394,18 @@ function _abrirModalVinculoRat(boCrime) {
 function _vratRenderLista(boCrime, opsVinc) {
   const el = document.getElementById('_vrat-lista');
   if(!el) return;
+  const pend = _vcPendentesHTML(boCrime, 'op');
   if(!opsVinc.length) {
-    el.innerHTML = '<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Nenhuma operação vinculada diretamente ainda.</div>';
+    el.innerHTML = pend + '<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Nenhuma operação vinculada diretamente ainda.</div>';
     return;
   }
-  el.innerHTML = `
+  el.innerHTML = pend + `
     <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">RATs vinculados a este crime:</div>
     <div style="display:flex;flex-direction:column;gap:4px;">
       ${opsVinc.map(op => `
         <div style="display:flex;justify-content:space-between;align-items:center;background:#1a2010;border:1px solid rgba(155,138,92,.3);border-radius:4px;padding:6px 10px;gap:8px;">
           <div style="display:flex;flex-direction:column;gap:2px;">
-            <span style="font-family:monospace;font-size:11px;color:var(--gold);font-weight:700;">${op.rat}</span>
+            <span style="font-family:monospace;font-size:11px;color:var(--gold);font-weight:700;">${op.rat}${_vcBadge('op', op.rat, boCrime)}</span>
             <span style="font-size:10px;color:var(--text-muted);">${op.data||'—'} · ${op.municipio||'—'} · ${LABEL_NAT_OPS_CRZ[op.natureza]||op.natureza}</span>
           </div>
           <button onclick="_vratRemover('${op.rat}','${boCrime}')"
@@ -7587,7 +7648,7 @@ function _vrcRenderLista(rat, boRefs) {
         return `
         <div style="display:flex;justify-content:space-between;align-items:center;background:#1a2010;border:1px solid rgba(155,138,92,.3);border-radius:4px;padding:6px 10px;gap:8px;">
           <div style="display:flex;flex-direction:column;gap:2px;">
-            <span style="font-family:monospace;font-size:11px;color:var(--gold);font-weight:700;">${bo}</span>
+            <span style="font-family:monospace;font-size:11px;color:var(--gold);font-weight:700;">${bo}${_vcBadge('op', rat, bo)}</span>
             <span style="font-size:10px;color:var(--text-muted);">${c ? (c.data||'—') + ' · ' + (c.municipio||'—') + ' · ' + (c.indicador||'—') : '—'}</span>
           </div>
           <button onclick="_vrcRemover('${bo}','${rat}')"
