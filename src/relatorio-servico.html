@@ -1463,14 +1463,61 @@ document.addEventListener('change', (e) => {
 });
 
 // ── Autocomplete do "Crime relacionado (REDS)" ──────────────────────────
-//  Carrega os REDS de bd_crimes (com município · natureza · data) num
-//  <datalist> nativo, UMA vez e sob demanda (no 1º foco do campo). O próprio
-//  navegador filtra conforme o militar digita. Continua aceitando digitação
-//  livre (crime ainda não importado → fica pendente).
+//  Carrega os crimes de bd_crimes (nº REDS · município · natureza · data) e
+//  mostra num <datalist> nativo, sob demanda (1º foco do campo). FILTRA pelo
+//  grupamento (gp_responsavel) da "Fração de Atuação" escolhida: cada crime é
+//  atribuído ao grupamento pelo MUNICÍPIO (municipios_grupos), igual ao
+//  analise-criminal. Sem fração (ou município não mapeado) → não esconde.
+//  Aceita digitação livre (crime ainda não importado → fica pendente).
 let _crimesDatalistCarregado = false;
 let _crimesDatalistCarregando = null;
+let _crimesRaw = [];          // crimes crus (p/ re-filtrar ao trocar a fração)
+let _munToGpResp = null;      // norm(municipio)          → norm(gp_responsavel)
+let _fracaoToGpResp = null;   // norm(grupamento_completo) → norm(gp_responsavel)
+
+function _normTxt(s){
+  const base = (typeof normalizeText === 'function') ? normalizeText(s) : String(s==null?'':s).toUpperCase();
+  return String(base).replace(/\s+/g, ' ').trim();
+}
+
+// gp_responsavel (normalizado) do grupamento escolhido na Fração de Atuação.
+function _gpRespDaFracaoSelecionada(){
+  const sel = document.querySelector('[name="fracaoAtuacao"]');
+  const val = sel ? (sel.value || '') : '';
+  if (!val || !_fracaoToGpResp) return '';
+  const canon = (typeof resolveFracaoCanonica === 'function') ? resolveFracaoCanonica(val) : val;
+  return _fracaoToGpResp[_normTxt(canon)] || _fracaoToGpResp[_normTxt(val)] || '';
+}
+
+// (Re)constrói as opções do datalist a partir de _crimesRaw, aplicando o filtro
+// por grupamento da fração (quando houver). Município mapeado p/ OUTRO
+// grupamento é escondido; não mapeado continua visível (evita perder crime por
+// diferença de grafia).
+function renderCrimesDatalist(){
+  const dl = document.getElementById('dl-crimes-reds');
+  if (!dl) return;
+  const esc = (s)=> String(s==null?'':s).replace(/[&<>"]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+  const fmtData = (d)=>{ const m = String(d||'').slice(0,10).match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? `${m[3]}/${m[2]}/${m[1]}` : ''; };
+  const gpAlvo = _gpRespDaFracaoSelecionada();
+  const vistos = new Set();
+  dl.innerHTML = _crimesRaw
+    .filter(c => {
+      if (!c.numero_reds || vistos.has(c.numero_reds)) return false;
+      if (gpAlvo && _munToGpResp){
+        const gpc = _munToGpResp[_normTxt(c.municipio)];
+        if (gpc && gpc !== gpAlvo) return false;   // de outro grupamento → esconde
+      }
+      vistos.add(c.numero_reds);
+      return true;
+    })
+    .map(c => {
+      const ctx = [c.municipio, c.descr_natureza_principal, fmtData(c.data_fato)].filter(Boolean).join(' · ');
+      return `<option value="${esc(c.numero_reds)}">${esc(ctx)}</option>`;
+    }).join('');
+}
+
 async function carregarCrimesDatalist(){
-  if (_crimesDatalistCarregado) return;
+  if (_crimesDatalistCarregado){ renderCrimesDatalist(); return; }
   if (_crimesDatalistCarregando) return _crimesDatalistCarregando;
   _crimesDatalistCarregando = (async () => {
     try{
@@ -1478,29 +1525,31 @@ async function carregarCrimesDatalist(){
       let dl = document.getElementById('dl-crimes-reds');
       if (!dl){ dl = document.createElement('datalist'); dl.id = 'dl-crimes-reds'; document.body.appendChild(dl); }
       const H = { apikey: SB_AUTH_KEY, Authorization: `Bearer ${SB_AUTH_KEY}` };
-      const LOTE = 1000; let off = 0; const linhas = [];
+      // Mapas de grupamento (município→gp e fração→gp) — p/ o filtro por fração.
+      try{
+        const [rm, rg] = await Promise.all([
+          fetch(`${SB_AUTH_URL}/rest/v1/municipios_grupos?select=municipio,gp_responsavel`, { headers:H }),
+          fetch(`${SB_AUTH_URL}/rest/v1/grupos?select=grupamento_completo,gp_responsavel`, { headers:H }),
+        ]);
+        if (rm.ok){ _munToGpResp = {}; (await rm.json()).forEach(m => { if(m.municipio && m.gp_responsavel) _munToGpResp[_normTxt(m.municipio)] = _normTxt(m.gp_responsavel); }); }
+        if (rg.ok){ _fracaoToGpResp = {}; (await rg.json()).forEach(g => { if(g.grupamento_completo && g.gp_responsavel) _fracaoToGpResp[_normTxt(g.grupamento_completo)] = _normTxt(g.gp_responsavel); }); }
+      }catch(_m){ console.warn('[crime-ac] mapas de grupamento falharam (mostra todos):', _m); }
+      // Crimes.
+      const LOTE = 1000; let off = 0; _crimesRaw = [];
       for(;;){
         const url = `${SB_AUTH_URL}/rest/v1/bd_crimes?select=numero_reds,municipio,descr_natureza_principal,data_fato`
           + `&numero_reds=not.is.null&order=data_fato.desc&offset=${off}&limit=${LOTE}`;
         const r = await fetch(url, { headers: H });
         if(!r.ok){ console.warn('[crime-ac] HTTP ' + r.status); break; }
         const parte = await r.json();
-        linhas.push(...parte);
+        _crimesRaw.push(...parte);
         if (parte.length < LOTE) break;
         off += LOTE;
         if (off > 20000) break; // guarda de segurança
       }
-      const esc = (s)=> String(s==null?'':s).replace(/[&<>"]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
-      const fmtData = (d)=>{ const m = String(d||'').slice(0,10).match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? `${m[3]}/${m[2]}/${m[1]}` : ''; };
-      const vistos = new Set();
-      dl.innerHTML = linhas
-        .filter(c => c.numero_reds && !vistos.has(c.numero_reds) && vistos.add(c.numero_reds))
-        .map(c => {
-          const ctx = [c.municipio, c.descr_natureza_principal, fmtData(c.data_fato)].filter(Boolean).join(' · ');
-          return `<option value="${esc(c.numero_reds)}">${esc(ctx)}</option>`;
-        }).join('');
       _crimesDatalistCarregado = true;
-      console.log('[crime-ac] datalist carregado:', dl.children.length, 'crimes');
+      renderCrimesDatalist();
+      console.log('[crime-ac] crimes:', _crimesRaw.length, '| mun→gp:', _munToGpResp?Object.keys(_munToGpResp).length:0);
     }catch(e){ console.warn('[crime-ac] falhou:', e); }
     finally { _crimesDatalistCarregando = null; }
   })();
@@ -1510,10 +1559,14 @@ async function carregarCrimesDatalist(){
 if (!document.getElementById('dl-crimes-reds')){
   try{ const _d = document.createElement('datalist'); _d.id = 'dl-crimes-reds'; (document.body || document.documentElement).appendChild(_d); }catch(_){}
 }
-// Lazy: popula quando o militar focar no campo do crime pela 1ª vez.
+// Lazy: popula no 1º foco do campo do crime.
 document.addEventListener('focusin', (e) => {
   const el = e.target;
   if (el && el.dataset && el.dataset.crimeAc === '1') carregarCrimesDatalist();
+});
+// Ao trocar a Fração de Atuação, re-filtra as sugestões (se já carregou).
+document.addEventListener('change', (e) => {
+  if (e.target && e.target.name === 'fracaoAtuacao' && _crimesDatalistCarregado) renderCrimesDatalist();
 });
 
 // Lê o valor ATUAL de um campo-controlador (por data-label) dentro de um escopo.
