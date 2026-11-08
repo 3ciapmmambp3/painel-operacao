@@ -874,11 +874,16 @@ const REPEATABLE_CONFIGS = {
       // nº próprio (RAT/BOS) já é o "Nº do REDS / Registro" acima; aqui entra o
       // REDS do CRIME (BO). Fica como indicação PENDENTE até o RAT/BOS e o crime
       // serem importados — aí a RPC vincular_reds_pendentes efetiva (db/181).
-      { label: 'Crime relacionado (REDS)', type: 'text', mask: 'reds', requiredWhenShown: true,
+      // Pergunta-gatilho: só aparece p/ Operação/Visita. Se "Sim", abre o campo
+      // do crime (obrigatório + máscara). Se "Não"/em branco, nada é exigido.
+      { label: 'Relacionada a algum crime?', type: 'select', options: ['Sim','Não'],
         showWhen: { field: 'Tipo de atividade', in: ['Operação','Visita Tranquilizadora'] },
-        extraNote: 'Obrigatório — nº do REDS do CRIME (BO), no padrão completo. O vínculo é feito automaticamente após a importação do RAT/BOS.' },
+        extraNote: 'Marque "Sim" para vincular o REDS (BO) do crime a esta operação/visita.' },
+      { label: 'Crime relacionado (REDS)', type: 'text', mask: 'reds', requiredWhenShown: true,
+        showWhen: { field: 'Relacionada a algum crime?', in: ['Sim'] },
+        extraNote: 'Nº do REDS do CRIME (BO), no padrão completo. O vínculo é feito automaticamente após a importação do RAT/BOS.' },
       { label: 'Observação do vínculo', type: 'textarea',
-        showWhen: { field: 'Tipo de atividade', in: ['Operação','Visita Tranquilizadora'] } },
+        showWhen: { field: 'Relacionada a algum crime?', in: ['Sim'] } },
       // Auto de Infração (múltiplos via "+ Adicionar") + Ato de Fiscalização.
       // O Ato só é obrigatório quando há Auto preenchido (regra genérica em
       // validarModalAtual: data-auto-infracao + "Nº Ato de Fiscalização").
@@ -1477,7 +1482,12 @@ document.addEventListener('change', (e) => {
       if (mostrar) inp.setAttribute('data-required', '1');
       else inp.removeAttribute('data-required');
     });
-    if (!mostrar) div.querySelectorAll('input, textarea, select').forEach(i => { i.value = ''; });
+    if (!mostrar) div.querySelectorAll('input, textarea, select').forEach(i => {
+      i.value = '';
+      // Se o campo oculto é ele próprio um controlador (select), propaga o change
+      // para esconder/limpar os campos que dependem dele (gatilhos encadeados).
+      if (i.tagName === 'SELECT') i.dispatchEvent(new Event('change', { bubbles: true }));
+    });
   });
 });
 
@@ -2818,7 +2828,7 @@ function fieldInputHTML(field, idx){
       ? `<input type="text" class="outro-livre-input" placeholder="${field.outroPlaceholder || 'Digite o nome da unidade'}" style="display:none;margin-top:6px;">`
       : '';
     return `
-      <div class="field">
+      <div class="field"${showWhenAttr}${showWhenStyle}>
         <label>${field.label}</label>
         <select${keyAttr}${sourceAttr}${scopedAttr}${requiredAttr}${demandaAttr}${labelAttr}${outroAttr}>
           <option value="">Selecione...${note}</option>
