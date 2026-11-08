@@ -876,7 +876,7 @@ const REPEATABLE_CONFIGS = {
       // serem importados — aí a RPC vincular_reds_pendentes efetiva (db/181).
       // Pergunta-gatilho: só aparece p/ Operação/Visita. Se "Sim", abre o campo
       // do crime (obrigatório + máscara). Se "Não"/em branco, nada é exigido.
-      { label: 'Relacionada a algum crime?', type: 'select', options: ['Sim','Não'],
+      { label: 'Relacionada a algum crime?', type: 'radio', options: ['Sim','Não'],
         showWhen: { field: 'Tipo de atividade', in: ['Operação','Visita Tranquilizadora'] },
         extraNote: 'Marque "Sim" para vincular o REDS (BO) do crime a esta operação/visita.' },
       { label: 'Crime relacionado (REDS)', type: 'text', mask: 'reds', requiredWhenShown: true,
@@ -1461,18 +1461,34 @@ document.addEventListener('change', (e) => {
   if (!ehOutro) outroInput.value = '';
 });
 
-// Campos condicionais (data-show-when): um select-controlador (identificado pelo
-// seu data-label) mostra/esconde os campos marcados dentro da MESMA entrada,
-// conforme o valor escolhido esteja na lista data-show-when-values. Ao esconder,
-// limpa o conteúdo (para não vazar valor oculto na coleta/validação).
+// Lê o valor ATUAL de um campo-controlador (por data-label) dentro de um escopo.
+// Trata grupo de radio (lê o marcado) além de select/input comum.
+function _lerValorControlador(scope, label){
+  if (!scope) return '';
+  const radios = scope.querySelectorAll(`input[type="radio"][data-label="${label}"]`);
+  if (radios.length){
+    const ck = scope.querySelector(`input[type="radio"][data-label="${label}"]:checked`);
+    return ck ? (ck.value || '').trim() : '';
+  }
+  const el = scope.querySelector(`[data-label="${label}"]`);
+  return el ? (el.value || '').trim() : '';
+}
+
+// Campos condicionais (data-show-when): um controlador (select OU grupo de radio,
+// identificado pelo seu data-label) mostra/esconde os campos marcados dentro da
+// MESMA entrada, conforme o valor atual esteja na lista data-show-when-values.
+// Ao esconder, limpa o conteúdo (para não vazar valor oculto na coleta/validação)
+// e, se o campo oculto for ele próprio um controlador, propaga o change (cascata).
 document.addEventListener('change', (e) => {
   const el = e.target;
-  if (!el || !el.dataset || !el.dataset.label || el.tagName !== 'SELECT') return;
+  if (!el || !el.dataset || !el.dataset.label) return;
+  const ehCtrl = el.tagName === 'SELECT' || (el.tagName === 'INPUT' && el.type === 'radio');
+  if (!ehCtrl) return;
   const entry = el.closest('[data-repeat-entry]'); if (!entry) return;
   const controller = el.dataset.label;
   const alvos = entry.querySelectorAll(`[data-show-when="${controller}"]`);
   if (!alvos.length) return;
-  const atual = (el.value || '').trim();
+  const atual = _lerValorControlador(entry, controller);
   alvos.forEach(div => {
     const vals = (div.dataset.showWhenValues || '').split('|');
     const mostrar = vals.includes(atual);
@@ -1483,10 +1499,12 @@ document.addEventListener('change', (e) => {
       else inp.removeAttribute('data-required');
     });
     if (!mostrar) div.querySelectorAll('input, textarea, select').forEach(i => {
-      i.value = '';
-      // Se o campo oculto é ele próprio um controlador (select), propaga o change
-      // para esconder/limpar os campos que dependem dele (gatilhos encadeados).
-      if (i.tagName === 'SELECT') i.dispatchEvent(new Event('change', { bubbles: true }));
+      if (i.type === 'radio' || i.type === 'checkbox'){
+        if (i.checked){ i.checked = false; i.dispatchEvent(new Event('change', { bubbles: true })); }
+      } else {
+        i.value = '';
+        if (i.tagName === 'SELECT') i.dispatchEvent(new Event('change', { bubbles: true }));
+      }
     });
   });
 });
@@ -2801,6 +2819,7 @@ function refreshAutoCalcFields(root){
 }
 
 // ---------- Motor genérico: blocos repetíveis (NUDEN, DDU, BALCÃO, PAF, FAPI, IMA) ----------
+let _radioFieldSeq = 0;  // nomes únicos p/ grupos de radio (um por campo renderizado)
 function fieldInputHTML(field, idx){
   const note = field.sourceNote ? ` (${field.sourceNote})` : '';
   // Campo condicional: aparece só quando um select-controlador (por label) está
@@ -2938,6 +2957,19 @@ function fieldInputHTML(field, idx){
           <select><option value="">Posto/Grad...</option>${postoOpts}</select>
           <input type="text" placeholder="Nome"${keyAttr}>
         </div>
+      </div>`;
+  }
+  if (field.type === 'radio'){
+    const nm = `radio_${++_radioFieldSeq}`;
+    const opts2 = (field.options || []).map(o =>
+      `<label class="radio-opt" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-weight:400;">
+         <input type="radio" name="${nm}" value="${o}" data-label="${field.label}"> ${o}
+       </label>`).join('');
+    return `
+      <div class="field"${showWhenAttr}${showWhenStyle}>
+        <label>${field.label}</label>
+        <div class="radio-row" style="display:flex;gap:20px;flex-wrap:wrap;margin-top:4px;">${opts2}</div>
+        ${field.extraNote ? `<p class="field-note">${field.extraNote}</p>` : ''}
       </div>`;
   }
   const inputType = ['date','time'].includes(field.type) ? field.type : 'text';
@@ -3135,6 +3167,7 @@ let currentModalId = null;
 
 function fieldHasValue(el){
   if (!el) return false;
+  if (el.type === 'radio' || el.type === 'checkbox') return el.checked;
   if (el.tagName === 'SELECT') return el.value !== '';
   return el.value.trim() !== '';
 }
@@ -3887,6 +3920,15 @@ function preencherEntradaPorLabel_(escopo, itemData){
     });
     if (!el) return;
 
+    // Grupo de radio (ex.: "Relacionada a algum crime?"): marca o rádio que casa
+    // com o valor salvo e propaga o change (reabre os campos dependentes).
+    if (el.type === 'radio'){
+      escopo.querySelectorAll(`input[type="radio"][data-label="${label}"]`).forEach(rb => {
+        if (rb.value === String(valor)){ rb.checked = true; rb.dispatchEvent(new Event('change', { bubbles: true })); }
+      });
+      return;
+    }
+
     // Caso especial: "Auto de Infração" é um campo COMPOSTO (dois inputs,
     // Número + Ano, salvos juntos como "NUMERO/ANO"). Jogar a string inteira
     // no input de Número — como o código fazia antes — faz a máscara
@@ -4229,6 +4271,12 @@ function collectCategoryEntries(id){
       if (!autos.length) return '';
       return autos.length > 1 ? `${autos.join(', ')} (${autos.length} autos)` : autos[0];
     }
+    // Grupo de radio (ex.: "Relacionada a algum crime?"): devolve o marcado.
+    const _radios = f.querySelectorAll('input[type="radio"]');
+    if (_radios.length){
+      const _ck = f.querySelector('input[type="radio"]:checked');
+      return _ck ? _ck.value : '';
+    }
     const input = f.querySelector('input, select, textarea');
     let value = input ? input.value : '';
 
@@ -4298,9 +4346,8 @@ function collectCategoryEntries(id){
         // (por data-label) está num valor que o exibe; senão ignora (não vira
         // linha "não preenchido" nem gera indicação de vínculo).
         if (f.dataset && f.dataset.showWhen){
-          const ctrl = entry.querySelector(`[data-label="${f.dataset.showWhen}"]`);
           const vals = (f.dataset.showWhenValues || '').split('|');
-          if (!ctrl || !vals.includes((ctrl.value || '').trim())) return;
+          if (!vals.includes(_lerValorControlador(entry, f.dataset.showWhen))) return;
         }
         // "Descreva o nome da operação" (.op-outra) só faz sentido — e só deve
         // aparecer no resumo/PDF — quando a operação escolhida é a avulsa
