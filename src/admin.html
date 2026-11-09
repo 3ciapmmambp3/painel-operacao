@@ -697,6 +697,23 @@ document.addEventListener('click', () => {
           <button class="imp-ind-btn" id="gdoesp-ind-btn-CVPA" onclick="gdoespSelInd('CVPA')">🏠 CVPA</button>
           <button class="imp-ind-btn" id="gdoesp-ind-btn-IF" onclick="gdoespSelInd('IF')">🔑 IF</button>
         </div>
+        <!-- Importador anual (Caderno novo) -->
+        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
+          <button onclick="document.getElementById('gdoesp-file-input').click()" style="background:rgba(100,80,30,.15);border:1px solid rgba(100,80,30,.4);color:var(--gold);padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">📥 Importar Caderno (.xlsx)</button>
+          <input type="file" id="gdoesp-file-input" accept=".xlsx,.xls" style="display:none;" onchange="gdoespImportarArquivo(this)">
+          <button onclick="gdoespAbrirColar()" style="background:rgba(31,111,235,.14);border:1px solid rgba(31,111,235,.45);color:#90caf9;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">📋 Colar tabela (indicador atual)</button>
+          <button onclick="gdoespBaixarModelo()" style="background:#222;border:1px solid var(--border);color:#ccc;padding:8px 14px;border-radius:6px;font-size:12px;cursor:pointer;">⬇️ Baixar modelo .xlsx</button>
+          <span id="gdoesp-imp-status" style="font-size:11px;color:var(--text-muted);"></span>
+        </div>
+        <div id="gdoesp-colar-box" style="display:none;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px;">
+          <div id="gdoesp-colar-head" style="font-size:11px;color:var(--text-muted);margin-bottom:6px;"></div>
+          <textarea id="gdoesp-colar-ta" placeholder="Uma CIA por linha, na ordem: CIA  Pop  Jan Fev Mar Abr Mai Jun Jul Ago Set Out Nov Dez  MetaAnual  ABS&#10;Ex.: 3  705.322  1,29 0,91 1,49 1,29 1,10 1,23 1,42 1,42 1,42 0,78 1,10 1,42  14,89  105" style="width:100%;min-height:120px;background:#1a1a1a;border:1px solid #333;color:#ccc;border-radius:6px;padding:8px;font-family:monospace;font-size:11px;resize:vertical;"></textarea>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <button onclick="gdoespProcessarColar()" style="background:#1f6feb;color:#fff;border:none;font-weight:700;font-size:12px;padding:7px 14px;border-radius:6px;cursor:pointer;">Validar e pré-visualizar</button>
+            <button onclick="document.getElementById('gdoesp-colar-box').style.display='none'" style="background:var(--bg-input);border:1px solid var(--border);color:var(--text-muted);font-size:12px;padding:7px 12px;border-radius:6px;cursor:pointer;">Cancelar</button>
+          </div>
+        </div>
+        <div id="gdoesp-preview" style="display:none;margin-bottom:10px;"></div>
         <div style="overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 320px);border:1px solid var(--border);border-radius:8px;">
           <table style="width:100%;border-collapse:collapse;font-size:11px;">
             <thead>
@@ -715,7 +732,7 @@ document.addEventListener('click', () => {
                 <th style="padding:8px 4px;color:#aaa;font-size:10px;border-bottom:1px solid var(--border);text-align:center;min-width:70px;position:sticky;top:0;background:#1a1a1a;z-index:10;">OUT</th>
                 <th style="padding:8px 4px;color:#aaa;font-size:10px;border-bottom:1px solid var(--border);text-align:center;min-width:70px;position:sticky;top:0;background:#1a1a1a;z-index:10;">NOV</th>
                 <th style="padding:8px 4px;color:#aaa;font-size:10px;border-bottom:1px solid var(--border);text-align:center;min-width:70px;position:sticky;top:0;background:#1a1a1a;z-index:10;">DEZ</th>
-                <th style="padding:8px 8px;color:var(--gold);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);text-align:center;border-left:2px solid var(--border);white-space:nowrap;min-width:84px;position:sticky;top:0;background:#1a1a1a;z-index:10;">META 2026 (TAXA)</th>
+                <th style="padding:8px 8px;color:var(--gold);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);text-align:center;border-left:2px solid var(--border);white-space:nowrap;min-width:84px;position:sticky;top:0;background:#1a1a1a;z-index:10;" id="gdoesp-th-anual">META 2026 (TAXA)</th>
                 <th style="padding:8px 8px;color:var(--gold);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);text-align:center;white-space:nowrap;min-width:80px;position:sticky;top:0;background:#1a1a1a;z-index:10;">ABS 2026</th>
               </tr>
             </thead>
@@ -2544,6 +2561,8 @@ function gdoespSelInd(ind){
 }
 
 async function metasGdoespCarregar(ano){
+  _gdoespEnsureAnos();
+  const th = document.getElementById('gdoesp-th-anual'); if(th) th.textContent = `META ${ano} (TAXA)`;
   const data = await sbFetch('gdo_especializada_metas', `ano=eq.${ano}&indicador=eq.${_gdoespInd}&select=*&order=cia`);
   _gdoespDados = data;
   const tbody = document.getElementById('meta-gdoesp-tbody');
@@ -2640,6 +2659,167 @@ async function metaGdoespAnualSalvar(id, col, novoVal, cia){
   }
 }
 
+/* ════════════════════════════════════════════════════════════
+   IMPORTADOR ANUAL — Metas GDO Especializada (.xlsx + colar)
+   Preenche/atualiza as 7 CIAs × 4 indicadores de UM ANO de uma vez.
+   Valida a soma dos 12 meses contra a meta anual (pega embaralhamento).
+   Match por (ano,cia,indicador): atualiza se já existe, insere se novo
+   → serve tanto p/ CRIAR um ano novo quanto p/ CORRIGIR um existente.
+════════════════════════════════════════════════════════════ */
+const GDOESP_IND_LISTA = ['MV','CVPE','CVPA','IF'];
+// aliases normalizados aceitos p/ cada mês na planilha (normKey tira _ e acento)
+const _GDOESP_MESALIAS = [
+  ['jan','janeiro','metajan'],['fev','fevereiro','metafev'],['mar','marco','metamar'],
+  ['abr','abril','metaabr'],['mai','maio','metamai'],['jun','junho','metajun'],
+  ['jul','julho','metajul'],['ago','agosto','metaago'],['set','setembro','metaset'],
+  ['out','outubro','metaout'],['nov','novembro','metanov'],['dez','dezembro','metadez']
+];
+// 2026 oficial (Caderno GDO 2026) — SÓ p/ gerar o modelo .xlsx de exemplo.
+// [pop, jan..dez(12), meta_anual_taxa, meta_anual_abs]
+const _GDOESP_2026 = {
+ MV:{1:[214388,2.86,2.86,1.23,2.45,3.68,3.27,3.27,2.25,2.04,3.48,2.66,3.07,33.12,71],2:[530297,1.04,0.47,1.32,0.38,0.28,1.41,1.04,0.66,1.04,0.66,0.47,0.66,9.43,50],3:[705322,1.23,0.98,1.17,1.23,1.11,1.78,1.05,1.23,1.66,1.41,1.29,1.60,15.74,111],4:[310228,1.12,1.12,1.26,0.70,0.70,0.84,1.40,1.40,1.40,0.98,1.81,0.84,13.54,42],5:[485210,0.72,0.52,0.52,0.52,0.62,0.72,0.52,0.72,0.10,0.62,0.93,0.31,6.80,33],6:[100861,2.43,0.81,1.62,0.40,1.62,2.43,1.62,1.21,1.21,2.43,1.62,2.43,19.83,20],7:[140931,1.06,1.42,1.77,1.06,0.35,0.71,1.77,1.06,0.00,0.35,2.13,1.06,12.77,18]},
+ CVPE:{1:[214388,2.86,3.05,2.10,1.34,3.05,2.29,2.86,2.10,0.95,0.38,1.34,2.86,25.19,54],2:[530297,0.22,0.22,0.66,0.35,0.31,2.17,0.18,0.27,0.09,0.80,0.18,0.40,5.85,31],3:[705322,1.29,0.91,1.49,1.29,1.10,1.23,1.42,1.42,1.42,0.78,1.10,1.42,14.89,105],4:[310228,0.91,0.78,1.04,0.65,1.95,0.91,0.65,0.39,1.82,1.04,0.91,1.82,12.89,40],5:[485210,0.40,0.40,0.55,0.55,0.32,1.82,0.48,0.24,0.32,0.32,0.40,0.40,6.18,30],6:[100861,3.12,2.08,5.72,2.08,3.64,0.52,2.60,3.12,3.64,0.00,3.64,1.56,31.73,32],7:[140931,1.94,1.94,1.29,1.61,1.61,1.61,0.97,1.94,0.32,1.94,0.97,1.61,17.74,25]},
+ CVPA:{1:[214388,14.77,16.51,12.69,11.30,9.04,10.95,14.77,9.21,9.21,8.52,11.65,9.91,138.53,297],2:[530297,3.18,2.02,3.42,2.79,2.48,1.94,2.48,1.55,2.25,2.25,1.79,1.94,28.10,149],3:[705322,3.24,4.03,3.02,2.07,2.44,3.55,3.98,2.97,2.55,3.13,2.49,2.55,36.01,254],4:[310228,5.44,7.75,3.70,4.51,5.09,5.21,6.13,6.60,4.17,5.32,5.44,5.09,64.47,200],5:[485210,6.39,4.74,4.81,5.46,3.30,3.81,5.89,4.53,5.10,4.17,5.03,5.10,58.33,283],6:[100861,21.53,13.89,14.93,15.63,20.49,18.40,20.14,25.70,14.59,15.63,14.24,10.07,205.23,207],7:[140931,9.07,4.69,4.07,2.50,2.82,3.75,3.44,6.57,3.75,2.19,5.63,9.70,58.18,82]},
+ IF:{1:[214388,140.14,128.07,140.59,139.47,148.86,134.78,140.14,139.25,132.54,124.05,126.73,121.14,1615.76,3464],2:[530297,37.12,34.80,41.04,34.35,35.07,34.71,35.24,35.07,30.25,34.35,30.34,26.50,408.83,2168],3:[705322,29.10,27.35,25.40,28.77,28.32,27.48,28.64,26.83,25.15,24.17,23.85,22.94,318.01,2243],4:[310228,50.01,45.42,54.91,48.90,47.16,56.18,59.82,58.87,57.13,48.90,50.17,42.73,620.19,1924],5:[485210,73.11,61.91,66.33,65.15,64.36,60.82,64.95,65.84,60.14,69.96,67.80,60.33,780.69,3788],6:[100861,198.75,164.88,142.46,160.90,163.88,176.84,167.37,155.91,139.48,162.89,158.90,165.88,1958.14,1975],7:[140931,80.12,77.37,74.62,72.21,77.03,64.30,66.37,73.24,58.80,63.27,62.58,68.09,838.00,1181]}
+};
+let _gdoespImpRows = [];
+
+function _gdoespEnsureAnos(){
+  const sel = document.getElementById('meta-ano'); if(!sel) return;
+  const cur = new Date().getFullYear(); const max = Math.max(cur+1, 2027);
+  const have = new Set([...sel.options].map(o=>o.value));
+  for(let y=2026; y<=max; y++){ if(!have.has(String(y))){ const o=document.createElement('option'); o.value=String(y); o.textContent=String(y); sel.appendChild(o); } }
+}
+function _gdoespNormKey(k){ return String(k).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,''); }
+function _gdoespNum(v){ if(v==null||v==='') return NaN; if(typeof v==='number') return v; let s=String(v).trim(); if(s.indexOf(',')>=0){ s=s.replace(/\./g,'').replace(',','.'); } return parseFloat(s); }
+function _gdoespInt(v){ if(v==null||v==='') return NaN; if(typeof v==='number') return Math.round(v); const s=String(v).replace(/[^\d]/g,''); return s?parseInt(s,10):NaN; }
+
+function _gdoespImpMsg(msg,tipo){
+  const el=document.getElementById('gdoesp-imp-status'); if(!el) return;
+  el.textContent=msg; el.style.color = tipo==='err'?'#ef5350':tipo==='ok'?'#2ea043':tipo==='info'?'#4e8fd4':'var(--text-muted)';
+}
+function gdoespBaixarModelo(){
+  const header=['indicador','cia','populacao_rural','jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez','meta_anual_taxa','meta_anual_abs'];
+  const aoa=[header];
+  GDOESP_IND_LISTA.forEach(ind=>{ for(let c=1;c<=7;c++){ aoa.push([ind,c,..._GDOESP_2026[ind][c]]); } });
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Metas GDO Esp');
+  XLSX.writeFile(wb,'modelo_metas_gdo_especializada.xlsx');
+  _gdoespImpMsg('Modelo baixado (preenchido com 2026). Troque os números do Caderno novo e importe.','info');
+}
+// lê 1 linha de objeto (planilha) -> {ind,cia,pop,meses[12],anual,abs} ou null
+function _gdoespRowFromObj(obj){
+  const m={}; Object.keys(obj).forEach(k=>{ m[_gdoespNormKey(k)]=obj[k]; });
+  const pick=(...keys)=>{ for(const k of keys){ const nk=_gdoespNormKey(k); if(m[nk]!=null&&m[nk]!=='') return m[nk]; } return null; };
+  let ind=pick('indicador','indicator','ind'); if(ind==null) return null;
+  ind=String(ind).toUpperCase().trim(); if(!GDOESP_IND_LISTA.includes(ind)) return null;
+  const cia=_gdoespInt(pick('cia','ciapmmamb','unidade')); if(!(cia>=1&&cia<=7)) return null;
+  const pop=_gdoespInt(pick('populacaorural','populacao','poprural','pop','populacaorural2025','populacaorural2026'));
+  const meses=_GDOESP_MESALIAS.map(al=>{ for(const a of al){ if(m[a]!=null&&m[a]!=='') return _gdoespNum(m[a]); } return NaN; });
+  const anual=_gdoespNum(pick('metaanualtaxa','metaanual','anual','metataxa','meta2026taxa','meta'));
+  const abs=_gdoespInt(pick('metaanualabs','abs','absoluto','abs2026','metaabs'));
+  return { ind, cia, pop, meses, anual, abs };
+}
+function gdoespImportarArquivo(input){
+  const file=input.files&&input.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const wb=XLSX.read(e.target.result,{type:'array'});
+      const rows=[];
+      wb.SheetNames.forEach(sn=>{ XLSX.utils.sheet_to_json(wb.Sheets[sn],{defval:null}).forEach(o=>{ const r=_gdoespRowFromObj(o); if(r) rows.push(r); }); });
+      if(!rows.length){ _gdoespImpMsg('Nenhuma linha reconhecida — use o botão "Baixar modelo .xlsx" como base.','err'); }
+      else _gdoespPreview(rows,'planilha '+file.name);
+    }catch(err){ _gdoespImpMsg('Erro ao ler .xlsx: '+err.message,'err'); }
+    input.value='';
+  };
+  reader.readAsArrayBuffer(file);
+}
+function gdoespAbrirColar(){
+  const b=document.getElementById('gdoesp-colar-box');
+  b.style.display = b.style.display==='none' ? 'block' : 'none';
+  document.getElementById('gdoesp-colar-head').textContent=`Colando a tabela do indicador ${_gdoespInd} (ano ${document.getElementById('meta-ano').value}). Uma CIA por linha; colunas: CIA · Pop · Jan…Dez · Meta anual · ABS.`;
+}
+// extrai 1 linha colada: cia no início, depois tokens numéricos [pop, 12 meses, anual, (abs)]
+function _gdoespParseLinhaColar(line, ind){
+  line=line.trim(); if(!line) return null;
+  const mc=line.match(/^([1-7])\b/); if(!mc) return null;
+  const cia=parseInt(mc[1]);
+  const rest=line.slice(mc[0].length);
+  const toks=rest.split(/[\t;|]+|\s+/).map(s=>s.trim()).filter(t=>/^[\d.,]+$/.test(t));
+  if(toks.length<14) return null;
+  const pop=_gdoespInt(toks[0]);
+  const meses=toks.slice(1,13).map(_gdoespNum);
+  const anual=_gdoespNum(toks[13]);
+  const abs=toks.length>=15?_gdoespInt(toks[14]):NaN;
+  return { ind, cia, pop, meses, anual, abs };
+}
+function gdoespProcessarColar(){
+  const txt=(document.getElementById('gdoesp-colar-ta').value||'').trim();
+  if(!txt){ _gdoespImpMsg('Cole as linhas primeiro.','err'); return; }
+  const ind=_gdoespInd; const rows=[];
+  txt.split(/\r?\n/).forEach(l=>{ const r=_gdoespParseLinhaColar(l,ind); if(r) rows.push(r); });
+  if(!rows.length){ _gdoespImpMsg('Não reconheci linhas (esperado: CIA, Pop, 12 meses, Meta anual, ABS).','err'); return; }
+  _gdoespPreview(rows,'colado · '+ind);
+}
+function _gdoespPreview(rows,origem){
+  _gdoespImpRows=rows;
+  let warn=0, bad=0;
+  const body=rows.map(r=>{
+    const soma=r.meses.reduce((s,v)=>s+(isFinite(v)?v:0),0);
+    const falta=r.meses.some(v=>!isFinite(v))||!isFinite(r.pop)||!isFinite(r.anual);
+    const dif=isFinite(r.anual)?Math.abs(soma-r.anual):NaN;
+    const okSoma=isFinite(dif)&&dif<=0.20;
+    if(falta) bad++; else if(!okSoma) warn++;
+    const cor=falta?'#ef5350':(okSoma?'#2ea043':'#ffc107');
+    const sit=falta?'dados faltando':(okSoma?'✓ confere':'⚠ soma '+soma.toFixed(2)+' ≠ anual '+(isFinite(r.anual)?r.anual.toFixed(2):'—'));
+    return `<tr><td style="padding:3px 8px">${r.ind}</td><td style="padding:3px 8px;text-align:center">${r.cia}ª</td><td style="padding:3px 8px;text-align:right">${isFinite(r.pop)?r.pop.toLocaleString('pt-BR'):'—'}</td><td style="padding:3px 8px;text-align:right">${soma.toFixed(2)}</td><td style="padding:3px 8px;text-align:right">${isFinite(r.anual)?r.anual.toFixed(2):'—'}</td><td style="padding:3px 8px;color:${cor}">${sit}</td></tr>`;
+  }).join('');
+  const ano=document.getElementById('meta-ano').value;
+  const pode=bad===0;
+  const el=document.getElementById('gdoesp-preview'); el.style.display='block';
+  el.innerHTML=`<div style="margin:0 0 8px;font-size:12px;color:var(--text-muted)">Prévia (${origem}) · ano <b style="color:var(--gold)">${ano}</b> · ${rows.length} linha(s)`+
+    (warn?` · <span style="color:#ffc107">${warn} com soma divergente</span>`:'')+(bad?` · <span style="color:#ef5350">${bad} com dados faltando</span>`:'')+`</div>`+
+    `<div style="max-height:300px;overflow:auto;border:1px solid var(--border);border-radius:6px"><table style="width:100%;font-size:11px;border-collapse:collapse"><thead><tr style="background:#1a1a1a"><th style="padding:5px 8px;text-align:left">Ind</th><th style="padding:5px 8px">CIA</th><th style="padding:5px 8px;text-align:right">Pop. Rural</th><th style="padding:5px 8px;text-align:right">Soma 12m</th><th style="padding:5px 8px;text-align:right">Meta anual</th><th style="padding:5px 8px;text-align:left">Conferência</th></tr></thead><tbody>${body}</tbody></table></div>`+
+    `<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">`+
+      `<button onclick="gdoespConfirmarImport()" ${pode?'':'disabled'} style="background:${pode?'#1f6feb':'#555'};color:#fff;border:none;font-weight:700;font-size:12px;padding:8px 16px;border-radius:6px;cursor:${pode?'pointer':'not-allowed'}">Gravar ${rows.length} linha(s) em ${ano}</button>`+
+      (warn?`<span style="font-size:11px;color:#ffc107">Soma divergente é só aviso (o Caderno arredonda) — a gravação prossegue.</span>`:'')+
+      (bad?`<span style="font-size:11px;color:#ef5350">Corrija as linhas com dados faltando antes de gravar.</span>`:'')+
+      `<button onclick="document.getElementById('gdoesp-preview').style.display='none'" style="background:var(--bg-input);border:1px solid var(--border);color:var(--text-muted);font-size:11px;padding:8px 12px;border-radius:6px;cursor:pointer">Fechar</button>`+
+    `</div>`;
+}
+async function _gdoespInsert(body){
+  const res=await fetch(`${SB_URL}/rest/v1/gdo_especializada_metas`,{method:'POST',
+    headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json','Prefer':'return=minimal'},
+    body:JSON.stringify(body)});
+  if(!res.ok) throw new Error(`insert ${res.status}: ${await res.text()}`);
+}
+async function gdoespConfirmarImport(){
+  const ano=parseInt(document.getElementById('meta-ano').value);
+  const rows=_gdoespImpRows; if(!rows.length) return;
+  _gdoespImpMsg('Gravando…','info');
+  try{
+    const existentes=await sbFetch('gdo_especializada_metas',`ano=eq.${ano}&select=id,cia,indicador`);
+    const idDe={}; existentes.forEach(r=>{ idDe[r.indicador+'-'+r.cia]=r.id; });
+    const quem=(typeof sessao!=='undefined' && (sessao?.nome||sessao?.matricula)) || 'importador Caderno';
+    let upd=0, ins=0;
+    for(const r of rows){
+      const body={ ano, cia:r.cia, indicador:r.ind,
+        populacao_rural:isFinite(r.pop)?r.pop:null,
+        meta_anual_taxa:isFinite(r.anual)?r.anual:null,
+        meta_anual_abs:isFinite(r.abs)?r.abs:null,
+        atualizado_em:new Date().toISOString(), atualizado_por:quem };
+      GDOESP_MESES_COLS.forEach((c,i)=>{ body[c]=isFinite(r.meses[i])?r.meses[i]:null; });
+      const id=idDe[r.ind+'-'+r.cia];
+      if(id){ await sbPatch('gdo_especializada_metas',`id=eq.${id}`,body); upd++; }
+      else { await _gdoespInsert(body); ins++; }
+    }
+    _gdoespImpMsg(`✓ Gravado em ${ano}: ${upd} atualizada(s), ${ins} nova(s).`,'ok');
+    document.getElementById('gdoesp-preview').style.display='none';
+    _gdoespImpRows=[];
+    metasGdoespCarregar(ano);
+  }catch(err){ _gdoespImpMsg('Erro ao gravar: '+err.message,'err'); }
+}
 
 /* ════════════════════════════════════════════════════════════
    POPULAÇÃO RURAL POR MUNICÍPIO
