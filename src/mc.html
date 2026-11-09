@@ -183,13 +183,15 @@
   </div>
 
   <div id="near-bar" style="display:none;align-items:center;gap:10px;flex-wrap:wrap;background:var(--gold-bg,rgba(155,138,92,.12));border:1px solid var(--gold-border,rgba(155,138,92,.4));border-radius:8px;padding:9px 13px;margin-bottom:10px;font-size:13px;color:var(--text-white);"></div>
+  <div id="sel-actions" style="display:none;align-items:center;gap:12px;flex-wrap:wrap;background:rgba(31,111,235,.10);border:1px solid rgba(31,111,235,.45);border-radius:8px;padding:9px 13px;margin-bottom:10px;font-size:13px;color:var(--text-white);"></div>
   <div class="tablewrap">
     <table>
       <thead><tr>
+        <th style="width:34px;text-align:center"><input type="checkbox" id="chk-all" onclick="_selAllFiltered(this.checked)" title="Selecionar todas as demandas do filtro atual (todas as páginas)" style="cursor:pointer"></th>
         <th>GEOCOD</th><th>Bioma</th><th>Município</th>
         <th class="colhide">Grupamento</th><th>Recebido</th><th>Vencimento</th><th>Situação</th><th>Prazo</th><th>Croqui</th>
       </tr></thead>
-      <tbody id="tb"><tr><td colspan="9" class="empty">Carregando…</td></tr></tbody>
+      <tbody id="tb"><tr><td colspan="10" class="empty">Carregando…</td></tr></tbody>
     </table>
   </div>
   <div id="pager" style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:12px;font-size:12.5px;color:var(--text-muted);flex-wrap:wrap"></div>
@@ -368,7 +370,7 @@ async function carregar(){
         ? `Demandas de <b>${_grafiaGP((ALLOWED.find(g=>g.gpr===gprs[0])||{}).comp||gprs[0])}</b>`
         : `Demandas de <b>${gprs.length} grupamento(s)</b>`);
   const tb = document.getElementById('tb');
-  tb.innerHTML = '<tr><td colspan="9" class="empty">Carregando…</td></tr>';
+  tb.innerHTML = '<tr><td colspan="10" class="empty">Carregando…</td></tr>';
   try {
     let url;
     if (verTudoSemFiltro()){
@@ -385,7 +387,7 @@ async function carregar(){
         const txt = await r.text();
         if (offset===0 && (r.status===404 || /relation .*mc_demandas.* does not exist|could not find the table/i.test(txt))){
           DADOS=[]; render(); kpis();
-          tb.innerHTML = '<tr><td colspan="9" class="empty">Módulo Monitoramento Contínuo aguardando a migração <b>db/157</b> no Supabase e a 1ª carga de lote (Carregar lote). Depois disso as demandas aparecem aqui.</td></tr>';
+          tb.innerHTML = '<tr><td colspan="10" class="empty">Módulo Monitoramento Contínuo aguardando a migração <b>db/157</b> no Supabase e a 1ª carga de lote (Carregar lote). Depois disso as demandas aparecem aqui.</td></tr>';
           return;
         }
         throw new Error(`${r.status} ${txt}`);
@@ -399,7 +401,7 @@ async function carregar(){
     popularAnos(); render(); kpis();
   } catch(e){
     console.error('mc',e);
-    tb.innerHTML = `<tr><td colspan="9" class="empty">Erro ao carregar: ${e.message}</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="10" class="empty">Erro ao carregar: ${e.message}</td></tr>`;
   }
 }
 
@@ -525,7 +527,7 @@ function render(){
   const sig=[filtro, gel('busca').value, gel('ano').value, _selVal('sel-pel'), _selVal('sel-grp')].join('|');
   if(sig!==_sig){ PAGE=1; _sig=sig; _nearAnchor=null; }
   _renderNearBar();
-  if(!rows.length){ tb.innerHTML='<tr><td colspan="9" class="empty">Nenhuma demanda neste filtro.</td></tr>'; if(pager)pager.innerHTML=''; return; }
+  if(!rows.length){ tb.innerHTML='<tr><td colspan="10" class="empty">Nenhuma demanda neste filtro.</td></tr>'; if(pager)pager.innerHTML=''; return; }
   const totalPag=Math.ceil(rows.length/PAGE_SIZE);
   if(PAGE>totalPag)PAGE=totalPag; if(PAGE<1)PAGE=1;
   const ini=(PAGE-1)*PAGE_SIZE;
@@ -539,6 +541,7 @@ function render(){
     const temPdf=(d.anexos||[]).length>0;
     const tr=document.createElement('tr'); tr.onclick=()=>abrir(d);
     tr.innerHTML =
+      `<td class="selcol" style="text-align:center" onclick="event.stopPropagation()"><input type="checkbox" class="rowchk" ${_sel.has(d.id)?'checked':''}${d.kml_content?'':' title="Sem KML — não entra no lote"'} onclick="event.stopPropagation()" onchange="_selToggle('${d.id}',this.checked)" style="cursor:pointer"></td>`+
       `<td class="num">${d.codigo||'—'}</td>`+
       `<td class="tema">${d.bioma||d.natureza||'—'}</td>`+
       `<td class="muni">${d.municipio||'—'}${(()=>{
@@ -571,6 +574,7 @@ function render(){
         `<span style="display:flex;gap:8px;align-items:center">${btn('‹ Anterior',PAGE-1,PAGE===1)}<b style="color:var(--gold-light)">Página ${PAGE} de ${totalPag}</b>${btn('Próxima ›',PAGE+1,PAGE===totalPag)}</span>`;
     }
   }
+  _renderSelBar(); _syncChkAll(rows);
 }
 
 /* ── gaveta ──────────────────────────────────────────────────────── */
@@ -644,6 +648,66 @@ function baixarKml(id){
     setTimeout(()=>URL.revokeObjectURL(url), 2000);
     toast('KML baixado: '+(d.codigo||'')+'.kml');
   }catch(e){ toast('Erro ao gerar KML: '+(e.message||e)); }
+}
+
+/* ── Seleção em lote + KML combinado (vários GEOCODs num arquivo só) ──────
+   Cada kml_content já vem embrulhado com <Schema> + <Folder><name>MC_<geocod>>.
+   Pra fundir: junto os <Folder> (cada GEOCOD vira uma pasta nomeada no Google
+   Earth = aparecem agrupados) e dedup dos <Schema>. Tudo client-side. */
+const _sel = new Set();
+function _selToggle(id, on){ if(on) _sel.add(id); else _sel.delete(id); _renderSelBar(); _syncChkAll(); }
+function _selClear(){ _sel.clear(); render(); }
+function _selAllFiltered(on){
+  const rows=DADOS.filter(passa);
+  rows.forEach(d=>{ if(on) _sel.add(d.id); else _sel.delete(d.id); });
+  render();
+}
+// marca/indetermina o checkbox do cabeçalho conforme a seleção do filtro atual
+function _syncChkAll(rows){
+  const el=document.getElementById('chk-all'); if(!el) return;
+  const r = rows || DADOS.filter(passa);
+  const sel = r.filter(d=>_sel.has(d.id)).length;
+  el.checked = r.length>0 && sel===r.length;
+  el.indeterminate = sel>0 && sel<r.length;
+}
+function _renderSelBar(){
+  const el=document.getElementById('sel-actions'); if(!el) return;
+  const n=_sel.size;
+  if(!n){ el.style.display='none'; el.innerHTML=''; return; }
+  const comKml=[..._sel].map(byId).filter(x=>x&&x.kml_content).length;
+  el.style.display='flex';
+  el.innerHTML =
+    `<span>☑️ <b>${n}</b> demanda(s) selecionada(s)`+(comKml<n?` · <b>${comKml}</b> com KML`:'')+`.</span>`+
+    `<button onclick="baixarKmlLote()" ${comKml?'':'disabled'} style="margin-left:auto;background:#1f6feb;color:#fff;border:none;font-weight:800;font-size:12.5px;padding:7px 14px;border-radius:7px;cursor:${comKml?'pointer':'not-allowed'};opacity:${comKml?'1':'.5'}">⬇️ Baixar KML agrupado (${comKml})</button>`+
+    `<button onclick="_selClear()" style="background:var(--bg-input);border:1px solid var(--border-mid);color:var(--text-white);font-size:12px;padding:7px 12px;border-radius:7px;cursor:pointer">Limpar seleção</button>`;
+}
+function _kmlSchemas(kml){ return String(kml||'').match(/<Schema\b[\s\S]*?<\/Schema>/g) || []; }
+function _kmlBody(d){
+  const kml=String(d.kml_content||'');
+  const folders=kml.match(/<Folder\b[\s\S]*?<\/Folder>/g);
+  if(folders && folders.length) return folders.join('\n');
+  const pms=kml.match(/<Placemark\b[\s\S]*?<\/Placemark>/g)||[];
+  if(!pms.length) return '';
+  return '<Folder><name>MC_'+(d.codigo||'')+'</name>\n'+pms.join('\n')+'\n</Folder>';
+}
+function baixarKmlLote(){
+  const ds=[..._sel].map(byId).filter(x=>x && x.kml_content);
+  if(!ds.length) return toast('Nenhuma das selecionadas tem KML. Gere os KMLs faltantes primeiro.');
+  const schemas=[]; const seen=new Set();
+  ds.forEach(d=>_kmlSchemas(d.kml_content).forEach(s=>{ if(!seen.has(s)){ seen.add(s); schemas.push(s); } }));
+  const bodies=ds.map(_kmlBody).filter(Boolean).join('\n');
+  const stamp=new Date().toISOString().slice(0,10);
+  const doc='<?xml version="1.0" encoding="utf-8" ?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n'+
+    '<Document id="root_doc">\n<name>MC — '+ds.length+' GEOCOD(s) — '+stamp+'</name>\n'+
+    schemas.join('\n')+(schemas.length?'\n':'')+bodies+'\n</Document></kml>\n';
+  try{
+    const blob=new Blob([doc],{type:'application/vnd.google-earth.kml+xml'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url; a.download='MC_lote_'+ds.length+'geocods_'+stamp+'.kml';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 2000);
+    toast(ds.length+' GEOCOD(s) exportados num KML agrupado.');
+  }catch(e){ toast('Erro ao gerar KML em lote: '+(e.message||e)); }
 }
 
 /* ── Gestão (Aux P3 + Admin): corrigir grupamento / inativar fora da Cia ── */
