@@ -1102,23 +1102,31 @@ window.addEventListener('load', function(){
     <div id="imp-historico-lista" style="font-size:11px;color:var(--text-muted);">Carregando...</div>
   </div>
 
-  <!-- Sincronizar base de crimes (reconciliar remoções do CGA) -->
+  <!-- Sincronizar base (reconciliar com o último import) -->
   <div class="imp-card" style="margin-top:16px;">
-    <div class="imp-card-title">🔄 Sincronizar base de crimes (reconciliar remoções do CGA)</div>
-    <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
+    <div class="imp-card-title">🔄 Sincronizar base (reconciliar remoções)</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+      <button class="imp-ind-btn sync-tipo-btn active" data-t="crimes" onclick="syncSelTipo('crimes')">🔴 Crimes (REDS)</button>
+      <button class="imp-ind-btn sync-tipo-btn" data-t="OPR" onclick="syncSelTipo('OPR')">🟢 Operações (RAT)</button>
+      <button class="imp-ind-btn sync-tipo-btn" data-t="VIS" onclick="syncSelTipo('VIS')">🟣 Visitas (BOS)</button>
+    </div>
+    <p id="sync-hint" style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
       A importação normal só <b>atualiza e adiciona</b> — nunca remove. Aqui você sobe
-      <b>todos os CSVs de crimes do ano</b> (IMV, CVPE, CVPA e IF juntos) e o sistema trata os REDS que
-      <b>saíram da base</b> do CGA: <b style="color:#ef5350;">remove</b> os sem auditoria e
-      <b style="color:#ffc107;">mantém+marca "fora da base"</b> os com auditoria (ficam nas Auditorias, mas não contam).
-      Assim o painel bate com o SIGOp sem perder o controle das auditorias. <i>Requer a migração db/183.</i>
+      <b>todos os CSVs de crimes do ano</b> (IMV, CVPE, CVPA e IF juntos): os REDS que <b>saíram da base</b> do CGA são
+      <b style="color:#ef5350;">removidos</b> (sem auditoria) ou <b style="color:#ffc107;">mantidos+marcados "fora da base"</b>
+      (com auditoria — ficam nas Auditorias, mas não contam). <i>Crimes requer a migração db/183.</i>
     </p>
+    <div style="margin-bottom:12px;padding:9px 12px;background:rgba(255,152,0,.1);border-left:3px solid #ff9800;border-radius:4px;font-size:11.5px;color:#ffb74d;">
+      ⚠ <b>Importante:</b> a sincronização <b>não substitui</b> a importação normal — ela só <b>remove</b> o que saiu da base.
+      Fluxo correto: <b>1º importe os arquivos</b> (acima, que adiciona/atualiza) e <b>depois sincronize</b> com os <b>mesmos</b> arquivos (que remove o que sobrou). Usar só a sincronização faria o banco parar de receber registros novos.
+    </div>
     <div id="sync-drop-area" style="border:2px dashed var(--border);border-radius:8px;padding:22px;text-align:center;cursor:pointer;"
          onclick="document.getElementById('sync-file-input').click()"
          ondragover="event.preventDefault();this.style.borderColor='var(--gold)'"
          ondragleave="this.style.borderColor='var(--border)'"
          ondrop="event.preventDefault();this.style.borderColor='var(--border)';syncCrimesFiles(event.dataTransfer.files)">
       <div style="font-size:22px;margin-bottom:6px;">📂</div>
-      <div style="font-size:12.5px;color:#ccc;">Clique ou arraste os <b>4 CSVs do ano</b> (IMV, CVPE, CVPA e IF)</div>
+      <div id="sync-drop-txt" style="font-size:12.5px;color:#ccc;">Clique ou arraste os <b>4 CSVs do ano</b> (IMV, CVPE, CVPA e IF)</div>
       <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Use os mesmos arquivos que importou acima.</div>
     </div>
     <input type="file" id="sync-file-input" accept=".csv" multiple style="display:none" onchange="syncCrimesFiles(this.files)">
@@ -6791,9 +6799,34 @@ function impSplitCsvLinha(linha, delim){
    Match ROW-level pela UNIÃO dos 4 arquivos (senão apagaria um CVPA só por
    não estar no arquivo de IMV). Usa a mesma chave NUMERO_REDS + ANO_FATO.
 ════════════════════════════════════════════════════════════════════ */
+let _syncTipo = 'crimes';
 let _syncArqs = [];     /* {nome, regs} */
 let _syncResultado = null;
-
+const SYNC_CFG = {
+  crimes:{ nome:'Crimes (REDS)', tabela:'bd_crimes', chaveCol:'NUMERO_REDS', chaveDb:'numero_reds', keepAud:true,
+    sel:'id,numero_reds,municipio,ano_fato,mes_numerico,imv_total,icvpe_total,icvpa_total,ifzr,tipo_auditoria,fora_base_cga',
+    drop:'Clique ou arraste os <b>4 CSVs de crimes do ano</b> (IMV, CVPE, CVPA e IF)',
+    hint:'Sobe os <b>4 CSVs de crimes do ano</b>: os REDS que saíram da base do CGA são <b style="color:#ef5350;">removidos</b> (sem auditoria) ou <b style="color:#ffc107;">mantidos+marcados "fora da base"</b> (com auditoria — ficam nas Auditorias, mas não contam). <i>Requer a migração db/183.</i>' },
+  OPR:{ nome:'Operações (RAT)', tabela:'bd_operacoes', chaveCol:'NUMERO_RAT', chaveDb:'numero_rat', keepAud:false,
+    sel:'id,numero_rat,municipio,ano_fato,mes_numerico,nome_operacao,descr_natureza_principal',
+    drop:'Clique ou arraste os <b>CSVs de Operações (RAT) do ano</b> (todas as regiões)',
+    hint:'Sobe <b>todos os CSVs de Operações (RAT) do ano</b>. Os RAT que <b>não estão</b> no import são <b style="color:#ef5350;">removidos</b> — deixa o banco <b>igual ao último import</b> (uma atualização).' },
+  VIS:{ nome:'Visitas (BOS)', tabela:'bd_visitas', chaveCol:'NUMERO_BOS', chaveDb:'numero_bos', keepAud:false,
+    sel:'id,numero_bos,municipio,ano_fato,mes_numerico,desc_natureza',
+    drop:'Clique ou arraste os <b>CSVs de Visitas (BOS) do ano</b> (todas as regiões)',
+    hint:'Sobe <b>todos os CSVs de Visitas (BOS) do ano</b>. Os BOS que <b>não estão</b> no import são <b style="color:#ef5350;">removidos</b> — deixa o banco <b>igual ao último import</b> (uma atualização).' },
+};
+function syncSelTipo(t){
+  _syncTipo = t; _syncArqs = []; _syncResultado = null;
+  document.querySelectorAll('.sync-tipo-btn').forEach(b=>b.classList.toggle('active', b.dataset.t===t));
+  const cfg = SYNC_CFG[t];
+  const hintEl=document.getElementById('sync-hint'); if(hintEl) hintEl.innerHTML=cfg.hint;
+  const dropEl=document.getElementById('sync-drop-txt'); if(dropEl) dropEl.innerHTML=cfg.drop;
+  document.getElementById('sync-file-input').value='';
+  _syncRenderArqs();
+  document.getElementById('sync-preview').style.display='none';
+  document.getElementById('sync-status').textContent='';
+}
 function syncCrimesFiles(files){
   Array.from(files).filter(f=>f.name.toLowerCase().endsWith('.csv')).forEach(file=>{
     if(_syncArqs.find(a=>a.nome===file.name)) return;
@@ -6826,95 +6859,101 @@ async function _sbGetAll(path){
   }
   return out;
 }
-function _syncIndsDe(r){
-  return [['imv_total','MV'],['icvpe_total','CVPE'],['icvpa_total','CVPA'],['ifzr','IF']]
+function _syncDescr(r){
+  if(_syncTipo==='crimes') return [['imv_total','MV'],['icvpe_total','CVPE'],['icvpa_total','CVPA'],['ifzr','IF']]
     .filter(([c])=> (parseInt(String(r[c]).replace(',','.'))||0) > 0 ).map(x=>x[1]).join(',');
+  if(_syncTipo==='OPR') return r.nome_operacao || r.descr_natureza_principal || '';
+  return r.desc_natureza || '';
 }
 async function syncCrimesAnalisar(){
+  const cfg = SYNC_CFG[_syncTipo];
   const st = document.getElementById('sync-status');
   st.textContent = 'Analisando…'; st.style.color = '#4e8fd4';
   document.getElementById('sync-preview').style.display='none'; _syncResultado=null;
   try{
-    /* união de REDS por ano a partir dos arquivos */
+    /* união das chaves por ano a partir dos arquivos */
     const unionByYear = {}; const anos = new Set();
     _syncArqs.forEach(a => a.regs.forEach(r => {
-      const reds = (r['NUMERO_REDS']||'').trim();
-      const ano  = (r['ANO_FATO']||'').trim();
-      if(!reds || !ano) return;
+      const chave = (r[cfg.chaveCol]||'').trim();
+      const ano   = (r['ANO_FATO']||'').trim();
+      if(!chave || !ano) return;
       anos.add(ano);
-      (unionByYear[ano] = unionByYear[ano] || new Set()).add(reds);
+      (unionByYear[ano] = unionByYear[ano] || new Set()).add(chave);
     }));
-    if(!anos.size){ st.textContent='Não achei NUMERO_REDS/ANO_FATO nos arquivos. Confira se são os CSVs de crimes.'; st.style.color='#ef5350'; return; }
+    if(!anos.size){ st.textContent=`Não achei ${cfg.chaveCol}/ANO_FATO nos arquivos. Confira se são os CSVs de ${cfg.nome}.`; st.style.color='#ef5350'; return; }
 
-    /* bd_crimes dos anos presentes (paginado) */
+    /* registros do banco nos anos presentes (paginado) */
     let bd = [];
     for(const ano of anos){
-      bd = bd.concat(await _sbGetAll(`bd_crimes?ano_fato=eq.${encodeURIComponent(ano)}&select=id,numero_reds,municipio,ano_fato,imv_total,icvpe_total,icvpa_total,ifzr,tipo_auditoria,fora_base_cga`));
+      bd = bd.concat(await _sbGetAll(`${cfg.tabela}?ano_fato=eq.${encodeURIComponent(ano)}&select=${cfg.sel}`));
     }
-    /* auditorias locais (chave = bo = numero_reds) */
+    /* auditorias locais — só p/ crimes (manter os auditados) */
     let audSet = new Set();
-    try{ (await _sbGetAll('auditorias?select=bo')).forEach(a=>audSet.add(a.bo)); }catch(e){ console.warn('auditorias:',e.message); }
+    if(cfg.keepAud){ try{ (await _sbGetAll('auditorias?select=bo')).forEach(a=>audSet.add(a.bo)); }catch(e){ console.warn('auditorias:',e.message); } }
 
     const remover=[], manter=[], voltaram=[];
     bd.forEach(r=>{
+      const chave = r[cfg.chaveDb];
       const u = unionByYear[String(r.ano_fato).trim()];
-      const naBase = u && u.has(r.numero_reds);
-      if(naBase){ if(r.fora_base_cga) voltaram.push(r); return; }  /* presente → se estava marcado, volta a contar */
-      const temAud = audSet.has(r.numero_reds) || (r.tipo_auditoria && String(r.tipo_auditoria).trim()!=='');
+      const naBase = u && u.has(chave);
+      if(naBase){ if(cfg.keepAud && r.fora_base_cga) voltaram.push(r); return; }
+      /* saiu da base */
+      const temAud = cfg.keepAud && (audSet.has(chave) || (r.tipo_auditoria && String(r.tipo_auditoria).trim()!==''));
       (temAud ? manter : remover).push(r);
     });
-    _syncResultado = { remover, manter, voltaram, anos:[...anos] };
+    _syncResultado = { remover, manter, voltaram, anos:[...anos], chaveDb:cfg.chaveDb, tabela:cfg.tabela, keepAud:cfg.keepAud };
     _syncRenderPreview();
     st.textContent='';
   }catch(e){
     const msg = String(e.message||e);
-    if(/fora_base_cga/.test(msg)) st.textContent='Rode a migração db/183 no Supabase antes de usar a sincronização.';
+    if(/fora_base_cga/.test(msg)) st.textContent='Rode a migração db/183 no Supabase antes de sincronizar crimes.';
     else st.textContent='Erro ao analisar: '+msg;
     st.style.color='#ef5350';
   }
 }
 function _syncRenderPreview(){
-  const {remover,manter,voltaram,anos} = _syncResultado;
+  const {remover,manter,voltaram,anos,chaveDb,keepAud} = _syncResultado;
   const tbl = arr => `<div style="max-height:150px;overflow:auto;border:1px solid var(--border);border-radius:6px;margin-bottom:8px;"><table style="width:100%;font-size:11px;border-collapse:collapse;">`+
-    (arr.length ? arr.slice(0,300).map(g=>`<tr><td style="padding:2px 6px;">${g.numero_reds}</td><td style="padding:2px 6px;">${g.municipio||''}</td><td style="padding:2px 6px;color:#aaa;">${_syncIndsDe(g)}</td></tr>`).join('')
+    (arr.length ? arr.slice(0,300).map(g=>`<tr><td style="padding:2px 6px;">${g[chaveDb]||''}</td><td style="padding:2px 6px;">${g.municipio||''}</td><td style="padding:2px 6px;color:#aaa;">${_syncDescr(g)}</td></tr>`).join('')
                 : `<tr><td style="padding:6px;color:var(--text-muted);">nenhum</td></tr>`)+
     `</table></div>`;
   const el = document.getElementById('sync-preview'); el.style.display='block';
   el.innerHTML =
-    `<div style="font-size:12px;margin-bottom:10px;">Ano(s): <b>${anos.join(', ')}</b> · Saíram da base: <b>${remover.length+manter.length}</b> REDS.</div>`+
-    `<div style="color:#ef5350;font-size:12px;font-weight:700;margin-bottom:4px;">🗑 ${remover.length} SEM auditoria → serão REMOVIDOS</div>${tbl(remover)}`+
-    `<div style="color:#ffc107;font-size:12px;font-weight:700;margin-bottom:4px;">🔖 ${manter.length} COM auditoria → MANTIDOS e marcados "fora da base" (não contam)</div>${tbl(manter)}`+
+    `<div style="font-size:12px;margin-bottom:10px;">Ano(s): <b>${anos.join(', ')}</b> · Saíram da base: <b>${remover.length+manter.length}</b> registro(s).</div>`+
+    `<div style="color:#ef5350;font-size:12px;font-weight:700;margin-bottom:4px;">🗑 ${remover.length} ${keepAud?'SEM auditoria → ':''}serão REMOVIDOS</div>${tbl(remover)}`+
+    (keepAud ? `<div style="color:#ffc107;font-size:12px;font-weight:700;margin-bottom:4px;">🔖 ${manter.length} COM auditoria → MANTIDOS e marcados "fora da base" (não contam)</div>${tbl(manter)}` : '')+
     (voltaram.length?`<div style="color:#2ea043;font-size:12px;margin-bottom:8px;">↩️ ${voltaram.length} voltaram à base → serão desmarcados (voltam a contar)</div>`:'')+
+    (remover.length+manter.length+voltaram.length===0 ? `<div style="color:#2ea043;font-size:12px;margin-bottom:8px;">✓ Nada a reconciliar — o banco já está igual ao import.</div>` : '')+
     `<button onclick="syncCrimesAplicar()" style="width:100%;padding:10px;background:#ef5350;color:#fff;font-weight:700;font-size:13px;border:none;border-radius:6px;cursor:pointer;">`+
-    `✅ Aplicar — remover ${remover.length} · manter/marcar ${manter.length}${voltaram.length?` · revalidar ${voltaram.length}`:''}</button>`;
+    `✅ Aplicar — remover ${remover.length}${keepAud?` · manter/marcar ${manter.length}`:''}${voltaram.length?` · revalidar ${voltaram.length}`:''}</button>`;
 }
-async function _syncPatchIds(ids, body){
+async function _syncPatchIds(tabela, ids, body){
   for(let i=0;i<ids.length;i+=50){
     const lote = ids.slice(i,i+50).join(',');
-    const r = await fetch(`${SB_URL}/rest/v1/bd_crimes?id=in.(${lote})`,
+    const r = await fetch(`${SB_URL}/rest/v1/${tabela}?id=in.(${lote})`,
       { method:'PATCH', headers:{ apikey:SB_KEY, Authorization:'Bearer '+SB_KEY, 'Content-Type':'application/json', Prefer:'return=minimal' }, body:JSON.stringify(body) });
     if(!r.ok) throw new Error('PATCH '+r.status+': '+await r.text());
   }
 }
 async function syncCrimesAplicar(){
   if(!_syncResultado) return;
-  const {remover,manter,voltaram} = _syncResultado;
+  const {remover,manter,voltaram,tabela,keepAud} = _syncResultado;
   const st = document.getElementById('sync-status'); st.textContent='Aplicando…'; st.style.color='#4e8fd4';
   try{
-    /* 1) remover sem auditoria */
+    /* 1) remover (quem saiu da base; para crimes, só os sem auditoria) */
     const idsRem = remover.map(g=>g.id);
     for(let i=0;i<idsRem.length;i+=50){
       const lote = idsRem.slice(i,i+50).join(',');
-      const r = await fetch(`${SB_URL}/rest/v1/bd_crimes?id=in.(${lote})`,
+      const r = await fetch(`${SB_URL}/rest/v1/${tabela}?id=in.(${lote})`,
         { method:'DELETE', headers:{ apikey:SB_KEY, Authorization:'Bearer '+SB_KEY, Prefer:'return=minimal' } });
       if(!r.ok) throw new Error('DELETE '+r.status+': '+await r.text());
     }
-    /* 2) manter+marcar fora da base */
-    if(manter.length) await _syncPatchIds(manter.map(g=>g.id), { fora_base_cga:true, fora_base_em:new Date().toISOString() });
-    /* 3) revalidar os que voltaram */
-    if(voltaram.length) await _syncPatchIds(voltaram.map(g=>g.id), { fora_base_cga:false, fora_base_em:null });
-
-    st.textContent = `✓ Concluído: ${remover.length} removido(s), ${manter.length} mantido(s)/marcado(s)${voltaram.length?`, ${voltaram.length} revalidado(s)`:''}. Abra a Análise Criminal e atualize — deve bater com o SIGOp.`;
+    /* 2) crimes: manter+marcar fora da base; e revalidar os que voltaram */
+    if(keepAud){
+      if(manter.length)   await _syncPatchIds(tabela, manter.map(g=>g.id),   { fora_base_cga:true,  fora_base_em:new Date().toISOString() });
+      if(voltaram.length) await _syncPatchIds(tabela, voltaram.map(g=>g.id), { fora_base_cga:false, fora_base_em:null });
+    }
+    st.textContent = `✓ Concluído: ${remover.length} removido(s)${keepAud?`, ${manter.length} mantido(s)/marcado(s)${voltaram.length?`, ${voltaram.length} revalidado(s)`:''}`:''}. Atualize o painel (Ctrl+F5).`;
     st.style.color = '#2ea043';
     document.getElementById('sync-preview').style.display='none';
     _syncArqs=[]; _syncResultado=null; _syncRenderArqs();
