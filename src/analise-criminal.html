@@ -12894,9 +12894,19 @@ function _imgSrc(url){
   const m = s.match(/\/file\/d\/([-\w]{16,})/) || s.match(/[?&]id=([-\w]{16,})/);
   return m ? 'https://lh3.googleusercontent.com/d/'+m[1] : s;
 }
+/* Normaliza um link de anexo para EMBUTIR num <iframe> (PDF). O Google bloqueia
+   o /view dentro de iframe (X-Frame-Options) → precisa do endpoint /preview.
+   URLs não-Drive (Supabase) passam intactas. */
+function _pdfSrc(url){
+  const s = String(url||'');
+  if(s.indexOf('drive.google.com')===-1 && s.indexOf('docs.google.com')===-1) return s;
+  const m = s.match(/\/file\/d\/([-\w]{16,})/) || s.match(/[?&]id=([-\w]{16,})/);
+  return m ? 'https://drive.google.com/file/d/'+m[1]+'/preview' : s;
+}
 
 /* Viewer inline — exibe imagem, PDF ou vídeo dentro da página sem abrir nova aba */
 function _abrirOuBaixar(src, nome, tipo, isBase64){
+  tipo = tipo || _tipoFromNome(nome);   /* anexos antigos podem ter tipo vazio → deduz pela extensão */
   const isImg   = (tipo||'').startsWith('image');
   const isPdf   = (tipo||'').includes('pdf');
   const isVideo = (tipo||'').startsWith('video');
@@ -12936,7 +12946,7 @@ function _mostrarViewerInline(src, nome, tipo, isBase64){
       blobUrl = URL.createObjectURL(new Blob([bytes],{type:mime}));
     }catch(e){ alert('Erro ao preparar anexo: '+e.message); return; }
   }
-  const viewSrc = blobUrl || (isImg ? _imgSrc(src) : src);
+  const viewSrc = blobUrl || (isImg ? _imgSrc(src) : isPdf ? _pdfSrc(src) : src);
 
   let conteudo = '';
   if(isImg)       conteudo = `<img src="${viewSrc}" style="max-width:100%;max-height:75vh;border-radius:4px;display:block;margin:auto;" alt="${nome}">`;
