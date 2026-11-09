@@ -9382,10 +9382,9 @@ function _gdoespRegistrosRurais(indCode, mesesSel){
     if(c.indicador !== dbKey) return false;
     if(foraBaseCgaSet.has(c.bo)) return false;   /* db/183: saiu da base do CGA — não conta (igual SIGOp) */
     if(mesesSel.length && !mesesSel.includes(c.mes)) return false;
-    /* Prioriza checagem por coordenada (IBGE); cai para o texto de localização quando não há coordenada */
-    if(c.lat && c.lng && typeof IBGE_DATA !== 'undefined' && IBGE_DATA.length){
-      return !pontoEmAreaUrbanaIBGE(c.lat, c.lng);
-    }
+    /* Conta pela classificação do CGA (= SIGOp, que filtra "ZONA RURAL"). A checagem
+       por malha IBGE NÃO exclui da contagem aqui — a divergência coordenada×IBGE vira
+       a SUGESTÃO DE AUDITORIA (aba Auditorias, via _auditoriaPendente), não some do número. */
     return c.localizacao === 'ZONA RURAL';
   });
 }
@@ -9821,13 +9820,9 @@ function _gdoespRenderMapa(indCode, varPorPel){
   const mesesSel = getMesDd('gdoesp');
   const mesesMapa = mesesSel; /* vazio = todos os meses */
 
-  const dbKey = _GDOESP_IND_DBKEY[indCode] || indCode;
-  const registros = dadosCrimes.filter(c => {
-    if(c.indicador !== dbKey) return false;
-    if(mesesMapa.length && !mesesMapa.includes(c.mes)) return false;
-    if(c.lat && c.lng && typeof IBGE_DATA !== 'undefined' && IBGE_DATA.length) return !pontoEmAreaUrbanaIBGE(c.lat, c.lng);
-    return c.localizacao === 'ZONA RURAL';
-  });
+  /* Mesma base da contagem (CGA rural, menos fora_base); os coord×IBGE urbanos
+     aparecem como marcador de auditoria pendente, não somem do mapa. */
+  const registros = _gdoespRegistrosRurais(indCode, mesesMapa);
   const nComCoor = registros.filter(c => c.lat && c.lng).length;
   const semCoor  = registros.length - nComCoor;
 
