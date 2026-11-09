@@ -6901,7 +6901,7 @@ async function syncCrimesAnalisar(){
       const temAud = cfg.keepAud && (audSet.has(chave) || (r.tipo_auditoria && String(r.tipo_auditoria).trim()!==''));
       (temAud ? manter : remover).push(r);
     });
-    _syncResultado = { remover, manter, voltaram, anos:[...anos], chaveDb:cfg.chaveDb, tabela:cfg.tabela, keepAud:cfg.keepAud };
+    _syncResultado = { remover, manter, voltaram, anos:[...anos], chaveDb:cfg.chaveDb, tabela:cfg.tabela, keepAud:cfg.keepAud, bdTotal:bd.length };
     _syncRenderPreview();
     st.textContent='';
   }catch(e){
@@ -6924,8 +6924,23 @@ function _syncRenderPreview(){
     (keepAud ? `<div style="color:#ffc107;font-size:12px;font-weight:700;margin-bottom:4px;">🔖 ${manter.length} COM auditoria → MANTIDOS e marcados "fora da base" (não contam)</div>${tbl(manter)}` : '')+
     (voltaram.length?`<div style="color:#2ea043;font-size:12px;margin-bottom:8px;">↩️ ${voltaram.length} voltaram à base → serão desmarcados (voltam a contar)</div>`:'')+
     (remover.length+manter.length+voltaram.length===0 ? `<div style="color:#2ea043;font-size:12px;margin-bottom:8px;">✓ Nada a reconciliar — o banco já está igual ao import.</div>` : '')+
-    `<button onclick="syncCrimesAplicar()" style="width:100%;padding:10px;background:#ef5350;color:#fff;font-weight:700;font-size:13px;border:none;border-radius:6px;cursor:pointer;">`+
+    _syncAlertaMassa()+
+    `<button id="sync-btn-aplicar" onclick="syncCrimesAplicar()"${_syncPerigoMassa()?' disabled':''} style="width:100%;padding:10px;background:${_syncPerigoMassa()?'#555':'#ef5350'};color:#fff;font-weight:700;font-size:13px;border:none;border-radius:6px;cursor:${_syncPerigoMassa()?'not-allowed':'pointer'};opacity:${_syncPerigoMassa()?'.6':'1'};">`+
     `✅ Aplicar — remover ${remover.length}${keepAud?` · manter/marcar ${manter.length}`:''}${voltaram.length?` · revalidar ${voltaram.length}`:''}</button>`;
+}
+/* Trava anti-deleção em massa: se a remoção passa de 25% da base do período
+   (quase sempre = arquivos incompletos), bloqueia o botão até confirmar. */
+function _syncPerigoMassa(){
+  const r=_syncResultado; if(!r||!r.bdTotal) return false;
+  return (r.remover.length / r.bdTotal) > 0.25 && r.remover.length > 20;
+}
+function _syncAlertaMassa(){
+  if(!_syncPerigoMassa()) return '';
+  const r=_syncResultado, pct=Math.round(r.remover.length / r.bdTotal * 100);
+  return `<div style="margin-bottom:8px;padding:10px 12px;background:rgba(239,83,80,.14);border:1px solid #ef5350;border-radius:6px;font-size:12px;color:#ff8a80;">`+
+    `⚠ <b>ATENÇÃO:</b> isso removeria <b>${r.remover.length}</b> de <b>${r.bdTotal}</b> registros (<b>${pct}%</b>) do(s) ano(s). `+
+    `Isso quase sempre significa que <b>os arquivos NÃO são a base completa</b> do período (ex.: faltou uma região/indicador). Confira antes.`+
+    `<br><label style="display:inline-flex;align-items:center;gap:6px;margin-top:8px;cursor:pointer;"><input type="checkbox" onchange="var b=document.getElementById('sync-btn-aplicar');b.disabled=!this.checked;b.style.opacity=this.checked?'1':'.6';b.style.background=this.checked?'#ef5350':'#555';b.style.cursor=this.checked?'pointer':'not-allowed';"> Entendo o risco — confirmo que os arquivos são a base completa.</label></div>`;
 }
 async function _syncPatchIds(tabela, ids, body){
   for(let i=0;i<ids.length;i+=50){
