@@ -6971,12 +6971,16 @@ const _OC_BO_FIELDS = [
   ['numero_reds','Número REDS'],['mes_descricao','Mês'],['data_fato','Data do fato'],
   ['municipio','Município'],['bairro','Bairro'],['tipo_logradouro','Tipo de logradouro'],
   ['logradouro','Logradouro'],['numero_logradouro','Número'],['descricao_localizacao','Localização'],
-  ['codigo_natureza_principal','Código da natureza'],['descr_natureza_principal','Descrição da natureza'],
-  ['tentado_consumado_principal','Tentado / Consumado'],['complemento_natureza','Complemento da natureza'],
+  ['complemento_natureza','Complemento da natureza'],
   ['causa_presumida','Causa presumida'],['descricao_meio_utilizado','Meio utilizado'],
   ['latitude','Latitude'],['longitude','Longitude'],
   ['unid_area_militar','Unidade de área militar'],['unid_registro_nivel_7','Unidade de registro (nível 7)']
 ];
+/* Naturezas: principal + secundárias 1-3 (código/descrição/tentado-consumado).
+   A principal é sempre mostrada; secundárias só quando preenchidas. */
+const _OC_NAT = [['principal','Principal'],['secundaria1','Secundária 1'],['secundaria2','Secundária 2'],['secundaria3','Secundária 3']];
+const _OC_NAT_COLS = [];
+_OC_NAT.forEach(([k])=>{ _OC_NAT_COLS.push('codigo_natureza_'+k,'descr_natureza_'+k,'tentado_consumado_'+k); });
 function _ocCardWrap(titulo, inner){
   return `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 20px;border-bottom:1px solid rgba(255,255,255,.08);position:sticky;top:0;background:#1c1c1c;border-radius:12px 12px 0 0;z-index:1;">
       <div style="font-size:14px;font-weight:800;color:var(--gold,#c9a84a);letter-spacing:.3px;">📄 Ocorrência · ${_OC_ESC(titulo)}</div>
@@ -6994,7 +6998,7 @@ async function abrirDetalheOcorrencia(bo){
   document.body.appendChild(ov);
   document.addEventListener('keydown', function _ocEsc(ev){ if(ev.key==='Escape'){ document.getElementById('oc-modal')?.remove(); document.removeEventListener('keydown',_ocEsc);} });
   try{
-    const sel = 'select=' + _OC_BO_FIELDS.map(f=>f[0]).join(',') + ',' + _OC_IND_COLS.join(',');
+    const sel = 'select=' + _OC_BO_FIELDS.map(f=>f[0]).concat(_OC_NAT_COLS, _OC_IND_COLS).join(',');
     const r = await fetch(`${SB_URL}/rest/v1/bd_crimes?numero_reds=eq.${encodeURIComponent(bo)}&${sel}&limit=1`,
       { headers:{ apikey:SB_KEY, Authorization:'Bearer '+SB_KEY } });
     const rows = r.ok ? await r.json() : [];
@@ -7006,6 +7010,20 @@ async function abrirDetalheOcorrencia(bo){
     const card = ov.querySelector('.oc-card');
     if(card) card.innerHTML = _ocCardWrap(bo, `<div style="padding:24px;color:var(--danger,#ef5350);">Erro ao carregar: ${_OC_ESC(e.message)}</div>`);
   }
+}
+function _ocNaturezasHtml(d){
+  return _OC_NAT.map(([k,lbl])=>{
+    const cod = (d['codigo_natureza_'+k]||'').toString().trim();
+    const des = (d['descr_natureza_'+k]||'').toString().trim();
+    const tc  = (d['tentado_consumado_'+k]||'').toString().trim();
+    if(k!=='principal' && !cod && !des) return '';   // secundária vazia: oculta
+    const temConteudo = cod || des;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:7px;">
+        <span style="font-size:9.5px;font-weight:800;color:var(--gold,#c9a84a);min-width:80px;text-transform:uppercase;letter-spacing:.3px;">${lbl}</span>
+        <span style="flex:1;font-size:12.5px;color:var(--text-white,#eee);font-weight:600;word-break:break-word;">${temConteudo ? _OC_ESC(des||'—') : '—'}${cod?` <span style="color:var(--text-hint,#888);font-weight:500;">(${_OC_ESC(cod)})</span>`:''}</span>
+        ${tc?`<span style="font-size:10px;font-weight:700;color:var(--gold-light,#d8c78a);background:rgba(155,138,92,.15);border:1px solid var(--gold-border,#5a4d2a);padding:1px 9px;border-radius:12px;white-space:nowrap;">${_OC_ESC(tc)}</span>`:''}
+      </div>`;
+  }).join('');
 }
 function _detalheOcorrenciaHtml(d){
   const campos = _OC_BO_FIELDS.map(([k,lbl])=>{
@@ -7034,6 +7052,8 @@ function _detalheOcorrenciaHtml(d){
     <div style="padding:18px 20px;">
       <div style="font-size:11px;font-weight:800;color:var(--gold,#c9a84a);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Dados da ocorrência</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;">${campos}</div>
+      <div style="font-size:11px;font-weight:800;color:var(--gold,#c9a84a);text-transform:uppercase;letter-spacing:.5px;margin:20px 0 10px;">Natureza(s)</div>
+      <div style="display:flex;flex-direction:column;gap:7px;">${_ocNaturezasHtml(d)}</div>
       <div style="font-size:11px;font-weight:800;color:var(--gold,#c9a84a);text-transform:uppercase;letter-spacing:.5px;margin:20px 0 10px;">Indicadores que esta ocorrência compõe</div>
       ${chips ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">${chips}</div>` : `<div style="color:var(--text-hint,#888);font-size:12px;margin-bottom:10px;">Esta ocorrência não compõe os indicadores-síntese (IMV/CVPE/CVPA/IF).</div>`}
       <div style="font-size:9.5px;color:var(--text-hint,#888);margin-bottom:7px;">Colunas de indicador (BP→CI) com valor nesta ocorrência:</div>
