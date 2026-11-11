@@ -1586,14 +1586,14 @@ function _lerValorControlador(scope, label){
 // identificado pelo seu data-label) mostra/esconde os campos marcados dentro da
 // MESMA entrada, conforme o valor atual esteja na lista data-show-when-values.
 // Ao esconder, limpa o conteúdo (para não vazar valor oculto na coleta/validação)
-// e, se o campo oculto for ele próprio um controlador, propaga o change (cascata).
-document.addEventListener('change', (e) => {
-  const el = e.target;
-  if (!el || !el.dataset || !el.dataset.label) return;
-  const ehCtrl = el.tagName === 'SELECT' || (el.tagName === 'INPUT' && el.type === 'radio');
-  if (!ehCtrl) return;
-  const entry = el.closest('[data-repeat-entry]'); if (!entry) return;
-  const controller = el.dataset.label;
+// e, se o campo oculto for ele próprio um controlador, CASCATEIA.
+//
+// Aplica DIRETO no DOM (sem depender de o evento borbulhar até o document). Isso
+// é essencial na EDIÇÃO: os painéis são preenchidos enquanto estão DESTACADOS
+// (panelCache, fora do document — ver openModal), e um 'change' disparado ali
+// NÃO chega ao listener de document, então o reveal tem que ser chamado na mão.
+function _aplicarCondicionalController(entry, controller){
+  if (!entry || !controller) return;
   const alvos = entry.querySelectorAll(`[data-show-when="${controller}"]`);
   if (!alvos.length) return;
   const atual = _lerValorControlador(entry, controller);
@@ -1608,13 +1608,30 @@ document.addEventListener('change', (e) => {
     });
     if (!mostrar) div.querySelectorAll('input, textarea, select').forEach(i => {
       if (i.type === 'radio' || i.type === 'checkbox'){
-        if (i.checked){ i.checked = false; i.dispatchEvent(new Event('change', { bubbles: true })); }
+        if (i.checked){ i.checked = false; if (i.dataset && i.dataset.label) _aplicarCondicionalController(entry, i.dataset.label); }
       } else {
+        const tinha = i.value !== '';
         i.value = '';
-        if (i.tagName === 'SELECT') i.dispatchEvent(new Event('change', { bubbles: true }));
+        if (i.tagName === 'SELECT' && tinha && i.dataset && i.dataset.label) _aplicarCondicionalController(entry, i.dataset.label);
       }
     });
   });
+}
+// Reaplica TODOS os condicionais de uma entrada (usado ao preencher na edição).
+// 2 passadas cobrem a cascata de 2 níveis (ex.: Tipo → pergunta → crime).
+function _aplicarCondicionaisEntrada(entry){
+  if (!entry) return;
+  const labels = new Set();
+  entry.querySelectorAll('select[data-label], input[type="radio"][data-label]').forEach(c => { if (c.dataset.label) labels.add(c.dataset.label); });
+  for (let _p = 0; _p < 2; _p++) labels.forEach(lbl => _aplicarCondicionalController(entry, lbl));
+}
+document.addEventListener('change', (e) => {
+  const el = e.target;
+  if (!el || !el.dataset || !el.dataset.label) return;
+  const ehCtrl = el.tagName === 'SELECT' || (el.tagName === 'INPUT' && el.type === 'radio');
+  if (!ehCtrl) return;
+  const entry = el.closest('[data-repeat-entry]'); if (!entry) return;
+  _aplicarCondicionalController(entry, el.dataset.label);
 });
 
 // CEMIG Subestações: quando o "Local" é escolhido, o texto já traz o tipo
@@ -4112,21 +4129,11 @@ function preencherEntradaPorLabel_(escopo, itemData){
     el.dispatchEvent(new Event('change', { bubbles: true }));
   });
 
-  // Reaplica a CASCATA dos campos condicionais (data-show-when) já com os valores
-  // preenchidos. Na edição, a ordem de preenchimento (chaves do JSONB) ou o timing
-  // dos eventos pode deixar "Relacionada a algum crime?" e "Crime relacionado
-  // (REDS)" ocultos mesmo com valor salvo. Dispara change em cada controlador
-  // (select ou rádio marcado) que governe algum campo da entrada. 2 passadas
-  // cobrem a cascata de 2 níveis (Tipo de atividade → pergunta → crime). É
-  // idempotente: só mostra/esconde conforme o valor atual de cada controlador.
-  for (let _p = 0; _p < 2; _p++){
-    escopo.querySelectorAll('select[data-label], input[type="radio"][data-label]:checked').forEach(ctrl => {
-      if (ctrl.dataset && ctrl.dataset.label &&
-          escopo.querySelector(`[data-show-when="${ctrl.dataset.label}"]`)){
-        ctrl.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-    });
-  }
+  // Revela/esconde os campos condicionais (data-show-when) com base nos valores
+  // JÁ preenchidos. Aplicado DIRETO no DOM porque, na edição, o painel costuma
+  // estar DESTACADO (panelCache, fora do document) — um 'change' disparado ali
+  // não borbulha até o listener de document, então o reveal não aconteceria.
+  _aplicarCondicionaisEntrada(escopo);
 }
 
 function preencherCategoria(categoriaLabel, itens){
