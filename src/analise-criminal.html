@@ -17,6 +17,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
   <style>
     /* ═══════════════════════════════
@@ -823,6 +824,7 @@ document.addEventListener('click', () => {
     <div class="subtab" data-tip="Missões" onclick="switchSubtab(this,'missoes')"><span>🎯</span><span class="lbl">Missões</span></div>
     <div class="subtab" id="tab-btn-auditorias" data-tip="Auditorias" style="display:none;" onclick="switchSubtab(this,'auditorias')"><span>🔐</span><span class="lbl">Auditorias</span></div>
     <div class="subtab" id="tab-btn-gdoesp" data-tip="Monitoramento GDO" style="display:none;" onclick="switchSubtab(this,'gdoesp');gdoespMesInit();renderGdoEsp()"><span>📊</span><span class="lbl">Monitoramento GDO</span></div>
+    <div class="subtab" id="tab-btn-vinculos-rel" data-tip="Vínculos pelo Relatório" style="display:none;" onclick="switchSubtab(this,'vinculos-rel')"><span>🔗</span><span class="lbl">Vínculos pelo Relatório</span></div>
   </aside>
   <!-- Contexto de entrada: alguns módulos têm CARD próprio no hub (P2 Inteligência;
        P3 Visitas Tranquilizadoras e Reunião Comunitária Rural). Ao entrar por
@@ -2405,6 +2407,55 @@ document.addEventListener('click', () => {
 
 </div><!-- /tab-gdoesp -->
 
+<!-- ════════════════════════════════
+     SUB-ABA: VÍNCULOS PELO RELATÓRIO (Aux P3 / Admin Geral — só controle)
+════════════════════════════════ -->
+<style>
+  #tab-vinculos-rel .vr-chip{background:rgba(255,255,255,.05);border:1px solid var(--border-hover,#3a3a3a);color:var(--text-hint,#999);border-radius:20px;padding:5px 14px;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;}
+  #tab-vinculos-rel .vr-chip.on{background:rgba(155,138,92,.2);border-color:var(--gold-border,#5a4d2a);color:var(--gold,#c9a84a);}
+  #tab-vinculos-rel tbody tr{border-top:1px solid rgba(255,255,255,.05);}
+  #tab-vinculos-rel tbody tr:hover{background:rgba(255,255,255,.03);}
+  #tab-vinculos-rel tbody td{padding:8px 10px;color:var(--text-white,#ddd);vertical-align:top;}
+</style>
+<div class="tab-pane" id="tab-vinculos-rel">
+  <div class="filter-box">
+    <div class="filter-box-title">🔗 Vínculos de crime indicados pelo Relatório de Serviço</div>
+    <div style="font-size:11px;color:var(--text-hint);margin:-4px 0 10px;">Indicações feitas pelos militares no Relatório de Serviço (Operação/Visita → crime). <b style="color:#66bb6a;">Vinculado</b> = efetivado no crime · <b style="color:#ffa726;">Pendente</b> = aguardando importar o RAT/BOS.</div>
+    <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;">
+      <div id="vr-chips" style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="vr-chip on" data-st="" onclick="vrSetStatus(this,'')">Todos</button>
+        <button class="vr-chip" data-st="auto" onclick="vrSetStatus(this,'auto')">Vinculados</button>
+        <button class="vr-chip" data-st="pendente" onclick="vrSetStatus(this,'pendente')">Pendentes</button>
+        <button class="vr-chip" data-st="cancelada" onclick="vrSetStatus(this,'cancelada')">Canceladas</button>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input id="vr-busca" type="text" placeholder="Buscar militar, RAT/BOS, crime…" oninput="renderVinculosRel()" style="background:var(--bg-input,#1c1c1c);border:1px solid var(--border-hover,#3a3a3a);border-radius:6px;padding:6px 10px;color:var(--text-white,#eee);font-size:12px;min-width:220px;outline:none;">
+        <button onclick="exportarVinculosRelExcel()" style="background:rgba(102,187,106,.15);border:1px solid rgba(102,187,106,.45);color:#66bb6a;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;">⬇ Exportar Excel</button>
+        <button onclick="carregarVinculosRel(true)" title="Recarregar" style="background:rgba(255,255,255,.06);border:1px solid var(--border-hover,#3a3a3a);color:var(--text-white,#eee);border-radius:6px;padding:6px 11px;font-size:13px;cursor:pointer;">↻</button>
+      </div>
+    </div>
+    <div id="vr-resumo" style="margin-top:10px;font-size:11px;color:var(--text-hint);"></div>
+  </div>
+  <div style="overflow:auto;border:1px solid var(--border-hover,#333);border-radius:8px;margin-top:4px;">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap;">
+      <thead>
+        <tr style="background:rgba(255,255,255,.04);color:var(--text-hint,#999);text-align:left;">
+          <th style="padding:9px 10px;font-weight:700;">Data serviço</th>
+          <th style="padding:9px 10px;font-weight:700;">Militar</th>
+          <th style="padding:9px 10px;font-weight:700;">Tipo</th>
+          <th style="padding:9px 10px;font-weight:700;">Nº próprio (RAT/BOS)</th>
+          <th style="padding:9px 10px;font-weight:700;">Crime (REDS)</th>
+          <th style="padding:9px 10px;font-weight:700;">Status</th>
+          <th style="padding:9px 10px;font-weight:700;">Vinculado em</th>
+          <th style="padding:9px 10px;font-weight:700;">Observação</th>
+          <th style="padding:9px 10px;font-weight:700;">Relatório</th>
+        </tr>
+      </thead>
+      <tbody id="vr-tbody"><tr><td colspan="9" style="padding:20px;text-align:center;color:var(--text-hint);">Carregando…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
 </main><!-- /content -->
 
   </div>
@@ -3386,6 +3437,11 @@ window.addEventListener('DOMContentLoaded', async () => {
       const t=document.getElementById('tab-btn-gdoesp'); if(t) t.style.display='';
     }
   })();
+
+  /* Sub-aba "Vínculos pelo Relatório": SÓ Aux P3 e Admin Geral (controle). */
+  if (typeof _vrPodeVer === 'function' && _vrPodeVer()){
+    const t=document.getElementById('tab-btn-vinculos-rel'); if(t) t.style.display='';
+  }
 
   /* Visibilidade da aba ADM na barra do topo: some por completo pra
      Operacional; "Administração" só aparece pra Admin Geral. */
@@ -15851,6 +15907,92 @@ document.addEventListener('click', e => {
 /* ══════════════════════════════════
    ABAS
 ══════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════
+   SUB-ABA "VÍNCULOS PELO RELATÓRIO" — só leitura + Exportar Excel.
+   Lista as indicações de crime feitas no Relatório de Serviço
+   (tabela vinculo_crime_pendente, db/181). Visível só p/ Aux P3 e Admin Geral.
+   ══════════════════════════════════════════════════════════════════════ */
+let VR_DADOS = [];
+let vrStatus = '';
+const VR_TIPO = { op:'Operação', visita:'Visita Tranquilizadora' };
+function _vrPodeVer(){
+  const fx=(sessao?.funcao||'').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  return sessao?.nivel_acesso==='admin_geral' || /AUX\s*P?\s*3/.test(fx);
+}
+function _vrEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function _vrData(s){ const p=String(s||'').slice(0,10).split('-'); return (p.length===3&&p[0])?`${p[2]}/${p[1]}/${p[0]}`:'—'; }
+function _vrDataHora(s){ if(!s) return '—'; const d=new Date(s); if(isNaN(d)) return _vrData(s); const z=n=>String(n).padStart(2,'0'); return `${z(d.getDate())}/${z(d.getMonth()+1)}/${d.getFullYear()} ${z(d.getHours())}:${z(d.getMinutes())}`; }
+async function carregarVinculosRel(force){
+  const tb=document.getElementById('vr-tbody'); if(!tb) return;
+  if(!_vrPodeVer()){ tb.innerHTML='<tr><td colspan="9" style="padding:20px;text-align:center;color:var(--danger);">Sem permissão para ver esta aba.</td></tr>'; return; }
+  if(VR_DADOS.length && !force){ renderVinculosRel(); return; }
+  tb.innerHTML='<tr><td colspan="9" style="padding:20px;text-align:center;color:var(--text-hint);">Carregando…</td></tr>';
+  try{
+    const r=await fetch(`${SB_URL}/rest/v1/vinculo_crime_pendente?select=*&order=criado_em.desc`,{headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY}});
+    VR_DADOS = r.ok ? (await r.json()) : [];
+  }catch(e){ console.warn('[vinculos-rel]',e); VR_DADOS=[]; }
+  renderVinculosRel();
+}
+function vrSetStatus(el,st){ vrStatus=st; document.querySelectorAll('#vr-chips .vr-chip').forEach(c=>c.classList.toggle('on', c.dataset.st===st)); renderVinculosRel(); }
+function _vrFiltradas(){
+  const q=(document.getElementById('vr-busca')?.value||'').trim().toLowerCase();
+  return VR_DADOS.filter(d=>{
+    if(vrStatus && d.status!==vrStatus) return false;
+    if(q){ const hay=`${d.nome||''} ${d.numero_proprio||''} ${d.crime_reds||''} ${d.observacao||''} ${d.matricula||''}`.toLowerCase(); if(!hay.includes(q)) return false; }
+    return true;
+  });
+}
+function _vrStatusBadge(st){
+  if(st==='auto') return '<span style="background:rgba(102,187,106,.18);color:#66bb6a;border:1px solid rgba(102,187,106,.5);padding:1px 9px;border-radius:12px;font-size:10px;font-weight:700;white-space:nowrap;">✔ Vinculado</span>';
+  if(st==='pendente') return '<span style="background:rgba(255,152,0,.18);color:#ffa726;border:1px solid rgba(255,152,0,.5);padding:1px 9px;border-radius:12px;font-size:10px;font-weight:700;white-space:nowrap;">⏳ Pendente</span>';
+  if(st==='cancelada') return '<span style="background:rgba(239,83,80,.18);color:#ef5350;border:1px solid rgba(239,83,80,.5);padding:1px 9px;border-radius:12px;font-size:10px;font-weight:700;white-space:nowrap;">✕ Cancelada</span>';
+  return _vrEsc(st);
+}
+function renderVinculosRel(){
+  const tb=document.getElementById('vr-tbody'); if(!tb) return;
+  const rows=_vrFiltradas();
+  const tot=VR_DADOS.length, vinc=VR_DADOS.filter(d=>d.status==='auto').length, pend=VR_DADOS.filter(d=>d.status==='pendente').length;
+  const resumo=document.getElementById('vr-resumo');
+  if(resumo) resumo.innerHTML=`Total: <b style="color:var(--text-white)">${tot}</b> · Vinculados: <b style="color:#66bb6a">${vinc}</b> · Pendentes: <b style="color:#ffa726">${pend}</b> · Exibindo: <b style="color:var(--text-white)">${rows.length}</b>`;
+  if(!rows.length){ tb.innerHTML='<tr><td colspan="9" style="padding:20px;text-align:center;color:var(--text-hint);">Nenhum vínculo encontrado.</td></tr>'; return; }
+  tb.innerHTML=rows.map(d=>{
+    const verRel = d.relatorio_id ? `<a href="relatorio-servico.html?ver=${encodeURIComponent(d.relatorio_id)}" target="_blank" rel="noopener" style="color:var(--info,#42a5f5);text-decoration:none;font-weight:700;">Ver ↗</a>` : '<span style="color:var(--text-hint)">—</span>';
+    const motivo = (d.status==='pendente' && d.motivo_pendente) ? `<br><span style="font-size:10px;color:#ffa726;">${_vrEsc(d.motivo_pendente)}</span>` : '';
+    return `<tr>
+      <td style="white-space:nowrap;">${_vrData(d.data_servico)}</td>
+      <td style="white-space:normal;max-width:180px;">${_vrEsc(d.nome)||'—'}${d.matricula?`<br><span style="font-size:10px;color:var(--text-hint)">${_vrEsc(d.matricula)}</span>`:''}</td>
+      <td>${VR_TIPO[d.tipo]||_vrEsc(d.tipo)}</td>
+      <td style="font-weight:700;color:var(--text-white)">${_vrEsc(d.numero_proprio)||'—'}</td>
+      <td style="font-weight:700;color:var(--gold,#c9a84a)">${_vrEsc(d.crime_reds)||'—'}</td>
+      <td>${_vrStatusBadge(d.status)}${motivo}</td>
+      <td style="white-space:nowrap;">${_vrDataHora(d.vinculado_em)}</td>
+      <td style="white-space:normal;max-width:220px;color:var(--text-hint)">${_vrEsc(d.observacao)||'—'}</td>
+      <td>${verRel}</td>
+    </tr>`;
+  }).join('');
+}
+function exportarVinculosRelExcel(){
+  if(typeof XLSX==='undefined') return alert('A biblioteca de Excel ainda está carregando — tente de novo em instantes.');
+  const rows=_vrFiltradas().map(d=>({
+    'Data do serviço':_vrData(d.data_servico),
+    'Militar':d.nome||'',
+    'Matrícula':d.matricula||'',
+    'Tipo':VR_TIPO[d.tipo]||d.tipo||'',
+    'Nº próprio (RAT/BOS)':d.numero_proprio||'',
+    'Crime (REDS)':d.crime_reds||'',
+    'Status':({auto:'Vinculado',pendente:'Pendente',cancelada:'Cancelada'})[d.status]||d.status||'',
+    'Motivo pendente':d.motivo_pendente||'',
+    'Vinculado em':_vrDataHora(d.vinculado_em),
+    'Observação':d.observacao||'',
+    'Criado em':_vrDataHora(d.criado_em),
+    'Relatório (ID)':d.relatorio_id||''
+  }));
+  if(!rows.length) return alert('Nada para exportar neste filtro.');
+  const ws=XLSX.utils.json_to_sheet(rows); const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Vínculos Relatório');
+  XLSX.writeFile(wb,'vinculos_relatorio_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
+
 function switchSubtab(el, id){
   /* Entrega o controle de volta ao mecanismo .active (remove o pré-paint do ?sub) */
   document.documentElement.removeAttribute('data-presub');
@@ -15888,6 +16030,9 @@ function switchSubtab(el, id){
   if(id === 'auditorias'){
     /* Sempre recarrega do Supabase ao abrir a aba para garantir dados atualizados */
     _carregarAuditorias().then(() => renderAuditoriasLista()).catch(() => renderAuditoriasLista());
+  }
+  if(id === 'vinculos-rel'){
+    carregarVinculosRel();
   }
   if(id === 'inteligencia'){
     setTimeout(_initIntelFiltroGP, 100);
