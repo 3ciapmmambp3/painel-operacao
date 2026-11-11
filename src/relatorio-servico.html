@@ -5242,9 +5242,14 @@ async function criarPendenciasMovimentacao(faltando){
     if (!sess.token) return;
     const H = { apikey: SB_AUTH_KEY, Authorization:`Bearer ${SB_AUTH_KEY}`, 'Content-Type':'application/json' };
     const matDe = v => ((v||'').split(' - ')[0] || '').trim();   // "matricula - posto - nome"
+    // data do serviço do relatório (YYYY-MM-DD) → a pendência nasce datada pelo
+    // serviço, não pelo dia do lançamento (evita ficha pendente "de hoje" fantasma
+    // quando a equipe lança relatório atrasado/backfill). Ver db/185.
+    const diaServico = ((typeof getFieldValue==='function' ? getFieldValue('data') : '')
+      || (document.getElementById('dataServico')||{}).value || '').trim();
     const call = (prefixo, motValue) => fetch(`${SB_AUTH_URL}/rest/v1/rpc/mov_pendencia_criar`, {
       method:'POST', headers:H,
-      body: JSON.stringify({ p_token: sess.token, p_prefixo: prefixo, p_mot_mat: matDe(motValue), p_mot_nome: motValue || '' })
+      body: JSON.stringify({ p_token: sess.token, p_prefixo: prefixo, p_mot_mat: matDe(motValue), p_mot_nome: motValue || '', p_dia: diaServico })
     }).catch(()=>{});
     const jobs = [];
     const principal = prefixoViatura(getViaturaPrincipal());   // pendência pela chave = prefixo
