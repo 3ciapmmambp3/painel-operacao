@@ -226,6 +226,10 @@ let gerFiltro = '';   // ''|'sem-gp'|'inativas' (só p/ quem gere)
 let GRUPOS = [], ALLOWED = [], DADOS = [], atual = null, filtro = 'todas';
 
 const _grafiaGP = s => String(s==null?'':s).replace(/MARILIERIA/gi,'MARLIERIA').replace(/MOLEVADE/gi,'MONLEVADE');
+// Fração responsável PADRONIZADA: sempre o GP resolvido (chave curta "GP X"),
+// nunca o rótulo cru "N GP / N PEL / N CIA…" da planilha. Cai pro cru só quando
+// o município não casou com grupamento (sem GP).
+const _fracLabel = d => _grafiaGP((d&&(d.gp_responsavel||d.fracao_responsavel||d.grupamento_completo))||'')||'—';
 const byId = id => DADOS.find(x=>String(x.id)===String(id));
 // Anexo (gaveta): pasta (vários arquivos) × arquivo único (PDF).
 function anxHtml(a){
@@ -482,7 +486,7 @@ function render(){
       `<td class="num">${d.codigo||'—'}</td>`+
       `<td class="tema">${d.natureza||'—'}</td>`+
       `<td class="muni">${d.municipio||'—'}${(()=>{const k=_nkey(d);const n=k?(_nc[k]||0)-1:0;return n>0?` <span class="near" data-k="${k}" onclick="event.stopPropagation();nearFiltrar(this.dataset.k)" title="Ver as ${n+1} demandas neste endereço (clique p/ filtrar; de novo p/ limpar)" style="display:inline-block;margin-left:5px;padding:0 6px;border-radius:9px;background:${_nearKey===k?'#2563eb':'#b26b00'};color:#fff;font-size:11px;font-weight:700;vertical-align:middle;cursor:pointer">+${n}</span>`:'';})()}</td>`+
-      `<td class="colhide tema">${_grafiaGP(d.fracao_responsavel)||'—'}</td>`+
+      `<td class="colhide tema">${_fracLabel(d)}</td>`+
       `<td class="prazo" style="font-weight:500">${fmtData(d.data_gerada)}</td>`+
       `<td class="prazo" style="font-weight:500">${fmtData(d.data_vencimento)}</td>`+
       `<td><span class="pill ${sitCls(d.situacao)}">${SIT_LBL[d.situacao]||d.situacao}</span></td>`+
@@ -510,7 +514,7 @@ function abrir(d){
   const pr=prazoInfo(d);
   document.getElementById('d-body').innerHTML =
     `<div class="grpline"><svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-       <span style="flex:1"><b>Fração responsável:</b> ${_grafiaGP(d.fracao_responsavel||d.grupamento_completo||'—')}</span></div>`+
+       <span style="flex:1"><b>Fração responsável:</b> ${_fracLabel(d)}</span></div>`+
     `<dl class="dl">`+
       di('Tipo', d.tipo_demanda)+
       di('Natureza / infração', d.natureza)+
@@ -617,7 +621,7 @@ async function reativarDemanda(){
 function exportarExcel(){
   const rows=DADOS.filter(passa).map(d=>({
     'Código':d.codigo, 'Tipo':d.tipo_demanda, 'Natureza':d.natureza, 'Município':d.municipio,
-    'Fração responsável':_grafiaGP(d.fracao_responsavel), 'Data gerada':fmtData(d.data_gerada),
+    'Fração responsável':_fracLabel(d), 'Data gerada':fmtData(d.data_gerada),
     'Enviada':fmtData(d.data_envio), 'Vencimento':fmtData(d.data_vencimento),
     'Status do prazo':d.status_prazo||prazoInfo(d).txt, 'Situação':SIT_LBL[d.situacao]||d.situacao,
     'Data atendimento':fmtData(d.data_atendimento), 'Nº REDS':d.numero_reds, 'Nº GAIA/Ato':d.numero_gaia,
