@@ -88,7 +88,9 @@ function extrairToken(j: any): string | null {
 }
 async function login(conta: Conta): Promise<{ token: string; cpf: string } | null> {
   const cpfDig = conta.cpf.replace(/\D/g, "");
-  const cands = [{ cpf: cpfDig, senha: conta.senha }, { cpf: conta.cpf, senha: conta.senha }, { login: cpfDig, senha: conta.senha }, { usuario: cpfDig, senha: conta.senha }, { cpf: cpfDig, password: conta.senha }, { username: cpfDig, password: conta.senha }];
+  // O login do SISDEN (atualização 2026-11-12) exige o CPF COM máscara 000.000.000-00 + chave `password`.
+  const cpfMask = cpfDig.length === 11 ? cpfDig.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4") : conta.cpf;
+  const cands = [{ cpf: cpfMask, password: conta.senha }, { cpf: cpfDig, password: conta.senha }, { cpf: cpfMask, senha: conta.senha }, { cpf: cpfDig, senha: conta.senha }, { login: cpfMask, senha: conta.senha }, { username: cpfMask, password: conta.senha }];
   for (const body of cands) {
     const r = await fetch(`${HOST}/eco-ui/api/auth/login`, { method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
     if (!r || !r.ok) continue;

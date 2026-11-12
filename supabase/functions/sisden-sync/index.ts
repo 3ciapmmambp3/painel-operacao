@@ -81,11 +81,16 @@ function extrairLista(j: unknown): any[] {
 }
 async function login(conta: Conta): Promise<string | null> {
   const url = `${HOST}/eco-ui/api/auth/login`;
-  const cpfDig = conta.cpf.replace(/\D/g, ""); const cpfMask = conta.cpf; const tag = `...${cpfDig.slice(-3)}`;
+  const cpfDig = conta.cpf.replace(/\D/g, "");
+  // O login do SISDEN (atualização 2026-11-12) exige o CPF COM máscara 000.000.000-00
+  // + chave `password`. Deriva a máscara dos dígitos (independe de como o secret guardou).
+  const cpfMask = cpfDig.length === 11 ? cpfDig.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4") : conta.cpf;
+  const tag = `...${cpfDig.slice(-3)}`;
   const candidatos: Record<string, string>[] = [
-    { cpf: cpfDig, senha: conta.senha }, { cpf: cpfMask, senha: conta.senha },
-    { login: cpfDig, senha: conta.senha }, { usuario: cpfDig, senha: conta.senha },
-    { cpf: cpfDig, password: conta.senha }, { username: cpfDig, password: conta.senha },
+    { cpf: cpfMask, password: conta.senha },                 // ← contrato novo (confirmado ao vivo 2026-11-12)
+    { cpf: cpfDig, password: conta.senha },                  // fallbacks de compatibilidade
+    { cpf: cpfMask, senha: conta.senha }, { cpf: cpfDig, senha: conta.senha },
+    { login: cpfMask, senha: conta.senha }, { username: cpfMask, password: conta.senha },
   ];
   for (let i = 0; i < candidatos.length; i++) {
     const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json" }, body: JSON.stringify(candidatos[i]) }).catch(() => null);
