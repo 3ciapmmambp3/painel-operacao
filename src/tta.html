@@ -516,7 +516,7 @@ function addEquipe(){
       '<select class="eq-grup" onchange="carregarMunisEquipe(this.closest(\'.equipe\'));ttaFillOperSelect(this.closest(\'.equipe\').querySelector(\'.eq-oper-sel\'))">'+grupamentoOptionsHTML()+'</select></div>'+
     '<div class="eq-g3">'+
       '<div class="f"><label>Comandante da equipe <span class="req">*</span></label><input class="eq-com" list="militares-dl" placeholder="nº ou nome…" oninput="mascaraPM(this);ttaSyncComMot(this);atualizarPresentesAuto()"></div>'+
-      '<div class="f eq-vtr-wrap"><label>Viatura (prefixo) <span class="req">*</span></label><input class="eq-vtr" list="viaturas-dl" placeholder="ex: 36685" oninput="atualizarPend()"></div>'+
+      '<div class="f eq-vtr-wrap"><label>Viatura (prefixo) <span class="req">*</span></label><input class="eq-vtr" list="viaturas-dl" placeholder="ex: 36685" oninput="atualizarPend();ttaCheckSubst(this)"></div>'+
       '<div class="f eq-mot-wrap"><label>Motorista <span class="req">*</span></label><input class="eq-mot" list="militares-dl" placeholder="nº ou nome…" oninput="mascaraPM(this);atualizarPend();atualizarPresentesAuto()"></div>'+
     '</div>'+
     '<div class="f full" style="margin-top:8px;display:flex;gap:20px;flex-wrap:wrap">'+
@@ -535,7 +535,8 @@ function addEquipe(){
       '<div class="eq-patrs"></div></div>'+
     '<div class="f full" style="margin-top:10px"><label>Município(s) de atuação desta equipe <span class="req">*</span></label>'+
       '<div class="checklist eq-munis" style="max-height:120px"></div></div>'+
-    '<div class="eq-pend"></div>';
+    '<div class="eq-pend"></div>'+
+    '<div class="eq-subst" style="display:none;margin-top:8px"></div>';
   document.getElementById('equipesTTA').appendChild(div);
   ttaFillOperSelect(div.querySelector('.eq-oper-sel'));
   carregarMunisEquipe(div);
@@ -578,6 +579,7 @@ function ttaSemVtr(cb){
     if(vtrWrap) vtrWrap.style.display='';
     if(motWrap) motWrap.style.display='';
   }
+  if(vtr) ttaCheckSubst(vtr);   // ficou a pé: se tinha viatura lançada, perguntar se rodou
   atualizarPend(); atualizarPresentesAuto();
 }
 // renumera as equipes e recalcula as opções de vínculo (principal / apoia a Equipe N)
@@ -637,6 +639,99 @@ function coletarEquipes(){
   });
 }
 
+/* ── Substituição de viatura no TTA: baixa da antiga com KM ──────────────
+   Na CORREÇÃO da chamada de hoje, quando a viatura de uma equipe muda (ou a
+   equipe fica a pé) e a ORIGINAL já havia sido lançada, pergunta se ela chegou
+   a rodar. Se sim, exige KM inicial/final (+ observação/motivo) e grava a BAIXA
+   da viatura antiga como Ficha de Movimentação (mov_ficha_substituicao). */
+function ttaCheckSubst(vtrInput){
+  const eq = vtrInput.closest('.equipe'); if(!eq) return;
+  const box = eq.querySelector('.eq-subst'); if(!box) return;
+  const orig = (eq.dataset.vtrOrig||'').trim();        // só é setado no modo correção
+  const cur  = (vtrInput.value||'').trim();
+  // só quando a viatura ORIGINAL (já lançada) foi trocada ou retirada
+  if(!orig || orig === cur){ box.style.display='none'; box.innerHTML=''; box.dataset.rendered=''; return; }
+  if(box.dataset.rendered === orig){ box.style.display=''; return; }   // já montado p/ esta antiga
+  const nm = 'subst_'+Math.random().toString(36).slice(2,8);
+  box.innerHTML =
+    '<div style="border:1px solid #d9a441;background:rgba(217,164,65,.08);border-radius:8px;padding:11px 13px">'+
+      '<div style="font-weight:800;color:#d9a441;font-size:12.5px;margin-bottom:6px">🔄 Viatura <b>'+ttaEsc(orig)+'</b> substituída'+(cur?(' por <b>'+ttaEsc(cur)+'</b>'):' (equipe ficou a pé)')+'</div>'+
+      '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">A viatura <b>'+ttaEsc(orig)+'</b> chegou a rodar hoje antes da troca? Se sim, dê a baixa dela informando o KM.</div>'+
+      '<div style="display:flex;gap:18px;margin-bottom:8px;flex-wrap:wrap">'+
+        '<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer"><input type="radio" name="'+nm+'" class="subst-rodou" value="sim" onchange="ttaSubstRodou(this)"> Sim, rodou</label>'+
+        '<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer"><input type="radio" name="'+nm+'" class="subst-rodou" value="nao" onchange="ttaSubstRodou(this)"> Não rodou (troca no pátio)</label>'+
+      '</div>'+
+      '<div class="subst-km" style="display:none">'+
+        '<div class="grid2">'+
+          '<div class="f"><label>KM inicial da '+ttaEsc(orig)+' <span class="req">*</span></label><input class="subst-kmi" type="number" inputmode="numeric" placeholder="carregando último KM…"></div>'+
+          '<div class="f"><label>KM final — no momento da troca <span class="req">*</span></label><input class="subst-kmf" type="number" inputmode="numeric" placeholder="ex: 128540"></div>'+
+        '</div>'+
+        '<div class="f full" style="margin-top:8px"><label>Observação / motivo da troca</label><textarea class="subst-obs" rows="2" placeholder="ex: pane elétrica; pneu furado; recolhida para manutenção…"></textarea></div>'+
+      '</div>'+
+    '</div>';
+  box.dataset.rendered = orig;
+  box.style.display='';
+  // pré-carrega o KM inicial = último KM final conhecido da viatura antiga
+  const kmi = box.querySelector('.subst-kmi');
+  rpc('mov_viatura_ultimo_km',{p_prefixo:orig}).then(v=>{
+    if(kmi && !kmi.value && v!=null){ kmi.value = v; }
+    if(kmi) kmi.placeholder = (v!=null) ? ('último KM: '+v) : 'informe o KM inicial';
+  }).catch(()=>{ if(kmi) kmi.placeholder='informe o KM inicial'; });
+}
+function ttaSubstRodou(radio){
+  const box = radio.closest('.eq-subst'); if(!box) return;
+  const km = box.querySelector('.subst-km');
+  if(km) km.style.display = (radio.value==='sim') ? '' : 'none';
+}
+// Lê e VALIDA as substituições com baixa pendente. Devolve a lista (vazia se não
+// houver) ou null quando faltar informação (já emite o toast).
+function coletarSubstituicoes(){
+  const lista=[];
+  for(const eq of [...document.querySelectorAll('#equipesTTA .equipe')]){
+    const orig=(eq.dataset.vtrOrig||'').trim();
+    const cur =(eq.querySelector('.eq-vtr').value||'').trim();
+    if(!orig || orig===cur) continue;                 // esta equipe não trocou de viatura
+    const box=eq.querySelector('.eq-subst');
+    const rodou=box && box.querySelector('.subst-rodou:checked');
+    if(!rodou){ toast('Informe se a viatura '+orig+' chegou a rodar antes da troca.'); return null; }
+    if(rodou.value==='nao') continue;                 // troca no pátio: nada a lançar
+    const kmiV=(box.querySelector('.subst-kmi').value||'').trim();
+    const kmfV=(box.querySelector('.subst-kmf').value||'').trim();
+    if(kmiV===''||kmfV===''){ toast('Informe o KM inicial e final da viatura '+orig+'.'); return null; }
+    const ni=parseInt(kmiV,10), nf=parseInt(kmfV,10);
+    if(!Number.isFinite(ni)||!Number.isFinite(nf)){ toast('KM inválido para a viatura '+orig+'.'); return null; }
+    if(nf<ni){ toast('O KM final da '+orig+' não pode ser menor que o inicial.'); return null; }
+    const gp = eq.dataset.gpOrig || ((eq.querySelector('.eq-grup')||{}).value||'');
+    const gopt=(GRUPOS||[]).find(x=>x.gp_responsavel===gp);
+    lista.push({
+      prefixo: orig, km_inicial: ni, km_final: nf,
+      observacoes: (box.querySelector('.subst-obs').value||'').trim(),
+      substituida_por: cur,
+      motorista_matricula: eq.dataset.motOrigMat || '',
+      motorista_nome: eq.dataset.motOrigNome || '',
+      gp_responsavel: gp || null,
+      grupamento_completo: gopt ? gopt.grupamento_completo : (eq.dataset.grupCompOrig||null),
+      inicio_turno: (document.getElementById('inicioTurno').value||'')
+    });
+  }
+  return lista;
+}
+async function lancarSubstituicoes(lista){
+  if(!lista || !lista.length) return;
+  const d=new Date(); const z=n=>String(n).padStart(2,'0');
+  const hojeISO = d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate());
+  for(const s of lista){
+    const inicioISO = s.inicio_turno ? (hojeISO+'T'+s.inicio_turno+':00') : null;
+    await rpc('mov_ficha_substituicao', { p_token: sessao.token, p_dados: {
+      prefixo: s.prefixo, km_inicial: s.km_inicial, km_final: s.km_final,
+      observacoes: s.observacoes, substituida_por: s.substituida_por,
+      motorista_matricula: s.motorista_matricula, motorista_nome: s.motorista_nome,
+      gp_responsavel: s.gp_responsavel, grupamento_completo: s.grupamento_completo,
+      inicio: inicioISO
+    }});
+  }
+}
+
 /* ── Correção da chamada de hoje (só no mesmo dia) ────────────────────── */
 let CHAMADA_HOJE = null;      // chamada de hoje do autor logado, se houver
 let CHAMADA_EDIT_ID = null;   // id quando em modo correção
@@ -676,6 +771,13 @@ async function carregarChamadaParaEdicao(c){
     div.querySelector('.eq-com').value = milToInput(ed.comandante);
     div.querySelector('.eq-vtr').value = ed.prefixo_viatura || '';
     div.querySelector('.eq-mot').value = milToInput(ed.motorista);
+    // guarda a viatura/motorista ORIGINAIS desta equipe — base p/ detectar
+    // substituição de viatura e dar a baixa da antiga com KM (ttaCheckSubst).
+    div.dataset.vtrOrig      = (ed.prefixo_viatura || '').trim();
+    div.dataset.motOrigMat   = (ed.motorista && ed.motorista.matricula) || '';
+    div.dataset.motOrigNome  = (ed.motorista && ed.motorista.nome) || '';
+    div.dataset.gpOrig       = ed.gp_responsavel || c.gp_responsavel || '';
+    div.dataset.grupCompOrig = ed.grupamento_completo || c.grupamento_completo || '';
     div.querySelector('.eq-patr').value = ed.tipo_patrulha || '';
     ttaOperRestore(div, ed);
     // #11 sem viatura / #10 comandante = motorista (restaura os checkboxes)
@@ -728,6 +830,9 @@ async function registrarChamada(){
     if (!e.tipo_patrulha)       return toast(`Equipe ${e.ordem}: selecione o tipo de patrulha.`);
     if (!e.municipios.length)   return toast(`Equipe ${e.ordem}: marque ao menos um município.`);
   }
+  // Substituição de viatura (só no modo correção): valida a baixa ANTES de salvar.
+  const substituicoes = coletarSubstituicoes();
+  if (substituicoes === null) return;   // faltou info — o toast já foi exibido
   // Nível-chamada = grupamento da EQUIPE 1 (principal), p/ compat com consumidores.
   const g = { gp_responsavel: equipes[0].gp_responsavel, grupamento_completo: equipes[0].grupamento_completo };
 
@@ -760,11 +865,20 @@ async function registrarChamada(){
   try{
     if (editando){
       await rpc('tta_editar_chamada', { p_token: sessao.token, p_id: CHAMADA_EDIT_ID, p_dados: payload });
+      await lancarSubstituicoes(substituicoes);   // baixa da(s) viatura(s) antiga(s) com KM, se houver
       await criarPendenciasTTA(viaturas);
       await cancelarPendenciasRemovidas(viaturas);
       // a chamada foi salva: as viaturas atuais viram a nova base para próximas edições
       PEND_PREFIXOS_ORIG = new Set(viaturas.map(v=>String(v.prefixo||'').trim()).filter(Boolean));
-      toast('✔ Correção salva.');
+      // rebaseia cada equipe (evita re-perguntar / re-lançar numa 2ª correção) e limpa os blocos
+      document.querySelectorAll('#equipesTTA .equipe').forEach(eq=>{
+        const mot=militarByInput(eq.querySelector('.eq-mot').value);
+        eq.dataset.vtrOrig     = (eq.querySelector('.eq-vtr').value||'').trim();
+        eq.dataset.motOrigMat  = mot ? mot.matricula : '';
+        eq.dataset.motOrigNome = mot ? mot.nome_completo : '';
+        const b=eq.querySelector('.eq-subst'); if(b){ b.style.display='none'; b.innerHTML=''; b.dataset.rendered=''; }
+      });
+      toast(substituicoes.length ? '✔ Correção salva. Baixa da viatura substituída registrada.' : '✔ Correção salva.');
       btn.textContent = '✔ Correção salva';
     } else {
       const nova = await rpc('tta_criar_chamada', { p_token: sessao.token, p_dados: payload });
