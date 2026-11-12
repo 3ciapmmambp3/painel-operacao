@@ -12,19 +12,22 @@
 --   • o feed da planilha (Apps Script → nuden_sync) — continua alimentando o painel;
 --   • o "📤 Responder no SISDEN" (é sob demanda, no clique — não usa cron).
 --
---  Reversível: a definição do job fica guardada, só `active=false`. Para RELIGAR,
---  rode o bloco do fim (ou re-rode o db/167).
 --  Rodar no Supabase (SQL Editor).
+--  OBS: `update cron.job set active=false` é NEGADO ao papel do SQL Editor
+--  ("permission denied for table job" — a tabela é do superusuário). Por isso
+--  usamos a função oficial `cron.unschedule()`, que o dono do job pode chamar
+--  (o db/167 já a usou com sucesso ao agendar).
 -- ══════════════════════════════════════════════════════════════════════
 
--- ── PAUSAR ──
-update cron.job set active = false where jobname = 'sisden-sync-diario';
+-- ── PAUSAR (remove o agendamento) ──
+select cron.unschedule('sisden-sync-diario')
+  from cron.job where jobname = 'sisden-sync-diario';
 
--- conferência (deve mostrar active = false):
+-- conferência (NÃO deve retornar nenhuma linha = job removido):
 select jobid, jobname, schedule, active
   from cron.job where jobname = 'sisden-sync-diario';
 
 -- ══════════════════════════════════════════════════════════════════════
--- ── PARA RELIGAR depois (quando quiser o robô de volta), rode só esta linha:
---   update cron.job set active = true where jobname = 'sisden-sync-diario';
+-- ── PARA RELIGAR depois (quando quiser o robô de volta): re-rode o db/167
+--    (ele recria o job 'sisden-sync-diario' às 05h/20h; é idempotente).
 -- ══════════════════════════════════════════════════════════════════════
