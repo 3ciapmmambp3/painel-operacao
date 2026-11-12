@@ -448,15 +448,16 @@ async function carregarPendentes(){
   const gprs=_gprsDoEscopo(grup);
   if(gprs.length){ try{
     const inVal=gprs.map(g=>'%22'+encodeURIComponent(g)+'%22').join(',');
-    const q=`${API}/rest/v1/denuncias?select=id,numero,tipo,origem,tema,objeto,descricao,municipio,endereco,referencia,situacao,anexos&ativo=is.true&gp_responsavel=in.(${inVal})&situacao=in.(PENDENTE,%22EM%20ANDAMENTO%22)&order=created_at.desc`;
+    const q=`${API}/rest/v1/denuncias?select=id,numero,tipo,origem,tema,objeto,descricao,municipio,endereco,referencia,situacao,anexos,denunciante,denunciado,observacoes,numero_oficio,prazo,registrado_por_matricula,registrado_por_nome,data_recebimento,created_at&ativo=is.true&gp_responsavel=in.(${inVal})&situacao=in.(PENDENTE,%22EM%20ANDAMENTO%22)&order=created_at.desc`;
     const r=await fetch(q,{headers:H}); if(!r.ok) throw new Error(await r.text());
     const arr=await r.json();
+    const _temPDF=await _ensureJsPDF();   // carrega jsPDF (1x) p/ gerar a ficha da denúncia como anexo
     (Array.isArray(arr)?arr:[]).forEach(p=>{
       const anx=(Array.isArray(p.anexos)?p.anexos:[]).map(a=>({nome:a.nome||'anexo',mime:a.mime||null,tamanho:a.tamanho||null,link:a.link||a.web_view_link||null,id:a.path||a.file_id||null,status:'ok'})).filter(a=>a.link);
-      // (removido) link sintético "Ficha da demanda (PDF)" → apontava p/ denuncias.html?ficha=,
-      // página interna que exige login; no Cartão compartilhado/impresso caía na tela de senha.
-      // O Cartão lista agora só os anexos reais do Drive (abrem p/ qualquer um). O histórico da
-      // demanda continua no próprio texto do Cartão (descrição + endereço + município).
+      // Ficha da demanda gerada como PDF REAL (data URL, baixa sem login) e anexada ao Cartão.
+      // Substitui o antigo link denuncias.html?ficha= (exigia login → caía na tela de senha).
+      // Traz os campos que o texto curto do Cartão não tem (denunciante/denunciado/histórico/roteiro…).
+      if(_temPDF){ try{ const fa=_fichaPdfAnexo(p); if(fa) anx.push({nome:fa.nome, link:fa.link, dl:true, status:'ok'}); }catch(e){ console.warn('ficha-pdf',e); } }
       PEND.push({tipo:p.tipo, tipoLabel:_tipoLbl(p.tipo), numero:p.numero, texto:textoDaDemanda(p), resumo:((p.tema?p.tema+' — ':'')+(p.descricao||p.objeto||'')), municipio:p.municipio||'', endereco:p.endereco||p.referencia||'', situacao:p.situacao||'', anexos:anx, fonte:'painel', folder:null, id:p.id});
     });
   }catch(e){ erroP='Painel: '+(e.message||e); } }
@@ -681,10 +682,68 @@ function renderDemandas(){
 }
 // KML (texto do banco) → data URL baixável, sem precisar de arquivo no Drive.
 function _kmlDataUrl(txt){ try{ return 'data:application/vnd.google-earth.kml+xml;charset=utf-8;base64,'+btoa(unescape(encodeURIComponent(String(txt||'')))); }catch(e){ return ''; } }
+// jsPDF sob demanda (só quando há denúncia/requisição pendente p/ gerar a ficha)
+async function _ensureJsPDF(){
+  if(window.jspdf&&window.jspdf.jsPDF) return true;
+  try{ await new Promise((res,rej)=>{ const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    s.onload=res; s.onerror=rej; document.head.appendChild(s); });
+  }catch(e){ return false; }
+  return !!(window.jspdf&&window.jspdf.jsPDF);
+}
+// Gera a FICHA da denúncia/requisição como PDF real → {nome, link:data:application/pdf}.
+// Baixa sem login (anexo com download) e viaja dentro do Cartão, como o KML.
+function _fichaPdfAnexo(p){
+  if(!(window.jspdf&&window.jspdf.jsPDF)) return null;
+  const denuncia = p.tipo==='denuncia';
+  const doc = new window.jspdf.jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  const PW=210, ML=16, MR=16, TW=PW-ML-MR; let y=18;
+  const titulo = denuncia?'FICHA DE DENÚNCIA':'FICHA DE REQUISIÇÃO';
+  doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.setTextColor(0);
+  ['COMANDO DE POLICIAMENTO ESPECIALIZADO','BATALHÃO DE POLÍCIA MILITAR DE MEIO AMBIENTE','3ª COMPANHIA DE POLÍCIA MILITAR DE MEIO AMBIENTE'].forEach(t=>{ doc.text(t, PW/2, y, {align:'center'}); y+=4.6; });
+  y+=3; doc.setFontSize(15); doc.text(titulo, PW/2, y, {align:'center'}); y+=6;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+  doc.text((denuncia?'DENÚNCIA':'REQUISIÇÃO')+' Nº '+(p.numero||'')+' — 3ª CIA PM MAmb', PW/2, y, {align:'center'}); y+=4;
+  doc.setDrawColor(155,138,92); doc.setLineWidth(0.5); doc.line(ML, y, PW-MR, y); y+=7;
+  const fmt = iso=>{ if(!iso) return '—'; const a=String(iso).slice(0,10).split('-'); return a.length===3?(a[2]+'/'+a[1]+'/'+a[0]):String(iso); };
+  const recebDe = p.data_recebimento || (p.created_at?String(p.created_at).slice(0,10):'');
+  const ident = ()=>{ const mat=p.registrado_por_matricula, nome=(p.registrado_por_nome||'').trim();
+    if(!nome&&!mat) return '—'; const dig=s=>(s==null?'':s).toString().replace(/\D/g,'');
+    if(mat&&dig(nome).includes(dig(mat))) return 'Nº PM '+nome.toUpperCase();
+    return (mat?'Nº PM '+mat+' — ':'')+((nome||'—').toUpperCase()); };
+  const campos = denuncia ? [
+    ['Infração', p.tema],['Município', p.municipio],['Endereço', p.endereco],
+    ['Denunciante', p.denunciante],['Denunciado', p.denunciado],
+    ['Histórico', p.descricao],['Roteiro', p.referencia],
+    ['PM que recebeu', ident()],['Data de recebimento', fmt(recebDe)],['Observações', p.observacoes]
+  ] : [
+    ['Origem', p.origem],['Nº ofício/processo', p.numero_oficio],['Infração', p.tema],
+    ['Município', p.municipio],['Endereço', p.endereco],['Objeto', p.objeto],
+    ['Histórico', p.descricao],['Roteiro', p.referencia],['PM que recebeu', ident()],
+    ['Data de recebimento', fmt(recebDe)],['Prazo', fmt(p.prazo)],['Observações', p.observacoes]
+  ];
+  const LBLW=44;
+  campos.forEach(c=>{
+    const val=(c[1]==null||c[1]==='')?'—':String(c[1]);
+    const valLines=doc.splitTextToSize(val, TW-LBLW-2);
+    const h=Math.max(5, valLines.length*4.3)+2.5;
+    if(y+h>284){ doc.addPage(); y=18; }
+    doc.setFont('helvetica','bold'); doc.setFontSize(8.3); doc.setTextColor(90);
+    doc.text(String(c[0]).toUpperCase(), ML, y+3.2);
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(0);
+    doc.text(valLines, ML+LBLW, y+3.2);
+    y+=h; doc.setDrawColor(225); doc.setLineWidth(0.1); doc.line(ML, y, PW-MR, y); y+=1.5;
+  });
+  let b64=''; try{ b64=(doc.output('datauristring').split('base64,')[1])||''; }catch(e){ return null; }
+  if(!b64) return null;
+  const nome=(denuncia?'Denúncia ':'Requisição ')+String(p.numero||'').replace(/[\/\\]/g,'-')+' (ficha).pdf';
+  return { nome, link:'data:application/pdf;base64,'+b64 };
+}
 function renderAnx(anexos,di){
   return (anexos||[]).map((a,ai)=>{
     const st=a.status==='up'?'<span class="st up">enviando…</span>':a.status==='err'?`<span class="st err">erro</span>`:'<span class="st ok">ok</span>';
-    const nome=a.link&&a.status!=='up'?`<a href="${_esc(a.link)}" ${a.kml?`download="${_esc(a.nome||'arquivo.kml')}"`:'target="_blank"'} style="color:var(--gold-light)">${a.kml?'🛰️ ':''}${_esc(a.nome||'anexo')}</a>`:_esc(a.nome||'anexo');
+    const baixar=a.kml||a.dl;
+    const nome=a.link&&a.status!=='up'?`<a href="${_esc(a.link)}" ${baixar?`download="${_esc(a.nome||(a.kml?'arquivo.kml':'ficha.pdf'))}"`:'target="_blank"'} style="color:var(--gold-light)">${a.kml?'🛰️ ':''}${_esc(a.nome||'anexo')}</a>`:_esc(a.nome||'anexo');
     return `<div class="anx-item">${a.kml?'🛰️':'📄'} ${nome} ${st}<button type="button" class="x" onclick="rmAnx(${di},${ai})">✕</button></div>`;
   }).join('');
 }
