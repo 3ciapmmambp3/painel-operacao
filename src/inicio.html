@@ -102,7 +102,11 @@
     /* Minhas tarefas */
     .mt-head{display:flex;align-items:center;gap:10px;margin:6px 2px 12px;}
     .mt-head .st{font-size:11px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:.8px;}
-    .mt-head .add{margin-left:auto;font-size:11px;padding:5px 12px;}
+    .mt-head .add{font-size:11px;padding:5px 12px;}
+    .mt-head .mt-arq-tgl{margin-left:auto;font-size:11px;font-weight:700;padding:5px 11px;border-radius:7px;border:1px solid var(--border-mid,#444);background:transparent;color:var(--text-white,#ddd);cursor:pointer;}
+    .mt-head .mt-arq-tgl:hover{border-color:var(--gold);color:var(--gold-light,#e8c879);}
+    .mt.st-arquivada{border-left-color:#9e9e9e;opacity:.72;}
+    .mt.st-arquivada .mt-t{text-decoration:line-through;text-decoration-color:var(--text-hint);color:var(--text-muted);}
     .mt-list{display:flex;flex-direction:column;gap:8px;}
     .mt{display:flex;align-items:flex-start;gap:11px;background:var(--bg-card);border:1px solid var(--border);border-left:3px solid var(--border);border-radius:10px;padding:11px 14px;}
     .mt.st-pendente{border-left-color:#ffb74d;}.mt.st-em_andamento{border-left-color:#42a5f5;}.mt.st-concluida{border-left-color:#66bb6a;opacity:.68;}
@@ -252,6 +256,7 @@
 
   <div class="mt-head">
     <span class="st">Minhas tarefas</span>
+    <button class="mt-arq-tgl" id="mt-arq-btn" onclick="mtToggleArq()">🗂 Arquivadas</button>
     <button class="btn-gold add" onclick="mtAbrir()">+ Nova tarefa pessoal</button>
   </div>
   <div id="md-tarefas"><div class="mt-empty">Carregando…</div></div>
@@ -802,6 +807,8 @@ const _mtFmt = s => { if(!s) return ''; const d=new Date(s); return isNaN(d)?Str
 const _mtLocalInput = s => { if(!s) return ''; const d=new Date(s); if(isNaN(d)) return ''; return `${d.getFullYear()}-${_mtP2(d.getMonth()+1)}-${_mtP2(d.getDate())}T${_mtP2(d.getHours())}:${_mtP2(d.getMinutes())}`; };
 let MT_PESSOAIS = [];
 let MT_ATRIB = [];   // tarefas de seção atribuídas a mim (p/ o modal Executar)
+let MT_ARQUIVADAS = [];   // tarefas pessoais arquivadas (aba "Arquivadas")
+let MT_VIEW = 'ativas';   // visão atual: 'ativas' | 'arquivadas'
 let MT_ROSTER = null;   // roster de militares p/ compartilhar (lazy)
 let MT_SHARE  = [];     // compartilhados escolhidos: {matricula, matricula_clean, nome}
 const MT_ME_CLEAN = String((sessao && sessao.matricula) || '').replace(/\D/g,'').padStart(7,'0');
@@ -860,25 +867,40 @@ async function _mtRpc(fn, body){
 }
 
 async function carregarMinhasTarefas(){
-  const box=document.getElementById('md-tarefas');
   try{
     const res = await _mtRpc('minhas_tarefas_listar', {p_token: sessao.token});
-    const atrib = (res&&res.atribuidas)||[];
-    MT_ATRIB = atrib;
-    MT_PESSOAIS = (res&&res.pessoais)||[];
-    const abertas = MT_PESSOAIS.filter(t=>t.status!=='concluida');
-    const concl   = MT_PESSOAIS.filter(t=>t.status==='concluida');
-    const linhas = [];
-    atrib.forEach(t=>linhas.push(mtCard(t,'secao')));
-    abertas.forEach(t=>linhas.push(mtCard(t,'pessoal')));
-    concl.forEach(t=>linhas.push(mtCard(t,'pessoal')));
-    box.innerHTML = linhas.length
-      ? `<div class="mt-list">${linhas.join('')}</div>`
-      : `<div class="mt-empty">Nenhuma tarefa por aqui. Crie uma tarefa pessoal, ou aguarde alguma tarefa de seção ser atribuída a você.</div>`;
+    MT_ATRIB      = (res&&res.atribuidas)||[];
+    MT_PESSOAIS   = (res&&res.pessoais)||[];
+    MT_ARQUIVADAS = (res&&res.arquivadas)||[];
+    renderMinhasTarefas();
   }catch(e){
-    box.innerHTML = `<div class="mt-empty">Não foi possível carregar suas tarefas agora.</div>`;
+    document.getElementById('md-tarefas').innerHTML = `<div class="mt-empty">Não foi possível carregar suas tarefas agora.</div>`;
   }
 }
+function renderMinhasTarefas(){
+  const box=document.getElementById('md-tarefas');
+  const btn=document.getElementById('mt-arq-btn');
+  if(btn) btn.innerHTML = (MT_VIEW==='arquivadas')
+      ? '← Tarefas ativas'
+      : ('🗂 Arquivadas'+(MT_ARQUIVADAS.length?` (${MT_ARQUIVADAS.length})`:''));
+  const linhas = [];
+  if(MT_VIEW==='arquivadas'){
+    MT_ARQUIVADAS.forEach(t=>linhas.push(mtCard(t,'pessoal')));
+    box.innerHTML = linhas.length
+      ? `<div class="mt-list">${linhas.join('')}</div>`
+      : `<div class="mt-empty">Nenhuma tarefa arquivada. As tarefas concluídas que você arquivar aparecem aqui — e podem ser reabertas.</div>`;
+    return;
+  }
+  const abertas = MT_PESSOAIS.filter(t=>t.status!=='concluida');
+  const concl   = MT_PESSOAIS.filter(t=>t.status==='concluida');
+  MT_ATRIB.forEach(t=>linhas.push(mtCard(t,'secao')));
+  abertas.forEach(t=>linhas.push(mtCard(t,'pessoal')));
+  concl.forEach(t=>linhas.push(mtCard(t,'pessoal')));
+  box.innerHTML = linhas.length
+    ? `<div class="mt-list">${linhas.join('')}</div>`
+    : `<div class="mt-empty">Nenhuma tarefa por aqui. Crie uma tarefa pessoal, ou aguarde alguma tarefa de seção ser atribuída a você.</div>`;
+}
+function mtToggleArq(){ MT_VIEW = (MT_VIEW==='arquivadas') ? 'ativas' : 'arquivadas'; renderMinhasTarefas(); }
 
 // Último pedido de complemento no histórico da tarefa (o que falta fazer).
 function _ultimoComplemento(t){
@@ -910,11 +932,18 @@ function mtCard(t, origem){
     // Executor quase nunca é da seção → executa/preenche AQUI (sem "Abrir seção").
     acoes.push(`<button class="mtb go" onclick="mtConcluirSecao('${t.id}')">✔ Concluir</button>`);
     acoes.push(`<button class="mtb" onclick="exAbrir('${t.id}')">📝 Executar</button>`);
+  } else if(t.status==='arquivada'){
+    // Aba Arquivadas: reabrir (volta p/ ativas), informar, editar; excluir só p/ dono.
+    acoes.push(`<button class="mtb go" onclick="mtStatus('${t.id}','pendente')" title="Reabrir — volta para as tarefas ativas">↺ Reabrir</button>`);
+    acoes.push(`<button class="mtb" onclick="mnAbrir('${t.id}','nota')">＋ Informar</button>`);
+    acoes.push(`<button class="mtb" onclick="mtAbrir('${t.id}')">✎</button>`);
+    if(t.sou_dono!==false) acoes.push(`<button class="mtb" onclick="mtExcluir('${t.id}')">🗑</button>`);
   } else {
     if(t.status==='pendente') acoes.push(`<button class="mtb" onclick="mtStatus('${t.id}','em_andamento')">▶ Iniciar</button>`);
     if(t.status!=='concluida') acoes.push(`<button class="mtb go" onclick="mnAbrir('${t.id}','concluir')">✔ Concluir</button>`);
     if(t.status==='concluida') acoes.push(`<button class="mtb" onclick="mtStatus('${t.id}','pendente')">↺ Reabrir</button>`);
-    if(t.status==='concluida' && t.sou_dono!==false) acoes.push(`<button class="mtb" onclick="mtStatus('${t.id}','arquivada')" title="Arquivar — some da lista (fica guardada)">🗂 Arquivar</button>`);
+    // Arquivar: disponível a QUALQUER participante da tarefa concluída (o db/143 já permite dono OU compartilhado).
+    if(t.status==='concluida') acoes.push(`<button class="mtb" onclick="mtStatus('${t.id}','arquivada')" title="Arquivar — some da lista (vai p/ Arquivadas)">🗂 Arquivar</button>`);
     acoes.push(`<button class="mtb" onclick="mnAbrir('${t.id}','nota')">＋ Informar</button>`);
     acoes.push(`<button class="mtb" onclick="mtAbrir('${t.id}')">✎</button>`);
     if(t.sou_dono!==false) acoes.push(`<button class="mtb" onclick="mtExcluir('${t.id}')">🗑</button>`);
@@ -1021,7 +1050,7 @@ async function mnSalvar(){
   finally{ btn.disabled=false; btn.textContent=lbl; }
 }
 function mtAbrir(id){
-  const t = id ? MT_PESSOAIS.find(x=>x.id===id) : null;
+  const t = id ? MT_PESSOAIS.concat(MT_ARQUIVADAS).find(x=>x.id===id) : null;
   document.getElementById('mt-mtitulo').textContent = t?'Editar tarefa pessoal':'Nova tarefa pessoal';
   document.getElementById('mt-id').value = t?t.id:'';
   document.getElementById('mt-titulo').value = t?(t.titulo||''):'';
