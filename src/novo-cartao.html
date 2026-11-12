@@ -522,9 +522,23 @@ async function carregarPendentes(){
   const _respIds=new Set(), _respKeys=new Set();
   if(gprs.length){ try{
     const inValR=gprs.map(g=>'%22'+encodeURIComponent(g)+'%22').join(',');
+    // denúncias/requisições respondidas (tabela denuncias) — chave id e tipo|numero
     const qr=`${API}/rest/v1/denuncias?select=id,numero,tipo&ativo=is.true&gp_responsavel=in.(${inValR})&or=(situacao.in.(RESPONDIDA,CONCLUIDA,FINALIZADA),data_resposta.not.is.null)`;
     const rr0=await fetch(qr,{headers:H});
     if(rr0.ok){ (await rr0.json()).forEach(d=>{ if(d.id)_respIds.add(String(d.id)); if(d.numero)_respKeys.add((d.tipo||'')+'|'+String(d.numero).replace(/\s/g,'')); }); }
+    // módulos ATENDIDOS (data_atendimento != null): MC/NUDEN/RI/DDU/Emergência — chave tipo|codigo
+    const _MODS=[['mc','mc_demandas'],['nuden','nuden_demandas'],['ri','ri_demandas'],['ddu181','ddu_demandas'],['emergencia','emergencia_demandas']];
+    await Promise.all(_MODS.map(async (m)=>{ const tp=m[0], tb=m[1];
+      try{ let off=0; const PG=1000;
+        for(;;){
+          const r=await fetch(`${API}/rest/v1/${tb}?select=codigo&gp_responsavel=in.(${inValR})&ativo=is.true&data_atendimento=not.is.null`,
+            {headers:Object.assign({},H,{'Range-Unit':'items','Range':off+'-'+(off+PG-1)})});
+          if(!r.ok) break; const arr=await r.json();
+          (Array.isArray(arr)?arr:[]).forEach(x=>{ if(x.codigo)_respKeys.add(tp+'|'+String(x.codigo).replace(/\s/g,'')); });
+          if(!Array.isArray(arr)||arr.length<PG||off>40000) break; off+=PG;
+        }
+      }catch(e){}
+    }));
   }catch(e){} }
   // 3) Pendentes de diligência — demandas de cartões anteriores NÃO finalizadas
   //    (Em andamento/Não atendido). A planilha já as "solta" ao lançar o REDS,
