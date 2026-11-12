@@ -516,9 +516,19 @@ async function carregarPendentes(){
       }catch(e){}
     }));
   }catch(e){} }
+  // 2c) Denúncias/requisições já RESPONDIDAS/finalizadas (no Controle de Demandas OU
+  //     respondidas em outro cartão → gravam situacao RESPONDIDA/CONCLUIDA/FINALIZADA).
+  //     Servem p/ EXCLUIR da diligência: já receberam a devida baixa, não são mais pendência.
+  const _respIds=new Set(), _respKeys=new Set();
+  if(gprs.length){ try{
+    const inValR=gprs.map(g=>'%22'+encodeURIComponent(g)+'%22').join(',');
+    const qr=`${API}/rest/v1/denuncias?select=id,numero,tipo&ativo=is.true&gp_responsavel=in.(${inValR})&or=(situacao.in.(RESPONDIDA,CONCLUIDA,FINALIZADA),data_resposta.not.is.null)`;
+    const rr0=await fetch(qr,{headers:H});
+    if(rr0.ok){ (await rr0.json()).forEach(d=>{ if(d.id)_respIds.add(String(d.id)); if(d.numero)_respKeys.add((d.tipo||'')+'|'+String(d.numero).replace(/\s/g,'')); }); }
+  }catch(e){} }
   // 3) Pendentes de diligência — demandas de cartões anteriores NÃO finalizadas
   //    (Em andamento/Não atendido). A planilha já as "solta" ao lançar o REDS,
-  //    então ficam aqui para re-despacho.
+  //    então ficam aqui para re-despacho — MENOS as que já foram respondidas (acima).
   try{
     const r=await fetch(`${API}/rest/v1/rpc/cartao_listar`,{method:'POST',headers:H,body:JSON.stringify({p_token:S.token})});
     if(r.ok){ const cs=await r.json(); const alvo=_normGrp(grup);
@@ -526,6 +536,9 @@ async function carregarPendentes(){
         if(!_naFracaoCompart(c.grupamento_completo||c.grupamento_id||'', grup)) return;   // do grupamento + compartilhados
         const resp=c.respostas||{};
         (c.demandas||[]).forEach((d,i)=>{ const rr=resp[String(d.ordem)]||resp[String(i+1)]||null;
+          // já respondida (Controle de Demandas ou outro cartão)? então já teve baixa → não é diligência.
+          const _o=d.origem||{};
+          if((_o.id&&_respIds.has(String(_o.id)))||(_o.numero&&_respKeys.has((_o.tipo||'')+'|'+String(_o.numero).replace(/\s/g,'')))) return;
           if(rr && (rr.atendida==='PARCIAL'||rr.atendida==='NAO')){
             const sit = rr.atendida==='PARCIAL'?'Em andamento':'Não atendido';
             PEND.push({ tipo:'diligencia', tipoLabel:'🟡 Pendente de diligência',
