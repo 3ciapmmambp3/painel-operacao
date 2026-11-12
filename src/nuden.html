@@ -150,7 +150,7 @@
       <h3 style="margin:0 0 4px;font-size:16px">Minha conta SISDEN (para responder)</h3>
       <div id="conta-status" style="font-size:12.5px;color:var(--text-muted,#9a9aa2);margin-bottom:12px">—</div>
       <label style="font-size:12px;color:#9a9aa2">CPF (login do SISDEN)</label>
-      <input id="conta-cpf" inputmode="numeric" placeholder="000.000.000-00" autocomplete="off" style="width:100%;box-sizing:border-box;margin:4px 0 10px;padding:9px;border-radius:7px;border:1px solid #444;background:#111;color:#eee">
+      <input id="conta-cpf" inputmode="numeric" maxlength="14" placeholder="000.000.000-00" autocomplete="off" oninput="this.value=_maskCpf(this.value)" style="width:100%;box-sizing:border-box;margin:4px 0 10px;padding:9px;border-radius:7px;border:1px solid #444;background:#111;color:#eee">
       <label style="font-size:12px;color:#9a9aa2">Senha do SISDEN</label>
       <input id="conta-senha" type="password" placeholder="sua senha do SISDEN" autocomplete="new-password" style="width:100%;box-sizing:border-box;margin:4px 0 10px;padding:9px;border-radius:7px;border:1px solid #444;background:#111;color:#eee">
       <label style="font-size:12px;color:#9a9aa2">PIN (você escolhe — usa pra confirmar o envio)</label>
@@ -260,11 +260,21 @@ async function abrirContaSisden(){
   }catch(e){ st.textContent='Erro ao carregar o cadastro.'; }
 }
 function fecharContaSisden(){ document.getElementById('conta-sisden-modal').style.display='none'; }
+// Formata CPF como 000.000.000-00 (o novo login do SISDEN exige o CPF COM máscara).
+function _maskCpf(v){
+  const d=String(v||'').replace(/\D/g,'').slice(0,11);
+  if(d.length>9) return d.replace(/(\d{3})(\d{3})(\d{3})(\d{1,2})/,'$1.$2.$3-$4');
+  if(d.length>6) return d.replace(/(\d{3})(\d{3})(\d{1,3})/,'$1.$2.$3');
+  if(d.length>3) return d.replace(/(\d{3})(\d{1,3})/,'$1.$2');
+  return d;
+}
 async function salvarContaSisden(){
-  const cpf=document.getElementById('conta-cpf').value.trim();
+  const cpfDig=document.getElementById('conta-cpf').value.replace(/\D/g,'');
   const senha=document.getElementById('conta-senha').value;
   const pin=document.getElementById('conta-pin').value.trim();
-  if(!cpf||!senha||!pin){ alert('Preencha CPF, senha e PIN.'); return; }
+  if(!cpfDig||!senha||!pin){ alert('Preencha CPF, senha e PIN.'); return; }
+  if(cpfDig.length!==11){ alert('CPF inválido — informe os 11 dígitos.'); return; }
+  const cpf=_maskCpf(cpfDig);   // sempre grava COM máscara (000.000.000-00) — o novo login do SISDEN exige
   try{
     const r = await _sbRpc('sisden_resp_salvar', { p_token: S.token, p_cpf: cpf, p_senha: senha, p_pin: pin });
     if(r && r.ok){ alert('Cadastro salvo! Agora você responde com o seu PIN.'); document.getElementById('conta-senha').value=''; abrirContaSisden(); }
