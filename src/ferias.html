@@ -475,11 +475,18 @@
           </div>
         </div>
         <div class="fld" style="margin-top:12px;"><label>4. Justificativa (em caso de gozo ou de não fruição)</label><textarea id="mp-just" rows="2"></textarea></div>
+        <div class="fld" style="margin-top:12px;">
+          <label>Requerimento assinado (PDF) <span style="color:var(--danger);">* obrigatório para salvar</span></label>
+          <label class="btn-outline" style="cursor:pointer;display:inline-block;">📎 Selecionar arquivo assinado
+            <input type="file" id="mp-file-form" accept="application/pdf" style="display:none;" onchange="mpFileFormChange()">
+          </label>
+          <span id="mp-file-form-nome" class="miut" style="margin-left:8px;"></span>
+        </div>
         <div class="row-actions" style="justify-content:flex-end;margin-top:14px;">
           <button class="btn-outline" onclick="premGerarPDF()">⬇ Baixar requerimento (PDF)</button>
           <button class="btn-gold" onclick="premManifestar()">Salvar manifestação</button>
         </div>
-        <div class="miut" style="margin-top:8px;">Preencha e <b>salve</b>. Depois <b>baixe o requerimento</b>, <b>assine digitalmente</b> (gov.br / assinador oficial) e <b>anexe</b> o PDF assinado abaixo. Pode alterar sua manifestação enquanto o prazo estiver aberto.</div>
+        <div class="miut" style="margin-top:8px;">Passo a passo: <b>1)</b> preencha os campos; <b>2)</b> baixe o requerimento; <b>3)</b> assine digitalmente (gov.br); <b>4)</b> <b>selecione o PDF assinado</b> acima; <b>5)</b> clique em <b>Salvar</b>. <b>Só é possível salvar com o requerimento anexado.</b> Pode alterar enquanto o prazo estiver aberto.</div>
       </div>
       <div id="milprem-anexo" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
         <div id="milprem-anexo-lista" class="miut">Nenhum requerimento anexado.</div>
@@ -1935,6 +1942,9 @@ function premPreencherForm(ped){
   const intv = ped? (ped.interesse?'sim':'nao') : '';
   document.querySelectorAll('input[name=mp-int]').forEach(r=>{ r.checked=(r.value===intv); });
   mpIntToggle();
+  const ff=document.getElementById('mp-file-form'); if(ff) ff.value='';
+  const fn=document.getElementById('mp-file-form-nome');
+  if(fn){ const a=(ped&&ped.anexo_requerimento)||[]; fn.textContent=a.length?('já anexado: '+(a[0].nome||'requerimento.pdf')+' — selecione outro só se quiser trocar'):''; }
 }
 function premColeta(){
   const lust=document.getElementById('mp-lustro').value==='Outro'?document.getElementById('mp-lustro-outro').value.trim():document.getElementById('mp-lustro').value;
@@ -1966,15 +1976,33 @@ async function premVagasCheck(){
     }catch(e){ if(seq===_vagaSeq) out.innerHTML='<span class="miut">Não deu para verificar as vagas agora.</span>'; }
   }
 }
+function mpFileFormChange(){ const f=(document.getElementById('mp-file-form').files||[])[0]; const el=document.getElementById('mp-file-form-nome'); if(el) el.textContent=f?('selecionado: '+f.name):''; }
 async function premManifestar(){
   const intv=(document.querySelector('input[name=mp-int]:checked')||{}).value;
   if(!intv) return flash('Marque se TEM ou NÃO tem interesse.',false);
   const d=premColeta();
   if(!d.exercicio) return flash('Informe o exercício (ano a que se refere).',false);
   if(d.interesse && !d.opcoes.length) return flash('Informe ao menos a Opção 1 (data de início).',false);
-  try{ await rpc('ferias_premio_manifestar',{p_token:sessao.token,p_dados:Object.assign({ano:anoSel},d)});
-    flash('Manifestação salva. Agora baixe o requerimento, assine e anexe.',true); premManifestBoot(); }
-  catch(e){ flash(e.message||'Erro ao salvar.',false); }
+  // anexo OBRIGATÓRIO: precisa de um PDF selecionado OU já ter um anexo salvo
+  const f=(document.getElementById('mp-file-form').files||[])[0];
+  const temAnexo = MP_PED && (MP_PED.anexo_requerimento||[]).length>0;
+  if(!f && !temAnexo) return flash('Anexe o requerimento assinado (PDF) para salvar.',false);
+  if(f && f.size>15*1024*1024) return flash('Arquivo acima de 15 MB.',false);
+  try{
+    // 1) sobe o anexo ANTES de salvar (se falhar, nada é gravado)
+    let anexo=null;
+    if(f){ flash('Enviando requerimento…',true);
+      let res; if(DRIVE_URL){ try{ res=await subirDrivePdf(f); }catch(e){ res=await subirStoragePdf(f); } } else res=await subirStoragePdf(f);
+      anexo=[{path:res.path||null,nome:f.name,tamanho:f.size,mime:f.type||'application/pdf',link:res.link}];
+    }
+    // 2) salva/edita a manifestação
+    const row=await rpc('ferias_premio_manifestar',{p_token:sessao.token,p_dados:Object.assign({ano:anoSel},d)});
+    MP_PED=row||MP_PED;
+    // 3) anexa o requerimento ao pedido
+    if(anexo && MP_PED && MP_PED.id){ await rpc('ferias_premio_anexar',{p_token:sessao.token,p_id:MP_PED.id,p_anexo:anexo,p_fase:'req'}); }
+    const ff=document.getElementById('mp-file-form'); if(ff) ff.value='';
+    flash('Manifestação salva com o requerimento anexado.',true); premManifestBoot();
+  }catch(e){ flash(e.message||'Erro ao salvar.',false); }
 }
 async function premAnexar(input){
   const f=input.files&&input.files[0]; input.value='';
