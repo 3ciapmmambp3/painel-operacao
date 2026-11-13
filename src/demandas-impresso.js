@@ -19,19 +19,21 @@
   function _esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); }
   function _fmt(iso) { if (!iso) return ''; var p = String(iso).slice(0, 10).split('-'); return p.length === 3 ? (p[2] + '/' + p[1] + '/' + p[0]) : ''; }
 
-  async function carregar(tabela, codigos) {
+  // Busca só as demandas MARCADAS da tabela (a tabela demandas_impressas só tem as
+  // que alguém marcou → é pequena). 1 requisição (pagina só se passar de 1000 marcadas).
+  // O 2º arg (codigos) é ignorado — mantido p/ compatibilidade com as chamadas.
+  async function carregar(tabela, _codigos) {
     St.tabela = tabela; St.map = new Map();
-    var cods = Array.from(new Set((codigos || []).map(function (c) { return String(c == null ? '' : c); }).filter(Boolean)));
-    if (!cods.length || !_api()) return;
+    if (!_api()) return;
     try {
-      for (var i = 0; i < cods.length; i += 200) {
-        var slice = cods.slice(i, i + 200);
-        var inVal = '(' + slice.map(function (c) { return '"' + c.replace(/"/g, '') + '"'; }).join(',') + ')';
-        var url = _api() + '/rest/v1/demandas_impressas?tabela=eq.' + encodeURIComponent(tabela) +
-          '&codigo=in.' + encodeURIComponent(inVal) + '&select=codigo,por_nome,em';
-        var r = await fetch(url, { headers: _H() });
-        if (!r.ok) continue;
-        (await r.json()).forEach(function (x) { if (x && x.codigo != null) St.map.set(String(x.codigo), { por_nome: x.por_nome || '', em: x.em || '' }); });
+      for (var off = 0; off < 50000; off += 1000) {
+        var url = _api() + '/rest/v1/demandas_impressas?tabela=eq.' + encodeURIComponent(tabela) + '&select=codigo,por_nome,em';
+        var r = await fetch(url, { headers: Object.assign({}, _H(), { 'Range-Unit': 'items', 'Range': off + '-' + (off + 999) }) });
+        if (!r.ok) break;
+        var arr = await r.json();
+        if (!Array.isArray(arr) || !arr.length) break;
+        arr.forEach(function (x) { if (x && x.codigo != null) St.map.set(String(x.codigo), { por_nome: x.por_nome || '', em: x.em || '' }); });
+        if (arr.length < 1000) break;
       }
     } catch (e) { console.warn('[impresso] carregar', e); }
   }
