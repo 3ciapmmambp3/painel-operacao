@@ -162,6 +162,7 @@
       <button id="sw-crono" class="asw" onclick="mostrarTela('cronograma')">📅 Cronograma de Férias Anuais</button>
       <button id="sw-militar" class="asw" style="display:none;" onclick="mostrarTela('militar')">🏖️ Minhas férias</button>
       <button id="sw-tramitar" class="asw" style="display:none;" onclick="mostrarTela('tramitar')">✅ Tramitar Solicitação de Férias</button>
+      <button id="sw-premio" class="asw" style="display:none;" onclick="mostrarTela('premiomanif')">🎖️ Férias-Prêmio (Pelotão)</button>
     </div>
 
     <!-- Título da tela de Cronograma (programação das férias do ano) -->
@@ -306,7 +307,7 @@
 
     <!-- ══ TAB PRÊMIO — MANIFESTAÇÃO (interesse com/sem + requerimento) ══ -->
     <div class="panel" id="panel-premio_manif">
-      <div class="card">
+      <div class="card" id="pm-prazo-card">
         <h3>Prazo da manifestação — Férias-Prêmio (<span id="pm-ano">—</span>)</h3>
         <div class="grid">
           <div class="fld"><label>Situação</label>
@@ -625,7 +626,8 @@
         <select id="mpg-sit" onchange="mpgSitChange()">
           <option value="SEM_INTERESSE">Sem interesse</option>
           <option value="PENDENTE">Pendente (aguardando)</option>
-          <option value="VALIDADO">Validado / Autorizado (P1)</option>
+          <option value="APROVADO_PEL">Validado pelo Pelotão</option>
+          <option value="VALIDADO">Autorizado (P1 / Cmt Cia)</option>
           <option value="REJEITADO">Rejeitado</option>
         </select></div>
       <div class="fld" id="mpg-motivo-fld" style="display:none;"><label>Motivo da rejeição</label><input id="mpg-motivo"></div>
@@ -1464,12 +1466,21 @@ function novoPedidoTipo(){ novoPedido(); document.getElementById('p-tipo').value
 function exportarControle(){
   const linhas=ctLinhas();
   if(!linhas.length){ flash('Nada para exportar com esses filtros.',false); return; }
-  const situ={PENDENTE:'Pendente',APROVADO_PEL:'Aprovado Pelotão',VALIDADO:'Validado',REJEITADO:'Rejeitado'};
-  const aoa=[['#','Pelotão','Fração/GP','Nº PM','Posto/Grad','Nome','Cidade/Lotação','Exercício','Dias','Início','Término','Situação']];
+  const prem = ctModo==='PREMIO';
+  const situ = prem
+    ? {PENDENTE:'Pendente',APROVADO_PEL:'Validado pelo Pelotão',VALIDADO:'Autorizado (P1)',REJEITADO:'Rejeitado',SEM_INTERESSE:'Sem interesse'}
+    : {PENDENTE:'Pendente',APROVADO_PEL:'Aprovado Pelotão',VALIDADO:'Validado',REJEITADO:'Rejeitado'};
+  const premById={}; if(prem) (pedidos||[]).forEach(p=>{ if(p.tipo==='PREMIO') premById[p.id]=p.premio||{}; });
+  const head=['#','Pelotão','Fração/GP','Nº PM','Posto/Grad','Nome','Cidade/Lotação','Exercício'];
+  if(prem) head.push('Lustro','Etapas');
+  head.push(prem?'Período':'Dias','Início','Término','Situação');
+  const aoa=[head];
   let _seq=0,_lastId=null;
   linhas.forEach(({r,x,primeira})=>{ if(r.id!==_lastId){_seq++;_lastId=r.id;}
-    aoa.push([primeira?_seq:'',_pelRot(r.pelotao||''),r.fracao||'',r.matricula||'',r.pg||'',r.nome||'',r.cidade||'',
-      (x&&x.exercicio)||r.exercicio||'',x?(x.parcela==='PREMIO'?'Prêmio':x.parcela):'',x?fmtBR(x.ini):'',x?fmtBR(x.fim):'',situ[r.situacao]||r.situacao]); });
+    const row=[primeira?_seq:'',_pelRot(r.pelotao||''),r.fracao||'',r.matricula||'',r.pg||'',r.nome||'',r.cidade||'',(x&&x.exercicio)||r.exercicio||''];
+    if(prem){ const pr=premById[r.id]||{}; row.push(primeira?(pr.lustro||''):'', primeira?(pr.etapas||''):''); }
+    row.push(x?(x.parcela==='PREMIO'?'Prêmio':x.parcela):'', x?fmtBR(x.ini):'', x?fmtBR(x.fim):'', situ[r.situacao]||r.situacao);
+    aoa.push(row); });
   const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=aoa[0].map(h=>({wch:Math.max(10,h.length+2)}));
   const nome=ctModo==='PREMIO'?'Ferias-Premio':'Ferias-Anuais';
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, nome.slice(0,28)+' '+anoSel);
@@ -1889,7 +1900,7 @@ async function premManifestBoot(){
   else s='Manifestação <b>aberta</b>'+(crono.premio_limite?(' · prazo até <b>'+fmtBR(crono.premio_limite)+'</b>'):'')+'.';
   if(MP_PED){
     s+='<div style="margin-top:6px;">Sua manifestação: '+(MP_PED.interesse?'<b style="color:var(--gold-light);">TENHO interesse</b>':'<b>NÃO tenho interesse</b>')
-      +(MP_PED.interesse?(' '+milTag(MP_PED.situacao)):'')+'</div>';
+      +(MP_PED.interesse?(' '+premioTag(MP_PED.situacao)):'')+'</div>';
   }
   st.innerHTML=s;
   const travado = MP_PED && ['APROVADO_PEL','VALIDADO'].includes(MP_PED.situacao);
@@ -2089,6 +2100,7 @@ async function premGerarPDF(){
 // ── GESTÃO (Aux P1): manifestação ──
 async function carregarPremioManif(){
   document.getElementById('pm-ano').textContent=anoSel;
+  const _pz=document.getElementById('pm-prazo-card'); if(_pz) _pz.style.display=podeP1()?'':'none';   // só P1 define o prazo
   let crono=null; try{ crono=await rpc('ferias_cronograma_get',{p_token:sessao.token,p_ano:anoSel}); }catch(e){}
   document.getElementById('pm-sit').value=(crono&&crono.premio_situacao)||'RASCUNHO';
   document.getElementById('pm-abertura').value=(crono&&crono.premio_abertura)?String(crono.premio_abertura).slice(0,10):'';
@@ -2107,7 +2119,17 @@ async function salvarPrazoPremio(){
 }
 function pmSetG(g){ pmG=g; document.querySelectorAll('#pm-chips .ct-chip').forEach(b=>b.classList.toggle('active',b.dataset.g===g)); pmRender(); }
 function _rNome(m){ return ((m.posto_graduacao||'')+' '+(m.nome_guerra||m.nome_completo||'')).trim(); }
+// rótulo da situação da prêmio (mostra QUEM validou)
+function premioTag(sit){
+  const m={PENDENTE:['pend','Pendente — aguardando pelotão/P1'],
+           APROVADO_PEL:['aprov','Validado pelo Pelotão'],
+           VALIDADO:['valid','Autorizado (P1)'],
+           REJEITADO:['rej','Rejeitado'],
+           SEM_INTERESSE:['','Sem interesse']};
+  const t=m[sit]||['','—']; return '<span class="tag '+t[0]+'">'+t[1]+'</span>';
+}
 function pmRender(){
+  const isP1=podeP1();
   const com=PM_LIST.filter(p=>p.interesse===true);
   const sem=PM_LIST.filter(p=>p.interesse===false);
   const temSet=new Set(); PM_LIST.forEach(p=>{ if(p.militar_id) temSet.add(String(p.militar_id)); if(p.militar&&p.militar.matricula) temSet.add('m:'+p.militar.matricula); });
@@ -2130,11 +2152,11 @@ function pmRender(){
     else { datas=(pr.opcoes||[]).map((o,k)=>{ const f=_premioFim(o.ini,pr.etapas); return 'Op'+(k+1)+': '+(o.ini?fmtBR(o.ini):'—')+(f?(' → '+fmtBR(f)):''); }).join('<br>')||'<span class="miut">—</span>'; }
     const a=(p.anexo_requerimento||[]);
     const anexo=a.length?('<a href="'+esc(a[0].link)+'" target="_blank" rel="noopener" style="color:var(--acc);">📎 ver</a>'):'<span class="miut">—</span>';
-    const sit = p.interesse? milTag(p.situacao) : '<span class="tag">Sem interesse</span>';
+    const sit = p.interesse? premioTag(p.situacao) : premioTag('SEM_INTERESSE');
     let acoes='';
     if(p.interesse) acoes+='<button class="minibtn" onclick="premioGerirAbrir(\''+p.id+'\',\'validar\')">validar</button> ';
     acoes+='<button class="minibtn" onclick="premioGerirAbrir(\''+p.id+'\',\'editar\')">editar</button> ';
-    acoes+='<button class="minibtn del" onclick="premioExcluir(\''+p.id+'\')">excluir</button>';
+    if(isP1) acoes+='<button class="minibtn del" onclick="premioExcluir(\''+p.id+'\')">excluir</button>';
     return `<tr><td>${i+1}</td><td>${esc((pg+' '+nome).trim())}</td><td>${esc(apRot(p.pelotao||'—'))}</td>`
       +`<td>${esc(pr.lustro||'—')} / ${esc(pr.etapas||'—')}</td><td>${esc(String(pr.exercicio||p.exercicio||'—'))}</td>`
       +`<td>${datas}</td><td>${anexo}</td><td>${sit}</td>`
@@ -2172,8 +2194,13 @@ function premioGerirAbrir(id, modo){
   const parc=(p.parcelas||[]).find(x=>x.parcela==='PREMIO');
   document.getElementById('mpg-ini').value=parc?String(parc.ini).slice(0,10):((ops[0]&&String(ops[0].ini||'').slice(0,10))||'');
   document.getElementById('mpg-fim').value=parc?String(parc.fim).slice(0,10):'';
-  let sit=p.situacao||(p.interesse?'PENDENTE':'SEM_INTERESSE'); if(modo==='validar') sit='VALIDADO';
-  document.getElementById('mpg-sit').value=sit;
+  const isP1=podeP1();
+  const selSit=document.getElementById('mpg-sit');
+  [...selSit.options].forEach(o=>{ const hide=(!isP1 && (o.value==='VALIDADO'||o.value==='SEM_INTERESSE')); o.hidden=hide; o.disabled=hide; });
+  let sit=p.situacao||(p.interesse?'PENDENTE':'SEM_INTERESSE');
+  if(modo==='validar') sit=isP1?'VALIDADO':'APROVADO_PEL';
+  selSit.value=sit;
+  document.getElementById('mpg-titulo').textContent=(modo==='validar'?(isP1?'Autorizar (P1)':'Validar (Pelotão)'):'Editar')+' manifestação — Férias-Prêmio';
   document.getElementById('mpg-motivo').value=p.motivo_rejeicao||'';
   mpgSitChange(); mpgRecalc();
   document.getElementById('modal-premio').classList.add('open');
@@ -2224,21 +2251,24 @@ function mostrarTela(tela){
   const crono = tela==='cronograma';
   const mil   = tela==='militar';
   const tram  = tela==='tramitar';
+  const prem  = tela==='premiomanif';
   document.getElementById('sw-gestao').classList.toggle('active', tela==='gestao');
   document.getElementById('sw-crono').classList.toggle('active', crono);
   const swMil=document.getElementById('sw-militar');   if(swMil) swMil.classList.toggle('active', mil);
   const swTr =document.getElementById('sw-tramitar');  if(swTr)  swTr.classList.toggle('active', tram);
+  const swP  =document.getElementById('sw-premio');    if(swP)   swP.classList.toggle('active', prem);
   // barras de abas internas da gestão (só nas telas de gestão/cronograma)
   document.getElementById('tabs-gestao').style.display = (tela==='gestao')?'flex':'none';
   document.getElementById('tabs-crono').style.display  = (crono)?'flex':'none';
   const ct=document.getElementById('crono-titulo'); if(ct) ct.style.display = crono?'block':'none';
-  if(mil || tram) document.querySelectorAll('#area-p1 .panel').forEach(p=>p.classList.remove('active'));
+  if(mil || tram || prem) document.querySelectorAll('#area-p1 .panel').forEach(p=>p.classList.remove('active'));
   // área do MILITAR (escolha) — irmã do #area-p1
   const am=document.getElementById('area-militar'); if(am) am.style.display = mil?'block':'none';
   const mt=document.getElementById('mil-titulo'); if(mt) mt.style.display='none';   // o rótulo da aba já indica
-  const lbl=document.querySelector('.yr label'); if(lbl) lbl.textContent = crono?'Ano do cronograma':(mil?'Ano':'Ano de gozo');
+  const lbl=document.querySelector('.yr label'); if(lbl) lbl.textContent = crono?'Ano do cronograma':((mil||prem)?'Ano':'Ano de gozo');
   if(mil){ try{ milBoot(); }catch(e){} return; }
   if(tram){ const pa=document.getElementById('panel-aprovar'); if(pa) pa.classList.add('active'); try{ aprovarBoot(); }catch(e){} return; }
+  if(prem){ const pp=document.getElementById('panel-premio_manif'); if(pp) pp.classList.add('active'); try{ carregarPremioManif(); }catch(e){} return; }
   abrirTab(crono?'crono':'anuais');
 }
 function abrirTab(t){
@@ -2448,6 +2478,7 @@ async function boot(){
       document.getElementById('sw-crono').style.display='none';
       const _swM=document.getElementById('sw-militar');  if(_swM) _swM.style.display='';
       const _swT=document.getElementById('sw-tramitar'); if(_swT) _swT.style.display='';
+      const _swP=document.getElementById('sw-premio');   if(_swP && podeAprovarPel()) _swP.style.display='';   // CMT de Pelotão valida a prêmio do seu pelotão
       document.getElementById('crono-titulo').style.display='none';
       document.getElementById('tabs-gestao').style.display='none';
       document.getElementById('tabs-crono').style.display='none';   // Tramitar agora é aba do alternador
