@@ -19,23 +19,35 @@
   function _esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]; }); }
   function _fmt(iso) { if (!iso) return ''; var p = String(iso).slice(0, 10).split('-'); return p.length === 3 ? (p[2] + '/' + p[1] + '/' + p[0]) : ''; }
 
-  // Busca só as demandas MARCADAS da tabela (a tabela demandas_impressas só tem as
-  // que alguém marcou → é pequena). 1 requisição (pagina só se passar de 1000 marcadas).
-  // O 2º arg (codigos) é ignorado — mantido p/ compatibilidade com as chamadas.
-  async function carregar(tabela, _codigos) {
+  // NÃO bloqueia o render da lista: resolve na hora e busca em SEGUNDO PLANO só as
+  // demandas MARCADAS da tabela (conjunto pequeno — a tabela demandas_impressas só
+  // tem as marcadas). Ao terminar, pinta as marcadas (repaint). O 2º arg é ignorado.
+  function carregar(tabela, _codigos) {
     St.tabela = tabela; St.map = new Map();
-    if (!_api()) return;
+    if (_api()) _carregarBg(tabela);
+    return Promise.resolve();
+  }
+  async function _carregarBg(tabela) {
     try {
       for (var off = 0; off < 50000; off += 1000) {
         var url = _api() + '/rest/v1/demandas_impressas?tabela=eq.' + encodeURIComponent(tabela) + '&select=codigo,por_nome,em';
         var r = await fetch(url, { headers: Object.assign({}, _H(), { 'Range-Unit': 'items', 'Range': off + '-' + (off + 999) }) });
         if (!r.ok) break;
         var arr = await r.json();
+        if (St.tabela !== tabela) return;            // trocou de tabela no meio — aborta
         if (!Array.isArray(arr) || !arr.length) break;
         arr.forEach(function (x) { if (x && x.codigo != null) St.map.set(String(x.codigo), { por_nome: x.por_nome || '', em: x.em || '' }); });
         if (arr.length < 1000) break;
       }
     } catch (e) { console.warn('[impresso] carregar', e); }
+    repaint();
+  }
+  // Repinta os ícones já renderizados conforme o estado carregado (marca as marcadas).
+  function repaint() {
+    try {
+      var els = document.querySelectorAll('.imp-chk[data-cod]');
+      for (var i = 0; i < els.length; i++) { _paint(els[i], St.map.has(els[i].getAttribute('data-cod'))); }
+    } catch (e) { }
   }
 
   function marcada(codigo) { return St.map.has(String(codigo == null ? '' : codigo)); }
@@ -49,7 +61,7 @@
   function icone(codigo) {
     var c = String(codigo == null ? '' : codigo);
     var on = St.map.has(c), info = on ? St.map.get(c) : null;
-    return '<span class="imp-chk' + (on ? ' on' : '') + '" role="button" title="' + _tip(on, info) +
+    return '<span class="imp-chk' + (on ? ' on' : '') + '" role="button" data-cod="' + c.replace(/"/g, '&quot;') + '" title="' + _tip(on, info) +
       '" onclick="event.stopPropagation();Impresso.toggle(this,\'' + c.replace(/'/g, "\\'") + '\')">' +
       '<span class="imp-box">' + (on ? '✔' : '') + '</span><span class="imp-lbl">Impresso</span></span>';
   }
@@ -95,5 +107,5 @@
     (document.head || document.documentElement).appendChild(st);
   } catch (e) { }
 
-  global.Impresso = { carregar: carregar, icone: icone, toggle: toggle, marcada: marcada };
+  global.Impresso = { carregar: carregar, icone: icone, toggle: toggle, marcada: marcada, repaint: repaint };
 })(window);
