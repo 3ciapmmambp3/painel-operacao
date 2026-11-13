@@ -1926,17 +1926,16 @@ async function premGerarPDF(){
   const doc=new jsPDF({unit:'mm',format:'a4'});
   let FAM='helvetica', BLACK='helvetica';
   try{ await _loadRawlineInto(doc); FAM='Rawline'; BLACK='RawlineBlack'; }catch(e){ /* fallback Helvetica se a fonte não carregar */ }
-  const L=20, R=190, W=R-L; let y=12;
+  const L=20, R=190, W=R-L, SZ=11; let y=12;   // corpo tamanho 11 (cabeçalho fica 10)
   const UND='______________________________________________________________________________';
-  const ln=(t,bold,gap)=>{ doc.setFont(FAM,bold?'bold':'normal'); doc.setFontSize(10);
-    const parts=doc.splitTextToSize(t,W); doc.text(parts,L,y); y+=parts.length*5+(gap||0); };
-  // linha de assinatura: rótulo à esquerda + etiqueta à direita (igual aos ~11 tabs do original),
-  // com a linha de assinatura logo abaixo, à direita.
-  const sign=(esq,dir)=>{ doc.setFont(FAM,'normal'); doc.setFontSize(10);
-    doc.text(esq,L,y); doc.text(dir,R,y,{align:'right'}); y+=6;
-    doc.text('_____________________________________________',R,y,{align:'right'}); y+=7; };
+  const ln=(t,bold,gap)=>{ doc.setFont(FAM,bold?'bold':'normal'); doc.setFontSize(SZ);
+    const parts=doc.splitTextToSize(t,W); doc.text(parts,L,y); y+=parts.length*5.3+(gap||0); };
+  // assinatura: rótulo à esquerda + etiqueta à direita (como os ~11 tabs do original),
+  // SEM linha (assinatura é digital) e com mais espaço (≈ dois "enter").
+  const sign=(esq,dir)=>{ doc.setFont(FAM,'normal'); doc.setFontSize(SZ);
+    doc.text(esq,L,y); doc.text(dir,R,y,{align:'right'}); y+=17; };
   // ── CABEÇALHO: brasão à ESQUERDA (célula ~25mm) + texto centralizado na célula direita (~130mm) ──
-  const brW=18, brH=brW*174/156;                 // brasão retrato (~18mm; original ~21mm)
+  const brW=22, brH=brW*174/156;                 // brasão retrato (~22mm, proporcional ao cabeçalho)
   const yTop=y;
   try{ doc.addImage(BRASAO_PREMIO,'PNG', L, yTop, brW, brH); }catch(e){}
   // cabeçalho (unidade) — alinhado à ESQUERDA, ao lado do brasão (NÃO centralizado), tamanho 10
@@ -1950,12 +1949,16 @@ async function premGerarPDF(){
   hdr.forEach(t=>{ const parts=doc.splitTextToSize(t,R-headerX); doc.text(parts,headerX,ty); ty+=parts.length*4.8+1.0; });
   y=Math.max(yTop+brH, ty)+4;
   // título (largura total, centralizado)
-  doc.setFont(FAM,'bold'); doc.setFontSize(10);
+  doc.setFont(FAM,'bold'); doc.setFontSize(SZ);
   const tit=doc.splitTextToSize('FORMULÁRIO DE REQUERIMENTO OU MANIFESTAÇÃO DE NÃO INTERESSE PARA GOZO DE FÉRIAS-PRÊMIO',W);
-  doc.text(tit,105,y,{align:'center'}); y+=tit.length*5+4;
+  doc.text(tit,105,y,{align:'center'}); y+=tit.length*5.3+4;
   // ── corpo ──
   const pg=(MP_PED&&MP_PED.militar&&MP_PED.militar.pg)||'';
-  ln('REQUERENTE (Nr./PG/NOME): '+((sessao.matricula||'')+'  '+(pg?pg+' ':'')+(sessao.nome||'')),false,1);
+  // REQUERENTE — rótulo em NEGRITO + valor normal, na mesma linha
+  doc.setFontSize(SZ); doc.setFont(FAM,'bold'); doc.text('REQUERENTE (Nr./PG/NOME): ',L,y);
+  const reqW=doc.getTextWidth('REQUERENTE (Nr./PG/NOME): ');
+  doc.setFont(FAM,'normal'); doc.text((sessao.matricula||'')+'  '+(pg?pg+' ':'')+(sessao.nome||''),L+reqW,y);
+  y+=5.3+1;
   ln('UNIDADE: 3ª Cia PM MAmb',false,4);
   // item 1 — lustro (lista completa, marca o escolhido)
   const lustOpts=['1º Lustro','2º Lustro','3º Lustro','4º Lustro','5º Lustro'], lust=d.lustro||'', lustStd=lustOpts.includes(lust);
