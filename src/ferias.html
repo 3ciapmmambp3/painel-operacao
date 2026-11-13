@@ -583,6 +583,61 @@
   </div>
 </div>
 
+<!-- MODAL GERIR MANIFESTAÇÃO — FÉRIAS-PRÊMIO (Aux P1: editar / validar) -->
+<div class="modal-bg" id="modal-premio">
+  <div class="modal">
+    <h2 id="mpg-titulo">Gerir manifestação — Férias-Prêmio</h2>
+    <div id="mpg-militar" class="miut" style="margin-bottom:10px;"></div>
+    <div class="grid">
+      <div class="fld"><label>Manifestação</label>
+        <select id="mpg-interesse"><option value="true">Com interesse</option><option value="false">Sem interesse</option></select></div>
+      <div class="fld"><label>Exercício (ano ref.)</label><input type="number" id="mpg-exerc" min="2020" max="2035"></div>
+    </div>
+    <div class="grid">
+      <div class="fld"><label>Lustro</label><input id="mpg-lustro" placeholder="ex.: 2º Lustro"></div>
+      <div class="fld"><label>Etapas pretendidas</label>
+        <select id="mpg-etapas" onchange="mpgRecalc()">
+          <option value="1 mês">1 mês (30 dias)</option>
+          <option value="2 meses">2 meses (60 dias)</option>
+          <option value="3 meses">3 meses (90 dias)</option>
+          <option value="">Outra (defina o término)</option>
+        </select></div>
+    </div>
+    <div class="card" style="margin-top:10px;background:var(--bg-dark);">
+      <h3>Datas pretendidas (início → término calculado pela etapa)</h3>
+      <div class="grid">
+        <div class="fld"><label>Opção 1 — início</label><input type="date" id="mpg-op1" onchange="mpgRecalc()"><div class="miut" id="mpg-op1f"></div></div>
+        <div class="fld"><label>Opção 2 — início</label><input type="date" id="mpg-op2" onchange="mpgRecalc()"><div class="miut" id="mpg-op2f"></div></div>
+        <div class="fld"><label>Opção 3 — início</label><input type="date" id="mpg-op3" onchange="mpgRecalc()"><div class="miut" id="mpg-op3f"></div></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:10px;background:var(--bg-dark);">
+      <h3>Período definido (conta no % quando aprovado/validado)</h3>
+      <div class="grid">
+        <div class="fld"><label>Início definido</label><input type="date" id="mpg-ini" onchange="mpgRecalc(true)"></div>
+        <div class="fld"><label>Término</label><input type="date" id="mpg-fim" onchange="mpgRecalc()"></div>
+      </div>
+      <div class="miut" id="mpg-periodo" style="margin-top:6px;"></div>
+    </div>
+    <div class="fld" style="margin-top:10px;"><label>Justificativa</label><textarea id="mpg-just" rows="2"></textarea></div>
+    <div class="grid">
+      <div class="fld"><label>Situação</label>
+        <select id="mpg-sit" onchange="mpgSitChange()">
+          <option value="SEM_INTERESSE">Sem interesse</option>
+          <option value="PENDENTE">Pendente (aguardando)</option>
+          <option value="APROVADO_PEL">Aprovado pelo Pelotão</option>
+          <option value="VALIDADO">Validado (P1)</option>
+          <option value="REJEITADO">Rejeitado</option>
+        </select></div>
+      <div class="fld" id="mpg-motivo-fld" style="display:none;"><label>Motivo da rejeição</label><input id="mpg-motivo"></div>
+    </div>
+    <div class="row-actions" style="justify-content:flex-end;margin-top:14px;">
+      <button class="btn-outline" onclick="fecharModalPremio()">Cancelar</button>
+      <button class="btn-gold" onclick="salvarPremioGerir()">Salvar</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const sessao = (function(){
   const raw = sessionStorage.getItem('poe_sessao_v2');
@@ -2044,21 +2099,96 @@ function pmRender(){
   const arr = pmG==='com'?com:sem;
   tb.innerHTML=arr.map((p,i)=>{
     const pr=p.premio||{}; const pg=(p.militar&&p.militar.pg)||''; const nome=(p.militar&&p.militar.nome)||'';
-    const datas=(pr.opcoes||[]).map((o,k)=>'Op'+(k+1)+': '+(o.ini?fmtBR(o.ini):'—')).join(' · ')||'—';
+    const parc=(p.parcelas||[]).find(x=>x.parcela==='PREMIO');
+    let datas;
+    if(parc){ datas='<b style="color:var(--gold-light);">'+fmtBR(parc.ini)+' → '+fmtBR(parc.fim)+'</b>'; }
+    else { datas=(pr.opcoes||[]).map((o,k)=>{ const f=_premioFim(o.ini,pr.etapas); return 'Op'+(k+1)+': '+(o.ini?fmtBR(o.ini):'—')+(f?(' → '+fmtBR(f)):''); }).join('<br>')||'<span class="miut">—</span>'; }
     const a=(p.anexo_requerimento||[]);
     const anexo=a.length?('<a href="'+esc(a[0].link)+'" target="_blank" rel="noopener" style="color:var(--acc);">📎 ver</a>'):'<span class="miut">—</span>';
     const sit = p.interesse? milTag(p.situacao) : '<span class="tag">Sem interesse</span>';
-    const acoes = pmG==='com'
-      ? `<button class="minibtn" onclick="premioMover('${p.id}',false)" title="Mover para Sem interesse">→ Sem</button>`
-      : `<button class="minibtn" onclick="premioMover('${p.id}',true)" title="Mover para Com interesse">→ Com</button>`;
+    let acoes='';
+    if(p.interesse) acoes+='<button class="minibtn" onclick="premioGerirAbrir(\''+p.id+'\',\'validar\')">validar</button> ';
+    acoes+='<button class="minibtn" onclick="premioGerirAbrir(\''+p.id+'\',\'editar\')">editar</button> ';
+    acoes+='<button class="minibtn del" onclick="premioExcluir(\''+p.id+'\')">excluir</button>';
     return `<tr><td>${i+1}</td><td>${esc((pg+' '+nome).trim())}</td><td>${esc(apRot(p.pelotao||'—'))}</td>`
       +`<td>${esc(pr.lustro||'—')} / ${esc(pr.etapas||'—')}</td><td>${esc(String(pr.exercicio||p.exercicio||'—'))}</td>`
-      +`<td>${esc(datas)}</td><td>${anexo}</td><td>${sit}</td>`
+      +`<td>${datas}</td><td>${anexo}</td><td>${sit}</td>`
       +`<td style="text-align:right;white-space:nowrap;">${acoes}</td></tr>`;
   }).join('') || '<tr><td colspan="9"><div class="empty">Ninguém neste grupo ainda.</div></td></tr>';
 }
 async function premioMover(id,interesse){
   try{ await rpc('ferias_premio_mover',{p_token:sessao.token,p_id:id,p_interesse:interesse}); flash('Manifestação movida.',true); carregarPremioManif(); }
+  catch(e){ flash(e.message||'Erro.',false); }
+}
+// ── duração da etapa (dias) e término calculado ──
+function _premioDias(etapas){ const e=String(etapas||'').toLowerCase().trim();
+  if(e.indexOf('1 m')===0)return 30; if(e.indexOf('2 m')===0)return 60; if(e.indexOf('3 m')===0)return 90;
+  const m=e.match(/(\d+)\s*m/); return m?parseInt(m[1],10)*30:null; }
+function _premioFim(iniISO, etapas){ const dias=_premioDias(etapas); if(!iniISO||!dias)return null; return _isoAddDia(String(iniISO).slice(0,10), dias-1); }
+
+// ── GESTÃO (Aux P1): editar / validar manifestação ──
+let MPG_ID=null;
+function fecharModalPremio(){ document.getElementById('modal-premio').classList.remove('open'); }
+function mpgSitChange(){ document.getElementById('mpg-motivo-fld').style.display=document.getElementById('mpg-sit').value==='REJEITADO'?'block':'none'; }
+function premioGerirAbrir(id, modo){
+  const p=(PM_LIST||[]).find(x=>String(x.id)===String(id)); if(!p) return;
+  MPG_ID=id; const pr=p.premio||{};
+  document.getElementById('mpg-titulo').textContent=(modo==='validar'?'Validar':'Editar')+' manifestação — Férias-Prêmio';
+  document.getElementById('mpg-militar').innerHTML='<b>'+esc((((p.militar&&p.militar.pg)||'')+' '+((p.militar&&p.militar.nome)||'')).trim())+'</b> · '+esc(apRot(p.pelotao||'—'));
+  document.getElementById('mpg-interesse').value=String(!!p.interesse);
+  document.getElementById('mpg-exerc').value=(pr.exercicio||p.exercicio||anoSel);
+  document.getElementById('mpg-lustro').value=pr.lustro||'';
+  document.getElementById('mpg-etapas').value=['1 mês','2 meses','3 meses'].includes(pr.etapas)?pr.etapas:'';
+  const ops=pr.opcoes||[];
+  document.getElementById('mpg-op1').value=(ops[0]&&String(ops[0].ini||'').slice(0,10))||'';
+  document.getElementById('mpg-op2').value=(ops[1]&&String(ops[1].ini||'').slice(0,10))||'';
+  document.getElementById('mpg-op3').value=(ops[2]&&String(ops[2].ini||'').slice(0,10))||'';
+  document.getElementById('mpg-just').value=pr.justificativa||'';
+  const parc=(p.parcelas||[]).find(x=>x.parcela==='PREMIO');
+  document.getElementById('mpg-ini').value=parc?String(parc.ini).slice(0,10):((ops[0]&&String(ops[0].ini||'').slice(0,10))||'');
+  document.getElementById('mpg-fim').value=parc?String(parc.fim).slice(0,10):'';
+  let sit=p.situacao||(p.interesse?'PENDENTE':'SEM_INTERESSE'); if(modo==='validar') sit='VALIDADO';
+  document.getElementById('mpg-sit').value=sit;
+  document.getElementById('mpg-motivo').value=p.motivo_rejeicao||'';
+  mpgSitChange(); mpgRecalc();
+  document.getElementById('modal-premio').classList.add('open');
+}
+function mpgRecalc(fromIni){
+  const et=document.getElementById('mpg-etapas').value;
+  [['mpg-op1','mpg-op1f'],['mpg-op2','mpg-op2f'],['mpg-op3','mpg-op3f']].forEach(([i,f])=>{
+    const v=document.getElementById(i).value; const fim=_premioFim(v,et);
+    document.getElementById(f).textContent=v?('término: '+(fim?fmtBR(fim):'defina manualmente')):'';
+  });
+  const ini=document.getElementById('mpg-ini').value, fimEl=document.getElementById('mpg-fim'), fimCalc=_premioFim(ini,et);
+  if(fimCalc && (fromIni || !fimEl.value)) fimEl.value=fimCalc;
+  const fim=fimEl.value;
+  document.getElementById('mpg-periodo').textContent=(ini&&fim)?('Período definido: '+fmtBR(ini)+' → '+fmtBR(fim)):'Informe o início (e o término) para validar/aprovar.';
+}
+async function salvarPremioGerir(){
+  if(!MPG_ID) return;
+  const interesse=document.getElementById('mpg-interesse').value==='true';
+  const etapas=document.getElementById('mpg-etapas').value||'Outra';
+  const exerc=parseInt(document.getElementById('mpg-exerc').value,10)||null;
+  const lustro=document.getElementById('mpg-lustro').value.trim()||null;
+  const just=document.getElementById('mpg-just').value.trim()||null;
+  const opcoes=[]; ['mpg-op1','mpg-op2','mpg-op3'].forEach(i=>{ const v=document.getElementById(i).value; if(v) opcoes.push({ini:v}); });
+  let sit=document.getElementById('mpg-sit').value;
+  if(!interesse) sit='SEM_INTERESSE';                       // sem interesse não fica na cadeia
+  const dados={interesse, exercicio:exerc, situacao:sit,
+    premio:{lustro,etapas,exercicio:exerc,opcoes,justificativa:just},
+    motivo_rejeicao:document.getElementById('mpg-motivo').value.trim()||null};
+  if(interesse && (sit==='VALIDADO'||sit==='APROVADO_PEL')){
+    const ini=document.getElementById('mpg-ini').value, fim=document.getElementById('mpg-fim').value;
+    if(!ini||!fim) return flash('Para '+(sit==='VALIDADO'?'validar':'aprovar')+', informe o início e o término do período.',false);
+    dados.parcelas=[{parcela:'PREMIO',ini,fim}];
+  } else { dados.parcelas=[]; }                              // só conta no % quando aprovado/validado
+  try{ await rpc('ferias_premio_gerir',{p_token:sessao.token,p_id:MPG_ID,p_dados:dados});
+    flash('Manifestação salva.',true); fecharModalPremio(); carregarPremioManif(); }
+  catch(e){ flash(e.message||'Erro ao salvar.',false); }
+}
+async function premioExcluir(id){
+  if(!confirm('Excluir esta manifestação de férias-prêmio?')) return;
+  try{ await rpc('ferias_pedido_excluir',{p_token:sessao.token,p_id:id}); flash('Excluído.',true); carregarPremioManif(); }
   catch(e){ flash(e.message||'Erro.',false); }
 }
 
