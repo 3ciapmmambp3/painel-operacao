@@ -1957,12 +1957,21 @@ async function carregarControleSupabase(tabela, sourceKey){
   if (!gprs.length) return;
   const inList = '(' + gprs.map(v=>`"${String(v).replace(/"/g,'')}"`).join(',') + ')';
   const sit = 'in.(' + ['"PENDENTE"','"EM ANDAMENTO"'].join(',') + ')';
-  const url = `${SB_AUTH_URL}/rest/v1/${tabela}?select=codigo,municipio,natureza,fracao_responsavel,grupamento_completo`
+  // Pagina TODAS as pendentes do escopo. O antigo limit=3000 truncava (MC passou de
+  // 6000): as cortadas (por vencimento) ficavam sem o contexto "— município" e o
+  // dropdown mostrava só-número. Agora busca em páginas até esgotar.
+  const baseUrl = `${SB_AUTH_URL}/rest/v1/${tabela}?select=codigo,municipio,natureza,fracao_responsavel,grupamento_completo`
             + `&gp_responsavel=in.${encodeURIComponent(inList)}&situacao=${encodeURIComponent(sit)}&ativo=eq.true`
-            + `&data_atendimento=is.null&order=data_vencimento.asc.nullslast&limit=3000`;
-  const rd = await fetch(url, { headers:H });
-  if (!rd.ok) return;   // ex.: 404 enquanto a migração (db/151|db/152) não rodou
-  const rows = await rd.json();
+            + `&data_atendimento=is.null&order=data_vencimento.asc.nullslast`;
+  let rows = []; const PG = 1000;
+  for (let off=0; off<60000; off+=PG){
+    const rd = await fetch(baseUrl, { headers: Object.assign({}, H, {'Range-Unit':'items','Range':off+'-'+(off+PG-1)}) });
+    if (!rd.ok) { if (off===0) return; break; }   // ex.: 404 enquanto a migração (db/151|db/152) não rodou
+    const chunk = await rd.json();
+    if (!Array.isArray(chunk) || !chunk.length) break;
+    rows = rows.concat(chunk);
+    if (chunk.length < PG) break;
+  }
   // PADRONIZADO (2026-11-12): TODAS as demandas mostram o contexto "— município · natureza"
   // no dropdown (ajuda o militar a não errar e a preencher). NUDEN/DDU antes eram só-número.
   // O corte p/ só-número é feito no ENVIO à planilha (filtrarPayloadParaPlanilha/_soCodigo),
