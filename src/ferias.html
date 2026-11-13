@@ -482,11 +482,13 @@
           </label>
           <span id="mp-file-form-nome" class="miut" style="margin-left:8px;"></span>
         </div>
-        <div class="row-actions" style="justify-content:flex-end;margin-top:14px;">
+        <div class="row-actions" style="justify-content:flex-end;margin-top:14px;align-items:center;flex-wrap:wrap;gap:8px;">
           <button class="btn-outline" onclick="premGerarPDF()">⬇ Baixar requerimento (PDF)</button>
+          <a class="btn-outline" href="https://assinador.iti.br/" target="_blank" rel="noopener" style="text-decoration:none;display:inline-flex;align-items:center;">✍️ Assinar no gov.br</a>
           <button class="btn-gold" onclick="premManifestar()">Salvar manifestação</button>
         </div>
-        <div class="miut" style="margin-top:8px;">Passo a passo: <b>1)</b> preencha os campos; <b>2)</b> baixe o requerimento; <b>3)</b> assine digitalmente (gov.br); <b>4)</b> <b>selecione o PDF assinado</b> acima; <b>5)</b> clique em <b>Salvar</b>. <b>Só é possível salvar com o requerimento anexado.</b> Pode alterar enquanto o prazo estiver aberto.</div>
+        <div id="mp-msg" style="display:none;margin-top:10px;font-size:13px;font-weight:600;text-align:right;"></div>
+        <div class="miut" style="margin-top:8px;">Passo a passo: <b>1)</b> preencha os campos; <b>2)</b> baixe o requerimento; <b>3)</b> clique em <b>Assinar no gov.br</b> (abre em outra aba — envie o PDF baixado, assine e baixe o assinado); <b>4)</b> <b>selecione o PDF assinado</b> acima; <b>5)</b> clique em <b>Salvar</b>. <b>Só é possível salvar com o requerimento anexado.</b> Pode alterar enquanto o prazo estiver aberto.</div>
       </div>
       <div id="milprem-anexo" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
         <div id="milprem-anexo-lista" class="miut">Nenhum requerimento anexado.</div>
@@ -1979,21 +1981,23 @@ async function premVagasCheck(){
   }
 }
 function mpFileFormChange(){ const f=(document.getElementById('mp-file-form').files||[])[0]; const el=document.getElementById('mp-file-form-nome'); if(el) el.textContent=f?('selecionado: '+f.name):''; }
+// mensagem PERTO do botão (não o toast do topo — em telas pequenas passa despercebido)
+function premMsg(t, ok){ const e=document.getElementById('mp-msg'); if(!e) return; e.style.display=t?'block':'none'; e.innerHTML=t||''; e.style.color=ok?'#66bb6a':'var(--danger)'; }
 async function premManifestar(){
   const intv=(document.querySelector('input[name=mp-int]:checked')||{}).value;
-  if(!intv) return flash('Marque se TEM ou NÃO tem interesse.',false);
+  if(!intv) return premMsg('Marque se TEM ou NÃO tem interesse.',false);
   const d=premColeta();
-  if(!d.exercicio) return flash('Informe o exercício (ano a que se refere).',false);
-  if(d.interesse && !d.opcoes.length) return flash('Informe ao menos a Opção 1 (data de início).',false);
+  if(!d.exercicio) return premMsg('Informe o exercício (ano a que se refere).',false);
+  if(d.interesse && !d.opcoes.length) return premMsg('Informe ao menos a Opção 1 (data de início).',false);
   // anexo OBRIGATÓRIO: precisa de um PDF selecionado OU já ter um anexo salvo
   const f=(document.getElementById('mp-file-form').files||[])[0];
   const temAnexo = MP_PED && (MP_PED.anexo_requerimento||[]).length>0;
-  if(!f && !temAnexo) return flash('Anexe o requerimento assinado (PDF) para salvar.',false);
-  if(f && f.size>15*1024*1024) return flash('Arquivo acima de 15 MB.',false);
+  if(!f && !temAnexo) return premMsg('⚠️ Anexe o requerimento assinado (PDF) para salvar.',false);
+  if(f && f.size>15*1024*1024) return premMsg('Arquivo acima de 15 MB.',false);
   try{
     // 1) sobe o anexo ANTES de salvar (se falhar, nada é gravado)
     let anexo=null;
-    if(f){ flash('Enviando requerimento…',true);
+    if(f){ premMsg('Enviando requerimento…',true);
       let res; if(DRIVE_URL){ try{ res=await subirDrivePdf(f); }catch(e){ res=await subirStoragePdf(f); } } else res=await subirStoragePdf(f);
       anexo=[{path:res.path||null,nome:f.name,tamanho:f.size,mime:f.type||'application/pdf',link:res.link}];
     }
@@ -2003,8 +2007,8 @@ async function premManifestar(){
     // 3) anexa o requerimento ao pedido
     if(anexo && MP_PED && MP_PED.id){ await rpc('ferias_premio_anexar',{p_token:sessao.token,p_id:MP_PED.id,p_anexo:anexo,p_fase:'req'}); }
     const ff=document.getElementById('mp-file-form'); if(ff) ff.value='';
-    flash('Manifestação salva com o requerimento anexado.',true); premManifestBoot();
-  }catch(e){ flash(e.message||'Erro ao salvar.',false); }
+    premMsg('✓ Manifestação salva com o requerimento anexado.',true); flash('Manifestação salva.',true); premManifestBoot();
+  }catch(e){ premMsg(e.message||'Erro ao salvar.',false); }
 }
 async function premAnexar(input){
   const f=input.files&&input.files[0]; input.value='';
