@@ -1911,50 +1911,69 @@ function premGerarPDF(){
   const jsPDF=(window.jspdf||{}).jsPDF; if(!jsPDF) return flash('Gerador de PDF indisponível.',false);
   const d=premColeta();
   const doc=new jsPDF({unit:'mm',format:'a4'});
-  const L=20, R=190, W=R-L; let y=10;
-  const cen=(t,sz,bold)=>{ doc.setFont('helvetica',bold?'bold':'normal'); doc.setFontSize(sz);
-    const parts=doc.splitTextToSize(t,W); doc.text(parts,105,y,{align:'center'}); y+=parts.length*(sz*0.42)+1.4; };
+  const L=20, R=190, W=R-L; let y=12;
+  const UND='______________________________________________________________________________';
   const ln=(t,bold,gap)=>{ doc.setFont('helvetica',bold?'bold':'normal'); doc.setFontSize(10);
     const parts=doc.splitTextToSize(t,W); doc.text(parts,L,y); y+=parts.length*5+(gap||0); };
-  // brasão oficial (word/media/image1.png), centralizado no topo
-  try{ const iw=15, ih=iw*174/156; doc.addImage(BRASAO_PREMIO,'PNG',105-iw/2,y,iw,ih); y+=ih+2; }catch(e){ y+=2; }
-  cen('POLÍCIA MILITAR DE MINAS GERAIS',10,true);
-  cen('COMANDO DE POLICIAMENTO ESPECIALIZADO',9,false);
-  cen('BATALHÃO DE POLÍCIA MILITAR DE MEIO AMBIENTE',9,false);
-  cen('3ª COMPANHIA DE POLÍCIA MILITAR DE MEIO AMBIENTE',9,false);
-  y+=3; cen('FORMULÁRIO DE REQUERIMENTO OU MANIFESTAÇÃO DE NÃO INTERESSE PARA GOZO DE FÉRIAS-PRÊMIO',10,true); y+=3;
+  // linha de assinatura: rótulo à esquerda + etiqueta à direita (igual aos ~11 tabs do original),
+  // com a linha de assinatura logo abaixo, à direita.
+  const sign=(esq,dir)=>{ doc.setFont('helvetica','normal'); doc.setFontSize(10);
+    doc.text(esq,L,y); doc.text(dir,R,y,{align:'right'}); y+=6;
+    doc.text('_____________________________________________',R,y,{align:'right'}); y+=7; };
+  // ── CABEÇALHO: brasão à ESQUERDA (célula ~25mm) + texto centralizado na célula direita (~130mm) ──
+  const brW=22, brH=brW*174/156;                 // brasão retrato
+  const yTop=y;
+  try{ doc.addImage(BRASAO_PREMIO,'PNG', L, yTop, brW, brH); }catch(e){}
+  const rcCenter=115;                            // centro da célula direita do cabeçalho
+  const hdr=[['POLÍCIA MILITAR DE MINAS GERAIS',10,true],
+             ['COMANDO DE POLICIAMENTO ESPECIALIZADO',9,false],
+             ['BATALHÃO DE POLÍCIA MILITAR DE MEIO AMBIENTE',9,false],
+             ['3ª COMPANHIA DE POLÍCIA MILITAR DE MEIO AMBIENTE',9,false]];
+  let ty=yTop+4;
+  hdr.forEach(([t,sz,b])=>{ doc.setFont('helvetica',b?'bold':'normal'); doc.setFontSize(sz);
+    const parts=doc.splitTextToSize(t,128); doc.text(parts,rcCenter,ty,{align:'center'}); ty+=parts.length*(sz*0.46)+1.3; });
+  y=Math.max(yTop+brH, ty)+4;
+  // título (largura total, centralizado)
+  doc.setFont('helvetica','bold'); doc.setFontSize(10);
+  const tit=doc.splitTextToSize('FORMULÁRIO DE REQUERIMENTO OU MANIFESTAÇÃO DE NÃO INTERESSE PARA GOZO DE FÉRIAS-PRÊMIO',W);
+  doc.text(tit,105,y,{align:'center'}); y+=tit.length*5+4;
+  // ── corpo ──
   const pg=(MP_PED&&MP_PED.militar&&MP_PED.militar.pg)||'';
   ln('REQUERENTE (Nr./PG/NOME): '+((sessao.matricula||'')+'  '+(pg?pg+' ':'')+(sessao.nome||'')),false,1);
-  ln('UNIDADE: 3ª Cia PM MAmb',false,3);
+  ln('UNIDADE: 3ª Cia PM MAmb',false,4);
   // item 1 — lustro (lista completa, marca o escolhido)
   const lustOpts=['1º Lustro','2º Lustro','3º Lustro','4º Lustro','5º Lustro'], lust=d.lustro||'', lustStd=lustOpts.includes(lust);
   let l1=lustOpts.map(o=>(o===lust?'( X ) ':'(   ) ')+o).join('   ')+'   '+((lust&&!lustStd)?('( X ) Outro: '+lust):'(   ) Outro: __________');
-  ln('1. Lustro a que faz jus (conforme Ato de concessão):',true,0);  ln(l1,false,3);
+  ln('1. Lustro a que faz jus (conforme Ato de concessão):',true,1);  ln(l1,false,4);
   // item 2 — etapas
   const etOpts=['1 mês','2 meses','3 meses'], et=d.etapas||'', etStd=etOpts.includes(et);
   let l2=etOpts.map(o=>(o===et?'( X ) ':'(   ) ')+o).join('   ')+'   '+((et&&!etStd)?('( X ) Outra: '+et):'(   ) Outra: __________');
-  ln('2. Etapas pretendidas para gozo:',true,0);  ln(l2,false,3);
+  ln('2. Etapas pretendidas para gozo:',true,1);  ln(l2,false,4);
   // item 3 — manifestação
-  ln('3. Manifestação de interesse:',true,0);
-  ln((d.interesse?'( X ) ':'(   ) ')+'Tenho interesse em usufruir férias-prêmio no exercício de '+(d.exercicio||'______')+', conforme datas indicadas abaixo:',false,0);
+  ln('3. Manifestação de interesse:',true,1);
+  ln((d.interesse?'( X ) ':'(   ) ')+'Tenho interesse em usufruir férias-prêmio no exercício de '+(d.exercicio||'______')+', conforme datas indicadas abaixo:',false,1);
   const op=(d.opcoes||[]);
   ln('     Opção 1: Início: '+(op[0]?fmtBR(op[0].ini):'___/___/______'),false,0);
   ln('     Opção 2: Início: '+(op[1]?fmtBR(op[1].ini):'___/___/______'),false,0);
   ln('     Opção 3: Início: '+(op[2]?fmtBR(op[2].ini):'___/___/______'),false,1);
-  ln((!d.interesse?'( X ) ':'(   ) ')+'Não tenho interesse em usufruir férias-prêmio no exercício de '+(d.exercicio||'______')+'.',false,3);
-  // item 4 — justificativa + data do dia
+  ln((!d.interesse?'( X ) ':'(   ) ')+'Não tenho interesse em usufruir férias-prêmio no exercício de '+(d.exercicio||'______')+'.',false,4);
+  // item 4 — justificativa + data do dia + assinatura
   const hj=new Date(), zz=n=>String(n).padStart(2,'0'), dataHoje=zz(hj.getDate())+'/'+zz(hj.getMonth()+1)+'/'+hj.getFullYear();
-  ln('4. Justificativa do militar (em caso de opção pelo gozo ou pela não fruição):',true,0);
-  ln((d.justificativa||'______________________________________________________________'),false,3);
-  ln('Data: '+dataHoje+'          Assinatura do militar requerente: ______________________________',false,4);
-  // itens 5-6 — em branco (preenchidos depois pela chefia/comandante)
-  ln('5. Despacho da Chefia Imediata:',true,0);
-  ln('(   ) De acordo     (   ) Não de acordo. Justificativa: _______________________________________',false,0);
-  ln('Em, na data da assinatura digital     Assinatura e posto/graduação da Chefia: __________________',false,4);
-  ln('6. Despacho do Comandante de Unidade:',true,0);
-  ln('(   ) DEFERIDO     (   ) INDEFERIDO',false,0);
-  ln('Justificativa (em caso de indeferimento): _____________________________________________________',false,0);
-  ln('Em, na data da assinatura digital     Assinatura e posto/graduação do Comandante: ______________',false,0);
+  ln('4. Justificativa do militar (em caso de opção pelo gozo ou pela não fruição):',true,1);
+  ln((d.justificativa||UND),false,0); if(!d.justificativa){ ln(UND,false,0); ln(UND,false,2);} else y+=2;
+  sign('Data: '+dataHoje,'Assinatura do militar requerente:');
+  // item 5 — Despacho da Chefia (em branco)
+  ln('5. Despacho da Chefia Imediata:',true,1);
+  ln('(   ) De acordo',false,1);
+  ln('(   ) Não de acordo. Justificativa: '+'______________________________________',false,0);
+  ln(UND,false,2);
+  sign('Em, na data da assinatura digital','Assinatura e posto/graduação da Chefia:');
+  // item 6 — Despacho do Comandante (em branco)
+  ln('6. Despacho do Comandante de Unidade:',true,1);
+  ln('(   ) DEFERIDO       (   ) INDEFERIDO',false,1);
+  ln('Justificativa (em caso de indeferimento): '+'________________________________',false,0);
+  ln(UND,false,2);
+  sign('Em, na data da assinatura digital','Assinatura e posto/graduação do Comandante:');
   const fn='Requerimento_Ferias_Premio_'+(sessao.matricula||'militar')+'_'+anoSel+'.pdf';
   doc.save(fn);
 }
