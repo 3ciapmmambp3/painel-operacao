@@ -38,14 +38,18 @@
 
   function marcada(codigo) { return St.map.has(String(codigo == null ? '' : codigo)); }
 
+  function _tip(on, info) {
+    return on
+      ? ('Impressa por ' + _esc((info && info.por_nome) || '—') + (info && info.em ? (' em ' + _fmt(info.em)) : '') + ' — clique p/ desmarcar')
+      : 'Clique p/ marcar como impressa';
+  }
+  // Controle estilo checkbox com rótulo "Impresso" (☐/☑), p/ ficar claro e visível.
   function icone(codigo) {
     var c = String(codigo == null ? '' : codigo);
     var on = St.map.has(c), info = on ? St.map.get(c) : null;
-    var tip = on
-      ? ('Impressa por ' + _esc(info.por_nome || '—') + (info.em ? (' em ' + _fmt(info.em)) : '') + ' — clique p/ desmarcar')
-      : 'Marcar como impressa';
-    return '<span class="imp-ic' + (on ? ' on' : '') + '" role="button" title="' + tip +
-      '" onclick="event.stopPropagation();Impresso.toggle(this,\'' + c.replace(/'/g, "\\'") + '\')">🖨</span>';
+    return '<span class="imp-chk' + (on ? ' on' : '') + '" role="button" title="' + _tip(on, info) +
+      '" onclick="event.stopPropagation();Impresso.toggle(this,\'' + c.replace(/'/g, "\\'") + '\')">' +
+      '<span class="imp-box">' + (on ? '✔' : '') + '</span><span class="imp-lbl">Impresso</span></span>';
   }
 
   async function toggle(el, codigo) {
@@ -54,7 +58,7 @@
     if (!tok) { alert('Sessão expirada. Faça login novamente.'); return; }
     var novo = !St.map.has(c);
     if (novo) St.map.set(c, { por_nome: 'você', em: new Date().toISOString() }); else St.map.delete(c);
-    if (el) { el.classList.toggle('on', novo); el.title = novo ? 'Impressa — clique p/ desmarcar' : 'Marcar como impressa'; }
+    _paint(el, novo);
     try {
       var r = await fetch(_api() + '/rest/v1/rpc/demanda_impresso_set', {
         method: 'POST', headers: _H(),
@@ -63,19 +67,29 @@
       if (!r.ok) throw new Error(await r.text());
     } catch (e) {
       if (novo) St.map.delete(c); else St.map.set(c, { por_nome: '', em: '' });
-      if (el) el.classList.toggle('on', !novo);
+      _paint(el, !novo);
       alert('Não consegui salvar o marcador de impressão: ' + (e.message || e));
     }
+  }
+  function _paint(el, on) {
+    if (!el) return;
+    el.classList.toggle('on', on);
+    var box = el.querySelector('.imp-box'); if (box) box.textContent = on ? '✔' : '';
+    el.title = on ? 'Impressa — clique p/ desmarcar' : 'Clique p/ marcar como impressa';
   }
 
   // CSS próprio (não depende do módulo).
   try {
     var st = document.createElement('style');
     st.textContent =
-      '.imp-ic{cursor:pointer;opacity:.33;filter:grayscale(1);font-size:15px;line-height:1;' +
-      'padding:1px 3px;border-radius:5px;user-select:none;transition:opacity .12s}' +
-      '.imp-ic:hover{opacity:.7}' +
-      '.imp-ic.on{opacity:1;filter:none;background:rgba(201,162,74,.18);box-shadow:inset 0 0 0 1px rgba(201,162,74,.5)}';
+      '.imp-chk{display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none;' +
+      'font-size:12px;font-weight:700;color:var(--text-muted,#9a9aa2);padding:4px 9px;border-radius:7px;' +
+      'border:1px solid var(--border-mid,#444);white-space:nowrap;line-height:1}' +
+      '.imp-chk:hover{color:var(--text-white,#ddd);border-color:#777}' +
+      '.imp-box{width:16px;height:16px;border-radius:4px;border:1.5px solid #888;display:inline-flex;' +
+      'align-items:center;justify-content:center;font-size:12px;line-height:1;color:#fff}' +
+      '.imp-chk.on{color:#2e9e46;border-color:#2e9e46;background:rgba(46,158,70,.14)}' +
+      '.imp-chk.on .imp-box{background:#2e9e46;border-color:#2e9e46}';
     (document.head || document.documentElement).appendChild(st);
   } catch (e) { }
 
