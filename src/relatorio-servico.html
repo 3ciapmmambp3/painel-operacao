@@ -1967,12 +1967,22 @@ async function carregarControleSupabase(tabela, sourceKey){
     return { value: extras ? `${d.codigo} — ${extras}` : `${d.codigo}`, fracao: d.grupamento_completo || d.fracao_responsavel || '' };
   });
   const atual = Array.isArray(referenceCache[sourceKey]) ? referenceCache[sourceKey] : [];
-  const seen = new Set(); const out = [];
+  // Dedup pelo CÓDIGO base (parte antes do "— município · bioma"), não pelo texto
+  // cheio — senão a mesma demanda vinda em 2 formatos (só-número da planilha de
+  // referências × número+contexto do Supabase) aparecia DUPLICADA. Mantém a versão
+  // mais completa (com "— …") p/ o militar não errar; o envio à planilha já corta
+  // p/ só-número (filtrarPayloadParaPlanilha/_soCodigo), então a baixa não quebra.
+  const _val = it => ((it && typeof it==='object') ? (it.value||'') : (it||''));
+  const _cod = v => _stripAndamento(String(v)).split(/\s+—\s+/)[0].replace(/\s+/g,' ').trim();
+  const byCod = new Map();
   [...atual, ...itens].forEach(it => {
-    const k = ((it && typeof it==='object') ? (it.value||'') : (it||'')).replace(/\s+/g,' ').trim();
-    if (k && !seen.has(k)) { seen.add(k); out.push(it); }
+    const v = _val(it); const c = _cod(v); if (!c) return;
+    const prev = byCod.get(c);
+    if (!prev) { byCod.set(c, it); return; }
+    const prevRich = /\s—\s/.test(_val(prev)), curRich = /\s—\s/.test(v);
+    if (curRich && !prevRich) byCod.set(c, it);   // substitui o só-número pelo completo
   });
-  referenceCache[sourceKey] = out;
+  referenceCache[sourceKey] = [...byCod.values()];
 }
 
 // Demandas EM ANDAMENTO (tabela de controle Supabase, db/134): mescla nos cards
