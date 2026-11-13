@@ -1904,20 +1904,35 @@ function premRenderAnexoMil(){
     ? ('📎 <a href="'+esc(a[0].link)+'" target="_blank" rel="noopener" style="color:var(--acc);">'+esc(a[0].nome||'requerimento.pdf')+'</a> <span class="miut">(anexado)</span>')
     : 'Nenhum requerimento anexado. Baixe o PDF acima, assine digitalmente e anexe aqui.';
 }
+// ── Fonte Rawline (oficial do requerimento): carrega sob demanda e embute no PDF ──
+function _ab2b64(buf){ let bin=''; const b=new Uint8Array(buf); for(let i=0;i<b.length;i+=0x8000){ bin+=String.fromCharCode.apply(null,b.subarray(i,i+0x8000)); } return btoa(bin); }
+let _rawlineB64=null;
+async function _loadRawlineInto(doc){
+  if(!_rawlineB64){
+    const fs={reg:'fonts/rawline-400.ttf',bold:'fonts/rawline-700.ttf',black:'fonts/rawline-900.ttf'}, out={};
+    for(const k in fs){ const r=await fetch(fs[k]); if(!r.ok) throw new Error('fonte '+r.status); out[k]=_ab2b64(await r.arrayBuffer()); }
+    _rawlineB64=out;
+  }
+  doc.addFileToVFS('rawline-400.ttf',_rawlineB64.reg);  doc.addFont('rawline-400.ttf','Rawline','normal');
+  doc.addFileToVFS('rawline-700.ttf',_rawlineB64.bold); doc.addFont('rawline-700.ttf','Rawline','bold');
+  doc.addFileToVFS('rawline-900.ttf',_rawlineB64.black);doc.addFont('rawline-900.ttf','RawlineBlack','normal');
+}
 // ── MILITAR: gera o requerimento pré-preenchido (jsPDF) ──
-function premGerarPDF(){
+async function premGerarPDF(){
   const intv=(document.querySelector('input[name=mp-int]:checked')||{}).value;
   if(!intv) return flash('Marque interesse / não-interesse antes de gerar o PDF.',false);
   const jsPDF=(window.jspdf||{}).jsPDF; if(!jsPDF) return flash('Gerador de PDF indisponível.',false);
   const d=premColeta();
   const doc=new jsPDF({unit:'mm',format:'a4'});
+  let FAM='helvetica', BLACK='helvetica';
+  try{ await _loadRawlineInto(doc); FAM='Rawline'; BLACK='RawlineBlack'; }catch(e){ /* fallback Helvetica se a fonte não carregar */ }
   const L=20, R=190, W=R-L; let y=12;
   const UND='______________________________________________________________________________';
-  const ln=(t,bold,gap)=>{ doc.setFont('helvetica',bold?'bold':'normal'); doc.setFontSize(10);
+  const ln=(t,bold,gap)=>{ doc.setFont(FAM,bold?'bold':'normal'); doc.setFontSize(10);
     const parts=doc.splitTextToSize(t,W); doc.text(parts,L,y); y+=parts.length*5+(gap||0); };
   // linha de assinatura: rótulo à esquerda + etiqueta à direita (igual aos ~11 tabs do original),
   // com a linha de assinatura logo abaixo, à direita.
-  const sign=(esq,dir)=>{ doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  const sign=(esq,dir)=>{ doc.setFont(FAM,'normal'); doc.setFontSize(10);
     doc.text(esq,L,y); doc.text(dir,R,y,{align:'right'}); y+=6;
     doc.text('_____________________________________________',R,y,{align:'right'}); y+=7; };
   // ── CABEÇALHO: brasão à ESQUERDA (célula ~25mm) + texto centralizado na célula direita (~130mm) ──
@@ -1931,11 +1946,11 @@ function premGerarPDF(){
              'BATALHÃO DE POLÍCIA MILITAR DE MEIO AMBIENTE',
              '3ª COMPANHIA DE POLÍCIA MILITAR DE MEIO AMBIENTE'];
   let ty=yTop+5;
-  doc.setFont('helvetica','bold'); doc.setFontSize(10);
+  doc.setFont(BLACK,'normal'); doc.setFontSize(10);
   hdr.forEach(t=>{ const parts=doc.splitTextToSize(t,R-headerX); doc.text(parts,headerX,ty); ty+=parts.length*4.8+1.0; });
   y=Math.max(yTop+brH, ty)+4;
   // título (largura total, centralizado)
-  doc.setFont('helvetica','bold'); doc.setFontSize(10);
+  doc.setFont(FAM,'bold'); doc.setFontSize(10);
   const tit=doc.splitTextToSize('FORMULÁRIO DE REQUERIMENTO OU MANIFESTAÇÃO DE NÃO INTERESSE PARA GOZO DE FÉRIAS-PRÊMIO',W);
   doc.text(tit,105,y,{align:'center'}); y+=tit.length*5+4;
   // ── corpo ──
