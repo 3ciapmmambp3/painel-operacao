@@ -448,7 +448,7 @@
             <div id="mp-lustro-outro-fld" style="display:none;margin-top:8px;"><label>Outro — qual?</label><input id="mp-lustro-outro"></div>
           </div>
           <div class="fld"><label>2. Etapas pretendidas para gozo</label>
-            <select id="mp-etapas" onchange="mpOutroToggle()">
+            <select id="mp-etapas" onchange="mpOutroToggle();premVagasCheck()">
               <option value="">— selecione —</option>
               <option value="1 mês">1 mês</option>
               <option value="2 meses">2 meses</option>
@@ -466,11 +466,11 @@
         </div>
         <div class="fld" style="margin-top:10px;max-width:220px;"><label>Exercício (ano a que se refere)</label><input type="number" id="mp-exerc" min="2020" max="2035"></div>
         <div id="mp-datas" style="display:none;margin-top:8px;">
-          <div class="miut" style="margin-bottom:6px;">Datas de início pretendidas (em ordem de preferência):</div>
+          <div class="miut" style="margin-bottom:6px;">Datas de início pretendidas (em ordem de preferência). Ao escolher a <b>etapa</b> e a <b>data</b>, o sistema informa se tende a haver <b>vaga</b> (não trava — é só um aviso).</div>
           <div class="grid">
-            <div class="fld"><label>Opção 1 — início</label><input type="date" id="mp-op1"></div>
-            <div class="fld"><label>Opção 2 — início</label><input type="date" id="mp-op2"></div>
-            <div class="fld"><label>Opção 3 — início</label><input type="date" id="mp-op3"></div>
+            <div class="fld"><label>Opção 1 — início</label><input type="date" id="mp-op1" onchange="premVagasCheck()"><div class="miut" id="mp-op1v" style="margin-top:4px;"></div></div>
+            <div class="fld"><label>Opção 2 — início</label><input type="date" id="mp-op2" onchange="premVagasCheck()"><div class="miut" id="mp-op2v" style="margin-top:4px;"></div></div>
+            <div class="fld"><label>Opção 3 — início</label><input type="date" id="mp-op3" onchange="premVagasCheck()"><div class="miut" id="mp-op3v" style="margin-top:4px;"></div></div>
           </div>
         </div>
         <div class="fld" style="margin-top:12px;"><label>4. Justificativa (em caso de gozo ou de não fruição)</label><textarea id="mp-just" rows="2"></textarea></div>
@@ -1888,7 +1888,7 @@ async function premManifestBoot(){
   }
   st.innerHTML=s;
   const travado = MP_PED && ['APROVADO_PEL','VALIDADO'].includes(MP_PED.situacao);
-  if(pode && !travado){ premPreencherForm(MP_PED); form.style.display='block'; }
+  if(pode && !travado){ premPreencherForm(MP_PED); form.style.display='block'; try{ premVagasCheck(); }catch(e){} }
   if(MP_PED){ anexoBox.style.display='block'; premRenderAnexoMil(); }
 }
 function mpOutroToggle(){
@@ -1929,6 +1929,26 @@ function premColeta(){
   const opcoes=[];
   if(intv==='sim'){ ['mp-op1','mp-op2','mp-op3'].forEach(id=>{ const v=document.getElementById(id).value; if(v) opcoes.push({ini:v}); }); }
   return {interesse:intv==='sim', lustro:lust||null, etapas:et||null, exercicio:exerc, justificativa:just, opcoes};
+}
+// informa (sem travar) se tende a haver vaga para a data+etapa escolhida
+let _vagaSeq=0;
+async function premVagasCheck(){
+  const etVal=document.getElementById('mp-etapas').value;
+  const seq=++_vagaSeq;
+  for(const n of [1,2,3]){
+    const ini=document.getElementById('mp-op'+n).value;
+    const out=document.getElementById('mp-op'+n+'v'); if(!out) continue;
+    if(!ini){ out.textContent=''; continue; }
+    const fim=_premioFim(ini, etVal);
+    if(!fim){ out.innerHTML='<span class="miut">Selecione a etapa (1/2/3 meses) para ver as vagas.</span>'; continue; }
+    out.innerHTML='<span class="miut">verificando vagas…</span>';
+    try{
+      const r=await rpc('ferias_premio_vagas',{p_token:sessao.token,p_ano:anoSel,p_ini:ini,p_fim:fim});
+      if(seq!==_vagaSeq) return;
+      if(r && r.vaga){ out.innerHTML='<span style="color:#66bb6a;">✓ Tende a haver vaga ('+fmtBR(ini)+' – '+fmtBR(fim)+').</span>'; }
+      else if(r){ out.innerHTML='<span style="color:var(--danger);">⚠️ Pode não haver vaga: em '+fmtBR(r.dia)+' a lotação '+esc(r.nivel)+' chega a '+esc(String(r.ferias))+' de '+esc(String(r.total))+' (teto '+esc(String(r.limite))+'%). Você ainda pode manifestar.</span>'; }
+    }catch(e){ if(seq===_vagaSeq) out.innerHTML='<span class="miut">Não deu para verificar as vagas agora.</span>'; }
+  }
 }
 async function premManifestar(){
   const intv=(document.querySelector('input[name=mp-int]:checked')||{}).value;
