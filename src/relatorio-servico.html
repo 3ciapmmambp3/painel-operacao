@@ -1904,13 +1904,19 @@ async function carregarDemandasSupabase(){
   const _valOf = it => (it && typeof it==='object') ? (it.value||'') : (it||'');
   const _scopePlan = arr => (Array.isArray(arr)?arr:[])
     .filter(it => (it && typeof it==='object') ? _fracEscopo(it.fracao) : false);
+  const _codOf = v => _stripAndamento(String(v)).split(/\s+—\s+/)[0].replace(/\s+/g,' ').trim();
   const _merge = (planScoped, sup) => {
-    const seen = new Set(); const out = [];
+    // Dedup pelo CÓDIGO base (a mesma demanda vinha só-número da planilha e
+    // número+município·tema do Supabase); mantém a versão mais completa.
+    const byCod = new Map();
     [...planScoped, ...sup].forEach(it => {
-      const k = _valOf(it).replace(/\s+/g,' ').trim();
-      if (k && !seen.has(k)) { seen.add(k); out.push(it); }
+      const v = _valOf(it); const c = _codOf(v); if (!c) return;
+      const prev = byCod.get(c);
+      if (!prev) { byCod.set(c, it); return; }
+      const prevRich = /\s—\s/.test(_valOf(prev)), curRich = /\s—\s/.test(v);
+      if (curRich && !prevRich) byCod.set(c, it);
     });
-    return out;
+    return [...byCod.values()];
   };
   referenceCache['DEN_BALCAO'] = _merge(_scopePlan(referenceCache['DEN_BALCAO']), supBalcao);
   referenceCache['REQUISICAO'] = _merge(_scopePlan(referenceCache['REQUISICAO']), supReq);
@@ -1957,13 +1963,12 @@ async function carregarControleSupabase(tabela, sourceKey){
   const rd = await fetch(url, { headers:H });
   if (!rd.ok) return;   // ex.: 404 enquanto a migração (db/151|db/152) não rodou
   const rows = await rd.json();
-  // NUDEN e DDU mostram SÓ O NÚMERO no dropdown. RI/Emergência/MC mantêm o
-  // contexto "— município · natureza" no dropdown (ajuda o militar a não errar);
-  // o corte p/ só-número é feito no ENVIO à planilha (filtrarPayloadParaPlanilha),
-  // porque a baixa cai noutra planilha que casa por número (2026-11-04).
-  const soNumero = (sourceKey === 'NUDEN' || sourceKey === 'DDU181');
+  // PADRONIZADO (2026-11-12): TODAS as demandas mostram o contexto "— município · natureza"
+  // no dropdown (ajuda o militar a não errar e a preencher). NUDEN/DDU antes eram só-número.
+  // O corte p/ só-número é feito no ENVIO à planilha (filtrarPayloadParaPlanilha/_soCodigo),
+  // porque a baixa cai noutra planilha que casa por número — então a baixa não quebra.
   const itens = rows.map(d => {
-    const extras = soNumero ? '' : [d.municipio, d.natureza].filter(Boolean).join(' · ');
+    const extras = [d.municipio, d.natureza].filter(Boolean).join(' · ');
     return { value: extras ? `${d.codigo} — ${extras}` : `${d.codigo}`, fracao: d.grupamento_completo || d.fracao_responsavel || '' };
   });
   const atual = Array.isArray(referenceCache[sourceKey]) ? referenceCache[sourceKey] : [];
