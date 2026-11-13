@@ -16,6 +16,8 @@
   <!-- xlsx-js-style: fork do SheetJS 0.18 com estilos de célula (cores/mesclagens
        do "Plano de Férias"). API compatível — import e exports existentes seguem iguais. -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+  <!-- jsPDF: geração do requerimento de férias-prêmio pré-preenchido -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="auth.js"></script>
   <style>
     body{display:flex;flex-direction:column;min-height:100vh;}
@@ -171,6 +173,7 @@
     <!-- Abas de GESTÃO (uso constante do Aux P1) -->
     <div class="tabs" id="tabs-gestao">
       <button class="tab active" data-tab="anuais" onclick="abrirTab('anuais')">🏖️ Férias Anuais</button>
+      <button class="tab" data-tab="premio_manif" onclick="abrirTab('premio_manif')">🎖️ Prêmio — Manifestação</button>
       <button class="tab" data-tab="premio" onclick="abrirTab('premio')">🎖️ Férias-Prêmio</button>
       <button class="tab" data-tab="lanc" onclick="abrirTab('lanc')">📝 Lançamentos</button>
     </div>
@@ -301,6 +304,44 @@
       </div>
     </div>
 
+    <!-- ══ TAB PRÊMIO — MANIFESTAÇÃO (interesse com/sem + requerimento) ══ -->
+    <div class="panel" id="panel-premio_manif">
+      <div class="card">
+        <h3>Prazo da manifestação — Férias-Prêmio (<span id="pm-ano">—</span>)</h3>
+        <div class="grid">
+          <div class="fld"><label>Situação</label>
+            <select id="pm-sit">
+              <option value="RASCUNHO">Rascunho (só o P1 vê)</option>
+              <option value="ABERTO">Aberto (militares podem manifestar)</option>
+              <option value="ENCERRADO">Encerrado (fora do prazo)</option>
+            </select>
+          </div>
+          <div class="fld"><label>Abertura da manifestação</label><input type="date" id="pm-abertura"></div>
+          <div class="fld"><label>Limite para manifestação</label><input type="date" id="pm-limite"></div>
+        </div>
+        <div class="row-actions"><button class="btn-gold" onclick="salvarPrazoPremio()">💾 Salvar prazo</button></div>
+        <div class="miut" style="margin-top:8px;">Enquanto <b>Aberto</b> (e dentro do prazo), todo militar manifesta interesse <b>ou</b> não-interesse na férias-prêmio do ano selecionado (campo <b>Ano de gozo</b> no topo) e anexa o requerimento assinado. A <b>aprovação</b> dos que têm interesse respeita o mesmo teto de % das anuais (15% da Cia + limite da fração).</div>
+      </div>
+      <div class="card">
+        <div class="ct-chips" id="pm-chips">
+          <button class="ct-chip active" data-g="com"   onclick="pmSetG('com')">✅ Com interesse <span class="miut" id="pm-n-com"></span></button>
+          <button class="ct-chip"        data-g="sem"   onclick="pmSetG('sem')">🚫 Sem interesse <span class="miut" id="pm-n-sem"></span></button>
+          <button class="ct-chip"        data-g="falta" onclick="pmSetG('falta')">⏳ Falta manifestar <span class="miut" id="pm-n-falta"></span></button>
+        </div>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead><tr>
+              <th style="width:30px;">#</th><th style="min-width:200px;">Militar</th><th style="width:90px;">Pelotão</th>
+              <th style="width:130px;">Lustro / Etapas</th><th style="width:60px;">Exerc.</th>
+              <th style="width:22%;">Opções (datas)</th><th style="width:120px;">Requerimento</th>
+              <th style="width:110px;">Situação</th><th style="width:1%;white-space:nowrap;text-align:right;">Ações</th>
+            </tr></thead>
+            <tbody id="pm-tbody"><tr><td colspan="9"><div class="empty">Carregando…</div></td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <!-- ══ TAB CONTROLE — compartilhada por "Férias Anuais" e "Férias-Prêmio" ══ -->
     <div class="panel active" id="panel-controle">
       <div class="card">
@@ -386,6 +427,63 @@
         <button class="btn-gold" onclick="milEnviar()">Enviar escolha</button>
       </div>
       <div class="miut" style="margin-top:10px;">Informe até <b>3 opções</b> em ordem de preferência (a 1ª é obrigatória). Se a 1ª não for possível, o comandante usa a 2ª/3ª — e no fracionado pode combinar (ex.: o 15 de uma opção e o 10 de outra). Prioridade por antiguidade. Enquanto pendente, você pode reenviar.</div>
+    </div>
+
+    <!-- ══ FÉRIAS-PRÊMIO — manifestação do militar ══ -->
+    <div id="milprem-card" class="card" style="display:none;margin-top:16px;border:1px solid var(--gold-border);">
+      <h3 style="font-size:13px;color:var(--gold-light);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">🎖️ Férias-Prêmio — Manifestação</h3>
+      <div id="milprem-status" class="miut" style="margin-bottom:12px;"></div>
+      <div id="milprem-form" style="display:none;">
+        <div class="grid">
+          <div class="fld"><label>1. Lustro a que faz jus (conforme Ato de concessão)</label>
+            <select id="mp-lustro" onchange="mpOutroToggle()">
+              <option value="">— selecione —</option>
+              <option value="1º Lustro">1º Lustro</option>
+              <option value="2º Lustro">2º Lustro</option>
+              <option value="3º Lustro">3º Lustro</option>
+              <option value="4º Lustro">4º Lustro</option>
+              <option value="5º Lustro">5º Lustro</option>
+              <option value="Outro">Outro</option>
+            </select></div>
+          <div class="fld" id="mp-lustro-outro-fld" style="display:none;"><label>Outro — qual?</label><input id="mp-lustro-outro"></div>
+          <div class="fld"><label>2. Etapas pretendidas para gozo</label>
+            <select id="mp-etapas" onchange="mpOutroToggle()">
+              <option value="">— selecione —</option>
+              <option value="1 mês">1 mês</option>
+              <option value="2 meses">2 meses</option>
+              <option value="3 meses">3 meses</option>
+              <option value="Outra">Outra</option>
+            </select></div>
+          <div class="fld" id="mp-etapas-outro-fld" style="display:none;"><label>Outra — qual?</label><input id="mp-etapas-outro"></div>
+        </div>
+        <div class="fld" style="margin-top:12px;"><label>3. Manifestação de interesse</label>
+          <div class="row-actions" style="gap:18px;margin-top:2px;">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-white);"><input type="radio" name="mp-int" value="sim" style="width:auto;" onchange="mpIntToggle()"> Tenho interesse</label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text-white);"><input type="radio" name="mp-int" value="nao" style="width:auto;" onchange="mpIntToggle()"> Não tenho interesse</label>
+          </div>
+        </div>
+        <div class="fld" style="margin-top:10px;max-width:220px;"><label>Exercício (ano a que se refere)</label><input type="number" id="mp-exerc" min="2020" max="2035"></div>
+        <div id="mp-datas" style="display:none;margin-top:8px;">
+          <div class="miut" style="margin-bottom:6px;">Datas de início pretendidas (em ordem de preferência):</div>
+          <div class="grid">
+            <div class="fld"><label>Opção 1 — início</label><input type="date" id="mp-op1"></div>
+            <div class="fld"><label>Opção 2 — início</label><input type="date" id="mp-op2"></div>
+            <div class="fld"><label>Opção 3 — início</label><input type="date" id="mp-op3"></div>
+          </div>
+        </div>
+        <div class="fld" style="margin-top:12px;"><label>4. Justificativa (em caso de gozo ou de não fruição)</label><textarea id="mp-just" rows="2"></textarea></div>
+        <div class="row-actions" style="justify-content:flex-end;margin-top:14px;">
+          <button class="btn-outline" onclick="premGerarPDF()">⬇ Baixar requerimento (PDF)</button>
+          <button class="btn-gold" onclick="premManifestar()">Salvar manifestação</button>
+        </div>
+        <div class="miut" style="margin-top:8px;">Preencha e <b>salve</b>. Depois <b>baixe o requerimento</b>, <b>assine digitalmente</b> (gov.br / assinador oficial) e <b>anexe</b> o PDF assinado abaixo. Pode alterar sua manifestação enquanto o prazo estiver aberto.</div>
+      </div>
+      <div id="milprem-anexo" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+        <div id="milprem-anexo-lista" class="miut">Nenhum requerimento anexado.</div>
+        <label class="btn-outline" style="cursor:pointer;margin-top:10px;display:inline-block;">📎 Anexar requerimento assinado
+          <input type="file" id="mp-file" accept="application/pdf" style="display:none;" onchange="premAnexar(this)">
+        </label>
+      </div>
     </div>
   </div>
 </div>
@@ -1572,6 +1670,7 @@ function milTag(s){ const m={PENDENTE:['pend','Pendente — aguardando o comanda
 async function milBoot(){
   const st=document.getElementById('mil-status'); const form=document.getElementById('mil-form-card');
   form.style.display='none';
+  try{ premManifestBoot(); }catch(e){}   // férias-prêmio (card próprio, independente do bloco anual)
   // Assistente administrativo (ASPM) NÃO faz a escolha — o Aux P1 lança manualmente.
   if(/ASPM/.test(_fx())){
     st.innerHTML='<div class="card"><div class="empty"><div style="font-size:30px;margin-bottom:8px;">🗂️</div>Como assistente administrativo (ASPM), suas férias são <b>lançadas pelo Auxiliar P1</b>. Procure a seção P1 para registrar seus dias.</div></div>';
@@ -1691,6 +1790,219 @@ async function milCancelar(id){
   catch(e){ flash(e.message||'Erro.',false); }
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// FÉRIAS-PRÊMIO — manifestação (militar) + gestão (Aux P1)  [db/190]
+// ══════════════════════════════════════════════════════════════════════
+let MP_PED=null;           // meu pedido de prêmio (militar)
+let PM_LIST=[], PM_ROSTER=[], pmG='com';   // gestão
+
+// ── MILITAR: boot da manifestação ──
+async function premManifestBoot(){
+  const card=document.getElementById('milprem-card'); if(!card) return;
+  const st=document.getElementById('milprem-status');
+  const form=document.getElementById('milprem-form');
+  const anexoBox=document.getElementById('milprem-anexo');
+  card.style.display='block'; form.style.display='none'; anexoBox.style.display='none';
+  let crono=null;
+  try{ crono=await rpc('ferias_cronograma_get',{p_token:sessao.token,p_ano:anoSel}); }catch(e){}
+  const hoje=new Date().toISOString().slice(0,10);
+  const aberto = crono && crono.premio_situacao==='ABERTO';
+  const antes  = aberto && crono.premio_abertura && hoje<String(crono.premio_abertura).slice(0,10);
+  const fora   = aberto && crono.premio_limite   && hoje>String(crono.premio_limite).slice(0,10);
+  const pode   = aberto && !antes && !fora;
+  MP_PED=null;
+  try{ const arr=await rpc('ferias_pedidos_listar',{p_token:sessao.token,p_ano:anoSel})||[];
+    MP_PED=arr.find(p=>p.tipo==='PREMIO'&&(String(p.militar_id)===String(sessao.id)||(p.militar&&String(p.militar.matricula)===String(sessao.matricula))))||null; }catch(e){}
+  if(!crono || crono.premio_situacao==='RASCUNHO'){
+    if(MP_PED){ st.innerHTML='A manifestação de férias-prêmio de '+anoSel+' não está aberta no momento.'; anexoBox.style.display='block'; premRenderAnexoMil(); }
+    else { card.style.display='none'; }
+    return;
+  }
+  let s='';
+  if(crono.premio_situacao==='ENCERRADO') s='Manifestação encerrada.';
+  else if(antes) s='A manifestação de férias-prêmio abre em <b>'+fmtBR(crono.premio_abertura)+'</b>.';
+  else if(fora)  s='O prazo da manifestação encerrou em <b>'+fmtBR(crono.premio_limite)+'</b>.';
+  else s='Manifestação <b>aberta</b>'+(crono.premio_limite?(' · prazo até <b>'+fmtBR(crono.premio_limite)+'</b>'):'')+'.';
+  if(MP_PED){
+    s+='<div style="margin-top:6px;">Sua manifestação: '+(MP_PED.interesse?'<b style="color:var(--gold-light);">TENHO interesse</b>':'<b>NÃO tenho interesse</b>')
+      +(MP_PED.interesse?(' '+milTag(MP_PED.situacao)):'')+'</div>';
+  }
+  st.innerHTML=s;
+  const travado = MP_PED && ['APROVADO_PEL','VALIDADO'].includes(MP_PED.situacao);
+  if(pode && !travado){ premPreencherForm(MP_PED); form.style.display='block'; }
+  if(MP_PED){ anexoBox.style.display='block'; premRenderAnexoMil(); }
+}
+function mpOutroToggle(){
+  document.getElementById('mp-lustro-outro-fld').style.display = document.getElementById('mp-lustro').value==='Outro'?'block':'none';
+  document.getElementById('mp-etapas-outro-fld').style.display = document.getElementById('mp-etapas').value==='Outra'?'block':'none';
+}
+function mpIntToggle(){
+  const v=(document.querySelector('input[name=mp-int]:checked')||{}).value;
+  document.getElementById('mp-datas').style.display = v==='sim'?'block':'none';
+}
+function premPreencherForm(ped){
+  const pr=(ped&&ped.premio)||{};
+  const lsel=document.getElementById('mp-lustro'), lopts=[...lsel.options].map(o=>o.value), lust=pr.lustro||'';
+  if(lust&&lopts.includes(lust)){ lsel.value=lust; document.getElementById('mp-lustro-outro').value=''; }
+  else if(lust){ lsel.value='Outro'; document.getElementById('mp-lustro-outro').value=lust; }
+  else { lsel.value=''; document.getElementById('mp-lustro-outro').value=''; }
+  const esel=document.getElementById('mp-etapas'), eopts=[...esel.options].map(o=>o.value), et=pr.etapas||'';
+  if(et&&eopts.includes(et)){ esel.value=et; document.getElementById('mp-etapas-outro').value=''; }
+  else if(et){ esel.value='Outra'; document.getElementById('mp-etapas-outro').value=et; }
+  else { esel.value=''; document.getElementById('mp-etapas-outro').value=''; }
+  mpOutroToggle();
+  document.getElementById('mp-exerc').value=(pr.exercicio||(ped&&ped.exercicio))||anoSel;
+  document.getElementById('mp-just').value=pr.justificativa||'';
+  const ops=pr.opcoes||[];
+  document.getElementById('mp-op1').value=(ops[0]&&String(ops[0].ini||'').slice(0,10))||'';
+  document.getElementById('mp-op2').value=(ops[1]&&String(ops[1].ini||'').slice(0,10))||'';
+  document.getElementById('mp-op3').value=(ops[2]&&String(ops[2].ini||'').slice(0,10))||'';
+  const intv = ped? (ped.interesse?'sim':'nao') : '';
+  document.querySelectorAll('input[name=mp-int]').forEach(r=>{ r.checked=(r.value===intv); });
+  mpIntToggle();
+}
+function premColeta(){
+  const lust=document.getElementById('mp-lustro').value==='Outro'?document.getElementById('mp-lustro-outro').value.trim():document.getElementById('mp-lustro').value;
+  const et  =document.getElementById('mp-etapas').value==='Outra'?document.getElementById('mp-etapas-outro').value.trim():document.getElementById('mp-etapas').value;
+  const intv=(document.querySelector('input[name=mp-int]:checked')||{}).value;
+  const exerc=parseInt(document.getElementById('mp-exerc').value,10)||null;
+  const just=document.getElementById('mp-just').value.trim()||null;
+  const opcoes=[];
+  if(intv==='sim'){ ['mp-op1','mp-op2','mp-op3'].forEach(id=>{ const v=document.getElementById(id).value; if(v) opcoes.push({ini:v}); }); }
+  return {interesse:intv==='sim', lustro:lust||null, etapas:et||null, exercicio:exerc, justificativa:just, opcoes};
+}
+async function premManifestar(){
+  const intv=(document.querySelector('input[name=mp-int]:checked')||{}).value;
+  if(!intv) return flash('Marque se TEM ou NÃO tem interesse.',false);
+  const d=premColeta();
+  if(!d.exercicio) return flash('Informe o exercício (ano a que se refere).',false);
+  if(d.interesse && !d.opcoes.length) return flash('Informe ao menos a Opção 1 (data de início).',false);
+  try{ await rpc('ferias_premio_manifestar',{p_token:sessao.token,p_dados:Object.assign({ano:anoSel},d)});
+    flash('Manifestação salva. Agora baixe o requerimento, assine e anexe.',true); premManifestBoot(); }
+  catch(e){ flash(e.message||'Erro ao salvar.',false); }
+}
+async function premAnexar(input){
+  const f=input.files&&input.files[0]; input.value='';
+  if(!f) return;
+  if(!MP_PED) return flash('Salve a manifestação antes de anexar.',false);
+  if(f.size>15*1024*1024) return flash('Arquivo acima de 15 MB.',false);
+  flash('Enviando anexo…',true);
+  try{
+    let res; if(DRIVE_URL){ try{ res=await subirDrivePdf(f); }catch(e){ res=await subirStoragePdf(f); } } else res=await subirStoragePdf(f);
+    const anexo=[{path:res.path||null,nome:f.name,tamanho:f.size,mime:f.type||'application/pdf',link:res.link}];
+    await rpc('ferias_premio_anexar',{p_token:sessao.token,p_id:MP_PED.id,p_anexo:anexo,p_fase:'req'});
+    flash('Requerimento anexado.',true); premManifestBoot();
+  }catch(e){ flash(e.message||'Erro ao anexar.',false); }
+}
+function premRenderAnexoMil(){
+  const box=document.getElementById('milprem-anexo-lista');
+  const a=(MP_PED&&MP_PED.anexo_requerimento)||[];
+  box.innerHTML = a.length
+    ? ('📎 <a href="'+esc(a[0].link)+'" target="_blank" rel="noopener" style="color:var(--acc);">'+esc(a[0].nome||'requerimento.pdf')+'</a> <span class="miut">(anexado)</span>')
+    : 'Nenhum requerimento anexado. Baixe o PDF acima, assine digitalmente e anexe aqui.';
+}
+// ── MILITAR: gera o requerimento pré-preenchido (jsPDF) ──
+function premGerarPDF(){
+  const intv=(document.querySelector('input[name=mp-int]:checked')||{}).value;
+  if(!intv) return flash('Marque interesse / não-interesse antes de gerar o PDF.',false);
+  const jsPDF=(window.jspdf||{}).jsPDF; if(!jsPDF) return flash('Gerador de PDF indisponível.',false);
+  const d=premColeta();
+  const doc=new jsPDF({unit:'mm',format:'a4'});
+  const L=20, R=190, W=R-L; let y=16;
+  const ck=on=>on?'( X )':'(   )';
+  const cen=(t,sz,bold)=>{ doc.setFont('helvetica',bold?'bold':'normal'); doc.setFontSize(sz);
+    const parts=doc.splitTextToSize(t,W); doc.text(parts,105,y,{align:'center'}); y+=parts.length*(sz*0.42)+1.5; };
+  const ln=(t,bold,gap)=>{ doc.setFont('helvetica',bold?'bold':'normal'); doc.setFontSize(10);
+    const parts=doc.splitTextToSize(t,W); doc.text(parts,L,y); y+=parts.length*5+(gap||0); };
+  cen('POLÍCIA MILITAR DE MINAS GERAIS',10,true);
+  cen('COMANDO DE POLICIAMENTO ESPECIALIZADO',9,false);
+  cen('BATALHÃO DE POLÍCIA MILITAR DE MEIO AMBIENTE',9,false);
+  cen('3ª COMPANHIA DE POLÍCIA MILITAR DE MEIO AMBIENTE',9,false);
+  y+=3; cen('FORMULÁRIO DE REQUERIMENTO OU MANIFESTAÇÃO DE NÃO INTERESSE PARA GOZO DE FÉRIAS-PRÊMIO',10,true); y+=3;
+  const pg=(MP_PED&&MP_PED.militar&&MP_PED.militar.pg)||'';
+  ln('REQUERENTE (Nr./PG/NOME): '+((sessao.matricula||'')+'  '+(pg?pg+' ':'')+(sessao.nome||'')),false,1);
+  ln('UNIDADE: 3ª Cia PM MAmb',false,3);
+  ln('1. Lustro a que faz jus (conforme Ato de concessão):',true,0);
+  ln(ck(true)+' '+(d.lustro||'____________'),false,3);
+  ln('2. Etapas pretendidas para gozo:',true,0);
+  ln(ck(true)+' '+(d.etapas||'____________'),false,3);
+  ln('3. Manifestação de interesse:',true,0);
+  ln(ck(d.interesse)+' Tenho interesse em usufruir férias-prêmio no exercício de '+(d.exercicio||'______')+', conforme datas indicadas abaixo:',false,0);
+  const op=(d.opcoes||[]);
+  ln('     Opção 1: Início: '+(op[0]?fmtBR(op[0].ini):'___/___/______'),false,0);
+  ln('     Opção 2: Início: '+(op[1]?fmtBR(op[1].ini):'___/___/______'),false,0);
+  ln('     Opção 3: Início: '+(op[2]?fmtBR(op[2].ini):'___/___/______'),false,1);
+  ln(ck(!d.interesse)+' Não tenho interesse em usufruir férias-prêmio no exercício de '+(d.exercicio||'______')+'.',false,3);
+  ln('4. Justificativa do militar (em caso de opção pelo gozo ou pela não fruição):',true,0);
+  ln((d.justificativa||'______________________________________________________________'),false,3);
+  ln('Data: ___/___/______          Assinatura do militar requerente: ______________________________',false,4);
+  ln('5. Despacho da Chefia Imediata:',true,0);
+  ln('(   ) De acordo     (   ) Não de acordo. Justificativa: _______________________________________',false,0);
+  ln('Em, na data da assinatura digital     Assinatura e posto/graduação da Chefia: __________________',false,4);
+  ln('6. Despacho do Comandante de Unidade:',true,0);
+  ln('(   ) DEFERIDO     (   ) INDEFERIDO',false,0);
+  ln('Justificativa (em caso de indeferimento): _____________________________________________________',false,0);
+  ln('Em, na data da assinatura digital     Assinatura e posto/graduação do Comandante: ______________',false,0);
+  const fn='Requerimento_Ferias_Premio_'+(sessao.matricula||'militar')+'_'+anoSel+'.pdf';
+  doc.save(fn);
+}
+
+// ── GESTÃO (Aux P1): manifestação ──
+async function carregarPremioManif(){
+  document.getElementById('pm-ano').textContent=anoSel;
+  let crono=null; try{ crono=await rpc('ferias_cronograma_get',{p_token:sessao.token,p_ano:anoSel}); }catch(e){}
+  document.getElementById('pm-sit').value=(crono&&crono.premio_situacao)||'RASCUNHO';
+  document.getElementById('pm-abertura').value=(crono&&crono.premio_abertura)?String(crono.premio_abertura).slice(0,10):'';
+  document.getElementById('pm-limite').value  =(crono&&crono.premio_limite)?String(crono.premio_limite).slice(0,10):'';
+  try{ PM_LIST=(await rpc('ferias_pedidos_listar',{p_token:sessao.token,p_ano:anoSel})||[]).filter(p=>p.tipo==='PREMIO'); }catch(e){ PM_LIST=[]; }
+  try{ PM_ROSTER=await garantirRosterEscopo()||[]; }catch(e){ PM_ROSTER=[]; }
+  pmRender();
+}
+async function salvarPrazoPremio(){
+  const dados={ano:anoSel,
+    premio_situacao:document.getElementById('pm-sit').value,
+    premio_abertura:document.getElementById('pm-abertura').value||null,
+    premio_limite:document.getElementById('pm-limite').value||null};
+  try{ await rpc('ferias_premio_prazo_salvar',{p_token:sessao.token,p_dados:dados}); flash('Prazo da férias-prêmio salvo.',true); }
+  catch(e){ flash(e.message||'Erro ao salvar.',false); }
+}
+function pmSetG(g){ pmG=g; document.querySelectorAll('#pm-chips .ct-chip').forEach(b=>b.classList.toggle('active',b.dataset.g===g)); pmRender(); }
+function _rNome(m){ return ((m.posto_graduacao||'')+' '+(m.nome_guerra||m.nome_completo||'')).trim(); }
+function pmRender(){
+  const com=PM_LIST.filter(p=>p.interesse===true);
+  const sem=PM_LIST.filter(p=>p.interesse===false);
+  const temSet=new Set(); PM_LIST.forEach(p=>{ if(p.militar_id) temSet.add(String(p.militar_id)); if(p.militar&&p.militar.matricula) temSet.add('m:'+p.militar.matricula); });
+  const falta=(PM_ROSTER||[]).filter(m=>!temSet.has(String(m.id))&&!temSet.has('m:'+(m.matricula||'')));
+  document.getElementById('pm-n-com').textContent='('+com.length+')';
+  document.getElementById('pm-n-sem').textContent='('+sem.length+')';
+  document.getElementById('pm-n-falta').textContent='('+falta.length+')';
+  const tb=document.getElementById('pm-tbody');
+  if(pmG==='falta'){
+    tb.innerHTML=falta.map((m,i)=>`<tr><td>${i+1}</td><td>${esc(_rNome(m))}</td><td>${esc(apRot(m.pelotao||'—'))}</td><td colspan="5"><span class="miut">Ainda não manifestou</span></td><td></td></tr>`).join('')
+      || '<tr><td colspan="9"><div class="empty">Todos do seu escopo já manifestaram.</div></td></tr>';
+    return;
+  }
+  const arr = pmG==='com'?com:sem;
+  tb.innerHTML=arr.map((p,i)=>{
+    const pr=p.premio||{}; const pg=(p.militar&&p.militar.pg)||''; const nome=(p.militar&&p.militar.nome)||'';
+    const datas=(pr.opcoes||[]).map((o,k)=>'Op'+(k+1)+': '+(o.ini?fmtBR(o.ini):'—')).join(' · ')||'—';
+    const a=(p.anexo_requerimento||[]);
+    const anexo=a.length?('<a href="'+esc(a[0].link)+'" target="_blank" rel="noopener" style="color:var(--acc);">📎 ver</a>'):'<span class="miut">—</span>';
+    const sit = p.interesse? milTag(p.situacao) : '<span class="tag">Sem interesse</span>';
+    const acoes = pmG==='com'
+      ? `<button class="minibtn" onclick="premioMover('${p.id}',false)" title="Mover para Sem interesse">→ Sem</button>`
+      : `<button class="minibtn" onclick="premioMover('${p.id}',true)" title="Mover para Com interesse">→ Com</button>`;
+    return `<tr><td>${i+1}</td><td>${esc((pg+' '+nome).trim())}</td><td>${esc(apRot(p.pelotao||'—'))}</td>`
+      +`<td>${esc(pr.lustro||'—')} / ${esc(pr.etapas||'—')}</td><td>${esc(String(pr.exercicio||p.exercicio||'—'))}</td>`
+      +`<td>${esc(datas)}</td><td>${anexo}</td><td>${sit}</td>`
+      +`<td style="text-align:right;white-space:nowrap;">${acoes}</td></tr>`;
+  }).join('') || '<tr><td colspan="9"><div class="empty">Ninguém neste grupo ainda.</div></td></tr>';
+}
+async function premioMover(id,interesse){
+  try{ await rpc('ferias_premio_mover',{p_token:sessao.token,p_id:id,p_interesse:interesse}); flash('Manifestação movida.',true); carregarPremioManif(); }
+  catch(e){ flash(e.message||'Erro.',false); }
+}
+
 // ══════════════ TABS / BOOT ══════════════
 // alterna entre a tela de GESTÃO (Anuais/Prêmio/Lançamentos) e a de CRONOGRAMA
 function mostrarTela(tela){
@@ -1732,6 +2044,7 @@ function abrirTab(t){
   }
   if(t==='lanc') carregarPedidos();
   if(t==='aprovar') aprovarBoot();
+  if(t==='premio_manif') carregarPremioManif();
 }
 // ══════════════ APROVAR PELOTÃO (organizar + percentual ao vivo) ══════════════
 let apTotals={};
