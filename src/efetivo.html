@@ -253,7 +253,7 @@
 <!-- MODAL BAIXA -->
 <div class="modal-bg" id="modal-baixa">
   <div class="modal">
-    <h2>Inativar / transferir do efetivo</h2>
+    <h2 id="baixa-titulo">Inativar / transferir do efetivo</h2>
     <div class="miut" id="baixa-quem" style="margin-bottom:12px;"></div>
     <div class="grid">
       <div class="fld"><label>Situação</label>
@@ -276,7 +276,7 @@
     <div class="miut" id="baixa-nota-inativar" style="margin-top:8px;">Mantém os dados, mas o militar <b>perde o acesso ao painel</b> (login) e sai do efetivo ativo da Cia (não conta nos indicadores). É <b>reativável</b> — inclusive para reconvocação da reserva. Para apagar o registro de vez, use <b>excluir</b>.</div>
     <div class="row-actions" style="justify-content:flex-end;margin-top:16px;">
       <button class="btn-outline" onclick="fechar('modal-baixa')">Cancelar</button>
-      <button class="btn-gold" onclick="salvarBaixa()">Confirmar inativação</button>
+      <button class="btn-gold" id="btn-baixa-confirmar" onclick="salvarBaixa()">Confirmar inativação</button>
     </div>
   </div>
 </div>
@@ -856,7 +856,8 @@ function render(){
           ? `<button class="minibtn ico" title="Voltar ao efetivo ativo" onclick="reativar('${m.id}')">↩️</button>`
           : ((m.integrante_ativo??m.ativo)
               ? `<button class="minibtn ico" title="Inativar / transferir / hipotecar" onclick="abrirBaixa('${m.id}')">⏸️</button>`
-              : `<button class="minibtn ico" title="Reativar" onclick="reativar('${m.id}')">↩️</button>`)}
+              : `<button class="minibtn ico" title="Editar dados da baixa / transferência" onclick="abrirBaixa('${m.id}')">📝</button>
+                 <button class="minibtn ico" title="Reativar" onclick="reativar('${m.id}')">↩️</button>`)}
       <button class="minibtn ico del" title="Excluir definitivamente" onclick="excluirDefinitivo('${m.id}')">🗑️</button>`}
     </td></tr>`;
   }).join('');
@@ -1061,12 +1062,20 @@ function _maskPM(v){ const d=String(v||'').replace(/\D/g,'').slice(0,7); if(!d) 
 // ── baixa / reativar ──
 function abrirBaixa(id){
   const m=LISTA.find(x=>x.id===id); if(!m) return; curId=id;
+  // Já está fora do efetivo ativo (não-hipotecado) → modo EDIÇÃO: completar/corrigir
+  // os dados da baixa depois, sem precisar reativar. Preserva a situação atual.
+  const jaInativo = !ehHipotecado(m) && !(m.integrante_ativo??m.ativo);
+  const sitOpts=['HIPOTECADO','TRANSFERIDO','RESERVA','OUTRO'];
+  const sitAtual=String(m.situacao_efetivo||'').toUpperCase();
   document.getElementById('baixa-quem').textContent=`${m.posto_graduacao||''} ${m.nome_guerra||m.nome_completo||''} · ${m.matricula||''}`;
-  document.getElementById('b-sit').value='HIPOTECADO'; document.getElementById('b-destino').value=m.transf_destino||'';
+  document.getElementById('b-sit').value=(jaInativo && sitOpts.includes(sitAtual))?sitAtual:'HIPOTECADO';
+  document.getElementById('b-destino').value=m.transf_destino||'';
   document.getElementById('b-pasta').value=m.transf_pasta_funcional==null?'':String(m.transf_pasta_funcional);
   document.getElementById('b-data').value=(m.transf_data_envio||'').slice(0,10); document.getElementById('b-oficio').value=m.transf_oficio_numero||'';
   document.getElementById('b-obs').value=m.transf_obs||'';
   document.getElementById('b-hip-suspender').checked=false;
+  document.getElementById('baixa-titulo').textContent=jaInativo?'Editar dados da baixa / transferência':'Inativar / transferir do efetivo';
+  document.getElementById('btn-baixa-confirmar').textContent=jaInativo?'Salvar dados':'Confirmar inativação';
   onBsitChange();
   document.getElementById('modal-baixa').classList.add('open');
 }
@@ -1090,8 +1099,9 @@ async function salvarBaixa(){
     const dados={ situacao_efetivo:g('b-sit'), transf_destino:g('b-destino').trim()||null,
       transf_data_envio:g('b-data')||null, transf_oficio_numero:g('b-oficio').trim()||null, transf_obs:g('b-obs').trim()||null };
     const pasta=g('b-pasta'); if(pasta!=='') dados.transf_pasta_funcional=(pasta==='true');
+    const _m=LISTA.find(x=>x.id===curId); const _edicao=_m && !ehHipotecado(_m) && !(_m.integrante_ativo??_m.ativo);
     await rpc('efetivo_baixar',{p_token:sessao.token,p_id:curId,p_dados:dados});
-    fechar('modal-baixa'); flash('Baixa registrada.',true); carregar();
+    fechar('modal-baixa'); flash(_edicao?'Dados da baixa atualizados.':'Baixa registrada.',true); carregar();
   }catch(e){ flash(e.message||'Erro.',false); }
 }
 async function reativar(id){
