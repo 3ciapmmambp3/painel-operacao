@@ -1,3 +1,7 @@
+/* Tema (escuro/claro): aplica a preferência salva o quanto antes, para telas
+   que ainda não têm o bootstrap inline no <head>. Não causa "flash" nas que têm. */
+(function(){ try{ var s=localStorage.getItem('poe_theme'); if(s) document.documentElement.setAttribute('data-theme', s); }catch(e){} })();
+
 /**
  * ══════════════════════════════════════════════════════════════════
  *  SUPABASE AUTH — 3ª CIA PM MAmb
@@ -708,6 +712,25 @@ document.addEventListener('DOMContentLoaded', function(){
 var POE_UI_STYLE_PILL  = 'display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);cursor:pointer;padding:5px 10px;border:1px solid var(--border);border-radius:5px;';
 var POE_UI_STYLE_AV    = 'width:22px;height:22px;border-radius:50%;background:var(--gold);color:#1a1000;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;';
 var POE_UI_SAIR_ONCLICK= "localStorage.removeItem('poe_sessao_v2');sessionStorage.removeItem('poe_sessao_v2');localStorage.removeItem('poe_sessao');window.location.href='index.html'";
+
+/* ── Tema escuro/claro (botão central no cabeçalho) ───────────────── */
+function poeTemaAtual(){
+  try{ var s=localStorage.getItem('poe_theme'); if(s) return s; }catch(e){}
+  return document.documentElement.getAttribute('data-theme') || 'dark';
+}
+function poeSyncTemaBtn(){
+  var b=document.getElementById('poe-tema'); if(!b) return;
+  var claro = poeTemaAtual()==='light';
+  b.textContent = claro ? '🌙' : '☀️';                                  // mostra o tema para o qual vai mudar
+  b.title = claro ? 'Mudar para o tema escuro' : 'Mudar para o tema claro';
+  b.setAttribute('aria-label', b.title);
+}
+function poeToggleTema(){
+  var novo = poeTemaAtual()==='light' ? 'dark' : 'light';
+  try{ localStorage.setItem('poe_theme', novo); }catch(e){}
+  document.documentElement.setAttribute('data-theme', novo);
+  poeSyncTemaBtn();
+}
 function poeRenderUserInfo(){
   var s=null;
   try{ s=JSON.parse(sessionStorage.getItem('poe_sessao_v2')||'null'); }catch(e){}
@@ -758,6 +781,18 @@ function poeRenderUserInfo(){
   if(!bg){ bg=document.createElement('span'); bg.id='user-badge'; info.appendChild(bg); }
   bg.style.cssText = BADGE_STYLE;
   bg.textContent = bi[0];
+
+  // botão de tema (escuro/claro) — antes do "Sair", em todas as telas com cabeçalho
+  var hr2 = document.querySelector('.header-right');
+  if(hr2 && !document.getElementById('poe-tema')){
+    var bt=document.createElement('button');
+    bt.id='poe-tema'; bt.type='button'; bt.className='btn-outline';
+    bt.style.cssText='padding:6px 10px;font-size:15px;line-height:1;';
+    bt.setAttribute('onclick','poeToggleTema()');
+    var sb = hr2.querySelector('button.btn-outline');
+    if(sb) hr2.insertBefore(bt, sb); else hr2.appendChild(bt);
+  }
+  poeSyncTemaBtn();
 }
 document.addEventListener('DOMContentLoaded', function(){ poeRenderUserInfo(); setTimeout(poeRenderUserInfo, 800); });
 if(document.readyState!=='loading'){ poeRenderUserInfo(); setTimeout(poeRenderUserInfo, 800); }
