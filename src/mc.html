@@ -105,6 +105,11 @@
   .anxbtn:hover{background:var(--gold);color:#1a1000}
   .anxbtn.kml{background:rgba(31,111,235,.14);border-color:rgba(31,111,235,.5);color:#90caf9}
   .anxbtn.kml:hover{background:#1f6feb;color:#fff}
+  .anxbtn.rota{background:var(--info-bg);border-color:var(--info);color:var(--info)}
+  .anxbtn.rota:hover{background:var(--info);color:#fff}
+  .anxbtn.zap{background:var(--success-bg);border-color:var(--success);color:var(--success)}
+  .anxbtn.zap:hover{background:var(--success);color:#fff}
+  .comochegar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px}
   .rs{background:var(--bg-card);border:1px solid var(--border);border-radius:9px;padding:12px 14px;font-size:12.5px;color:var(--text-muted)}
   .rs b{color:var(--text-white)}
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:#111;border:1px solid var(--gold-border);color:var(--text-white);padding:12px 20px;border-radius:10px;font-size:13px;z-index:60;box-shadow:0 8px 30px rgba(0,0,0,.6);opacity:0;transition:.28s}
@@ -593,6 +598,20 @@ function abrir(d){
   const di=(t,v,full)=>`<div class="di${full?' full':''}"><dt>${t}</dt><dd>${(v==null||v==='')?'—':v}</dd></div>`;
   const pr=prazoInfo(d);
   const coord = (d.coord_y||d.coord_x) ? `${d.coord_y||'?'}, ${d.coord_x||'?'}` : '';
+  // ── Como chegar: rota no Google Maps a partir da localização de quem abrir o link ──
+  const _la=parseFloat(d.coord_y), _lo=parseFloat(d.coord_x);
+  const _temCoord = isFinite(_la)&&isFinite(_lo);
+  const _rotaUrl = _temCoord ? `https://www.google.com/maps/dir/?api=1&destination=${_la},${_lo}` : '';
+  const _wppTxt = _temCoord ? encodeURIComponent(`Rota até ${d.codigo||'local'}${d.municipio?(' — '+d.municipio):''}: ${_rotaUrl}`) : '';
+  const comoChegar = _temCoord
+    ? `<div class="sec-t">Como chegar</div>`+
+      `<div class="comochegar">`+
+        `<a class="anxbtn rota" href="${_rotaUrl}" target="_blank" rel="noopener" title="Abre o Google Maps e traça a rota a partir de onde você estiver (no celular abre o app).">🧭 Traçar rota</a>`+
+        `<a class="anxbtn zap" href="https://wa.me/?text=${_wppTxt}" target="_blank" rel="noopener" title="Abre o WhatsApp para enviar o link da rota a alguém.">📱 Enviar no WhatsApp</a>`+
+        `<button class="anxbtn" onclick="mcCopiarRota('${_la}','${_lo}','${String(d.codigo||'').replace(/['\\]/g,'')}')" title="Copia o link do Google Maps para colar no WhatsApp, SMS, etc.">📋 Copiar link</button>`+
+      `</div>`+
+      `<div class="rs" style="margin-top:4px;font-size:11.5px">Aponta para a coordenada do GEOCOD (${coord}). A rota parte de onde o link for aberto.</div>`
+    : '';
   const kmlBtn = d.kml_content
     ? `<div class="anxitem"><svg class="ic" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`+
       `<div class="m"><b>KML do GEOCOD ${d.codigo}</b><small>Gerado individualmente · abre no Google Earth</small></div>`+
@@ -621,6 +640,7 @@ function abrir(d){
        : `<div class="rs">Croqui (PDF) não localizado no Drive para este GEOCOD.</div>`)+
       kmlBtn+
     `</div>`+
+    comoChegar+
     `<div class="sec-t">Atendimento</div>`+
     (atendidaN(d)
       ? `<dl class="dl">`+
@@ -642,6 +662,18 @@ function abrir(d){
   document.body.style.overflow='hidden';
 }
 function fechar(){ document.getElementById('ov').classList.remove('show'); document.body.style.overflow=''; }
+
+/* copia o link da rota (Google Maps) p/ colar no WhatsApp/SMS */
+function mcCopiarRota(la,lo){
+  const url=`https://www.google.com/maps/dir/?api=1&destination=${la},${lo}`;
+  const ok=()=>toast('Link da rota copiado — cole no WhatsApp.');
+  if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(url).then(ok).catch(()=>_copyFallback(url,ok)); }
+  else _copyFallback(url,ok);
+}
+function _copyFallback(txt,ok){
+  try{ const t=document.createElement('textarea'); t.value=txt; t.style.position='fixed'; t.style.opacity='0'; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); ok(); }
+  catch(e){ toast('Copie manualmente: '+txt); }
+}
 
 /* baixa o KML individual do GEOCOD (gerado, guardado no banco) — client-side */
 function baixarKml(id){
