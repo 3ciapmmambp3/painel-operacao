@@ -730,6 +730,7 @@ function poeToggleTema(){
   try{ localStorage.setItem('poe_theme', novo); }catch(e){}
   document.documentElement.setAttribute('data-theme', novo);
   poeSyncTemaBtn();
+  try{ window.dispatchEvent(new CustomEvent('poe-theme', { detail:{ theme:novo } })); }catch(e){}
 }
 function poeRenderUserInfo(){
   var s=null;

@@ -17,6 +17,29 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+  <script>
+  /* Cores dos gráficos (Chart.js) cientes do tema. No ESCURO devolvem os mesmos
+     valores de antes (#aaa/#777/#2a2a2a) — nada muda. No CLARO, tons legíveis. */
+  function chTheme(){ return document.documentElement.getAttribute('data-theme')==='light'; }
+  function chTick(){ return chTheme()?'#5a6069':'#777'; }
+  function chLabel(){ return chTheme()?'#3a3f45':'#aaa'; }
+  function chGrid(){ return chTheme()?'rgba(20,24,30,.10)':'#2a2a2a'; }
+  if(window.Chart){ try{ Chart.defaults.color=chLabel(); Chart.defaults.borderColor=chGrid(); }catch(e){} }
+  /* troca de tema ao vivo: reaplica as cores nos gráficos já desenhados */
+  window.addEventListener('poe-theme', function(){
+    if(!window.Chart) return;
+    try{ Chart.defaults.color=chLabel(); Chart.defaults.borderColor=chGrid(); }catch(e){}
+    [window._chartEvolucao, window._chartComparativo, window._chartLoc].forEach(function(ch){
+      if(!ch || !ch.options) return;
+      try{
+        var lg=ch.options.plugins && ch.options.plugins.legend && ch.options.plugins.legend.labels;
+        if(lg) lg.color=chLabel();
+        if(ch.options.scales){ ['x','y'].forEach(function(ax){ var s=ch.options.scales[ax]; if(!s) return; if(s.ticks) s.ticks.color=chTick(); if(s.grid) s.grid.color=chGrid(); }); }
+        ch.update('none');
+      }catch(e){}
+    });
+  });
+  </script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
   <style>
@@ -5324,10 +5347,10 @@ function renderChartEvolucao(dados, mesAtual){
     data: { labels, datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { labels: { color:'#aaa', font:{size:11} } } },
+      plugins: { legend: { labels: { color:chLabel(), font:{size:11} } } },
       scales: {
-        x: { ticks:{color:'#777',font:{size:10}}, grid:{color:'#2a2a2a'} },
-        y: { ticks:{color:'#777',font:{size:10}}, grid:{color:'#2a2a2a'}, beginAtZero:true },
+        x: { ticks:{color:chTick(),font:{size:10}}, grid:{color:chGrid()} },
+        y: { ticks:{color:chTick(),font:{size:10}}, grid:{color:chGrid()}, beginAtZero:true },
       },
     },
   });
@@ -5377,8 +5400,8 @@ function renderChartComparativo(contagem){
         }
       },
       scales: {
-        x: { ticks:{color:'#aaa',font:{size:11}}, grid:{color:'#2a2a2a'} },
-        y: { ticks:{color:'#777',font:{size:10}}, grid:{color:'#2a2a2a'}, beginAtZero:true },
+        x: { ticks:{color:chLabel(),font:{size:11}}, grid:{color:chGrid()} },
+        y: { ticks:{color:chTick(),font:{size:10}}, grid:{color:chGrid()}, beginAtZero:true },
       },
     },
   });
@@ -5527,7 +5550,7 @@ function renderChartLocalizacao(dados){
     options: {
       responsive:true, maintainAspectRatio:false,
       plugins:{
-        legend:{ labels:{color:'#aaa',font:{size:11}}, position:'bottom' },
+        legend:{ labels:{color:chLabel(),font:{size:11}}, position:'bottom' },
       },
       cutout:'60%',
     },
