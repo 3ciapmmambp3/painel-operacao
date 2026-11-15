@@ -714,11 +714,72 @@ function _renderSelBar(){
   const n=_sel.size;
   if(!n){ el.style.display='none'; el.innerHTML=''; return; }
   const comKml=[..._sel].map(byId).filter(x=>x&&x.kml_content).length;
+  const comCoord=[..._sel].map(byId).filter(x=>x&&isFinite(parseFloat(x.coord_y))&&isFinite(parseFloat(x.coord_x))).length;
   el.style.display='flex';
   el.innerHTML =
     `<span>☑️ <b>${n}</b> demanda(s) selecionada(s)`+(comKml<n?` · <b>${comKml}</b> com KML`:'')+`.</span>`+
-    `<button onclick="baixarKmlLote()" ${comKml?'':'disabled'} style="margin-left:auto;background:#1f6feb;color:#fff;border:none;font-weight:800;font-size:12.5px;padding:7px 14px;border-radius:7px;cursor:${comKml?'pointer':'not-allowed'};opacity:${comKml?'1':'.5'}">⬇️ Baixar KML agrupado (${comKml})</button>`+
+    `<button onclick="rotaLoteSel()" ${comCoord?'':'disabled'} style="margin-left:auto;background:var(--info);color:#fff;border:none;font-weight:800;font-size:12.5px;padding:7px 14px;border-radius:7px;cursor:${comCoord?'pointer':'not-allowed'};opacity:${comCoord?'1':'.5'}" title="Monta um roteiro otimizado (vizinho mais próximo) com todos os pontos selecionados — abre no Google Maps, com a ordem sugerida e a distância entre eles.">🧭 Traçar rota (${comCoord})</button>`+
+    `<button onclick="baixarKmlLote()" ${comKml?'':'disabled'} style="background:#1f6feb;color:#fff;border:none;font-weight:800;font-size:12.5px;padding:7px 14px;border-radius:7px;cursor:${comKml?'pointer':'not-allowed'};opacity:${comKml?'1':'.5'}">⬇️ Baixar KML agrupado (${comKml})</button>`+
     `<button onclick="_selClear()" style="background:var(--bg-input);border:1px solid var(--border-mid);color:var(--text-white);font-size:12px;padding:7px 12px;border-radius:7px;cursor:pointer">Limpar seleção</button>`;
+}
+/* ── Roteiro: rota multi-parada p/ os GEOCODs selecionados ──────────── */
+function _coordOf(d){ const la=parseFloat(d&&d.coord_y), lo=parseFloat(d&&d.coord_x); return (isFinite(la)&&isFinite(lo))?{la,lo}:null; }
+function rotaLoteSel(){
+  const ds=[..._sel].map(byId).filter(x=>x && _coordOf(x));
+  if(!ds.length) return toast('Nenhuma selecionada tem coordenada (gere os KMLs faltantes).');
+  const MAX=10;
+  const _ordena=(origem)=>{   // vizinho mais próximo (greedy)
+    let pend=ds.map(d=>({d,c:_coordOf(d)})), seq=[], cur=origem;
+    if(!cur){ pend.sort((a,b)=>b.c.la-a.c.la); seq.push(pend.shift()); cur=seq[0].c; }   // sem GPS: começa pelo ponto mais ao norte
+    while(pend.length){ let bi=0,bd=Infinity; for(let i=0;i<pend.length;i++){ const dd=_hav(cur.la,cur.lo,pend[i].c.la,pend[i].c.lo); if(dd<bd){bd=dd;bi=i;} } const nx=pend.splice(bi,1)[0]; seq.push(nx); cur=nx.c; }
+    return seq;
+  };
+  const _go=(origem,origemLabel)=>{
+    let seq=_ordena(origem); let cortadas=0;
+    if(seq.length>MAX){ cortadas=seq.length-MAX; seq=seq.slice(0,MAX); }
+    let total=0, prev=origem; const linhas=seq.map((it,i)=>{ const dist=prev?_hav(prev.la,prev.lo,it.c.la,it.c.lo):null; if(dist!=null) total+=dist; prev=it.c; return {i:i+1,cod:it.d.codigo,muni:it.d.municipio,dist}; });
+    const pt=c=>`${c.la},${c.lo}`;
+    const dest=seq[seq.length-1].c, wps=seq.slice(0,-1).map(it=>pt(it.c));
+    let url='https://www.google.com/maps/dir/?api=1&travelmode=driving';
+    if(origem) url+='&origin='+encodeURIComponent(pt(origem));
+    url+='&destination='+encodeURIComponent(pt(dest));
+    if(wps.length) url+='&waypoints='+encodeURIComponent(wps.join('|'));
+    _modalRoteiro(linhas,total,url,origemLabel,cortadas);
+  };
+  if(navigator.geolocation){
+    toast('Obtendo sua localização…');
+    navigator.geolocation.getCurrentPosition(
+      p=>_go({la:p.coords.latitude,lo:p.coords.longitude},'sua localização atual'),
+      ()=>_go(null,'1º ponto (sem GPS)'),
+      {enableHighAccuracy:true,timeout:6000,maximumAge:60000});
+  } else _go(null,'1º ponto');
+}
+function _modalRoteiro(linhas,total,url,origemLabel,cortadas){
+  const old=document.getElementById('_rotaModal'); if(old) old.remove();
+  const km=v=>v==null?'':((v<10?v.toFixed(1):Math.round(v))+' km');
+  const itin=linhas.map(l=>`<div style="padding:6px 0;border-bottom:1px solid var(--border)"><b>${l.i}.</b> ${l.cod||'—'}${l.muni?' · <span style="color:var(--text-muted)">'+l.muni+'</span>':''}${l.dist!=null?`<span style="color:var(--text-hint);float:right">+${km(l.dist)}</span>`:''}</div>`).join('');
+  const ov=document.createElement('div'); ov.id='_rotaModal';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:120;padding:16px';
+  const box=document.createElement('div');
+  box.style.cssText='background:var(--bg-card);border:1px solid var(--border);border-radius:14px;max-width:460px;width:100%;max-height:85vh;overflow:auto;padding:20px;color:var(--text-white);box-shadow:0 20px 60px rgba(0,0,0,.4)';
+  box.innerHTML=
+    `<div style="font-size:15px;font-weight:800;color:var(--gold);margin-bottom:4px">🧭 Roteiro sugerido — ${linhas.length} parada(s)</div>`+
+    `<div style="font-size:11.5px;color:var(--text-hint);margin-bottom:12px">Ordem por proximidade, a partir de ${origemLabel}. Distâncias em linha reta (aprox., não de estrada).</div>`+
+    `<div style="font-size:12.5px;margin-bottom:10px">${itin}</div>`+
+    `<div style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px">Total (linha reta): <b style="color:var(--text-white)">${km(total)}</b>${cortadas?` · <span style="color:var(--danger)">${cortadas} parada(s) além do limite do Maps (10) ficaram de fora</span>`:''}</div>`+
+    `<div style="display:flex;gap:8px;flex-wrap:wrap">`+
+      `<a class="anxbtn rota" id="_rtOpen" target="_blank" rel="noopener">🧭 Abrir no Maps</a>`+
+      `<a class="anxbtn zap" id="_rtWpp" target="_blank" rel="noopener">📱 WhatsApp</a>`+
+      `<button class="anxbtn" id="_rtCopy">📋 Copiar link</button>`+
+      `<button class="anxbtn" id="_rtClose" style="margin-left:auto">Fechar</button>`+
+    `</div>`;
+  ov.appendChild(box); document.body.appendChild(ov);
+  box.querySelector('#_rtOpen').href=url;
+  const plain='Roteiro ('+linhas.length+' paradas):\n'+linhas.map(l=>l.i+'. '+(l.cod||'')+(l.muni?' - '+l.muni:'')).join('\n')+'\n\nRota: '+url;
+  box.querySelector('#_rtWpp').href='https://wa.me/?text='+encodeURIComponent(plain);
+  box.querySelector('#_rtCopy').onclick=()=>{ const ok=()=>toast('Link do roteiro copiado.'); if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(url).then(ok).catch(()=>_copyFallback(url,ok)); } else _copyFallback(url,ok); };
+  box.querySelector('#_rtClose').onclick=()=>ov.remove();
+  ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
 }
 function _kmlSchemas(kml){ return String(kml||'').match(/<Schema\b[\s\S]*?<\/Schema>/g) || []; }
 function _kmlBody(d){
