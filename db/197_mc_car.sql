@@ -1,15 +1,13 @@
--- ══════════════════════════════════════════════════════════════════════
--- db/197 — CAR / SICAR por ponto do Monitoramento Contínuo
--- Guarda o imóvel rural (CAR) que contém a coordenada do GEOCOD, consultado
+-- db/197 - CAR / SICAR por ponto do Monitoramento Continuo
+-- Guarda o imovel rural (CAR) que contem a coordenada do GEOCOD, consultado
 -- no GeoServer oficial do SICAR (geoserver.car.gov.br) pelo nosso Apps Script
--- (AutomacaoCastro → mc_car_backfill → consultarCarPorCoordenada).
--- Segue o padrão UPDATE-only do mc_set_kml (db/158/160): nunca insere, só
--- atualiza por 'codigo' (GEOCOD_IEF). grant p/ anon (o Apps Script usa a anon).
---   car_imovel        nº(s) do CAR (cod_imovel), vírgula-separado se houver +de1
---   car_qtd           quantos imóveis rurais intersectam o ponto
+-- (AutomacaoCastro -> mc_car_backfill -> consultarCarPorCoordenada).
+-- Padrao UPDATE-only do mc_set_kml (db/158/160): nunca insere, so atualiza por
+-- 'codigo' (GEOCOD_IEF). grant p/ anon (o Apps Script usa a anon key).
+--   car_imovel        numero(s) do CAR (cod_imovel), virgula-separado
+--   car_qtd           quantos imoveis rurais intersectam o ponto
 --   car_dados         [{cod_imovel,municipio,area,status}] p/ detalhe na gaveta
---   car_consultado_em carimbo da consulta (null = ainda não consultado)
--- ══════════════════════════════════════════════════════════════════════
+--   car_consultado_em carimbo da consulta (null = ainda nao consultado)
 
 alter table public.mc_demandas
   add column if not exists car_imovel        text,
@@ -51,4 +49,4 @@ $$;
 
 grant execute on function public.mc_set_car(jsonb) to anon;
 
--- Rodar depois do db/196. Não toca em data/baixa — só preenche o CAR.
+-- Rodar depois do db/196. Nao toca em data/baixa - so preenche o CAR.
