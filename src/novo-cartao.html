@@ -580,11 +580,19 @@ async function abrirPendentes(){
   const res=await carregarPendentes();
   if(res.erro){ document.getElementById('plista').innerHTML=''; document.getElementById('pmsg').innerHTML='<span style="color:#ef9a9a">'+_esc(res.erro)+'</span>'; return; }
   if(!PEND.length){ document.getElementById('plista').innerHTML='<div class="hint">Nenhuma demanda pendente para este grupamento.</div>'; return; }
-  PFILTRO=''; PBUSCA=''; PSEL.clear(); const bb=document.getElementById('p-busca'); if(bb) bb.value=''; renderPendentes();
+  PFILTRO=''; PBUSCA=''; PNEAR=null; PSEL.clear(); const bb=document.getElementById('p-busca'); if(bb) bb.value=''; renderPendentes();
 }
 let PFILTRO='';
 let PBUSCA='';
-function setPBusca(v){ PBUSCA=v; renderPendentes(); }
+let PNEAR=null;   // isolamento por proximidade: {anchor, raio, label, set:Set(índices)}
+function setPBusca(v){ PBUSCA=v; PNEAR=null; renderPendentes(); }
+function _hav(la1,lo1,la2,lo2){const R=6371,t=Math.PI/180,dla=(la2-la1)*t,dlo=(lo2-lo1)*t,a=Math.sin(dla/2)**2+Math.cos(la1*t)*Math.cos(la2*t)*Math.sin(dlo/2)**2;return 2*R*Math.asin(Math.min(1,Math.sqrt(a)));}
+function _pendCoordMap(){ const m={}; PEND.forEach((p,i)=>{ const c=window.CartaoMapa?CartaoMapa.coordDe(p):null; if(c) m[i]=c; }); return m; }
+function _pendEndKey(p){ return _norm(((p&&p.endereco||'')+' '+(p&&p.municipio||'')).trim()); }
+function isolarProx(i,raio){ const CM=_pendCoordMap(), c=CM[i]; if(!c) return; const set=new Set([i]); Object.keys(CM).forEach(k=>{k=+k; if(_hav(c.la,c.lo,CM[k].la,CM[k].lo)<=raio) set.add(k);}); PNEAR={anchor:i,raio,label:(raio<1?Math.round(raio*1000)+' m':raio+' km'),set}; renderPendentes(); }
+function isolarProxEnd(i){ const key=_pendEndKey(PEND[i]); if(!key||key.length<3) return; const set=new Set([i]); PEND.forEach((p,k)=>{ if(_pendEndKey(p)===key) set.add(k); }); PNEAR={anchor:i,raio:0,label:'mesmo endereço',set}; renderPendentes(); }
+function limparProx(){ PNEAR=null; renderPendentes(); }
+function selecionarProx(){ if(!PNEAR) return; PNEAR.set.forEach(i=>{ const p=PEND[i]; if(p) PSEL.add(i); }); atualizaBtnAdd(); renderPendentes(); }
 let PSEL=new Set();   // índices do PEND marcados (persistem ao trocar de aba)
 function togglePSel(i,on){ if(on) PSEL.add(i); else PSEL.delete(i); atualizaBtnAdd(); }
 
@@ -592,7 +600,8 @@ function togglePSel(i,on){ if(on) PSEL.add(i); else PSEL.delete(i); atualizaBtnA
 let _pendMap=null, _pendMarks={};
 function abrirMapaPendentes(){
   if(!window.CartaoMapa){ alert('Mapa indisponível.'); return; }
-  const itens=PEND.map((p,i)=>({p,i,c:CartaoMapa.coordDe(p)})).filter(x=>x.c);
+  let itens=PEND.map((p,i)=>({p,i,c:CartaoMapa.coordDe(p)})).filter(x=>x.c);
+  if(PNEAR) itens=itens.filter(x=>PNEAR.set.has(x.i));   // se há um +N isolado, mapeia só o grupo
   if(!itens.length){ alert('Nenhuma pendente tem coordenada para mapear.\nAs do Monitoramento Contínuo têm — se não aparecerem, feche e abra o "Puxar pendente" de novo.'); return; }
   _loadLeafletPend(()=>_renderMapaPendentes(itens));
 }
@@ -646,7 +655,7 @@ function _renderMapaPendentes(itens){
   setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} },160);
 }
 function atualizaBtnAdd(){ const b=document.getElementById('btn-add-pend'); if(b) b.textContent = PSEL.size ? ('Adicionar selecionadas ('+PSEL.size+')') : 'Adicionar selecionadas'; }
-function setPFiltro(t){ PFILTRO=t; renderPendentes(); }
+function setPFiltro(t){ PFILTRO=t; PNEAR=null; renderPendentes(); }
 function renderPendentes(){
   const box=document.getElementById('plista');
   const ja=new Set(DEM.filter(d=>d.origem).map(d=>d.origem.tipo+':'+d.origem.numero));
@@ -656,15 +665,36 @@ function renderPendentes(){
     + tipos.map(t=>`<button type="button" class="pchip${PFILTRO===t?' on':''}" onclick="setPFiltro('${String(t).replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')">${_esc(t)} (${PEND.filter(p=>p.tipoLabel===t).length})</button>`).join('')
     + `</div>`;
   const bq=_norm(PBUSCA||'');
-  const lista=PEND.map((p,i)=>({p,i})).filter(x=>(!PFILTRO||x.p.tipoLabel===PFILTRO) && (!bq || _norm((x.p.numero||'')+' '+(x.p.texto||'')+' '+(x.p.municipio||'')).includes(bq)));
+  // índice de coordenadas (MC via coordenadas/KML) p/ os badges de proximidade "+N"
+  const CM=_pendCoordMap();
+  const _nearN=(i,R)=>{ const c=CM[i]; if(!c) return 0; let n=0; for(const k in CM){ if(+k===i) continue; if(_hav(c.la,c.lo,CM[k].la,CM[k].lo)<=R) n++; } return n; };
+  const _endN=(i)=>{ const key=_pendEndKey(PEND[i]); if(!key||key.length<3) return 0; let n=0; PEND.forEach((p,k)=>{ if(k!==i && _pendEndKey(p)===key) n++; }); return n; };
+  // barra de isolamento (quando um +N foi clicado)
+  let nearBar='';
+  if(PNEAR){ const an=PEND[PNEAR.anchor];
+    nearBar=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--gold-bg);border:1px solid var(--gold-border);border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:var(--text-white)">`
+      +`<span>📍 Mostrando <b>${PNEAR.set.size}</b> próxima(s) de <b>${_esc(an?an.numero:'')}</b> (${_esc(PNEAR.label)}).</span>`
+      +`<button type="button" class="btn gold" style="padding:5px 10px;font-size:11.5px;margin-left:auto" onclick="selecionarProx()">✓ Selecionar as ${PNEAR.set.size}</button>`
+      +`<button type="button" class="btn ghost" style="padding:5px 10px;font-size:11.5px" onclick="limparProx()">✕ Mostrar todas</button>`
+      +`</div>`;
+  }
+  let lista=PEND.map((p,i)=>({p,i})).filter(x=>(!PFILTRO||x.p.tipoLabel===PFILTRO) && (!bq || _norm((x.p.numero||'')+' '+(x.p.texto||'')+' '+(x.p.municipio||'')).includes(bq)));
+  if(PNEAR) lista=lista.filter(x=>PNEAR.set.has(x.i));
   const itens = lista.length ? lista.map(({p,i})=>{ const dup=ja.has(p.tipo+':'+p.numero);
+    let near='';
+    if(CM[i]){ const n05=_nearN(i,0.5), n5=_nearN(i,5);
+      if(n05>0) near+=` <span onclick="event.preventDefault();event.stopPropagation();isolarProx(${i},0.5)" title="${n05} pendente(s) a até 500 m — clique p/ isolar e selecionar" style="display:inline-block;margin-left:4px;padding:0 6px;border-radius:9px;background:#b26b00;color:#fff;font-size:10.5px;font-weight:700;cursor:pointer;vertical-align:middle">+${n05}</span>`;
+      if(n5>n05) near+=` <span onclick="event.preventDefault();event.stopPropagation();isolarProx(${i},5)" title="${n5} pendente(s) a até 5 km — clique p/ isolar e selecionar" style="display:inline-block;margin-left:4px;padding:0 6px;border-radius:9px;background:#7c3aed;color:#fff;font-size:10.5px;font-weight:700;cursor:pointer;vertical-align:middle">↔${n5}</span>`;
+    } else { const ne=_endN(i);
+      if(ne>0) near+=` <span onclick="event.preventDefault();event.stopPropagation();isolarProxEnd(${i})" title="${ne} pendente(s) no mesmo endereço — clique p/ isolar" style="display:inline-block;margin-left:4px;padding:0 6px;border-radius:9px;background:#1769c4;color:#fff;font-size:10.5px;font-weight:700;cursor:pointer;vertical-align:middle">+${ne}</span>`;
+    }
     return `<label style="display:flex;gap:10px;align-items:flex-start;border:1px solid var(--border-mid);border-radius:8px;padding:10px 12px;margin-bottom:8px;${dup?'opacity:.5':''}">
       <input type="checkbox" data-i="${i}" ${dup?'disabled':''} ${PSEL.has(i)?'checked':''} onchange="togglePSel(${i},this.checked)" style="margin-top:3px;width:auto">
-      <span><b style="color:var(--gold-light)">${_esc(p.tipoLabel)} ${_esc(p.numero)}</b>${p.municipio?(' · 📍 <b>'+_esc(p.municipio)+'</b>'):''}${p.situacao?(' · '+_esc(p.situacao)):''}${(Array.isArray(p.anexos)&&p.anexos.length)?(' · 📎 '+p.anexos.length+' anexo(s)'):''}${dup?' · <i>já no cartão</i>':''}<br>
+      <span><b style="color:var(--gold-light)">${_esc(p.tipoLabel)} ${_esc(p.numero)}</b>${p.municipio?(' · 📍 <b>'+_esc(p.municipio)+'</b>'):''}${near}${p.situacao?(' · '+_esc(p.situacao)):''}${(Array.isArray(p.anexos)&&p.anexos.length)?(' · 📎 '+p.anexos.length+' anexo(s)'):''}${dup?' · <i>já no cartão</i>':''}<br>
       ${p.resumo?`<span style="font-size:12px;color:var(--text-muted)">${_esc(p.resumo.slice(0,160))}</span><br>`:''}
       ${p.endereco?`<span style="font-size:11px;color:var(--text-hint)">📍 ${_esc(p.endereco)}</span>`:''}</span></label>`;
-  }).join('') : '<div class="hint">Nenhuma pendente deste tipo.</div>';
-  box.innerHTML = chips + itens;
+  }).join('') : '<div class="hint">Nenhuma pendente'+(PNEAR?' próxima':' deste tipo')+'.</div>';
+  box.innerHTML = chips + nearBar + itens;
   atualizaBtnAdd();
 }
 function fecharPendentes(){ document.getElementById('pmod').style.display='none'; }
