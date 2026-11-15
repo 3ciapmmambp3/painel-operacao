@@ -81,7 +81,7 @@ window.CartaoMapa = (function(){
       const c=x.c, d=x.d, n=(d.ordem||x.i+1); pts.push([c.la,c.lo]);
       const icon=L.divIcon({html:'<div style="background:#c62f2b;color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font:700 12px Arial;box-shadow:0 1px 4px rgba(0,0,0,.5)">'+n+'</div>',className:'',iconSize:[26,26],iconAnchor:[13,13]});
       const dir='https://www.google.com/maps/dir/?api=1&destination='+c.la+','+c.lo;
-      const waze='https://waze.com/ul?ll='+c.la+','+c.lo+'&navigate=yes';
+      const waze='https://waze.com/ul?ll='+c.la+','+c.lo;
       const info=_info(d).map(r=>(r[0]?'<b>'+_esc(r[0])+':</b> ':'')+_esc(r[1])).join('<br>');
       const popup='<div style="font:12px/1.5 Arial;min-width:190px;max-width:250px"><div style="font-weight:800;color:#8a6d00;margin-bottom:4px">📍 DEMANDA '+_esc(n)+'</div>'+info+'<div style="margin-top:8px"><a href="'+dir+'" target="_blank" rel="noopener" style="color:#1769c4;font-weight:700">🧭 Rota (Maps)</a> &nbsp;·&nbsp; <a href="'+waze+'" target="_blank" rel="noopener" style="color:#0a8fb8;font-weight:700">🚗 Waze</a></div></div>';
       L.marker([c.la,c.lo],{icon}).addTo(map).bindPopup(popup);
