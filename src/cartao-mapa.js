@@ -111,6 +111,7 @@ window.CartaoMapa = (function(){
   function rotaUrl(demandas){
     const its=(demandas||[]).map(d=>({d,c:coordDe(d)})).filter(x=>x.c);
     if(!its.length) return '';
+    if(its.length===1){ const c=its[0].c; return 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination='+encodeURIComponent(c.la+','+c.lo); }
     let pend=its.slice(); pend.sort((a,b)=>b.c.la-a.c.la);
     let seq=[pend.shift()], cur=seq[0].c;
     while(pend.length){ let bi=0,bd=Infinity; for(let i=0;i<pend.length;i++){ const dd=_hav(cur.la,cur.lo,pend[i].c.la,pend[i].c.lo); if(dd<bd){bd=dd;bi=i;} } const nx=pend.splice(bi,1)[0]; seq.push(nx); cur=nx.c; }
