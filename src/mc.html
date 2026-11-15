@@ -737,13 +737,18 @@ function rotaLoteSel(){
   const _go=(origem,origemLabel)=>{
     let seq=_ordena(origem); let cortadas=0;
     if(seq.length>MAX){ cortadas=seq.length-MAX; seq=seq.slice(0,MAX); }
-    let total=0, prev=origem; const linhas=seq.map((it,i)=>{ const dist=prev?_hav(prev.la,prev.lo,it.c.la,it.c.lo):null; if(dist!=null) total+=dist; prev=it.c; return {i:i+1,cod:it.d.codigo,muni:it.d.municipio,dist}; });
     const pt=c=>`${c.la},${c.lo}`;
-    const dest=seq[seq.length-1].c, wps=seq.slice(0,-1).map(it=>pt(it.c));
-    let url='https://www.google.com/maps/dir/?api=1&travelmode=driving';
-    if(origem) url+='&origin='+encodeURIComponent(pt(origem));
-    url+='&destination='+encodeURIComponent(pt(dest));
-    if(wps.length) url+='&waypoints='+encodeURIComponent(wps.join('|'));
+    let total=0, prev=origem;
+    const linhas=seq.map((it,i)=>{ const dist=prev?_hav(prev.la,prev.lo,it.c.la,it.c.lo):null; if(dist!=null) total+=dist; prev=it.c; return {i:i+1,cod:it.d.codigo,muni:it.d.municipio,dist}; });
+    // Origem SEMPRE definida p/ a rota renderizar TODAS as paradas (no desktop sem GPS, o 1º ponto vira a origem).
+    const org = origem || seq[0].c;
+    const stops = origem ? seq : seq.slice(1);
+    let url='https://www.google.com/maps/dir/?api=1&travelmode=driving&origin='+encodeURIComponent(pt(org));
+    if(stops.length){
+      const dest=stops[stops.length-1].c, wps=stops.slice(0,-1).map(it=>pt(it.c));
+      url+='&destination='+encodeURIComponent(pt(dest));
+      if(wps.length) url+='&waypoints='+encodeURIComponent(wps.join('|'));
+    } else { url+='&destination='+encodeURIComponent(pt(org)); }
     _modalRoteiro(linhas,total,url,origemLabel,cortadas);
   };
   if(navigator.geolocation){
@@ -782,13 +787,41 @@ function _modalRoteiro(linhas,total,url,origemLabel,cortadas){
   ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
 }
 function _kmlSchemas(kml){ return String(kml||'').match(/<Schema\b[\s\S]*?<\/Schema>/g) || []; }
+function _xmlEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+// Pino (marcador) com balão de informações no centroide do GEOCOD
+function _kmlInfoPin(d){
+  const la=parseFloat(d.coord_y), lo=parseFloat(d.coord_x);
+  if(!(isFinite(la)&&isFinite(lo))) return '';
+  const pr=(typeof prazoInfo==='function')?prazoInfo(d):null;
+  const rows=[
+    ['GEOCOD', d.codigo],
+    ['Município', d.municipio],
+    ['Grupamento', (typeof _fracLabel==='function')?_fracLabel(d):(d.grupamento||'')],
+    ['Bioma', d.bioma||d.natureza],
+    ['Área desmatada (ha)', d.hectares],
+    ['Detecção', (d.data_inic||d.data_final)?`${fmtData(d.data_inic)} → ${fmtData(d.data_final)}`:''],
+    ['Recebido na 3ª Cia', fmtData(d.data_gerada)],
+    ['Vencimento', fmtData(d.data_vencimento)],
+    ['Situação', (SIT_LBL&&SIT_LBL[d.situacao])||d.situacao],
+    ['Prazo', (d.status_prazo || (pr&&pr.txt) || '')],
+  ].filter(r=>r[1]!=null && String(r[1]).trim()!=='' && String(r[1])!=='—');
+  const html='<![CDATA[<div style="font:13px Arial,sans-serif;line-height:1.5">'+
+    rows.map(r=>'<b>'+r[0]+':</b> '+String(r[1])).join('<br>')+'</div>]]>';
+  return '<Placemark><name>'+_xmlEsc(d.codigo||'MC')+'</name><description>'+html+'</description>'+
+         '<Point><coordinates>'+lo+','+la+',0</coordinates></Point></Placemark>';
+}
 function _kmlBody(d){
   const kml=String(d.kml_content||'');
+  const pin=_kmlInfoPin(d);
   const folders=kml.match(/<Folder\b[\s\S]*?<\/Folder>/g);
-  if(folders && folders.length) return folders.join('\n');
+  if(folders && folders.length){
+    let f=folders.join('\n');
+    if(pin) f=f.replace('</name>', '</name>\n'+pin);   // insere o pino logo após o nome da pasta do GEOCOD
+    return f;
+  }
   const pms=kml.match(/<Placemark\b[\s\S]*?<\/Placemark>/g)||[];
-  if(!pms.length) return '';
-  return '<Folder><name>MC_'+(d.codigo||'')+'</name>\n'+pms.join('\n')+'\n</Folder>';
+  const inner=(pin?pin+'\n':'')+pms.join('\n');
+  return inner.trim() ? '<Folder><name>MC_'+(d.codigo||'')+'</name>\n'+inner+'\n</Folder>' : '';
 }
 function baixarKmlLote(){
   const ds=[..._sel].map(byId).filter(x=>x && x.kml_content);
