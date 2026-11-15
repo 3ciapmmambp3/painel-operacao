@@ -718,22 +718,40 @@ function _renderSelBar(){
   el.style.display='flex';
   el.innerHTML =
     `<span>☑️ <b>${n}</b> demanda(s) selecionada(s)`+(comKml<n?` · <b>${comKml}</b> com KML`:'')+`.</span>`+
-    `<button onclick="rotaLoteSel()" ${comCoord?'':'disabled'} style="margin-left:auto;background:var(--info);color:#fff;border:none;font-weight:800;font-size:12.5px;padding:7px 14px;border-radius:7px;cursor:${comCoord?'pointer':'not-allowed'};opacity:${comCoord?'1':'.5'}" title="Monta um roteiro otimizado (vizinho mais próximo) com todos os pontos selecionados — abre no Google Maps, com a ordem sugerida e a distância entre eles.">🧭 Traçar rota (${comCoord})</button>`+
+    `<button onclick="mapaLoteSel()" ${comCoord?'':'disabled'} style="margin-left:auto;background:var(--success);color:#fff;border:none;font-weight:800;font-size:12.5px;padding:7px 14px;border-radius:7px;cursor:${comCoord?'pointer':'not-allowed'};opacity:${comCoord?'1':'.5'}" title="Abre um mapa no painel com um alfinete por ponto; clique num alfinete para ver as informações (GEOCOD, município, bioma, prazo…) e traçar a rota até ele.">🗺️ Ver no mapa (${comCoord})</button>`+
+    `<button onclick="rotaLoteSel()" ${comCoord?'':'disabled'} style="background:var(--info);color:#fff;border:none;font-weight:800;font-size:12.5px;padding:7px 14px;border-radius:7px;cursor:${comCoord?'pointer':'not-allowed'};opacity:${comCoord?'1':'.5'}" title="Monta um roteiro otimizado (vizinho mais próximo) com todos os pontos selecionados — abre no Google Maps, com a ordem sugerida e a distância entre eles.">🧭 Traçar rota (${comCoord})</button>`+
     `<button onclick="baixarKmlLote()" ${comKml?'':'disabled'} style="background:#1f6feb;color:#fff;border:none;font-weight:800;font-size:12.5px;padding:7px 14px;border-radius:7px;cursor:${comKml?'pointer':'not-allowed'};opacity:${comKml?'1':'.5'}">⬇️ Baixar KML agrupado (${comKml})</button>`+
     `<button onclick="_selClear()" style="background:var(--bg-input);border:1px solid var(--border-mid);color:var(--text-white);font-size:12px;padding:7px 12px;border-radius:7px;cursor:pointer">Limpar seleção</button>`;
 }
 /* ── Roteiro: rota multi-parada p/ os GEOCODs selecionados ──────────── */
 function _coordOf(d){ const la=parseFloat(d&&d.coord_y), lo=parseFloat(d&&d.coord_x); return (isFinite(la)&&isFinite(lo))?{la,lo}:null; }
+// Dados do GEOCOD como pares [rótulo,valor] — usado no balão do KML e no popup do mapa
+function _mcInfoRows(d){
+  const pr=(typeof prazoInfo==='function')?prazoInfo(d):null;
+  return [
+    ['Município', d.municipio],
+    ['Grupamento', (typeof _fracLabel==='function')?_fracLabel(d):(d.grupamento||'')],
+    ['Bioma', d.bioma||d.natureza],
+    ['Área desmatada (ha)', d.hectares],
+    ['Detecção', (d.data_inic||d.data_final)?`${fmtData(d.data_inic)} → ${fmtData(d.data_final)}`:''],
+    ['Recebido na 3ª Cia', fmtData(d.data_gerada)],
+    ['Vencimento', fmtData(d.data_vencimento)],
+    ['Situação', (SIT_LBL&&SIT_LBL[d.situacao])||d.situacao],
+    ['Prazo', (d.status_prazo || (pr&&pr.txt) || '')],
+  ].filter(r=>r[1]!=null && String(r[1]).trim()!=='' && String(r[1])!=='—');
+}
+// Ordena por vizinho-mais-próximo (greedy). items=[{d,c:{la,lo}}]; sem origem começa pelo ponto mais ao norte.
+function _ordenaVizinho(items, origem){
+  let pend=items.slice(), seq=[], cur=origem;
+  if(!cur){ pend.sort((a,b)=>b.c.la-a.c.la); seq.push(pend.shift()); cur=seq[0].c; }
+  while(pend.length){ let bi=0,bd=Infinity; for(let i=0;i<pend.length;i++){ const dd=_hav(cur.la,cur.lo,pend[i].c.la,pend[i].c.lo); if(dd<bd){bd=dd;bi=i;} } const nx=pend.splice(bi,1)[0]; seq.push(nx); cur=nx.c; }
+  return seq;
+}
 function rotaLoteSel(){
   const ds=[..._sel].map(byId).filter(x=>x && _coordOf(x));
   if(!ds.length) return toast('Nenhuma selecionada tem coordenada (gere os KMLs faltantes).');
   const MAX=10;
-  const _ordena=(origem)=>{   // vizinho mais próximo (greedy)
-    let pend=ds.map(d=>({d,c:_coordOf(d)})), seq=[], cur=origem;
-    if(!cur){ pend.sort((a,b)=>b.c.la-a.c.la); seq.push(pend.shift()); cur=seq[0].c; }   // sem GPS: começa pelo ponto mais ao norte
-    while(pend.length){ let bi=0,bd=Infinity; for(let i=0;i<pend.length;i++){ const dd=_hav(cur.la,cur.lo,pend[i].c.la,pend[i].c.lo); if(dd<bd){bd=dd;bi=i;} } const nx=pend.splice(bi,1)[0]; seq.push(nx); cur=nx.c; }
-    return seq;
-  };
+  const _ordena=(origem)=>_ordenaVizinho(ds.map(d=>({d,c:_coordOf(d)})), origem);
   const _go=(origem,origemLabel)=>{
     let seq=_ordena(origem); let cortadas=0;
     if(seq.length>MAX){ cortadas=seq.length-MAX; seq=seq.slice(0,MAX); }
@@ -786,25 +804,63 @@ function _modalRoteiro(linhas,total,url,origemLabel,cortadas){
   box.querySelector('#_rtClose').onclick=()=>ov.remove();
   ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
 }
+/* ── Mapa no painel: pinos com info dos GEOCODs selecionados (Leaflet) ── */
+let _mcMapObj=null;
+function _loadLeaflet(cb){
+  if(window.L) return cb();
+  if(!document.getElementById('_leafletCss')){ const c=document.createElement('link'); c.id='_leafletCss'; c.rel='stylesheet'; c.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(c); }
+  let s=document.getElementById('_leafletJs');
+  if(s){ s.addEventListener('load',cb); return; }
+  s=document.createElement('script'); s.id='_leafletJs'; s.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+  s.onload=cb; s.onerror=()=>toast('Falha ao carregar o mapa (precisa de internet).'); document.head.appendChild(s);
+}
+function mapaLoteSel(){
+  const ds=[..._sel].map(byId).filter(x=>x && _coordOf(x));
+  if(!ds.length) return toast('Nenhuma selecionada tem coordenada (gere os KMLs faltantes).');
+  toast('Abrindo o mapa…'); _loadLeaflet(()=>_abrirMapaLote(ds));
+}
+function _abrirMapaLote(ds){
+  const old=document.getElementById('_mapaModal'); if(old) old.remove();
+  const ov=document.createElement('div'); ov.id='_mapaModal';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:130;padding:14px';
+  const box=document.createElement('div');
+  box.style.cssText='background:var(--bg-card);border:1px solid var(--border);border-radius:14px;width:min(960px,96vw);height:min(86vh,760px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.45)';
+  box.innerHTML=
+    `<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap">`+
+      `<div style="font-size:14px;font-weight:800;color:var(--gold)">🗺️ ${ds.length} ponto(s) no mapa</div>`+
+      `<div style="font-size:11px;color:var(--text-hint)">clique num alfinete para ver as informações</div>`+
+      `<a class="anxbtn rota" id="_mpRota" style="margin-left:auto;cursor:pointer">🧭 Rota no Google Maps</a>`+
+      `<button class="anxbtn" id="_mpClose">Fechar</button>`+
+    `</div>`+
+    `<div id="_mcMap" style="flex:1;min-height:0"></div>`;
+  ov.appendChild(box); document.body.appendChild(ov);
+  const close=()=>{ try{ if(_mcMapObj){ _mcMapObj.remove(); _mcMapObj=null; } }catch(e){} ov.remove(); };
+  box.querySelector('#_mpClose').onclick=close;
+  ov.onclick=e=>{ if(e.target===ov) close(); };
+  box.querySelector('#_mpRota').onclick=()=>rotaLoteSel();
+  const map=L.map('_mcMap',{zoomControl:true}); _mcMapObj=map;
+  const sat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles &copy; Esri'});
+  const ruas=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'});
+  sat.addTo(map); L.control.layers({'Satélite':sat,'Ruas':ruas},null,{collapsed:true}).addTo(map);
+  const seq=_ordenaVizinho(ds.map(d=>({d,c:_coordOf(d)})), null), pts=[];
+  seq.forEach((it,i)=>{
+    const n=i+1, c=it.c, d=it.d; pts.push([c.la,c.lo]);
+    const icon=L.divIcon({html:'<div style="background:#c62f2b;color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font:700 12px Arial;box-shadow:0 1px 4px rgba(0,0,0,.5)">'+n+'</div>',className:'',iconSize:[26,26],iconAnchor:[13,13]});
+    const dir='https://www.google.com/maps/dir/?api=1&destination='+c.la+','+c.lo;
+    const popup='<div style="font:12px/1.5 Arial;min-width:190px;max-width:250px"><div style="font-weight:800;color:#8a6d00;margin-bottom:4px">📍 '+(d.codigo||'GEOCOD')+'</div>'+_mcInfoRows(d).map(r=>'<b>'+r[0]+':</b> '+String(r[1])).join('<br>')+'<div style="margin-top:8px"><a href="'+dir+'" target="_blank" rel="noopener" style="color:#1769c4;font-weight:700">🧭 Traçar rota até aqui</a></div></div>';
+    L.marker([c.la,c.lo],{icon}).addTo(map).bindPopup(popup);
+  });
+  if(pts.length>1) L.polyline(pts,{color:'#ffd54a',weight:2.5,opacity:.85,dashArray:'6,6'}).addTo(map);
+  if(pts.length===1) map.setView(pts[0],14); else map.fitBounds(pts,{padding:[40,40]});
+  setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} },160);
+}
 function _kmlSchemas(kml){ return String(kml||'').match(/<Schema\b[\s\S]*?<\/Schema>/g) || []; }
 function _xmlEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 // Pino (marcador) com balão de informações no centroide do GEOCOD
 function _kmlInfoPin(d){
   const la=parseFloat(d.coord_y), lo=parseFloat(d.coord_x);
   if(!(isFinite(la)&&isFinite(lo))) return '';
-  const pr=(typeof prazoInfo==='function')?prazoInfo(d):null;
-  const rows=[
-    ['GEOCOD', d.codigo],
-    ['Município', d.municipio],
-    ['Grupamento', (typeof _fracLabel==='function')?_fracLabel(d):(d.grupamento||'')],
-    ['Bioma', d.bioma||d.natureza],
-    ['Área desmatada (ha)', d.hectares],
-    ['Detecção', (d.data_inic||d.data_final)?`${fmtData(d.data_inic)} → ${fmtData(d.data_final)}`:''],
-    ['Recebido na 3ª Cia', fmtData(d.data_gerada)],
-    ['Vencimento', fmtData(d.data_vencimento)],
-    ['Situação', (SIT_LBL&&SIT_LBL[d.situacao])||d.situacao],
-    ['Prazo', (d.status_prazo || (pr&&pr.txt) || '')],
-  ].filter(r=>r[1]!=null && String(r[1]).trim()!=='' && String(r[1])!=='—');
+  const rows=[['GEOCOD', d.codigo]].concat(_mcInfoRows(d));
   const html='<![CDATA[<div style="font:13px Arial,sans-serif;line-height:1.5">'+
     rows.map(r=>'<b>'+r[0]+':</b> '+String(r[1])).join('<br>')+'</div>]]>';
   return '<Placemark><name>'+_xmlEsc(d.codigo||'MC')+'</name><description>'+html+'</description>'+
