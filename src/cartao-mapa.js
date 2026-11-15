@@ -46,6 +46,7 @@ window.CartaoMapa = (function(){
     if(d.endereco) rows.push(['Endereço', d.endereco]);
     if(d.origem && (d.origem.label||d.origem.numero)) rows.push(['Demanda', ((d.origem.label||'')+' '+(d.origem.numero||'')).trim()]);
     else if(d.texto) rows.push(['', String(d.texto).split('\n')[0]]);
+    if(d.car_imovel) rows.push(['CAR', d.car_imovel]);
     if(d.observacao) rows.push(['Obs', d.observacao]);
     return rows;
   }

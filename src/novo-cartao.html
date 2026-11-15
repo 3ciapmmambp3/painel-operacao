@@ -490,7 +490,7 @@ async function carregarPendentes(){
       try{
         let off=0; const PG=1000;
         for(;;){
-          const sel='id,codigo,municipio,endereco,situacao,anexos'+(tb==='mc_demandas'?',kml_content,coord_x,coord_y':'');   // MC: traz o KML por GEOCOD + a coordenada (p/ rota no cartão)
+          const sel='id,codigo,municipio,endereco,situacao,anexos'+(tb==='mc_demandas'?',kml_content,coord_x,coord_y,car_imovel':'');   // MC: KML + coordenada + nº do CAR (p/ rota e CAR no cartão)
           const q=`${API}/rest/v1/${tb}?select=${sel}&gp_responsavel=in.(${inVal2})&ativo=is.true&data_atendimento=is.null&order=data_vencimento.asc.nullslast`;
           const r=await fetch(q,{headers:Object.assign({},H,{'Range-Unit':'items','Range':off+'-'+(off+PG-1)})});
           if(!r.ok) break;
@@ -508,11 +508,12 @@ async function carregarPendentes(){
               if(!ex.situacao  && d.situacao)  ex.situacao =d.situacao;
               if(!ex.id        && d.id)        ex.id       =d.id;
               if(!ex.coordenadas && d.coord_y!=null && d.coord_y!=='' && d.coord_x!=null && d.coord_x!=='') ex.coordenadas=d.coord_y+', '+d.coord_x;
+              if(!ex.car_imovel && d.car_imovel) ex.car_imovel=d.car_imovel;
               return;
             }
             jaTem.add(key);
             const _coordTxt=(d.coord_y!=null && d.coord_y!=='' && d.coord_x!=null && d.coord_x!=='')?(d.coord_y+', '+d.coord_x):'';
-            const novo={tipo:cfg.tipo, tipoLabel:cfg.label, numero:num, texto:_tplDemanda(cfg.kind,num,d.municipio||''), resumo:'', municipio:d.municipio||'', endereco:d.endereco||'', coordenadas:_coordTxt, situacao:d.situacao||'', anexos:anx, fonte:'painel', folder:cfg.folder||null, id:d.id};
+            const novo={tipo:cfg.tipo, tipoLabel:cfg.label, numero:num, texto:_tplDemanda(cfg.kind,num,d.municipio||''), resumo:'', municipio:d.municipio||'', endereco:d.endereco||'', coordenadas:_coordTxt, car_imovel:d.car_imovel||'', situacao:d.situacao||'', anexos:anx, fonte:'painel', folder:cfg.folder||null, id:d.id};
             PEND.push(novo); byKey.set(key,novo);
           });
           if(arr.length<PG || off>40000) break; off+=PG;
@@ -706,7 +707,7 @@ async function addPendentes(){
   DEM = DEM.filter(d=>!_demandaVazia(d));
   const novas=[];
   sel.forEach(i=>{ const p=PEND[i]; if(!p) return;
-    const nd={texto:p.texto, municipio:p.municipio||'', endereco:p.endereco||'', coordenadas:p.coordenadas||'', observacao:p.observacao||'', anexos:(Array.isArray(p.anexos)?p.anexos.slice():[]), origem: p.origem || {tipo:p.tipo, numero:p.numero, id:p.id, fonte:p.fonte, label:p.tipoLabel, folder:p.folder||null}};
+    const nd={texto:p.texto, municipio:p.municipio||'', endereco:p.endereco||'', coordenadas:p.coordenadas||'', car_imovel:p.car_imovel||'', observacao:p.observacao||'', anexos:(Array.isArray(p.anexos)?p.anexos.slice():[]), origem: p.origem || {tipo:p.tipo, numero:p.numero, id:p.id, fonte:p.fonte, label:p.tipoLabel, folder:p.folder||null}};
     DEM.push(nd); novas.push(nd); });
   if(!DEM.length) addDemanda();
   renderDemandas();

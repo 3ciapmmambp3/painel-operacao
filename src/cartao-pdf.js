@@ -88,6 +88,7 @@
         + (d.endereco?rowH('Endereço / referência', endCell):'')
         + (d.municipio?row('Município', d.municipio):'')
         + (d.coordenadas?rowH('Coordenadas', coordCell):'')
+        + (d.car_imovel?rowH('CAR / SICAR', E(d.car_imovel)+' <a href="https://consultapublica.car.gov.br/publico/imoveis/index" target="_blank" rel="noopener">(consultar demonstrativo)</a>'):'')
         + (anx.length?rowH('Anexo', anexoCell):'');
       const _corSit = r&&r.atendida ? ({TOTAL:'#1b7a1b',PARCIAL:'#b26a00',NAO:'#c62828'})[r.atendida]||'' : '';
       let resp = (r&&r.atendida)
