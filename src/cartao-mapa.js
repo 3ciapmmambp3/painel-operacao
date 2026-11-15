@@ -113,8 +113,8 @@ window.CartaoMapa = (function(){
   function rotaInfo(demandas){
     const its=(demandas||[]).map((d,i)=>({d,ordem:(d&&d.ordem)||i+1,c:coordDe(d)}));
     const com=its.filter(x=>x.c), excluidas=its.filter(x=>!x.c).map(x=>({d:x.d,ordem:x.ordem}));
-    if(!com.length) return {url:'',incluidas:[],excluidas,cortadas:0};
-    if(com.length===1){ const c=com[0].c; return {url:'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination='+encodeURIComponent(c.la+','+c.lo), incluidas:[{d:com[0].d,ordem:com[0].ordem}], excluidas, cortadas:0}; }
+    if(!com.length) return {url:'',incluidas:[],excluidas,cortadas:0,primeiro:null};
+    if(com.length===1){ const c=com[0].c; return {url:'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination='+encodeURIComponent(c.la+','+c.lo), incluidas:[{d:com[0].d,ordem:com[0].ordem}], excluidas, cortadas:0, primeiro:{la:c.la,lo:c.lo}}; }
     let pend=com.slice(); pend.sort((a,b)=>b.c.la-a.c.la);
     let seq=[pend.shift()], cur=seq[0].c;
     while(pend.length){ let bi=0,bd=Infinity; for(let i=0;i<pend.length;i++){ const dd=_hav(cur.la,cur.lo,pend[i].c.la,pend[i].c.lo); if(dd<bd){bd=dd;bi=i;} } const nx=pend.splice(bi,1)[0]; seq.push(nx); cur=nx.c; }
@@ -123,9 +123,30 @@ window.CartaoMapa = (function(){
     let url='https://www.google.com/maps/dir/?api=1&travelmode=driving&origin='+encodeURIComponent(pt(org));
     if(stops.length){ const dest=stops[stops.length-1].c, wps=stops.slice(0,-1).map(x=>pt(x.c)); url+='&destination='+encodeURIComponent(pt(dest)); if(wps.length) url+='&waypoints='+encodeURIComponent(wps.join('|')); }
     else url+='&destination='+encodeURIComponent(pt(org));
-    return {url, incluidas:seq.map(x=>({d:x.d,ordem:x.ordem})), excluidas, cortadas};
+    return {url, incluidas:seq.map(x=>({d:x.d,ordem:x.ordem})), excluidas, cortadas, primeiro:{la:org.la,lo:org.lo}};
   }
   function rotaUrl(demandas){ return rotaInfo(demandas).url; }
+  // Seletor de app: abre a rota no Google Maps (completa) ou Waze (1º ponto).
+  function escolherRota(demandas){
+    const ri=rotaInfo(demandas);
+    if(!ri.url || !ri.primeiro){ alert('Nenhuma demanda com coordenada para traçar a rota.'); return; }
+    const n=ri.incluidas.length, waze='https://waze.com/ul?ll='+ri.primeiro.la+','+ri.primeiro.lo;
+    const old=document.getElementById('_cmRotaSel'); if(old) old.remove();
+    const ov=document.createElement('div'); ov.id='_cmRotaSel';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:100000;padding:16px';
+    const box=document.createElement('div');
+    box.style.cssText='background:#fff;border-radius:14px;max-width:360px;width:100%;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.45);font-family:Arial';
+    box.innerHTML=
+      '<div style="font-size:15px;font-weight:800;color:#7a6b43;margin-bottom:3px">🧭 Abrir a rota em qual app?</div>'+
+      '<div style="font-size:11.5px;color:#888;margin-bottom:14px">'+n+' ponto(s) na rota.</div>'+
+      '<a href="'+ri.url+'" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:8px;padding:12px 14px;border:1px solid #cbd5e1;border-radius:9px;margin-bottom:9px;color:#1769c4;font-weight:700;text-decoration:none">🧭 Google Maps <span style="margin-left:auto;font-weight:400;color:#888;font-size:11px">rota completa</span></a>'+
+      '<a href="'+waze+'" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:8px;padding:12px 14px;border:1px solid #cbd5e1;border-radius:9px;margin-bottom:9px;color:#0a8fb8;font-weight:700;text-decoration:none">🚗 Waze <span style="margin-left:auto;font-weight:400;color:#888;font-size:11px">1º ponto (não faz várias paradas)</span></a>'+
+      '<button id="_cmRotaFechar" style="width:100%;margin-top:4px;background:#f0f0f0;border:1px solid #ccc;border-radius:8px;padding:9px;cursor:pointer;font-weight:700;font-family:Arial">Fechar</button>';
+    ov.appendChild(box); document.body.appendChild(ov);
+    const close=()=>ov.remove();
+    box.querySelector('#_cmRotaFechar').onclick=close; ov.onclick=e=>{ if(e.target===ov) close(); };
+    box.querySelectorAll('a').forEach(a=>a.addEventListener('click',()=>setTimeout(close,150)));
+  }
   function nComCoord(demandas){ return (demandas||[]).filter(d=>coordDe(d)).length; }
-  return { abrir, coordDe, rotaUrl, rotaInfo, nComCoord };
+  return { abrir, coordDe, rotaUrl, rotaInfo, escolherRota, nComCoord };
 })();

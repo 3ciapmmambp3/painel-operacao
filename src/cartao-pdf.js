@@ -112,7 +112,7 @@
           const incl=ri.incluidas.map(x=>x.ordem).join(' → ');
           const excl=ri.excluidas.map(x=>x.ordem).join(', ');
           demHtml += '<div class="demblock"><h4 class="sec">Rota dos pontos (Google Maps)</h4><table class="t">'
-            + rowH('Traçar rota', '<a href="'+ri.url+'" target="_blank" rel="noopener">Abrir a rota de todos os pontos no Google Maps</a>')
+            + rowH('Traçar rota', '<a href="'+ri.url+'" target="_blank" rel="noopener">Google Maps (rota completa)</a>'+(ri.primeiro?' &nbsp;&middot;&nbsp; <a href="https://waze.com/ul?ll='+ri.primeiro.la+','+ri.primeiro.lo+'" target="_blank" rel="noopener">Waze (1&ordm; ponto)</a>':''))
             + rowH('Passa pelas demandas (nesta ordem)', E(incl) + (ri.cortadas?(' (+'+ri.cortadas+' além do limite de 10 paradas do Maps)'):''))
             + (excl?rowH('Fora da rota (sem coordenada)', '<span style="color:#c62828">Demanda(s) '+E(excl)+'</span>'):'')
             + '</table></div>';
