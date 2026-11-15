@@ -106,22 +106,26 @@ window.CartaoMapa = (function(){
     setTimeout(()=>alert('KML baixado. No Google Earth: menu → Projetos → Importar arquivo KML → selecione o arquivo baixado.'),300);
   }
   function _hav(la1,lo1,la2,lo2){const R=6371,t=Math.PI/180,dla=(la2-la1)*t,dlo=(lo2-lo1)*t,a=Math.sin(dla/2)**2+Math.cos(la1*t)*Math.cos(la2*t)*Math.sin(dlo/2)**2;return 2*R*Math.asin(Math.min(1,Math.sqrt(a)));}
-  // URL do Google Maps com a rota multi-parada por TODAS as demandas com coordenada
-  // (ordem vizinho-mais-próximo a partir do ponto mais ao norte; teto de 10 paradas).
-  function rotaUrl(demandas){
-    const its=(demandas||[]).map(d=>({d,c:coordDe(d)})).filter(x=>x.c);
-    if(!its.length) return '';
-    if(its.length===1){ const c=its[0].c; return 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination='+encodeURIComponent(c.la+','+c.lo); }
-    let pend=its.slice(); pend.sort((a,b)=>b.c.la-a.c.la);
+  // Rota multi-parada por TODAS as demandas com coordenada (ordem vizinho-mais-
+  // próximo a partir do ponto mais ao norte; teto de 10 paradas). Devolve:
+  //  { url, incluidas:[{d,ordem}] em ordem de percurso, excluidas:[{d,ordem}] sem
+  //    coordenada (fora da rota), cortadas: nº além do teto de 10 }
+  function rotaInfo(demandas){
+    const its=(demandas||[]).map((d,i)=>({d,ordem:(d&&d.ordem)||i+1,c:coordDe(d)}));
+    const com=its.filter(x=>x.c), excluidas=its.filter(x=>!x.c).map(x=>({d:x.d,ordem:x.ordem}));
+    if(!com.length) return {url:'',incluidas:[],excluidas,cortadas:0};
+    if(com.length===1){ const c=com[0].c; return {url:'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination='+encodeURIComponent(c.la+','+c.lo), incluidas:[{d:com[0].d,ordem:com[0].ordem}], excluidas, cortadas:0}; }
+    let pend=com.slice(); pend.sort((a,b)=>b.c.la-a.c.la);
     let seq=[pend.shift()], cur=seq[0].c;
     while(pend.length){ let bi=0,bd=Infinity; for(let i=0;i<pend.length;i++){ const dd=_hav(cur.la,cur.lo,pend[i].c.la,pend[i].c.lo); if(dd<bd){bd=dd;bi=i;} } const nx=pend.splice(bi,1)[0]; seq.push(nx); cur=nx.c; }
-    if(seq.length>10) seq=seq.slice(0,10);
+    let cortadas=0; if(seq.length>10){ cortadas=seq.length-10; seq=seq.slice(0,10); }
     const pt=c=>c.la+','+c.lo, org=seq[0].c, stops=seq.slice(1);
     let url='https://www.google.com/maps/dir/?api=1&travelmode=driving&origin='+encodeURIComponent(pt(org));
     if(stops.length){ const dest=stops[stops.length-1].c, wps=stops.slice(0,-1).map(x=>pt(x.c)); url+='&destination='+encodeURIComponent(pt(dest)); if(wps.length) url+='&waypoints='+encodeURIComponent(wps.join('|')); }
     else url+='&destination='+encodeURIComponent(pt(org));
-    return url;
+    return {url, incluidas:seq.map(x=>({d:x.d,ordem:x.ordem})), excluidas, cortadas};
   }
+  function rotaUrl(demandas){ return rotaInfo(demandas).url; }
   function nComCoord(demandas){ return (demandas||[]).filter(d=>coordDe(d)).length; }
-  return { abrir, coordDe, rotaUrl, nComCoord };
+  return { abrir, coordDe, rotaUrl, rotaInfo, nComCoord };
 })();
