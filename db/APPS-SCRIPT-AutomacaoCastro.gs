@@ -513,6 +513,7 @@ var AutomacaoCastro = (function () {
       if (p.action === 'mc_lote')          return jsonOut(mcLote(p));
       if (p.action === 'mc_importar')      return jsonOut(runMC() || { ok: true });
       if (p.action === 'mc_kml_backfill')  return jsonOut(mcKmlBackfill(p));
+      if (p.action === 'mc_car_backfill')  return jsonOut(mcCarBackfill(p));
       if (p.action === 'mc_lote_geocods')  return jsonOut(mcLoteGeocods(p));
       if (p.action === 'mc_arquivar_lotes') return jsonOut(mcArquivarLotes(p));
       if (p.action === 'ri_coord_backfill') return jsonOut(riCoordBackfill(p));
@@ -1220,6 +1221,75 @@ var AutomacaoCastro = (function () {
     return { ok: true, pastas: ids.length, geocods: rowsAll.length, atualizadas: upd, semKml: semKml };
   }
 
+  /* ── CAR / SICAR por coordenada ─────────────────────────────────────
+     Proxy do GeoServer OFICIAL do SICAR (geoserver.car.gov.br). O navegador
+     não acessa direto (SSL/CORS) → consulta aqui no servidor, com fallback
+     de certificado. Reaproveitado do projeto Modo Campo (Elber).
+     ─────────────────────────────────────────────────────────────────── */
+  var SICAR_ULTIMO_TRANSPORTE_ = 'normal';
+  function _sicarEhUrlOficial_(url){ return /^https:\/\/geoserver\.car\.gov\.br\//i.test(String(url||'')); }
+  function _sicarOpcoesFetch_(op, ignorarCert){ op=op||{}; var o={}; for (var k in op) o[k]=op[k]; o.muteHttpExceptions=true; o.followRedirects=true; if (ignorarCert) o.validateHttpsCertificates=false; return o; }
+  function _fetchSicar_(url, op){
+    try { SICAR_ULTIMO_TRANSPORTE_='normal'; return UrlFetchApp.fetch(url, _sicarOpcoesFetch_(op, false)); }
+    catch (e1){
+      if (!_sicarEhUrlOficial_(url)) throw e1;
+      try { SICAR_ULTIMO_TRANSPORTE_='fallback_ssl'; return UrlFetchApp.fetch(url, _sicarOpcoesFetch_(op, true)); }
+      catch (e2){ throw new Error('SICAR indisponível. HTTPS: ' + (e1&&e1.message||e1) + ' | fallback: ' + (e2&&e2.message||e2)); }
+    }
+  }
+  function consultarCarPorCoordenada(lat, lon, uf){
+    lat=Number(lat); lon=Number(lon); uf=String(uf||'MG').trim().toUpperCase();
+    if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat)>90 || Math.abs(lon)>180) return { ok:false, erro:'Coordenada inválida.' };
+    var layer='sicar:sicar_imoveis_'+uf.toLowerCase();
+    var cql='INTERSECTS(geo_area_imovel, POINT(' + lon.toFixed(8) + ' ' + lat.toFixed(8) + '))';
+    var url='https://geoserver.car.gov.br/geoserver/sicar/ows?service=WFS&version=1.0.0&request=GetFeature'
+      + '&typeName=' + encodeURIComponent(layer)
+      + '&outputFormat=' + encodeURIComponent('application/json')
+      + '&srsName=' + encodeURIComponent('EPSG:4326')
+      + '&maxFeatures=25'
+      + '&cql_filter=' + encodeURIComponent(cql);
+    try {
+      var resp=_fetchSicar_(url, { method:'get', headers:{ 'Accept':'application/json', 'User-Agent':'PMMG-3Cia-MC/1.0' } });
+      var code=resp.getResponseCode();
+      if (code<200 || code>=300) return { ok:false, erro:'SICAR respondeu HTTP ' + code };
+      var obj=JSON.parse(resp.getContentText('UTF-8'));
+      var feats=Array.isArray(obj.features)?obj.features:[];
+      return { ok:true, quantidade:feats.length, features:feats };
+    } catch (e){ return { ok:false, erro:String(e&&e.message||e) }; }
+  }
+  function _carResumo_(f){
+    var p=(f&&f.properties)||{};
+    return {
+      cod_imovel: String(p.cod_imovel || p.cod_car || p.car || ''),
+      municipio:  String(p.municipio || p.nom_munici || p.municipi || ''),
+      area:       String(p.area || p.num_area || p.area_imove || ''),
+      status:     String(p.status_imovel || p.condicao || p.des_condic || p.ind_status || p.situacao || '')
+    };
+  }
+  // Consulta o CAR de uma lista de pontos [{codigo,lat,lon}] e grava via mc_set_car.
+  // O painel pagina (manda ~25 por chamada) porque cada consulta ao SICAR é lenta.
+  function mcCarBackfill(p){
+    var pts=p.pontos;
+    if (typeof pts==='string'){ try{ pts=JSON.parse(pts); }catch(e){ pts=[]; } }
+    if (!pts || !pts.length) return { ok:true, total:0, atualizadas:0, comCar:0, semCar:0, erros:0 };
+    var uf=String(p.uf||'MG'), rows=[], comCar=0, semCar=0, erros=0;
+    for (var i=0;i<pts.length;i++){
+      var pt=pts[i]||{}, cod=String(pt.codigo||'').trim();
+      if (!cod || !isFinite(Number(pt.lat)) || !isFinite(Number(pt.lon))) continue;
+      var r=consultarCarPorCoordenada(pt.lat, pt.lon, uf);
+      if (!r.ok){ erros++; continue; }                        // não grava: tenta de novo depois
+      var fs=(r.features||[]).map(_carResumo_).filter(function(x){ return x.cod_imovel; });
+      rows.push({ codigo:cod, car_qtd:fs.length, car_dados:fs, car_imovel:fs.map(function(x){return x.cod_imovel;}).join(', ') });
+      if (fs.length) comCar++; else semCar++;
+    }
+    var upd=0, LOTE=200;
+    for (var j=0;j<rows.length;j+=LOTE){
+      var rr=enviarRpc('mc_set_car', { linhas: rows.slice(j, j+LOTE) });
+      if (typeof rr==='number') upd+=rr; else if (rr && rr.length) upd+=(typeof rr[0]==='number'?rr[0]:0);
+    }
+    return { ok:true, total:pts.length, atualizadas:upd, comCar:comCar, semCar:semCar, erros:erros, transporteSicar:SICAR_ULTIMO_TRANSPORTE_ };
+  }
+
   // RECONCILIA aba MC → Supabase (puxa REDS/ato/data que o Aux lançar) + re-casa PDFs
   function runMC() {
     var F = FONTES.MC, cfg = F.abas[0];
@@ -1266,7 +1336,8 @@ var AutomacaoCastro = (function () {
   }
 
   return { run: run, runMC: runMC, mcLote: mcLote, mcListarLotes: mcListarLotes,
-           mcKmlBackfill: mcKmlBackfill,
+           mcKmlBackfill: mcKmlBackfill, mcCarBackfill: mcCarBackfill,
+           consultarCarPorCoordenada: consultarCarPorCoordenada,
            riCoordBackfill: riCoordBackfill,
            nudenCoordBackfill: nudenCoordBackfill, nudenCoordLoop: nudenCoordLoop,
            instalarGatilho: instalarGatilho, doGet: doGet, doPost: doPost };
