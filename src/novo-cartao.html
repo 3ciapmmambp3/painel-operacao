@@ -11,6 +11,7 @@
   <script src="auth.js"></script>
   <script src="frota-grupamentos.js"></script>
   <script src="coord.js"></script>
+  <script src="cartao-mapa.js"></script>
   <style>
     body{padding-bottom:70px;background:var(--bg-page)}
     .wrap{max-width:900px;margin:16px auto 0;padding:0 16px}
@@ -147,7 +148,8 @@
       <div class="hint" id="pmsg" style="margin-bottom:10px"></div>
       <input id="p-busca" placeholder="🔎 Buscar por número ou texto…" autocomplete="off" oninput="setPBusca(this.value)" style="width:100%;margin-bottom:10px">
       <div id="plista"></div>
-      <div style="display:flex;gap:9px;justify-content:flex-end;margin-top:12px">
+      <div style="display:flex;gap:9px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap">
+        <button type="button" class="btn ghost" id="btn-mapa-pend" onclick="abrirMapaPendentes()" style="margin-right:auto" title="Mostra as pendentes que têm coordenada num mapa (satélite). Clique nos alfinetes próximos para selecioná-las e trazer pro cartão com a rota.">🗺️ Ver no mapa / selecionar próximas</button>
         <button type="button" class="btn ghost" onclick="fecharPendentes()">Cancelar</button>
         <button type="button" class="btn gold" id="btn-add-pend" onclick="addPendentes()">Adicionar selecionadas</button>
       </div>
@@ -488,7 +490,7 @@ async function carregarPendentes(){
       try{
         let off=0; const PG=1000;
         for(;;){
-          const sel='id,codigo,municipio,endereco,situacao,anexos'+(tb==='mc_demandas'?',kml_content':'');   // MC: traz o KML por GEOCOD
+          const sel='id,codigo,municipio,endereco,situacao,anexos'+(tb==='mc_demandas'?',kml_content,coord_x,coord_y':'');   // MC: traz o KML por GEOCOD + a coordenada (p/ rota no cartão)
           const q=`${API}/rest/v1/${tb}?select=${sel}&gp_responsavel=in.(${inVal2})&ativo=is.true&data_atendimento=is.null&order=data_vencimento.asc.nullslast`;
           const r=await fetch(q,{headers:Object.assign({},H,{'Range-Unit':'items','Range':off+'-'+(off+PG-1)})});
           if(!r.ok) break;
@@ -505,10 +507,12 @@ async function carregarPendentes(){
               if(!ex.endereco  && d.endereco)  ex.endereco =d.endereco;
               if(!ex.situacao  && d.situacao)  ex.situacao =d.situacao;
               if(!ex.id        && d.id)        ex.id       =d.id;
+              if(!ex.coordenadas && d.coord_y!=null && d.coord_y!=='' && d.coord_x!=null && d.coord_x!=='') ex.coordenadas=d.coord_y+', '+d.coord_x;
               return;
             }
             jaTem.add(key);
-            const novo={tipo:cfg.tipo, tipoLabel:cfg.label, numero:num, texto:_tplDemanda(cfg.kind,num,d.municipio||''), resumo:'', municipio:d.municipio||'', endereco:d.endereco||'', situacao:d.situacao||'', anexos:anx, fonte:'painel', folder:cfg.folder||null, id:d.id};
+            const _coordTxt=(d.coord_y!=null && d.coord_y!=='' && d.coord_x!=null && d.coord_x!=='')?(d.coord_y+', '+d.coord_x):'';
+            const novo={tipo:cfg.tipo, tipoLabel:cfg.label, numero:num, texto:_tplDemanda(cfg.kind,num,d.municipio||''), resumo:'', municipio:d.municipio||'', endereco:d.endereco||'', coordenadas:_coordTxt, situacao:d.situacao||'', anexos:anx, fonte:'painel', folder:cfg.folder||null, id:d.id};
             PEND.push(novo); byKey.set(key,novo);
           });
           if(arr.length<PG || off>40000) break; off+=PG;
@@ -583,6 +587,64 @@ let PBUSCA='';
 function setPBusca(v){ PBUSCA=v; renderPendentes(); }
 let PSEL=new Set();   // índices do PEND marcados (persistem ao trocar de aba)
 function togglePSel(i,on){ if(on) PSEL.add(i); else PSEL.delete(i); atualizaBtnAdd(); }
+
+/* ── Mapa de seleção por proximidade (pendentes do painel com coordenada) ── */
+let _pendMap=null, _pendMarks={};
+function abrirMapaPendentes(){
+  if(!window.CartaoMapa){ alert('Mapa indisponível.'); return; }
+  const itens=PEND.map((p,i)=>({p,i,c:CartaoMapa.coordDe(p)})).filter(x=>x.c);
+  if(!itens.length){ alert('Nenhuma pendente tem coordenada para mapear.\nAs do Monitoramento Contínuo têm — se não aparecerem, feche e abra o "Puxar pendente" de novo.'); return; }
+  _loadLeafletPend(()=>_renderMapaPendentes(itens));
+}
+function _loadLeafletPend(cb){
+  if(window.L) return cb();
+  if(!document.getElementById('_cmLeafletCss')){ const c=document.createElement('link'); c.id='_cmLeafletCss'; c.rel='stylesheet'; c.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(c); }
+  let s=document.getElementById('_cmLeafletJs'); if(s){ s.addEventListener('load',cb); return; }
+  s=document.createElement('script'); s.id='_cmLeafletJs'; s.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+  s.onload=cb; s.onerror=()=>alert('Falha ao carregar o mapa (precisa de internet).'); document.head.appendChild(s);
+}
+function _pendIcon(i){
+  const on=PSEL.has(i), bg=on?'#2e9e4f':'#c62f2b';
+  return L.divIcon({html:'<div style="background:'+bg+';color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font:700 14px Arial;box-shadow:0 1px 4px rgba(0,0,0,.5)">'+(on?'✓':'')+'</div>',className:'',iconSize:[26,26],iconAnchor:[13,13]});
+}
+function _togglePend(i){
+  if(PSEL.has(i)) PSEL.delete(i); else PSEL.add(i);
+  const mk=_pendMarks[i]; if(mk) mk.setIcon(_pendIcon(i));
+  _pendHeader(); atualizaBtnAdd();
+}
+function _pendHeader(){ const el=document.getElementById('_pendCount'); if(el) el.textContent=PSEL.size+' selecionada(s)'; const u=document.getElementById('_pendUsar'); if(u) u.textContent='Usar seleção'+(PSEL.size?(' ('+PSEL.size+')'):''); }
+function _renderMapaPendentes(itens){
+  const old=document.getElementById('_pendMapModal'); if(old) old.remove();
+  const ov=document.createElement('div'); ov.id='_pendMapModal';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:10001;padding:14px';
+  const box=document.createElement('div');
+  box.style.cssText='background:var(--bg-page);border:1px solid var(--gold-border);border-radius:14px;width:min(980px,97vw);height:min(88vh,780px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5)';
+  box.innerHTML='<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap">'+
+    '<div style="font-size:14px;font-weight:800;color:var(--gold-light)">🗺️ Selecionar por proximidade</div>'+
+    '<div style="font-size:11px;color:var(--text-hint)">clique nos alfinetes próximos para marcar (verde ✓) / desmarcar</div>'+
+    '<span id="_pendCount" style="margin-left:auto;font-size:12px;color:var(--text-muted)"></span>'+
+    '<button type="button" class="btn gold" id="_pendUsar">Usar seleção</button>'+
+    '<button type="button" class="btn ghost" id="_pendFechar">Fechar</button>'+
+    '</div><div id="_pendMap" style="flex:1;min-height:0"></div>';
+  ov.appendChild(box); document.body.appendChild(ov);
+  const aplicar=()=>{ try{ if(_pendMap){ _pendMap.remove(); _pendMap=null; } }catch(e){} _pendMarks={}; ov.remove(); renderPendentes(); };
+  box.querySelector('#_pendFechar').onclick=aplicar;
+  box.querySelector('#_pendUsar').onclick=aplicar;
+  const map=L.map('_pendMap',{zoomControl:true}); _pendMap=map;
+  const sat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles &copy; Esri'});
+  const ruas=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'});
+  sat.addTo(map); L.control.layers({'Satélite':sat,'Ruas':ruas},null,{collapsed:true}).addTo(map);
+  _pendMarks={}; const pts=[];
+  itens.forEach(x=>{ const c=x.c, p=x.p, i=x.i; pts.push([c.la,c.lo]);
+    const mk=L.marker([c.la,c.lo],{icon:_pendIcon(i)}).addTo(map);
+    mk.bindTooltip((p.tipoLabel||'')+' '+(p.numero||'')+(p.municipio?(' · '+p.municipio):''),{direction:'top'});
+    mk.on('click',()=>_togglePend(i));
+    _pendMarks[i]=mk;
+  });
+  if(pts.length>1) map.fitBounds(pts,{padding:[40,40]}); else map.setView(pts[0],14);
+  _pendHeader();
+  setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} },160);
+}
 function atualizaBtnAdd(){ const b=document.getElementById('btn-add-pend'); if(b) b.textContent = PSEL.size ? ('Adicionar selecionadas ('+PSEL.size+')') : 'Adicionar selecionadas'; }
 function setPFiltro(t){ PFILTRO=t; renderPendentes(); }
 function renderPendentes(){
