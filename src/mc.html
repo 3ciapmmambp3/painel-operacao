@@ -109,6 +109,10 @@
   .anxbtn.rota:hover{background:var(--info);color:#fff}
   .anxbtn.zap{background:var(--success-bg);border-color:var(--success);color:var(--success)}
   .anxbtn.zap:hover{background:var(--success);color:#fff}
+  .anxbtn.waze{background:rgba(10,143,184,.14);border-color:#0a8fb8;color:#0a8fb8}
+  .anxbtn.waze:hover{background:#0a8fb8;color:#fff}
+  .anxbtn.earth{background:rgba(66,133,80,.14);border-color:#4caf50;color:#3c9a44}
+  .anxbtn.earth:hover{background:#4caf50;color:#fff}
   .comochegar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px}
   .rs{background:var(--bg-card);border:1px solid var(--border);border-radius:9px;padding:12px 14px;font-size:12.5px;color:var(--text-muted)}
   .rs b{color:var(--text-white)}
@@ -607,6 +611,7 @@ function abrir(d){
     ? `<div class="sec-t">Como chegar</div>`+
       `<div class="comochegar">`+
         `<a class="anxbtn rota" href="${_rotaUrl}" target="_blank" rel="noopener" title="Abre o Google Maps e traça a rota a partir de onde você estiver (no celular abre o app).">🧭 Traçar rota</a>`+
+        `<a class="anxbtn waze" href="https://waze.com/ul?ll=${_la},${_lo}&navigate=yes" target="_blank" rel="noopener" title="Abre o Waze e navega até o ponto.">🚗 Waze</a>`+
         `<a class="anxbtn zap" href="https://wa.me/?text=${_wppTxt}" target="_blank" rel="noopener" title="Abre o WhatsApp para enviar o link da rota a alguém.">📱 Enviar no WhatsApp</a>`+
         `<button class="anxbtn" onclick="mcCopiarRota('${_la}','${_lo}','${String(d.codigo||'').replace(/['\\]/g,'')}')" title="Copia o link do Google Maps para colar no WhatsApp, SMS, etc.">📋 Copiar link</button>`+
       `</div>`+
@@ -767,7 +772,7 @@ function rotaLoteSel(){
       url+='&destination='+encodeURIComponent(pt(dest));
       if(wps.length) url+='&waypoints='+encodeURIComponent(wps.join('|'));
     } else { url+='&destination='+encodeURIComponent(pt(org)); }
-    _modalRoteiro(linhas,total,url,origemLabel,cortadas);
+    _modalRoteiro(linhas,total,url,origemLabel,cortadas,seq[0]&&seq[0].c);
   };
   if(navigator.geolocation){
     toast('Obtendo sua localização…');
@@ -777,7 +782,7 @@ function rotaLoteSel(){
       {enableHighAccuracy:true,timeout:6000,maximumAge:60000});
   } else _go(null,'1º ponto');
 }
-function _modalRoteiro(linhas,total,url,origemLabel,cortadas){
+function _modalRoteiro(linhas,total,url,origemLabel,cortadas,wazeC){
   const old=document.getElementById('_rotaModal'); if(old) old.remove();
   const km=v=>v==null?'':((v<10?v.toFixed(1):Math.round(v))+' km');
   const itin=linhas.map(l=>`<div style="padding:6px 0;border-bottom:1px solid var(--border)"><b>${l.i}.</b> ${l.cod||'—'}${l.muni?' · <span style="color:var(--text-muted)">'+l.muni+'</span>':''}${l.dist!=null?`<span style="color:var(--text-hint);float:right">+${km(l.dist)}</span>`:''}</div>`).join('');
@@ -792,6 +797,7 @@ function _modalRoteiro(linhas,total,url,origemLabel,cortadas){
     `<div style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px">Total (linha reta): <b style="color:var(--text-white)">${km(total)}</b>${cortadas?` · <span style="color:var(--danger)">${cortadas} parada(s) além do limite do Maps (10) ficaram de fora</span>`:''}</div>`+
     `<div style="display:flex;gap:8px;flex-wrap:wrap">`+
       `<a class="anxbtn rota" id="_rtOpen" target="_blank" rel="noopener">🧭 Abrir no Maps</a>`+
+      (wazeC?`<a class="anxbtn waze" href="https://waze.com/ul?ll=${wazeC.la},${wazeC.lo}&navigate=yes" target="_blank" rel="noopener" title="O Waze não faz rota com várias paradas; abre navegando até a 1ª parada.">🚗 Waze (1ª parada)</a>`:``)+
       `<a class="anxbtn zap" id="_rtWpp" target="_blank" rel="noopener">📱 WhatsApp</a>`+
       `<button class="anxbtn" id="_rtCopy">📋 Copiar link</button>`+
       `<button class="anxbtn" id="_rtClose" style="margin-left:auto">Fechar</button>`+
@@ -830,6 +836,7 @@ function _abrirMapaLote(ds){
       `<div style="font-size:14px;font-weight:800;color:var(--gold)">🗺️ ${ds.length} ponto(s) no mapa</div>`+
       `<div style="font-size:11px;color:var(--text-hint)">clique num alfinete para ver as informações</div>`+
       `<a class="anxbtn rota" id="_mpRota" style="margin-left:auto;cursor:pointer">🧭 Rota no Google Maps</a>`+
+      (ds.some(x=>x.kml_content)?`<button class="anxbtn earth" id="_mpEarth" title="Baixa o KML dos pontos e abre o Google Earth (lá: Projetos → Importar arquivo KML).">🌍 Google Earth</button>`:``)+
       `<button class="anxbtn" id="_mpClose">Fechar</button>`+
     `</div>`+
     `<div id="_mcMap" style="flex:1;min-height:0"></div>`;
@@ -838,6 +845,7 @@ function _abrirMapaLote(ds){
   box.querySelector('#_mpClose').onclick=close;
   ov.onclick=e=>{ if(e.target===ov) close(); };
   box.querySelector('#_mpRota').onclick=()=>rotaLoteSel();
+  const _mpE=box.querySelector('#_mpEarth'); if(_mpE) _mpE.onclick=()=>abrirGoogleEarthLote();
   const map=L.map('_mcMap',{zoomControl:true}); _mcMapObj=map;
   const sat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles &copy; Esri'});
   const ruas=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'});
@@ -847,12 +855,19 @@ function _abrirMapaLote(ds){
     const n=i+1, c=it.c, d=it.d; pts.push([c.la,c.lo]);
     const icon=L.divIcon({html:'<div style="background:#c62f2b;color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font:700 12px Arial;box-shadow:0 1px 4px rgba(0,0,0,.5)">'+n+'</div>',className:'',iconSize:[26,26],iconAnchor:[13,13]});
     const dir='https://www.google.com/maps/dir/?api=1&destination='+c.la+','+c.lo;
-    const popup='<div style="font:12px/1.5 Arial;min-width:190px;max-width:250px"><div style="font-weight:800;color:#8a6d00;margin-bottom:4px">📍 '+(d.codigo||'GEOCOD')+'</div>'+_mcInfoRows(d).map(r=>'<b>'+r[0]+':</b> '+String(r[1])).join('<br>')+'<div style="margin-top:8px"><a href="'+dir+'" target="_blank" rel="noopener" style="color:#1769c4;font-weight:700">🧭 Traçar rota até aqui</a></div></div>';
+    const waze='https://waze.com/ul?ll='+c.la+','+c.lo+'&navigate=yes';
+    const popup='<div style="font:12px/1.5 Arial;min-width:190px;max-width:250px"><div style="font-weight:800;color:#8a6d00;margin-bottom:4px">📍 '+(d.codigo||'GEOCOD')+'</div>'+_mcInfoRows(d).map(r=>'<b>'+r[0]+':</b> '+String(r[1])).join('<br>')+'<div style="margin-top:8px"><a href="'+dir+'" target="_blank" rel="noopener" style="color:#1769c4;font-weight:700">🧭 Rota (Maps)</a> &nbsp;·&nbsp; <a href="'+waze+'" target="_blank" rel="noopener" style="color:#0a8fb8;font-weight:700">🚗 Waze</a></div></div>';
     L.marker([c.la,c.lo],{icon}).addTo(map).bindPopup(popup);
   });
   if(pts.length>1) L.polyline(pts,{color:'#ffd54a',weight:2.5,opacity:.85,dashArray:'6,6'}).addTo(map);
   if(pts.length===1) map.setView(pts[0],14); else map.fitBounds(pts,{padding:[40,40]});
   setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} },160);
+}
+// baixa o KML agrupado e abre o Google Earth (o usuário importa o arquivo lá)
+function abrirGoogleEarthLote(){
+  baixarKmlLote();
+  try{ window.open('https://earth.google.com/web/','_blank','noopener'); }catch(e){}
+  setTimeout(()=>toast('KML baixado. No Google Earth: menu → Projetos → Importar arquivo KML → selecione o arquivo baixado.'), 400);
 }
 function _kmlSchemas(kml){ return String(kml||'').match(/<Schema\b[\s\S]*?<\/Schema>/g) || []; }
 function _xmlEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }

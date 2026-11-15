@@ -65,11 +65,13 @@ window.CartaoMapa = (function(){
       '<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #e2e2e2;flex-wrap:wrap;font-family:Arial">'+
         '<div style="font-size:14px;font-weight:800;color:#7a6b43">🗺️ '+_esc(titulo||('Locais do cartão — '+itens.length+' ponto(s)'))+'</div>'+
         '<div style="font-size:11px;color:#888">clique num alfinete para ver as informações</div>'+
-        '<button id="_cmClose" style="margin-left:auto;background:#eee;border:1px solid #ccc;border-radius:7px;padding:7px 12px;cursor:pointer;font-weight:700;font-family:Arial">Fechar</button>'+
+        '<button id="_cmEarth" style="margin-left:auto;background:rgba(66,133,80,.14);border:1px solid #4caf50;color:#2e7d32;border-radius:7px;padding:7px 12px;cursor:pointer;font-weight:700;font-family:Arial" title="Baixa o KML dos pontos e abre o Google Earth (lá: Projetos → Importar arquivo KML).">🌍 Google Earth</button>'+
+        '<button id="_cmClose" style="background:#eee;border:1px solid #ccc;border-radius:7px;padding:7px 12px;cursor:pointer;font-weight:700;font-family:Arial">Fechar</button>'+
       '</div><div id="_cmMap" style="flex:1;min-height:0"></div>';
     ov.appendChild(box); document.body.appendChild(ov);
     const close=()=>{ try{ if(_map){ _map.remove(); _map=null; } }catch(e){} ov.remove(); };
     box.querySelector('#_cmClose').onclick=close; ov.onclick=e=>{ if(e.target===ov) close(); };
+    box.querySelector('#_cmEarth').onclick=()=>_googleEarth(itens, titulo);
     const map=L.map('_cmMap',{zoomControl:true}); _map=map;
     const sat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles &copy; Esri'});
     const ruas=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'});
@@ -79,13 +81,29 @@ window.CartaoMapa = (function(){
       const c=x.c, d=x.d, n=(d.ordem||x.i+1); pts.push([c.la,c.lo]);
       const icon=L.divIcon({html:'<div style="background:#c62f2b;color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font:700 12px Arial;box-shadow:0 1px 4px rgba(0,0,0,.5)">'+n+'</div>',className:'',iconSize:[26,26],iconAnchor:[13,13]});
       const dir='https://www.google.com/maps/dir/?api=1&destination='+c.la+','+c.lo;
+      const waze='https://waze.com/ul?ll='+c.la+','+c.lo+'&navigate=yes';
       const info=_info(d).map(r=>(r[0]?'<b>'+_esc(r[0])+':</b> ':'')+_esc(r[1])).join('<br>');
-      const popup='<div style="font:12px/1.5 Arial;min-width:190px;max-width:250px"><div style="font-weight:800;color:#8a6d00;margin-bottom:4px">📍 DEMANDA '+_esc(n)+'</div>'+info+'<div style="margin-top:8px"><a href="'+dir+'" target="_blank" rel="noopener" style="color:#1769c4;font-weight:700">🧭 Traçar rota até aqui</a></div></div>';
+      const popup='<div style="font:12px/1.5 Arial;min-width:190px;max-width:250px"><div style="font-weight:800;color:#8a6d00;margin-bottom:4px">📍 DEMANDA '+_esc(n)+'</div>'+info+'<div style="margin-top:8px"><a href="'+dir+'" target="_blank" rel="noopener" style="color:#1769c4;font-weight:700">🧭 Rota (Maps)</a> &nbsp;·&nbsp; <a href="'+waze+'" target="_blank" rel="noopener" style="color:#0a8fb8;font-weight:700">🚗 Waze</a></div></div>';
       L.marker([c.la,c.lo],{icon}).addTo(map).bindPopup(popup);
     });
     if(pts.length>1) L.polyline(pts,{color:'#ffd54a',weight:2.5,opacity:.85,dashArray:'6,6'}).addTo(map);
     if(pts.length===1) map.setView(pts[0],14); else map.fitBounds(pts,{padding:[40,40]});
     setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} },160);
+  }
+  function _kmlDe(itens, titulo){
+    const style='<Style id="cmPin"><IconStyle><scale>1.1</scale><Icon><href>http://maps.google.com/mapfiles/kml/pushpin/red-pushpin.png</href></Icon></IconStyle></Style>';
+    const pms=itens.map(x=>{
+      const c=x.c, d=x.d, n=(d.ordem||x.i+1);
+      const desc='<![CDATA[<div style="font:13px Arial">'+_info(d).map(r=>(r[0]?'<b>'+r[0]+':</b> ':'')+String(r[1])).join('<br>')+'</div>]]>';
+      return '<Placemark><name>DEMANDA '+_esc(n)+'</name><description>'+desc+'</description><styleUrl>#cmPin</styleUrl><Point><coordinates>'+c.lo+','+c.la+',0</coordinates></Point></Placemark>';
+    }).join('\n');
+    return '<?xml version="1.0" encoding="utf-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>'+_esc(titulo||'Cartão — locais')+'</name>'+style+pms+'</Document></kml>';
+  }
+  function _baixa(txt, nome){ try{ const b=new Blob([txt],{type:'application/vnd.google-earth.kml+xml'}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=nome; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),2000); return true; }catch(e){ return false; } }
+  function _googleEarth(itens, titulo){
+    _baixa(_kmlDe(itens, titulo), String(titulo||'cartao-locais').replace(/[^\w.-]+/g,'_')+'.kml');
+    try{ window.open('https://earth.google.com/web/','_blank','noopener'); }catch(e){}
+    setTimeout(()=>alert('KML baixado. No Google Earth: menu → Projetos → Importar arquivo KML → selecione o arquivo baixado.'),300);
   }
   return { abrir, coordDe };
 })();
