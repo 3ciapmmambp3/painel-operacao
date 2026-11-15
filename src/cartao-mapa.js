@@ -66,7 +66,7 @@ window.CartaoMapa = (function(){
         '<div style="font-size:14px;font-weight:800;color:#7a6b43">🗺️ '+_esc(titulo||('Locais do cartão — '+itens.length+' ponto(s)'))+'</div>'+
         '<div style="font-size:11px;color:#888">clique num alfinete para ver as informações</div>'+
         '<button id="_cmEarth" style="margin-left:auto;background:rgba(66,133,80,.14);border:1px solid #4caf50;color:#2e7d32;border-radius:7px;padding:7px 12px;cursor:pointer;font-weight:700;font-family:Arial" title="Baixa o KML dos pontos e abre o Google Earth (lá: Projetos → Importar arquivo KML).">🌍 Google Earth</button>'+
-        '<button id="_cmClose" style="background:#eee;border:1px solid #ccc;border-radius:7px;padding:7px 12px;cursor:pointer;font-weight:700;font-family:Arial">Fechar</button>'+
+        '<button id="_cmClose" title="Fechar" style="width:34px;height:34px;border-radius:8px;background:#f0f0f0;border:1px solid #ccc;color:#333;font-size:17px;font-weight:700;cursor:pointer;line-height:1;font-family:Arial;flex-shrink:0">✕</button>'+
       '</div><div id="_cmMap" style="flex:1;min-height:0"></div>';
     ov.appendChild(box); document.body.appendChild(ov);
     const close=()=>{ try{ if(_map){ _map.remove(); _map=null; } }catch(e){} ov.remove(); };
