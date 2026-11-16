@@ -188,12 +188,15 @@
       position:fixed;display:none;z-index:9999;
       background:#1a1a1a;border:1px solid var(--gold-border);border-radius:6px;
       padding:8px 12px;min-width:220px;max-width:340px;
-      box-shadow:0 4px 16px rgba(0,0,0,.6);pointer-events:none;
+      box-shadow:0 4px 16px rgba(0,0,0,.6);pointer-events:auto;
     }
     #rat-tooltip .tt-title{font-size:10px;font-weight:700;color:var(--gold);text-transform:uppercase;margin-bottom:6px;border-bottom:1px solid #333;padding-bottom:4px;}
-    #rat-tooltip .tt-row{display:flex;justify-content:space-between;gap:12px;font-size:11px;padding:2px 0;white-space:nowrap;}
+    #rat-tooltip .tt-row{display:flex;justify-content:space-between;gap:12px;font-size:11px;padding:2px 4px;white-space:nowrap;border-radius:4px;}
     #rat-tooltip .tt-rat{color:#ccc;}
     #rat-tooltip .tt-data{color:var(--gold);}
+    #rat-tooltip .tt-rat.tt-clk{cursor:pointer;text-decoration:underline dotted rgba(212,175,55,.6);}
+    #rat-tooltip .tt-rat.tt-clk:hover{color:#fff;}
+    #rat-tooltip .tt-row:has(.tt-clk:hover){background:rgba(212,175,55,.12);}
     /* Saldo 0 = verde, negativo = vermelho com destaque, positivo = laranja com destaque */
     .saldo-zero{color:#66bb6a;font-weight:700;background:rgba(102,187,106,.1);border-radius:3px;padding:1px 5px;}
     .saldo-neg{color:#ef5350;font-weight:700;background:rgba(239,83,80,.15);border-radius:3px;padding:1px 5px;}
@@ -7491,12 +7494,24 @@ function impGerExcluirSelecionados(){
   const tip = document.getElementById('rat-tooltip');
   const tipTitle = tip.querySelector('.tt-title');
   const tipBody  = tip.querySelector('.tt-body');
+  let hideTimer=null, curEl=null;
+  const cancelHide=()=>{ if(hideTimer){ clearTimeout(hideTimer); hideTimer=null; } };
+  const scheduleHide=()=>{ cancelHide(); hideTimer=setTimeout(()=>{ tip.style.display='none'; curEl=null; }, 350); };
+
+  // Span do REDS clicável (copia o número limpo). extra=prefixo visual (✓/✗); st=cor opcional.
+  function ratSpan(rat, extra, st){
+    const clean=(rat==null?'':String(rat));
+    const show=(extra||'')+(rat||'—');
+    const style=st?` style="color:${st};"`:'';
+    if(!clean || clean==='—') return `<span class="tt-rat"${style}>${show}</span>`;
+    return `<span class="tt-rat tt-clk"${style} data-copy="${clean.replace(/"/g,'&quot;')}" title="Clique para copiar o REDS">${show}</span>`;
+  }
 
   function showTip(e, rats){
-    if(!rats || !rats.length){ tip.style.display='none'; return; }
-    tipTitle.textContent = `📋 Ocorrências (${rats.length})`;
+    if(!rats || !rats.length){ tip.style.display='none'; curEl=null; return; }
+    tipTitle.innerHTML = `📋 Ocorrências (${rats.length}) <span style="font-weight:400;color:#888;text-transform:none;">— clique p/ copiar</span>`;
     tipBody.innerHTML = rats.map(r =>
-      `<div class="tt-row"><span class="tt-rat">${r.rat||'—'}</span><span class="tt-data">${r.data||'—'}</span></div>`
+      `<div class="tt-row">${ratSpan(r.rat)}<span class="tt-data">${r.data||'—'}</span></div>`
     ).join('');
     tip.style.display = 'block';
     positionTip(e);
@@ -7512,8 +7527,11 @@ function impGerExcluirSelecionados(){
   }
 
   document.addEventListener('mouseover', function(e){
+    if(e.target.closest('#rat-tooltip')){ cancelHide(); return; }
     const el = e.target.closest('[data-rat-tip],[data-rat-inline],[data-rat-gdo]');
-    if(!el){ tip.style.display='none'; return; }
+    if(!el) return;                                   // mouseout cuida de esconder
+    if(el===curEl && tip.style.display==='block'){ cancelHide(); return; }
+    cancelHide(); curEl=el;
 
     /* Tabela principal — usa dadosRatsList com chaves múltiplas */
     if(el.dataset.ratTip){
@@ -7531,24 +7549,24 @@ function impGerExcluirSelecionados(){
     if(el.dataset.ratGdo){
       try{
         const { validos, invalidos } = JSON.parse(decodeURIComponent(el.dataset.ratGdo));
-        tipTitle.textContent = `📋 Ocorrências (${validos.length} válidas${invalidos.length>0?' · '+invalidos.length+' inválidas':''})`;
+        tipTitle.innerHTML = `📋 Ocorrências (${validos.length} válidas${invalidos.length>0?' · '+invalidos.length+' inválidas':''}) <span style="font-weight:400;color:#888;text-transform:none;">— clique p/ copiar</span>`;
         let html = '';
         if(validos.length){
           validos.forEach(r => {
-            html += `<div class="tt-row"><span class="tt-rat">✓ ${r.rat||'—'}</span><span class="tt-data">${r.data||'—'}</span></div>`;
+            html += `<div class="tt-row">${ratSpan(r.rat,'✓ ')}<span class="tt-data">${r.data||'—'}</span></div>`;
           });
         }
         if(invalidos.length){
           if(validos.length) html += `<div style="border-top:1px solid #333;margin:4px 0;"></div>`;
           invalidos.forEach(r => {
-            html += `<div class="tt-row tt-inv"><span class="tt-rat" style="color:#ef5350;">✗ ${r.rat||'—'}</span><span class="tt-data" style="color:#ef5350;">${r.data||'—'}</span></div>`;
+            html += `<div class="tt-row tt-inv">${ratSpan(r.rat,'✗ ','#ef5350')}<span class="tt-data" style="color:#ef5350;">${r.data||'—'}</span></div>`;
             if(r.motivo) html += `<div style="font-size:9px;color:#aaa;padding-left:12px;margin-bottom:2px;">${r.motivo}</div>`;
           });
         }
         tipBody.innerHTML = html;
         tip.style.display = 'block';
         positionTip(e);
-      }catch(err){ tip.style.display='none'; }
+      }catch(err){ tip.style.display='none'; curEl=null; }
       return;
     }
 
@@ -7557,17 +7575,35 @@ function impGerExcluirSelecionados(){
       try{
         const rats = JSON.parse(decodeURIComponent(el.dataset.ratInline));
         showTip(e, rats);
-      }catch(err){ tip.style.display='none'; }
+      }catch(err){ tip.style.display='none'; curEl=null; }
     }
   });
 
   document.addEventListener('mousemove', function(e){
-    if(tip.style.display==='block') positionTip(e);
+    if(tip.style.display!=='block') return;
+    if(e.target.closest('#rat-tooltip')) return;      // já dentro da dica: não reposiciona
+    if(e.target.closest('[data-rat-tip],[data-rat-inline],[data-rat-gdo]')) positionTip(e);
   });
 
   document.addEventListener('mouseout', function(e){
-    if(!e.target.closest('[data-rat-tip],[data-rat-inline],[data-rat-gdo]')) tip.style.display='none';
+    if(e.target.closest('[data-rat-tip],[data-rat-inline],[data-rat-gdo],#rat-tooltip')) scheduleHide();
   });
+
+  // Mantém a dica aberta enquanto o mouse estiver sobre ela (para clicar e copiar).
+  tip.addEventListener('mouseenter', cancelHide);
+  tip.addEventListener('mouseleave', scheduleHide);
+
+  // CLIQUE no REDS → copia para a área de transferência.
+  tip.addEventListener('click', function(e){
+    const c = e.target.closest('[data-copy]');
+    if(!c) return;
+    const txt = (c.getAttribute('data-copy')||'').trim();
+    if(!txt || c._cop) return;
+    const done=()=>{ c._cop=1; const o=c.innerHTML; c.innerHTML='✓ copiado'; setTimeout(()=>{ c.innerHTML=o; c._cop=0; },1100); };
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(done).catch(()=>_ratCopyFB(txt,done)); }
+    else _ratCopyFB(txt,done);
+  });
+  function _ratCopyFB(t,ok){ try{ const ta=document.createElement('textarea'); ta.value=t; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); ok&&ok(); }catch(e){} }
 })();
 
 /* ════════════════════════════════════════════════════════════
