@@ -709,9 +709,10 @@ function baixarKml(id){
   const d=byId(id);
   if(!d || !d.kml_content) return toast('KML não disponível para este GEOCOD.');
   try{
-    const blob=new Blob([d.kml_content],{type:'application/vnd.google-earth.kml+xml'});
+    const label=_mcLabel(d);
+    const blob=new Blob([_mcRename(d.kml_content,label)],{type:'application/vnd.google-earth.kml+xml'});
     const url=URL.createObjectURL(blob);
-    const a=document.createElement('a'); a.href=url; a.download=(d.codigo||'geocod')+'.kml';
+    const a=document.createElement('a'); a.href=url; a.download=label.replace(/[\\/:*?"<>|]/g,'-')+'.kml';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(url), 2000);
     toast('KML baixado: '+(d.codigo||'')+'.kml');
@@ -812,7 +813,7 @@ function _modalRoteiro(linhas,total,url,origemLabel,cortadas,wazeC){
   const km=v=>v==null?'':((v<10?v.toFixed(1):Math.round(v))+' km');
   const itin=linhas.map(l=>`<div style="padding:6px 0;border-bottom:1px solid var(--border)"><b>${l.i}.</b> ${l.cod||'—'}${l.muni?' · <span style="color:var(--text-muted)">'+l.muni+'</span>':''}${l.dist!=null?`<span style="color:var(--text-hint);float:right">+${km(l.dist)}</span>`:''}</div>`).join('');
   const ov=document.createElement('div'); ov.id='_rotaModal';
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:120;padding:16px';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:1200;padding:16px';
   const box=document.createElement('div');
   box.style.cssText='background:var(--bg-card);border:1px solid var(--border);border-radius:14px;max-width:460px;width:100%;max-height:85vh;overflow:auto;padding:20px;color:var(--text-white);box-shadow:0 20px 60px rgba(0,0,0,.4)';
   box.innerHTML=
@@ -853,13 +854,13 @@ function mapaLoteSel(){
 function _abrirMapaLote(ds){
   const old=document.getElementById('_mapaModal'); if(old) old.remove();
   const ov=document.createElement('div'); ov.id='_mapaModal';
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:130;padding:14px';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:1200;padding:14px';
   const box=document.createElement('div');
   box.style.cssText='background:var(--bg-card);border:1px solid var(--border);border-radius:14px;width:min(960px,96vw);height:min(86vh,760px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.45)';
   box.innerHTML=
     `<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap">`+
       `<div style="font-size:14px;font-weight:800;color:var(--gold)">🗺️ ${ds.length} ponto(s) no mapa</div>`+
-      `<div style="font-size:11px;color:var(--text-hint)">clique num alfinete para ver as informações</div>`+
+      `<div style="font-size:11px;color:var(--text-hint)">clique num alfinete para ver as informações · <span style="color:#c62f2b;font-weight:800">●</span> pendente · <span style="color:#2e9e4f;font-weight:800">●</span> atendido</div>`+
       `<a class="anxbtn rota" id="_mpRota" style="margin-left:auto;cursor:pointer">🧭 Rota no Google Maps</a>`+
       (ds.some(x=>x.kml_content)?`<button class="anxbtn earth" id="_mpEarth" title="Baixa o KML dos pontos e abre o Google Earth (lá: Projetos → Importar arquivo KML).">🌍 Google Earth</button>`:``)+
       `<button id="_mpClose" title="Fechar" style="width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:var(--bg-input);color:var(--text-white);font-size:17px;font-weight:700;cursor:pointer;line-height:1;flex-shrink:0">✕</button>`+
@@ -878,7 +879,9 @@ function _abrirMapaLote(ds){
   const seq=_ordenaVizinho(ds.map(d=>({d,c:_coordOf(d)})), null), pts=[];
   seq.forEach((it,i)=>{
     const n=i+1, c=it.c, d=it.d; pts.push([c.la,c.lo]);
-    const icon=L.divIcon({html:'<div style="background:#c62f2b;color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font:700 12px Arial;box-shadow:0 1px 4px rgba(0,0,0,.5)">'+n+'</div>',className:'',iconSize:[26,26],iconAnchor:[13,13]});
+    const feito=(typeof atendidaN==='function')&&atendidaN(d);   // atendido/fiscalizado → verde; pendente → vermelho
+    const cor=feito?'#2e9e4f':'#c62f2b';
+    const icon=L.divIcon({html:'<div style="background:'+cor+';color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font:700 12px Arial;box-shadow:0 1px 4px rgba(0,0,0,.5)">'+n+'</div>',className:'',iconSize:[26,26],iconAnchor:[13,13]});
     const dir='https://www.google.com/maps/dir/?api=1&destination='+c.la+','+c.lo;
     const waze='https://waze.com/ul?ll='+c.la+','+c.lo;
     const popup='<div style="font:12px/1.5 Arial;min-width:190px;max-width:250px"><div style="font-weight:800;color:#8a6d00;margin-bottom:4px">📍 '+(d.codigo||'GEOCOD')+'</div>'+_mcInfoRows(d).map(r=>'<b>'+r[0]+':</b> '+String(r[1])).join('<br>')+'<div style="margin-top:8px"><a href="'+dir+'" target="_blank" rel="noopener" style="color:#1769c4;font-weight:700">🧭 Rota (Maps)</a> &nbsp;·&nbsp; <a href="'+waze+'" target="_blank" rel="noopener" style="color:#0a8fb8;font-weight:700">🚗 Waze</a></div></div>';
@@ -896,6 +899,23 @@ function abrirGoogleEarthLote(){
 }
 function _kmlSchemas(kml){ return String(kml||'').match(/<Schema\b[\s\S]*?<\/Schema>/g) || []; }
 function _xmlEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+// Rótulo exibido no Google Earth: "GEOCOD - ANO - Município" (ex.: "365280626 - 2026 - Novo Oriente de Minas")
+function _mcLabel(d){
+  const cod=String(d.codigo||'MC').trim();
+  const ano=(typeof anoDe==='function')?anoDe(d):null;
+  const muni=String(d.municipio||'').trim();
+  return cod+(ano?' - '+ano:'')+(muni?' - '+muni:'');
+}
+// Renomeia, no KML do GEOCOD, o nome que o Google Earth exibe (a 1ª <Folder>; senão <Document>; senão o 1º <name>).
+function _mcRename(kml, label){
+  const s=String(kml||''); if(!label) return s;
+  const nm='<name>'+_xmlEsc(label)+'</name>';
+  if(/<Folder\b[^>]*>\s*<name>[\s\S]*?<\/name>/.test(s))
+    return s.replace(/(<Folder\b[^>]*>\s*)<name>[\s\S]*?<\/name>/, '$1'+nm);
+  if(/<Document\b[^>]*>\s*<name>[\s\S]*?<\/name>/.test(s))
+    return s.replace(/(<Document\b[^>]*>\s*)<name>[\s\S]*?<\/name>/, '$1'+nm);
+  return s.replace(/<name>[\s\S]*?<\/name>/, nm);
+}
 // Pino (marcador) com balão de informações no centroide do GEOCOD
 function _kmlInfoPin(d){
   const la=parseFloat(d.coord_y), lo=parseFloat(d.coord_x);
@@ -903,12 +923,12 @@ function _kmlInfoPin(d){
   const rows=[['GEOCOD', d.codigo]].concat(_mcInfoRows(d));
   const html='<![CDATA[<div style="font:13px Arial,sans-serif;line-height:1.5">'+
     rows.map(r=>'<b>'+r[0]+':</b> '+String(r[1])).join('<br>')+'</div>]]>';
-  return '<Placemark><name>'+_xmlEsc(d.codigo||'MC')+'</name><description>'+html+'</description>'+
+  return '<Placemark><name>'+_xmlEsc(_mcLabel(d))+'</name><description>'+html+'</description>'+
          '<styleUrl>#mcPin</styleUrl>'+
          '<Point><coordinates>'+lo+','+la+',0</coordinates></Point></Placemark>';
 }
 function _kmlBody(d){
-  const kml=String(d.kml_content||'');
+  const kml=_mcRename(String(d.kml_content||''), _mcLabel(d));   // nomeia a pasta: "GEOCOD - ANO - Município"
   const pin=_kmlInfoPin(d);
   const folders=kml.match(/<Folder\b[\s\S]*?<\/Folder>/g);
   if(folders && folders.length){
