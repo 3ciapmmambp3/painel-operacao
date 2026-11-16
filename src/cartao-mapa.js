@@ -18,6 +18,30 @@ window.CartaoMapa = (function(){
     pares.forEach(a=>{ const lo=parseFloat(a[0]), la=parseFloat(a[1]); if(isFinite(lo)&&isFinite(la)){ sx+=lo; sy+=la; n++; } });
     return n?{la:sy/n, lo:sx/n}:null;
   }
+  // Anéis dos <Polygon> do KML → arrays de [lat,lon] (p/ desenhar o contorno no mapa, como no Google Earth)
+  function _kmlPolys(kml){
+    const s=String(kml||''); const out=[];
+    (s.match(/<Polygon\b[\s\S]*?<\/Polygon>/gi)||[]).forEach(pg=>{
+      (pg.match(/<coordinates>([\s\S]*?)<\/coordinates>/gi)||[]).forEach(r=>{
+        const pts=r.replace(/<\/?coordinates>/gi,'').trim().split(/\s+/).map(tok=>{
+          const a=tok.split(','); const lo=parseFloat(a[0]), la=parseFloat(a[1]);
+          return (isFinite(la)&&isFinite(lo))?[la,lo]:null;
+        }).filter(Boolean);
+        if(pts.length>=3) out.push(pts);
+      });
+    });
+    return out;
+  }
+  // Polígonos (contornos) de uma demanda, a partir do KML anexo
+  function polysDe(d){
+    const anx=(d && d.anexos)||[];
+    for(const a of anx){
+      if(a && a.link && (a.kml || /\.kml(\?|$)/i.test(a.nome||''))){
+        const ps=_kmlPolys(_kmlFromDataUrl(a.link)); if(ps.length) return ps;
+      }
+    }
+    return [];
+  }
   function coordDe(d){
     if(d && d.coordenadas && window.Coord && Coord.paraDecimal){
       const p=Coord.paraDecimal(d.coordenadas);
@@ -77,9 +101,11 @@ window.CartaoMapa = (function(){
     const sat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles &copy; Esri'});
     const ruas=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'});
     sat.addTo(map); L.control.layers({'Satélite':sat,'Ruas':ruas},null,{collapsed:true}).addTo(map);
-    const pts=[];
+    const pts=[], allLL=[];
     itens.forEach(x=>{
-      const c=x.c, d=x.d, n=(d.ordem||x.i+1); pts.push([c.la,c.lo]);
+      const c=x.c, d=x.d, n=(d.ordem||x.i+1); pts.push([c.la,c.lo]); allLL.push([c.la,c.lo]);
+      // Contorno do polígono do GEOCOD (como no Google Earth)
+      polysDe(d).forEach(ring=>{ L.polygon(ring,{color:'#e03a34',weight:2,opacity:.95,fill:true,fillColor:'#e03a34',fillOpacity:.12}).addTo(map); ring.forEach(p=>allLL.push(p)); });
       const icon=L.divIcon({html:'<div style="background:#c62f2b;color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font:700 12px Arial;box-shadow:0 1px 4px rgba(0,0,0,.5)">'+n+'</div>',className:'',iconSize:[26,26],iconAnchor:[13,13]});
       const dir='https://www.google.com/maps/dir/?api=1&destination='+c.la+','+c.lo;
       const waze='https://waze.com/ul?ll='+c.la+','+c.lo;
@@ -88,7 +114,7 @@ window.CartaoMapa = (function(){
       L.marker([c.la,c.lo],{icon}).addTo(map).bindPopup(popup);
     });
     if(pts.length>1) L.polyline(pts,{color:'#ffd54a',weight:2.5,opacity:.85,dashArray:'6,6'}).addTo(map);
-    if(pts.length===1) map.setView(pts[0],14); else map.fitBounds(pts,{padding:[40,40]});
+    if(allLL.length===1) map.setView(allLL[0],14); else map.fitBounds(allLL,{padding:[40,40]});
     setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} },160);
   }
   function _kmlDe(itens, titulo){
@@ -149,5 +175,5 @@ window.CartaoMapa = (function(){
     box.querySelectorAll('a').forEach(a=>a.addEventListener('click',()=>setTimeout(close,150)));
   }
   function nComCoord(demandas){ return (demandas||[]).filter(d=>coordDe(d)).length; }
-  return { abrir, coordDe, rotaUrl, rotaInfo, escolherRota, nComCoord };
+  return { abrir, coordDe, polysDe, rotaUrl, rotaInfo, escolherRota, nComCoord };
 })();
