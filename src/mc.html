@@ -853,6 +853,20 @@ function _modalRoteiro(linhas,total,url,origemLabel,cortadas,wazeC){
 }
 /* ── Mapa no painel: pinos com info dos GEOCODs selecionados (Leaflet) ── */
 let _mcMapObj=null;
+// Extrai os anéis dos <Polygon> do KML → arrays de [lat,lon] (p/ desenhar o contorno no Leaflet, como no Google Earth)
+function _kmlPolys(kml){
+  const s=String(kml||''); const out=[];
+  (s.match(/<Polygon\b[\s\S]*?<\/Polygon>/gi)||[]).forEach(pg=>{
+    (pg.match(/<coordinates>([\s\S]*?)<\/coordinates>/gi)||[]).forEach(r=>{
+      const pts=r.replace(/<\/?coordinates>/gi,'').trim().split(/\s+/).map(tok=>{
+        const a=tok.split(','); const lo=parseFloat(a[0]), la=parseFloat(a[1]);
+        return (isFinite(la)&&isFinite(lo))?[la,lo]:null;
+      }).filter(Boolean);
+      if(pts.length>=3) out.push(pts);
+    });
+  });
+  return out;
+}
 function _loadLeaflet(cb){
   if(window.L) return cb();
   if(!document.getElementById('_leafletCss')){ const c=document.createElement('link'); c.id='_leafletCss'; c.rel='stylesheet'; c.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(c); }
@@ -891,11 +905,17 @@ function _abrirMapaLote(ds){
   const sat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles &copy; Esri'});
   const ruas=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'});
   sat.addTo(map); L.control.layers({'Satélite':sat,'Ruas':ruas},null,{collapsed:true}).addTo(map);
-  const seq=_ordenaVizinho(ds.map(d=>({d,c:_coordOf(d)})), null), pts=[];
+  const seq=_ordenaVizinho(ds.map(d=>({d,c:_coordOf(d)})), null), pts=[], allLL=[];
   seq.forEach((it,i)=>{
-    const n=i+1, c=it.c, d=it.d; pts.push([c.la,c.lo]);
+    const n=i+1, c=it.c, d=it.d; pts.push([c.la,c.lo]); allLL.push([c.la,c.lo]);
     const feito=(typeof atendidaN==='function')&&atendidaN(d);   // atendido/fiscalizado → verde; pendente → vermelho
     const cor=feito?'#2e9e4f':'#c62f2b';
+    // Contorno do polígono do GEOCOD (como no Google Earth): azul=atendido, vermelho=pendente
+    const corLinha=feito?'#1E90FF':'#e03a34';
+    _kmlPolys(d.kml_content).forEach(ring=>{
+      L.polygon(ring,{color:corLinha,weight:2,opacity:.95,fill:true,fillColor:corLinha,fillOpacity:.12}).addTo(map);
+      ring.forEach(p=>allLL.push(p));
+    });
     const icon=L.divIcon({html:'<div style="background:'+cor+';color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font:700 12px Arial;box-shadow:0 1px 4px rgba(0,0,0,.5)">'+n+'</div>',className:'',iconSize:[26,26],iconAnchor:[13,13]});
     const dir='https://www.google.com/maps/dir/?api=1&destination='+c.la+','+c.lo;
     const waze='https://waze.com/ul?ll='+c.la+','+c.lo;
@@ -903,7 +923,7 @@ function _abrirMapaLote(ds){
     L.marker([c.la,c.lo],{icon}).addTo(map).bindPopup(popup);
   });
   if(pts.length>1) L.polyline(pts,{color:'#ffd54a',weight:2.5,opacity:.85,dashArray:'6,6'}).addTo(map);
-  if(pts.length===1) map.setView(pts[0],14); else map.fitBounds(pts,{padding:[40,40]});
+  if(allLL.length===1) map.setView(allLL[0],14); else map.fitBounds(allLL,{padding:[40,40]});
   setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} },160);
 }
 // baixa o KML agrupado e abre o Google Earth (o usuário importa o arquivo lá)
