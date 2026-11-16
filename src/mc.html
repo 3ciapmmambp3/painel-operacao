@@ -710,7 +710,7 @@ function baixarKml(id){
   if(!d || !d.kml_content) return toast('KML não disponível para este GEOCOD.');
   try{
     const label=_mcLabel(d);
-    const blob=new Blob([_mcRename(d.kml_content,label)],{type:'application/vnd.google-earth.kml+xml'});
+    const blob=new Blob([_kmlDoc([d], label)],{type:'application/vnd.google-earth.kml+xml'});
     const url=URL.createObjectURL(blob);
     const a=document.createElement('a'); a.href=url; a.download=label.replace(/[\\/:*?"<>|]/g,'-')+'.kml';
     document.body.appendChild(a); a.click(); a.remove();
@@ -931,12 +931,16 @@ function _kmlInfoPin(d){
   const rows=[['GEOCOD', d.codigo]].concat(_mcInfoRows(d));
   const html='<![CDATA[<div style="font:13px Arial,sans-serif;line-height:1.5">'+
     rows.map(r=>'<b>'+r[0]+':</b> '+String(r[1])).join('<br>')+'</div>]]>';
+  const feito=(typeof atendidaN==='function')&&atendidaN(d);   // atendido → pino verde; pendente → vermelho
   return '<Placemark><name>'+_xmlEsc(_mcLabel(d))+'</name><description>'+html+'</description>'+
-         '<styleUrl>#mcPin</styleUrl>'+
+         '<styleUrl>#'+(feito?'mcPinOk':'mcPin')+'</styleUrl>'+
          '<Point><coordinates>'+lo+','+la+',0</coordinates></Point></Placemark>';
 }
 function _kmlBody(d){
-  const kml=_mcRename(String(d.kml_content||''), _mcLabel(d));   // nomeia a pasta: "GEOCOD - ANO - Município"
+  let kml=_mcRename(String(d.kml_content||''), _mcLabel(d));   // nomeia a pasta: "GEOCOD - ANO - Município"
+  // Atendido → contorno do polígono em VERDE; pendente mantém o vermelho original.
+  if((typeof atendidaN==='function') && atendidaN(d))
+    kml=kml.replace(/<color>ff0000ff<\/color>/gi,'<color>ff4f9e2e</color>');
   const pin=_kmlInfoPin(d);
   const folders=kml.match(/<Folder\b[\s\S]*?<\/Folder>/g);
   if(folders && folders.length){
@@ -948,17 +952,22 @@ function _kmlBody(d){
   const inner=(pin?pin+'\n':'')+pms.join('\n');
   return inner.trim() ? '<Folder><name>MC_'+(d.codigo||'')+'</name>\n'+inner+'\n</Folder>' : '';
 }
-function baixarKmlLote(){
-  const ds=[..._sel].map(byId).filter(x=>x && x.kml_content);
-  if(!ds.length) return toast('Nenhuma das selecionadas tem KML. Gere os KMLs faltantes primeiro.');
+// Monta o documento KML (schemas + estilos verde/vermelho + corpos com pino de info) para 1 ou vários GEOCODs
+function _kmlDoc(ds, docName){
   const schemas=[]; const seen=new Set();
   ds.forEach(d=>_kmlSchemas(d.kml_content).forEach(s=>{ if(!seen.has(s)){ seen.add(s); schemas.push(s); } }));
   const bodies=ds.map(_kmlBody).filter(Boolean).join('\n');
-  const stamp=new Date().toISOString().slice(0,10);
-  const estilo='<Style id="mcPin"><IconStyle><scale>1.1</scale><Icon><href>http://maps.google.com/mapfiles/kml/pushpin/red-pushpin.png</href></Icon></IconStyle><LabelStyle><scale>0.9</scale></LabelStyle></Style>\n';
-  const doc='<?xml version="1.0" encoding="utf-8" ?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n'+
-    '<Document id="root_doc">\n<name>MC — '+ds.length+' GEOCOD(s) — '+stamp+'</name>\n'+
+  const estilo='<Style id="mcPin"><IconStyle><scale>1.1</scale><Icon><href>http://maps.google.com/mapfiles/kml/pushpin/red-pushpin.png</href></Icon></IconStyle><LabelStyle><scale>0.9</scale></LabelStyle></Style>\n'+
+    '<Style id="mcPinOk"><IconStyle><scale>1.1</scale><Icon><href>http://maps.google.com/mapfiles/kml/pushpin/grn-pushpin.png</href></Icon></IconStyle><LabelStyle><scale>0.9</scale></LabelStyle></Style>\n';
+  return '<?xml version="1.0" encoding="utf-8" ?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n'+
+    '<Document id="root_doc">\n<name>'+_xmlEsc(docName)+'</name>\n'+
     estilo+schemas.join('\n')+(schemas.length?'\n':'')+bodies+'\n</Document></kml>\n';
+}
+function baixarKmlLote(){
+  const ds=[..._sel].map(byId).filter(x=>x && x.kml_content);
+  if(!ds.length) return toast('Nenhuma das selecionadas tem KML. Gere os KMLs faltantes primeiro.');
+  const stamp=new Date().toISOString().slice(0,10);
+  const doc=_kmlDoc(ds, 'MC — '+ds.length+' GEOCOD(s) — '+stamp);
   try{
     const blob=new Blob([doc],{type:'application/vnd.google-earth.kml+xml'});
     const url=URL.createObjectURL(blob);
