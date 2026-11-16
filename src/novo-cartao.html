@@ -66,6 +66,7 @@
     .msg{display:none;border-radius:8px;padding:11px 14px;font-size:13px;margin-top:14px}
     .msg.show{display:block}.msg.err{background:var(--danger-bg);border:1px solid var(--danger);color:#ef9a9a}.msg.ok{background:var(--success-bg);border:1px solid var(--success);color:#a5d6a7}
     @media(max-width:680px){.grid,.grid.three{grid-template-columns:1fr}.f.col2{grid-column:auto}}
+    .leaflet-tooltip.pend-tip{white-space:normal;max-width:260px;padding:8px 10px;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.35)}
   </style>
 </head>
 <body>
@@ -615,6 +616,14 @@ function _loadLeafletPend(cb){
   s=document.createElement('script'); s.id='_cmLeafletJs'; s.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
   s.onload=cb; s.onerror=()=>alert('Falha ao carregar o mapa (precisa de internet).'); document.head.appendChild(s);
 }
+// Conteúdo do balão de informações do pendente no mapa de seleção
+function _pendTipHtml(p){
+  const rows=[['Tipo',p.tipoLabel],['Município',p.municipio],['Endereço',p.endereco],['Situação',p.situacao],['CAR',p.car_imovel]]
+    .filter(r=>r[1]!=null && String(r[1]).trim()!=='' && String(r[1])!=='—');
+  return '<div style="font:12px/1.45 Arial;max-width:240px"><div style="font-weight:800;color:#8a6d00;margin-bottom:3px">📍 '+_esc((p.tipoLabel?p.tipoLabel+' ':'')+(p.numero||''))+'</div>'+
+    rows.map(r=>'<b>'+_esc(r[0])+':</b> '+_esc(r[1])).join('<br>')+
+    '<div style="margin-top:4px;color:#2e7d32;font-weight:700">Clique no alfinete para marcar/desmarcar</div></div>';
+}
 function _pendIcon(i){
   const on=PSEL.has(i), bg=on?'#2e9e4f':'#c62f2b';
   return L.divIcon({html:'<div style="background:'+bg+';color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font:700 14px Arial;box-shadow:0 1px 4px rgba(0,0,0,.5)">'+(on?'✓':'')+'</div>',className:'',iconSize:[26,26],iconAnchor:[13,13]});
@@ -651,7 +660,8 @@ function _renderMapaPendentes(itens){
     // Contorno do polígono do GEOCOD (como no Google Earth / mapa do MC)
     (CartaoMapa.polysDe?CartaoMapa.polysDe(p):[]).forEach(ring=>{ L.polygon(ring,{color:'#e03a34',weight:2,opacity:.95,fill:true,fillColor:'#e03a34',fillOpacity:.12}).addTo(map); ring.forEach(pt=>pts.push(pt)); });
     const mk=L.marker([c.la,c.lo],{icon:_pendIcon(i)}).addTo(map);
-    mk.bindTooltip((p.tipoLabel||'')+' '+(p.numero||'')+(p.municipio?(' · '+p.municipio):''),{direction:'top'});
+    // Balão de informações (passe o mouse); o clique continua marcando/desmarcando
+    mk.bindTooltip(_pendTipHtml(p),{direction:'top',sticky:true,opacity:1,className:'pend-tip'});
     mk.on('click',()=>_togglePend(i));
     _pendMarks[i]=mk;
   });
