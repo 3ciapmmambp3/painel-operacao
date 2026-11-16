@@ -758,6 +758,7 @@ function _coordOf(d){ const la=parseFloat(d&&d.coord_y), lo=parseFloat(d&&d.coor
 // Dados do GEOCOD como pares [rótulo,valor] — usado no balão do KML e no popup do mapa
 function _mcInfoRows(d){
   const pr=(typeof prazoInfo==='function')?prazoInfo(d):null;
+  const feito=(typeof atendidaN==='function') && atendidaN(d);
   const rows=[
     ['Município', d.municipio],
     ['Grupamento', (typeof _fracLabel==='function')?_fracLabel(d):(d.grupamento||'')],
@@ -767,13 +768,14 @@ function _mcInfoRows(d){
     ['Recebido na 3ª Cia', fmtData(d.data_gerada)],
     ['Vencimento', fmtData(d.data_vencimento)],
     ['Situação', (SIT_LBL&&SIT_LBL[d.situacao])||d.situacao],
-    ['Prazo', (d.status_prazo || (pr&&pr.txt) || '')],
+    // Prazo só faz sentido p/ pendentes; no atendido o status_prazo/cálculo ("32 dias p/ vencer"/"ATRASADO") confunde
+    ['Prazo', feito ? '' : (d.status_prazo || (pr&&pr.txt) || '')],
     ['CAR', d.car_imovel],
   ];
   const _tem=v=>v!=null && String(v).trim()!=='' && String(v)!=='—';
   const out=rows.filter(r=>_tem(r[1]));
   // Nos pontos atendidos, mostra os dados da fiscalização (balão do mapa + pino do Google Earth)
-  if((typeof atendidaN==='function') && atendidaN(d)){
+  if(feito){
     const add=(lbl,val)=>{ if(_tem(val)) out.push([lbl, String(val).trim()]); };
     add('Fiscalizado em', fmtData(d.data_atendimento));
     add('Nº REDS', d.numero_reds);
@@ -943,9 +945,10 @@ function _kmlInfoPin(d){
 }
 function _kmlBody(d){
   let kml=_mcRename(String(d.kml_content||''), _mcLabel(d));   // nomeia a pasta: "GEOCOD - ANO - Município"
-  // Atendido → contorno do polígono em VERDE; pendente mantém o vermelho original.
+  // Atendido → contorno do polígono em AZUL (verde se confundia com a vegetação); pendente mantém o vermelho.
+  // KML usa cor aabbggrr; ffff901e = azul (#1E90FF). O ícone/pino do atendido continua verde.
   if((typeof atendidaN==='function') && atendidaN(d))
-    kml=kml.replace(/<color>ff0000ff<\/color>/gi,'<color>ff4f9e2e</color>');
+    kml=kml.replace(/<color>ff0000ff<\/color>/gi,'<color>ffff901e</color>');
   const pin=_kmlInfoPin(d);
   const folders=kml.match(/<Folder\b[\s\S]*?<\/Folder>/g);
   if(folders && folders.length){
