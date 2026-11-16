@@ -48,6 +48,9 @@
   // que salva o arquivo automaticamente (usado no "Baixar PDF").
   function html(cartao, download){
     const base=_assets();
+    // Link p/ a página pública do cartão (lá o KML baixa com 1 clique). O PDF não
+    // pode linkar o próprio KML: ele é um data: URL e leitores de PDF bloqueiam data:.
+    const pubCartao = (base && cartao.id) ? (base+'/cartao-publico.html?id='+encodeURIComponent(cartao.id)) : '';
     const row=(l,v)=>`<tr><td class="l">${E(l)}</td><td>${(v==null||v==='')?'—':E(v)}</td></tr>`;
     const rowH=(l,h)=>`<tr><td class="l">${E(l)}</td><td>${h||'—'}</td></tr>`;
     const rowBlk=(l,v)=>`<tr><td class="bl" colspan="2"><span class="bl-l">${E(l)}</span><div class="bl-v">${(v==null||v==='')?'—':E(v)}</div></td></tr>`;
@@ -75,7 +78,15 @@
       const ord=d.ordem||(i+1);
       const r=respostas[String(d.ordem)]||respostas[String(i+1)]||null;
       const anx=(d.anexos||[]).filter(a=>a&&a.link);
-      const anexoCell=anx.length?anx.map(a=>(a.kml||/\.kml(\?|$)/i.test(a.nome||'')||/vnd\.google-earth/i.test(a.link||''))?`🛰️ ${E(a.nome||'KML')} <span style="color:#777">(baixar no cartão online)</span>`:`<a href="${String(a.link).replace(/"/g,'&quot;')}" target="_blank" rel="noopener">${E(a.nome||'anexo')}</a>`).join('<br>'):'';
+      const anexoCell=anx.length?anx.map(a=>{
+        const isKml=(a.kml||/\.kml(\?|$)/i.test(a.nome||'')||/vnd\.google-earth/i.test(a.link||''));
+        if(isKml){
+          return pubCartao
+            ? `🛰️ <a href="${pubCartao}" target="_blank" rel="noopener">${E(a.nome||'KML')} — baixar na página do cartão</a>`
+            : `🛰️ ${E(a.nome||'KML')} <span style="color:#777">(baixar no cartão online)</span>`;
+        }
+        return `<a href="${String(a.link).replace(/"/g,'&quot;')}" target="_blank" rel="noopener">${E(a.nome||'anexo')}</a>`;
+      }).join('<br>'):'';
       const rota = mapsRota(d.coordenadas);
       const coordCell = d.coordenadas
         ? (rota?`<a href="${rota}" target="_blank" rel="noopener">Rota no Google Maps</a> (${E(d.coordenadas)})`:E(d.coordenadas))
