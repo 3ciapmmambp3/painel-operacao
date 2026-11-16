@@ -46,7 +46,7 @@
 
   // Monta o HTML da ficha. download=true remove a barra e injeta o html2pdf
   // que salva o arquivo automaticamente (usado no "Baixar PDF").
-  function html(cartao, download){
+  function html(cartao, download, autoprint){
     const base=_assets();
     // Link p/ a página pública do cartão (lá o KML baixa com 1 clique). O PDF não
     // pode linkar o próprio KML: ele é um data: URL e leitores de PDF bloqueiam data:.
@@ -194,6 +194,7 @@
         <div class="rodape">Emitido por ${E(emitido||'—')} · ${fmtData(cartao.criado_em||cartao.created_at)}</div>
       </div>
       ${download?`<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js"></script><script>(async function(){try{await (document.fonts?document.fonts.ready:0);}catch(e){}try{await Promise.all([].map.call(document.images,function(i){return i.complete?0:new Promise(function(r){i.onload=i.onerror=r;});}));}catch(e){}var el=document.querySelector('.doc');try{await html2pdf().set({margin:[12,10,14,10],filename:${JSON.stringify(nomeArq(cartao))},image:{type:'jpeg',quality:0.98},html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff'},jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},pagebreak:{mode:['css','legacy'],avoid:'.demblock'}}).from(el).save();}catch(e){console.error('html2pdf',e);}try{parent.postMessage('cp-pdf-done','*');}catch(e){}})();</script>`:''}
+      ${(!download&&autoprint)?`<script>document.title=${JSON.stringify(nomeArq(cartao).replace(/\.pdf$/i,''))};(async function(){try{await (document.fonts?document.fonts.ready:0);}catch(e){}try{await Promise.all([].map.call(document.images,function(i){return i.complete?0:new Promise(function(r){i.onload=i.onerror=r;});}));}catch(e){}setTimeout(function(){try{window.focus();window.print();}catch(e){}},120);})();</script>`:''}
     </body></html>`;
   }
 
@@ -205,25 +206,15 @@
     return true;
   }
 
-  // Baixa o PDF direto (sem diálogo): renderiza a ficha num iframe oculto e o
-  // html2pdf salva o arquivo com o nome padrão. Fallback = abre a visualização.
+  // Gera o PDF abrindo a visualização e disparando a impressão automaticamente.
+  // Usa window.print (Salvar como PDF do Chrome), que PRESERVA os hiperlinks
+  // (KML → página do cartão, Drive, Maps) — o html2pdf rasterizava e perdia os
+  // links. A barra com "Imprimir / PDF" continua como reserva se o usuário cancelar.
   function baixar(cartao){
-    let ifr;
-    try{
-      ifr=document.createElement('iframe');
-      ifr.setAttribute('aria-hidden','true');
-      ifr.style.cssText='position:fixed;left:-10000px;top:0;width:820px;height:1400px;border:0;opacity:0';
-      document.body.appendChild(ifr);
-      let done=false;
-      const cleanup=()=>{ if(done) return; done=true; try{global.removeEventListener('message',onmsg);}catch(e){} setTimeout(()=>{ try{ifr.remove();}catch(e){} },400); };
-      const onmsg=e=>{ if(e && e.data==='cp-pdf-done') cleanup(); };
-      global.addEventListener('message', onmsg);
-      const d=ifr.contentDocument||(ifr.contentWindow&&ifr.contentWindow.document);
-      if(!d){ ifr.remove(); return imprimir(cartao); }
-      d.open(); d.write(html(cartao, true)); d.close();
-      setTimeout(cleanup, 25000);
-      return true;
-    }catch(e){ try{ if(ifr) ifr.remove(); }catch(_){} return imprimir(cartao); }
+    const w=global.open('', '_blank');
+    if(!w){ alert('Permita pop-ups para gerar o PDF do cartão.'); return false; }
+    w.document.write(html(cartao, false, true)); w.document.close();
+    return true;
   }
 
   // WhatsApp: manda o texto + o LINK público do cartão (o PDF sai pelo botão
