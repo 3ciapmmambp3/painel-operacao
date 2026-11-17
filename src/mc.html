@@ -377,6 +377,11 @@ function verTudoSemFiltro(){
   return (isAdminTotal || GERIR) && _selVal('sel-pel')==='all' && _selVal('sel-grp')==='all';
 }
 
+// Colunas da LISTA — tudo menos kml_content (o KML pesa ~2,7 KB/linha e a lista
+// só precisa saber SE existe, não o conteúdo). O conteúdo é carregado sob demanda
+// (mapa / Google Earth / baixar KML / Excel) via _garantirKml().
+const SEL_LEVE = 'id,codigo,tipo_demanda,data_gerada,natureza,municipio,endereco,fracao_responsavel,gp_responsavel,grupamento_completo,data_envio,data_vencimento,status_prazo,data_atendimento,numero_gaia,numero_reds,resultado,status_atendimento,info_complementares,numero_auto_infracao,equipe,viatura,hectares,data_inic,data_final,mes_ref,ano_ref,coord_x,coord_y,regional,bioma,id_semad,id_evolucao,lote,kml_link,anexos,situacao,atendido_por_matricula,atendido_por_nome,observacoes_resposta,fonte_aba,raw,versao,synced_at,ativo,inativado_por_matricula,inativado_por_nome,motivo_inativacao,inativado_em,created_at,updated_at,gp_manual_at,gp_manual_por,car_imovel,car_qtd,car_dados,car_consultado_em';
+
 async function carregar(){
   const gprs = gprEscopo();
   document.getElementById('scope-txt').innerHTML = verTudoSemFiltro()
@@ -387,14 +392,13 @@ async function carregar(){
   const tb = document.getElementById('tb');
   tb.innerHTML = '<tr><td colspan="10" class="empty">Carregando…</td></tr>';
   try {
-    let url;
-    if (verTudoSemFiltro()){
-      url = `${API}/rest/v1/${TBL}?select=*&order=data_vencimento.asc.nullslast`;
-    } else {
+    let filtroQS = '';
+    if (!verTudoSemFiltro()){
       if (!gprs.length){ DADOS=[]; render(); kpis(); return; }
       const inList = '(' + gprs.map(v=>`"${v.replace(/"/g,'')}"`).join(',') + ')';
-      url = `${API}/rest/v1/${TBL}?select=*&gp_responsavel=in.${encodeURIComponent(inList)}&order=data_vencimento.asc.nullslast`;
+      filtroQS = `&gp_responsavel=in.${encodeURIComponent(inList)}`;
     }
+    const url = `${API}/rest/v1/${TBL}?select=${SEL_LEVE}${filtroQS}&order=data_vencimento.asc.nullslast`;
     const PAGE = 1000; let offset = 0; const todas = [];
     for (;;){
       const r = await fetch(url, { headers: Object.assign({}, H, { 'Range-Unit':'items', 'Range': `${offset}-${offset+PAGE-1}` }) });
@@ -413,11 +417,38 @@ async function carregar(){
       offset += PAGE;
     }
     DADOS = todas;
+    // marca quais têm KML (consulta leve só de id); o conteúdo vem sob demanda
+    try{
+      const comKmlSet = new Set(); let offk = 0;
+      for(;;){
+        const rk = await fetch(`${API}/rest/v1/${TBL}?select=id&kml_content=not.is.null${filtroQS}`, { headers: Object.assign({}, H, { 'Range-Unit':'items', 'Range': `${offk}-${offk+1000-1}` }) });
+        if(!rk.ok) break;
+        const ck = await rk.json(); ck.forEach(x=>comKmlSet.add(x.id));
+        if(ck.length < 1000 || comKmlSet.size >= 20000) break; offk += 1000;
+      }
+      DADOS.forEach(d=>{ d.tem_kml = comKmlSet.has(d.id); });
+    }catch(_){ DADOS.forEach(d=>{ d.tem_kml = (d.kml_content!=null); }); }
     try{ await Impresso.carregar('mc_demandas', DADOS.map(d=>d.codigo)); }catch(_){}
     popularAnos(); render(); kpis();
   } catch(e){
     console.error('mc',e);
     tb.innerHTML = `<tr><td colspan="10" class="empty">Erro ao carregar: ${e.message}</td></tr>`;
+  }
+}
+
+// Carrega o kml_content SOB DEMANDA p/ as linhas que têm KML mas ainda não baixaram
+// (usado por baixar KML, Ver no mapa, Google Earth e export Excel). Faz cache no objeto.
+async function _garantirKml(ds){
+  const alvo = (ds||[]).filter(d=>d && d.tem_kml && d.kml_content==null);
+  if(!alvo.length) return;
+  const ids = alvo.map(d=>d.id);
+  for(let i=0;i<ids.length;i+=200){
+    const lote = ids.slice(i,i+200);
+    const inList = '(' + lote.map(x=>`"${String(x).replace(/"/g,'')}"`).join(',') + ')';
+    try{
+      const r = await fetch(`${API}/rest/v1/${TBL}?select=id,kml_content&id=in.${encodeURIComponent(inList)}`, { headers: H });
+      if(r.ok){ const arr = await r.json(); const m={}; arr.forEach(x=>m[x.id]=x.kml_content); alvo.forEach(d=>{ if(m[d.id]!==undefined) d.kml_content=m[d.id]; }); }
+    }catch(e){}
   }
 }
 
@@ -557,7 +588,7 @@ function render(){
     const temPdf=(d.anexos||[]).length>0;
     const tr=document.createElement('tr'); tr.onclick=()=>abrir(d);
     tr.innerHTML =
-      `<td class="selcol" style="text-align:center" onclick="event.stopPropagation()"><input type="checkbox" class="rowchk" ${_sel.has(d.id)?'checked':''}${d.kml_content?'':' title="Sem KML — não entra no lote"'} onclick="event.stopPropagation()" onchange="_selToggle('${d.id}',this.checked)" style="cursor:pointer"></td>`+
+      `<td class="selcol" style="text-align:center" onclick="event.stopPropagation()"><input type="checkbox" class="rowchk" ${_sel.has(d.id)?'checked':''}${d.tem_kml?'':' title="Sem KML — não entra no lote"'} onclick="event.stopPropagation()" onchange="_selToggle('${d.id}',this.checked)" style="cursor:pointer"></td>`+
       `<td class="num">${d.codigo||'—'}</td>`+
       `<td class="tema">${d.bioma||d.natureza||'—'}</td>`+
       `<td class="muni">${d.municipio||'—'}${(()=>{
@@ -577,8 +608,8 @@ function render(){
       `<td><span class="prazo ${pr.cls}">${pr.txt}</span></td>`+
       `<td><span style="display:inline-flex;gap:6px;align-items:center;flex-wrap:nowrap;white-space:nowrap">`+
         `${temPdf?`<a class="anxbtn" href="${(d.anexos[0].web_view_link||d.anexos[0].link||'#')}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${d.anexos[0].tipo==='pasta'?'Pasta':'Croqui'}</a>`:''}`+
-        `${d.kml_content?`<a class="anxbtn kml" href="#" onclick="event.stopPropagation();baixarKml('${d.id}');return false" title="Baixar o KML do GEOCOD — abre no Google Earth. Não depende de permissão do Drive.">KML</a>`:''}`+
-        `${(!temPdf && !d.kml_content)?'<span style="color:var(--text-hint)">—</span>':''}`+
+        `${d.tem_kml?`<a class="anxbtn kml" href="#" onclick="event.stopPropagation();baixarKml('${d.id}');return false" title="Baixar o KML do GEOCOD — abre no Google Earth. Não depende de permissão do Drive.">KML</a>`:''}`+
+        `${(!temPdf && !d.tem_kml)?'<span style="color:var(--text-hint)">—</span>':''}`+
       `</span></td>`+
       `<td style="text-align:center">${Impresso.icone(d.codigo)}</td>`;
     tb.appendChild(tr);
@@ -640,7 +671,7 @@ function abrir(d){
       +`<div class="anx">${itens}</div>`
       +`<div class="rs" style="margin-top:6px;font-size:11.5px"><b>Proprietário / recibo (demonstrativo):</b> clique em <b>📄 Demonstrativo</b> (copia o nº e abre o SICAR oficial) → cole o número, <b>resolva o captcha</b> e baixe o PDF. O recibo não vem automático — o site oficial exige o captcha. <span class="miut">Consultado em ${quando}.</span></div>`;
   })();
-  const kmlBtn = d.kml_content
+  const kmlBtn = d.tem_kml
     ? `<div class="anxitem"><svg class="ic" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`+
       `<div class="m"><b>KML do GEOCOD ${d.codigo}</b><small>Gerado individualmente · abre no Google Earth</small></div>`+
       `<button class="anxbtn" onclick="baixarKml('${d.id}')">Baixar KML</button></div>`
@@ -705,9 +736,11 @@ function _copyFallback(txt,ok){
 }
 
 /* baixa o KML individual do GEOCOD (gerado, guardado no banco) — client-side */
-function baixarKml(id){
+async function baixarKml(id){
   const d=byId(id);
-  if(!d || !d.kml_content) return toast('KML não disponível para este GEOCOD.');
+  if(!d || !d.tem_kml) return toast('KML não disponível para este GEOCOD.');
+  await _garantirKml([d]);
+  if(!d.kml_content) return toast('Não foi possível carregar o KML agora. Tente de novo.');
   try{
     const label=_mcLabel(d);
     const blob=new Blob([_kmlDoc([d], label)],{type:'application/vnd.google-earth.kml+xml'});
@@ -743,7 +776,7 @@ function _renderSelBar(){
   const el=document.getElementById('sel-actions'); if(!el) return;
   const n=_sel.size;
   if(!n){ el.style.display='none'; el.innerHTML=''; return; }
-  const comKml=[..._sel].map(byId).filter(x=>x&&x.kml_content).length;
+  const comKml=[..._sel].map(byId).filter(x=>x&&x.tem_kml).length;
   const comCoord=[..._sel].map(byId).filter(x=>x&&isFinite(parseFloat(x.coord_y))&&isFinite(parseFloat(x.coord_x))).length;
   el.style.display='flex';
   el.innerHTML =
@@ -875,10 +908,12 @@ function _loadLeaflet(cb){
   s=document.createElement('script'); s.id='_leafletJs'; s.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
   s.onload=cb; s.onerror=()=>toast('Falha ao carregar o mapa (precisa de internet).'); document.head.appendChild(s);
 }
-function mapaLoteSel(){
+async function mapaLoteSel(){
   const ds=[..._sel].map(byId).filter(x=>x && _coordOf(x));
   if(!ds.length) return toast('Nenhuma selecionada tem coordenada (gere os KMLs faltantes).');
-  toast('Abrindo o mapa…'); _loadLeaflet(()=>_abrirMapaLote(ds));
+  toast('Abrindo o mapa…');
+  await _garantirKml(ds);   // carrega os polígonos (KML) dos pontos antes de desenhar
+  _loadLeaflet(()=>_abrirMapaLote(ds));
 }
 function _abrirMapaLote(ds){
   const old=document.getElementById('_mapaModal'); if(old) old.remove();
@@ -891,7 +926,7 @@ function _abrirMapaLote(ds){
       `<div style="font-size:14px;font-weight:800;color:var(--gold)">🗺️ ${ds.length} ponto(s) no mapa</div>`+
       `<div style="font-size:11px;color:var(--text-hint)">clique num alfinete para ver as informações · <span style="color:#c62f2b;font-weight:800">●</span> pendente · <span style="color:#2e9e4f;font-weight:800">●</span> atendido</div>`+
       `<a class="anxbtn rota" id="_mpRota" style="margin-left:auto;cursor:pointer">🧭 Rota no Google Maps</a>`+
-      (ds.some(x=>x.kml_content)?`<button class="anxbtn earth" id="_mpEarth" title="Baixa o KML dos pontos e abre o Google Earth (lá: Projetos → Importar arquivo KML).">🌍 Google Earth</button>`:``)+
+      (ds.some(x=>x.tem_kml)?`<button class="anxbtn earth" id="_mpEarth" title="Baixa o KML dos pontos e abre o Google Earth (lá: Projetos → Importar arquivo KML).">🌍 Google Earth</button>`:``)+
       `<button id="_mpClose" title="Fechar" style="width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:var(--bg-input);color:var(--text-white);font-size:17px;font-weight:700;cursor:pointer;line-height:1;flex-shrink:0">✕</button>`+
     `</div>`+
     `<div id="_mcMap" style="flex:1;min-height:0"></div>`;
@@ -991,9 +1026,10 @@ function _kmlDoc(ds, docName){
     '<Document id="root_doc">\n<name>'+_xmlEsc(docName)+'</name>\n'+
     estilo+schemas.join('\n')+(schemas.length?'\n':'')+bodies+'\n</Document></kml>\n';
 }
-function baixarKmlLote(){
-  const ds=[..._sel].map(byId).filter(x=>x && x.kml_content);
+async function baixarKmlLote(){
+  const ds=[..._sel].map(byId).filter(x=>x && x.tem_kml);
   if(!ds.length) return toast('Nenhuma das selecionadas tem KML. Gere os KMLs faltantes primeiro.');
+  await _garantirKml(ds);   // carrega o conteúdo dos KMLs selecionados
   const stamp=new Date().toISOString().slice(0,10);
   const doc=_kmlDoc(ds, 'MC — '+ds.length+' GEOCOD(s) — '+stamp);
   try{
@@ -1434,7 +1470,7 @@ function exportarExcel(){
    preenchidas à mão se precisar) · X=DATA ATENDIMENTO · Y=REDS ·
    Z=AUTO DE INFRAÇÃO · AA=Nº ATO DE FISCALIZAÇÃO (=ID SISFIS) · AB=OBSERVAÇÃO.
    Exporta o que está no filtro atual (município/lote/cards), ordenado por GEOCOD. */
-function exportarBaixaSemad(){
+async function exportarBaixaSemad(){
   const dOut = iso => { if(!iso) return ''; const p=String(iso).slice(0,10).split('-'); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:String(iso); };
   const kmlData = kml => { const o={}; const re=/<SimpleData name="([^"]+)">([\s\S]*?)<\/SimpleData>/g; let m; while((m=re.exec(String(kml||'')))) o[m[1]]=m[2]; return o; };
   const num = v => { const x=parseFloat(String(v==null?'':v).replace(',','.')); return isFinite(x)?x:''; };  // HECTARES/X/Y como número (evita bug de locale)
@@ -1442,8 +1478,10 @@ function exportarBaixaSemad(){
     'MES_REF','ANO_REF','X','Y','MUNICIPIO','NUFIS','CIA_PM','BIOMA_IBGE','BIO_LEI_MA','GEOCOD_IEF',
     'ID_EVOLUCAO','% Veg Nativa','UC/ZA','Registro_Car','DAIA_CAR',
     'DATA ATENDIMENTO','REDS','AUTO DE INFRAÇÃO','Nº ATO DE FISCALIZAÇÃO','OBSERVAÇÃO'];
-  const rows = DADOS.filter(passa)
-    .sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo),undefined,{numeric:true}))
+  const _lista = DADOS.filter(passa)
+    .sort((a,b)=>String(a.codigo).localeCompare(String(b.codigo),undefined,{numeric:true}));
+  await _garantirKml(_lista);   // o formato SEMAD lê campos de dentro do KML (SimpleData)
+  const rows = _lista
     .map(d=>{
       const k=kmlData(d.kml_content), o={}; HEAD.forEach(h=>o[h]='');
       o['ID']=k.ID||d.id_semad||'';
