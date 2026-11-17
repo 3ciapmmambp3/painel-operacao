@@ -5884,21 +5884,33 @@ function _mcCard(cfg){
     + (cfg.footer||'')
     + `</div>`;
 }
-/* Seção "🔗 Relacionados": visitas vinculadas por BO + visitas/ops no mesmo local (~50 m) */
+/* Seção "🔗 Relacionados": visitas vinculadas por BO (com nº/data/tipo) + visitas/ops no mesmo local (~50 m) */
 function _mcVinculosCrime(d){
   const bo = norm(d.bo||''); if(!bo) return '';
+  const _tipoVis = v => v.alertaUrbano ? 'Urbana ⚠' : (v.natCode==='A20028' ? 'Furto' : 'Violento');
+  const _corVis  = v => v.alertaUrbano ? '#ff9800' : (v.natCode==='A20028' ? '#66bb6a' : '#ab47bc');
   const visLig  = (dadosVisitas||[]).filter(v => (v.boRefs||[]).some(b=>norm(b)===bo) || norm(v.bo||'')===bo);
   const PROX = 0.00045;
   const perto = p => p && p.lat && p.lng && d.lat && d.lng && Math.abs(p.lat-d.lat)<PROX && Math.abs(p.lng-d.lng)<PROX;
   const visPerto = (dadosVisitas||[]).filter(v => perto(v) && !visLig.includes(v));
   const opsPerto = (dadosGdoRural||[]).filter(o => perto(o));
-  const nVis = visLig.length + visPerto.length, nOps = opsPerto.length;
-  if(!nVis && !nOps) return '';
+  if(!visLig.length && !visPerto.length && !opsPerto.length) return '';
   let h = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid #333;">'
     + '<div style="font-size:10px;font-weight:800;color:#42a5f5;letter-spacing:.3px;margin-bottom:5px;">🔗 RELACIONADOS A ESTE CRIME</div>';
-  if(nVis) h += `<div style="font-size:11px;color:#66bb6a;line-height:1.7;">🤝 <b>${nVis}</b> visita(s) tranquilizadora(s)`
-    + (visLig.length?` <span style="color:#8bd19a;">· ${visLig.length} vinculada(s) por BO</span>`:'') + `</div>`;
-  if(nOps) h += `<div style="font-size:11px;color:#ef7a73;line-height:1.7;">★ <b>${nOps}</b> operação(ões) GDO Rural no local</div>`;
+  /* Visitas vinculadas por BO — com tipo, nº e data (marque a camada do tipo p/ ver no mapa) */
+  visLig.forEach(v => {
+    h += `<div style="font-size:11px;line-height:1.5;color:#ddd;margin-bottom:3px;">`
+      + `🤝 Visita <b style="color:${_corVis(v)};">${_tipoVis(v)}</b> <span style="color:#777;font-size:10px;">· vinculada por BO</span>`
+      + `<div style="padding-left:16px;color:#aaa;font-size:10px;">Nº <span style="font-family:monospace;">${v.bo||'—'}</span>${v.data?` · ${v.data}${v.horInicio?' '+v.horInicio:''}`:''}</div></div>`;
+  });
+  if(visPerto.length){
+    const tipos=[...new Set(visPerto.map(_tipoVis))].join(', ');
+    h += `<div style="font-size:11px;color:#66bb6a;line-height:1.6;">📍 <b>${visPerto.length}</b> visita(s) no mesmo local <span style="color:#777;font-size:10px;">(${tipos})</span></div>`;
+  }
+  if(opsPerto.length){
+    const rats=[...new Set(opsPerto.map(o=>o.rat||o.natureza).filter(Boolean))].slice(0,2).join(', ');
+    h += `<div style="font-size:11px;color:#ef7a73;line-height:1.6;">★ <b>${opsPerto.length}</b> operação(ões) GDO no local${rats?` <span style="color:#777;font-size:10px;">(${rats})</span>`:''}</div>`;
+  }
   h += '</div>';
   return h;
 }
