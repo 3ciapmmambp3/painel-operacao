@@ -398,36 +398,36 @@ async function carregar(){
       const inList = '(' + gprs.map(v=>`"${v.replace(/"/g,'')}"`).join(',') + ')';
       filtroQS = `&gp_responsavel=in.${encodeURIComponent(inList)}`;
     }
-    const url = `${API}/rest/v1/${TBL}?select=${SEL_LEVE}${filtroQS}&order=data_vencimento.asc.nullslast`;
-    const PAGE = 1000; let offset = 0; const todas = [];
-    for (;;){
-      const r = await fetch(url, { headers: Object.assign({}, H, { 'Range-Unit':'items', 'Range': `${offset}-${offset+PAGE-1}` }) });
-      if (!r.ok){
-        const txt = await r.text();
-        if (offset===0 && (r.status===404 || /relation .*mc_demandas.* does not exist|could not find the table/i.test(txt))){
-          DADOS=[]; render(); kpis();
-          tb.innerHTML = '<tr><td colspan="10" class="empty">Módulo Monitoramento Contínuo aguardando a migração <b>db/157</b> no Supabase e a 1ª carga de lote (Carregar lote). Depois disso as demandas aparecem aqui.</td></tr>';
-          return;
-        }
-        throw new Error(`${r.status} ${txt}`);
+    const PAGE = 1000, MAXP = 20;   // teto de segurança: 20 páginas = 20.000 linhas
+    const baseUrl = `${API}/rest/v1/${TBL}?select=${SEL_LEVE}${filtroQS}&order=data_vencimento.asc.nullslast`;
+    // 1) total p/ paginar EM PARALELO (muito mais rápido que página-a-página sequencial)
+    let total = 0;
+    const rh = await fetch(`${API}/rest/v1/${TBL}?select=id${filtroQS}`, { headers: Object.assign({}, H, { 'Prefer':'count=exact', 'Range-Unit':'items', 'Range':'0-0' }) });
+    if (!rh.ok){
+      const txt = await rh.text();
+      if (rh.status===404 || /relation .*mc_demandas.* does not exist|could not find the table/i.test(txt)){
+        DADOS=[]; render(); kpis();
+        tb.innerHTML = '<tr><td colspan="10" class="empty">Módulo Monitoramento Contínuo aguardando a migração <b>db/157</b> no Supabase e a 1ª carga de lote (Carregar lote). Depois disso as demandas aparecem aqui.</td></tr>';
+        return;
       }
-      const chunk = await r.json();
-      todas.push(...chunk);
-      if (chunk.length < PAGE || todas.length >= 20000) break;
-      offset += PAGE;
+      throw new Error(`${rh.status} ${txt}`);
     }
-    DADOS = todas;
-    // marca quais têm KML (consulta leve só de id); o conteúdo vem sob demanda
-    try{
-      const comKmlSet = new Set(); let offk = 0;
-      for(;;){
-        const rk = await fetch(`${API}/rest/v1/${TBL}?select=id&kml_content=not.is.null${filtroQS}`, { headers: Object.assign({}, H, { 'Range-Unit':'items', 'Range': `${offk}-${offk+1000-1}` }) });
-        if(!rk.ok) break;
-        const ck = await rk.json(); ck.forEach(x=>comKmlSet.add(x.id));
-        if(ck.length < 1000 || comKmlSet.size >= 20000) break; offk += 1000;
-      }
-      DADOS.forEach(d=>{ d.tem_kml = comKmlSet.has(d.id); });
-    }catch(_){ DADOS.forEach(d=>{ d.tem_kml = (d.kml_content!=null); }); }
+    total = parseInt((rh.headers.get('content-range')||'/0').split('/')[1], 10) || 0;
+    const nP = Math.min(MAXP, Math.max(1, Math.ceil(total/PAGE)));
+    // 2) dispara TODAS as páginas da lista + a consulta "tem KML" ao mesmo tempo
+    const listaReqs = [];
+    for (let i=0;i<nP;i++){ const off=i*PAGE;
+      listaReqs.push(fetch(baseUrl, { headers: Object.assign({}, H, { 'Range-Unit':'items', 'Range': `${off}-${off+PAGE-1}` }) }).then(r=>r.ok?r.json():[])); }
+    const temKmlReq = (async()=>{
+      const set=new Set(); const reqs=[];
+      for (let i=0;i<nP;i++){ const off=i*PAGE;
+        reqs.push(fetch(`${API}/rest/v1/${TBL}?select=id&kml_content=not.is.null${filtroQS}`, { headers: Object.assign({}, H, { 'Range-Unit':'items', 'Range': `${off}-${off+PAGE-1}` }) }).then(r=>r.ok?r.json():[])); }
+      (await Promise.all(reqs)).flat().forEach(x=>set.add(x.id));
+      return set;
+    })();
+    const [partes, comKmlSet] = await Promise.all([ Promise.all(listaReqs), temKmlReq ]);
+    DADOS = partes.flat();
+    DADOS.forEach(d=>{ d.tem_kml = comKmlSet.has(d.id); });
     try{ await Impresso.carregar('mc_demandas', DADOS.map(d=>d.codigo)); }catch(_){}
     popularAnos(); render(); kpis();
   } catch(e){
