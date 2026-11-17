@@ -7128,7 +7128,7 @@ function impConfirmar(){
   (async () => {
     try {
       /* Converte chaves para lowercase — padrão das colunas SQL */
-      const registros = _impTodosRegistros.map(r => {
+      let registros = _impTodosRegistros.map(r => {
         const obj = {};
         Object.keys(r).forEach(k => {
           if(k.startsWith('_')) return;
@@ -7137,6 +7137,30 @@ function impConfirmar(){
         });
         return obj;
       });
+
+      /* Blindagem: só envia colunas que EXISTEM na tabela. Evita PGRST204 quando o
+         SIGOp adiciona uma coluna nova à planilha (ex.: "semoventes"). Descobre as
+         colunas por uma amostra da própria tabela; se não conseguir, segue sem filtrar. */
+      let _impIgnoradas = [];
+      try {
+        const _am = await fetch(`${SB_URL}/rest/v1/${tabela}?select=*&limit=1`, {
+          headers:{ 'apikey':SB_KEY, 'Authorization':'Bearer '+SB_KEY }
+        });
+        if(_am.ok){
+          const _amJ = await _am.json();
+          if(Array.isArray(_amJ) && _amJ[0]){
+            const _permit = new Set(Object.keys(_amJ[0]));
+            const _drop = new Set();
+            registros = registros.map(o => {
+              const f = {};
+              Object.keys(o).forEach(c => { if(_permit.has(c)) f[c]=o[c]; else _drop.add(c); });
+              return f;
+            });
+            _impIgnoradas = [..._drop];
+            if(_impIgnoradas.length) console.warn('[import] Colunas ignoradas (não existem em '+tabela+'): '+_impIgnoradas.join(', '));
+          }
+        }
+      } catch(_colE){ console.warn('[import] Não deu p/ conferir colunas da tabela (segue sem filtrar):', _colE); }
 
       /* Upsert em lotes de 200 — usa on_conflict explícito por tabela */
       const ON_CONFLICT = {
@@ -7218,6 +7242,7 @@ function impConfirmar(){
           <div style="font-size:18px;font-weight:700;color:#2ea043;margin-bottom:8px;">${novos.length} novos · ${atualizados.length} atualizados!</div>
           <div style="font-size:12px;color:var(--text-muted);">Tabela Supabase: <b style="color:var(--gold)">${tabela}</b></div>
           <div style="font-size:11px;color:#2ea043;margin-top:8px;">✅ Todos os dados salvos no Supabase com campos completos!</div>
+          ${_impIgnoradas && _impIgnoradas.length ? `<div style="font-size:11px;color:#ff9800;margin-top:8px;">⚠ Colunas ignoradas (não existem na tabela <b>${tabela}</b>): <b>${_impIgnoradas.join(', ')}</b>.<br>Se quiser guardá-las, crie as colunas na tabela e reimporte.</div>` : ''}
         </div>
         <div style="display:flex;gap:12px;justify-content:center;margin-top:8px;">
           <div class="imp-stat-box imp-stat-novos"><div class="n">${novos.length}</div><div class="l">Inseridos</div></div>
