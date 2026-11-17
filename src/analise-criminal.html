@@ -5884,32 +5884,45 @@ function _mcCard(cfg){
     + (cfg.footer||'')
     + `</div>`;
 }
-/* Seção "🔗 Relacionados": visitas vinculadas por BO (com nº/data/tipo) + visitas/ops no mesmo local (~50 m) */
+/* Liga a camada indicada (ml-*) e re-renderiza — usado ao clicar numa visita/op do "Relacionados". */
+function mcAtivarCamada(mlId){
+  const el = document.getElementById(mlId);
+  if(el){ el.checked = true; }
+  const fsEl = document.getElementById('fs-'+mlId);   // espelha na tela cheia, se existir
+  if(fsEl){ fsEl.checked = true; }
+  try{ toggleMapaLayer(mlId); }catch(e){}
+  try{ (typeof flash==='function') && flash('Camada ativada — a visita/operação já aparece no mapa.', true); }catch(e){}
+}
+/* Seção "🔗 Relacionados": visitas vinculadas por BO (com nº/data/tipo) + visitas/ops no mesmo local (~50 m).
+   Cada item é CLICÁVEL → liga a camada correspondente e mostra o ícone no mapa. */
 function _mcVinculosCrime(d){
   const bo = norm(d.bo||''); if(!bo) return '';
   const _tipoVis = v => v.alertaUrbano ? 'Urbana ⚠' : (v.natCode==='A20028' ? 'Furto' : 'Violento');
   const _corVis  = v => v.alertaUrbano ? '#ff9800' : (v.natCode==='A20028' ? '#66bb6a' : '#ab47bc');
+  const _mlVis   = v => v.alertaUrbano ? 'ml-visitas-urbano' : (v.natCode==='A20028' ? 'ml-visitas-furto' : 'ml-visitas-violento');
   const visLig  = (dadosVisitas||[]).filter(v => (v.boRefs||[]).some(b=>norm(b)===bo) || norm(v.bo||'')===bo);
   const PROX = 0.00045;
   const perto = p => p && p.lat && p.lng && d.lat && d.lng && Math.abs(p.lat-d.lat)<PROX && Math.abs(p.lng-d.lng)<PROX;
   const visPerto = (dadosVisitas||[]).filter(v => perto(v) && !visLig.includes(v));
   const opsPerto = (dadosGdoRural||[]).filter(o => perto(o));
   if(!visLig.length && !visPerto.length && !opsPerto.length) return '';
+  const _verLink = '<span style="color:#42a5f5;font-size:10px;font-weight:700;white-space:nowrap;">▸ ver no mapa</span>';
   let h = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid #333;">'
-    + '<div style="font-size:10px;font-weight:800;color:#42a5f5;letter-spacing:.3px;margin-bottom:5px;">🔗 RELACIONADOS A ESTE CRIME</div>';
-  /* Visitas vinculadas por BO — com tipo, nº e data (marque a camada do tipo p/ ver no mapa) */
+    + '<div style="font-size:10px;font-weight:800;color:#42a5f5;letter-spacing:.3px;margin-bottom:5px;">🔗 RELACIONADOS A ESTE CRIME <span style="color:#666;font-weight:600;">· clique p/ ver no mapa</span></div>';
+  /* Visitas vinculadas por BO — clicável (liga a camada do tipo) */
   visLig.forEach(v => {
-    h += `<div style="font-size:11px;line-height:1.5;color:#ddd;margin-bottom:3px;">`
-      + `🤝 Visita <b style="color:${_corVis(v)};">${_tipoVis(v)}</b> <span style="color:#777;font-size:10px;">· vinculada por BO</span>`
+    h += `<div onclick="mcAtivarCamada('${_mlVis(v)}')" title="Clique para mostrar esta visita no mapa" style="cursor:pointer;font-size:11px;line-height:1.5;color:#ddd;margin-bottom:3px;padding:2px 4px;border-radius:4px;background:rgba(66,165,245,.06);">`
+      + `<div style="display:flex;align-items:center;gap:6px;">🤝 Visita <b style="color:${_corVis(v)};">${_tipoVis(v)}</b> <span style="color:#777;font-size:10px;">· vinculada por BO</span><span style="margin-left:auto;">${_verLink}</span></div>`
       + `<div style="padding-left:16px;color:#aaa;font-size:10px;">Nº <span style="font-family:monospace;">${v.bo||'—'}</span>${v.data?` · ${v.data}${v.horInicio?' '+v.horInicio:''}`:''}</div></div>`;
   });
   if(visPerto.length){
     const tipos=[...new Set(visPerto.map(_tipoVis))].join(', ');
-    h += `<div style="font-size:11px;color:#66bb6a;line-height:1.6;">📍 <b>${visPerto.length}</b> visita(s) no mesmo local <span style="color:#777;font-size:10px;">(${tipos})</span></div>`;
+    const mlAlvo = _mlVis(visPerto[0]);
+    h += `<div onclick="mcAtivarCamada('${mlAlvo}')" title="Clique para mostrar no mapa" style="cursor:pointer;font-size:11px;color:#66bb6a;line-height:1.6;padding:2px 4px;border-radius:4px;background:rgba(102,187,106,.06);display:flex;align-items:center;gap:6px;">📍 <b>${visPerto.length}</b> visita(s) no mesmo local <span style="color:#777;font-size:10px;">(${tipos})</span><span style="margin-left:auto;">${_verLink}</span></div>`;
   }
   if(opsPerto.length){
     const rats=[...new Set(opsPerto.map(o=>o.rat||o.natureza).filter(Boolean))].slice(0,2).join(', ');
-    h += `<div style="font-size:11px;color:#ef7a73;line-height:1.6;">★ <b>${opsPerto.length}</b> operação(ões) GDO no local${rats?` <span style="color:#777;font-size:10px;">(${rats})</span>`:''}</div>`;
+    h += `<div onclick="mcAtivarCamada('ml-ops')" title="Clique para mostrar no mapa" style="cursor:pointer;font-size:11px;color:#ef7a73;line-height:1.6;padding:2px 4px;border-radius:4px;background:rgba(229,122,115,.06);display:flex;align-items:center;gap:6px;">★ <b>${opsPerto.length}</b> operação(ões) GDO no local${rats?` <span style="color:#777;font-size:10px;">(${rats})</span>`:''}<span style="margin-left:auto;">${_verLink}</span></div>`;
   }
   h += '</div>';
   return h;
@@ -6412,7 +6425,7 @@ function _renderMapaCriminalInterno(dados, gpFiltro, pelFiltro, mapaBusca){
       const _locCor = (d.localizacao||'').includes('URBAN')?'#ef5350':'#66bb6a';
       const _natTxt = [d.descrNatureza, d.descrNaturezaSec1, d.descrNaturezaSec2]
         .filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i).join(' · ');
-      _mCrime.bindTooltip(_mcCard({
+      const _cardCrime = _mcCard({
         cor, badge:d.indicador, titulo:indLabel,
         rows:[
           ['Nº BO', d.bo],
@@ -6426,9 +6439,12 @@ function _renderMapaCriminalInterno(dados, gpFiltro, pelFiltro, mapaBusca){
           d.rpm?['RPM', d.rpm]:null
         ],
         extra: _mcVinculosCrime(d) + auditBadge
-      }),
-        {sticky:true, direction:'top', className:'leaflet-tooltip-crime', opacity:1}
-      );
+      });
+      _mCrime.bindTooltip(_cardCrime, {sticky:true, direction:'top', className:'leaflet-tooltip-crime', opacity:1});
+      /* Tem relacionados? Abre em POPUP ao clicar (os itens "ver no mapa" ficam clicáveis). */
+      if(/RELACIONADOS A ESTE CRIME/.test(_cardCrime)){
+        _mCrime.bindPopup(_cardCrime, {maxWidth:340, className:'leaflet-popup-crime', autoPan:true, closeButton:true});
+      }
     }
 
     _mCrime.addTo(gCrimes);
