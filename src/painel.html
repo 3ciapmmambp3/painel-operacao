@@ -7138,27 +7138,60 @@ function impConfirmar(){
         return obj;
       });
 
-      /* Blindagem: só envia colunas que EXISTEM na tabela. Evita PGRST204 quando o
-         SIGOp adiciona uma coluna nova à planilha (ex.: "semoventes"). Descobre as
-         colunas por uma amostra da própria tabela; se não conseguir, segue sem filtrar. */
-      let _impIgnoradas = [];
+      /* Blindagem + colunas novas: só envia colunas que EXISTEM na tabela. Se a planilha
+         trouxe coluna nova (ex.: SIGOp adicionou "semoventes"), PERGUNTA se quer criá-la no
+         banco (texto) e já importa com ela. Se recusar, ignora (aviso laranja). Descobre as
+         colunas por uma amostra da tabela; se não conseguir, segue sem filtrar. */
+      let _impIgnoradas = [], _impCriadas = [];
+      const _impColsDe = async (tab) => {
+        try{
+          const r = await fetch(`${SB_URL}/rest/v1/${tab}?select=*&limit=1`, { headers:{ 'apikey':SB_KEY, 'Authorization':'Bearer '+SB_KEY } });
+          if(!r.ok) return null;
+          const j = await r.json();
+          return (Array.isArray(j) && j[0]) ? new Set(Object.keys(j[0])) : null;
+        }catch(e){ return null; }
+      };
+      // espera o PostgREST recarregar o schema p/ enxergar a coluna recém-criada
+      const _impEsperarCol = async (tab, col) => {
+        for(let t=0;t<10;t++){
+          try{ const r = await fetch(`${SB_URL}/rest/v1/${tab}?select=${col}&limit=1`, { headers:{ 'apikey':SB_KEY, 'Authorization':'Bearer '+SB_KEY } }); if(r.ok) return true; }catch(e){}
+          await new Promise(res=>setTimeout(res,600));
+        }
+        return false;
+      };
       try {
-        const _am = await fetch(`${SB_URL}/rest/v1/${tabela}?select=*&limit=1`, {
-          headers:{ 'apikey':SB_KEY, 'Authorization':'Bearer '+SB_KEY }
-        });
-        if(_am.ok){
-          const _amJ = await _am.json();
-          if(Array.isArray(_amJ) && _amJ[0]){
-            const _permit = new Set(Object.keys(_amJ[0]));
-            const _drop = new Set();
-            registros = registros.map(o => {
-              const f = {};
-              Object.keys(o).forEach(c => { if(_permit.has(c)) f[c]=o[c]; else _drop.add(c); });
-              return f;
-            });
-            _impIgnoradas = [..._drop];
-            if(_impIgnoradas.length) console.warn('[import] Colunas ignoradas (não existem em '+tabela+'): '+_impIgnoradas.join(', '));
+        let _permit = await _impColsDe(tabela);
+        if(_permit){
+          // colunas da planilha que a tabela ainda não tem
+          const _faltam = new Set();
+          registros.forEach(o => Object.keys(o).forEach(c => { if(!_permit.has(c)) _faltam.add(c); }));
+          const faltam = [..._faltam];
+          if(faltam.length){
+            const criar = confirm('A planilha trouxe '+faltam.length+' coluna(s) que a tabela "'+tabela+'" ainda não tem:\n\n'+faltam.join(', ')+'\n\nDeseja CRIAR essas colunas no banco (como texto) e guardar esses dados?\n\n[ OK ] cria e importa tudo\n[ Cancelar ] importa ignorando essas colunas'); // eslint-disable-line no-alert
+            if(criar){
+              for(const c of faltam){
+                try{
+                  const rr = await fetch(`${SB_URL}/rest/v1/rpc/bd_add_coluna`, { method:'POST', headers:{ 'apikey':SB_KEY, 'Authorization':'Bearer '+SB_KEY, 'Content-Type':'application/json' }, body: JSON.stringify({ p_tabela:tabela, p_coluna:c }) });
+                  if(rr.ok){ _impCriadas.push(c); }
+                  else console.warn('[import] criar coluna '+c+' falhou: HTTP '+rr.status+' '+(await rr.text()));
+                }catch(e){ console.warn('[import] criar coluna '+c+' erro:', e); }
+              }
+              if(_impCriadas.length){
+                await _impEsperarCol(tabela, _impCriadas[0]);
+                _permit = await _impColsDe(tabela) || _permit;
+              }
+            }
           }
+          // filtra p/ só colunas existentes (já inclui as recém-criadas)
+          const _drop = new Set();
+          registros = registros.map(o => {
+            const f = {};
+            Object.keys(o).forEach(c => { if(_permit.has(c)) f[c]=o[c]; else _drop.add(c); });
+            return f;
+          });
+          _impIgnoradas = [..._drop];
+          if(_impIgnoradas.length) console.warn('[import] Colunas ignoradas (não existem em '+tabela+'): '+_impIgnoradas.join(', '));
+          if(_impCriadas.length) console.log('[import] Colunas criadas no banco: '+_impCriadas.join(', '));
         }
       } catch(_colE){ console.warn('[import] Não deu p/ conferir colunas da tabela (segue sem filtrar):', _colE); }
 
@@ -7242,7 +7275,8 @@ function impConfirmar(){
           <div style="font-size:18px;font-weight:700;color:#2ea043;margin-bottom:8px;">${novos.length} novos · ${atualizados.length} atualizados!</div>
           <div style="font-size:12px;color:var(--text-muted);">Tabela Supabase: <b style="color:var(--gold)">${tabela}</b></div>
           <div style="font-size:11px;color:#2ea043;margin-top:8px;">✅ Todos os dados salvos no Supabase com campos completos!</div>
-          ${_impIgnoradas && _impIgnoradas.length ? `<div style="font-size:11px;color:#ff9800;margin-top:8px;">⚠ Colunas ignoradas (não existem na tabela <b>${tabela}</b>): <b>${_impIgnoradas.join(', ')}</b>.<br>Se quiser guardá-las, crie as colunas na tabela e reimporte.</div>` : ''}
+          ${_impCriadas && _impCriadas.length ? `<div style="font-size:11px;color:#2ea043;margin-top:8px;">🆕 Coluna(s) criada(s) no banco e já importada(s): <b>${_impCriadas.join(', ')}</b>.</div>` : ''}
+          ${_impIgnoradas && _impIgnoradas.length ? `<div style="font-size:11px;color:#ff9800;margin-top:8px;">⚠ Colunas ignoradas (não existem na tabela <b>${tabela}</b>): <b>${_impIgnoradas.join(', ')}</b>.<br>Se quiser guardá-las, reimporte e confirme a criação quando perguntado.</div>` : ''}
         </div>
         <div style="display:flex;gap:12px;justify-content:center;margin-top:8px;">
           <div class="imp-stat-box imp-stat-novos"><div class="n">${novos.length}</div><div class="l">Inseridos</div></div>
