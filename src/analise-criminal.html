@@ -3803,7 +3803,7 @@ async function carregarCrimes(forcar){
   await _carregarForaBaseCga();   /* db/183: REDS fora da base do CGA (não contam) */
   if(!Object.keys(munParaGrupCrimes).length) await carregarGruposCrimes();
 
-  const CACHE_KEY_CRIMES = 'ac_cache_bd_crimes_v2';   /* v2: inclui unid_area_nivel_5 (UEOp) */
+  const CACHE_KEY_CRIMES = 'ac_cache_bd_crimes_v3';   /* v3: ordena por data_fato,id + dedupe (sem duplicata de paginação) + naturezas secundárias */
   const { usarCache, totalAtual } = await _cacheDecidir(CACHE_KEY_CRIMES, 'bd_crimes', null, forcar);
 
   let rows = [];
@@ -3813,13 +3813,13 @@ async function carregarCrimes(forcar){
   } else {
     try {
       /* Paginação: Supabase Free limita 1000 por requisição */
-      const _crimesFields = `select=numero_reds,ano_fato,mes_descricao,data_fato,municipio,` +
+      const _crimesFields = `select=id,numero_reds,ano_fato,mes_descricao,data_fato,municipio,` +
         `descricao_localizacao,latitude,longitude,unid_area_nivel_4,unid_area_nivel_5,unid_registro_nivel_4,unid_registro_nivel_7,` +
-        `imv_total,icvpe_total,icvpa_total,ifzr,descr_natureza_principal,` +
+        `imv_total,icvpe_total,icvpa_total,ifzr,descr_natureza_principal,descr_natureza_secundaria1,descr_natureza_secundaria2,` +
         `codigo_complemento_natureza,complemento_natureza,` +
         `imv_b01121,imv_b01129,imv_b01148,imv_b02001,imv_c01157,imv_b01504,` +
         `icvpe_b01121,icvpe_b01121_militar,icvpe_b02001,icvpe_b01148,icvpe_b01504,` +
-        `icvpa_c01157,icvpa_c01158,icvpa_c01159&order=data_fato`;
+        `icvpa_c01157,icvpa_c01158,icvpa_c01159&order=data_fato,id`;   /* id = desempate único → paginação determinística (sem duplicar) */
       let _cOffset = 0, _cCont = true;
       while(_cCont) {
         const r = await fetch(
@@ -3832,6 +3832,10 @@ async function carregarCrimes(forcar){
         _cCont = page.length === 1000;
         _cOffset += 1000;
       }
+      /* Dedupe de segurança: paginação por offset pode repetir uma linha de borda. */
+      { const _vistos=new Set(); const _antes=rows.length;
+        rows = rows.filter(r=>{ const k = (r.id!=null)?('id:'+r.id):('reds:'+(r.numero_reds||'')+'|'+(r.data_fato||'')); if(_vistos.has(k)) return false; _vistos.add(k); return true; });
+        if(rows.length!==_antes) console.log('[carregarCrimes] dedupe: removidas '+(_antes-rows.length)+' linha(s) duplicada(s) da paginação'); }
       if(totalAtual !== null) _cacheSalvar(CACHE_KEY_CRIMES, rows, totalAtual);
       console.log('[carregarCrimes] Supabase bd_crimes:', rows.length, 'registros baixados da API');
     } catch(e){
@@ -3849,6 +3853,9 @@ async function carregarCrimes(forcar){
 
   const IND_COL = { IMV:'imv_total', CVPE:'icvpe_total', CVPA:'icvpa_total', IF:'ifzr' };
   const ultimaData = { IMV:null, CVPE:null, CVPA:null, IF:null };
+
+  /* Dedupe final (cobre cache antigo e qualquer caminho) — 1 ocorrência por REDS/id. */
+  { const _v=new Set(); rows = rows.filter(r=>{ const k=(r.id!=null)?('id:'+r.id):('reds:'+(r.numero_reds||'')+'|'+(r.data_fato||'')); if(!k||k==='reds:|'){return true;} if(_v.has(k))return false; _v.add(k); return true; }); }
 
   rows.forEach((r, idx) => {
     const munVal = (r.municipio || '').toString().trim();
@@ -3899,7 +3906,9 @@ async function carregarCrimes(forcar){
         localizacao:   locNorm,
         natureza:      (r.unid_area_nivel_4 || '').toString().trim(),
         ueop:          (r.unid_area_nivel_5 || '').toString().trim(),   /* UEOp (Unidade Área Nível 5) */
-        descrNatureza: (r.descr_natureza_principal || '').toString().trim(),
+        descrNatureza:     (r.descr_natureza_principal || '').toString().trim(),
+        descrNaturezaSec1: (r.descr_natureza_secundaria1 || '').toString().trim(),
+        descrNaturezaSec2: (r.descr_natureza_secundaria2 || '').toString().trim(),
         unidRegistro7: (r.unid_registro_nivel_7 || '').toString().trim(),
         codComplemento:      parseInt(r.codigo_complemento_natureza) || null,
         complementoNatureza: (r.complemento_natureza || '').toString().trim(),
@@ -6389,10 +6398,13 @@ function _renderMapaCriminalInterno(dados, gpFiltro, pelFiltro, mapaBusca){
       const vitRow = d.indicador !== 'IF' && d.qtdVitimas
         ? `<tr><td style="color:#888;padding:2px 4px 2px 0;">Vítimas</td><td style="color:#ef5350;font-weight:700;padding:2px 0;">${d.qtdVitimas}</td></tr>` : '';
       const _locCor = (d.localizacao||'').includes('URBAN')?'#ef5350':'#66bb6a';
+      const _natTxt = [d.descrNatureza, d.descrNaturezaSec1, d.descrNaturezaSec2]
+        .filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i).join(' · ');
       _mCrime.bindTooltip(_mcCard({
         cor, badge:d.indicador, titulo:indLabel,
         rows:[
           ['Nº BO', d.bo],
+          ['Natureza', _natTxt],
           ['Data', (d.data||'') + (d.mes?` <span style="color:#666;font-size:10px;">${d.mes}</span>`:'')],
           ['Município', d.municipio],
           ['Grupamento', (gpCurto2||gp) + (gpCurto2&&gpCurto2!==gp?`<br><span style="color:#666;font-size:10px;">${gp}</span>`:''), '#c9a84c'],
