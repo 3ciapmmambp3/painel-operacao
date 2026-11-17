@@ -5855,6 +5855,45 @@ function renderMapaCriminal(){
   _renderMapaCriminalInterno(dados, gp, pel, mapaBusca);
 }
 
+/* ══ BALÃO PADRÃO (card único p/ crime, visita e operação) ══
+   cfg: {cor, badge, titulo, rows:[[label,valor,corValor?],...], extra?, footer?} */
+function _mcCard(cfg){
+  const cor = cfg.cor || '#9b8a5c';
+  const rowsHtml = (cfg.rows||[])
+    .filter(r => r && r[1]!=null && r[1]!=='' && r[1]!=='—')
+    .map(r => `<tr><td style="color:#888;padding:2px 10px 2px 0;white-space:nowrap;vertical-align:top;">${r[0]}</td>`
+      + `<td style="color:${r[2]||'#fff'};font-weight:600;line-height:1.5;word-break:break-word;">${r[1]}</td></tr>`)
+    .join('');
+  return `<div style="width:300px;max-width:min(300px,calc(100vw - 32px));background:#1e1e1e;border:1px solid ${cor}55;border-radius:8px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.6);">`
+    + `<div style="background:${cor}22;border-bottom:2px solid ${cor};padding:8px 12px;display:flex;align-items:center;gap:8px;">`
+    +   `<span style="background:${cor};color:#fff;font-size:10px;font-weight:800;padding:2px 8px;border-radius:3px;letter-spacing:.5px;">${cfg.badge||''}</span>`
+    +   `<span style="color:#ddd;font-size:11px;font-weight:600;">${cfg.titulo||''}</span>`
+    + `</div>`
+    + `<div style="padding:8px 12px;"><table style="width:100%;border-collapse:collapse;font-size:11px;line-height:1.9;">${rowsHtml}</table>`
+    +   (cfg.extra||'')
+    + `</div>`
+    + (cfg.footer||'')
+    + `</div>`;
+}
+/* Seção "🔗 Relacionados": visitas vinculadas por BO + visitas/ops no mesmo local (~50 m) */
+function _mcVinculosCrime(d){
+  const bo = norm(d.bo||''); if(!bo) return '';
+  const visLig  = (dadosVisitas||[]).filter(v => (v.boRefs||[]).some(b=>norm(b)===bo) || norm(v.bo||'')===bo);
+  const PROX = 0.00045;
+  const perto = p => p && p.lat && p.lng && d.lat && d.lng && Math.abs(p.lat-d.lat)<PROX && Math.abs(p.lng-d.lng)<PROX;
+  const visPerto = (dadosVisitas||[]).filter(v => perto(v) && !visLig.includes(v));
+  const opsPerto = (dadosGdoRural||[]).filter(o => perto(o));
+  const nVis = visLig.length + visPerto.length, nOps = opsPerto.length;
+  if(!nVis && !nOps) return '';
+  let h = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid #333;">'
+    + '<div style="font-size:10px;font-weight:800;color:#42a5f5;letter-spacing:.3px;margin-bottom:5px;">🔗 RELACIONADOS A ESTE CRIME</div>';
+  if(nVis) h += `<div style="font-size:11px;color:#66bb6a;line-height:1.7;">🤝 <b>${nVis}</b> visita(s) tranquilizadora(s)`
+    + (visLig.length?` <span style="color:#8bd19a;">· ${visLig.length} vinculada(s) por BO</span>`:'') + `</div>`;
+  if(nOps) h += `<div style="font-size:11px;color:#ef7a73;line-height:1.7;">★ <b>${nOps}</b> operação(ões) GDO Rural no local</div>`;
+  h += '</div>';
+  return h;
+}
+
 function _renderMapaCriminalInterno(dados, gpFiltro, pelFiltro, mapaBusca){
   gpFiltro  = gpFiltro  || '';
   pelFiltro = pelFiltro || '';
@@ -6173,17 +6212,16 @@ function _renderMapaCriminalInterno(dados, gpFiltro, pelFiltro, mapaBusca){
     });
     _mOps_last = L.marker([op.lat, op.lng], {icon, zIndexOffset:500});
     _mOps_last.bindTooltip(
-        `<div style="font-size:11px;line-height:1.8;width:240px;word-break:break-word;">
-          <b style="color:${corOp};font-size:12px;">★ OP GDO RURAL</b>
-          <span style="background:${corOp}33;color:${corOp};font-weight:700;padding:1px 6px;border-radius:3px;font-size:10px;margin-left:6px;">${op.natureza}</span><br>
-          <span style="color:#bbb;font-size:10px;">${label}</span><br>
-          <b>RAT:</b> ${op.rat}<br>
-          <b>Data:</b> ${op.data||'—'}<br>
-          <b>Município:</b> ${op.municipio||'—'}<br>
-          <b>Pelotão:</b> ${opPel!==99&&opPel>0?opPel+'º PEL':'—'}<br>
-          <b>Grupamento:</b> <span style="color:#c9a84c;font-weight:700;">${gpCurtoOp||'—'}</span>
-          ${gpLongoOp&&gpLongoOp!==gpCurtoOp?`<br><span style="color:#888;font-size:10px;">${gpLongoOp}</span>`:''}
-        </div>`,
+        _mcCard({
+          cor:corOp, badge:op.natureza, titulo:'Op. GDO Rural' + (label?' — '+label:''),
+          rows:[
+            ['RAT', op.rat],
+            ['Data', op.data],
+            ['Município', op.municipio],
+            ['Pelotão', (opPel!==99&&opPel>0)?opPel+'º Pelotão':''],
+            ['Grupamento', (gpCurtoOp||'') + (gpLongoOp&&gpLongoOp!==gpCurtoOp?`<br><span style="color:#888;font-size:10px;">${gpLongoOp}</span>`:''), '#c9a84c']
+          ]
+        }),
         {sticky:true, direction:'top', className:'leaflet-tooltip-pel'}
       )
       .addTo(gOps);
@@ -6350,26 +6388,21 @@ function _renderMapaCriminalInterno(dados, gpFiltro, pelFiltro, mapaBusca){
         ? `<div style="margin-top:8px;background:rgba(239,83,80,.18);border:1px solid #ef5350;border-radius:5px;padding:5px 8px;font-size:10px;color:#ef5350;font-weight:700;text-align:center;letter-spacing:.3px;">⚠ ÁREA URBANA — NECESSÁRIA AUDITORIA</div>` : '';
       const vitRow = d.indicador !== 'IF' && d.qtdVitimas
         ? `<tr><td style="color:#888;padding:2px 4px 2px 0;">Vítimas</td><td style="color:#ef5350;font-weight:700;padding:2px 0;">${d.qtdVitimas}</td></tr>` : '';
-      _mCrime.bindTooltip(`
-        <div style="width:320px;max-width:min(320px,calc(100vw - 32px));background:#1e1e1e;border:1px solid ${cor}55;border-radius:8px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.6);">
-          <div style="background:${cor}22;border-bottom:2px solid ${cor};padding:8px 12px;display:flex;align-items:center;gap:8px;">
-            <span style="background:${cor};color:#fff;font-size:10px;font-weight:800;padding:2px 8px;border-radius:3px;letter-spacing:.5px;">${d.indicador}</span>
-            <span style="color:#ddd;font-size:11px;font-weight:600;">${indLabel}</span>
-          </div>
-          <div style="padding:8px 12px;">
-            <table style="width:100%;border-collapse:collapse;font-size:11px;line-height:1.9;">
-              <tr><td style="color:#888;width:85px;padding:1px 4px 1px 0;white-space:nowrap;">Nº BO</td><td style="color:#fff;font-weight:700;">${d.bo}</td></tr>
-              <tr><td style="color:#888;padding:1px 4px 1px 0;white-space:nowrap;">Data</td><td style="color:#ccc;">${d.data||'—'} ${d.mes?'<span style="color:#666;font-size:10px;">'+d.mes+'</span>':''}</td></tr>
-              <tr><td style="color:#888;padding:1px 4px 1px 0;white-space:nowrap;">Município</td><td style="color:#fff;font-weight:600;">${d.municipio||'—'}</td></tr>
-              <tr><td style="color:#888;padding:1px 4px 1px 0;white-space:nowrap;vertical-align:top;">Grupamento</td><td style="color:#c9a84c;font-size:11px;line-height:1.5;word-break:break-word;white-space:normal;">${gpCurto2||gp}${gpCurto2&&gpCurto2!==gp?`<br><span style="color:#666;font-size:10px;">${gp}</span>`:''}</td></tr>
-              <tr><td style="color:#888;padding:1px 4px 1px 0;white-space:nowrap;">Pelotão</td><td style="color:#ccc;">${(pel&&pel!==99)?pel+'º Pelotão':'—'}</td></tr>
-              <tr><td style="color:#888;padding:1px 4px 1px 0;white-space:nowrap;">Localização</td><td style="color:${(d.localizacao||'').includes('URBAN')?'#ef5350':'#66bb6a'};font-weight:600;">${d.localizacao||'—'}</td></tr>
-              ${vitRow}
-              ${d.rpm?`<tr><td style="color:#888;padding:1px 4px 1px 0;white-space:nowrap;">RPM</td><td style="color:#ccc;">${d.rpm}</td></tr>`:''}
-            </table>
-          </div>
-          ${auditBadge}
-        </div>`,
+      const _locCor = (d.localizacao||'').includes('URBAN')?'#ef5350':'#66bb6a';
+      _mCrime.bindTooltip(_mcCard({
+        cor, badge:d.indicador, titulo:indLabel,
+        rows:[
+          ['Nº BO', d.bo],
+          ['Data', (d.data||'') + (d.mes?` <span style="color:#666;font-size:10px;">${d.mes}</span>`:'')],
+          ['Município', d.municipio],
+          ['Grupamento', (gpCurto2||gp) + (gpCurto2&&gpCurto2!==gp?`<br><span style="color:#666;font-size:10px;">${gp}</span>`:''), '#c9a84c'],
+          ['Pelotão', (pel&&pel!==99)?pel+'º Pelotão':''],
+          ['Localização', d.localizacao, _locCor],
+          (d.indicador!=='IF'&&d.qtdVitimas)?['Vítimas', d.qtdVitimas, '#ef5350']:null,
+          d.rpm?['RPM', d.rpm]:null
+        ],
+        extra: _mcVinculosCrime(d) + auditBadge
+      }),
         {sticky:true, direction:'top', className:'leaflet-tooltip-crime', opacity:1}
       );
     }
@@ -6443,20 +6476,27 @@ function _renderMapaCriminalInterno(dados, gpFiltro, pelFiltro, mapaBusca){
     const boNorm=(v.bo||'').toString().trim();
     const crimeRef=dadosCrimes.find(d=>(d.bo||d.rat||'').toString().trim()===boNorm);
     const m=L.marker([v.lat,v.lng],{icon,zIndexOffset:alerta?400:600,pelNum:_vPelN,natCode:v.natCode,alertaVis:alerta})
-      .bindTooltip(`<div style="font-size:11px;line-height:1.8;width:240px;word-break:break-word;">
-        <b style="color:${cor};">🤝 VISITA TRANQUILIZADORA</b><br>
-        <b>Natureza:</b> ${v.natCode}<br>
-        <span style="color:#bbb;font-size:10px;word-break:break-word;">${v.natDesc||'—'}</span><br>
-        <b>BO:</b> <span style="font-family:monospace;font-size:10px;">${v.bo||'—'}</span><br>
-        <b>Data:</b> ${v.data||'—'}${v.horInicio?' · '+v.horInicio:''}<br>
-        <b>Município:</b> ${v.municipio||'—'}<br>
-        <b>Local:</b> <span style="color:${alerta?'#ff9800':'#4caf50'}">${v.localizacao||'—'}${alerta?' ⚠':' ✔'}</span><br>
-        <b>Grupamento:</b> <span style="color:#c9a84c;font-weight:700;">${(v.unidReg||'—').split('/')[0].trim()}</span><br>
-        <span style="color:#888;font-size:10px;word-break:break-word;">${v.unidReg||'—'}</span><br>
-        <b>RPM:</b> ${v.rpm||'—'} · <b>Duração:</b> ${v.faixaTempo||'—'}
-        ${(v.boRefs&&v.boRefs.length)?`<hr style="border-color:#333;margin:4px 0;"><b style="color:#42a5f5;">🔗 Vinculada ao crime:</b><br>${v.boRefs.map(b=>`<span style="font-family:monospace;font-size:10px;">${b}</span>`).join('<br>')}`:crimeRef?`<hr style="border-color:#333;margin:4px 0;"><b style="color:${cor};">Crime próximo:</b> [${crimeRef.indicador}] ${crimeRef.municipio||'—'}`:''}
-        <b>Local:</b> <span style="color:${v.localizacao==='ZONA RURAL'?'#4caf50':v.localizacao==='PERIMETRO URBANO'?'#ff9800':'#aaa'}">${v.localizacao==='ZONA RURAL'?'🌿 RURAL':v.localizacao==='PERIMETRO URBANO'?'🏙 URBANO':v.localizacao||'—'}</span>
-      </div>`,{sticky:true,direction:'top',className:'leaflet-tooltip-vis'});
+      .bindTooltip((function(){
+        const _vt = v.natCode==='A20028' ? 'Visita — Furto' : (alerta ? 'Visita — Área Urbana ⚠' : 'Visita — Crime Violento');
+        const _locTxt = v.localizacao==='ZONA RURAL' ? '🌿 Zona Rural' : v.localizacao==='PERIMETRO URBANO' ? '🏙 Perímetro Urbano' : (v.localizacao||'');
+        const _vinc = (v.boRefs&&v.boRefs.length)
+          ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #333;"><div style="font-size:10px;font-weight:800;color:#42a5f5;letter-spacing:.3px;margin-bottom:4px;">🔗 VINCULADA AO CRIME</div>${v.boRefs.map(b=>`<div style="font-family:monospace;font-size:10px;color:#90caf9;">${b}</div>`).join('')}</div>`
+          : (crimeRef ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #333;"><div style="font-size:10px;font-weight:800;color:#8a8a8a;letter-spacing:.3px;margin-bottom:4px;">CRIME PRÓXIMO</div><div style="font-size:11px;color:#ccc;">[${crimeRef.indicador}] ${crimeRef.municipio||'—'}</div></div>` : '');
+        return _mcCard({
+          cor, badge:'VISITA', titulo:_vt,
+          rows:[
+            ['Natureza', `${v.natCode||''} ${v.natDesc?`<span style="color:#888;font-size:10px;">${v.natDesc}</span>`:''}`],
+            ['BO', v.bo ? `<span style="font-family:monospace;font-size:10px;">${v.bo}</span>` : ''],
+            ['Data', (v.data||'') + (v.horInicio?` · ${v.horInicio}`:'')],
+            ['Município', v.municipio],
+            ['Localização', _locTxt, alerta?'#ff9800':'#66bb6a'],
+            ['Grupamento', (v.unidReg||'').split('/')[0].trim() + (v.unidReg?`<br><span style="color:#888;font-size:10px;">${v.unidReg}</span>`:''), '#c9a84c'],
+            ['RPM', v.rpm],
+            ['Duração', v.faixaTempo]
+          ],
+          extra:_vinc
+        });
+      })(),{sticky:true,direction:'top',className:'leaflet-tooltip-vis'});
     if(alerta) m.addTo(gVUrbano);
     else if(isFurto) m.addTo(gVFurto);
     else m.addTo(gVViolento);
