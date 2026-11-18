@@ -1555,7 +1555,16 @@ function _abrirMapaUC(d, la, lo, feats){
   let mcLayer=null;
   try{
     const rings = d.kml_content ? _kmlPolys(d.kml_content) : [];
-    if(rings.length){ mcLayer=L.polygon(rings,{color:'#f5c542',weight:3,fillColor:'#f5c542',fillOpacity:.22}).addTo(map); mcLayer.bindPopup('Área do GEOCOD '+_escH(d.codigo||'')); }
+    if(rings.length){
+      mcLayer=L.polygon(rings,{color:'#f5c542',weight:3,fillColor:'#f5c542',fillOpacity:.22}).addTo(map);
+      // balão com as informações do GEOCOD (igual ao Harpia) ao clicar no polígono do MC
+      const _rota='https://www.google.com/maps/dir/?api=1&destination='+la+','+lo;
+      const popup='<div style="font:12px/1.5 Arial;min-width:200px;max-width:270px">'
+        +'<div style="font-weight:800;color:#8a6d00;margin-bottom:4px">📍 GEOCOD '+_escH(d.codigo||'')+'</div>'
+        +_mcInfoRows(d).map(r=>'<b>'+_escH(r[0])+':</b> '+_escH(String(r[1]))).join('<br>')
+        +'<div style="margin-top:8px"><a href="'+_rota+'" target="_blank" rel="noopener" style="color:#1769c4;font-weight:700">🧭 Rota (Maps)</a> &nbsp;·&nbsp; <a href="https://waze.com/ul?ll='+la+','+lo+'" target="_blank" rel="noopener" style="color:#0a8fb8;font-weight:700">🚗 Waze</a></div></div>';
+      mcLayer.bindPopup(popup,{maxWidth:300});
+    }
   }catch(e){}
   // ponto pesquisado (vermelho)
   const mk=L.circleMarker([la,lo],{radius:7,color:'#fff',weight:2,fillColor:'#e03a34',fillOpacity:1}).addTo(map);
@@ -1564,8 +1573,10 @@ function _abrirMapaUC(d, la, lo, feats){
   const fitMC=()=>{ try{ if(mcLayer) map.fitBounds(mcLayer.getBounds().pad(0.5)); else map.setView([la,lo],15); }catch(e){ map.setView([la,lo],15); } };
   box.querySelector('#_ucFitMC').onclick=fitMC;
   box.querySelector('#_ucFitUC').onclick=fitUC;
-  // enquadra SÓ depois que o container tem altura (senão o zoom sai errado e o contorno fica fora da tela)
-  setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} fitUC(); },200);
+  // enquadra SÓ depois que o container tem altura (senão o zoom sai errado).
+  // Abre no polígono do MC (o alvo da fiscalização, bem visível em dourado);
+  // a UC verde fica ao redor. Botão "Toda a UC" mostra o contorno inteiro.
+  setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} if(mcLayer) fitMC(); else fitUC(); },200);
 }
 
 async function carregarLote(){
