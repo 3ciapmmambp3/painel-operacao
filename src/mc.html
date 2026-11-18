@@ -1447,14 +1447,14 @@ function mcCopiarCar(cod){
    (uc_dados + uc_consultado_em), então fica disponível a todos sem reconsultar. */
 const UC_IDE_BASE = 'https://geoserver.meioambiente.mg.gov.br/IDE/wfs';
 const UC_CAMADAS = [
-  { layer:'IDE:ide_2010_mg_unidades_conservacao_estaduais_pol', esfera:'Estadual'  },
-  { layer:'IDE:ide_2010_mg_unidades_conservacao_federais_pol',  esfera:'Federal'   },
-  { layer:'IDE:ide_2010_mg_unidades_conservacao_municipais_pol', esfera:'Municipal' }
+  { layer:'IDE:ide_2010_mg_unidades_conservacao_estaduais_pol', esfera:'Estadual',  geom:'geometry' },
+  { layer:'IDE:ide_2010_mg_unidades_conservacao_federais_pol',  esfera:'Federal',   geom:'geom' },     // esta camada usa 'geom'
+  { layer:'IDE:ide_2010_mg_unidades_conservacao_municipais_pol', esfera:'Municipal', geom:'geometry' }
 ];
 async function mcConsultarUC(lat, lon){
   const pick=(p,keys)=>{ for(const k of keys){ if(p && p[k]!=null && String(p[k]).trim()!=='') return String(p[k]).trim(); } return ''; };
   const reqs = UC_CAMADAS.map(async c=>{
-    const cql = `INTERSECTS(geometry,POINT(${lat} ${lon}))`;
+    const cql = `INTERSECTS(${c.geom||'geometry'},POINT(${lat} ${lon}))`;
     const url = `${UC_IDE_BASE}?service=WFS&version=1.1.0&request=GetFeature`
       + `&typeName=${encodeURIComponent(c.layer)}&outputFormat=application/json`
       + `&CQL_FILTER=${encodeURIComponent(cql)}`;
@@ -1508,7 +1508,7 @@ async function mcMapaUC(){
   toast('Carregando o mapa da Unidade de Conservação…');
   const feats=[];
   await Promise.all(UC_CAMADAS.map(async c=>{
-    const cql=`INTERSECTS(geometry,POINT(${la} ${lo}))`;
+    const cql=`INTERSECTS(${c.geom||'geometry'},POINT(${la} ${lo}))`;
     const url=`${UC_IDE_BASE}?service=WFS&version=1.1.0&request=GetFeature`
       +`&typeName=${encodeURIComponent(c.layer)}&outputFormat=application/json`
       +`&CQL_FILTER=${encodeURIComponent(cql)}`;
@@ -1542,7 +1542,9 @@ function _abrirMapaUC(d, la, lo, feats){
   const close=()=>{ try{ if(_mcMapUCObj){ _mcMapUCObj.remove(); _mcMapUCObj=null; } }catch(e){} ov.remove(); };
   box.querySelector('#_ucMpClose').onclick=close;
   ov.onclick=e=>{ if(e.target===ov) close(); };
-  const map=L.map('_mcMapUC',{zoomControl:true}); _mcMapUCObj=map;
+  // setView ANTES de adicionar qualquer camada vetorial (senão o Leaflet estoura
+  // ao desenhar o polígono e o mapa não vai pro lugar certo).
+  const map=L.map('_mcMapUC',{zoomControl:true}).setView([la,lo],12); _mcMapUCObj=map;
   const sat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles &copy; Esri'});
   const ruas=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'});
   sat.addTo(map); L.control.layers({'Satélite':sat,'Ruas':ruas},null,{collapsed:true}).addTo(map);
@@ -1558,7 +1560,7 @@ function _abrirMapaUC(d, la, lo, feats){
   // ponto pesquisado (vermelho)
   const mk=L.circleMarker([la,lo],{radius:7,color:'#fff',weight:2,fillColor:'#e03a34',fillOpacity:1}).addTo(map);
   mk.bindPopup('📍 Ponto pesquisado<br>GEOCOD '+_escH(d.codigo||''));
-  const fitUC=()=>{ try{ const b=gj.getBounds(); b.extend([la,lo]); map.fitBounds(b.pad(0.05)); }catch(e){ map.setView([la,lo],11); } };
+  const fitUC=()=>{ try{ map.fitBounds(gj.getBounds().extend([la,lo]),{padding:[30,30]}); }catch(e){ map.setView([la,lo],11); } };
   const fitMC=()=>{ try{ if(mcLayer) map.fitBounds(mcLayer.getBounds().pad(0.5)); else map.setView([la,lo],15); }catch(e){ map.setView([la,lo],15); } };
   box.querySelector('#_ucFitMC').onclick=fitMC;
   box.querySelector('#_ucFitUC').onclick=fitUC;
