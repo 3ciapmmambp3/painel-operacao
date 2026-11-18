@@ -105,9 +105,37 @@ let CUR=null;
     if(!r.ok) throw new Error(await r.text());
     const c=await r.json();
     if(!c){ box.innerHTML='<div class="state">Cartão não encontrado ou removido.</div>'; return; }
-    CUR=c; render(c);
+    CUR=c; render(c); _kmlAuto(c);
   }catch(e){ box.innerHTML='<div class="state">Não foi possível carregar: '+_esc(e.message||e)+'</div>'; }
 })();
+
+// Abertura via ?kml=<ordem> (link vindo do PDF): baixa o KML daquela demanda
+// automaticamente. Como leitores de PDF bloqueiam links data:, o PDF aponta p/ cá.
+function _dataUrlToBlob(u){
+  const m=/^data:([^;,]*?)(?:;charset=[^;,]*)?;base64,(.*)$/.exec(u||'');
+  if(!m) return null;
+  try{ const bin=atob(m[2]); const arr=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i); return new Blob([arr],{type:m[1]||'application/vnd.google-earth.kml+xml'}); }catch(e){ return null; }
+}
+function _kmlAuto(c){
+  const ord=new URLSearchParams(location.search).get('kml');
+  if(!ord) return;
+  const dems=(c&&c.demandas)||[];
+  const dem=dems.find(d=>String(d.ordem)===String(ord)) || dems[parseInt(ord,10)-1];
+  if(!dem) return;
+  const anx=(dem.anexos||[]).find(a=>a&&a.link&&(a.kml||/\.kml(\?|$)/i.test(a.nome||'')||/vnd\.google-earth/i.test(a.link||'')));
+  if(!anx) return;
+  const nome=anx.nome||('demanda-'+ord+'.kml');
+  const blob=_dataUrlToBlob(anx.link); if(!blob) return;
+  const url=URL.createObjectURL(blob);
+  try{ const a=document.createElement('a'); a.href=url; a.download=nome; document.body.appendChild(a); a.click(); a.remove(); }catch(e){}
+  // Banner de reforço (se o navegador bloquear o download automático sem toque).
+  try{
+    const b=document.createElement('div');
+    b.style.cssText='position:sticky;top:0;z-index:50;background:var(--gold);color:#1a1000;padding:11px 14px;font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap;box-shadow:0 4px 16px rgba(0,0,0,.3)';
+    b.innerHTML='🛰️ KML da Demanda '+_esc(ord)+' — se o download não começar, <a href="'+url+'" download="'+_esc(nome)+'" style="color:#1a1000;text-decoration:underline">toque aqui para baixar</a>.';
+    const wrap=document.querySelector('.wrap'); wrap.parentNode.insertBefore(b,wrap);
+  }catch(e){}
+}
 
 function render(c){
   const patr=(Array.isArray(c.patrulheiros)?c.patrulheiros:[]).filter(Boolean);

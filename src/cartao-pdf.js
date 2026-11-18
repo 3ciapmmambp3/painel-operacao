@@ -81,8 +81,12 @@
       const anexoCell=anx.length?anx.map(a=>{
         const isKml=(a.kml||/\.kml(\?|$)/i.test(a.nome||'')||/vnd\.google-earth/i.test(a.link||''));
         if(isKml){
-          return pubCartao
-            ? `🛰️ <a href="${pubCartao}" target="_blank" rel="noopener">${E(a.nome||'KML')} — baixar na página do cartão</a>`
+          // O PDF não pode embutir o KML (é data: URL, bloqueado em leitores de PDF).
+          // Linka p/ a página pública do cartão COM ?kml=<ordem> → lá o download do KML
+          // dispara sozinho ao abrir (ver cartao-publico.html → _kmlAuto).
+          const kmlLink = pubCartao ? (pubCartao+'&kml='+encodeURIComponent(ord)) : '';
+          return kmlLink
+            ? `🛰️ <a href="${kmlLink}" target="_blank" rel="noopener">${E(a.nome||'KML')} — baixar</a>`
             : `🛰️ ${E(a.nome||'KML')} <span style="color:#777">(baixar no cartão online)</span>`;
         }
         return `<a href="${String(a.link).replace(/"/g,'&quot;')}" target="_blank" rel="noopener">${E(a.nome||'anexo')}</a>`;
