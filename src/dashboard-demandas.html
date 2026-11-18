@@ -48,6 +48,20 @@
 
   .grid2{display:grid;grid-template-columns:1.6fr 1fr;gap:16px}
   @media(max-width:1000px){.grid2{grid-template-columns:1fr}}
+  .rcol{display:flex;flex-direction:column;min-width:0}
+  .grid-tipo{display:grid;grid-template-columns:1fr 320px;gap:16px}
+  @media(max-width:1000px){.grid-tipo{grid-template-columns:1fr}}
+
+  /* rosca Participação por tipo */
+  .donutwrap{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .donut{width:138px;height:138px;flex-shrink:0}
+  .donut .dc1{fill:var(--text-white);font-size:22px;font-weight:800}
+  .donut .dc2{fill:var(--text-hint);font-size:8.5px;text-transform:uppercase;letter-spacing:.4px}
+  .pleglist{flex:1;min-width:150px;display:flex;flex-direction:column;gap:7px}
+  .pleg{display:flex;align-items:center;gap:8px;font-size:12px}
+  .pleg i{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+  .pleg .pl{color:var(--text-white);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pleg .pr{margin-left:auto;color:var(--text-hint);font-variant-numeric:tabular-nums;white-space:nowrap}
   .grid2b{display:grid;grid-template-columns:1fr 1fr;gap:16px}
   @media(max-width:900px){.grid2b{grid-template-columns:1fr}}
 
@@ -264,6 +278,7 @@ const TIPOS = [
   { k:'requisicao', lbl:'Requisições',      table:'denuncias',           src:'den' },
 ];
 const TIPO_LBL = Object.fromEntries(TIPOS.map(t=>[t.k,t.lbl]));
+const TIPO_COR = { nuden:'#66bb6a', ddu:'#42a5f5', ri:'#ffa726', emergencia:'#ef5350', mc:'#ab47bc', denuncia:'#26c6da', requisicao:'#d4af37' };
 
 let GRUPOS=[], ALLOWED=[], DADOS=[];
 let TIPOS_SEL = new Set();   // vazio = todos os tipos
@@ -536,11 +551,10 @@ function render(){
   const M=metricas(arr);
   document.getElementById('conteudo').innerHTML =
     kpisHTML(M) +
-    porTipoHTML(arrTipo) +
-    `<div class="grid2">${situacaoFracaoHTML(arr)}${destaquesHTML(arr)}</div>` +
+    `<div class="grid-tipo">${porTipoHTML(arrTipo)}${participacaoTipoHTML(arrTipo)}</div>` +
+    `<div class="grid2">${situacaoFracaoHTML(arr)}<div class="rcol">${destaquesHTML(arr)}${proxVencHTML(arr)}</div></div>` +
     `<div class="grid2b">${evolucaoHTML(arr)}${prazoMesHTML(arr)}</div>` +
-    `<div class="grid2b">${proxVencHTML(arr)}${naturezaHTML(arr)}</div>` +
-    porMunicipioHTML(arr);
+    `<div class="grid2b">${porMunicipioHTML(arr)}${naturezaHTML(arr)}</div>`;
   // liga eventos do toggle fração/pelotão
   const sg=document.getElementById('seg-frac'); if(sg) sg.querySelectorAll('button').forEach(b=>b.onclick=()=>{ FRAC_MODE=b.dataset.m; render(); });
 }
@@ -602,6 +616,28 @@ function porTipoHTML(arr){
       <thead><tr><th>Tipo</th><th class="barcol">Demandas</th><th class="num">Receb.</th><th class="num">Cumpr.</th><th class="num">Atend.</th><th class="num">Pend.</th><th class="num">Atraso</th><th class="num">Mediana</th></tr></thead>
       <tbody>${rows||'<tr><td colspan="8" class="empty">Sem dados.</td></tr>'}</tbody>
     </table></div>${LEGENDA}</div>`;
+}
+
+/* ── Participação por tipo (rosca) ───────────────────────────────── */
+function participacaoTipoHTML(arr){
+  const dados=TIPOS.map(t=>({t, n:arr.filter(d=>d.tipo===t.k).length})).filter(x=>x.n>0);
+  const total=dados.reduce((s,x)=>s+x.n,0);
+  if(!total) return `<div class="panel"><h3>Participação por tipo</h3><div class="empty">Sem dados.</div></div>`;
+  const C=2*Math.PI*48; let acc=0;
+  const segs=dados.map(({t,n})=>{ const dash=(n/total)*C;
+    const el=`<circle cx="60" cy="60" r="48" fill="none" stroke="${TIPO_COR[t.k]||'#999'}" stroke-width="15" stroke-dasharray="${dash.toFixed(2)} ${(C-dash).toFixed(2)}" stroke-dashoffset="${(-acc).toFixed(2)}"></circle>`;
+    acc+=dash; return el; }).join('');
+  const leg=dados.slice().sort((a,b)=>b.n-a.n).map(({t,n})=>`<div class="pleg"><i style="background:${TIPO_COR[t.k]||'#999'}"></i><span class="pl">${esc(t.lbl)}</span><span class="pr">${n} · ${(n/total*100).toFixed(0)}%</span></div>`).join('');
+  return `<div class="panel"><h3>Participação por tipo <small>recebidas</small></h3>
+    <div class="donutwrap">
+      <svg class="donut" viewBox="0 0 120 120">
+        <circle cx="60" cy="60" r="48" fill="none" stroke="var(--bg-input)" stroke-width="15"></circle>
+        <g transform="rotate(-90 60 60)">${segs}</g>
+        <text x="60" y="57" text-anchor="middle" class="dc1">${total}</text>
+        <text x="60" y="72" text-anchor="middle" class="dc2">recebidas</text>
+      </svg>
+      <div class="pleglist">${leg}</div>
+    </div></div>`;
 }
 
 /* ── Situação por fração / pelotão ───────────────────────────────── */
