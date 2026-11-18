@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<script>
+(function(){ var s; try{ s=localStorage.getItem('poe_theme'); }catch(e){} if(!s) s='dark'; document.documentElement.setAttribute('data-theme', s); })();
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard de Demandas — 3ª Cia PM MAmb</title>
+<link rel="stylesheet" href="styles/global.css">
+<script src="auth.js"></script>
+<script src="topnav.js" data-ativo="p3"></script>
+<script src="demandas-sidebar.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  body{padding-bottom:40px}
+  .shell{display:flex;align-items:flex-start}
+  .shell .wrap{flex:1;min-width:0;max-width:none;margin:20px 22px 0;padding:0}
+  @media(max-width:760px){ .shell{flex-direction:column;align-items:stretch} .shell .wrap{margin:16px 14px 0} }
+
+  .pagehead{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:14px;gap:16px;flex-wrap:wrap}
+  .pagehead h2{font-size:20px;font-weight:700}
+  .scope{font-size:12px;color:var(--text-muted);margin-top:5px;display:flex;align-items:center;gap:7px}
+  .scope .pin{width:14px;height:14px;stroke:var(--gold);fill:none;stroke-width:1.8}
+  .scope b{color:var(--gold);font-weight:600}
+  .ph-actions{display:flex;gap:9px;flex-wrap:wrap}
+
+  .controls{display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:11px 14px}
+  .controls .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--gold);font-weight:700}
+  .controls select{background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:8px 30px 8px 11px;color:var(--text-white);font-size:12.5px;outline:none;appearance:none;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239b8a5c' stroke-width='3'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
+  .controls select:focus{border-color:var(--gold)}
+  .controls .sp{flex:1}
+  .btn{background:var(--bg-input);border:1px solid var(--border-mid);color:var(--text-white);padding:8px 14px;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:7px}
+  .btn:hover{border-color:var(--gold)}
+  .btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2.2}
+
+  /* KPIs */
+  .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:11px;margin-bottom:18px}
+  @media(max-width:1050px){.kpis{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:560px){.kpis{grid-template-columns:repeat(2,1fr)}}
+  .kpi{background:var(--bg-card);border:1px solid var(--border);border-radius:11px;padding:13px 15px;position:relative;overflow:hidden}
+  .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--gold)}
+  .kpi.ok::before{background:var(--success)} .kpi.warn::before{background:#ffb74d}
+  .kpi.red::before{background:var(--danger)} .kpi.info::before{background:var(--info)} .kpi.pur::before{background:#ba68c8}
+  .kpi .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);font-weight:700}
+  .kpi .val{font-size:26px;font-weight:800;margin-top:5px;line-height:1;font-variant-numeric:tabular-nums}
+  .kpi .sub{font-size:10px;color:var(--text-hint);margin-top:5px;line-height:1.35}
+
+  .grid2{display:grid;grid-template-columns:1.6fr 1fr;gap:16px}
+  @media(max-width:1000px){.grid2{grid-template-columns:1fr}}
+  .grid2b{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:900px){.grid2b{grid-template-columns:1fr}}
+
+  .panel{background:var(--bg-card);border:1px solid var(--border);border-radius:11px;padding:15px 17px;margin-bottom:16px}
+  .panel h3{font-size:13px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+  .panel h3 small{color:var(--text-hint);font-weight:600;text-transform:none;letter-spacing:0;font-size:11px}
+  .panel .psub{font-size:11px;color:var(--text-hint);margin-bottom:12px}
+
+  .seg{display:inline-flex;border:1px solid var(--border-mid);border-radius:7px;overflow:hidden}
+  .seg button{background:var(--bg-input);border:none;color:var(--text-muted);font-size:11.5px;font-weight:700;padding:6px 12px;cursor:pointer}
+  .seg button.on{background:var(--gold);color:#1a1000}
+
+  /* chips multisseleção de Tipo */
+  .chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .chip{background:var(--bg-input);border:1px solid var(--border-mid);color:var(--text-muted);font-size:11.5px;font-weight:700;padding:6px 11px;border-radius:20px;cursor:pointer;user-select:none;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .chip:hover{border-color:var(--gold)}
+  .chip .ck{width:13px;height:13px;border:1.6px solid var(--border-hover);border-radius:4px;display:inline-grid;place-items:center;font-size:10px;line-height:1;color:transparent}
+  .chip.on{background:var(--gold-bg);border-color:var(--gold);color:var(--gold-light)}
+  .chip.on .ck{background:var(--gold);border-color:var(--gold);color:#1a1000}
+  .chip.chip-all{font-style:normal}
+  .chip.chip-all.on{background:var(--gold);border-color:var(--gold);color:#1a1000}
+
+  /* Tabela de frações / tipos */
+  .tblwrap{overflow-x:auto;border:1px solid var(--border);border-radius:9px}
+  table.dt{width:100%;border-collapse:collapse;font-size:12.5px;white-space:nowrap;min-width:620px}
+  table.dt th,table.dt td{text-align:left;padding:8px 11px;border-bottom:1px solid var(--border)}
+  table.dt th{font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-hint);position:sticky;top:0;background:var(--bg-dark);z-index:1}
+  table.dt tbody tr{cursor:pointer}
+  table.dt tbody tr:hover{background:var(--bg-hover)}
+  table.dt td.num{text-align:right;font-variant-numeric:tabular-nums}
+  table.dt td.nome{color:var(--text-white);font-weight:600}
+  table.dt td .pelt{color:var(--text-hint);font-weight:400;font-size:11px}
+  .atr{color:var(--danger);font-weight:800} .atr0{color:var(--text-hint)}
+  .efi{display:inline-block;min-width:46px;text-align:center;font-weight:800;padding:2px 8px;border-radius:20px;font-size:11px}
+  .efi.hi{background:rgba(102,187,106,.16);color:var(--success)}
+  .efi.mid{background:rgba(255,167,38,.16);color:#ffb74d}
+  .efi.lo{background:rgba(239,83,80,.16);color:var(--danger)}
+  .efi.na{background:var(--bg-input);color:var(--text-hint)}
+  /* mini barra empilhada de status */
+  .sbar{display:flex;height:9px;width:120px;border-radius:5px;overflow:hidden;background:var(--bg-input)}
+  .sbar i{height:100%;display:block}
+  .s-np{background:var(--success)} .s-ca{background:#8d7a3f} .s-ea{background:var(--danger)} .s-aa{background:#6b7280}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:10.5px;color:var(--text-muted);margin:10px 2px 0}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .legend i{width:9px;height:9px;border-radius:2px;display:inline-block}
+  .foot-note{font-size:10.5px;color:var(--text-hint);margin-top:9px}
+
+  /* Destaques */
+  .destaques .dq{padding:10px 0;border-bottom:1px solid var(--border)}
+  .destaques .dq:last-child{border-bottom:none}
+  .destaques .dq .dt{font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-hint);font-weight:700}
+  .destaques .dq .dv{font-size:13.5px;color:var(--text-white);font-weight:700;margin-top:2px}
+  .destaques .dq .dd{font-size:11px;color:var(--text-muted);margin-top:1px}
+
+  /* barras horizontais (natureza) */
+  .bar{display:grid;grid-template-columns:1fr auto;gap:4px 12px;align-items:center;margin-bottom:10px}
+  .bar .bl{font-size:12px;color:var(--text-white);font-weight:600;overflow:hidden;text-overflow:ellipsis}
+  .bar .bn{font-size:12px;color:var(--gold-light);font-weight:800;text-align:right;white-space:nowrap}
+  .bar .track{grid-column:1/3;height:7px;background:var(--bg-input);border-radius:5px;overflow:hidden}
+  .bar .fill{height:100%;background:linear-gradient(90deg,var(--gold-dark),var(--gold));border-radius:5px}
+
+  /* barras verticais empilhadas (evolução por mês) */
+  .vbars{display:flex;align-items:flex-end;gap:10px;height:190px;padding:6px 2px 0}
+  .vbar{flex:1;min-width:16px;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%}
+  .vbar .col{width:100%;max-width:46px;display:flex;flex-direction:column-reverse;justify-content:flex-start;flex:1;border-radius:4px 4px 0 0;overflow:hidden;background:var(--bg-input)}
+  .vbar .col i{width:100%;display:block}
+  .vbar .cap{font-size:10px;color:var(--text-muted);font-weight:600}
+  .vbar .tot{font-size:10px;color:var(--text-hint)}
+
+  /* sparkline prazo cumprido */
+  .spark{width:100%;height:150px}
+  .spark text{fill:var(--text-hint);font-size:10px}
+
+  /* próximos vencimentos */
+  .pv{display:flex;align-items:flex-end;gap:12px;height:160px;padding-top:6px}
+  .pvcol{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%}
+  .pvcol .b{width:100%;max-width:54px;flex:1;display:flex;flex-direction:column;justify-content:flex-end}
+  .pvcol .b i{width:100%;border-radius:4px 4px 0 0;background:#6b7280;display:block}
+  .pvcol.venc .b i{background:var(--danger)} .pvcol.d7 .b i{background:#ffb74d}
+  .pvcol .cap{font-size:10.5px;color:var(--text-muted);font-weight:600;text-align:center}
+  .pvcol .qt{font-size:11px;color:var(--text-white);font-weight:700}
+
+  .empty{color:var(--text-hint);font-size:12.5px;padding:18px 4px;text-align:center}
+  .loading{padding:50px 20px;text-align:center;color:var(--text-muted);font-size:13.5px}
+  .loading.err{color:var(--danger)}
+  .mini-note{font-size:10px;color:var(--text-hint);font-style:italic}
+
+  @media print{
+    @page{margin:10mm}
+    .header,.topnav,.rd-sidebar,.controls,.btn,.ph-actions{display:none!important}
+    .shell .wrap{margin:0}
+    body{background:#fff}
+    .kpi,.panel,.tblwrap{break-inside:avoid}
+  }
+</style>
+<script src="pwa.js" defer></script>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <div class="header-shields"><img src="assets/escudo-cpe.png" alt="CPE" onerror="this.style.display='none'"><img src="assets/escudo-pmmg.png" alt="PMMG" onerror="this.style.display='none'"><img src="assets/brasao-bpmmamb.png" alt="BPM MAMB" onerror="this.style.display='none'"></div><div class="header-div"></div>
+    <div class="header-title"><div class="header-kicker">CPE · BPM MAmb · 3ª Cia PM MAmb</div><h1>PAINEL DE GESTÃO OPERACIONAL</h1><p>Controle de Demandas · Dashboard</p></div>
+  </div>
+  <div class="header-right"><span class="last-update" id="who"></span></div>
+</header>
+
+<div class="shell">
+<aside class="rd-sidebar" id="demandas-sidebar"></aside>
+
+<div class="wrap">
+  <div class="pagehead">
+    <div>
+      <h2>📊 Dashboard de Demandas</h2>
+      <div class="scope">
+        <svg class="pin" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        <span id="scope-txt">Carregando…</span>
+      </div>
+    </div>
+    <div class="ph-actions">
+      <button class="btn" onclick="exportarExcel()"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Baixar Excel</button>
+      <button class="btn" onclick="window.print()"><svg viewBox="0 0 24 24"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z"/></svg> Imprimir / PDF</button>
+    </div>
+  </div>
+
+  <div class="controls">
+    <span class="lbl">Período</span>
+    <select id="f-ano" onchange="render()"><option value="all">Todos os anos</option></select>
+    <span class="lbl">Tipo</span>
+    <div id="tipo-chips" class="chips"></div>
+    <span class="lbl" id="lbl-esc" style="display:none">Fração</span>
+    <select id="sel-pel" onchange="onPelChange()" style="display:none"></select>
+    <select id="sel-grp" onchange="render()" style="display:none"></select>
+    <span class="sp"></span>
+    <button class="btn" onclick="carregar()"><svg viewBox="0 0 24 24"><path d="M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15"/></svg> Atualizar</button>
+  </div>
+
+  <div id="conteudo"><div class="loading">Carregando demandas…</div></div>
+</div>
+</div>
+
+<script>
+/* ── sessão / config (padrão ima.html) ───────────────────────────── */
+const S = (typeof sessaoLer === 'function') ? sessaoLer() : null;
+if (!S) location.href = 'index.html';
+const API  = (typeof SB_AUTH_URL !== 'undefined') ? SB_AUTH_URL : '';
+const AKEY = (typeof SB_AUTH_KEY !== 'undefined') ? SB_AUTH_KEY : '';
+const H = { 'apikey': AKEY, 'Authorization': `Bearer ${AKEY}`, 'Content-Type':'application/json' };
+const MILITAR = S ? `${S.matricula} — ${S.pg||''} ${S.guerra||S.nome||''}`.replace(/\s+/g,' ').trim() : '';
+if (S) document.getElementById('who').textContent = MILITAR;
+
+const gpNum  = s => { const m=(s||'').match(/(\d+)\s*GP/i);  return m?+m[1]:null; };
+const pelNum = s => { const m=(s||'').match(/(\d+)\s*PEL/i); return m?+m[1]:null; };
+const nivel = S ? S.nivel_acesso : 'operacional';
+const isAdminTotal = nivel==='admin' || nivel==='admin_geral';
+const isAdminPel   = nivel==='admin_pelotao';
+const _func = (S && S.funcao || '').toString().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+const isAuxGestor = /AUX\s*P?\s*3/.test(_func);
+const GERIR = (nivel==='admin_geral') || isAuxGestor;   // Aux P3 / Admin Geral vê toda a Cia
+
+const _grafiaGP = s => String(s==null?'':s).replace(/MARILIERIA/gi,'MARLIERIA').replace(/MOLEVADE/gi,'MONLEVADE');
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+
+/* tipos de demanda */
+const TIPOS = [
+  { k:'nuden',      lbl:'NUDEN / SEMAD',    table:'nuden_demandas',      src:'mod' },
+  { k:'ddu',        lbl:'DDU 181',          table:'ddu_demandas',        src:'mod' },
+  { k:'ri',         lbl:'FTP / RI',         table:'ri_demandas',         src:'mod' },
+  { k:'emergencia', lbl:'Emergência Amb.',  table:'emergencia_demandas', src:'mod' },
+  { k:'mc',         lbl:'Monit. Contínuo',  table:'mc_demandas',         src:'mod' },
+  { k:'denuncia',   lbl:'Denúncias de Balcão', table:'denuncias',        src:'den' },
+  { k:'requisicao', lbl:'Requisições',      table:'denuncias',           src:'den' },
+];
+const TIPO_LBL = Object.fromEntries(TIPOS.map(t=>[t.k,t.lbl]));
+
+let GRUPOS=[], ALLOWED=[], DADOS=[];
+let TIPOS_SEL = new Set();   // vazio = todos os tipos
+
+/* ── boot ────────────────────────────────────────────────────────── */
+(async function init(){
+  try{
+    const r = await fetch(`${API}/rest/v1/grupos?select=gp_responsavel,grupamento_completo,pelotao&order=grupamento_completo`, { headers:H });
+    GRUPOS = (await r.json()).map(g => ({ gpr:g.gp_responsavel, comp:g.grupamento_completo, gp:gpNum(g.grupamento_completo), pel:pelNum(g.grupamento_completo) }));
+  }catch(e){ console.error('grupos', e); }
+  const meuGp=gpNum(S.grupamento_id), meuPel=pelNum(S.grupamento_id);
+  if (isAdminTotal) ALLOWED = GRUPOS.slice();
+  else if (isAdminPel) ALLOWED = GRUPOS.filter(g=>g.pel===meuPel);
+  else {
+    ALLOWED = GRUPOS.filter(g=>g.gp===meuGp && g.pel===meuPel);
+    if (!ALLOWED.length) ALLOWED = GRUPOS.filter(g=>(S.grupamento_id||'').toUpperCase().includes(g.gpr.replace('GP ','')));
+  }
+  if (GERIR) ALLOWED = GRUPOS.slice();
+  montarTipos();
+  montarSeletor(meuPel);
+  await carregar();
+})();
+
+function montarTipos(){
+  const box=document.getElementById('tipo-chips');
+  box.innerHTML = `<span class="chip chip-all" data-k="__all"><span class="ck">✓</span>Todos</span>`
+    + TIPOS.map(t=>`<span class="chip" data-k="${t.k}"><span class="ck">✓</span>${t.lbl}</span>`).join('');
+  box.querySelectorAll('.chip').forEach(c=>c.onclick=()=>toggleTipo(c.dataset.k));
+  refreshChips();
+}
+function toggleTipo(k){
+  if (k==='__all'){ TIPOS_SEL.clear(); }
+  else { if (TIPOS_SEL.has(k)) TIPOS_SEL.delete(k); else TIPOS_SEL.add(k); }
+  refreshChips(); render();
+}
+function refreshChips(){
+  document.querySelectorAll('#tipo-chips .chip').forEach(c=>{
+    const k=c.dataset.k;
+    const on = k==='__all' ? TIPOS_SEL.size===0 : TIPOS_SEL.has(k);
+    c.classList.toggle('on', on);
+  });
+}
+function montarSeletor(meuPel){
+  if (!(isAdminTotal || isAdminPel || GERIR)) return;
+  document.getElementById('lbl-esc').style.display='';
+  const selPel=document.getElementById('sel-pel'), selGrp=document.getElementById('sel-grp');
+  selPel.style.display=''; selGrp.style.display='';
+  const pels=[...new Set(ALLOWED.map(g=>g.pel))].sort((a,b)=>a-b);
+  selPel.innerHTML=(isAdminTotal||GERIR ? '<option value="all">Todos os pelotões</option>':'')
+    + pels.map(p=>`<option value="${p}"${p===meuPel&&isAdminPel?' selected':''}>${p}º Pelotão</option>`).join('');
+  preencherGrupamentos();
+}
+function preencherGrupamentos(){
+  const selPel=document.getElementById('sel-pel').value;
+  const selGrp=document.getElementById('sel-grp'); const prev=selGrp.value;
+  let lista=ALLOWED.slice();
+  if (selPel!=='all') lista=lista.filter(g=>String(g.pel)===String(selPel));
+  const pels=[...new Set(lista.map(g=>g.pel))].sort((a,b)=>a-b);
+  let html='<option value="all">Todos os grupamentos</option>';
+  pels.forEach(p=>{
+    const doPel=lista.filter(g=>g.pel===p).sort((a,b)=>_grafiaGP(a.comp).localeCompare(_grafiaGP(b.comp),'pt-BR'));
+    html+=`<optgroup label="${(p||'?')}º Pelotão">${doPel.map(g=>`<option value="${g.gpr}">${_grafiaGP(g.comp)}</option>`).join('')}</optgroup>`;
+  });
+  selGrp.innerHTML=html;
+  if ([...selGrp.options].some(o=>o.value===prev)) selGrp.value=prev;
+}
+function onPelChange(){ preencherGrupamentos(); render(); }
+const _selVal = id => { const e=document.getElementById(id); return e?e.value:'all'; };
+function temSeletor(){ return document.getElementById('sel-pel').style.display!=='none'; }
+function gprEscopo(){
+  let lista=ALLOWED.slice();
+  if (temSeletor()){
+    const p=_selVal('sel-pel'), g=_selVal('sel-grp');
+    if (p!=='all') lista=lista.filter(x=>String(x.pel)===String(p));
+    if (g!=='all') lista=lista.filter(x=>x.gpr===g);
+  }
+  return lista.map(x=>x.gpr);
+}
+
+/* ── normalização comum das 2 fontes ─────────────────────────────── */
+function _norm(d, tipoKey){
+  // módulos: data_gerada/data_vencimento/data_atendimento/natureza
+  // denuncias: data_recebimento/prazo/data_resposta/tema
+  const recebido = d.data_gerada || d.data_recebimento || (d.created_at?String(d.created_at).slice(0,10):'') || '';
+  const venc = d.data_vencimento || d.prazo || '';
+  const atend = d.data_atendimento || d.data_resposta || '';
+  return {
+    tipo: tipoKey,
+    recebido: ymd(recebido), vencimento: ymd(venc), atendimento: ymd(atend),
+    situacao: (d.situacao||'').toUpperCase(),
+    natureza: (d.natureza || d.tema || '').trim(),
+    municipio: (d.municipio||'').trim(),
+    gp_responsavel: d.gp_responsavel||'',
+    grupamento_completo: d.grupamento_completo||d.gp_responsavel||'',
+    pel: pelNum(d.grupamento_completo||'') ,
+    reds: d.numero_reds||''
+  };
+}
+function ymd(s){ s=String(s==null?'':s).trim(); return s? s.slice(0,10) : ''; }
+
+/* ── carregar (paginado + paralelo por tabela) ───────────────────── */
+async function carregar(){
+  const box=document.getElementById('conteudo');
+  box.innerHTML='<div class="loading">Carregando demandas…</div>';
+  const inListAll = (ALLOWED.length===GRUPOS.length) ? null : ALLOWED.map(g=>g.gpr);
+  const gpFilter = inListAll ? `&gp_responsavel=in.(${inListAll.map(encodeURIComponent).join(',')})` : '';
+  const ativoF = '&or=(ativo.is.null,ativo.eq.true)';
+
+  const selMod='data_gerada,data_vencimento,data_atendimento,situacao,natureza,municipio,gp_responsavel,grupamento_completo,numero_reds,ativo';
+  const selDen='data_recebimento,prazo,data_resposta,situacao,tema,municipio,gp_responsavel,grupamento_completo,numero_reds,ativo,tipo,created_at';
+
+  async function pega(table, sel){
+    const base=`${API}/rest/v1/${table}?select=${sel}${gpFilter}${ativoF}`;
+    const PG=1000; let off=0; const todas=[];
+    for(;;){
+      const r=await fetch(base,{ headers:Object.assign({}, H, {'Range-Unit':'items','Range':`${off}-${off+PG-1}`}) });
+      if(!r.ok) throw new Error(`${table}: ${r.status} ${await r.text()}`);
+      const chunk=await r.json(); todas.push(...chunk);
+      if(chunk.length<PG || off>60000) break;
+      off+=PG;
+    }
+    return todas;
+  }
+
+  try{
+    const mods=TIPOS.filter(t=>t.src==='mod');
+    const jobs=mods.map(t=>pega(t.table, selMod).then(rows=>rows.map(d=>_norm(d, t.k))));
+    jobs.push(pega('denuncias', selDen).then(rows=>rows.map(d=>_norm(d, d.tipo==='requisicao'?'requisicao':'denuncia'))));
+    const partes=await Promise.all(jobs);
+    DADOS=[].concat(...partes);
+    popularAnos();
+    render();
+  }catch(e){
+    console.error('dashboard', e);
+    box.innerHTML=`<div class="loading err">Não foi possível carregar as demandas.<br><small>${esc(e.message)}</small></div>`;
+  }
+}
+
+function popularAnos(){
+  const sel=document.getElementById('f-ano'); const atual=sel.value;
+  const anos=[...new Set(DADOS.map(d=>d.recebido?+d.recebido.slice(0,4):null).filter(Boolean))].sort((a,b)=>b-a);
+  sel.innerHTML='<option value="all">Todos os anos</option>'+anos.map(a=>`<option value="${a}">${a}</option>`).join('');
+  if (anos.includes(+atual)) sel.value=atual;
+}
+
+/* ── classificação de status / métricas ──────────────────────────── */
+const HOJE = new Date().toISOString().slice(0,10);
+const SIT_ATEND = new Set(['RESPONDIDA','CONCLUIDA','FINALIZADA']);
+function atendida(d){ return SIT_ATEND.has(d.situacao) || !!d.atendimento; }
+// status 4-way (particiona o conjunto)
+function statusDe(d){
+  if (atendida(d)){
+    if (d.vencimento && d.atendimento) return d.atendimento<=d.vencimento ? 'np' : 'ca';
+    return 'np'; // atendida sem datas suficientes → conta como no prazo
+  }
+  if (d.vencimento && d.vencimento<HOJE) return 'ea';
+  return 'aa';
+}
+function diasAtend(d){
+  if(!d.recebido||!d.atendimento) return null;
+  const a=new Date(d.recebido), b=new Date(d.atendimento);
+  if(isNaN(a)||isNaN(b)) return null;
+  return Math.round((b-a)/86400000);
+}
+function mediana(arr){
+  const v=arr.filter(x=>x!=null).sort((a,b)=>a-b);
+  if(!v.length) return null;
+  const m=Math.floor(v.length/2);
+  return v.length%2 ? v[m] : Math.round((v[m-1]+v[m])/2);
+}
+// bloco de métricas de um conjunto
+function metricas(arr){
+  const rec=arr.length;
+  let np=0, ca=0, ea=0, aa=0;
+  const dias=[];
+  arr.forEach(d=>{ const s=statusDe(d); if(s==='np')np++;else if(s==='ca')ca++;else if(s==='ea')ea++;else aa++;
+    if(atendida(d)){ const dd=diasAtend(d); if(dd!=null) dias.push(dd); } });
+  const atend=np+ca;
+  const denomCumpr=atend+ea;                 // atendidas + vencidas sem atendimento
+  const cumprimento = denomCumpr? np/denomCumpr : null;
+  const taxaAtend = rec? atend/rec : null;
+  return { rec, np, ca, ea, aa, atend, cumprimento, taxaAtend, emAtraso:ea, mediana:mediana(dias) };
+}
+
+/* ── filtro (tipo + ano + escopo) ────────────────────────────────── */
+function filtrados(){
+  const ano=_selVal('f-ano');
+  const gprs = temSeletor()? gprEscopo() : ALLOWED.map(g=>g.gpr);
+  const escLimita = temSeletor() && !((isAdminTotal||GERIR) && _selVal('sel-pel')==='all' && _selVal('sel-grp')==='all');
+  const setGpr = escLimita? new Set(gprs) : null;
+  return DADOS.filter(d=>{
+    if (TIPOS_SEL.size && !TIPOS_SEL.has(d.tipo)) return false;
+    if (ano!=='all' && String(d.recebido?d.recebido.slice(0,4):'')!==String(ano)) return false;
+    if (setGpr && !setGpr.has(d.gp_responsavel)) return false;
+    return true;
+  });
+}
+
+/* ── render principal ────────────────────────────────────────────── */
+function render(){
+  if (!DADOS.length){ document.getElementById('conteudo').innerHTML='<div class="empty">Nenhuma demanda carregada.</div>'; return; }
+  const arr=filtrados();
+  atualizarScope(arr.length);
+  const M=metricas(arr);
+  document.getElementById('conteudo').innerHTML =
+    kpisHTML(M) +
+    porTipoHTML() +
+    `<div class="grid2">${situacaoFracaoHTML()}${destaquesHTML(arr)}</div>` +
+    `<div class="grid2b">${evolucaoHTML(arr)}${prazoMesHTML(arr)}</div>` +
+    `<div class="grid2b">${proxVencHTML(arr)}${naturezaHTML(arr)}</div>` +
+    porMunicipioHTML(arr);
+  // liga eventos do toggle fração/pelotão
+  const sg=document.getElementById('seg-frac'); if(sg) sg.querySelectorAll('button').forEach(b=>b.onclick=()=>{ FRAC_MODE=b.dataset.m; render(); });
+}
+function atualizarScope(n){
+  const el=document.getElementById('scope-txt');
+  const verTudo = (!temSeletor()) || ((isAdminTotal||GERIR) && _selVal('sel-pel')==='all' && _selVal('sel-grp')==='all');
+  const tLbl = TIPOS_SEL.size===0 ? 'todos os tipos'
+             : (TIPOS_SEL.size===1 ? TIPO_LBL[[...TIPOS_SEL][0]] : TIPOS_SEL.size+' tipos');
+  if (verTudo) el.innerHTML=`<b>${n}</b> demanda(s) · <b>toda a 3ª Cia</b> · ${tLbl}`;
+  else{
+    const g=_selVal('sel-grp');
+    el.innerHTML = g!=='all'
+      ? `<b>${n}</b> demanda(s) · <b>${_grafiaGP((ALLOWED.find(x=>x.gpr===g)||{}).comp||g)}</b> · ${tLbl}`
+      : `<b>${n}</b> demanda(s) · escopo selecionado · ${tLbl}`;
+  }
+}
+const pct = (x,casas=1) => x==null?'—':(x*100).toFixed(casas).replace('.',',')+'%';
+const efiCls = x => x==null?'na':(x>=0.8?'hi':(x>=0.5?'mid':'lo'));
+
+function kpisHTML(M){
+  return `<div class="kpis">
+    <div class="kpi"><div class="lbl">Recebidas</div><div class="val">${M.rec}</div><div class="sub">no período/escopo</div></div>
+    <div class="kpi ok"><div class="lbl">Cumprimento do prazo</div><div class="val">${pct(M.cumprimento)}</div><div class="sub">atendidas no prazo ÷ (atendidas + vencidas sem atend.)</div></div>
+    <div class="kpi info"><div class="lbl">Taxa de atendimento</div><div class="val">${pct(M.taxaAtend)}</div><div class="sub">atendidas ÷ recebidas</div></div>
+    <div class="kpi red"><div class="lbl">Em atraso</div><div class="val">${M.emAtraso}</div><div class="sub">vencidas sem atendimento</div></div>
+    <div class="kpi warn"><div class="lbl">Tempo mediano</div><div class="val">${M.mediana==null?'—':M.mediana+'<span style="font-size:14px"> d</span>'}</div><div class="sub">do recebimento ao atendimento</div></div>
+    <div class="kpi pur"><div class="lbl">Atendidas</div><div class="val">${M.atend}</div><div class="sub">${M.rec?pct(M.atend/M.rec):'—'} do recebido</div></div>
+  </div>`;
+}
+
+/* mini barra de status */
+function sbar(M){
+  const t=M.rec||1;
+  const seg=(c,v)=>v>0?`<i class="${c}" style="width:${(v/t*100).toFixed(2)}%"></i>`:'';
+  return `<span class="sbar" title="No prazo ${M.np} · c/ atraso ${M.ca} · em atraso ${M.ea} · a atender ${M.aa}">${seg('s-np',M.np)}${seg('s-ca',M.ca)}${seg('s-ea',M.ea)}${seg('s-aa',M.aa)}</span>`;
+}
+const LEGENDA = `<div class="legend">
+  <span><i class="s-np"></i>Atendida no prazo</span><span><i class="s-ca"></i>Atendida com atraso</span>
+  <span><i class="s-ea"></i>Em atraso (sem atend.)</span><span><i class="s-aa"></i>A atender, no prazo</span></div>`;
+
+/* ── Por tipo de demanda ─────────────────────────────────────────── */
+function porTipoHTML(){
+  const ano=_selVal('f-ano');
+  const gprs = temSeletor()? gprEscopo():ALLOWED.map(g=>g.gpr);
+  const escLimita = temSeletor() && !((isAdminTotal||GERIR) && _selVal('sel-pel')==='all' && _selVal('sel-grp')==='all');
+  const setGpr = escLimita? new Set(gprs):null;
+  const linhas=TIPOS.map(t=>{
+    const sub=DADOS.filter(d=>d.tipo===t.k
+      && (ano==='all'||String(d.recebido?d.recebido.slice(0,4):'')===String(ano))
+      && (!setGpr || setGpr.has(d.gp_responsavel)));
+    return { t, M:metricas(sub) };
+  }).filter(x=>x.M.rec>0);
+  const rows=linhas.map(({t,M})=>`<tr onclick="toggleTipo('${t.k}')"${TIPOS_SEL.has(t.k)?' style="background:var(--gold-bg)"':''}>
+    <td class="nome">${esc(t.lbl)}</td>
+    <td>${sbar(M)}</td>
+    <td class="num">${M.rec}</td>
+    <td class="num"><span class="efi ${efiCls(M.cumprimento)}">${pct(M.cumprimento,0)}</span></td>
+    <td class="num">${pct(M.taxaAtend,0)}</td>
+    <td class="num ${M.emAtraso?'atr':'atr0'}">${M.emAtraso}</td>
+    <td class="num">${M.mediana==null?'—':M.mediana+' d'}</td></tr>`).join('');
+  return `<div class="panel"><h3>Por tipo de demanda <small>clique para filtrar</small></h3>
+    <div class="tblwrap"><table class="dt">
+      <thead><tr><th>Tipo</th><th>Demandas</th><th class="num">Receb.</th><th class="num">Cumpr.</th><th class="num">Atend.</th><th class="num">Atraso</th><th class="num">Mediana</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="7" class="empty">Sem dados.</td></tr>'}</tbody>
+    </table></div>${LEGENDA}</div>`;
+}
+
+/* ── Situação por fração / pelotão ───────────────────────────────── */
+let FRAC_MODE='frac';
+function situacaoFracaoHTML(){
+  const arr=filtrados();
+  const grupos={};
+  arr.forEach(d=>{
+    const key = FRAC_MODE==='pel' ? (d.pel?`${d.pel}º Pelotão`:'— sem pelotão') : (_grafiaGP(d.grupamento_completo||d.gp_responsavel)||'—');
+    (grupos[key]=grupos[key]||[]).push(d);
+  });
+  let linhas=Object.entries(grupos).map(([nome,lst])=>{
+    const M=metricas(lst); const pel=pelNum(lst[0].grupamento_completo||'');
+    return { nome, pel, M };
+  });
+  linhas.sort((a,b)=> (a.pel||99)-(b.pel||99) || b.M.rec-a.M.rec);
+  const rows=linhas.map(({nome,pel,M})=>`<tr>
+    <td class="nome">${esc(nome)}${FRAC_MODE==='frac'&&pel?` <span class="pelt">· ${pel}º Pel</span>`:''}</td>
+    <td>${sbar(M)}</td>
+    <td class="num">${M.rec}</td>
+    <td class="num"><span class="efi ${efiCls(M.cumprimento)}">${pct(M.cumprimento,0)}</span></td>
+    <td class="num">${pct(M.taxaAtend,0)}</td>
+    <td class="num ${M.emAtraso?'atr':'atr0'}">${M.emAtraso}</td>
+    <td class="num">${M.mediana==null?'—':M.mediana+' d'}</td></tr>`).join('');
+  return `<div class="panel"><h3>Situação por ${FRAC_MODE==='pel'?'pelotão':'fração'}
+      <span class="seg" id="seg-frac"><button data-m="frac" class="${FRAC_MODE==='frac'?'on':''}">Por fração</button><button data-m="pel" class="${FRAC_MODE==='pel'?'on':''}">Por pelotão</button></span></h3>
+    <div class="tblwrap"><table class="dt">
+      <thead><tr><th>${FRAC_MODE==='pel'?'Pelotão':'Fração'}</th><th>Demandas</th><th class="num">Receb.</th><th class="num">Cumpr.</th><th class="num">Atend.</th><th class="num">Atraso</th><th class="num">Mediana</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="7" class="empty">Sem dados no filtro.</td></tr>'}</tbody>
+    </table></div>
+    <div class="foot-note">Cumprimento = atendidas no prazo ÷ (atendidas + vencidas sem atendimento).</div></div>`;
+}
+
+/* ── Destaques ───────────────────────────────────────────────────── */
+function destaquesHTML(arr){
+  // agrupa por fração
+  const g={};
+  arr.forEach(d=>{ const k=_grafiaGP(d.grupamento_completo||d.gp_responsavel)||'—'; (g[k]=g[k]||[]).push(d); });
+  const linhas=Object.entries(g).map(([nome,lst])=>({nome, M:metricas(lst)})).filter(x=>x.M.rec>0);
+  if(!linhas.length) return `<div class="panel destaques"><h3>Destaques</h3><div class="empty">Sem dados.</div></div>`;
+  const MINREC=5;
+  const elegiveis=linhas.filter(x=>x.M.rec>=MINREC);
+  const base=elegiveis.length?elegiveis:linhas;
+  const maxBy=(f)=>base.slice().sort((a,b)=>f(b)-f(a))[0];
+  const minBy=(f)=>base.filter(x=>f(x)!=null).slice().sort((a,b)=>f(a)-f(b))[0];
+  const volume=maxBy(x=>x.M.rec);
+  const melhorC=maxBy(x=>x.M.cumprimento==null?-1:x.M.cumprimento);
+  const piorC=minBy(x=>x.M.cumprimento);
+  const maisAtraso=maxBy(x=>x.M.emAtraso);
+  const maiorMed=maxBy(x=>x.M.mediana==null?-1:x.M.mediana);
+  const dq=(t,v,d)=>`<div class="dq"><div class="dt">${t}</div><div class="dv">${esc(v)}</div><div class="dd">${esc(d)}</div></div>`;
+  return `<div class="panel destaques"><h3>Destaques <small>no filtro</small></h3>
+    ${dq('Maior volume recebido', volume.nome, `${volume.M.rec} demandas`)}
+    ${melhorC&&melhorC.M.cumprimento!=null?dq('Melhor cumprimento do prazo', melhorC.nome, `${pct(melhorC.M.cumprimento,1)} no prazo`):''}
+    ${piorC&&piorC.M.cumprimento!=null?dq('Menor cumprimento do prazo', piorC.nome, `${pct(piorC.M.cumprimento,1)} no prazo`):''}
+    ${maisAtraso.M.emAtraso>0?dq('Mais demandas em atraso', maisAtraso.nome, `${maisAtraso.M.emAtraso} sem atendimento após o vencimento`):''}
+    ${maiorMed&&maiorMed.M.mediana!=null?dq('Maior tempo mediano', maiorMed.nome, `${maiorMed.M.mediana} dias do recebimento ao atendimento`):''}
+    <div class="mini-note" style="padding-top:10px">Considera frações com ao menos ${MINREC} demandas.</div></div>`;
+}
+
+/* ── Evolução pelo mês de envio ──────────────────────────────────── */
+function mesChave(d){ return d.recebido? d.recebido.slice(0,7):''; }  // YYYY-MM
+function mesLbl(ym){ const [y,m]=ym.split('-'); const nomes=['','jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez']; return nomes[+m]+'/'+y.slice(2); }
+function evolucaoHTML(arr){
+  const map={};
+  arr.forEach(d=>{ const k=mesChave(d); if(!k) return; (map[k]=map[k]||[]).push(d); });
+  let meses=Object.keys(map).sort();
+  if(meses.length>14) meses=meses.slice(-14);
+  if(!meses.length) return `<div class="panel"><h3>Evolução pelo mês de envio</h3><div class="empty">Sem datas de recebimento.</div></div>`;
+  const dados=meses.map(ym=>({ym, M:metricas(map[ym])}));
+  const max=Math.max(...dados.map(x=>x.M.rec),1);
+  const seg=(c,v)=>v>0?`<i class="${c}" style="height:${(v/max*100).toFixed(2)}%"></i>`:'';
+  const cols=dados.map(({ym,M})=>`<div class="vbar"><div class="col" title="${mesLbl(ym)}: ${M.rec}">${seg('s-aa',M.aa)}${seg('s-ea',M.ea)}${seg('s-ca',M.ca)}${seg('s-np',M.np)}</div><div class="tot">${M.rec}</div><div class="cap">${mesLbl(ym)}</div></div>`).join('');
+  return `<div class="panel"><h3>Evolução pelo mês de envio</h3><div class="psub">Demandas recebidas por mês, por situação atual.</div>
+    <div class="vbars">${cols}</div>${LEGENDA}</div>`;
+}
+
+/* ── Prazo cumprido pelo mês de vencimento (linha) ───────────────── */
+function prazoMesHTML(arr){
+  // por mês de vencimento: % das que venceram no mês e foram atendidas até o vencimento
+  const map={};
+  arr.forEach(d=>{ if(!d.vencimento) return; const k=d.vencimento.slice(0,7);
+    const alvo = atendida(d) ? (d.atendimento? (d.atendimento<=d.vencimento?1:0) : 1)
+                             : (d.vencimento<HOJE?0:null);  // ainda não venceu → ignora
+    if(alvo==null) return;
+    const o=map[k]||(map[k]={n:0,ok:0}); o.n++; o.ok+=alvo;
+  });
+  let meses=Object.keys(map).sort();
+  if(meses.length>14) meses=meses.slice(-14);
+  const pts=meses.filter(m=>map[m].n>0).map(m=>({m, p:map[m].ok/map[m].n, n:map[m].n}));
+  if(pts.length<2) return `<div class="panel"><h3>Prazo cumprido pelo mês de vencimento</h3><div class="empty">Dados insuficientes para a série.</div></div>`;
+  const W=520,Hh=120,padL=30,padB=22,padT=10;
+  const x=i=>padL+(W-padL-6)*(i/(pts.length-1));
+  const y=p=>padT+(Hh-padT-padB)*(1-p);
+  const line=pts.map((pt,i)=>`${i?'L':'M'}${x(i).toFixed(1)},${y(pt.p).toFixed(1)}`).join(' ');
+  const dots=pts.map((pt,i)=>`<circle cx="${x(i).toFixed(1)}" cy="${y(pt.p).toFixed(1)}" r="${pt.n<5?2:3.3}" fill="${pt.n<5?'#777':'var(--gold)'}"></circle>`).join('');
+  const labs=pts.map((pt,i)=> (i%Math.ceil(pts.length/7||1)===0||i===pts.length-1)?`<text x="${x(i).toFixed(1)}" y="${Hh-6}" text-anchor="middle">${mesLbl(pt.m)}</text>`:'').join('');
+  const gl=[0,0.5,1].map(g=>`<line x1="${padL}" y1="${y(g)}" x2="${W-6}" y2="${y(g)}" stroke="var(--border)" stroke-width="1"/><text x="2" y="${y(g)+3}">${g*100}%</text>`).join('');
+  const ult=pts[pts.length-1];
+  return `<div class="panel"><h3>Prazo cumprido pelo mês de vencimento <small>último: ${pct(ult.p,0)}</small></h3>
+    <div class="psub">Das que venceram no mês, quantas foram atendidas até o vencimento. Ponto cinza = menos de 5 (pouco confiável).</div>
+    <svg class="spark" viewBox="0 0 ${W} ${Hh}" preserveAspectRatio="none">${gl}<path d="${line}" fill="none" stroke="var(--gold)" stroke-width="2"/>${dots}${labs}</svg></div>`;
+}
+
+/* ── Próximos vencimentos (abertas por faixa) ────────────────────── */
+function proxVencHTML(arr){
+  const abertas=arr.filter(d=>!atendida(d) && d.vencimento);
+  const faixas=[{k:'venc',lbl:'Vencidas',cls:'venc',n:0},{k:'d7',lbl:'≤ 7 dias',cls:'d7',n:0},{k:'d15',lbl:'8–15 d',cls:'',n:0},{k:'d30',lbl:'16–30 d',cls:'',n:0},{k:'m30',lbl:'> 30 d',cls:'',n:0}];
+  const hoje=new Date(HOJE);
+  abertas.forEach(d=>{ const dv=new Date(d.vencimento); const dias=Math.round((dv-hoje)/86400000);
+    if(dias<0)faixas[0].n++; else if(dias<=7)faixas[1].n++; else if(dias<=15)faixas[2].n++; else if(dias<=30)faixas[3].n++; else faixas[4].n++; });
+  const max=Math.max(...faixas.map(f=>f.n),1);
+  const cols=faixas.map(f=>`<div class="pvcol ${f.cls}"><div class="qt">${f.n}</div><div class="b"><i style="height:${(f.n/max*100).toFixed(1)}%"></i></div><div class="cap">${f.lbl}</div></div>`).join('');
+  const tot=faixas.reduce((s,f)=>s+f.n,0);
+  return `<div class="panel"><h3>Próximos vencimentos <small>${tot} em aberto</small></h3>
+    <div class="psub">Demandas ainda sem atendimento, por prazo restante.</div>
+    <div class="pv">${cols}</div></div>`;
+}
+
+/* ── Natureza (barras horizontais) ───────────────────────────────── */
+function naturezaHTML(arr){
+  const m={};
+  arr.forEach(d=>{ const k=(d.natureza||'—').toUpperCase().trim()||'—'; m[k]=(m[k]||0)+1; });
+  let lista=Object.entries(m).map(([categoria,q])=>({categoria,q})).sort((a,b)=>b.q-a.q);
+  const total=lista.reduce((s,x)=>s+x.q,0)||1;
+  if(lista.length>18){ const resto=lista.slice(18).reduce((s,x)=>s+x.q,0); lista=lista.slice(0,18); if(resto)lista.push({categoria:'(demais)',q:resto}); }
+  const max=lista.length?lista[0].q:1;
+  const rows=lista.map(x=>`<div class="bar"><span class="bl">${esc(x.categoria)}</span><span class="bn">${x.q} · ${(x.q/total*100).toFixed(0)}%</span><div class="track"><div class="fill" style="width:${Math.max(3,x.q/max*100)}%"></div></div></div>`).join('');
+  return `<div class="panel"><h3>Natureza <small>recebidas no período</small></h3>${rows||'<div class="empty">Sem dados.</div>'}</div>`;
+}
+
+/* ── Por município (tabela) ──────────────────────────────────────── */
+let MUNI_ALL=false;
+function porMunicipioHTML(arr){
+  const m={};
+  arr.forEach(d=>{ const k=(d.municipio||'—').toUpperCase().trim()||'—'; (m[k]=m[k]||[]).push(d); });
+  let linhas=Object.entries(m).map(([nome,lst])=>({nome, M:metricas(lst)})).sort((a,b)=>b.M.rec-a.M.rec);
+  const totalMun=linhas.length;
+  const mostra=MUNI_ALL?linhas:linhas.slice(0,12);
+  const rows=mostra.map(({nome,M})=>`<tr>
+    <td class="nome">${esc(nome)}</td>
+    <td class="num">${M.rec}</td>
+    <td class="num">${M.atend}</td>
+    <td class="num"><span class="efi ${efiCls(M.taxaAtend)}">${pct(M.taxaAtend,0)}</span></td>
+    <td class="num"><span class="efi ${efiCls(M.cumprimento)}">${pct(M.cumprimento,0)}</span></td>
+    <td class="num ${M.emAtraso?'atr':'atr0'}">${M.emAtraso}</td></tr>`).join('');
+  const toggle=totalMun>12?`<button class="btn" style="margin-top:12px" onclick="MUNI_ALL=!MUNI_ALL;render()">${MUNI_ALL?'Mostrar menos':'Mostrar todos os '+totalMun}</button>`:'';
+  return `<div class="panel"><h3>Por município <small>${totalMun} município(s)</small></h3>
+    <div class="tblwrap"><table class="dt">
+      <thead><tr><th>Município</th><th class="num">Receb.</th><th class="num">Atend.</th><th class="num">Atendimento</th><th class="num">Cumpr.</th><th class="num">Atraso</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="6" class="empty">Sem dados.</td></tr>'}</tbody>
+    </table></div>${toggle}</div>`;
+}
+
+/* ── Exportar Excel (situação por fração + por município) ─────────── */
+function exportarExcel(){
+  const arr=filtrados();
+  if(!arr.length){ alert('Nenhuma demanda no filtro para exportar.'); return; }
+  const wb=XLSX.utils.book_new();
+  // aba por tipo
+  const porTipo=TIPOS.map(t=>{ const sub=arr.filter(d=>d.tipo===t.k); const M=metricas(sub); return {
+    'Tipo':t.lbl,'Recebidas':M.rec,'Atendidas':M.atend,'Cumprimento %':M.cumprimento==null?'':Math.round(M.cumprimento*100),
+    'Atendimento %':M.taxaAtend==null?'':Math.round(M.taxaAtend*100),'Em atraso':M.emAtraso,'Mediana (d)':M.mediana==null?'':M.mediana }; }).filter(r=>r.Recebidas>0);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(porTipo), 'Por tipo');
+  // aba por fração
+  const gf={}; arr.forEach(d=>{ const k=_grafiaGP(d.grupamento_completo||d.gp_responsavel)||'—'; (gf[k]=gf[k]||[]).push(d); });
+  const porFrac=Object.entries(gf).map(([nome,lst])=>{ const M=metricas(lst); return {
+    'Fração':nome,'Pelotão':pelNum(lst[0].grupamento_completo||'')||'','Recebidas':M.rec,'Atendidas':M.atend,
+    'No prazo':M.np,'C/ atraso':M.ca,'Em atraso':M.ea,'A atender':M.aa,
+    'Cumprimento %':M.cumprimento==null?'':Math.round(M.cumprimento*100),'Atendimento %':M.taxaAtend==null?'':Math.round(M.taxaAtend*100),'Mediana (d)':M.mediana==null?'':M.mediana }; })
+    .sort((a,b)=>(a['Pelotão']||99)-(b['Pelotão']||99)||b.Recebidas-a.Recebidas);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(porFrac), 'Por fração');
+  // aba por município
+  const gm={}; arr.forEach(d=>{ const k=(d.municipio||'—').toUpperCase().trim()||'—'; (gm[k]=gm[k]||[]).push(d); });
+  const porMun=Object.entries(gm).map(([nome,lst])=>{ const M=metricas(lst); return {
+    'Município':nome,'Recebidas':M.rec,'Atendidas':M.atend,'Atendimento %':M.taxaAtend==null?'':Math.round(M.taxaAtend*100),
+    'Cumprimento %':M.cumprimento==null?'':Math.round(M.cumprimento*100),'Em atraso':M.emAtraso }; }).sort((a,b)=>b.Recebidas-a.Recebidas);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(porMun), 'Por município');
+  XLSX.writeFile(wb, 'Dashboard_Demandas_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
+</script>
+</body>
+</html>

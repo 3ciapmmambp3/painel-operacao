@@ -36,6 +36,7 @@
     else if (path === 'ima.html')                 ativo = 'ima';
     else if (path === 'nova-denuncia.html')       ativo = qs.get('tipo') === 'requisicao' ? 'req' : 'den';
     else if (path === 'materiais-tco-semad.html') ativo = qs.get('aba') === 'SEMAD' ? 'mat-semad' : 'mat-tco';
+    else if (path === 'dashboard-demandas.html')  ativo = 'dashboard';
     else if (path === 'relatorio-demandas.html')  ativo = 'relatorio';
     const on = k => ativo === k ? ' ativo' : '';
 
@@ -60,7 +61,8 @@
       ${item('mat-tco','materiais-tco-semad.html?aba=TCO','📦','Materiais Acautelados - TCO')}
       ${item('mat-semad','materiais-tco-semad.html?aba=SEMAD','♻️','Materiais Acautelados - SEMAD')}
       ${item('ima','ima.html','🛣️','Apoio ao IMA')}
-      ${isAG ? item('relatorio','relatorio-demandas.html','📊','Relatório') : ''}`;
+      ${item('dashboard','dashboard-demandas.html','📊','Dashboard')}
+      ${isAG ? item('relatorio','relatorio-demandas.html','📈','Relatório') : ''}`;
 
     // recolher (persistente, mesma chave das telas de Relatório Diário)
     const btn = document.getElementById('rdToggle');
