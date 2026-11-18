@@ -485,10 +485,11 @@ async function carregar(){
   }catch(e){ document.getElementById('tbody').innerHTML=`<tr><td colspan="9"><div class="empty">${esc(e.message)}</div></td></tr>`; }
 }
 // ── campanha de atualização cadastral (controle do Aux P1) ──
+function _campAberta(){ return !!(CAMP && CAMP.aberta); }
 function _marcaCampanhaBtn(){
   const b=document.getElementById('btn-campanha'); if(!b) return;
-  b.textContent = CAMP ? '🪪 Atualização de dados — ABERTA' : '🪪 Solicitar atualização de dados';
-  b.style.borderColor = CAMP?'var(--gold)':''; b.style.color = CAMP?'var(--gold)':'';
+  b.textContent = _campAberta() ? '🪪 Atualização de dados — ABERTA' : '🪪 Solicitar atualização de dados';
+  b.style.borderColor = _campAberta()?'var(--gold)':''; b.style.color = _campAberta()?'var(--gold)':'';
 }
 function _linkMeusDados(){ return location.origin + location.pathname.replace(/[^/]*$/,'') + 'meus-dados.html'; }
 function _escopoCamp(pel){ return LISTA.filter(m=>(m.integrante_ativo??m.ativo) && !ehHipotecado(m) && (!pel || _pelDe(m)===String(pel))); }
@@ -502,19 +503,43 @@ function renderCampBody(){
       <a class="minibtn" href="https://wa.me/?text=${encodeURIComponent('Atualize seus dados pessoais no painel (telefone, endereço, documentos). Faça login e confira: '+_linkMeusDados())}" target="_blank" rel="noopener" style="text-decoration:none;">🟢 WhatsApp</a>
     </div>
     <div class="miut" style="margin-top:6px;">O militar precisa <b>fazer login</b> para abrir (os dados são pessoais). O link leva direto à ficha dele.</div>`;
-  if(!CAMP){
-    const pels=[...new Set(LISTA.map(_pelDe).filter(p=>p&&/^\d+$/.test(p)))].sort((a,b)=>a-b);
-    box.innerHTML=`
-      <div class="sec">Abrir solicitação</div>
+  const pels=[...new Set(LISTA.map(_pelDe).filter(p=>p&&/^\d+$/.test(p)))].sort((a,b)=>a-b);
+  const formAbrir=`
       <div class="grid">
         <div class="fld"><label>Prazo</label><input type="date" id="camp-prazo"></div>
         <div class="fld"><label>Escopo</label><select id="camp-pel"><option value="">Companhia inteira</option>${pels.map(p=>`<option value="${p}">${p}º Pelotão</option>`).join('')}</select></div>
         <div class="fld" style="grid-column:1/-1;"><label>Mensagem (opcional)</label><input id="camp-msg" placeholder="ex.: Conferência semestral — confirmem até o prazo."></div>
       </div>
       <div class="row-actions" style="justify-content:flex-end;margin-top:14px;">
-        <button class="btn-gold" onclick="salvarCampanha()">Abrir solicitação</button>
+        <button class="btn-gold" onclick="salvarCampanha()">Abrir nova solicitação</button>
+      </div>`;
+  if(!_campAberta()){
+    // Nunca houve campanha, OU a última está encerrada (oferece reabrir × nova).
+    const encerrada = CAMP && !CAMP.aberta;
+    let topo='';
+    if(encerrada){
+      const base=_escopoCamp(CAMP.escopo_pel);
+      const conf=base.filter(m=>m.dados_confirmados_campanha===CAMP.id).length;
+      const escTxt=CAMP.escopo_pel?(CAMP.escopo_pel+'º Pelotão'):'Companhia inteira';
+      const hoje=new Date().toISOString().slice(0,10);
+      topo=`
+      <div class="banner" style="border:1px solid var(--border);border-left:3px solid #ffb74d;background:rgba(255,183,77,.08);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--text-white);">
+        Última solicitação <b>encerrada</b> · ${escTxt}${CAMP.prazo?` · prazo era <b>${fmtBR(CAMP.prazo)}</b>`:''} · <b style="color:var(--success)">${conf}</b> já confirmaram.
       </div>
-      <div style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">${linkBloco}</div>`;
+      <div class="sec">Estender o prazo (mesma solicitação)</div>
+      <div class="miut" style="margin:4px 0 8px;">Reabre <b>esta mesma</b> solicitação: quem já preencheu <b>não</b> precisa preencher de novo; o aviso volta só para os pendentes, até o novo prazo.</div>
+      <div class="grid"><div class="fld"><label>Novo prazo</label><input type="date" id="camp-prazo2" value="${hoje}"></div></div>
+      <div class="row-actions" style="justify-content:flex-end;margin-top:10px;">
+        <button class="btn-gold" onclick="estenderPrazo('camp-prazo2')">Reabrir p/ os pendentes</button>
+      </div>
+      <div style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;"></div>
+      <div class="sec">Abrir uma solicitação NOVA (re-cobra todos)</div>
+      <div class="miut" style="margin:4px 0 8px;">Cria uma solicitação do zero: <b>todos</b> precisam conferir/preencher de novo. Use para a conferência periódica.</div>`;
+    } else {
+      topo=`<div class="sec">Abrir solicitação</div>`;
+    }
+    box.innerHTML = topo + formAbrir
+      + `<div style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">${linkBloco}</div>`;
     return;
   }
   // campanha aberta → status + progresso + encerrar
@@ -551,9 +576,17 @@ function renderCampBody(){
         </div>
       </div>
     </div>
+    <div style="border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin:4px 0 14px;">
+      <div class="sec" style="margin-top:0;">Prazo${_campPrazoVencido()?' <span style="color:#ef5350;">(encerrou em '+fmtBR(CAMP.prazo)+')</span>':''}</div>
+      <div class="miut" style="margin:2px 0 8px;">Alterar/estender mantém <b>esta</b> solicitação: quem já preencheu não repete; os pendentes voltam a ver o aviso até o novo prazo.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+        <div class="fld" style="margin:0;"><label>Prazo</label><input type="date" id="camp-prazo-ed" value="${CAMP.prazo?String(CAMP.prazo).slice(0,10):''}"></div>
+        <button class="btn-gold" onclick="estenderPrazo('camp-prazo-ed')">Salvar prazo</button>
+      </div>
+    </div>
     ${linkBloco}
     <div class="row-actions" style="justify-content:space-between;margin-top:16px;align-items:center;">
-      <span class="miut">Para abrir uma nova (outro prazo/escopo), encerre esta primeiro.</span>
+      <span class="miut">Para re-cobrar <b>todos</b> (nova conferência), encerre esta e abra uma nova.</span>
       <button class="btn-outline" onclick="encerrarCampanha()">Encerrar solicitação</button>
     </div>`;
 }
@@ -578,6 +611,19 @@ async function salvarCampanha(){
     flash('Solicitação aberta. Os militares verão o aviso no Meu Dia.',true);
     await carregar(); renderCampBody();
   }catch(e){ flash(e.message||'Erro ao abrir a solicitação.',false); }
+}
+function _campPrazoVencido(){
+  if(!CAMP || !CAMP.prazo) return false;
+  return new Date().toISOString().slice(0,10) > String(CAMP.prazo).slice(0,10);
+}
+async function estenderPrazo(inputId){
+  const prazo=(document.getElementById(inputId)||{}).value||null;
+  if(!prazo){ flash('Informe o novo prazo.',false); return; }
+  try{
+    await rpc('efetivo_att_prazo',{p_token:sessao.token,p_prazo:prazo});
+    flash('Prazo salvo. Quem já preencheu continua como feito; os pendentes voltam a ver o aviso.',true);
+    await carregar(); renderCampBody();
+  }catch(e){ flash(e.message||'Erro ao alterar o prazo.',false); }
 }
 async function encerrarCampanha(){
   if(!confirm('Encerrar a solicitação de atualização? O aviso some do Meu Dia dos militares (os dados já confirmados ficam salvos).')) return;

@@ -490,7 +490,11 @@ async function carregarAvisosMeuDia(){
   try{
     const rd=await fetch(`${SB_AUTH_URL}/rest/v1/rpc/meus_dados_ler`,{method:'POST',headers:{...H,'Content-Type':'application/json'},body:JSON.stringify({p_token:sessao.token})});
     if(rd.ok){ const md=await rd.json(); const c=md&&md.campanha;
-      if(c && !c.confirmado){
+      // dentro do prazo? (a Aux P1 define/estende o prazo; vencido, o aviso para
+      // sozinho e volta para os pendentes quando ela estender). Data local (BR).
+      const _h=new Date(); const _hojeISO=`${_h.getFullYear()}-${String(_h.getMonth()+1).padStart(2,'0')}-${String(_h.getDate()).padStart(2,'0')}`;
+      const _noPrazo = c && (!c.prazo || _hojeISO <= String(c.prazo).slice(0,10));
+      if(c && !c.confirmado && _noPrazo){
         const prazo=c.prazo?` — prazo até <b>${_fmtD(c.prazo)}</b>`:'';
         avisos.push({ic:'🪪',txt:`<b>Confira e atualize seus dados pessoais</b> (telefone, endereço, documentos…)${prazo}.`,lk:'meus-dados.html',lkTxt:'Atualizar →'});
       }
