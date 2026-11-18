@@ -1516,6 +1516,8 @@ async function mcMapaUC(){
       (j.features||[]).forEach(f=>{ f.__esfera=c.esfera; feats.push(f); });
     }catch(_){}
   }));
+  // carrega o polígono do próprio MC (KML do GEOCOD), se ainda não estiver em memória
+  try{ if(d.tem_kml && !d.kml_content) await _garantirKml([d]); }catch(_){}
   if(!feats.length) return toast('Não consegui carregar o contorno agora (tente reconsultar a UC).');
   _loadLeaflet(()=>_abrirMapaUC(d, la, lo, feats));
 }
@@ -1527,9 +1529,11 @@ function _abrirMapaUC(d, la, lo, feats){
   const box=document.createElement('div');
   box.style.cssText='background:var(--bg-card);border:1px solid var(--border);border-radius:14px;width:min(960px,96vw);height:min(86vh,760px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.45)';
   box.innerHTML=
-    `<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap">`+
+    `<div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap">`+
       `<div style="font-size:14px;font-weight:800;color:var(--gold)">🗺️ Unidade de Conservação</div>`+
-      `<div style="font-size:11px;color:var(--text-hint)"><span style="color:#e03a34;font-weight:800">●</span> ponto do GEOCOD · <span style="color:#20c997;font-weight:800">▬</span> contorno da UC</div>`+
+      `<div style="font-size:11px;color:var(--text-hint)"><span style="color:#e03a34;font-weight:800">●</span> ponto · <span style="color:#f5c542;font-weight:800">▬</span> área do MC · <span style="color:#20c997;font-weight:800">▬</span> UC</div>`+
+      `<button class="anxbtn" id="_ucFitMC" title="Enquadrar na área do GEOCOD (zoom perto do ponto).">🔲 Área do MC</button>`+
+      `<button class="anxbtn" id="_ucFitUC" title="Enquadrar a Unidade de Conservação inteira.">🟢 Toda a UC</button>`+
       `<button id="_ucMpClose" title="Fechar" style="margin-left:auto;width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:var(--bg-input);color:var(--text-white);font-size:17px;font-weight:700;cursor:pointer;line-height:1;flex-shrink:0">✕</button>`+
     `</div>`+
     `<div style="padding:8px 16px;font-size:12.5px;color:var(--text-white);border-bottom:1px solid var(--border)">📍 GEOCOD <b>${_escH(d.codigo||'')}</b> em: <b style="color:var(--danger)">${_escH(nomes.join('  +  '))}</b></div>`+
@@ -1542,13 +1546,24 @@ function _abrirMapaUC(d, la, lo, feats){
   const sat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles &copy; Esri'});
   const ruas=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'});
   sat.addTo(map); L.control.layers({'Satélite':sat,'Ruas':ruas},null,{collapsed:true}).addTo(map);
-  const gj=L.geoJSON(feats,{style:{color:'#20c997',weight:2.5,fillColor:'#20c997',fillOpacity:.12}}).addTo(map);
+  // contorno da UC (verde)
+  const gj=L.geoJSON(feats,{style:{color:'#20c997',weight:2.5,fillColor:'#20c997',fillOpacity:.10}}).addTo(map);
   try{ gj.bindPopup(nomes.join('<br>')); }catch(e){}
+  // polígono do próprio MC a ser fiscalizado (dourado), vindo do KML do GEOCOD
+  let mcLayer=null;
+  try{
+    const rings = d.kml_content ? _kmlPolys(d.kml_content) : [];
+    if(rings.length){ mcLayer=L.polygon(rings,{color:'#f5c542',weight:3,fillColor:'#f5c542',fillOpacity:.22}).addTo(map); mcLayer.bindPopup('Área do GEOCOD '+_escH(d.codigo||'')); }
+  }catch(e){}
+  // ponto pesquisado (vermelho)
   const mk=L.circleMarker([la,lo],{radius:7,color:'#fff',weight:2,fillColor:'#e03a34',fillOpacity:1}).addTo(map);
   mk.bindPopup('📍 Ponto pesquisado<br>GEOCOD '+_escH(d.codigo||''));
-  try{ const b=gj.getBounds(); b.extend([la,lo]); map.fitBounds(b.pad(0.08)); }
-  catch(e){ map.setView([la,lo],12); }
-  setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} },150);
+  const fitUC=()=>{ try{ const b=gj.getBounds(); b.extend([la,lo]); map.fitBounds(b.pad(0.05)); }catch(e){ map.setView([la,lo],11); } };
+  const fitMC=()=>{ try{ if(mcLayer) map.fitBounds(mcLayer.getBounds().pad(0.5)); else map.setView([la,lo],15); }catch(e){ map.setView([la,lo],15); } };
+  box.querySelector('#_ucFitMC').onclick=fitMC;
+  box.querySelector('#_ucFitUC').onclick=fitUC;
+  // enquadra SÓ depois que o container tem altura (senão o zoom sai errado e o contorno fica fora da tela)
+  setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} fitUC(); },200);
 }
 
 async function carregarLote(){
