@@ -701,6 +701,7 @@ function abrir(d){
     return `<div class="sec-t">Unidade de Conservação</div>`
       +`<div class="rs" style="font-size:12.5px;margin-bottom:6px;background:var(--danger-bg);border-color:rgba(239,83,80,.4)"><b style="color:var(--danger)">⚠️ Ponto DENTRO de Unidade de Conservação.</b></div>`
       +`<div class="anx">${itens}</div>`
+      +`<div class="comochegar" style="margin-top:6px"><button class="anxbtn rota" onclick="mcMapaUC()" title="Abre um mapa mostrando o ponto do GEOCOD e o contorno da Unidade de Conservação.">🗺️ Ver no mapa</button></div>`
       +`<div class="rs" style="margin-top:6px;font-size:11.5px">Fonte: IDE oficial de Minas Gerais. <span class="miut">Consultado em ${quando}.</span> ${btn}</div>`;
   })();
   const kmlBtn = d.tem_kml
@@ -1493,6 +1494,61 @@ async function mcVerificarUC(){
     abrir(atual);
     toast(ucs.length ? ('Dentro de UC: '+ucs.map(u=>u.nome_uc).join(', ')) : 'Ponto fora de Unidade de Conservação.');
   }catch(e){ toast('Consulta feita, mas falhou ao salvar no banco: '+(e.message||e)); }
+}
+
+/* ── Mapa da UC: ponto do GEOCOD + contorno da Unidade de Conservação ─────
+   Re-busca o polígono (GeoJSON, com geometria) nas 3 camadas do IDE de MG e
+   desenha no Leaflet. A geometria NÃO é guardada no banco (polígonos são
+   grandes) — é buscada só na hora de ver o mapa. */
+let _mcMapUCObj=null;
+async function mcMapaUC(){
+  const d=atual; if(!d) return;
+  const la=parseFloat(d.coord_y), lo=parseFloat(d.coord_x);
+  if(!isFinite(la)||!isFinite(lo)) return toast('Sem coordenada (lat/lon) para o mapa.');
+  toast('Carregando o mapa da Unidade de Conservação…');
+  const feats=[];
+  await Promise.all(UC_CAMADAS.map(async c=>{
+    const cql=`INTERSECTS(geometry,POINT(${la} ${lo}))`;
+    const url=`${UC_IDE_BASE}?service=WFS&version=1.1.0&request=GetFeature`
+      +`&typeName=${encodeURIComponent(c.layer)}&outputFormat=application/json`
+      +`&CQL_FILTER=${encodeURIComponent(cql)}`;
+    try{ const r=await fetch(url); if(!r.ok) return; const j=await r.json();
+      (j.features||[]).forEach(f=>{ f.__esfera=c.esfera; feats.push(f); });
+    }catch(_){}
+  }));
+  if(!feats.length) return toast('Não consegui carregar o contorno agora (tente reconsultar a UC).');
+  _loadLeaflet(()=>_abrirMapaUC(d, la, lo, feats));
+}
+function _abrirMapaUC(d, la, lo, feats){
+  const old=document.getElementById('_mapaUCModal'); if(old) old.remove();
+  const nomes=feats.map(f=>{ const p=f.properties||{}; const n=(p.nome_uc||p.nome||'UC'); return n+(f.__esfera?(' · '+f.__esfera):''); });
+  const ov=document.createElement('div'); ov.id='_mapaUCModal';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:1200;padding:14px';
+  const box=document.createElement('div');
+  box.style.cssText='background:var(--bg-card);border:1px solid var(--border);border-radius:14px;width:min(960px,96vw);height:min(86vh,760px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.45)';
+  box.innerHTML=
+    `<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap">`+
+      `<div style="font-size:14px;font-weight:800;color:var(--gold)">🗺️ Unidade de Conservação</div>`+
+      `<div style="font-size:11px;color:var(--text-hint)"><span style="color:#e03a34;font-weight:800">●</span> ponto do GEOCOD · <span style="color:#20c997;font-weight:800">▬</span> contorno da UC</div>`+
+      `<button id="_ucMpClose" title="Fechar" style="margin-left:auto;width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:var(--bg-input);color:var(--text-white);font-size:17px;font-weight:700;cursor:pointer;line-height:1;flex-shrink:0">✕</button>`+
+    `</div>`+
+    `<div style="padding:8px 16px;font-size:12.5px;color:var(--text-white);border-bottom:1px solid var(--border)">📍 GEOCOD <b>${_escH(d.codigo||'')}</b> em: <b style="color:var(--danger)">${_escH(nomes.join('  +  '))}</b></div>`+
+    `<div id="_mcMapUC" style="flex:1;min-height:0"></div>`;
+  ov.appendChild(box); document.body.appendChild(ov);
+  const close=()=>{ try{ if(_mcMapUCObj){ _mcMapUCObj.remove(); _mcMapUCObj=null; } }catch(e){} ov.remove(); };
+  box.querySelector('#_ucMpClose').onclick=close;
+  ov.onclick=e=>{ if(e.target===ov) close(); };
+  const map=L.map('_mcMapUC',{zoomControl:true}); _mcMapUCObj=map;
+  const sat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles &copy; Esri'});
+  const ruas=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'});
+  sat.addTo(map); L.control.layers({'Satélite':sat,'Ruas':ruas},null,{collapsed:true}).addTo(map);
+  const gj=L.geoJSON(feats,{style:{color:'#20c997',weight:2.5,fillColor:'#20c997',fillOpacity:.12}}).addTo(map);
+  try{ gj.bindPopup(nomes.join('<br>')); }catch(e){}
+  const mk=L.circleMarker([la,lo],{radius:7,color:'#fff',weight:2,fillColor:'#e03a34',fillOpacity:1}).addTo(map);
+  mk.bindPopup('📍 Ponto pesquisado<br>GEOCOD '+_escH(d.codigo||''));
+  try{ const b=gj.getBounds(); b.extend([la,lo]); map.fitBounds(b.pad(0.08)); }
+  catch(e){ map.setView([la,lo],12); }
+  setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} },150);
 }
 
 async function carregarLote(){
