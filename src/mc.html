@@ -380,7 +380,7 @@ function verTudoSemFiltro(){
 // Colunas da LISTA — tudo menos kml_content (o KML pesa ~2,7 KB/linha e a lista
 // só precisa saber SE existe, não o conteúdo). O conteúdo é carregado sob demanda
 // (mapa / Google Earth / baixar KML / Excel) via _garantirKml().
-const SEL_LEVE = 'id,codigo,tipo_demanda,data_gerada,natureza,municipio,endereco,fracao_responsavel,gp_responsavel,grupamento_completo,data_envio,data_vencimento,status_prazo,data_atendimento,numero_gaia,numero_reds,resultado,status_atendimento,info_complementares,numero_auto_infracao,equipe,viatura,hectares,data_inic,data_final,mes_ref,ano_ref,coord_x,coord_y,regional,bioma,id_semad,id_evolucao,lote,kml_link,anexos,situacao,atendido_por_matricula,atendido_por_nome,observacoes_resposta,fonte_aba,raw,versao,synced_at,ativo,inativado_por_matricula,inativado_por_nome,motivo_inativacao,inativado_em,created_at,updated_at,gp_manual_at,gp_manual_por,car_imovel,car_qtd,car_dados,car_consultado_em';
+const SEL_LEVE = 'id,codigo,tipo_demanda,data_gerada,natureza,municipio,endereco,fracao_responsavel,gp_responsavel,grupamento_completo,data_envio,data_vencimento,status_prazo,data_atendimento,numero_gaia,numero_reds,resultado,status_atendimento,info_complementares,numero_auto_infracao,equipe,viatura,hectares,data_inic,data_final,mes_ref,ano_ref,coord_x,coord_y,regional,bioma,id_semad,id_evolucao,lote,kml_link,anexos,situacao,atendido_por_matricula,atendido_por_nome,observacoes_resposta,fonte_aba,raw,versao,synced_at,ativo,inativado_por_matricula,inativado_por_nome,motivo_inativacao,inativado_em,created_at,updated_at,gp_manual_at,gp_manual_por,car_imovel,car_qtd,car_dados,car_consultado_em,uc_dados,uc_consultado_em';
 
 async function carregar(){
   const gprs = gprEscopo();
@@ -672,6 +672,37 @@ function abrir(d){
       +`<div class="anx">${itens}</div>`
       +`<div class="rs" style="margin-top:6px;font-size:11.5px"><b>Proprietário / recibo (demonstrativo):</b> clique em <b>📄 Demonstrativo</b> (copia o nº e abre o SICAR oficial) → cole o número, <b>resolva o captcha</b> e baixe o PDF. O recibo não vem automático — o site oficial exige o captcha. <span class="miut">Consultado em ${quando}.</span></div>`;
   })();
+  // ── Unidade de Conservação (UC) — o ponto cai dentro de uma UC? Consulta o IDE
+  //    oficial de MG (público). Resultado gravado na linha (fica p/ todos). ──
+  const ucSec = (()=>{
+    const jaFez = !!d.uc_consultado_em;
+    const btn = _temCoord
+      ? `<button class="anxbtn" onclick="mcVerificarUC()" title="Consulta no IDE oficial de Minas Gerais (público) se este ponto cai dentro de uma Unidade de Conservação (Estadual, Federal ou Municipal). Grava o resultado no banco — fica disponível para todos, sem reconsultar.">${jaFez?'↻ Reconsultar':'🏞️ Verificar Unidade de Conservação'}</button>`
+      : `<span class="miut">Sem coordenada para consultar.</span>`;
+    if(!jaFez){
+      return `<div class="sec-t">Unidade de Conservação</div>`
+        +`<div class="rs" style="font-size:12px">Ainda não consultado neste ponto. ${btn}</div>`;
+    }
+    const quando = fmtData(d.uc_consultado_em);
+    const ucs = Array.isArray(d.uc_dados) ? d.uc_dados.filter(x=>x&&x.nome_uc) : [];
+    if(!ucs.length){
+      return `<div class="sec-t">Unidade de Conservação</div>`
+        +`<div class="rs" style="font-size:12px"><b style="color:var(--success)">Fora de Unidade de Conservação.</b> O ponto não cai em UC Estadual, Federal nem Municipal. <span class="miut">Consultado em ${quando}.</span> ${btn}</div>`;
+    }
+    const itens = ucs.map(u=>{
+      const meta=[u.categoria, u.grupo, u.esfera?('UC '+u.esfera):'', u.ato_legal].filter(Boolean).join(' · ');
+      const extra=[u.bioma?('Bioma: '+u.bioma):'', u.municipios?('Municípios: '+u.municipios):''].filter(Boolean).join(' · ');
+      return `<div class="anxitem" style="align-items:flex-start">`
+        +`<svg class="ic" viewBox="0 0 24 24"><path d="M12 3L3 20h18L12 3z"/></svg>`
+        +`<div class="m"><b style="word-break:break-word">${_escH(u.nome_uc)}</b>`
+        +(meta?`<small>${_escH(meta)}</small>`:'')
+        +(extra?`<small>${_escH(extra)}</small>`:'')+`</div></div>`;
+    }).join('');
+    return `<div class="sec-t">Unidade de Conservação</div>`
+      +`<div class="rs" style="font-size:12.5px;margin-bottom:6px;background:var(--danger-bg);border-color:rgba(239,83,80,.4)"><b style="color:var(--danger)">⚠️ Ponto DENTRO de Unidade de Conservação.</b></div>`
+      +`<div class="anx">${itens}</div>`
+      +`<div class="rs" style="margin-top:6px;font-size:11.5px">Fonte: IDE oficial de Minas Gerais. <span class="miut">Consultado em ${quando}.</span> ${btn}</div>`;
+  })();
   const kmlBtn = d.tem_kml
     ? `<div class="anxitem"><svg class="ic" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`+
       `<div class="m"><b>KML do GEOCOD ${d.codigo}</b><small>Gerado individualmente · abre no Google Earth</small></div>`+
@@ -702,6 +733,7 @@ function abrir(d){
     `</div>`+
     comoChegar+
     carSec+
+    ucSec+
     `<div class="sec-t">Atendimento</div>`+
     (atendidaN(d)
       ? `<dl class="dl">`+
@@ -1405,6 +1437,64 @@ function mcCopiarCar(cod){
   if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(cod).then(ok).catch(()=>_copyFallback(cod,ok)); }
   else _copyFallback(cod,ok);
 }
+
+/* ── Unidade de Conservação (UC) por ponto ───────────────────────────────
+   Pergunta ao IDE OFICIAL de Minas Gerais (geoserver.meioambiente.mg.gov.br,
+   WFS público e com CORS liberado) se o ponto do MC cai dentro de uma UC
+   Estadual, Federal ou Municipal. Ordem dos eixos do WFS 1.1.0/EPSG:4674 é
+   lat lon → POINT(<lat> <lon>). O resultado é gravado na linha do mc_demandas
+   (uc_dados + uc_consultado_em), então fica disponível a todos sem reconsultar. */
+const UC_IDE_BASE = 'https://geoserver.meioambiente.mg.gov.br/IDE/wfs';
+const UC_CAMADAS = [
+  { layer:'IDE:ide_2010_mg_unidades_conservacao_estaduais_pol', esfera:'Estadual'  },
+  { layer:'IDE:ide_2010_mg_unidades_conservacao_federais_pol',  esfera:'Federal'   },
+  { layer:'IDE:ide_2010_mg_unidades_conservacao_municipais_pol', esfera:'Municipal' }
+];
+async function mcConsultarUC(lat, lon){
+  const pick=(p,keys)=>{ for(const k of keys){ if(p && p[k]!=null && String(p[k]).trim()!=='') return String(p[k]).trim(); } return ''; };
+  const reqs = UC_CAMADAS.map(async c=>{
+    const cql = `INTERSECTS(geometry,POINT(${lat} ${lon}))`;
+    const url = `${UC_IDE_BASE}?service=WFS&version=1.1.0&request=GetFeature`
+      + `&typeName=${encodeURIComponent(c.layer)}&outputFormat=application/json`
+      + `&CQL_FILTER=${encodeURIComponent(cql)}`;
+    try{
+      const r = await fetch(url);
+      if(!r.ok) return [];
+      const j = await r.json();
+      return (j.features||[]).map(f=>{
+        const p=f.properties||{};
+        return {
+          nome_uc:    pick(p,['nome_uc','nome','nom_uc','nm_uc']) || '(UC sem nome)',
+          categoria:  pick(p,['categoria','cat']),
+          grupo:      pick(p,['grupo','grupo_uc']),
+          esfera:     pick(p,['esfera']) || c.esfera,
+          ato_legal:  pick(p,['ato_legal','ato','diploma']),
+          bioma:      pick(p,['bioma']),
+          municipios: pick(p,['municipios','municipio','mun'])
+        };
+      });
+    }catch(_){ return []; }
+  });
+  const todas = (await Promise.all(reqs)).flat();
+  const seen=new Set(), out=[];
+  todas.forEach(u=>{ const k=(u.nome_uc+'|'+u.esfera).toLowerCase(); if(!seen.has(k)){ seen.add(k); out.push(u); } });
+  return out;
+}
+async function mcVerificarUC(){
+  const d = atual; if(!d) return;
+  const la=parseFloat(d.coord_y), lo=parseFloat(d.coord_x);
+  if(!isFinite(la)||!isFinite(lo)) return toast('Sem coordenada (lat/lon) para consultar a UC.');
+  toast('Consultando Unidade de Conservação no IDE de MG…');
+  let ucs;
+  try{ ucs = await mcConsultarUC(la, lo); }
+  catch(e){ return toast('Erro ao consultar o IDE de MG: '+(e.message||e)); }
+  try{
+    await _patchAtual({ uc_dados: ucs, uc_consultado_em: new Date().toISOString() });
+    abrir(atual);
+    toast(ucs.length ? ('Dentro de UC: '+ucs.map(u=>u.nome_uc).join(', ')) : 'Ponto fora de Unidade de Conservação.');
+  }catch(e){ toast('Consulta feita, mas falhou ao salvar no banco: '+(e.message||e)); }
+}
+
 async function carregarLote(){
   const sel=document.getElementById('f-lote'); const loteId=sel.value;
   const loteObj=LOTES_CACHE.find(l=>l.id===loteId);
