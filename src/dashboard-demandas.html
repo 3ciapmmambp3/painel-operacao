@@ -267,6 +267,14 @@ const GERIR = (nivel==='admin_geral') || isAuxGestor;   // Aux P3 / Admin Geral 
 const _grafiaGP = s => String(s==null?'':s).replace(/MARILIERIA/gi,'MARLIERIA').replace(/MOLEVADE/gi,'MONLEVADE');
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
 const _nf = s => String(s==null?'':s).toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim();
+// Escolhe a melhor grafia de um nome (ex.: município) entre variantes que só
+// diferem por acento: a mais frequente; empate → prefere a que TEM acento.
+function _melhorGrafia(cont){ // cont = {grafiaExibida: qtd}
+  const temAcento = s => /[^\x00-\x7F]/.test(s);
+  const ent = Object.entries(cont);
+  if(!ent.length) return '—';
+  return ent.sort((a,b)=> (b[1]-a[1]) || ((temAcento(b[0])?1:0)-(temAcento(a[0])?1:0)) || a[0].localeCompare(b[0],'pt-BR'))[0][0];
+}
 
 /* tipos de demanda */
 const TIPOS = [
@@ -516,8 +524,10 @@ function filtrados(){ return aplicaFiltros(false); }
 /* ── filtro de Município (busca + multisseleção) ─────────────────── */
 function popularMunicipios(){
   const m={};
-  DADOS.forEach(d=>{ const key=d._muniN; if(!key) return; if(!m[key]) m[key]={key, label:d.municipio.toUpperCase(), q:0}; m[key].q++; });
-  MUNI_OPTS=Object.values(m).sort((a,b)=>a.label.localeCompare(b.label,'pt-BR'));
+  DADOS.forEach(d=>{ const key=d._muniN; if(!key) return;
+    const g=m[key]||(m[key]={key, nomes:{}, q:0}); g.q++;
+    const disp=(d.municipio||'').trim().toUpperCase(); if(disp) g.nomes[disp]=(g.nomes[disp]||0)+1; });
+  MUNI_OPTS=Object.values(m).map(g=>({key:g.key, label:_melhorGrafia(g.nomes), q:g.q})).sort((a,b)=>a.label.localeCompare(b.label,'pt-BR'));
   // remove seleções que não existem mais
   [...MUNI_SEL].forEach(k=>{ if(!m[k]) MUNI_SEL.delete(k); });
   atualizarMuniBtn();
@@ -770,9 +780,12 @@ function naturezaHTML(arr){
 /* ── Por município (tabela) ──────────────────────────────────────── */
 let MUNI_ALL=false;
 function porMunicipioHTML(arr){
+  // agrupa IGNORANDO acento (ex.: Franciscopolis = Franciscópolis); exibe a melhor grafia
   const m={};
-  arr.forEach(d=>{ const k=(d.municipio||'—').toUpperCase().trim()||'—'; (m[k]=m[k]||[]).push(d); });
-  let linhas=Object.entries(m).map(([nome,lst])=>({nome, M:metricas(lst)})).sort((a,b)=>b.M.rec-a.M.rec);
+  arr.forEach(d=>{ const raw=(d.municipio||'').trim(); const k=_nf(raw)||'—';
+    const g=m[k]||(m[k]={lst:[],nomes:{}}); g.lst.push(d);
+    const disp=raw?raw.toUpperCase():'—'; g.nomes[disp]=(g.nomes[disp]||0)+1; });
+  let linhas=Object.values(m).map(g=>({nome:_melhorGrafia(g.nomes), M:metricas(g.lst)})).sort((a,b)=>b.M.rec-a.M.rec);
   const totalMun=linhas.length;
   // renderiza TODAS as linhas; as além da 12ª ficam ocultas até "Mostrar todos" (ou ao buscar)
   const rows=linhas.map(({nome,M},i)=>`<tr data-nome="${esc(nome)}" class="mrow"${(!MUNI_ALL&&i>=12)?' style="display:none"':''}>
@@ -823,10 +836,11 @@ function exportarExcel(){
     'Cumprimento %':M.cumprimento==null?'':Math.round(M.cumprimento*100),'Atendimento %':M.taxaAtend==null?'':Math.round(M.taxaAtend*100),'Mediana (d)':M.mediana==null?'':M.mediana }; })
     .sort((a,b)=>(a['Pelotão']||99)-(b['Pelotão']||99)||b.Recebidas-a.Recebidas);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(porFrac), 'Por fração');
-  // aba por município
-  const gm={}; arr.forEach(d=>{ const k=(d.municipio||'—').toUpperCase().trim()||'—'; (gm[k]=gm[k]||[]).push(d); });
-  const porMun=Object.entries(gm).map(([nome,lst])=>{ const M=metricas(lst); return {
-    'Município':nome,'Recebidas':M.rec,'Atendidas':M.atend,'Pendentes':M.pend,'Atendimento %':M.taxaAtend==null?'':Math.round(M.taxaAtend*100),
+  // aba por município (dedup por acento → melhor grafia)
+  const gm={}; arr.forEach(d=>{ const raw=(d.municipio||'').trim(); const k=_nf(raw)||'—';
+    const g=gm[k]||(gm[k]={lst:[],nomes:{}}); g.lst.push(d); const disp=raw?raw.toUpperCase():'—'; g.nomes[disp]=(g.nomes[disp]||0)+1; });
+  const porMun=Object.values(gm).map(g=>{ const M=metricas(g.lst); return {
+    'Município':_melhorGrafia(g.nomes),'Recebidas':M.rec,'Atendidas':M.atend,'Pendentes':M.pend,'Atendimento %':M.taxaAtend==null?'':Math.round(M.taxaAtend*100),
     'Cumprimento %':M.cumprimento==null?'':Math.round(M.cumprimento*100),'Em atraso':M.emAtraso }; }).sort((a,b)=>b.Recebidas-a.Recebidas);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(porMun), 'Por município');
   XLSX.writeFile(wb, 'Dashboard_Demandas_'+new Date().toISOString().slice(0,10)+'.xlsx');
