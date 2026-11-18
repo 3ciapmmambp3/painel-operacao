@@ -70,6 +70,30 @@
   .chip.chip-all{font-style:normal}
   .chip.chip-all.on{background:var(--gold);border-color:var(--gold);color:#1a1000}
 
+  /* filtro de município (multisseleção com busca) */
+  .msel{position:relative;display:inline-block}
+  .msel-btn{background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:8px 11px;color:var(--text-white);font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+  .msel-btn:hover{border-color:var(--gold)}
+  .msel-btn.has{border-color:var(--gold);color:var(--gold-light)}
+  .msel-pop{position:absolute;z-index:40;top:calc(100% + 5px);left:0;width:280px;background:var(--bg-card);border:1px solid var(--border-hover);border-radius:9px;box-shadow:0 10px 30px rgba(0,0,0,.5);padding:10px;display:none}
+  .msel-pop.show{display:block}
+  .msel-pop input{width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:7px;padding:8px 10px;color:var(--text-white);font-size:12.5px;outline:none;margin-bottom:8px}
+  .msel-pop input:focus{border-color:var(--gold)}
+  .msel-list{max-height:260px;overflow-y:auto;display:flex;flex-direction:column}
+  .msel-opt{display:flex;align-items:center;gap:8px;padding:6px 7px;border-radius:6px;cursor:pointer;font-size:12.5px;color:var(--text-white)}
+  .msel-opt:hover{background:var(--bg-hover)}
+  .msel-opt .ck{width:14px;height:14px;border:1.6px solid var(--border-hover);border-radius:4px;display:inline-grid;place-items:center;font-size:10px;color:transparent;flex-shrink:0}
+  .msel-opt.on .ck{background:var(--gold);border-color:var(--gold);color:#1a1000}
+  .msel-opt .q{margin-left:auto;color:var(--text-hint);font-size:11px}
+  .msel-foot{display:flex;justify-content:space-between;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
+  .msel-foot button{background:var(--bg-input);border:1px solid var(--border-mid);color:var(--text-muted);border-radius:6px;padding:6px 11px;font-size:11.5px;font-weight:700;cursor:pointer}
+  .msel-foot button:hover{border-color:var(--gold);color:var(--text-white)}
+
+  /* KPI clicável */
+  .kpi.clk{cursor:pointer} .kpi.clk:hover{background:var(--bg-hover)}
+  .kpi.on{box-shadow:inset 0 0 0 2px var(--gold)}
+  .kpi .hint{font-size:9px;color:var(--text-hint);margin-top:4px;opacity:.75}
+
   /* Tabela de frações / tipos */
   .tblwrap{overflow-x:auto;border:1px solid var(--border);border-radius:9px}
   table.dt{width:100%;border-collapse:collapse;font-size:12.5px;white-space:nowrap;min-width:620px}
@@ -77,10 +101,15 @@
   table.dt th{font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-hint);position:sticky;top:0;background:var(--bg-dark);z-index:1}
   table.dt tbody tr{cursor:pointer}
   table.dt tbody tr:hover{background:var(--bg-hover)}
-  table.dt td.num{text-align:right;font-variant-numeric:tabular-nums}
+  table.dt td.num,table.dt th.num{text-align:right;font-variant-numeric:tabular-nums}
+  table.dt th.num{white-space:nowrap}
+  table.dt td.num{white-space:nowrap}
+  /* 1ª coluna (nome) absorve a folga → números agrupados à direita, sob os cabeçalhos */
+  table.dt th:first-child,table.dt td:first-child{width:99%}
   table.dt td.nome{color:var(--text-white);font-weight:600}
   table.dt td .pelt{color:var(--text-hint);font-weight:400;font-size:11px}
   .atr{color:var(--danger);font-weight:800} .atr0{color:var(--text-hint)}
+  .pen{color:#ffb74d;font-weight:800} .pen0{color:var(--text-hint)}
   .efi{display:inline-block;min-width:46px;text-align:center;font-weight:800;padding:2px 8px;border-radius:20px;font-size:11px}
   .efi.hi{background:rgba(102,187,106,.16);color:var(--success)}
   .efi.mid{background:rgba(255,167,38,.16);color:#ffb74d}
@@ -181,6 +210,15 @@
     <span class="lbl" id="lbl-esc" style="display:none">Fração</span>
     <select id="sel-pel" onchange="onPelChange()" style="display:none"></select>
     <select id="sel-grp" onchange="render()" style="display:none"></select>
+    <span class="lbl">Município</span>
+    <div class="msel" id="muni-filter">
+      <button class="msel-btn" id="muni-btn" onclick="toggleMuniPop(event)">Todos os municípios ▾</button>
+      <div class="msel-pop" id="muni-pop" onclick="event.stopPropagation()">
+        <input id="muni-search" placeholder="Digite o município…" oninput="renderMuniList()" autocomplete="off">
+        <div class="msel-list" id="muni-list"></div>
+        <div class="msel-foot"><button onclick="limparMuni()">Limpar</button><button onclick="toggleMuniPop()">Fechar</button></div>
+      </div>
+    </div>
     <span class="sp"></span>
     <button class="btn" onclick="carregar()"><svg viewBox="0 0 24 24"><path d="M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15"/></svg> Atualizar</button>
   </div>
@@ -210,6 +248,7 @@ const GERIR = (nivel==='admin_geral') || isAuxGestor;   // Aux P3 / Admin Geral 
 
 const _grafiaGP = s => String(s==null?'':s).replace(/MARILIERIA/gi,'MARLIERIA').replace(/MOLEVADE/gi,'MONLEVADE');
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+const _nf = s => String(s==null?'':s).toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim();
 
 /* tipos de demanda */
 const TIPOS = [
@@ -225,13 +264,24 @@ const TIPO_LBL = Object.fromEntries(TIPOS.map(t=>[t.k,t.lbl]));
 
 let GRUPOS=[], ALLOWED=[], DADOS=[];
 let TIPOS_SEL = new Set();   // vazio = todos os tipos
+let STATUS = '';             // '' | 'atend' | 'pend' | 'atraso' (cards clicáveis)
+let MUNI_SEL = new Set();    // municípios selecionados (chave normalizada); vazio = todos
+let MUNI_OPTS = [];          // [{key,label,q}]
+let GPR2COMP = {};           // gp_responsavel normalizado -> grupamento_completo canônico
+let MUNI2COMP = {};          // município normalizado -> grupamento_completo (via vw)
 
 /* ── boot ────────────────────────────────────────────────────────── */
 (async function init(){
   try{
     const r = await fetch(`${API}/rest/v1/grupos?select=gp_responsavel,grupamento_completo,pelotao&order=grupamento_completo`, { headers:H });
     GRUPOS = (await r.json()).map(g => ({ gpr:g.gp_responsavel, comp:g.grupamento_completo, gp:gpNum(g.grupamento_completo), pel:pelNum(g.grupamento_completo) }));
+    GRUPOS.forEach(g=>{ if(g.gpr) GPR2COMP[_nf(g.gpr)] = g.comp; });
   }catch(e){ console.error('grupos', e); }
+  // cruzamento município → grupamento (resolve frações "6GP" / grafias divergentes)
+  try{
+    const r2 = await fetch(`${API}/rest/v1/vw_municipio_grupamento?select=municipio,grupamento_completo&order=municipio`, { headers:H });
+    (await r2.json()).forEach(x=>{ if(x.municipio) MUNI2COMP[_nf(x.municipio)] = x.grupamento_completo; });
+  }catch(e){ console.error('vw_municipio_grupamento', e); }
   const meuGp=gpNum(S.grupamento_id), meuPel=pelNum(S.grupamento_id);
   if (isAdminTotal) ALLOWED = GRUPOS.slice();
   else if (isAdminPel) ALLOWED = GRUPOS.filter(g=>g.pel===meuPel);
@@ -308,17 +358,26 @@ function _norm(d, tipoKey){
   const recebido = d.data_gerada || d.data_recebimento || (d.created_at?String(d.created_at).slice(0,10):'') || '';
   const venc = d.data_vencimento || d.prazo || '';
   const atend = d.data_atendimento || d.data_resposta || '';
+  const municipio = (d.municipio||'').trim();
+  const fracao = resolveFracao(d.gp_responsavel||'', d.grupamento_completo||'', municipio);
   return {
     tipo: tipoKey,
     recebido: ymd(recebido), vencimento: ymd(venc), atendimento: ymd(atend),
     situacao: (d.situacao||'').toUpperCase(),
     natureza: (d.natureza || d.tema || '').trim(),
-    municipio: (d.municipio||'').trim(),
+    municipio, _muniN: _nf(municipio),
     gp_responsavel: d.gp_responsavel||'',
     grupamento_completo: d.grupamento_completo||d.gp_responsavel||'',
-    pel: pelNum(d.grupamento_completo||'') ,
+    fracao, pel: pelNum(fracao),
     reds: d.numero_reds||''
   };
+}
+// Resolve a fração canônica: 1) pelo gp_responsavel na tabela grupos;
+// 2) senão cruza o município; 3) senão usa o que vier (grupamento/gp cru).
+function resolveFracao(gpr, comp, municipio){
+  const c1 = GPR2COMP[_nf(gpr)];                 if (c1) return _grafiaGP(c1);
+  const c2 = MUNI2COMP[_nf(municipio)];          if (c2) return _grafiaGP(c2);
+  return _grafiaGP(comp || gpr || '—') || '—';
 }
 function ymd(s){ s=String(s==null?'':s).trim(); return s? s.slice(0,10) : ''; }
 
@@ -353,6 +412,7 @@ async function carregar(){
     const partes=await Promise.all(jobs);
     DADOS=[].concat(...partes);
     popularAnos();
+    popularMunicipios();
     render();
   }catch(e){
     console.error('dashboard', e);
@@ -400,36 +460,81 @@ function metricas(arr){
   arr.forEach(d=>{ const s=statusDe(d); if(s==='np')np++;else if(s==='ca')ca++;else if(s==='ea')ea++;else aa++;
     if(atendida(d)){ const dd=diasAtend(d); if(dd!=null) dias.push(dd); } });
   const atend=np+ca;
+  const pend=ea+aa;                           // em aberto (não atendidas): atrasadas + no prazo
   const denomCumpr=atend+ea;                 // atendidas + vencidas sem atendimento
   const cumprimento = denomCumpr? np/denomCumpr : null;
   const taxaAtend = rec? atend/rec : null;
-  return { rec, np, ca, ea, aa, atend, cumprimento, taxaAtend, emAtraso:ea, mediana:mediana(dias) };
+  return { rec, np, ca, ea, aa, atend, pend, cumprimento, taxaAtend, emAtraso:ea, mediana:mediana(dias) };
 }
 
-/* ── filtro (tipo + ano + escopo) ────────────────────────────────── */
-function filtrados(){
+/* ── filtro (tipo + ano + escopo + município + status) ───────────── */
+function ctxFiltro(){
   const ano=_selVal('f-ano');
-  const gprs = temSeletor()? gprEscopo() : ALLOWED.map(g=>g.gpr);
-  const escLimita = temSeletor() && !((isAdminTotal||GERIR) && _selVal('sel-pel')==='all' && _selVal('sel-grp')==='all');
-  const setGpr = escLimita? new Set(gprs) : null;
+  const temSel=temSeletor();
+  const escLimita = temSel && !((isAdminTotal||GERIR) && _selVal('sel-pel')==='all' && _selVal('sel-grp')==='all');
+  const setGpr = escLimita? new Set(gprEscopo()) : null;
+  return { ano, setGpr };
+}
+function passaStatus(d){
+  if (STATUS==='atend')  return atendida(d);
+  if (STATUS==='pend')   return !atendida(d);
+  if (STATUS==='atraso') return statusDe(d)==='ea';
+  return true;
+}
+function aplicaFiltros(ignoreTipo){
+  const { ano, setGpr } = ctxFiltro();
   return DADOS.filter(d=>{
-    if (TIPOS_SEL.size && !TIPOS_SEL.has(d.tipo)) return false;
+    if (!ignoreTipo && TIPOS_SEL.size && !TIPOS_SEL.has(d.tipo)) return false;
     if (ano!=='all' && String(d.recebido?d.recebido.slice(0,4):'')!==String(ano)) return false;
     if (setGpr && !setGpr.has(d.gp_responsavel)) return false;
+    if (MUNI_SEL.size && !MUNI_SEL.has(d._muniN)) return false;
+    if (STATUS && !passaStatus(d)) return false;
     return true;
   });
 }
+function filtrados(){ return aplicaFiltros(false); }
+
+/* ── filtro de Município (busca + multisseleção) ─────────────────── */
+function popularMunicipios(){
+  const m={};
+  DADOS.forEach(d=>{ const key=d._muniN; if(!key) return; if(!m[key]) m[key]={key, label:d.municipio.toUpperCase(), q:0}; m[key].q++; });
+  MUNI_OPTS=Object.values(m).sort((a,b)=>a.label.localeCompare(b.label,'pt-BR'));
+  // remove seleções que não existem mais
+  [...MUNI_SEL].forEach(k=>{ if(!m[k]) MUNI_SEL.delete(k); });
+  atualizarMuniBtn();
+}
+function atualizarMuniBtn(){
+  const b=document.getElementById('muni-btn'); if(!b) return;
+  b.textContent = (MUNI_SEL.size? `${MUNI_SEL.size} município(s)` : 'Todos os municípios') + ' ▾';
+  b.classList.toggle('has', MUNI_SEL.size>0);
+}
+function renderMuniList(){
+  const q=_nf(document.getElementById('muni-search').value);
+  const list=document.getElementById('muni-list'); if(!list) return;
+  const filtradas=MUNI_OPTS.filter(o=>!q || o.key.includes(q)).slice(0,300);
+  list.innerHTML = filtradas.map(o=>`<div class="msel-opt${MUNI_SEL.has(o.key)?' on':''}" onclick="toggleMuni('${o.key.replace(/'/g,"\\'")}')"><span class="ck">✓</span><span>${esc(o.label)}</span><span class="q">${o.q}</span></div>`).join('')
+    || '<div class="empty" style="padding:14px">Nenhum município.</div>';
+}
+function toggleMuni(key){ if(MUNI_SEL.has(key)) MUNI_SEL.delete(key); else MUNI_SEL.add(key); atualizarMuniBtn(); renderMuniList(); render(); }
+function limparMuni(){ MUNI_SEL.clear(); atualizarMuniBtn(); renderMuniList(); render(); }
+function toggleMuniPop(e){ if(e) e.stopPropagation();
+  const p=document.getElementById('muni-pop'); const abrir=!p.classList.contains('show');
+  p.classList.toggle('show', abrir);
+  if(abrir){ document.getElementById('muni-search').value=''; renderMuniList(); setTimeout(()=>document.getElementById('muni-search').focus(),0); }
+}
+document.addEventListener('click', e=>{ const f=document.getElementById('muni-filter'); const p=document.getElementById('muni-pop'); if(p&&p.classList.contains('show')&&f&&!f.contains(e.target)) p.classList.remove('show'); });
 
 /* ── render principal ────────────────────────────────────────────── */
 function render(){
   if (!DADOS.length){ document.getElementById('conteudo').innerHTML='<div class="empty">Nenhuma demanda carregada.</div>'; return; }
   const arr=filtrados();
+  const arrTipo=aplicaFiltros(true);   // "Por tipo" ignora o filtro de Tipo (mostra todos)
   atualizarScope(arr.length);
   const M=metricas(arr);
   document.getElementById('conteudo').innerHTML =
     kpisHTML(M) +
-    porTipoHTML() +
-    `<div class="grid2">${situacaoFracaoHTML()}${destaquesHTML(arr)}</div>` +
+    porTipoHTML(arrTipo) +
+    `<div class="grid2">${situacaoFracaoHTML(arr)}${destaquesHTML(arr)}</div>` +
     `<div class="grid2b">${evolucaoHTML(arr)}${prazoMesHTML(arr)}</div>` +
     `<div class="grid2b">${proxVencHTML(arr)}${naturezaHTML(arr)}</div>` +
     porMunicipioHTML(arr);
@@ -441,27 +546,31 @@ function atualizarScope(n){
   const verTudo = (!temSeletor()) || ((isAdminTotal||GERIR) && _selVal('sel-pel')==='all' && _selVal('sel-grp')==='all');
   const tLbl = TIPOS_SEL.size===0 ? 'todos os tipos'
              : (TIPOS_SEL.size===1 ? TIPO_LBL[[...TIPOS_SEL][0]] : TIPOS_SEL.size+' tipos');
-  if (verTudo) el.innerHTML=`<b>${n}</b> demanda(s) · <b>toda a 3ª Cia</b> · ${tLbl}`;
+  const extra = (MUNI_SEL.size? ` · ${MUNI_SEL.size} município(s)`:'')
+    + (STATUS?` · ${({atend:'só atendidas',pend:'só pendentes',atraso:'só em atraso'})[STATUS]}`:'');
+  if (verTudo) el.innerHTML=`<b>${n}</b> demanda(s) · <b>toda a 3ª Cia</b> · ${tLbl}${extra}`;
   else{
     const g=_selVal('sel-grp');
-    el.innerHTML = g!=='all'
+    el.innerHTML = (g!=='all'
       ? `<b>${n}</b> demanda(s) · <b>${_grafiaGP((ALLOWED.find(x=>x.gpr===g)||{}).comp||g)}</b> · ${tLbl}`
-      : `<b>${n}</b> demanda(s) · escopo selecionado · ${tLbl}`;
+      : `<b>${n}</b> demanda(s) · escopo selecionado · ${tLbl}`) + extra;
   }
 }
 const pct = (x,casas=1) => x==null?'—':(x*100).toFixed(casas).replace('.',',')+'%';
 const efiCls = x => x==null?'na':(x>=0.8?'hi':(x>=0.5?'mid':'lo'));
 
 function kpisHTML(M){
+  const on = s => STATUS===s ? ' on' : '';
   return `<div class="kpis">
-    <div class="kpi"><div class="lbl">Recebidas</div><div class="val">${M.rec}</div><div class="sub">no período/escopo</div></div>
+    <div class="kpi clk${STATUS===''?' on':''}" onclick="setStatus('')"><div class="lbl">Recebidas</div><div class="val">${M.rec}</div><div class="sub">no período/escopo</div><div class="hint">clique: ver todas</div></div>
     <div class="kpi ok"><div class="lbl">Cumprimento do prazo</div><div class="val">${pct(M.cumprimento)}</div><div class="sub">atendidas no prazo ÷ (atendidas + vencidas sem atend.)</div></div>
     <div class="kpi info"><div class="lbl">Taxa de atendimento</div><div class="val">${pct(M.taxaAtend)}</div><div class="sub">atendidas ÷ recebidas</div></div>
-    <div class="kpi red"><div class="lbl">Em atraso</div><div class="val">${M.emAtraso}</div><div class="sub">vencidas sem atendimento</div></div>
+    <div class="kpi red clk${on('atraso')}" onclick="setStatus('atraso')"><div class="lbl">Em atraso</div><div class="val">${M.emAtraso}</div><div class="sub">vencidas sem atendimento</div><div class="hint">clique: filtrar</div></div>
     <div class="kpi warn"><div class="lbl">Tempo mediano</div><div class="val">${M.mediana==null?'—':M.mediana+'<span style="font-size:14px"> d</span>'}</div><div class="sub">do recebimento ao atendimento</div></div>
-    <div class="kpi pur"><div class="lbl">Atendidas</div><div class="val">${M.atend}</div><div class="sub">${M.rec?pct(M.atend/M.rec):'—'} do recebido</div></div>
+    <div class="kpi pur clk${on('atend')}" onclick="setStatus('atend')"><div class="lbl">Atendidas</div><div class="val">${M.atend}</div><div class="sub">${M.rec?pct(M.atend/M.rec):'—'} do recebido</div><div class="hint">clique: filtrar</div></div>
   </div>`;
 }
+function setStatus(s){ STATUS = (STATUS===s? '' : s); render(); }
 
 /* mini barra de status */
 function sbar(M){
@@ -474,45 +583,33 @@ const LEGENDA = `<div class="legend">
   <span><i class="s-ea"></i>Em atraso (sem atend.)</span><span><i class="s-aa"></i>A atender, no prazo</span></div>`;
 
 /* ── Por tipo de demanda ─────────────────────────────────────────── */
-function porTipoHTML(){
-  const ano=_selVal('f-ano');
-  const gprs = temSeletor()? gprEscopo():ALLOWED.map(g=>g.gpr);
-  const escLimita = temSeletor() && !((isAdminTotal||GERIR) && _selVal('sel-pel')==='all' && _selVal('sel-grp')==='all');
-  const setGpr = escLimita? new Set(gprs):null;
-  const linhas=TIPOS.map(t=>{
-    const sub=DADOS.filter(d=>d.tipo===t.k
-      && (ano==='all'||String(d.recebido?d.recebido.slice(0,4):'')===String(ano))
-      && (!setGpr || setGpr.has(d.gp_responsavel)));
-    return { t, M:metricas(sub) };
-  }).filter(x=>x.M.rec>0);
+function porTipoHTML(arr){
+  const linhas=TIPOS.map(t=>({ t, M:metricas(arr.filter(d=>d.tipo===t.k)) })).filter(x=>x.M.rec>0);
   const rows=linhas.map(({t,M})=>`<tr onclick="toggleTipo('${t.k}')"${TIPOS_SEL.has(t.k)?' style="background:var(--gold-bg)"':''}>
     <td class="nome">${esc(t.lbl)}</td>
     <td>${sbar(M)}</td>
     <td class="num">${M.rec}</td>
     <td class="num"><span class="efi ${efiCls(M.cumprimento)}">${pct(M.cumprimento,0)}</span></td>
     <td class="num">${pct(M.taxaAtend,0)}</td>
+    <td class="num ${M.pend?'pen':'pen0'}">${M.pend}</td>
     <td class="num ${M.emAtraso?'atr':'atr0'}">${M.emAtraso}</td>
     <td class="num">${M.mediana==null?'—':M.mediana+' d'}</td></tr>`).join('');
   return `<div class="panel"><h3>Por tipo de demanda <small>clique para filtrar</small></h3>
     <div class="tblwrap"><table class="dt">
-      <thead><tr><th>Tipo</th><th>Demandas</th><th class="num">Receb.</th><th class="num">Cumpr.</th><th class="num">Atend.</th><th class="num">Atraso</th><th class="num">Mediana</th></tr></thead>
-      <tbody>${rows||'<tr><td colspan="7" class="empty">Sem dados.</td></tr>'}</tbody>
+      <thead><tr><th>Tipo</th><th>Demandas</th><th class="num">Receb.</th><th class="num">Cumpr.</th><th class="num">Atend.</th><th class="num">Pend.</th><th class="num">Atraso</th><th class="num">Mediana</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="8" class="empty">Sem dados.</td></tr>'}</tbody>
     </table></div>${LEGENDA}</div>`;
 }
 
 /* ── Situação por fração / pelotão ───────────────────────────────── */
 let FRAC_MODE='frac';
-function situacaoFracaoHTML(){
-  const arr=filtrados();
+function situacaoFracaoHTML(arr){
   const grupos={};
   arr.forEach(d=>{
-    const key = FRAC_MODE==='pel' ? (d.pel?`${d.pel}º Pelotão`:'— sem pelotão') : (_grafiaGP(d.grupamento_completo||d.gp_responsavel)||'—');
+    const key = FRAC_MODE==='pel' ? (d.pel?`${d.pel}º Pelotão`:'— sem pelotão') : (d.fracao||'—');
     (grupos[key]=grupos[key]||[]).push(d);
   });
-  let linhas=Object.entries(grupos).map(([nome,lst])=>{
-    const M=metricas(lst); const pel=pelNum(lst[0].grupamento_completo||'');
-    return { nome, pel, M };
-  });
+  let linhas=Object.entries(grupos).map(([nome,lst])=>({ nome, pel:pelNum(lst[0].fracao||'')||lst[0].pel, M:metricas(lst) }));
   linhas.sort((a,b)=> (a.pel||99)-(b.pel||99) || b.M.rec-a.M.rec);
   const rows=linhas.map(({nome,pel,M})=>`<tr>
     <td class="nome">${esc(nome)}${FRAC_MODE==='frac'&&pel?` <span class="pelt">· ${pel}º Pel</span>`:''}</td>
@@ -520,22 +617,23 @@ function situacaoFracaoHTML(){
     <td class="num">${M.rec}</td>
     <td class="num"><span class="efi ${efiCls(M.cumprimento)}">${pct(M.cumprimento,0)}</span></td>
     <td class="num">${pct(M.taxaAtend,0)}</td>
+    <td class="num ${M.pend?'pen':'pen0'}">${M.pend}</td>
     <td class="num ${M.emAtraso?'atr':'atr0'}">${M.emAtraso}</td>
     <td class="num">${M.mediana==null?'—':M.mediana+' d'}</td></tr>`).join('');
   return `<div class="panel"><h3>Situação por ${FRAC_MODE==='pel'?'pelotão':'fração'}
       <span class="seg" id="seg-frac"><button data-m="frac" class="${FRAC_MODE==='frac'?'on':''}">Por fração</button><button data-m="pel" class="${FRAC_MODE==='pel'?'on':''}">Por pelotão</button></span></h3>
     <div class="tblwrap"><table class="dt">
-      <thead><tr><th>${FRAC_MODE==='pel'?'Pelotão':'Fração'}</th><th>Demandas</th><th class="num">Receb.</th><th class="num">Cumpr.</th><th class="num">Atend.</th><th class="num">Atraso</th><th class="num">Mediana</th></tr></thead>
-      <tbody>${rows||'<tr><td colspan="7" class="empty">Sem dados no filtro.</td></tr>'}</tbody>
+      <thead><tr><th>${FRAC_MODE==='pel'?'Pelotão':'Fração'}</th><th>Demandas</th><th class="num">Receb.</th><th class="num">Cumpr.</th><th class="num">Atend.</th><th class="num">Pend.</th><th class="num">Atraso</th><th class="num">Mediana</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="8" class="empty">Sem dados no filtro.</td></tr>'}</tbody>
     </table></div>
-    <div class="foot-note">Cumprimento = atendidas no prazo ÷ (atendidas + vencidas sem atendimento).</div></div>`;
+    <div class="foot-note">Cumprimento = atendidas no prazo ÷ (atendidas + vencidas sem atendimento). Pend. = em aberto (atrasadas + no prazo).</div></div>`;
 }
 
 /* ── Destaques ───────────────────────────────────────────────────── */
 function destaquesHTML(arr){
-  // agrupa por fração
+  // agrupa pela fração canônica (dedup grafias / resolve "6GP" via município)
   const g={};
-  arr.forEach(d=>{ const k=_grafiaGP(d.grupamento_completo||d.gp_responsavel)||'—'; (g[k]=g[k]||[]).push(d); });
+  arr.forEach(d=>{ const k=d.fracao||'—'; (g[k]=g[k]||[]).push(d); });
   const linhas=Object.entries(g).map(([nome,lst])=>({nome, M:metricas(lst)})).filter(x=>x.M.rec>0);
   if(!linhas.length) return `<div class="panel destaques"><h3>Destaques</h3><div class="empty">Sem dados.</div></div>`;
   const MINREC=5;
@@ -643,12 +741,13 @@ function porMunicipioHTML(arr){
     <td class="num">${M.atend}</td>
     <td class="num"><span class="efi ${efiCls(M.taxaAtend)}">${pct(M.taxaAtend,0)}</span></td>
     <td class="num"><span class="efi ${efiCls(M.cumprimento)}">${pct(M.cumprimento,0)}</span></td>
+    <td class="num ${M.pend?'pen':'pen0'}">${M.pend}</td>
     <td class="num ${M.emAtraso?'atr':'atr0'}">${M.emAtraso}</td></tr>`).join('');
   const toggle=totalMun>12?`<button class="btn" style="margin-top:12px" onclick="MUNI_ALL=!MUNI_ALL;render()">${MUNI_ALL?'Mostrar menos':'Mostrar todos os '+totalMun}</button>`:'';
   return `<div class="panel"><h3>Por município <small>${totalMun} município(s)</small></h3>
     <div class="tblwrap"><table class="dt">
-      <thead><tr><th>Município</th><th class="num">Receb.</th><th class="num">Atend.</th><th class="num">Atendimento</th><th class="num">Cumpr.</th><th class="num">Atraso</th></tr></thead>
-      <tbody>${rows||'<tr><td colspan="6" class="empty">Sem dados.</td></tr>'}</tbody>
+      <thead><tr><th>Município</th><th class="num">Receb.</th><th class="num">Atend.</th><th class="num">Atendimento</th><th class="num">Cumpr.</th><th class="num">Pend.</th><th class="num">Atraso</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="7" class="empty">Sem dados.</td></tr>'}</tbody>
     </table></div>${toggle}</div>`;
 }
 
@@ -659,13 +758,13 @@ function exportarExcel(){
   const wb=XLSX.utils.book_new();
   // aba por tipo
   const porTipo=TIPOS.map(t=>{ const sub=arr.filter(d=>d.tipo===t.k); const M=metricas(sub); return {
-    'Tipo':t.lbl,'Recebidas':M.rec,'Atendidas':M.atend,'Cumprimento %':M.cumprimento==null?'':Math.round(M.cumprimento*100),
+    'Tipo':t.lbl,'Recebidas':M.rec,'Atendidas':M.atend,'Pendentes':M.pend,'Cumprimento %':M.cumprimento==null?'':Math.round(M.cumprimento*100),
     'Atendimento %':M.taxaAtend==null?'':Math.round(M.taxaAtend*100),'Em atraso':M.emAtraso,'Mediana (d)':M.mediana==null?'':M.mediana }; }).filter(r=>r.Recebidas>0);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(porTipo), 'Por tipo');
-  // aba por fração
-  const gf={}; arr.forEach(d=>{ const k=_grafiaGP(d.grupamento_completo||d.gp_responsavel)||'—'; (gf[k]=gf[k]||[]).push(d); });
+  // aba por fração (fração canônica)
+  const gf={}; arr.forEach(d=>{ const k=d.fracao||'—'; (gf[k]=gf[k]||[]).push(d); });
   const porFrac=Object.entries(gf).map(([nome,lst])=>{ const M=metricas(lst); return {
-    'Fração':nome,'Pelotão':pelNum(lst[0].grupamento_completo||'')||'','Recebidas':M.rec,'Atendidas':M.atend,
+    'Fração':nome,'Pelotão':pelNum(lst[0].fracao||'')||lst[0].pel||'','Recebidas':M.rec,'Atendidas':M.atend,'Pendentes':M.pend,
     'No prazo':M.np,'C/ atraso':M.ca,'Em atraso':M.ea,'A atender':M.aa,
     'Cumprimento %':M.cumprimento==null?'':Math.round(M.cumprimento*100),'Atendimento %':M.taxaAtend==null?'':Math.round(M.taxaAtend*100),'Mediana (d)':M.mediana==null?'':M.mediana }; })
     .sort((a,b)=>(a['Pelotão']||99)-(b['Pelotão']||99)||b.Recebidas-a.Recebidas);
@@ -673,7 +772,7 @@ function exportarExcel(){
   // aba por município
   const gm={}; arr.forEach(d=>{ const k=(d.municipio||'—').toUpperCase().trim()||'—'; (gm[k]=gm[k]||[]).push(d); });
   const porMun=Object.entries(gm).map(([nome,lst])=>{ const M=metricas(lst); return {
-    'Município':nome,'Recebidas':M.rec,'Atendidas':M.atend,'Atendimento %':M.taxaAtend==null?'':Math.round(M.taxaAtend*100),
+    'Município':nome,'Recebidas':M.rec,'Atendidas':M.atend,'Pendentes':M.pend,'Atendimento %':M.taxaAtend==null?'':Math.round(M.taxaAtend*100),
     'Cumprimento %':M.cumprimento==null?'':Math.round(M.cumprimento*100),'Em atraso':M.emAtraso }; }).sort((a,b)=>b.Recebidas-a.Recebidas);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(porMun), 'Por município');
   XLSX.writeFile(wb, 'Dashboard_Demandas_'+new Date().toISOString().slice(0,10)+'.xlsx');
