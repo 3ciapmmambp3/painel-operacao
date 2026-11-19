@@ -745,6 +745,22 @@ function abrir(d){
     const _row=(l,v)=> (v!=null && String(v).trim()!=='') ? `<div><span style="color:var(--text-hint)">${_escH(l)}:</span> <b>${_escH(String(v))}</b></div>` : '';
     const itens=cands.slice(0,6).map(({o,dist,mesmo})=>{
       const resumo=[o.municipio, o.numero_reds?('REDS '+o.numero_reds):'', o.data_atendimento?('em '+fmtData(o.data_atendimento)):''].filter(Boolean).join(' · ');
+      // CAR + proprietário do MC atendido (vêm 1 por linha, na mesma ordem)
+      const _spl2=s=>String(s==null?'':s).split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+      const cd=Array.isArray(o.car_dados)?o.car_dados:[];
+      const carNums=cd.map(c=>c&&c.cod_imovel).filter(Boolean);
+      let carHtml='';
+      if(carNums.length){
+        carHtml+=carNums.map(n=>`<div style="font-family:monospace;font-size:11px;word-break:break-all">🌱 ${_escH(n)}</div>`).join('');
+        const cc=cd.find(c=>c&&(c.proprietario||c.cpf));
+        if(cc){ const nn=_spl2(cc.proprietario), pp=_spl2(cc.cpf), N=Math.max(nn.length,pp.length); let ls=''; for(let i=0;i<N;i++){ ls+=`<div>👤 ${_escH(nn[i]||'—')}${pp[i]?(' — '+_escH(pp[i])):''}</div>`; } carHtml+=`<div style="margin-top:2px;color:var(--gold-light)">${ls}</div>`; }
+      }
+      const anx0=(Array.isArray(o.anexos)&&o.anexos[0])?o.anexos[0]:null;
+      const filesHtml=`<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">`
+        +(anx0?`<a class="anxbtn" href="${anx0.web_view_link||anx0.link||'#'}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Abrir o croqui (PDF) deste GEOCOD.">📄 Croqui</a>`:'')
+        +(o.tem_kml?`<a class="anxbtn kml" href="#" onclick="event.stopPropagation();baixarKml('${o.id}');return false" title="Baixar o KML deste GEOCOD (abre no Google Earth).">🛰️ KML</a>`:'')
+        +`<button class="anxbtn" style="opacity:.75" onclick="event.stopPropagation();abrir(byId('${o.id}'))" title="Abre a ficha completa deste GEOCOD (troca o MC exibido).">Abrir ficha completa ↗</button>`
+        +`</div>`;
       const detalhe=`<div id="viz-${o.id}" style="display:none;width:100%;box-sizing:border-box;margin-top:8px;padding:10px 12px;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:8px;font-size:12px;line-height:1.75">`
         +_row('Município', o.municipio)
         +_row('Fiscalizado em', o.data_atendimento?fmtData(o.data_atendimento):'')
@@ -754,13 +770,14 @@ function abrir(d){
         +_row('Ato de fiscalização (SISFIS)', o.numero_gaia)
         +_row('Nº Auto de Infração', o.numero_auto_infracao)
         +_row('Resultado', o.resultado)
-        +`<div style="margin-top:8px"><button class="anxbtn" onclick="event.stopPropagation();abrir(byId('${o.id}'))" title="Abre a ficha completa deste GEOCOD.">Abrir ficha completa ↗</button></div>`
+        +(carHtml?`<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border-mid)"><div style="color:var(--text-hint);margin-bottom:2px">CAR / Proprietário:</div>${carHtml}</div>`:'')
+        +filesHtml
         +`</div>`;
       return `<div class="anxitem" style="align-items:flex-start;flex-direction:column;gap:0">`
         +`<div style="display:flex;align-items:flex-start;gap:10px;width:100%;cursor:pointer" onclick="mcVizTgl('${o.id}')" title="Clique para ver os detalhes do atendimento (equipe, Ato, Auto de Infração).">`
         +`<svg class="ic" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>`
         +`<div class="m" style="flex:1"><b>GEOCOD ${_escH(o.codigo||'')} <span style="color:var(--gold)">▾</span></b>`
-        +(mesmo?` <span style="color:var(--danger);font-weight:800">• MESMO PROPRIETÁRIO/CAR</span>`:(isFinite(dist)?` <span class="miut">a ${fmtKm(dist)}</span>`:''))
+        +(mesmo?` <span style="color:var(--danger);font-weight:800;font-size:10.5px;letter-spacing:.2px">• MESMO PROPRIETÁRIO/CAR</span>`:(isFinite(dist)?` <span class="miut">a ${fmtKm(dist)}</span>`:''))
         +(resumo?`<small>${_escH(resumo)}</small>`:'')
         +`</div></div>`
         +detalhe
