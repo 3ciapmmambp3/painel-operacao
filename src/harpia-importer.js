@@ -102,36 +102,45 @@
   // ── Loop principal ────────────────────────────────────────────────────
   (async function run(){
     try {
-      var sel = 'id,codigo,coord_x,coord_y';
-      var filtro = '&coord_y=not.is.null&car_consultado_em=is.null&ativo=eq.true';
-      // conta
-      var rc = await fetch(SB_URL + '/rest/v1/mc_demandas?select=id' + filtro, { headers: Object.assign({ Prefer: 'count=exact', 'Range-Unit':'items', Range:'0-0' }, H) });
-      var total = parseInt((rc.headers.get('content-range') || '0-0/0').split('/')[1], 10) || 0;
-      if (!total){ setMsg('✅ Nenhum MC pendente de CAR. Tudo já consultado!'); setStat(''); window.__harpiaImporterRodando=false; return; }
-      if (!confirm('Importar o CAR de ' + total + ' MC(s) pendente(s) do Harpia?\n\nIsso pode levar alguns minutos. Pode acompanhar o progresso e fechar quando quiser (o que já foi importado fica salvo).')){
-        box.remove(); window.__harpiaImporterRodando = false; return;
-      }
-      var feito = 0, comCar = 0, semCar = 0, erros = 0, PAG = 100, off = 0;
-      while (off < total && !window.__harpiaCancel){
+      // 1) Carrega TODOS os MCs ativos com coordenada (em páginas). Traz car_dados
+      //    para decidir, no cliente, quais ainda NÃO têm proprietário (Harpia) —
+      //    o car_consultado_em pode já ter vindo do SICAR, que não traz dono.
+      setMsg('Carregando a lista de MCs…');
+      var sel = 'id,codigo,coord_x,coord_y,car_dados';
+      var filtro = '&coord_y=not.is.null&ativo=eq.true';
+      var todos = [], off = 0, PAG = 1000;
+      while (!window.__harpiaCancel){
         var rq = await fetch(SB_URL + '/rest/v1/mc_demandas?select=' + sel + filtro + '&order=codigo&limit=' + PAG + '&offset=' + off, { headers: H });
         var lote = await rq.json();
         if (!lote.length) break;
-        for (var k = 0; k < lote.length && !window.__harpiaCancel; k++){
-          var d = lote[k];
-          var la = parseFloat(d.coord_y), lo = parseFloat(d.coord_x);
-          try {
-            var items = (isFinite(la) && isFinite(lo)) ? await buscarCar(la, lo) : [];
-            await salvar(d.id, items);
-            if (items.length){ comCar++; log('✔ ' + d.codigo + ' — ' + (items[0].proprietario || items[0].nome_imovel || items.length + ' imóvel(is)')); }
-            else { semCar++; log('– ' + d.codigo + ' — sem CAR no ponto'); }
-          } catch(e){ erros++; log('✖ ' + d.codigo + ' — ' + e.message); }
-          feito++;
-          setBar(feito/total);
-          setMsg('Importando… <b>' + feito + '/' + total + '</b>');
-          setStat('✔ com CAR: ' + comCar + '  ·  – sem CAR: ' + semCar + (erros ? ('  ·  ✖ erros: ' + erros) : ''));
-          await sleep(PAUSA_MS);
-        }
+        todos = todos.concat(lote);
+        setMsg('Carregando a lista de MCs… <b>' + todos.length + '</b>');
+        if (lote.length < PAG) break;
         off += PAG;
+      }
+      // já tem proprietário/CPF do Harpia?
+      var jaTem = function(d){ return Array.isArray(d.car_dados) && d.car_dados.some(function(c){ return c && (c.proprietario || c.cpf); }); };
+      var pend = todos.filter(function(d){ return !jaTem(d); });
+      var total = pend.length;
+      if (!total){ setMsg('✅ Nenhum MC pendente de proprietário — tudo já importado do Harpia! (' + todos.length + ' no total)'); setStat(''); window.__harpiaImporterRodando=false; return; }
+      if (!confirm('Importar o proprietário/CAR de ' + total + ' MC(s) do Harpia?\n\n(' + todos.length + ' no total · ' + (todos.length - total) + ' já têm proprietário.)\n\nPode levar alguns minutos. Dá pra acompanhar e fechar quando quiser — o que já foi importado fica salvo, e numa próxima vez ele continua só pelos que faltam.')){
+        box.remove(); window.__harpiaImporterRodando = false; return;
+      }
+      var feito = 0, comCar = 0, semCar = 0, erros = 0;
+      for (var k = 0; k < pend.length && !window.__harpiaCancel; k++){
+        var d = pend[k];
+        var la = parseFloat(d.coord_y), lo = parseFloat(d.coord_x);
+        try {
+          var items = (isFinite(la) && isFinite(lo)) ? await buscarCar(la, lo) : [];
+          await salvar(d.id, items);
+          if (items.length){ comCar++; log('✔ ' + d.codigo + ' — ' + (items[0].proprietario || items[0].nome_imovel || items.length + ' imóvel(is)')); }
+          else { semCar++; log('– ' + d.codigo + ' — sem CAR no ponto'); }
+        } catch(e){ erros++; log('✖ ' + d.codigo + ' — ' + e.message); }
+        feito++;
+        setBar(feito/total);
+        setMsg('Importando… <b>' + feito + '/' + total + '</b>');
+        setStat('✔ com CAR: ' + comCar + '  ·  – sem CAR: ' + semCar + (erros ? ('  ·  ✖ erros: ' + erros) : ''));
+        await sleep(PAUSA_MS);
       }
       if (window.__harpiaCancel){ setMsg('⏹ Interrompido. O que foi importado está salvo.'); }
       else { setMsg('✅ <b>Concluído!</b> ' + feito + ' MC(s) processado(s). Volte ao painel e atualize.'); setBar(1); }
