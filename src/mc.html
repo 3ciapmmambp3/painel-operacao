@@ -734,16 +734,29 @@ function abrir(d){
     if(!cands.length) return '';
     cands.sort((a,b)=> (b.mesmo-a.mesmo) || (a.dist-b.dist));
     const fmtKm=v=> !isFinite(v)?'':(v<1?Math.round(v*1000)+' m':(v<10?v.toFixed(1):Math.round(v))+' km');
+    const _row=(l,v)=> (v!=null && String(v).trim()!=='') ? `<div><span style="color:var(--text-hint)">${_escH(l)}:</span> <b>${_escH(String(v))}</b></div>` : '';
     const itens=cands.slice(0,6).map(({o,dist,mesmo})=>{
-      const info=[o.numero_reds?('REDS '+o.numero_reds):'', o.data_atendimento?('em '+fmtData(o.data_atendimento)):'', o.atendido_por_nome?('por '+o.atendido_por_nome):''].filter(Boolean).join(' · ');
-      const extra=[o.numero_gaia?('Ato/SISFIS '+o.numero_gaia):'', o.numero_auto_infracao?('Auto nº '+o.numero_auto_infracao):'', o.resultado?('Resultado: '+o.resultado):''].filter(Boolean).join(' · ');
-      return `<div class="anxitem" style="align-items:flex-start;cursor:pointer" onclick="abrir(byId('${o.id}'))" title="Abrir este GEOCOD — ver quem atendeu, equipe, Ato de fiscalização e Auto de Infração.">`
+      const resumo=[o.municipio, o.numero_reds?('REDS '+o.numero_reds):'', o.data_atendimento?('em '+fmtData(o.data_atendimento)):''].filter(Boolean).join(' · ');
+      const detalhe=`<div id="viz-${o.id}" style="display:none;margin-top:8px;padding:10px 12px;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:8px;font-size:12px;line-height:1.75">`
+        +_row('Município', o.municipio)
+        +_row('Fiscalizado em', o.data_atendimento?fmtData(o.data_atendimento):'')
+        +_row('Quem atendeu', o.atendido_por_nome)
+        +_row('Equipe', o.equipe)
+        +_row('Nº REDS', o.numero_reds)
+        +_row('Ato de fiscalização (SISFIS)', o.numero_gaia)
+        +_row('Nº Auto de Infração', o.numero_auto_infracao)
+        +_row('Resultado', o.resultado)
+        +`<div style="margin-top:8px"><button class="anxbtn" onclick="event.stopPropagation();abrir(byId('${o.id}'))" title="Abre a ficha completa deste GEOCOD.">Abrir ficha completa ↗</button></div>`
+        +`</div>`;
+      return `<div class="anxitem" style="align-items:flex-start;flex-direction:column;gap:0">`
+        +`<div style="display:flex;align-items:flex-start;gap:10px;width:100%;cursor:pointer" onclick="mcVizTgl('${o.id}')" title="Clique para ver os detalhes do atendimento (equipe, Ato, Auto de Infração).">`
         +`<svg class="ic" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>`
-        +`<div class="m"><b>GEOCOD ${_escH(o.codigo||'')} <span style="color:var(--gold)">↗</span></b>`
+        +`<div class="m" style="flex:1"><b>GEOCOD ${_escH(o.codigo||'')} <span style="color:var(--gold)">▾</span></b>`
         +(mesmo?` <span style="color:var(--danger);font-weight:800">• MESMO PROPRIETÁRIO/CAR</span>`:(isFinite(dist)?` <span class="miut">a ${fmtKm(dist)}</span>`:''))
-        +(info?`<small>${_escH([o.municipio,info].filter(Boolean).join(' — '))}</small>`:(o.municipio?`<small>${_escH(o.municipio)}</small>`:''))
-        +(extra?`<small>${_escH(extra)}</small>`:'')
-        +(o.equipe?`<small>Equipe: ${_escH(o.equipe)}</small>`:'')+`</div></div>`;
+        +(resumo?`<small>${_escH(resumo)}</small>`:'')
+        +`</div></div>`
+        +detalhe
+        +`</div>`;
     }).join('');
     return `<div class="sec-t">Atendimentos próximos (possível mesmo proprietário)</div>`
       +`<div class="rs" style="font-size:11.5px;margin-bottom:4px;color:var(--text-muted)">Demandas <b>já fiscalizadas</b> a ≤ ${RAIO} km daqui ou do <b>mesmo proprietário/CAR</b>. Fale com quem atendeu — pode já conhecer o local e o dono.</div>`
@@ -1521,6 +1534,10 @@ function mcCopiarCar(cod){
   if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(cod).then(ok).catch(()=>_copyFallback(cod,ok)); }
   else _copyFallback(cod,ok);
 }
+
+/* abre/fecha a caixinha de detalhes do atendimento próximo (sem trocar de gaveta) */
+function mcVizTgl(id){ const el=document.getElementById('viz-'+id); if(!el) return; const ab=el.style.display==='none'||!el.style.display; el.style.display=ab?'block':'none';
+  try{ const car=el.parentNode&&el.parentNode.querySelector('b span'); if(car) car.textContent=ab?'▴':'▾'; }catch(e){} }
 
 /* ── Unidade de Conservação (UC) por ponto ───────────────────────────────
    Pergunta ao IDE OFICIAL de Minas Gerais (geoserver.meioambiente.mg.gov.br,
