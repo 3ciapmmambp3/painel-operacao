@@ -1193,7 +1193,7 @@ function _abrirMapaLote(ds){
   box.querySelector('#_mpRota').onclick=()=>rotaLoteSel();
   const _mpE=box.querySelector('#_mpEarth'); if(_mpE) _mpE.onclick=()=>abrirGoogleEarthLote();
   const map=L.map('_mcMap',{zoomControl:true}); _mcMapObj=map;
-  const sat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles &copy; Esri'});
+  const sat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,maxNativeZoom:18,attribution:'Tiles &copy; Esri'});
   const ruas=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'});
   sat.addTo(map); L.control.layers({'Satélite':sat,'Ruas':ruas},null,{collapsed:true}).addTo(map);
   const seq=_ordenaVizinho(ds.map(d=>({d,c:_coordOf(d)})), null), pts=[], allLL=[];
@@ -1221,7 +1221,9 @@ function _abrirMapaLote(ds){
     L.marker([c.la,c.lo],{icon}).addTo(map).bindPopup(popup);
   });
   if(pts.length>1) L.polyline(pts,{color:'#ffd54a',weight:2.5,opacity:.85,dashArray:'6,6'}).addTo(map);
-  if(allLL.length===1) map.setView(allLL[0],14); else map.fitBounds(allLL,{padding:[40,40]});
+  // maxZoom:17 → não aproxima além da imagem de satélite disponível (rural evita
+  // o "Map data not yet available" do Esri). Dá pra aproximar mais à mão.
+  if(allLL.length===1) map.setView(allLL[0],15); else map.fitBounds(allLL,{padding:[40,40],maxZoom:17});
   setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} },160);
   // Contorno das Unidades de Conservação dos pontos (busca ao vivo no IDE do
   // Estado; não bloqueia a abertura — aparece em verde quando chega). Consulta
@@ -1898,7 +1900,7 @@ function _abrirMapaUC(d, la, lo, feats){
   // setView ANTES de adicionar qualquer camada vetorial (senão o Leaflet estoura
   // ao desenhar o polígono e o mapa não vai pro lugar certo).
   const map=L.map('_mcMapUC',{zoomControl:true}).setView([la,lo],12); _mcMapUCObj=map;
-  const sat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles &copy; Esri'});
+  const sat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,maxNativeZoom:18,attribution:'Tiles &copy; Esri'});
   const ruas=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'});
   sat.addTo(map); L.control.layers({'Satélite':sat,'Ruas':ruas},null,{collapsed:true}).addTo(map);
   // contorno da UC (verde)
@@ -1938,9 +1940,9 @@ function _abrirMapaUC(d, la, lo, feats){
     +_mcInfoRows(d).map(r=>'<b>'+_escH(r[0])+':</b> '+_escH(String(r[1]))).join('<br>')
     +'<div style="margin-top:8px"><a href="'+_dirMk+'" target="_blank" rel="noopener" style="color:#1769c4;font-weight:700">🧭 Rota (Maps)</a> &nbsp;·&nbsp; <a href="'+_wazeMk+'" target="_blank" rel="noopener" style="color:#0a8fb8;font-weight:700">🚗 Waze</a></div></div>';
   mk.bindPopup(_popMk,{maxWidth:300});
-  const fitUC=()=>{ try{ map.fitBounds(gj.getBounds().extend([la,lo]),{padding:[30,30]}); }catch(e){ map.setView([la,lo],11); } };
-  const fitMC=()=>{ try{ if(mcLayer) map.fitBounds(mcLayer.getBounds().pad(0.5)); else map.setView([la,lo],15); }catch(e){ map.setView([la,lo],15); } };
-  const fitCar=()=>{ try{ if(carLayer) map.fitBounds(carLayer.getBounds().pad(0.2)); else map.setView([la,lo],14); }catch(e){ map.setView([la,lo],14); } };
+  const fitUC=()=>{ try{ map.fitBounds(gj.getBounds().extend([la,lo]),{padding:[30,30],maxZoom:17}); }catch(e){ map.setView([la,lo],11); } };
+  const fitMC=()=>{ try{ if(mcLayer) map.fitBounds(mcLayer.getBounds().pad(0.5),{maxZoom:17}); else map.setView([la,lo],15); }catch(e){ map.setView([la,lo],15); } };
+  const fitCar=()=>{ try{ if(carLayer) map.fitBounds(carLayer.getBounds().pad(0.2),{maxZoom:17}); else map.setView([la,lo],14); }catch(e){ map.setView([la,lo],14); } };
   box.querySelector('#_ucFitMC').onclick=fitMC;
   const _fu=box.querySelector('#_ucFitUC'); if(_fu) _fu.onclick=fitUC;
   const _fc=box.querySelector('#_ucFitCar'); if(_fc) _fc.onclick=fitCar;

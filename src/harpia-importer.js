@@ -166,8 +166,14 @@
       var precisa = function(d){ return !jaTem(d) || (geomDone && !geomDone.has(d.id)); };
       var pend = todos.filter(precisa);
       var total = pend.length;
-      if (!total){ setMsg('✅ Nenhum MC pendente de proprietário — tudo já importado do Harpia! (' + todos.length + ' no total)'); setStat(''); window.__harpiaImporterRodando=false; return; }
-      if (!confirm('Importar o proprietário/CAR de ' + total + ' MC(s) do Harpia?\n\n(' + todos.length + ' no total · ' + (todos.length - total) + ' já têm proprietário.)\n\nPode levar alguns minutos. Dá pra acompanhar e fechar quando quiser — o que já foi importado fica salvo, e numa próxima vez ele continua só pelos que faltam.')){
+      var semProp = pend.filter(function(d){ return !jaTem(d); }).length;   // faltam nome/CPF
+      var soGeom = total - semProp;                                          // já têm dono, falta só o polígono
+      if (!total){ setMsg('✅ Nada pendente — proprietário e polígono de todos já importados! (' + todos.length + ' no total)'); setStat(''); window.__harpiaImporterRodando=false; return; }
+      var msg = 'Importar do Harpia ' + total + ' MC(s)?\n\n';
+      if (semProp) msg += '• ' + semProp + ' sem proprietário (traz nome/CPF + polígono)\n';
+      if (soGeom)  msg += '• ' + soGeom + ' só para preencher o POLÍGONO do imóvel (já têm proprietário)\n';
+      msg += '\n(' + todos.length + ' no total.) Pode levar alguns minutos. Dá pra acompanhar e fechar quando quiser — o que já foi importado fica salvo, e numa próxima vez ele continua só pelos que faltam.';
+      if (!confirm(msg)){
         box.remove(); window.__harpiaImporterRodando = false; return;
       }
       var feito = 0, comCar = 0, semCar = 0, erros = 0;
