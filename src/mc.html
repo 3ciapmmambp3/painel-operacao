@@ -662,15 +662,23 @@ function abrir(d){
     }
     const linhas = dados.length ? dados : String(d.car_imovel||'').split(/,\s*/).filter(Boolean).map(c=>({cod_imovel:c}));
     const temProp = linhas.some(c=>c && (c.proprietario || c.cpf || c.nome_imovel));
+    const _spl=s=>String(s==null?'':s).split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
     const itens = linhas.map(c=>{
       const extra=[c.municipio?('Município: '+c.municipio):'', c.area?('Área: '+c.area+' ha'):'', c.mod_fiscal?('Mód. fiscais: '+c.mod_fiscal):'', c.status?('Situação: '+c.status):''].filter(Boolean).join(' · ');
-      // Dados do proprietário (do Harpia) — dado pessoal (PII)
-      const prop=[c.nome_imovel?('🏠 '+c.nome_imovel):'', c.proprietario?('👤 '+c.proprietario):'', c.cpf?('CPF/CNPJ '+c.cpf):''].filter(Boolean).join('  ·  ');
-      return `<div class="anxitem" style="align-items:flex-start">`
+      // Proprietário ↔ CPF (vêm 1 por linha, na mesma ordem) — dado pessoal (PII)
+      const nomes=_spl(c.proprietario), cpfs=_spl(c.cpf), imovel=_spl(c.nome_imovel).join(' / ');
+      const nOwn=Math.max(nomes.length, cpfs.length);
+      let ownersHtml='';
+      if(nOwn){
+        let ls=''; for(let i=0;i<nOwn;i++){ const nm=nomes[i]||'', cp=cpfs[i]||''; ls+=`<div style="padding:1px 0">👤 <b>${_escH(nm||'—')}</b>${cp?(` <span style="color:var(--text-hint)">— ${_escH(cp)}</span>`):''}</div>`; }
+        ownersHtml=`<div style="margin-top:4px;color:var(--gold-light);font-size:12px;line-height:1.55">${ls}</div>`;
+      } else if(c.cpf){ ownersHtml=`<small style="color:var(--gold-light)">CPF/CNPJ ${_escH(c.cpf)}</small>`; }
+      return `<div class="anxitem" style="align-items:flex-start;flex-wrap:wrap">`
         +`<svg class="ic" viewBox="0 0 24 24"><path d="M12 2l3 7h7l-5.5 4 2 7-6.5-4.5L5.5 20l2-7L2 9h7z"/></svg>`
-        +`<div class="m"><b style="font-family:monospace;font-size:12.5px;word-break:break-all">${_escH(c.cod_imovel||'—')}</b>`
+        +`<div class="m" style="flex:1;min-width:180px"><b style="font-family:monospace;font-size:12.5px;word-break:break-all">${_escH(c.cod_imovel||'—')}</b>`
         +(extra?`<small>${_escH(extra)}</small>`:'')
-        +(prop?`<small style="color:var(--gold-light);font-weight:600">${_escH(prop)}</small>`:'')+`</div>`
+        +(imovel?`<small style="color:var(--gold-light)">🏠 ${_escH(imovel)}</small>`:'')
+        +ownersHtml+`</div>`
         +`<button class="anxbtn" onclick="mcCopiarCar('${String(c.cod_imovel||'').replace(/['\\]/g,'')}')">📋 Copiar nº</button>`
         +`<a class="anxbtn rota" href="https://consultapublica.car.gov.br/publico/imoveis/index" target="_blank" rel="noopener" onclick="mcCopiarCar('${String(c.cod_imovel||'').replace(/['\\]/g,'')}')" title="Copia o número e abre o SICAR oficial (lá: cole o nº, resolva o captcha e baixe o demonstrativo com APP/Reserva Legal).">📄 Demonstrativo</a>`
         +`<a class="anxbtn" href="https://alertas.sccon.com.br/minasgerais/#/" target="_blank" rel="noopener" title="Abre o HARPIA — Monitoramento Contínuo da Cobertura Vegetal de Minas Gerais (SCCON).">🦅 Harpia</a></div>`;
@@ -737,7 +745,7 @@ function abrir(d){
     const _row=(l,v)=> (v!=null && String(v).trim()!=='') ? `<div><span style="color:var(--text-hint)">${_escH(l)}:</span> <b>${_escH(String(v))}</b></div>` : '';
     const itens=cands.slice(0,6).map(({o,dist,mesmo})=>{
       const resumo=[o.municipio, o.numero_reds?('REDS '+o.numero_reds):'', o.data_atendimento?('em '+fmtData(o.data_atendimento)):''].filter(Boolean).join(' · ');
-      const detalhe=`<div id="viz-${o.id}" style="display:none;margin-top:8px;padding:10px 12px;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:8px;font-size:12px;line-height:1.75">`
+      const detalhe=`<div id="viz-${o.id}" style="display:none;width:100%;box-sizing:border-box;margin-top:8px;padding:10px 12px;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:8px;font-size:12px;line-height:1.75">`
         +_row('Município', o.municipio)
         +_row('Fiscalizado em', o.data_atendimento?fmtData(o.data_atendimento):'')
         +_row('Quem atendeu', o.atendido_por_nome)
@@ -902,9 +910,9 @@ function _mcInfoRows(d){
   // Dados do CAR vindos do Harpia (1º imóvel do ponto): proprietário/CPF/área
   const _car0 = Array.isArray(d.car_dados) ? d.car_dados.find(x=>x && (x.proprietario||x.cpf||x.nome_imovel||x.area)) : null;
   if(_car0){
-    rows.push(['Proprietário', _car0.proprietario]);
-    rows.push(['CPF/CNPJ', _car0.cpf]);
-    rows.push(['Imóvel (CAR)', _car0.nome_imovel]);
+    rows.push(['Proprietário', String(_car0.proprietario||'').replace(/\r?\n/g,' / ')]);
+    rows.push(['CPF/CNPJ', String(_car0.cpf||'').replace(/\r?\n/g,' / ')]);
+    rows.push(['Imóvel (CAR)', String(_car0.nome_imovel||'').replace(/\r?\n/g,' / ')]);
     rows.push(['Área do imóvel (ha)', _car0.area]);
   }
   const _tem=v=>v!=null && String(v).trim()!=='' && String(v)!=='—';
