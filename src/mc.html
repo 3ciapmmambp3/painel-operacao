@@ -725,7 +725,7 @@ function abrir(d){
   const comoChegar = _temCoord
     ? `<div class="sec-t">Como chegar</div>`+
       `<div class="comochegar">`+
-        `<button class="anxbtn" style="background:var(--success);color:#fff;border:none;font-weight:700" onclick="mcMapaUC()" title="Abre um mapa (satélite) com o polígono do MC a fiscalizar, o ponto, e o contorno da Unidade de Conservação (se houver).">🗺️ Ver no mapa</button>`+
+        `<button class="anxbtn" style="background:var(--success);color:#fff;border:none;font-weight:700" onclick="mcVerNoMapa()" title="Abre o mapa (satélite) com o alfinete e todas as informações do ponto (GEOCOD, CAR/proprietário, UC, alertas ambientais), o polígono do MC, o imóvel do CAR e o contorno da UC.">🗺️ Ver no mapa</button>`+
         `<a class="anxbtn rota" href="${_rotaUrl}" target="_blank" rel="noopener" title="Abre o Google Maps e traça a rota a partir de onde você estiver (no celular abre o app).">🧭 Traçar rota</a>`+
         `<a class="anxbtn waze" href="https://waze.com/ul?ll=${_la},${_lo}" target="_blank" rel="noopener" title="Abre o local no Waze — toque em Ir para navegar (em área sem estrada o Waze encaixa na via mais próxima).">🚗 Waze</a>`+
         `<a class="anxbtn zap" href="https://wa.me/?text=${_wppTxt}" target="_blank" rel="noopener" title="Abre o WhatsApp para enviar o link da rota a alguém.">📱 Enviar no WhatsApp</a>`+
@@ -1156,11 +1156,23 @@ async function mapaLoteSel(){
   const ds=[..._sel].map(byId).filter(x=>x && _coordOf(x));
   if(!ds.length) return toast('Nenhuma selecionada tem coordenada (gere os KMLs faltantes).');
   toast('Abrindo o mapa…');
-  await _garantirKml(ds);   // carrega os polígonos (KML) dos pontos antes de desenhar
+  await _garantirKml(ds);        // polígonos (KML) dos pontos
+  try{ await _garantirCarGeom(ds); }catch(_){}   // polígono do imóvel (CAR)
   _loadLeaflet(()=>_abrirMapaLote(ds));
+}
+// "Ver no mapa" da gaveta: abre EXATAMENTE o mesmo mapa da seleção, só que para
+// este MC (com balão de informações completo, UC ao vivo e imóvel do CAR).
+async function mcVerNoMapa(){
+  const d=atual; if(!d) return;
+  if(!_coordOf(d)) return toast('Sem coordenada (lat/lon) para o mapa.');
+  toast('Abrindo o mapa…');
+  try{ if(d.tem_kml && d.kml_content==null) await _garantirKml([d]); }catch(_){}
+  try{ await _garantirCarGeom([d]); }catch(_){}
+  _loadLeaflet(()=>_abrirMapaLote([d]));
 }
 function _abrirMapaLote(ds){
   const old=document.getElementById('_mapaModal'); if(old) old.remove();
+  const temCar=(ds||[]).some(d=>_carGeomList(d).length);
   const ov=document.createElement('div'); ov.id='_mapaModal';
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:1200;padding:14px';
   const box=document.createElement('div');
@@ -1168,7 +1180,7 @@ function _abrirMapaLote(ds){
   box.innerHTML=
     `<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap">`+
       `<div style="font-size:14px;font-weight:800;color:var(--gold)">🗺️ ${ds.length} ponto(s) no mapa</div>`+
-      `<div style="font-size:11px;color:var(--text-hint)">clique num alfinete para ver as informações · <span style="color:#c62f2b;font-weight:800">●</span> pendente · <span style="color:#2e9e4f;font-weight:800">●</span> atendido</div>`+
+      `<div style="font-size:11px;color:var(--text-hint)">clique num alfinete para ver as informações · <span style="color:#c62f2b;font-weight:800">●</span> pendente · <span style="color:#2e9e4f;font-weight:800">●</span> atendido${temCar?' · <span style="color:#3ba7f5;font-weight:800">▬</span> imóvel (CAR)':''}</div>`+
       `<a class="anxbtn rota" id="_mpRota" style="margin-left:auto;cursor:pointer">🧭 Rota no Google Maps</a>`+
       (ds.some(x=>x.tem_kml)?`<button class="anxbtn earth" id="_mpEarth" title="Baixa o KML dos pontos e abre o Google Earth (lá: Projetos → Importar arquivo KML).">🌍 Google Earth</button>`:``)+
       `<button id="_mpClose" title="Fechar" style="width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:var(--bg-input);color:var(--text-white);font-size:17px;font-weight:700;cursor:pointer;line-height:1;flex-shrink:0">✕</button>`+
@@ -1194,6 +1206,13 @@ function _abrirMapaLote(ds){
     _kmlPolys(d.kml_content).forEach(ring=>{
       L.polygon(ring,{color:corLinha,weight:2,opacity:.95,fill:true,fillColor:corLinha,fillOpacity:.12}).addTo(map);
       ring.forEach(p=>allLL.push(p));
+    });
+    // polígono do imóvel (CAR), em azul, se já importado (car_geom)
+    _carGeomList(d).forEach(x=>{
+      try{
+        const cl=L.geoJSON(x.geometry,{style:{color:'#3ba7f5',weight:2,fillColor:'#3ba7f5',fillOpacity:.08},interactive:false}).addTo(map);
+        const b=cl.getBounds(); if(b&&b.isValid()){ allLL.push([b.getSouth(),b.getWest()],[b.getNorth(),b.getEast()]); }
+      }catch(_){}
     });
     const icon=L.divIcon({html:'<div style="background:'+cor+';color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font:700 12px Arial;box-shadow:0 1px 4px rgba(0,0,0,.5)">'+n+'</div>',className:'',iconSize:[26,26],iconAnchor:[13,13]});
     const dir='https://www.google.com/maps/dir/?api=1&destination='+c.la+','+c.lo;
