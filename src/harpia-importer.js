@@ -68,35 +68,60 @@
     if (!r.ok) throw new Error('HTTP ' + r.status);
     var txt = new TextDecoder('utf-8').decode(await r.arrayBuffer());
     var j = JSON.parse(txt);
-    return (j.features || []).map(function(f){
-      var p = f.properties || {};
-      return {
-        cod_imovel:  p.cod_imovel || '',
-        municipio:   fixEnc(p.municipio),
-        area:        p.num_area,
-        mod_fiscal:  p.mod_fiscal,
-        status:      fixEnc(p.des_condic),
-        nome_imovel: fixEnc(p.nome_do_im),
-        proprietario:fixEnc(p.nome_dos_p),
-        cpf:         p.cpf_ou_cnp || ''
-      };
-    });
+    var feats = j.features || [];
+    return {
+      items: feats.map(function(f){
+        var p = f.properties || {};
+        return {
+          cod_imovel:  p.cod_imovel || '',
+          municipio:   fixEnc(p.municipio),
+          area:        p.num_area,
+          mod_fiscal:  p.mod_fiscal,
+          status:      fixEnc(p.des_condic),
+          nome_imovel: fixEnc(p.nome_do_im),
+          proprietario:fixEnc(p.nome_dos_p),
+          cpf:         p.cpf_ou_cnp || ''
+        };
+      }),
+      // polígono do imóvel (GeoJSON) — guardado numa coluna separada (car_geom)
+      geoms: feats.map(function(f){
+        return { cod_imovel: (f.properties && f.properties.cod_imovel) || '', geometry: f.geometry || null };
+      }).filter(function(g){ return g.geometry; })
+    };
   }
 
   // ── Grava no banco (na própria linha do MC) ───────────────────────────
-  async function salvar(id, items){
+  // car_geom pode não existir ainda (db/204 não rodado) → se o PATCH reclamar
+  // da coluna, reenvia SEM ela (não perde o resto). geomOK fica false e avisa.
+  var geomColOK = true;
+  async function patchLinha(id, body){
+    var r = await fetch(SB_URL + '/rest/v1/mc_demandas?id=eq.' + encodeURIComponent(id), {
+      method: 'PATCH',
+      headers: Object.assign({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }, H),
+      body: JSON.stringify(body)
+    });
+    return r;
+  }
+  async function salvar(id, items, geoms){
     var body = {
       car_dados: items,
       car_imovel: items.map(function(c){ return c.cod_imovel; }).filter(Boolean).join(', ') || null,
       car_qtd: items.length,
       car_consultado_em: new Date().toISOString()
     };
-    var r = await fetch(SB_URL + '/rest/v1/mc_demandas?id=eq.' + encodeURIComponent(id), {
-      method: 'PATCH',
-      headers: Object.assign({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }, H),
-      body: JSON.stringify(body)
-    });
-    if (!r.ok) throw new Error('salvar HTTP ' + r.status + ' ' + (await r.text()).slice(0,80));
+    if (geomColOK) body.car_geom = (geoms && geoms.length) ? geoms : null;
+    var r = await patchLinha(id, body);
+    if (!r.ok){
+      var t = (await r.text()) || '';
+      // coluna car_geom ainda não existe → tira e tenta de novo (uma vez)
+      if (geomColOK && /car_geom/.test(t)){
+        geomColOK = false; delete body.car_geom;
+        r = await patchLinha(id, body);
+        if (r.ok) return;
+        t = (await r.text()) || '';
+      }
+      throw new Error('salvar HTTP ' + r.status + ' ' + t.slice(0,80));
+    }
   }
 
   // ── Loop principal ────────────────────────────────────────────────────
@@ -118,9 +143,28 @@
         if (lote.length < PAG) break;
         off += PAG;
       }
+      // 2) ids que JÁ têm o polígono (car_geom) — consulta leve (só ids). Serve
+      //    p/ backfill da geometria em quem já tinha proprietário mas ainda sem
+      //    o polígono. Se a coluna não existe (db/204 não rodado), ignora.
+      var geomDone = null;  // null = não dá pra saber → não força backfill de geom
+      try {
+        var gd = new Set(), goff = 0;
+        while (true){
+          var rg2 = await fetch(SB_URL + '/rest/v1/mc_demandas?select=id&car_geom=not.is.null' + filtro + '&limit=1000&offset=' + goff, { headers: H });
+          if (!rg2.ok) { if (goff===0) { geomDone = null; } break; }
+          var lg = await rg2.json();
+          if (!Array.isArray(lg) || !lg.length) { if (goff===0 && geomDone===null) geomDone = gd; break; }
+          lg.forEach(function(x){ gd.add(x.id); }); geomDone = gd;
+          if (lg.length < 1000) break;
+          goff += 1000;
+        }
+      } catch(_g){ geomDone = null; }
+
       // já tem proprietário/CPF do Harpia?
       var jaTem = function(d){ return Array.isArray(d.car_dados) && d.car_dados.some(function(c){ return c && (c.proprietario || c.cpf); }); };
-      var pend = todos.filter(function(d){ return !jaTem(d); });
+      // precisa processar se falta proprietário OU (se dá p/ saber) falta o polígono
+      var precisa = function(d){ return !jaTem(d) || (geomDone && !geomDone.has(d.id)); };
+      var pend = todos.filter(precisa);
       var total = pend.length;
       if (!total){ setMsg('✅ Nenhum MC pendente de proprietário — tudo já importado do Harpia! (' + todos.length + ' no total)'); setStat(''); window.__harpiaImporterRodando=false; return; }
       if (!confirm('Importar o proprietário/CAR de ' + total + ' MC(s) do Harpia?\n\n(' + todos.length + ' no total · ' + (todos.length - total) + ' já têm proprietário.)\n\nPode levar alguns minutos. Dá pra acompanhar e fechar quando quiser — o que já foi importado fica salvo, e numa próxima vez ele continua só pelos que faltam.')){
@@ -131,9 +175,10 @@
         var d = pend[k];
         var la = parseFloat(d.coord_y), lo = parseFloat(d.coord_x);
         try {
-          var items = (isFinite(la) && isFinite(lo)) ? await buscarCar(la, lo) : [];
-          await salvar(d.id, items);
-          if (items.length){ comCar++; log('✔ ' + d.codigo + ' — ' + (items[0].proprietario || items[0].nome_imovel || items.length + ' imóvel(is)')); }
+          var res = (isFinite(la) && isFinite(lo)) ? await buscarCar(la, lo) : { items:[], geoms:[] };
+          var items = res.items || [];
+          await salvar(d.id, items, res.geoms || []);
+          if (items.length){ comCar++; log('✔ ' + d.codigo + ' — ' + (items[0].proprietario || items[0].nome_imovel || items.length + ' imóvel(is)') + ((res.geoms && res.geoms.length)?' 🗺️':'')); }
           else { semCar++; log('– ' + d.codigo + ' — sem CAR no ponto'); }
         } catch(e){ erros++; log('✖ ' + d.codigo + ' — ' + e.message); }
         feito++;

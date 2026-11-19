@@ -455,6 +455,77 @@ async function _garantirKml(ds){
   }
 }
 
+// Carrega o POLÍGONO do imóvel (car_geom) SOB DEMANDA — fica FORA do SELECT
+// leve da lista (pesa). Usado por: mapa, exportar KML/GeoJSON da gaveta.
+// Faz cache no objeto. `undefined` = nunca buscado; `null` = buscado, sem geom.
+async function _garantirCarGeom(ds){
+  const alvo = (ds||[]).filter(d=>d && d.car_consultado_em && d.car_geom===undefined);
+  if(!alvo.length) return;
+  const ids = alvo.map(d=>d.id);
+  for(let i=0;i<ids.length;i+=200){
+    const lote = ids.slice(i,i+200);
+    const inList = '(' + lote.map(x=>`"${String(x).replace(/"/g,'')}"`).join(',') + ')';
+    try{
+      const r = await fetch(`${API}/rest/v1/${TBL}?select=id,car_geom&id=in.${encodeURIComponent(inList)}`, { headers: H });
+      if(r.ok){ const arr = await r.json(); const m={}; arr.forEach(x=>m[x.id]=x.car_geom); alvo.forEach(d=>{ if(d.car_geom===undefined) d.car_geom = (m[d.id]!==undefined ? m[d.id] : null); }); }
+      else { alvo.forEach(d=>{ if(d.car_geom===undefined) d.car_geom=null; }); }   // ex.: coluna ainda não existe (db/204)
+    }catch(e){ alvo.forEach(d=>{ if(d.car_geom===undefined) d.car_geom=null; }); }
+  }
+}
+// Normaliza car_geom em lista de {cod_imovel, geometry(GeoJSON)}
+function _carGeomList(d){
+  const g = d && d.car_geom;
+  if(!Array.isArray(g)) return [];
+  return g.filter(x=>x && x.geometry && x.geometry.coordinates);
+}
+// GeoJSON (FeatureCollection) dos imóveis do MC — abre em QGIS/Earth, vira shapefile
+function _carGeoJSON(d){
+  const feats = _carGeomList(d).map(x=>({ type:'Feature',
+    properties:{ cod_imovel:x.cod_imovel||'', geocod:d.codigo||'', municipio:d.municipio||'' },
+    geometry:x.geometry }));
+  return JSON.stringify({ type:'FeatureCollection', name:'CAR_'+(d.codigo||''), features:feats }, null, 1);
+}
+// KML dos imóveis do MC (perímetro) — abre no Google Earth
+function _carKML(d){
+  const esc=s=>String(s==null?'':s).replace(/[<&>]/g,c=>c==='<'?'&lt;':c==='>'?'&gt;':'&amp;');
+  const ringKml=ring=>'<outerBoundaryIs><LinearRing><coordinates>'
+    +ring.map(pt=>pt[0]+','+pt[1]+',0').join(' ')+'</coordinates></LinearRing></outerBoundaryIs>';
+  // GeoJSON Polygon = [ring0(ext), ring1(buraco)…]; MultiPolygon = [ [rings], … ]
+  const polyKml=coords=>'<Polygon>'+ringKml(coords[0])
+    +coords.slice(1).map(h=>'<innerBoundaryIs><LinearRing><coordinates>'+h.map(pt=>pt[0]+','+pt[1]+',0').join(' ')+'</coordinates></LinearRing></innerBoundaryIs>').join('')+'</Polygon>';
+  const pms=_carGeomList(d).map(x=>{
+    const gt=x.geometry.type, co=x.geometry.coordinates; let geo='';
+    if(gt==='Polygon') geo=polyKml(co);
+    else if(gt==='MultiPolygon') geo='<MultiGeometry>'+co.map(p=>polyKml(p)).join('')+'</MultiGeometry>';
+    else return '';
+    return '<Placemark><name>'+esc(x.cod_imovel||'Imóvel')+'</name>'
+      +'<styleUrl>#carPoly</styleUrl>'+geo+'</Placemark>';
+  }).filter(Boolean).join('');
+  return '<?xml version="1.0" encoding="UTF-8"?>\n'
+    +'<kml xmlns="http://www.opengis.net/kml/2.2"><Document>'
+    +'<name>CAR '+esc(d.codigo||'')+'</name>'
+    +'<Style id="carPoly"><LineStyle><color>ff3ba7f5</color><width>2.4</width></LineStyle>'
+    +'<PolyStyle><color>3c3ba7f5</color></PolyStyle></Style>'
+    +pms+'</Document></kml>';
+}
+function _baixarArq(nome, texto, mime){
+  try{
+    const blob=new Blob([texto],{type:mime}); const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url; a.download=nome; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 2000);
+  }catch(e){ toast('Erro ao baixar: '+(e.message||e)); }
+}
+async function mcBaixarCarGeom(id, fmt){
+  const d=byId(id); if(!d) return;
+  toast('Preparando o polígono…');
+  await _garantirCarGeom([d]);
+  if(!_carGeomList(d).length) return toast('Sem polígono do imóvel para este GEOCOD. Rode o Importador do Harpia (ele traz o perímetro junto).');
+  const base='CAR_'+String(d.codigo||'').replace(/[\\/:*?"<>|]/g,'-');
+  if(fmt==='geojson') _baixarArq(base+'.geojson', _carGeoJSON(d), 'application/geo+json');
+  else _baixarArq(base+'.kml', _carKML(d), 'application/vnd.google-earth.kml+xml');
+  toast('Polígono baixado: '+base+'.'+(fmt==='geojson'?'geojson':'kml'));
+}
+
 /* ── regras de prazo (modelo SISDEN) ─────────────────────────────── */
 function hoje0(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
 function diasVenc(d){ if(!d.data_vencimento) return null; const p=new Date(d.data_vencimento+'T00:00:00'); return Math.round((p-hoje0())/86400000); }
@@ -695,6 +766,11 @@ function abrir(d){
     }).join('');
     return `<div class="sec-t">CAR / SICAR</div>`
       +`<div class="anx">${itens}</div>`
+      +(dados.length ? `<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">`
+          +`<span style="font-size:11.5px;color:var(--text-hint)">Perímetro do imóvel:</span>`
+          +`<button class="anxbtn" onclick="mcBaixarCarGeom('${d.id}','kml')" title="Baixa o polígono do imóvel (perímetro do CAR) em KML — abre no Google Earth.">⬇️ KML</button>`
+          +`<button class="anxbtn" onclick="mcBaixarCarGeom('${d.id}','geojson')" title="Baixa o polígono do imóvel em GeoJSON — abre no QGIS/ArcGIS e converte em shapefile. Use como quiser.">⬇️ GeoJSON</button>`
+        +`</div>` : '')
       +(temProp
         ? `<div class="rs" style="margin-top:6px;font-size:11px;color:var(--text-hint)">🔒 Proprietário/CPF vindos do Harpia (uso funcional restrito). Para APP / Reserva Legal, use o <b>📄 Demonstrativo</b> do SICAR. <span class="miut">Consultado em ${quando}.</span></div>`
         : `<div class="rs" style="margin-top:6px;font-size:11.5px"><b>Proprietário:</b> rode o <b>Importador do Harpia</b> (traz nome/CPF automático), ou clique em <b>📄 Demonstrativo</b> e resolva o captcha no SICAR. <span class="miut">Consultado em ${quando}.</span></div>`);
@@ -1713,11 +1789,14 @@ async function mcMapaUC(){
   }));
   // carrega o polígono do próprio MC (KML do GEOCOD), se ainda não estiver em memória
   try{ if(d.tem_kml && !d.kml_content) await _garantirKml([d]); }catch(_){}
+  // carrega o polígono do imóvel (CAR), se já consultado
+  try{ await _garantirCarGeom([d]); }catch(_){}
   _loadLeaflet(()=>_abrirMapaUC(d, la, lo, feats));   // abre mesmo sem UC (mostra o polígono do MC)
 }
 function _abrirMapaUC(d, la, lo, feats){
   const old=document.getElementById('_mapaUCModal'); if(old) old.remove();
   const nomes=feats.map(f=>{ const p=f.properties||{}; const n=(p.nome_uc||p.nome||'UC'); return n+(f.__esfera?(' · '+f.__esfera):''); });
+  const carGeoms=_carGeomList(d);   // polígono(s) do imóvel (CAR), se já importados
   const ov=document.createElement('div'); ov.id='_mapaUCModal';
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:1200;padding:14px';
   const box=document.createElement('div');
@@ -1725,9 +1804,10 @@ function _abrirMapaUC(d, la, lo, feats){
   box.innerHTML=
     `<div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap">`+
       `<div style="font-size:14px;font-weight:800;color:var(--gold)">🗺️ Mapa do ponto (MC)</div>`+
-      `<div style="font-size:11px;color:var(--text-hint)"><span style="color:#e03a34;font-weight:800">●</span> ponto · <span style="color:#f5c542;font-weight:800">▬</span> área do MC${nomes.length?' · <span style="color:#20c997;font-weight:800">▬</span> UC':''}</div>`+
+      `<div style="font-size:11px;color:var(--text-hint)"><span style="color:#e03a34;font-weight:800">●</span> ponto · <span style="color:#f5c542;font-weight:800">▬</span> área do MC${nomes.length?' · <span style="color:#20c997;font-weight:800">▬</span> UC':''}${carGeoms.length?' · <span style="color:#3ba7f5;font-weight:800">▬</span> imóvel (CAR)':''}</div>`+
       `<button class="anxbtn" id="_ucFitMC" title="Enquadrar na área do GEOCOD (zoom perto do ponto).">🔲 Área do MC</button>`+
       (nomes.length?`<button class="anxbtn" id="_ucFitUC" title="Enquadrar a Unidade de Conservação inteira.">🟢 Toda a UC</button>`:'')+
+      (carGeoms.length?`<button class="anxbtn" id="_ucFitCar" title="Enquadrar o imóvel rural (CAR) inteiro.">🏠 Imóvel (CAR)</button>`:'')+
       `<button id="_ucMpClose" title="Fechar" style="margin-left:auto;width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:var(--bg-input);color:var(--text-white);font-size:17px;font-weight:700;cursor:pointer;line-height:1;flex-shrink:0">✕</button>`+
     `</div>`+
     `<div style="padding:8px 16px;font-size:12.5px;color:var(--text-white);border-bottom:1px solid var(--border)">📍 GEOCOD <b>${_escH(d.codigo||'')}</b> ${nomes.length?('em: <b style="color:var(--danger)">'+_escH(nomes.join('  +  '))+'</b>'):'<span style="color:var(--success)">— fora de Unidade de Conservação</span>'}</div>`+
@@ -1760,13 +1840,24 @@ function _abrirMapaUC(d, la, lo, feats){
       mcLayer.bindPopup(popup,{maxWidth:300});
     }
   }catch(e){}
+  // polígono do imóvel rural (CAR) — azul — vindo do Harpia (car_geom)
+  let carLayer=null;
+  try{
+    if(carGeoms.length){
+      const fc={ type:'FeatureCollection', features:carGeoms.map(x=>({ type:'Feature', properties:{cod:x.cod_imovel||''}, geometry:x.geometry })) };
+      carLayer=L.geoJSON(fc,{style:{color:'#3ba7f5',weight:2.5,fill:true,fillColor:'#3ba7f5',fillOpacity:.10},interactive:true}).addTo(map);
+      const _c0=carGeoms[0]; try{ carLayer.bindPopup('🏠 Imóvel (CAR)<br><b style="font-family:monospace">'+_escH(_c0.cod_imovel||'')+'</b>'); }catch(e){}
+    }
+  }catch(e){}
   // ponto pesquisado (vermelho)
   const mk=L.circleMarker([la,lo],{radius:7,color:'#fff',weight:2,fillColor:'#e03a34',fillOpacity:1}).addTo(map);
   mk.bindPopup('📍 Ponto pesquisado<br>GEOCOD '+_escH(d.codigo||''));
   const fitUC=()=>{ try{ map.fitBounds(gj.getBounds().extend([la,lo]),{padding:[30,30]}); }catch(e){ map.setView([la,lo],11); } };
   const fitMC=()=>{ try{ if(mcLayer) map.fitBounds(mcLayer.getBounds().pad(0.5)); else map.setView([la,lo],15); }catch(e){ map.setView([la,lo],15); } };
+  const fitCar=()=>{ try{ if(carLayer) map.fitBounds(carLayer.getBounds().pad(0.2)); else map.setView([la,lo],14); }catch(e){ map.setView([la,lo],14); } };
   box.querySelector('#_ucFitMC').onclick=fitMC;
   const _fu=box.querySelector('#_ucFitUC'); if(_fu) _fu.onclick=fitUC;
+  const _fc=box.querySelector('#_ucFitCar'); if(_fc) _fc.onclick=fitCar;
   // enquadra SÓ depois que o container tem altura (senão o zoom sai errado).
   // Abre no polígono do MC (o alvo da fiscalização, bem visível em dourado);
   // a UC verde fica ao redor. Botão "Toda a UC" mostra o contorno inteiro.
