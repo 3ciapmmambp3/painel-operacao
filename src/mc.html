@@ -243,6 +243,7 @@
         <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px"><span id="lp-txt">Processando…</span></div>
         <div style="height:10px;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:6px;overflow:hidden"><div id="lp-bar" style="height:100%;width:0;background:var(--gold);transition:width .3s"></div></div>
       </div>
+      <div id="lote-aviso-car" style="display:none;margin-top:14px;padding:11px 13px;border:1px solid var(--gold);border-radius:8px;background:rgba(201,162,39,.08);font-size:12.5px;color:var(--text-white);line-height:1.55"></div>
       <div id="pend-report" style="display:none;margin-top:14px;max-height:320px;overflow:auto"></div>
       <div class="mfoot" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
         <span style="display:flex;gap:8px;flex-wrap:wrap">
@@ -1818,6 +1819,7 @@ async function carregarLote(){
   const loteNome=loteObj?loteObj.nome:(sel.options[sel.selectedIndex]?sel.options[sel.selectedIndex].text:'');
   if(!loteId) return toast('Selecione um lote.');
   const btn=document.getElementById('f-carregar'); btn.disabled=true;
+  const _av0=document.getElementById('lote-aviso-car'); if(_av0) _av0.style.display='none';
   const prog=document.getElementById('lote-prog'); prog.style.display='block';
   const bar=document.getElementById('lp-bar'), txt=document.getElementById('lp-txt');
   // páginas pequenas (cada chamada rápida) + retry + não aborta a carga toda se
@@ -1851,6 +1853,21 @@ async function carregarLote(){
     txt.textContent=`Concluído: ${total} GEOCOD (novos ${ins} · atualizados ${upd}).`+(falhas?` ${falhas} página(s) falharam — carregue de novo p/ completar.`:'');
     toast('Lote carregado: '+total+' GEOCOD.'+(falhas?` ${falhas} a refazer.`:''));
     await carregar();
+    // Aviso: quantos MC ativos (com coordenada) ainda estão SEM proprietário/CPF
+    // do CAR — ou seja, precisam do "🦅 Importar CAR do Harpia" (que traz só os
+    // que faltam). Assim o militar sabe na hora se precisa rodar o importador.
+    try{
+      const _temProp=d=>Array.isArray(d.car_dados)&&d.car_dados.some(c=>c&&(c.proprietario||c.cpf));
+      const _semProp=DADOS.filter(d=>d.ativo!==false&&isFinite(parseFloat(d.coord_y))&&isFinite(parseFloat(d.coord_x))&&!_temProp(d)).length;
+      const av=document.getElementById('lote-aviso-car');
+      if(av){
+        av.style.display='block';
+        av.innerHTML = _semProp>0
+          ? `🌱 <b>${_semProp}</b> MC ativo(s) ainda <b>sem proprietário/CPF</b> do CAR. Abra a página do <b>Harpia</b> e clique no atalho — ele traz <b>só os que faltam</b>.`
+            + `<div style="margin-top:8px"><button class="btn-gold btn-sm" onclick="abrirImportadorHarpia()">🦅 Importar CAR do Harpia</button></div>`
+          : `✅ Todos os MC ativos já têm proprietário/CAR importado — não precisa rodar o Importar CAR.`;
+      }
+    }catch(_e){}
   }catch(e){ toast('Erro: '+(e.message||e)); txt.textContent='Erro: '+(e.message||e); }
   finally{ btn.disabled=false; }
 }
