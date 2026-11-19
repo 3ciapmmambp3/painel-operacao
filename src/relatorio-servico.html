@@ -1961,7 +1961,15 @@ async function carregarControleSupabase(tabela, sourceKey){
   const pelN = s => { const m=(s||'').match(/(\d+)\s*PEL/i); return m?+m[1]:null; };
   const rg = await fetch(`${SB_AUTH_URL}/rest/v1/grupos?select=gp_responsavel,grupamento_completo`, { headers:H });
   if (!rg.ok) return;
-  const GRUPOS = (await rg.json()).map(g => ({ gpr:g.gp_responsavel, gp:gpN(g.grupamento_completo), pel:pelN(g.grupamento_completo) }));
+  const _gruposRaw = await rg.json();
+  const GRUPOS = _gruposRaw.map(g => ({ gpr:g.gp_responsavel, gp:gpN(g.grupamento_completo), pel:pelN(g.grupamento_completo) }));
+  // Mapa gp_responsavel → grupamento_completo CANÔNICO (só o cheio, com " / ").
+  // Usado para consertar em memória demandas cujo grupamento_completo veio
+  // TRUNCADO na importação (ex.: só "6 GP"), que de outro modo somem do dropdown
+  // porque não casam na Fração de Atuação. O gp_responsavel nesses casos está
+  // certo, então ele reconstitui a fração. Ver db/203.
+  const gprToGrup = {};
+  _gruposRaw.forEach(g => { if (g.gp_responsavel && /\s\/\s/.test(g.grupamento_completo||'')) gprToGrup[g.gp_responsavel] = g.grupamento_completo; });
   const nivel = S.nivel_acesso || 'operacional';
   const meuGp = gpN(S.grupamento_id), meuPel = pelN(S.grupamento_id);
   let ALLOWED;
@@ -1978,7 +1986,7 @@ async function carregarControleSupabase(tabela, sourceKey){
   // Pagina TODAS as pendentes do escopo. O antigo limit=3000 truncava (MC passou de
   // 6000): as cortadas (por vencimento) ficavam sem o contexto "— município" e o
   // dropdown mostrava só-número. Agora busca em páginas até esgotar.
-  const baseUrl = `${SB_AUTH_URL}/rest/v1/${tabela}?select=codigo,municipio,natureza,fracao_responsavel,grupamento_completo`
+  const baseUrl = `${SB_AUTH_URL}/rest/v1/${tabela}?select=codigo,municipio,natureza,fracao_responsavel,grupamento_completo,gp_responsavel`
             + `&gp_responsavel=in.${encodeURIComponent(inList)}&situacao=${encodeURIComponent(sit)}&ativo=eq.true`
             + `&data_atendimento=is.null&order=data_vencimento.asc.nullslast`;
   let rows = []; const PG = 1000;
@@ -1996,7 +2004,12 @@ async function carregarControleSupabase(tabela, sourceKey){
   // porque a baixa cai noutra planilha que casa por número — então a baixa não quebra.
   const itens = rows.map(d => {
     const extras = [d.municipio, d.natureza].filter(Boolean).join(' · ');
-    return { value: extras ? `${d.codigo} — ${extras}` : `${d.codigo}`, fracao: d.grupamento_completo || d.fracao_responsavel || '' };
+    // fração p/ o filtro por Fração de Atuação. Se o grupamento_completo vier
+    // truncado (sem " / ", ex.: "6 GP"), reconstitui pelo gp_responsavel — senão
+    // a demanda some do dropdown mesmo estando pendente (db/203).
+    let frac = d.grupamento_completo || '';
+    if (!/\s\/\s/.test(frac) && gprToGrup[d.gp_responsavel]) frac = gprToGrup[d.gp_responsavel];
+    return { value: extras ? `${d.codigo} — ${extras}` : `${d.codigo}`, fracao: frac || d.fracao_responsavel || '' };
   });
   const atual = Array.isArray(referenceCache[sourceKey]) ? referenceCache[sourceKey] : [];
   // Dedup pelo CÓDIGO base (parte antes do "— município · bioma"), não pelo texto
