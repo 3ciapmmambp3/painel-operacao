@@ -1044,6 +1044,11 @@ function _mcInfoRows(d){
     rows.push(['Imóvel (CAR)', String(_car0.nome_imovel||'').replace(/\r?\n/g,' / ')]);
     rows.push(['Área do imóvel (ha)', _car0.area]);
   }
+  // UC + flags ambientais (IDE-MG) — o que o ponto "cai dentro de"
+  const _ucIn = Array.isArray(d.uc_dados) ? d.uc_dados.filter(u=>u&&u.nome_uc).map(u=>u.nome_uc) : [];
+  if(_ucIn.length) rows.push(['Unidade de Conservação', _ucIn.join(' · ')]);
+  const _ambIn = Array.isArray(d.amb_dados) ? d.amb_dados.filter(a=>a&&a.dentro).map(a=>a.rotulo) : [];
+  if(_ambIn.length) rows.push(['Alertas ambientais', _ambIn.join(' · ')]);
   const _tem=v=>v!=null && String(v).trim()!=='' && String(v)!=='—';
   const out=rows.filter(r=>_tem(r[1]));
   // Nos pontos atendidos, mostra os dados da fiscalização (balão do mapa + pino do Google Earth)
@@ -1904,9 +1909,16 @@ function _abrirMapaUC(d, la, lo, feats){
       const _c0=carGeoms[0]; try{ carLayer.bindPopup('🏠 Imóvel (CAR)<br><b style="font-family:monospace">'+_escH(_c0.cod_imovel||'')+'</b>'); }catch(e){}
     }
   }catch(e){}
-  // ponto pesquisado (vermelho)
+  // ponto pesquisado (vermelho) — balão com TODAS as informações (igual ao mapa
+  // da seleção "Ver no mapa"): GEOCOD, município, CAR, proprietário, UC, ambiental…
   const mk=L.circleMarker([la,lo],{radius:7,color:'#fff',weight:2,fillColor:'#e03a34',fillOpacity:1}).addTo(map);
-  mk.bindPopup('📍 Ponto pesquisado<br>GEOCOD '+_escH(d.codigo||''));
+  const _dirMk='https://www.google.com/maps/dir/?api=1&destination='+la+','+lo;
+  const _wazeMk='https://waze.com/ul?ll='+la+','+lo;
+  const _popMk='<div style="font:12px/1.5 Arial;min-width:200px;max-width:270px">'
+    +'<div style="font-weight:800;color:#8a6d00;margin-bottom:4px">📍 '+_escH(d.codigo||'GEOCOD')+'</div>'
+    +_mcInfoRows(d).map(r=>'<b>'+_escH(r[0])+':</b> '+_escH(String(r[1]))).join('<br>')
+    +'<div style="margin-top:8px"><a href="'+_dirMk+'" target="_blank" rel="noopener" style="color:#1769c4;font-weight:700">🧭 Rota (Maps)</a> &nbsp;·&nbsp; <a href="'+_wazeMk+'" target="_blank" rel="noopener" style="color:#0a8fb8;font-weight:700">🚗 Waze</a></div></div>';
+  mk.bindPopup(_popMk,{maxWidth:300});
   const fitUC=()=>{ try{ map.fitBounds(gj.getBounds().extend([la,lo]),{padding:[30,30]}); }catch(e){ map.setView([la,lo],11); } };
   const fitMC=()=>{ try{ if(mcLayer) map.fitBounds(mcLayer.getBounds().pad(0.5)); else map.setView([la,lo],15); }catch(e){ map.setView([la,lo],15); } };
   const fitCar=()=>{ try{ if(carLayer) map.fitBounds(carLayer.getBounds().pad(0.2)); else map.setView([la,lo],14); }catch(e){ map.setView([la,lo],14); } };
@@ -1916,7 +1928,7 @@ function _abrirMapaUC(d, la, lo, feats){
   // enquadra SÓ depois que o container tem altura (senão o zoom sai errado).
   // Abre no polígono do MC (o alvo da fiscalização, bem visível em dourado);
   // a UC verde fica ao redor. Botão "Toda a UC" mostra o contorno inteiro.
-  setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} if(mcLayer) fitMC(); else if(feats.length) fitUC(); else map.setView([la,lo],15); },200);
+  setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} if(mcLayer) fitMC(); else if(feats.length) fitUC(); else map.setView([la,lo],15); try{ mk.openPopup(); }catch(e){} },200);
 }
 
 /* ── Importador de CAR do Harpia (bookmarklet) ───────────────────────────
