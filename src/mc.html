@@ -250,6 +250,7 @@
           <button class="btn-outline btn-sm" id="f-kml" onclick="gerarKmlsFaltantes()" title="Gera o KML individual (por GEOCOD) das demandas que estão sem KML, varrendo os KML mestres das pastas da companhia selecionada. Não altera datas nem baixa.">🛰️ Gerar KMLs faltantes</button>
           <button class="btn-outline btn-sm" id="f-car" onclick="consultarCarFaltantes()" title="Consulta no SICAR oficial o imóvel rural (CAR) de cada GEOCOD ainda SEM consulta. RESPEITA o filtro atual (pelotão/grupamento/busca) — ou, se você marcar demandas, só as marcadas. Assim dá pra fazer em partes. Grava o nº do CAR no banco e aparece na gaveta. Cada consulta ao SICAR é lenta.">🌱 Consultar CAR (faltantes)</button>
           <button class="btn-outline btn-sm" id="f-harpia" onclick="abrirImportadorHarpia()" title="Traz do HARPIA o PROPRIETÁRIO, CPF, nome do imóvel, área e módulos fiscais do CAR — automático, sem captcha. Usa um atalho (bookmarklet) que roda na página do Harpia.">🦅 Importar CAR do Harpia</button>
+          <button class="btn-outline btn-sm" id="f-uc" onclick="verificarUCFaltantes()" title="Consulta a Unidade de Conservação (IDE do Estado, público) de TODOS os MCs ainda sem UC e grava — pra já aparecer no Ver no mapa sem clicar um por um. Roda aqui no painel.">🏞️ Verificar UC (faltantes)</button>
           <label style="display:flex;align-items:center;gap:4px;font-size:11.5px;color:var(--text-muted)">por vez <input id="f-vp-batch" type="number" min="1" max="100" value="5" style="width:54px;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:6px;padding:5px 6px;color:var(--text-white);font-family:inherit"></label>
           <button class="btn-outline btn-sm" id="f-verificar" onclick="verificarPendencias()" title="Lê os GEOCODs das pastas ainda NÃO carregadas EM ETAPAS (N por vez) e compara com o que já está no painel. Mostra, por pasta, quantas demandas são NOVAS vs já estão lá — e deixa arquivar as que já entraram, aos poucos. Útil quando há muitas pastas (2025).">🔎 Verificar pendências</button>
         </span>
@@ -643,6 +644,7 @@ function abrir(d){
   const comoChegar = _temCoord
     ? `<div class="sec-t">Como chegar</div>`+
       `<div class="comochegar">`+
+        `<button class="anxbtn" style="background:var(--success);color:#fff;border:none;font-weight:700" onclick="mcMapaUC()" title="Abre um mapa (satélite) com o polígono do MC a fiscalizar, o ponto, e o contorno da Unidade de Conservação (se houver).">🗺️ Ver no mapa</button>`+
         `<a class="anxbtn rota" href="${_rotaUrl}" target="_blank" rel="noopener" title="Abre o Google Maps e traça a rota a partir de onde você estiver (no celular abre o app).">🧭 Traçar rota</a>`+
         `<a class="anxbtn waze" href="https://waze.com/ul?ll=${_la},${_lo}" target="_blank" rel="noopener" title="Abre o local no Waze — toque em Ir para navegar (em área sem estrada o Waze encaixa na via mais próxima).">🚗 Waze</a>`+
         `<a class="anxbtn zap" href="https://wa.me/?text=${_wppTxt}" target="_blank" rel="noopener" title="Abre o WhatsApp para enviar o link da rota a alguém.">📱 Enviar no WhatsApp</a>`+
@@ -708,8 +710,7 @@ function abrir(d){
     return `<div class="sec-t">Unidade de Conservação</div>`
       +`<div class="rs" style="font-size:12.5px;margin-bottom:6px;background:var(--danger-bg);border-color:rgba(239,83,80,.4)"><b style="color:var(--danger)">⚠️ Ponto DENTRO de Unidade de Conservação.</b></div>`
       +`<div class="anx">${itens}</div>`
-      +`<div class="comochegar" style="margin-top:6px"><button class="anxbtn rota" onclick="mcMapaUC()" title="Abre um mapa mostrando o ponto do GEOCOD e o contorno da Unidade de Conservação.">🗺️ Ver no mapa</button></div>`
-      +`<div class="rs" style="margin-top:6px;font-size:11.5px">Fonte: IDE oficial de Minas Gerais. <span class="miut">Consultado em ${quando}.</span> ${btn}</div>`;
+      +`<div class="rs" style="margin-top:6px;font-size:11.5px">Fonte: IDE oficial de Minas Gerais. Veja o contorno em <b>🗺️ Ver no mapa</b> (acima). <span class="miut">Consultado em ${quando}.</span> ${btn}</div>`;
   })();
   // ── Atendimentos próximos (quem já foi perto / possível mesmo proprietário) ──
   const vizSec = (()=>{
@@ -735,11 +736,13 @@ function abrir(d){
     const fmtKm=v=> !isFinite(v)?'':(v<1?Math.round(v*1000)+' m':(v<10?v.toFixed(1):Math.round(v))+' km');
     const itens=cands.slice(0,6).map(({o,dist,mesmo})=>{
       const info=[o.numero_reds?('REDS '+o.numero_reds):'', o.data_atendimento?('em '+fmtData(o.data_atendimento)):'', o.atendido_por_nome?('por '+o.atendido_por_nome):''].filter(Boolean).join(' · ');
-      return `<div class="anxitem" style="align-items:flex-start">`
+      const extra=[o.numero_gaia?('Ato/SISFIS '+o.numero_gaia):'', o.numero_auto_infracao?('Auto nº '+o.numero_auto_infracao):'', o.resultado?('Resultado: '+o.resultado):''].filter(Boolean).join(' · ');
+      return `<div class="anxitem" style="align-items:flex-start;cursor:pointer" onclick="abrir(byId('${o.id}'))" title="Abrir este GEOCOD — ver quem atendeu, equipe, Ato de fiscalização e Auto de Infração.">`
         +`<svg class="ic" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>`
-        +`<div class="m"><b>GEOCOD ${_escH(o.codigo||'')}</b>`
+        +`<div class="m"><b>GEOCOD ${_escH(o.codigo||'')} <span style="color:var(--gold)">↗</span></b>`
         +(mesmo?` <span style="color:var(--danger);font-weight:800">• MESMO PROPRIETÁRIO/CAR</span>`:(isFinite(dist)?` <span class="miut">a ${fmtKm(dist)}</span>`:''))
         +(info?`<small>${_escH([o.municipio,info].filter(Boolean).join(' — '))}</small>`:(o.municipio?`<small>${_escH(o.municipio)}</small>`:''))
+        +(extra?`<small>${_escH(extra)}</small>`:'')
         +(o.equipe?`<small>Equipe: ${_escH(o.equipe)}</small>`:'')+`</div></div>`;
     }).join('');
     return `<div class="sec-t">Atendimentos próximos (possível mesmo proprietário)</div>`
@@ -861,6 +864,7 @@ function _renderSelBar(){
     `<button onclick="mapaLoteSel()" ${comCoord?'':'disabled'} style="margin-left:auto;background:var(--success);color:#fff;border:none;font-weight:800;font-size:12.5px;padding:7px 14px;border-radius:7px;cursor:${comCoord?'pointer':'not-allowed'};opacity:${comCoord?'1':'.5'}" title="Abre um mapa no painel com um alfinete por ponto; clique num alfinete para ver as informações (GEOCOD, município, bioma, prazo…) e traçar a rota até ele.">🗺️ Ver no mapa (${comCoord})</button>`+
     `<button onclick="rotaLoteSel()" ${comCoord?'':'disabled'} style="background:var(--info);color:#fff;border:none;font-weight:800;font-size:12.5px;padding:7px 14px;border-radius:7px;cursor:${comCoord?'pointer':'not-allowed'};opacity:${comCoord?'1':'.5'}" title="Monta um roteiro otimizado (vizinho mais próximo) com todos os pontos selecionados — abre no Google Maps, com a ordem sugerida e a distância entre eles.">🧭 Traçar rota (${comCoord})</button>`+
     `<button onclick="baixarKmlLote()" ${comKml?'':'disabled'} style="background:#1f6feb;color:#fff;border:none;font-weight:800;font-size:12.5px;padding:7px 14px;border-radius:7px;cursor:${comKml?'pointer':'not-allowed'};opacity:${comKml?'1':'.5'}">⬇️ Baixar KML agrupado (${comKml})</button>`+
+    `<button onclick="verificarUCSelecionados()" ${comCoord?'':'disabled'} style="background:#1f6b45;color:#fff;border:none;font-weight:800;font-size:12.5px;padding:7px 14px;border-radius:7px;cursor:${comCoord?'pointer':'not-allowed'};opacity:${comCoord?'1':'.5'}" title="Consulta a Unidade de Conservação (IDE do Estado) dos pontos selecionados e grava, pra já aparecer no Ver no mapa.">🏞️ Verificar UC (${comCoord})</button>`+
     `<button onclick="_selClear()" style="background:var(--bg-input);border:1px solid var(--border-mid);color:var(--text-white);font-size:12px;padding:7px 12px;border-radius:7px;cursor:pointer">Limpar seleção</button>`;
 }
 /* ── Roteiro: rota multi-parada p/ os GEOCODs selecionados ──────────── */
@@ -1547,6 +1551,58 @@ async function mcVerificarUC(){
   }catch(e){ toast('Consulta feita, mas falhou ao salvar no banco: '+(e.message||e)); }
 }
 
+/* ── Verificar UC em LOTE (roda no painel — IDE do Estado é público) ──────
+   Preenche a Unidade de Conservação de vários MCs de uma vez, pra já aparecer
+   no "Ver no mapa" sem o usuário clicar um por um. */
+async function _mcVerificarUCLista(lista){
+  const alvo=(lista||[]).filter(d=>d && isFinite(parseFloat(d.coord_y)) && isFinite(parseFloat(d.coord_x)));
+  if(!alvo.length) return toast('Nenhum ponto com coordenada para verificar UC.');
+  if(window.__ucLoteRodando) return toast('Já está verificando UC. Aguarde.');
+  window.__ucLoteRodando=true; window.__ucLoteCancel=false;
+  const ov=document.createElement('div'); ov.id='_ucLoteModal';
+  ov.style.cssText='position:fixed;top:16px;right:16px;z-index:1400;width:320px;max-width:92vw;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.5);color:var(--text-white);font-size:13px;overflow:hidden';
+  ov.innerHTML='<div style="background:#1f6b45;padding:10px 14px;font-weight:800;display:flex;align-items:center;gap:8px">🏞️ Verificar Unidade de Conservação<button id="_ucLx" style="margin-left:auto;background:transparent;border:0;color:#fff;font-size:18px;cursor:pointer;line-height:1">✕</button></div>'
+    +'<div style="padding:14px"><div id="_ucLm" style="margin-bottom:10px">Iniciando…</div>'
+    +'<div style="background:var(--bg-input);border-radius:8px;height:12px;overflow:hidden;border:1px solid var(--border-mid)"><div id="_ucLb" style="height:100%;width:0;background:#49c07d;transition:width .2s"></div></div>'
+    +'<div id="_ucLs" style="margin-top:8px;font-size:12px;color:var(--text-muted)"></div></div>';
+  document.body.appendChild(ov);
+  ov.querySelector('#_ucLx').onclick=()=>{ window.__ucLoteCancel=true; ov.remove(); };
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  let feito=0,dentro=0,fora=0,erros=0;
+  for(const d of alvo){
+    if(window.__ucLoteCancel) break;
+    try{
+      const ucs=await mcConsultarUC(parseFloat(d.coord_y), parseFloat(d.coord_x));
+      await fetch(`${API}/rest/v1/${TBL}?id=eq.${encodeURIComponent(d.id)}`, { method:'PATCH', headers:Object.assign({'Content-Type':'application/json',Prefer:'return=minimal'},H), body:JSON.stringify({ uc_dados:ucs, uc_consultado_em:new Date().toISOString() }) });
+      const i=DADOS.findIndex(x=>x.id===d.id); if(i>=0){ DADOS[i].uc_dados=ucs; DADOS[i].uc_consultado_em=new Date().toISOString(); }
+      if(atual && atual.id===d.id){ atual.uc_dados=ucs; atual.uc_consultado_em=new Date().toISOString(); }
+      ucs.length?dentro++:fora++;
+    }catch(e){ erros++; }
+    feito++;
+    const m=ov.querySelector('#_ucLm'), b=ov.querySelector('#_ucLb'), s=ov.querySelector('#_ucLs');
+    if(m) m.innerHTML='Verificando… <b>'+feito+'/'+alvo.length+'</b>';
+    if(b) b.style.width=Math.round(feito/alvo.length*100)+'%';
+    if(s) s.textContent='⚠️ dentro de UC: '+dentro+'  ·  fora: '+fora+(erros?('  ·  erros: '+erros):'');
+    await sleep(120);
+  }
+  window.__ucLoteRodando=false;
+  const m=ov.querySelector('#_ucLm'); if(m) m.innerHTML=(window.__ucLoteCancel?'⏹ Interrompido.':'✅ Concluído!')+' '+feito+' verificado(s).';
+  try{ render(); }catch(e){}
+  try{ if(atual) abrir(atual); }catch(e){}
+  setTimeout(()=>{ if(ov && ov.parentNode) ov.remove(); }, 4000);
+}
+function verificarUCSelecionados(){ const ds=[..._sel].map(byId).filter(Boolean); if(!ds.length) return toast('Selecione ao menos uma demanda.'); _mcVerificarUCLista(ds); }
+async function verificarUCFaltantes(){
+  toast('Procurando MCs sem UC…');
+  try{
+    const r=await fetch(`${API}/rest/v1/${TBL}?select=id,codigo,coord_x,coord_y&coord_y=not.is.null&uc_consultado_em=is.null&ativo=eq.true&order=codigo`, { headers:H });
+    const lista=await r.json();
+    if(!lista.length) return toast('✅ UC de todos os MCs já consultada.');
+    if(!confirm('Verificar Unidade de Conservação de '+lista.length+' MC(s) ainda sem UC?\n\nRoda aqui no painel (IDE do Estado, público). Pode levar alguns minutos — dá pra fechar e o que já foi fica salvo.')) return;
+    _mcVerificarUCLista(lista);
+  }catch(e){ toast('Erro ao buscar pendentes de UC: '+(e.message||e)); }
+}
+
 /* ── Mapa da UC: ponto do GEOCOD + contorno da Unidade de Conservação ─────
    Re-busca o polígono (GeoJSON, com geometria) nas 3 camadas do IDE de MG e
    desenha no Leaflet. A geometria NÃO é guardada no banco (polígonos são
@@ -1556,7 +1612,7 @@ async function mcMapaUC(){
   const d=atual; if(!d) return;
   const la=parseFloat(d.coord_y), lo=parseFloat(d.coord_x);
   if(!isFinite(la)||!isFinite(lo)) return toast('Sem coordenada (lat/lon) para o mapa.');
-  toast('Carregando o mapa da Unidade de Conservação…');
+  toast('Carregando o mapa…');
   const feats=[];
   await Promise.all(UC_CAMADAS.map(async c=>{
     const cql=`INTERSECTS(${c.geom||'geometry'},POINT(${la} ${lo}))`;
@@ -1569,8 +1625,7 @@ async function mcMapaUC(){
   }));
   // carrega o polígono do próprio MC (KML do GEOCOD), se ainda não estiver em memória
   try{ if(d.tem_kml && !d.kml_content) await _garantirKml([d]); }catch(_){}
-  if(!feats.length) return toast('Não consegui carregar o contorno agora (tente reconsultar a UC).');
-  _loadLeaflet(()=>_abrirMapaUC(d, la, lo, feats));
+  _loadLeaflet(()=>_abrirMapaUC(d, la, lo, feats));   // abre mesmo sem UC (mostra o polígono do MC)
 }
 function _abrirMapaUC(d, la, lo, feats){
   const old=document.getElementById('_mapaUCModal'); if(old) old.remove();
@@ -1581,13 +1636,13 @@ function _abrirMapaUC(d, la, lo, feats){
   box.style.cssText='background:var(--bg-card);border:1px solid var(--border);border-radius:14px;width:min(960px,96vw);height:min(86vh,760px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.45)';
   box.innerHTML=
     `<div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap">`+
-      `<div style="font-size:14px;font-weight:800;color:var(--gold)">🗺️ Unidade de Conservação</div>`+
-      `<div style="font-size:11px;color:var(--text-hint)"><span style="color:#e03a34;font-weight:800">●</span> ponto · <span style="color:#f5c542;font-weight:800">▬</span> área do MC · <span style="color:#20c997;font-weight:800">▬</span> UC</div>`+
+      `<div style="font-size:14px;font-weight:800;color:var(--gold)">🗺️ Mapa do ponto (MC)</div>`+
+      `<div style="font-size:11px;color:var(--text-hint)"><span style="color:#e03a34;font-weight:800">●</span> ponto · <span style="color:#f5c542;font-weight:800">▬</span> área do MC${nomes.length?' · <span style="color:#20c997;font-weight:800">▬</span> UC':''}</div>`+
       `<button class="anxbtn" id="_ucFitMC" title="Enquadrar na área do GEOCOD (zoom perto do ponto).">🔲 Área do MC</button>`+
-      `<button class="anxbtn" id="_ucFitUC" title="Enquadrar a Unidade de Conservação inteira.">🟢 Toda a UC</button>`+
+      (nomes.length?`<button class="anxbtn" id="_ucFitUC" title="Enquadrar a Unidade de Conservação inteira.">🟢 Toda a UC</button>`:'')+
       `<button id="_ucMpClose" title="Fechar" style="margin-left:auto;width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:var(--bg-input);color:var(--text-white);font-size:17px;font-weight:700;cursor:pointer;line-height:1;flex-shrink:0">✕</button>`+
     `</div>`+
-    `<div style="padding:8px 16px;font-size:12.5px;color:var(--text-white);border-bottom:1px solid var(--border)">📍 GEOCOD <b>${_escH(d.codigo||'')}</b> em: <b style="color:var(--danger)">${_escH(nomes.join('  +  '))}</b></div>`+
+    `<div style="padding:8px 16px;font-size:12.5px;color:var(--text-white);border-bottom:1px solid var(--border)">📍 GEOCOD <b>${_escH(d.codigo||'')}</b> ${nomes.length?('em: <b style="color:var(--danger)">'+_escH(nomes.join('  +  '))+'</b>'):'<span style="color:var(--success)">— fora de Unidade de Conservação</span>'}</div>`+
     `<div id="_mcMapUC" style="flex:1;min-height:0"></div>`;
   ov.appendChild(box); document.body.appendChild(ov);
   const close=()=>{ try{ if(_mcMapUCObj){ _mcMapUCObj.remove(); _mcMapUCObj=null; } }catch(e){} ov.remove(); };
@@ -1623,11 +1678,11 @@ function _abrirMapaUC(d, la, lo, feats){
   const fitUC=()=>{ try{ map.fitBounds(gj.getBounds().extend([la,lo]),{padding:[30,30]}); }catch(e){ map.setView([la,lo],11); } };
   const fitMC=()=>{ try{ if(mcLayer) map.fitBounds(mcLayer.getBounds().pad(0.5)); else map.setView([la,lo],15); }catch(e){ map.setView([la,lo],15); } };
   box.querySelector('#_ucFitMC').onclick=fitMC;
-  box.querySelector('#_ucFitUC').onclick=fitUC;
+  const _fu=box.querySelector('#_ucFitUC'); if(_fu) _fu.onclick=fitUC;
   // enquadra SÓ depois que o container tem altura (senão o zoom sai errado).
   // Abre no polígono do MC (o alvo da fiscalização, bem visível em dourado);
   // a UC verde fica ao redor. Botão "Toda a UC" mostra o contorno inteiro.
-  setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} if(mcLayer) fitMC(); else fitUC(); },200);
+  setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} if(mcLayer) fitMC(); else if(feats.length) fitUC(); else map.setView([la,lo],15); },200);
 }
 
 /* ── Importador de CAR do Harpia (bookmarklet) ───────────────────────────
