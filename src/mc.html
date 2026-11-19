@@ -251,7 +251,7 @@
           <button class="btn-outline btn-sm" id="f-kml" onclick="gerarKmlsFaltantes()" title="Gera o KML individual (por GEOCOD) das demandas que estão sem KML, varrendo os KML mestres das pastas da companhia selecionada. Não altera datas nem baixa.">🛰️ Gerar KMLs faltantes</button>
           <button class="btn-outline btn-sm" id="f-car" onclick="consultarCarFaltantes()" title="Consulta no SICAR oficial o imóvel rural (CAR) de cada GEOCOD ainda SEM consulta. RESPEITA o filtro atual (pelotão/grupamento/busca) — ou, se você marcar demandas, só as marcadas. Assim dá pra fazer em partes. Grava o nº do CAR no banco e aparece na gaveta. Cada consulta ao SICAR é lenta.">🌱 Consultar CAR (faltantes)</button>
           <button class="btn-outline btn-sm" id="f-harpia" onclick="abrirImportadorHarpia()" title="Traz do HARPIA o PROPRIETÁRIO, CPF, nome do imóvel, área e módulos fiscais do CAR — automático, sem captcha. Usa um atalho (bookmarklet) que roda na página do Harpia.">🦅 Importar CAR do Harpia</button>
-          <button class="btn-outline btn-sm" id="f-uc" onclick="verificarUCFaltantes()" title="Consulta a Unidade de Conservação (IDE do Estado, público) de TODOS os MCs ainda sem UC e grava — pra já aparecer no Ver no mapa sem clicar um por um. Roda aqui no painel.">🏞️ Verificar UC (faltantes)</button>
+          <button class="btn-outline btn-sm" id="f-uc" onclick="verificarUCFaltantes()" title="Consulta no IDE do Estado (público) a Unidade de Conservação E o contexto ambiental (embargo, Reserva Legal/APP a recompor, Mata Atlântica) de TODOS os MCs ainda sem consulta, e grava. Roda aqui no painel.">🏞️ Verificar UC + Ambiental (faltantes)</button>
           <label style="display:flex;align-items:center;gap:4px;font-size:11.5px;color:var(--text-muted)">por vez <input id="f-vp-batch" type="number" min="1" max="100" value="5" style="width:54px;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:6px;padding:5px 6px;color:var(--text-white);font-family:inherit"></label>
           <button class="btn-outline btn-sm" id="f-verificar" onclick="verificarPendencias()" title="Lê os GEOCODs das pastas ainda NÃO carregadas EM ETAPAS (N por vez) e compara com o que já está no painel. Mostra, por pasta, quantas demandas são NOVAS vs já estão lá — e deixa arquivar as que já entraram, aos poucos. Útil quando há muitas pastas (2025).">🔎 Verificar pendências</button>
         </span>
@@ -383,7 +383,7 @@ function verTudoSemFiltro(){
 // Colunas da LISTA — tudo menos kml_content (o KML pesa ~2,7 KB/linha e a lista
 // só precisa saber SE existe, não o conteúdo). O conteúdo é carregado sob demanda
 // (mapa / Google Earth / baixar KML / Excel) via _garantirKml().
-const SEL_LEVE = 'id,codigo,tipo_demanda,data_gerada,natureza,municipio,endereco,fracao_responsavel,gp_responsavel,grupamento_completo,data_envio,data_vencimento,status_prazo,data_atendimento,numero_gaia,numero_reds,resultado,status_atendimento,info_complementares,numero_auto_infracao,equipe,viatura,hectares,data_inic,data_final,mes_ref,ano_ref,coord_x,coord_y,regional,bioma,id_semad,id_evolucao,lote,kml_link,anexos,situacao,atendido_por_matricula,atendido_por_nome,observacoes_resposta,fonte_aba,raw,versao,synced_at,ativo,inativado_por_matricula,inativado_por_nome,motivo_inativacao,inativado_em,created_at,updated_at,gp_manual_at,gp_manual_por,car_imovel,car_qtd,car_dados,car_consultado_em,uc_dados,uc_consultado_em';
+const SEL_LEVE = 'id,codigo,tipo_demanda,data_gerada,natureza,municipio,endereco,fracao_responsavel,gp_responsavel,grupamento_completo,data_envio,data_vencimento,status_prazo,data_atendimento,numero_gaia,numero_reds,resultado,status_atendimento,info_complementares,numero_auto_infracao,equipe,viatura,hectares,data_inic,data_final,mes_ref,ano_ref,coord_x,coord_y,regional,bioma,id_semad,id_evolucao,lote,kml_link,anexos,situacao,atendido_por_matricula,atendido_por_nome,observacoes_resposta,fonte_aba,raw,versao,synced_at,ativo,inativado_por_matricula,inativado_por_nome,motivo_inativacao,inativado_em,created_at,updated_at,gp_manual_at,gp_manual_por,car_imovel,car_qtd,car_dados,car_consultado_em,uc_dados,uc_consultado_em,amb_dados,amb_consultado_em';
 
 async function carregar(){
   const gprs = gprEscopo();
@@ -780,7 +780,7 @@ function abrir(d){
   const ucSec = (()=>{
     const jaFez = !!d.uc_consultado_em;
     const btn = _temCoord
-      ? `<button class="anxbtn" onclick="mcVerificarUC()" title="Consulta no IDE oficial de Minas Gerais (público) se este ponto cai dentro de uma Unidade de Conservação (Estadual, Federal ou Municipal). Grava o resultado no banco — fica disponível para todos, sem reconsultar.">${jaFez?'↻ Reconsultar':'🏞️ Verificar Unidade de Conservação'}</button>`
+      ? `<button class="anxbtn" onclick="mcVerificarUC()" title="Consulta no IDE oficial de Minas Gerais (público) se este ponto cai em Unidade de Conservação E o contexto ambiental (embargo Sisema, Reserva Legal/APP a recompor declarado no CAR, Lei da Mata Atlântica). Grava no banco — fica disponível para todos.">${jaFez?'↻ Reconsultar UC + Ambiental':'🏞️ Verificar UC + Ambiental'}</button>`
       : `<span class="miut">Sem coordenada para consultar.</span>`;
     if(!jaFez){
       return `<div class="sec-t">Unidade de Conservação</div>`
@@ -805,6 +805,27 @@ function abrir(d){
       +`<div class="rs" style="font-size:12.5px;margin-bottom:6px;background:var(--danger-bg);border-color:rgba(239,83,80,.4)"><b style="color:var(--danger)">⚠️ Ponto DENTRO de Unidade de Conservação.</b></div>`
       +`<div class="anx">${itens}</div>`
       +`<div class="rs" style="margin-top:6px;font-size:11.5px">Fonte: IDE oficial de Minas Gerais. Veja o contorno em <b>🗺️ Ver no mapa</b> (acima). <span class="miut">Consultado em ${quando}.</span> ${btn}</div>`;
+  })();
+  // ── Contexto ambiental do ponto (camadas PÚBLICAS do IDE-MG) — consultado
+  //    junto com a UC. Flags: embargo, Reserva Legal/APP a recompor (CAR), Mata Atlântica. ──
+  const ambSec = (()=>{
+    if(!d.amb_consultado_em) return '';   // só aparece depois de consultar (UC+ambiental juntos)
+    const quando = fmtData(d.amb_consultado_em);
+    const arr = Array.isArray(d.amb_dados) ? d.amb_dados : [];
+    const dentros = arr.filter(a=>a && a.dentro);
+    const linha = a=>{
+      const cor = a.tipo==='alerta' ? 'var(--danger)' : 'var(--gold-light)';
+      const ic  = a.tipo==='alerta' ? '⛔' : '⚠️';
+      return `<div style="padding:2px 0;color:${cor};font-size:12px">${ic} <b>${_escH(a.rotulo)}</b>${a.n>1?(' <span style="color:var(--text-hint)">('+a.n+')</span>'):''}</div>`;
+    };
+    if(!dentros.length){
+      return `<div class="sec-t">Contexto ambiental (IDE-MG)</div>`
+        +`<div class="rs" style="font-size:12px"><b style="color:var(--success)">Nenhuma restrição detectada no ponto</b> — fora de embargo, sem Reserva Legal/APP a recompor e fora da Lei da Mata Atlântica. <span class="miut">Consultado em ${quando}.</span></div>`;
+    }
+    return `<div class="sec-t">Contexto ambiental (IDE-MG)</div>`
+      +`<div class="rs" style="font-size:11.5px;margin-bottom:4px;color:var(--text-hint)">O ponto cai dentro de (camadas públicas, declarado no CAR / Sisema):</div>`
+      +dentros.map(linha).join('')
+      +`<div class="rs" style="margin-top:6px;font-size:11px;color:var(--text-hint)">Indicativo por ponto — confirme sempre no <b>📄 Demonstrativo</b> do SICAR. <span class="miut">Consultado em ${quando}.</span></div>`;
   })();
   // ── Atendimentos próximos (quem já foi perto / possível mesmo proprietário) ──
   const vizSec = (()=>{
@@ -904,6 +925,7 @@ function abrir(d){
     comoChegar+
     carSec+
     ucSec+
+    ambSec+
     vizSec+
     `<div class="sec-t">Atendimento</div>`+
     (atendidaN(d)
@@ -982,7 +1004,7 @@ function _renderSelBar(){
   if(!n){ el.style.display='none'; el.innerHTML=''; return; }
   const comKml=[..._sel].map(byId).filter(x=>x&&x.tem_kml).length;
   const comCoord=[..._sel].map(byId).filter(x=>x&&isFinite(parseFloat(x.coord_y))&&isFinite(parseFloat(x.coord_x))).length;
-  const semUC=[..._sel].map(byId).filter(x=>x&&isFinite(parseFloat(x.coord_y))&&isFinite(parseFloat(x.coord_x))&&!x.uc_consultado_em).length;
+  const semUC=[..._sel].map(byId).filter(x=>x&&isFinite(parseFloat(x.coord_y))&&isFinite(parseFloat(x.coord_x))&&(!x.uc_consultado_em||!x.amb_consultado_em)).length;
   el.style.display='flex';
   el.innerHTML =
     `<span>☑️ <b>${n}</b> demanda(s) selecionada(s)`+(comKml<n?` · <b>${comKml}</b> com KML`:'')+`.</span>`+
@@ -990,8 +1012,8 @@ function _renderSelBar(){
     `<button onclick="rotaLoteSel()" ${comCoord?'':'disabled'} style="background:var(--info);color:#fff;border:none;font-weight:800;font-size:12.5px;padding:7px 14px;border-radius:7px;cursor:${comCoord?'pointer':'not-allowed'};opacity:${comCoord?'1':'.5'}" title="Monta um roteiro otimizado (vizinho mais próximo) com todos os pontos selecionados — abre no Google Maps, com a ordem sugerida e a distância entre eles.">🧭 Traçar rota (${comCoord})</button>`+
     `<button onclick="baixarKmlLote()" ${comKml?'':'disabled'} style="background:#1f6feb;color:#fff;border:none;font-weight:800;font-size:12.5px;padding:7px 14px;border-radius:7px;cursor:${comKml?'pointer':'not-allowed'};opacity:${comKml?'1':'.5'}">⬇️ Baixar KML agrupado (${comKml})</button>`+
     (comCoord ? (semUC
-      ? `<button onclick="verificarUCSelecionados()" style="background:#1f6b45;color:#fff;border:none;font-weight:800;font-size:12.5px;padding:7px 14px;border-radius:7px;cursor:pointer;opacity:1" title="Consulta a Unidade de Conservação (IDE do Estado) dos ${semUC} ponto(s) selecionado(s) ainda SEM UC e grava.">🏞️ Verificar UC (${semUC})</button>`
-      : `<button disabled style="background:#1f6b45;color:#fff;border:none;font-weight:800;font-size:12.5px;padding:7px 14px;border-radius:7px;cursor:not-allowed;opacity:.5" title="Todos os selecionados já têm Unidade de Conservação verificada.">🏞️ UC ✓</button>`
+      ? `<button onclick="verificarUCSelecionados()" style="background:#1f6b45;color:#fff;border:none;font-weight:800;font-size:12.5px;padding:7px 14px;border-radius:7px;cursor:pointer;opacity:1" title="Consulta no IDE do Estado a UC + contexto ambiental (embargo, Reserva Legal/APP a recompor, Mata Atlântica) dos ${semUC} ponto(s) selecionado(s) ainda sem consulta e grava.">🏞️ Verificar UC + Amb. (${semUC})</button>`
+      : `<button disabled style="background:#1f6b45;color:#fff;border:none;font-weight:800;font-size:12.5px;padding:7px 14px;border-radius:7px;cursor:not-allowed;opacity:.5" title="Todos os selecionados já têm UC + ambiental verificados.">🏞️ UC+Amb ✓</button>`
     ) : '')+
     `<button onclick="_selClear()" style="background:var(--bg-input);border:1px solid var(--border-mid);color:var(--text-white);font-size:12px;padding:7px 12px;border-radius:7px;cursor:pointer">Limpar seleção</button>`;
 }
@@ -1696,18 +1718,48 @@ async function mcConsultarUC(lat, lon){
   todas.forEach(u=>{ const k=(u.nome_uc+'|'+u.esfera).toLowerCase(); if(!seen.has(k)){ seen.add(k); out.push(u); } });
   return out;
 }
+/* ── Contexto ambiental por ponto — camadas PÚBLICAS do IDE-MG (sem Harpia) ──
+   Flags "o ponto cai dentro de…": embargo (Sisema), Reserva Legal e APP a
+   recompor (declarado no CAR) e Lei da Mata Atlântica. Usa resultType=hits
+   (só a contagem, sem baixar geometria). Mesma ordem de eixos da UC: lat lon. */
+const AMB_CAMADAS = [
+  { key:'embargo', rotulo:'Área embargada (Sisema)',              layer:'IDE:ide_2304_mg_areas_embargadas_sisema_pol',                       geom:'geom', tipo:'alerta' },
+  { key:'rl',      rotulo:'Reserva Legal a recompor (CAR)',       layer:'IDE:ide_210602_mg_imoveis_recomp_res_legal_declarado_car_pol',      geom:'geom', tipo:'info' },
+  { key:'app',     rotulo:'APP a recompor (CAR)',                 layer:'IDE:ide_210602_mg_imoveis_recomp_apps_declarado_car_pol',           geom:'geom', tipo:'info' },
+  { key:'matatl',  rotulo:'Lei da Mata Atlântica (11.428)',       layer:'IDE:ide_2020_mg_area_lei_mata_atlantica_pol',                       geom:'geom', tipo:'info' }
+];
+async function mcConsultarAmbiental(lat, lon){
+  const reqs = AMB_CAMADAS.map(async c=>{
+    const cql = `INTERSECTS(${c.geom},POINT(${lat} ${lon}))`;
+    const url = `${UC_IDE_BASE}?service=WFS&version=1.1.0&request=GetFeature`
+      + `&typeName=${encodeURIComponent(c.layer)}&resultType=hits`
+      + `&CQL_FILTER=${encodeURIComponent(cql)}`;
+    try{
+      const r = await fetch(url);
+      if(!r.ok) return { key:c.key, rotulo:c.rotulo, tipo:c.tipo, dentro:false, n:0, erro:true };
+      const t = await r.text();
+      const m = t.match(/numberOfFeatures="(\d+)"/) || t.match(/numberMatched="(\d+)"/);
+      const n = m ? parseInt(m[1],10) : 0;
+      return { key:c.key, rotulo:c.rotulo, tipo:c.tipo, dentro:n>0, n };
+    }catch(_){ return { key:c.key, rotulo:c.rotulo, tipo:c.tipo, dentro:false, n:0, erro:true }; }
+  });
+  return await Promise.all(reqs);
+}
 async function mcVerificarUC(){
   const d = atual; if(!d) return;
   const la=parseFloat(d.coord_y), lo=parseFloat(d.coord_x);
-  if(!isFinite(la)||!isFinite(lo)) return toast('Sem coordenada (lat/lon) para consultar a UC.');
-  toast('Consultando Unidade de Conservação no IDE de MG…');
-  let ucs;
-  try{ ucs = await mcConsultarUC(la, lo); }
+  if(!isFinite(la)||!isFinite(lo)) return toast('Sem coordenada (lat/lon) para consultar.');
+  toast('Consultando UC + contexto ambiental no IDE de MG…');
+  let ucs, amb;
+  try{ [ucs, amb] = await Promise.all([ mcConsultarUC(la, lo), mcConsultarAmbiental(la, lo) ]); }
   catch(e){ return toast('Erro ao consultar o IDE de MG: '+(e.message||e)); }
   try{
-    await _patchAtual({ uc_dados: ucs, uc_consultado_em: new Date().toISOString() });
+    const agora=new Date().toISOString();
+    await _patchAtual({ uc_dados: ucs, uc_consultado_em: agora, amb_dados: amb, amb_consultado_em: agora });
     abrir(atual);
-    toast(ucs.length ? ('Dentro de UC: '+ucs.map(u=>u.nome_uc).join(', ')) : 'Ponto fora de Unidade de Conservação.');
+    const alertas=(amb||[]).filter(a=>a&&a.dentro).map(a=>a.rotulo);
+    toast((ucs.length ? ('Dentro de UC: '+ucs.map(u=>u.nome_uc).join(', ')+'. ') : 'Fora de UC. ')
+      + (alertas.length ? ('⚠️ '+alertas.join(' · ')) : 'Sem restrição ambiental no ponto.'));
   }catch(e){ toast('Consulta feita, mas falhou ao salvar no banco: '+(e.message||e)); }
 }
 
@@ -1716,35 +1768,38 @@ async function mcVerificarUC(){
    no "Ver no mapa" sem o usuário clicar um por um. */
 async function _mcVerificarUCLista(lista){
   const comCoord=(lista||[]).filter(d=>d && isFinite(parseFloat(d.coord_y)) && isFinite(parseFloat(d.coord_x)));
-  const alvo=comCoord.filter(d=>!d.uc_consultado_em);          // pula os que JÁ têm UC verificada
+  const alvo=comCoord.filter(d=>!d.uc_consultado_em || !d.amb_consultado_em);   // pula os que JÁ têm UC+ambiental
   const jaFeitos=comCoord.length-alvo.length;
-  if(!alvo.length) return toast(jaFeitos?('✅ Todos os '+jaFeitos+' já têm Unidade de Conservação verificada.'):'Nenhum ponto com coordenada para verificar UC.');
+  if(!alvo.length) return toast(jaFeitos?('✅ Todos os '+jaFeitos+' já têm UC + ambiental verificados.'):'Nenhum ponto com coordenada para verificar.');
   if(window.__ucLoteRodando) return toast('Já está verificando UC. Aguarde.');
   window.__ucLoteRodando=true; window.__ucLoteCancel=false;
   const ov=document.createElement('div'); ov.id='_ucLoteModal';
   ov.style.cssText='position:fixed;top:16px;right:16px;z-index:1400;width:320px;max-width:92vw;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.5);color:var(--text-white);font-size:13px;overflow:hidden';
-  ov.innerHTML='<div style="background:#1f6b45;padding:10px 14px;font-weight:800;display:flex;align-items:center;gap:8px">🏞️ Verificar Unidade de Conservação<button id="_ucLx" style="margin-left:auto;background:transparent;border:0;color:#fff;font-size:18px;cursor:pointer;line-height:1">✕</button></div>'
+  ov.innerHTML='<div style="background:#1f6b45;padding:10px 14px;font-weight:800;display:flex;align-items:center;gap:8px">🏞️ Verificar UC + Ambiental<button id="_ucLx" style="margin-left:auto;background:transparent;border:0;color:#fff;font-size:18px;cursor:pointer;line-height:1">✕</button></div>'
     +'<div style="padding:14px"><div id="_ucLm" style="margin-bottom:10px">Iniciando…</div>'
     +'<div style="background:var(--bg-input);border-radius:8px;height:12px;overflow:hidden;border:1px solid var(--border-mid)"><div id="_ucLb" style="height:100%;width:0;background:#49c07d;transition:width .2s"></div></div>'
     +'<div id="_ucLs" style="margin-top:8px;font-size:12px;color:var(--text-muted)"></div></div>';
   document.body.appendChild(ov);
   ov.querySelector('#_ucLx').onclick=()=>{ window.__ucLoteCancel=true; ov.remove(); };
   const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-  let feito=0,dentro=0,fora=0,erros=0;
+  let feito=0,dentro=0,fora=0,erros=0,emb=0;
   for(const d of alvo){
     if(window.__ucLoteCancel) break;
     try{
-      const ucs=await mcConsultarUC(parseFloat(d.coord_y), parseFloat(d.coord_x));
-      await fetch(`${API}/rest/v1/${TBL}?id=eq.${encodeURIComponent(d.id)}`, { method:'PATCH', headers:Object.assign({'Content-Type':'application/json',Prefer:'return=minimal'},H), body:JSON.stringify({ uc_dados:ucs, uc_consultado_em:new Date().toISOString() }) });
-      const i=DADOS.findIndex(x=>x.id===d.id); if(i>=0){ DADOS[i].uc_dados=ucs; DADOS[i].uc_consultado_em=new Date().toISOString(); }
-      if(atual && atual.id===d.id){ atual.uc_dados=ucs; atual.uc_consultado_em=new Date().toISOString(); }
+      const la=parseFloat(d.coord_y), lo=parseFloat(d.coord_x);
+      const [ucs,amb]=await Promise.all([ mcConsultarUC(la,lo), mcConsultarAmbiental(la,lo) ]);
+      const agora=new Date().toISOString();
+      await fetch(`${API}/rest/v1/${TBL}?id=eq.${encodeURIComponent(d.id)}`, { method:'PATCH', headers:Object.assign({'Content-Type':'application/json',Prefer:'return=minimal'},H), body:JSON.stringify({ uc_dados:ucs, uc_consultado_em:agora, amb_dados:amb, amb_consultado_em:agora }) });
+      const i=DADOS.findIndex(x=>x.id===d.id); if(i>=0){ DADOS[i].uc_dados=ucs; DADOS[i].uc_consultado_em=agora; DADOS[i].amb_dados=amb; DADOS[i].amb_consultado_em=agora; }
+      if(atual && atual.id===d.id){ atual.uc_dados=ucs; atual.uc_consultado_em=agora; atual.amb_dados=amb; atual.amb_consultado_em=agora; }
       ucs.length?dentro++:fora++;
+      if((amb||[]).some(a=>a&&a.key==='embargo'&&a.dentro)) emb++;
     }catch(e){ erros++; }
     feito++;
     const m=ov.querySelector('#_ucLm'), b=ov.querySelector('#_ucLb'), s=ov.querySelector('#_ucLs');
     if(m) m.innerHTML='Verificando… <b>'+feito+'/'+alvo.length+'</b>';
     if(b) b.style.width=Math.round(feito/alvo.length*100)+'%';
-    if(s) s.textContent='⚠️ dentro de UC: '+dentro+'  ·  fora: '+fora+(erros?('  ·  erros: '+erros):'');
+    if(s) s.textContent='⚠️ em UC: '+dentro+'  ·  fora: '+fora+(emb?('  ·  ⛔ embargo: '+emb):'')+(erros?('  ·  erros: '+erros):'');
     await sleep(120);
   }
   window.__ucLoteRodando=false;
@@ -1759,10 +1814,10 @@ function verificarUCSelecionados(){ const ds=[..._sel].map(byId).filter(Boolean)
 async function verificarUCFaltantes(){
   toast('Procurando MCs sem UC…');
   try{
-    const r=await fetch(`${API}/rest/v1/${TBL}?select=id,codigo,coord_x,coord_y&coord_y=not.is.null&uc_consultado_em=is.null&ativo=eq.true&order=codigo`, { headers:H });
+    const r=await fetch(`${API}/rest/v1/${TBL}?select=id,codigo,coord_x,coord_y,uc_consultado_em,amb_consultado_em&coord_y=not.is.null&or=(uc_consultado_em.is.null,amb_consultado_em.is.null)&ativo=eq.true&order=codigo`, { headers:H });
     const lista=await r.json();
-    if(!lista.length) return toast('✅ UC de todos os MCs já consultada.');
-    if(!confirm('Verificar Unidade de Conservação de '+lista.length+' MC(s) ainda sem UC?\n\nRoda aqui no painel (IDE do Estado, público). Pode levar alguns minutos — dá pra fechar e o que já foi fica salvo.')) return;
+    if(!lista.length) return toast('✅ UC + ambiental de todos os MCs já consultados.');
+    if(!confirm('Verificar UC + contexto ambiental de '+lista.length+' MC(s)?\n\n(Unidade de Conservação, embargo, Reserva Legal/APP a recompor, Mata Atlântica.)\n\nRoda aqui no painel (IDE do Estado, público). Pode levar alguns minutos — dá pra fechar e o que já foi fica salvo.')) return;
     _mcVerificarUCLista(lista);
   }catch(e){ toast('Erro ao buscar pendentes de UC: '+(e.message||e)); }
 }
