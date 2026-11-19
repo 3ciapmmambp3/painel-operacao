@@ -1049,6 +1049,34 @@ function _abrirMapaLote(ds){
   if(pts.length>1) L.polyline(pts,{color:'#ffd54a',weight:2.5,opacity:.85,dashArray:'6,6'}).addTo(map);
   if(allLL.length===1) map.setView(allLL[0],14); else map.fitBounds(allLL,{padding:[40,40]});
   setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} },160);
+  // Contorno das Unidades de Conservação dos pontos (busca ao vivo no IDE do
+  // Estado; não bloqueia a abertura — aparece em verde quando chega). Consulta
+  // só pontos "representativos" (>1 km entre si) p/ não repetir a mesma UC.
+  (async()=>{
+    try{
+      if(typeof UC_CAMADAS==='undefined') return;
+      const vistos=new Set(), feats=[], jaQ=[];
+      for(const it of seq){
+        const c=it && it.c; if(!c || !isFinite(c.la) || !isFinite(c.lo)) continue;
+        if(jaQ.some(q=>_hav(c.la,c.lo,q.la,q.lo)<1)) continue;   // ~1 km: provável mesma UC
+        jaQ.push(c);
+        for(const cam of UC_CAMADAS){
+          if(!document.getElementById('_mapaModal')) return;     // usuário fechou
+          try{
+            const cql=`INTERSECTS(${cam.geom||'geometry'},POINT(${c.la} ${c.lo}))`;
+            const url=`${UC_IDE_BASE}?service=WFS&version=1.1.0&request=GetFeature&typeName=${encodeURIComponent(cam.layer)}&outputFormat=application/json&CQL_FILTER=${encodeURIComponent(cql)}`;
+            const j=await (await fetch(url)).json();
+            (j.features||[]).forEach(f=>{ if(f && !vistos.has(f.id)){ vistos.add(f.id); feats.push(f); } });
+          }catch(e){}
+        }
+        if(jaQ.length>=40) break;   // teto de segurança
+      }
+      if(feats.length && _mcMapObj && document.getElementById('_mapaModal')){
+        const g=L.geoJSON(feats,{style:{color:'#20c997',weight:2.5,fillColor:'#20c997',fillOpacity:.07},interactive:false});
+        g.addTo(_mcMapObj);
+      }
+    }catch(e){}
+  })();
 }
 // baixa o KML agrupado e abre o Google Earth (o usuário importa o arquivo lá)
 function abrirGoogleEarthLote(){
