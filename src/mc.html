@@ -576,7 +576,12 @@ function render(){
   const sig=[filtro, gel('busca').value, gel('ano').value, _selVal('sel-pel'), _selVal('sel-grp')].join('|');
   if(sig!==_sig){ PAGE=1; _sig=sig; _nearAnchor=null; }
   _renderNearBar();
-  if(!rows.length){ tb.innerHTML='<tr><td colspan="10" class="empty">Nenhuma demanda neste filtro.</td></tr>'; if(pager)pager.innerHTML=''; return; }
+  // Selecionadas escondidas pelo filtro/busca atual → fixadas no TOPO, sempre
+  // visíveis. Senão, ao buscar a 2ª demanda, a 1ª marcada sumia da lista mesmo
+  // continuando marcada e contando no "N selecionada(s)".
+  const _idsRows=new Set(rows.map(d=>d.id));
+  const pinned=[..._sel].map(byId).filter(d=>d && !_idsRows.has(d.id));
+  if(!rows.length && !pinned.length){ tb.innerHTML='<tr><td colspan="10" class="empty">Nenhuma demanda neste filtro.</td></tr>'; if(pager)pager.innerHTML=''; return; }
   const totalPag=Math.ceil(rows.length/PAGE_SIZE);
   if(PAGE>totalPag)PAGE=totalPag; if(PAGE<1)PAGE=1;
   const ini=(PAGE-1)*PAGE_SIZE;
@@ -585,10 +590,11 @@ function render(){
   DADOS.forEach(x=>{if(x.ativo===false)return;const la=parseFloat(x.coord_y),lo=parseFloat(x.coord_x);if(isFinite(la)&&isFinite(lo)){(_grid[_ck(la,lo)]=_grid[_ck(la,lo)]||[]).push({x,la,lo});}});
   // conta OUTRAS demandas ativas dentro do raio R (km) a partir de d
   const _nearN=(d,R)=>{const la=parseFloat(d.coord_y),lo=parseFloat(d.coord_x);if(!isFinite(la)||!isFinite(lo))return 0;const span=Math.ceil(R/111/_CELL)+1,ci=Math.floor(la/_CELL),cj=Math.floor(lo/_CELL);let n=0;for(let a=-span;a<=span;a++)for(let b=-span;b<=span;b++){const arr=_grid[(ci+a)+'_'+(cj+b)];if(!arr)continue;for(const p of arr){if(p.x===d)continue;if(_hav(la,lo,p.la,p.lo)<=R)n++;}}return n;};
-  rows.slice(ini, ini+PAGE_SIZE).forEach(d=>{
+  const _mkRow=(d,pin)=>{
     const pr=prazoInfo(d);
     const temPdf=(d.anexos||[]).length>0;
     const tr=document.createElement('tr'); tr.onclick=()=>abrir(d);
+    if(pin){ tr.style.boxShadow='inset 3px 0 0 var(--gold)'; tr.style.background='rgba(201,162,39,.07)'; tr.title='Selecionada — fora do filtro/busca atual'; }
     tr.innerHTML =
       `<td class="selcol" style="text-align:center" onclick="event.stopPropagation()"><input type="checkbox" class="rowchk" ${_sel.has(d.id)?'checked':''}${d.tem_kml?'':' title="Sem KML — não entra no lote"'} onclick="event.stopPropagation()" onchange="_selToggle('${d.id}',this.checked)" style="cursor:pointer"></td>`+
       `<td class="num">${d.codigo||'—'}</td>`+
@@ -615,12 +621,15 @@ function render(){
       `</span></td>`+
       `<td style="text-align:center">${Impresso.icone(d.codigo)}</td>`;
     tb.appendChild(tr);
-  });
+  };
+  pinned.forEach(d=>_mkRow(d,true));
+  rows.slice(ini, ini+PAGE_SIZE).forEach(d=>_mkRow(d,false));
   if(pager){
-    if(totalPag<=1){ pager.innerHTML=`<span>${rows.length} demanda(s)</span>`; }
+    const _pin = pinned.length ? ` · <span style="color:var(--gold-light)">+${pinned.length} selecionada(s) fixada(s)</span>` : '';
+    if(totalPag<=1){ pager.innerHTML=`<span>${rows.length} demanda(s)${_pin}</span>`; }
     else{
       const btn=(lbl,p,dis)=>`<button onclick="irPagina(${p})" ${dis?'disabled':''} style="background:var(--bg-input);border:1px solid var(--border-mid);color:var(--text-white);border-radius:6px;padding:6px 12px;font-size:12px;cursor:${dis?'not-allowed':'pointer'};opacity:${dis?'.5':'1'}">${lbl}</button>`;
-      pager.innerHTML=`<span>${rows.length} demanda(s) · mostrando ${ini+1}–${Math.min(ini+PAGE_SIZE,rows.length)}</span>`+
+      pager.innerHTML=`<span>${rows.length} demanda(s) · mostrando ${ini+1}–${Math.min(ini+PAGE_SIZE,rows.length)}${_pin}</span>`+
         `<span style="display:flex;gap:8px;align-items:center">${btn('‹ Anterior',PAGE-1,PAGE===1)}<b style="color:var(--gold-light)">Página ${PAGE} de ${totalPag}</b>${btn('Próxima ›',PAGE+1,PAGE===totalPag)}</span>`;
     }
   }
