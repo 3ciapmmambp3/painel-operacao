@@ -51,7 +51,10 @@
   async function lerBase(base){
     var url = base + '?service=WFS&version=1.1.0&request=GetCapabilities';
     try{
-      var r = await fetch(url, { credentials:'include' });
+      // fetch SIMPLES (sem credentials) — igual ao importador que funciona. Com
+      // credentials:'include' o navegador bloqueia a resposta (servidor responde
+      // ACAO:*), dando "Failed to fetch".
+      var r = await fetch(url);
       if (!r.ok){ return { base:base, erro:'HTTP '+r.status, nomes:[] }; }
       var txt = await r.text();
       // pega <Name>…</Name> dentro de FeatureType; também captura o <Title> seguinte
