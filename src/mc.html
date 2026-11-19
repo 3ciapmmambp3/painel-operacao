@@ -249,6 +249,7 @@
           <button class="btn-outline btn-sm" id="f-importar" onclick="importarPlanilha()" title="Traz para o painel os lotes que já estão lançados na aba MC (sem precisar recarregar as pastas)">↻ Importar da planilha</button>
           <button class="btn-outline btn-sm" id="f-kml" onclick="gerarKmlsFaltantes()" title="Gera o KML individual (por GEOCOD) das demandas que estão sem KML, varrendo os KML mestres das pastas da companhia selecionada. Não altera datas nem baixa.">🛰️ Gerar KMLs faltantes</button>
           <button class="btn-outline btn-sm" id="f-car" onclick="consultarCarFaltantes()" title="Consulta no SICAR oficial o imóvel rural (CAR) de cada GEOCOD ainda SEM consulta. RESPEITA o filtro atual (pelotão/grupamento/busca) — ou, se você marcar demandas, só as marcadas. Assim dá pra fazer em partes. Grava o nº do CAR no banco e aparece na gaveta. Cada consulta ao SICAR é lenta.">🌱 Consultar CAR (faltantes)</button>
+          <button class="btn-outline btn-sm" id="f-harpia" onclick="abrirImportadorHarpia()" title="Traz do HARPIA o PROPRIETÁRIO, CPF, nome do imóvel, área e módulos fiscais do CAR — automático, sem captcha. Usa um atalho (bookmarklet) que roda na página do Harpia.">🦅 Importar CAR do Harpia</button>
           <label style="display:flex;align-items:center;gap:4px;font-size:11.5px;color:var(--text-muted)">por vez <input id="f-vp-batch" type="number" min="1" max="100" value="5" style="width:54px;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:6px;padding:5px 6px;color:var(--text-white);font-family:inherit"></label>
           <button class="btn-outline btn-sm" id="f-verificar" onclick="verificarPendencias()" title="Lê os GEOCODs das pastas ainda NÃO carregadas EM ETAPAS (N por vez) e compara com o que já está no painel. Mostra, por pasta, quantas demandas são NOVAS vs já estão lá — e deixa arquivar as que já entraram, aos poucos. Útil quando há muitas pastas (2025).">🔎 Verificar pendências</button>
         </span>
@@ -658,19 +659,25 @@ function abrir(d){
       return `<div class="sec-t">CAR / SICAR</div><div class="rs" style="font-size:12px">Nenhum imóvel rural (CAR) encontrado neste ponto. <span class="miut">Consultado em ${quando}.</span></div>`;
     }
     const linhas = dados.length ? dados : String(d.car_imovel||'').split(/,\s*/).filter(Boolean).map(c=>({cod_imovel:c}));
+    const temProp = linhas.some(c=>c && (c.proprietario || c.cpf || c.nome_imovel));
     const itens = linhas.map(c=>{
-      const extra=[c.municipio?('Município: '+c.municipio):'', c.area?('Área: '+c.area+' ha'):'', c.status?('Situação: '+c.status):''].filter(Boolean).join(' · ');
+      const extra=[c.municipio?('Município: '+c.municipio):'', c.area?('Área: '+c.area+' ha'):'', c.mod_fiscal?('Mód. fiscais: '+c.mod_fiscal):'', c.status?('Situação: '+c.status):''].filter(Boolean).join(' · ');
+      // Dados do proprietário (do Harpia) — dado pessoal (PII)
+      const prop=[c.nome_imovel?('🏠 '+c.nome_imovel):'', c.proprietario?('👤 '+c.proprietario):'', c.cpf?('CPF/CNPJ '+c.cpf):''].filter(Boolean).join('  ·  ');
       return `<div class="anxitem" style="align-items:flex-start">`
         +`<svg class="ic" viewBox="0 0 24 24"><path d="M12 2l3 7h7l-5.5 4 2 7-6.5-4.5L5.5 20l2-7L2 9h7z"/></svg>`
         +`<div class="m"><b style="font-family:monospace;font-size:12.5px;word-break:break-all">${_escH(c.cod_imovel||'—')}</b>`
-        +(extra?`<small>${_escH(extra)}</small>`:'')+`</div>`
+        +(extra?`<small>${_escH(extra)}</small>`:'')
+        +(prop?`<small style="color:var(--gold-light);font-weight:600">${_escH(prop)}</small>`:'')+`</div>`
         +`<button class="anxbtn" onclick="mcCopiarCar('${String(c.cod_imovel||'').replace(/['\\]/g,'')}')">📋 Copiar nº</button>`
-        +`<a class="anxbtn rota" href="https://consultapublica.car.gov.br/publico/imoveis/index" target="_blank" rel="noopener" onclick="mcCopiarCar('${String(c.cod_imovel||'').replace(/['\\]/g,'')}')" title="Copia o número e abre o SICAR oficial. Lá: cole o número, resolva o captcha e baixe o demonstrativo (recibo PDF com o proprietário).">📄 Demonstrativo</a>`
+        +`<a class="anxbtn rota" href="https://consultapublica.car.gov.br/publico/imoveis/index" target="_blank" rel="noopener" onclick="mcCopiarCar('${String(c.cod_imovel||'').replace(/['\\]/g,'')}')" title="Copia o número e abre o SICAR oficial (lá: cole o nº, resolva o captcha e baixe o demonstrativo com APP/Reserva Legal).">📄 Demonstrativo</a>`
         +`<a class="anxbtn" href="https://alertas.sccon.com.br/minasgerais/#/" target="_blank" rel="noopener" title="Abre o HARPIA — Monitoramento Contínuo da Cobertura Vegetal de Minas Gerais (SCCON).">🦅 Harpia</a></div>`;
     }).join('');
     return `<div class="sec-t">CAR / SICAR</div>`
       +`<div class="anx">${itens}</div>`
-      +`<div class="rs" style="margin-top:6px;font-size:11.5px"><b>Proprietário / recibo (demonstrativo):</b> clique em <b>📄 Demonstrativo</b> (copia o nº e abre o SICAR oficial) → cole o número, <b>resolva o captcha</b> e baixe o PDF. O recibo não vem automático — o site oficial exige o captcha. <span class="miut">Consultado em ${quando}.</span></div>`;
+      +(temProp
+        ? `<div class="rs" style="margin-top:6px;font-size:11px;color:var(--text-hint)">🔒 Proprietário/CPF vindos do Harpia (uso funcional restrito). Para APP / Reserva Legal, use o <b>📄 Demonstrativo</b> do SICAR. <span class="miut">Consultado em ${quando}.</span></div>`
+        : `<div class="rs" style="margin-top:6px;font-size:11.5px"><b>Proprietário:</b> rode o <b>Importador do Harpia</b> (traz nome/CPF automático), ou clique em <b>📄 Demonstrativo</b> e resolva o captcha no SICAR. <span class="miut">Consultado em ${quando}.</span></div>`);
   })();
   // ── Unidade de Conservação (UC) — o ponto cai dentro de uma UC? Consulta o IDE
   //    oficial de MG (público). Resultado gravado na linha (fica p/ todos). ──
@@ -704,6 +711,41 @@ function abrir(d){
       +`<div class="comochegar" style="margin-top:6px"><button class="anxbtn rota" onclick="mcMapaUC()" title="Abre um mapa mostrando o ponto do GEOCOD e o contorno da Unidade de Conservação.">🗺️ Ver no mapa</button></div>`
       +`<div class="rs" style="margin-top:6px;font-size:11.5px">Fonte: IDE oficial de Minas Gerais. <span class="miut">Consultado em ${quando}.</span> ${btn}</div>`;
   })();
+  // ── Atendimentos próximos (quem já foi perto / possível mesmo proprietário) ──
+  const vizSec = (()=>{
+    const _la=parseFloat(d.coord_y), _lo=parseFloat(d.coord_x);
+    const _nf=s=>String(s==null?'':s).normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/\s+/g,' ').trim();
+    const codsDe=o=>new Set((Array.isArray(o.car_dados)?o.car_dados:[]).map(c=>String(c&&c.cod_imovel||'').toUpperCase()).filter(Boolean));
+    const propsDe=o=>new Set((Array.isArray(o.car_dados)?o.car_dados:[]).map(c=>_nf(c&&c.proprietario)).filter(Boolean));
+    const meusCod=codsDe(d), meusProp=propsDe(d);
+    const RAIO=3; // km
+    const cands=[];
+    (typeof DADOS!=='undefined'?DADOS:[]).forEach(o=>{
+      if(!o || o.id===d.id) return;
+      if(!(typeof atendidaN==='function' && atendidaN(o))) return;   // só já fiscalizadas
+      const ola=parseFloat(o.coord_y), olo=parseFloat(o.coord_x);
+      const dist=(isFinite(_la)&&isFinite(_lo)&&isFinite(ola)&&isFinite(olo))?_hav(_la,_lo,ola,olo):Infinity;
+      let mesmo=false;
+      const oc=codsDe(o); meusCod.forEach(c=>{ if(oc.has(c)) mesmo=true; });
+      if(!mesmo){ const op=propsDe(o); meusProp.forEach(p=>{ if(p&&op.has(p)) mesmo=true; }); }
+      if(mesmo || dist<=RAIO) cands.push({o,dist,mesmo});
+    });
+    if(!cands.length) return '';
+    cands.sort((a,b)=> (b.mesmo-a.mesmo) || (a.dist-b.dist));
+    const fmtKm=v=> !isFinite(v)?'':(v<1?Math.round(v*1000)+' m':(v<10?v.toFixed(1):Math.round(v))+' km');
+    const itens=cands.slice(0,6).map(({o,dist,mesmo})=>{
+      const info=[o.numero_reds?('REDS '+o.numero_reds):'', o.data_atendimento?('em '+fmtData(o.data_atendimento)):'', o.atendido_por_nome?('por '+o.atendido_por_nome):''].filter(Boolean).join(' · ');
+      return `<div class="anxitem" style="align-items:flex-start">`
+        +`<svg class="ic" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>`
+        +`<div class="m"><b>GEOCOD ${_escH(o.codigo||'')}</b>`
+        +(mesmo?` <span style="color:var(--danger);font-weight:800">• MESMO PROPRIETÁRIO/CAR</span>`:(isFinite(dist)?` <span class="miut">a ${fmtKm(dist)}</span>`:''))
+        +(info?`<small>${_escH([o.municipio,info].filter(Boolean).join(' — '))}</small>`:(o.municipio?`<small>${_escH(o.municipio)}</small>`:''))
+        +(o.equipe?`<small>Equipe: ${_escH(o.equipe)}</small>`:'')+`</div></div>`;
+    }).join('');
+    return `<div class="sec-t">Atendimentos próximos (possível mesmo proprietário)</div>`
+      +`<div class="rs" style="font-size:11.5px;margin-bottom:4px;color:var(--text-muted)">Demandas <b>já fiscalizadas</b> a ≤ ${RAIO} km daqui ou do <b>mesmo proprietário/CAR</b>. Fale com quem atendeu — pode já conhecer o local e o dono.</div>`
+      +`<div class="anx">${itens}</div>`;
+  })();
   const kmlBtn = d.tem_kml
     ? `<div class="anxitem"><svg class="ic" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`+
       `<div class="m"><b>KML do GEOCOD ${d.codigo}</b><small>Gerado individualmente · abre no Google Earth</small></div>`+
@@ -735,6 +777,7 @@ function abrir(d){
     comoChegar+
     carSec+
     ucSec+
+    vizSec+
     `<div class="sec-t">Atendimento</div>`+
     (atendidaN(d)
       ? `<dl class="dl">`+
@@ -839,6 +882,14 @@ function _mcInfoRows(d){
     ['Prazo', feito ? '' : (d.status_prazo || (pr&&pr.txt) || '')],
     ['CAR', d.car_imovel],
   ];
+  // Dados do CAR vindos do Harpia (1º imóvel do ponto): proprietário/CPF/área
+  const _car0 = Array.isArray(d.car_dados) ? d.car_dados.find(x=>x && (x.proprietario||x.cpf||x.nome_imovel||x.area)) : null;
+  if(_car0){
+    rows.push(['Proprietário', _car0.proprietario]);
+    rows.push(['CPF/CNPJ', _car0.cpf]);
+    rows.push(['Imóvel (CAR)', _car0.nome_imovel]);
+    rows.push(['Área do imóvel (ha)', _car0.area]);
+  }
   const _tem=v=>v!=null && String(v).trim()!=='' && String(v)!=='—';
   const out=rows.filter(r=>_tem(r[1]));
   // Nos pontos atendidos, mostra os dados da fiscalização (balão do mapa + pino do Google Earth)
@@ -1577,6 +1628,46 @@ function _abrirMapaUC(d, la, lo, feats){
   // Abre no polígono do MC (o alvo da fiscalização, bem visível em dourado);
   // a UC verde fica ao redor. Botão "Toda a UC" mostra o contorno inteiro.
   setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} if(mcLayer) fitMC(); else fitUC(); },200);
+}
+
+/* ── Importador de CAR do Harpia (bookmarklet) ───────────────────────────
+   Mostra um atalho (bookmarklet) que o militar arrasta pra barra de favoritos
+   e clica estando na página do Harpia. Lá ele busca proprietário/CPF/área do
+   CAR por ponto e grava no banco (ver src/harpia-importer.js). Funciona porque
+   o acesso ao CAR é liberado pelo Referer do Harpia — sem senha, sem captcha. */
+function abrirImportadorHarpia(){
+  const origin = location.origin;
+  const bm = "javascript:(function(){fetch('"+origin+"/harpia-importer.js?v='+Date.now()).then(function(r){return r.text();}).then(function(t){(0,eval)(t);}).catch(function(e){alert('Erro ao carregar o importador: '+(e&&e.message||e));});})();";
+  const old=document.getElementById('_harpiaModal'); if(old) old.remove();
+  const ov=document.createElement('div'); ov.id='_harpiaModal';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:1300;padding:16px';
+  const box=document.createElement('div');
+  box.style.cssText='background:var(--bg-card);border:1px solid var(--border);border-radius:14px;max-width:560px;width:100%;max-height:88vh;overflow:auto;padding:22px;color:var(--text-white);box-shadow:0 20px 60px rgba(0,0,0,.45)';
+  box.innerHTML=
+    `<div style="font-size:16px;font-weight:800;color:var(--gold);margin-bottom:4px">🦅 Importar CAR do Harpia</div>`+
+    `<div style="font-size:12.5px;color:var(--text-muted);margin-bottom:14px">Traz <b>proprietário, CPF, nome do imóvel, área e módulos fiscais</b> do CAR — automático, sem captcha. É um atalho que roda na página do Harpia (onde o acesso ao CAR é liberado).</div>`+
+    `<div style="background:var(--bg-input);border:1px solid var(--border-mid);border-radius:10px;padding:14px;margin-bottom:14px">`+
+      `<div style="font-weight:700;margin-bottom:8px">Passo a passo (só na 1ª vez você instala):</div>`+
+      `<ol style="margin:0 0 4px 18px;padding:0;font-size:12.5px;line-height:1.7">`+
+        `<li><b>Arraste</b> o botão verde abaixo para a sua <b>barra de favoritos</b> do navegador.<br><span style="color:var(--text-hint)">(se a barra estiver escondida: Ctrl+Shift+B)</span></li>`+
+        `<li>Abra o <b>Harpia</b> (alertas.sccon.com.br) — <b>não precisa nem logar</b>.</li>`+
+        `<li>Clique no favorito <b>“Importar CAR 3ªCia”</b> → ele importa e salva sozinho.</li>`+
+        `<li>Volte aqui e <b>atualize a página</b> — os dados aparecem na gaveta de cada MC.</li>`+
+      `</ol>`+
+    `</div>`+
+    `<div style="text-align:center;margin-bottom:12px">`+
+      `<a id="_bmLink" style="display:inline-block;background:var(--success);color:#fff;font-weight:800;font-size:14px;padding:11px 20px;border-radius:9px;text-decoration:none;cursor:grab;user-select:none">🌱 Importar CAR 3ªCia</a>`+
+      `<div style="font-size:11px;color:var(--text-hint);margin-top:6px">↑ arraste este botão para os favoritos (não clique aqui)</div>`+
+    `</div>`+
+    `<div style="display:flex;gap:8px;justify-content:flex-end">`+
+      `<button class="anxbtn" id="_bmCopy">📋 Copiar o código do atalho</button>`+
+      `<button class="anxbtn" id="_bmClose" style="background:var(--bg-input)">Fechar</button>`+
+    `</div>`;
+  ov.appendChild(box); document.body.appendChild(ov);
+  box.querySelector('#_bmLink').setAttribute('href', bm);
+  box.querySelector('#_bmClose').onclick=()=>ov.remove();
+  ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+  box.querySelector('#_bmCopy').onclick=()=>{ const ok=()=>toast('Código copiado. Crie um favorito e cole no endereço (URL).'); if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(bm).then(ok).catch(()=>_copyFallback(bm,ok)); } else _copyFallback(bm,ok); };
 }
 
 async function carregarLote(){
