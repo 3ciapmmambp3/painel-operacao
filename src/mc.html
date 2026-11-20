@@ -555,8 +555,10 @@ function _carGeoJSON(d){
         app_recompor_ha:a.hasApp?Math.round(a.appHa*100)/100:'', rl_recompor_ha:a.hasRl?Math.round(a.rlHa*100)/100:'', embargo:a.emb>0?'sim':'' },
       geometry:x.geometry };
   });
-  // polígonos das áreas ambientais (APP / Reserva Legal / Embargo)
+  // polígono(s) de embargo (área real). APP/RL não entram como polígono (são o
+  // contorno do imóvel) — seus ha já vão nas propriedades do imóvel acima.
   _ambGeomList(d).forEach(cam=>{
+    if(cam.key!=='embargo') return;
     (cam.features||[]).forEach(f=>feats.push({ type:'Feature',
       properties:Object.assign({ camada:cam.key, rotulo:cam.rotulo, mc:d.codigo||'' }, f.properties||{}),
       geometry:f.geometry }));
@@ -580,8 +582,8 @@ function _carKML(d){
     return '<Placemark><name>'+esc(i.proprietario||x.cod_imovel||'Imóvel')+'</name>'
       +'<description>'+desc+'</description><styleUrl>#carPoly</styleUrl>'+geo+'</Placemark>';
   }).filter(Boolean).join('');
-  // áreas ambientais (APP / Reserva Legal / Embargo)
-  const ambPms=_ambGeomList(d).map(cam=>(cam.features||[]).map(f=>{
+  // áreas ambientais desenhadas: só embargo (APP/RL viram dados no imóvel acima)
+  const ambPms=_ambGeomList(d).filter(cam=>cam.key==='embargo').map(cam=>(cam.features||[]).map(f=>{
     const geo=_gjGeomKml(f.geometry); if(!geo) return '';
     const p=f.properties||{};
     let desc='<![CDATA['+linha('Área', cam.rotulo);
@@ -1268,11 +1270,9 @@ async function mcVerNoMapa(){
 function _abrirMapaLote(ds){
   const old=document.getElementById('_mapaModal'); if(old) old.remove();
   const temCar=(ds||[]).some(d=>_carGeomList(d).length);
-  // quais camadas ambientais aparecem (p/ montar a legenda)
-  const ambKeys=new Set(); (ds||[]).forEach(d=>_ambGeomList(d).forEach(c=>{ if(c.features&&c.features.length) ambKeys.add(c.key); }));
-  const ambLeg=['app','rl','embargo'].filter(k=>ambKeys.has(k)).map(k=>{
-    const c=_ambGeom_legenda[k]; return ' · <span style="color:'+c.cor+';font-weight:800">▬</span> '+c.rot;
-  }).join('');
+  // legenda: só o embargo é desenhado (APP/RL vão no balão do imóvel)
+  const temEmb=(ds||[]).some(d=>_ambGeomList(d).some(c=>c.key==='embargo'&&c.features&&c.features.length));
+  const ambLeg=temEmb?' · <span style="color:#ff1744;font-weight:800">▬</span> embargo':'';
   const ov=document.createElement('div'); ov.id='_mapaModal';
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:1200;padding:14px';
   const box=document.createElement('div');
@@ -1325,8 +1325,11 @@ function _abrirMapaLote(ds){
         const b=cl.getBounds(); if(b&&b.isValid()){ allLL.push([b.getSouth(),b.getWest()],[b.getNorth(),b.getEast()]); }
       }catch(_){}
     });
-    // áreas ambientais (APP ciano / Reserva Legal âmbar / Embargo vermelho), clicáveis
+    // Embargo (área real, distinta) desenhado em vermelho e clicável.
+    // APP/Reserva Legal NÃO são desenhadas: a camada pública traz só o contorno
+    // do imóvel (= igual ao CAR) + o nº de ha a recompor → esse nº vai no balão azul.
     _ambGeomList(d).forEach(cam=>{
+      if(cam.key!=='embargo') return;
       (cam.features||[]).forEach(f=>{
         try{
           const gl=L.geoJSON(f.geometry,{style:{color:cam.cor,weight:2,fillColor:cam.cor,fillOpacity:.16},interactive:true}).addTo(map);
