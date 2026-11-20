@@ -560,6 +560,14 @@ function _geoAreaHa(geometry){
   else if(geometry.type==='MultiPolygon') (geometry.coordinates||[]).forEach(p=>{ m2+=poly(p); });
   return m2/10000; // ha
 }
+/* O Auto de Infração do embargo (Sisema, campo num_ai) foi lavrado pela equipe
+   policial? Casa o nº sequencial (antes da "/") do embargo com o(s) auto(s) da
+   demanda do MC. Se casar, dá p/ mostrar a Equipe PM e o REDS que atenderam. */
+function _autoDaPM(numAi, d){
+  const seq=s=>String(s==null?'':s).split('/')[0].replace(/\D/g,'');
+  const emb=seq(numAi); if(!emb) return false;
+  return String(d&&d.numero_auto_infracao||'').split(/[;,\n]+/).map(seq).some(a=>a&&a===emb);
+}
 // GeoJSON (FeatureCollection) dos imóveis do MC + áreas ambientais — QGIS/Earth
 function _carGeoJSON(d){
   const feats = _carGeomList(d).map(x=>{
@@ -605,7 +613,7 @@ function _carKML(d){
     let desc='<![CDATA['+linha('Área', cam.rotulo);
     if(cam.key==='app') desc+=linha('A recompor', _ha(+p.rec_app_ha));
     else if(cam.key==='rl') desc+=linha('A recompor', _ha(+p.rec_rl_ha));
-    else if(cam.key==='embargo'){ const _aHa=_geoAreaHa(f.geometry); const _imovel=[...new Set((Array.isArray(d.car_dados)?d.car_dados:[]).map(c=>String(c&&c.nome_imovel||'').replace(/\r?\n/g,' ').trim()).filter(Boolean))].join(' / '); desc+=linha('Autuado', p.fiscalizad)+linha('CPF/CNPJ', p.doc_fiscal)+linha('Imóvel (CAR)', _imovel)+linha('Auto de Infração', p.num_ai)+linha('Atividade', p.atividade_)+linha('Local (fisc.)', p.local_fisc)+linha('Data fisc.', p.data_fisca)+linha('Área embargada', _aHa?_ha(_aHa):'')+linha('Penalidade', p.penalidade)+linha('Valor multa', p.valor_mult); }
+    else if(cam.key==='embargo'){ const _aHa=_geoAreaHa(f.geometry); const _imovel=[...new Set((Array.isArray(d.car_dados)?d.car_dados:[]).map(c=>String(c&&c.nome_imovel||'').replace(/\r?\n/g,' ').trim()).filter(Boolean))].join(' / '); desc+=linha('Autuado', p.fiscalizad)+linha('CPF/CNPJ', p.doc_fiscal)+linha('Imóvel (CAR)', _imovel)+linha('Auto de Infração', p.num_ai)+linha('Atividade', p.atividade_)+linha('Local (fisc.)', p.local_fisc)+linha('Data fisc.', p.data_fisca)+linha('Área embargada', _aHa?_ha(_aHa):'')+linha('Penalidade', p.penalidade)+linha('Valor multa', p.valor_mult); if(_autoDaPM(p.num_ai, d)) desc+=linha('Auto lavrado pela PM — Equipe', d.equipe)+linha('REDS', d.numero_reds)+linha('Fiscalizado por', d.atendido_por_nome); }
     desc+=']]>';
     return '<Placemark><name>'+esc(cam.rotulo)+'</name><description>'+desc+'</description><styleUrl>#amb_'+cam.key+'</styleUrl>'+geo+'</Placemark>';
   }).filter(Boolean).join('')).join('');
@@ -1390,7 +1398,9 @@ function _abrirMapaLote(ds){
                  +lin('Local (fisc.)', p.local_fisc)+lin('Data fisc.', p.data_fisca)
                  +lin('Área embargada', _aHa?_ha(_aHa):'')
                  +lin('Penalidade', p.penalidade)+lin('Valor multa', p.valor_mult)
-                 +lin('Outras penalidades', p.outras_pen); }
+                 +lin('Outras penalidades', p.outras_pen);
+            if(_autoDaPM(p.num_ai, d)) info+='<div style="margin-top:3px;padding-top:3px;border-top:1px dashed #ccc">'
+                 +lin('🚔 Auto lavrado pela PM — Equipe', d.equipe)+lin('REDS', d.numero_reds)+lin('Fiscalizado por', d.atendido_por_nome)+'</div>'; }
           info+='</div>';
           gl.bindPopup(info);
           const b=gl.getBounds(); if(b&&b.isValid()){ allLL.push([b.getSouth(),b.getWest()],[b.getNorth(),b.getEast()]); }
