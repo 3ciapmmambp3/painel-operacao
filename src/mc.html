@@ -803,6 +803,19 @@ function render(){
   _renderSelBar(); _syncChkAll(rows);
 }
 
+/* Atendimentos próximos — raio ajustável (lembrado no navegador). O match por
+   mesmo proprietário/CAR NÃO depende de distância: aparece sempre. */
+const VIZ_PRESETS=[0.5,1,2,3,5]; // km
+let _VIZ_RAIO=(function(){const v=parseFloat(localStorage.getItem('mc_viz_raio'));return VIZ_PRESETS.indexOf(v)>=0?v:1;})();
+function _vizRaioLabel(v){return v<1?Math.round(v*1000)+' m':v+' km';}
+function mcVizSetRaio(v){
+  _VIZ_RAIO=v; try{localStorage.setItem('mc_viz_raio',String(v));}catch(e){}
+  if(typeof atual==='undefined'||!atual) return;
+  const panel=document.querySelector('#ov .panel'); const top=panel?panel.scrollTop:0;
+  abrir(atual);                 // re-renderiza a gaveta com o novo raio
+  if(panel) panel.scrollTop=top; // preserva a rolagem
+}
+
 /* ── gaveta ──────────────────────────────────────────────────────── */
 function abrir(d){
   atual=d;
@@ -929,8 +942,8 @@ function abrir(d){
     const codsDe=o=>new Set((Array.isArray(o.car_dados)?o.car_dados:[]).map(c=>String(c&&c.cod_imovel||'').toUpperCase()).filter(Boolean));
     const propsDe=o=>new Set((Array.isArray(o.car_dados)?o.car_dados:[]).map(c=>_nf(c&&c.proprietario)).filter(Boolean));
     const meusCod=codsDe(d), meusProp=propsDe(d);
-    const RAIO=3; // km
-    const cands=[];
+    const RAIO=_VIZ_RAIO, RMAX=VIZ_PRESETS[VIZ_PRESETS.length-1]; // km: raio escolhido / maior preset
+    const all=[];
     (typeof DADOS!=='undefined'?DADOS:[]).forEach(o=>{
       if(!o || o.id===d.id) return;
       if(!(typeof atendidaN==='function' && atendidaN(o))) return;   // só já fiscalizadas
@@ -939,9 +952,10 @@ function abrir(d){
       let mesmo=false;
       const oc=codsDe(o); meusCod.forEach(c=>{ if(oc.has(c)) mesmo=true; });
       if(!mesmo){ const op=propsDe(o); meusProp.forEach(p=>{ if(p&&op.has(p)) mesmo=true; }); }
-      if(mesmo || dist<=RAIO) cands.push({o,dist,mesmo});
+      if(mesmo || dist<=RMAX) all.push({o,dist,mesmo}); // junta tudo até o maior preset
     });
-    if(!cands.length) return '';
+    if(!all.length) return '';   // nada nem no maior raio → esconde a seção
+    const cands=all.filter(c=>c.mesmo || c.dist<=RAIO); // filtra pelo raio escolhido (mesmo prop. sempre entra)
     cands.sort((a,b)=> (b.mesmo-a.mesmo) || (a.dist-b.dist));
     const fmtKm=v=> !isFinite(v)?'':(v<1?Math.round(v*1000)+' m':(v<10?v.toFixed(1):Math.round(v))+' km');
     const _row=(l,v)=> (v!=null && String(v).trim()!=='') ? `<div><span style="color:var(--text-hint)">${_escH(l)}:</span> <b>${_escH(String(v))}</b></div>` : '';
@@ -985,9 +999,10 @@ function abrir(d){
         +detalhe
         +`</div>`;
     }).join('');
-    return `<div class="sec-t">Atendimentos próximos (possível mesmo proprietário)</div>`
-      +`<div class="rs" style="font-size:11.5px;margin-bottom:4px;color:var(--text-muted)">Demandas <b>já fiscalizadas</b> a ≤ ${RAIO} km daqui ou do <b>mesmo proprietário/CAR</b>. Fale com quem atendeu — pode já conhecer o local e o dono.</div>`
-      +`<div class="anx">${itens}</div>`;
+    const _chips=VIZ_PRESETS.map(v=>{const on=v===RAIO;return `<button type="button" onclick="mcVizSetRaio(${v})" title="Vizinhos já fiscalizados a até ${_vizRaioLabel(v)}" style="padding:2px 9px;border-radius:9px;font-size:11px;font-weight:700;cursor:pointer;border:1px solid ${on?'var(--gold)':'var(--border-mid)'};background:${on?'var(--gold)':'transparent'};color:${on?'#1a1000':'var(--text-muted)'}">${_vizRaioLabel(v)}</button>`;}).join('');
+    return `<div class="sec-t" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="flex:1">Atendimentos próximos (possível mesmo proprietário)</span><span style="display:inline-flex;gap:4px;align-items:center;font-weight:400"><span style="font-size:11px;color:var(--text-hint)">Raio:</span>${_chips}</span></div>`
+      +`<div class="rs" style="font-size:11.5px;margin-bottom:4px;color:var(--text-muted)">Demandas <b>já fiscalizadas</b> a ≤ <b>${_vizRaioLabel(RAIO)}</b> daqui ou do <b>mesmo proprietário/CAR</b> (sempre aparece). Fale com quem atendeu — pode já conhecer o local e o dono.</div>`
+      +`<div class="anx">${itens || `<div class="rs" style="font-size:11.5px;color:var(--text-hint)">Nenhum atendimento a ≤ ${_vizRaioLabel(RAIO)} — aumente o raio acima.</div>`}</div>`;
   })();
   const kmlBtn = d.tem_kml
     ? `<div class="anxitem"><svg class="ic" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`+
