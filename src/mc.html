@@ -544,6 +544,22 @@ function _ambResumo(d, cod){
   return r;
 }
 const _ha=v=>v?(Math.round(v*100)/100).toLocaleString('pt-BR')+' ha':'';
+/* Área geodésica (ha) de um polígono GeoJSON em lon/lat (EPSG:4326). Soma anéis
+   externos e desconta buracos; aceita Polygon e MultiPolygon. Usado p/ mostrar o
+   tamanho da área demarcada (embargo etc.) direto do polígono exibido no mapa. */
+function _geoAreaHa(geometry){
+  if(!geometry) return 0;
+  const R=6378137, rad=Math.PI/180;
+  const anel=r=>{ const n=r&&r.length||0; if(n<3) return 0; let a=0;
+    for(let i=0;i<n;i++){ const p1=r[i], p2=r[(i+1)%n]; if(!p1||!p2) continue;
+      a+=(p2[0]*rad - p1[0]*rad)*(2 + Math.sin(p1[1]*rad) + Math.sin(p2[1]*rad)); }
+    return Math.abs(a*R*R/2); };
+  const poly=pp=>{ if(!pp||!pp.length) return 0; let s=anel(pp[0]); for(let i=1;i<pp.length;i++) s-=anel(pp[i]); return Math.max(0,s); };
+  let m2=0;
+  if(geometry.type==='Polygon') m2=poly(geometry.coordinates);
+  else if(geometry.type==='MultiPolygon') (geometry.coordinates||[]).forEach(p=>{ m2+=poly(p); });
+  return m2/10000; // ha
+}
 // GeoJSON (FeatureCollection) dos imóveis do MC + áreas ambientais — QGIS/Earth
 function _carGeoJSON(d){
   const feats = _carGeomList(d).map(x=>{
@@ -589,7 +605,7 @@ function _carKML(d){
     let desc='<![CDATA['+linha('Área', cam.rotulo);
     if(cam.key==='app') desc+=linha('A recompor', _ha(+p.rec_app_ha));
     else if(cam.key==='rl') desc+=linha('A recompor', _ha(+p.rec_rl_ha));
-    else if(cam.key==='embargo'){ desc+=linha('Auto de Infração', p.num_ai)+linha('Atividade', p.atividade_)+linha('Data fisc.', p.data_fisca)+linha('Penalidade', p.penalidade); }
+    else if(cam.key==='embargo'){ const _aHa=_geoAreaHa(f.geometry); desc+=linha('Autuado', p.fiscalizad)+linha('CPF/CNPJ', p.doc_fiscal)+linha('Auto de Infração', p.num_ai)+linha('Atividade', p.atividade_)+linha('Local (fisc.)', p.local_fisc)+linha('Data fisc.', p.data_fisca)+linha('Área embargada', _aHa?_ha(_aHa):'')+linha('Penalidade', p.penalidade)+linha('Valor multa', p.valor_mult); }
     desc+=']]>';
     return '<Placemark><name>'+esc(cam.rotulo)+'</name><description>'+desc+'</description><styleUrl>#amb_'+cam.key+'</styleUrl>'+geo+'</Placemark>';
   }).filter(Boolean).join('')).join('');
@@ -1326,8 +1342,13 @@ function _abrirMapaLote(ds){
     const corLinha=feito?'#1E90FF':'#e03a34';
     try{
       const aneis=_kmlPolys(d.kml_content);
+      // balão do polígono do GEOCOD (demarcação do desmate) — tamanho da área
+      const _gpop='<div style="font:12px/1.5 Arial;max-width:230px"><div style="font-weight:800;color:'+corLinha+';margin-bottom:3px">▬ Polígono do GEOCOD '+_escH(d.codigo||'')+'</div>'
+        +(d.hectares?('<b>Área desmatada:</b> '+(_ha(+d.hectares)||d.hectares)+'<br>'):'')
+        +((d.bioma||d.natureza)?('<b>Bioma:</b> '+_escH(d.bioma||d.natureza)+'<br>'):'')
+        +'<b>Situação:</b> '+(feito?'Fiscalizado':'Pendente')+'</div>';
       aneis.forEach(ring=>{
-        L.polygon(ring,{color:corLinha,weight:3,opacity:.98,fill:true,fillColor:corLinha,fillOpacity:.12}).addTo(map);
+        L.polygon(ring,{color:corLinha,weight:3,opacity:.98,fill:true,fillColor:corLinha,fillOpacity:.12}).addTo(map).bindPopup(_gpop);
         ring.forEach(p=>allLL.push(p));
       });
     }catch(_){}
@@ -1361,7 +1382,13 @@ function _abrirMapaLote(ds){
           let info='<div style="font:12px/1.5 Arial;max-width:250px"><div style="font-weight:800;color:'+cam.cor+';margin-bottom:3px">▬ '+cam.rotulo+'</div>';
           if(cam.key==='app') info+=lin('A recompor', _ha(+p.rec_app_ha))+lin('Imóvel', p.cod_imovel)+lin('Município', p.municipio);
           else if(cam.key==='rl') info+=lin('A recompor', _ha(+p.rec_rl_ha))+lin('Imóvel', p.cod_imovel)+lin('Município', p.municipio);
-          else if(cam.key==='embargo') info+=lin('Auto de Infração', p.num_ai)+lin('Atividade', p.atividade_)+lin('Data fisc.', p.data_fisca)+lin('Penalidade', p.penalidade)+lin('Valor multa', p.valor_mult);
+          else if(cam.key==='embargo'){ const _aHa=_geoAreaHa(f.geometry);
+            info+=lin('Autuado', p.fiscalizad)+lin('CPF/CNPJ', p.doc_fiscal)
+                 +lin('Auto de Infração', p.num_ai)+lin('Atividade', p.atividade_)
+                 +lin('Local (fisc.)', p.local_fisc)+lin('Data fisc.', p.data_fisca)
+                 +lin('Área embargada', _aHa?_ha(_aHa):'')
+                 +lin('Penalidade', p.penalidade)+lin('Valor multa', p.valor_mult)
+                 +lin('Outras penalidades', p.outras_pen); }
           info+='</div>';
           gl.bindPopup(info);
           const b=gl.getBounds(); if(b&&b.isValid()){ allLL.push([b.getSouth(),b.getWest()],[b.getNorth(),b.getEast()]); }
