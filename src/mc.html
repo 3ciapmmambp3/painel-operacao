@@ -1297,6 +1297,11 @@ function _abrirMapaLote(ds){
   const ruas=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'});
   sat.addTo(map); L.control.layers({'Satélite':sat,'Ruas':ruas},null,{collapsed:true}).addTo(map);
   const seq=_ordenaVizinho(ds.map(d=>({d,c:_coordOf(d)})), null), pts=[], allLL=[];
+  // Vista inicial ANTES de adicionar as camadas: sem isso o Leaflet adia a projeção
+  // e o fitBounds projeta tudo de uma vez via whenReady, estourando em _clipPoints
+  // (mapa fica em branco quando há polígono + geoJSON juntos). Com uma vista definida,
+  // cada camada projeta na hora, isolada pelo try/catch de cada uma.
+  try{ const _c0=seq.map(it=>it.c).find(c=>c&&isFinite(c.la)&&isFinite(c.lo)); if(_c0){ map.setView([_c0.la,_c0.lo],13); map.invalidateSize(); } }catch(_){}
   seq.forEach((it,i)=>{
     const n=i+1, c=it.c, d=it.d; pts.push([c.la,c.lo]); allLL.push([c.la,c.lo]);
     const feito=(typeof atendidaN==='function')&&atendidaN(d);   // atendido/fiscalizado → verde; pendente → vermelho
@@ -1360,8 +1365,9 @@ function _abrirMapaLote(ds){
     if(pts.length>1) L.polyline(pts,{color:'#ffd54a',weight:2.5,opacity:.85,dashArray:'6,6'}).addTo(map);
     // maxZoom:17 → não aproxima além da imagem de satélite disponível (rural evita
     // o "Map data not yet available" do Esri). Dá pra aproximar mais à mão.
-    if(allLL.length===1) map.setView(allLL[0],15);
-    else if(allLL.length) map.fitBounds(allLL,{padding:[40,40],maxZoom:17});
+    const allOK=allLL.filter(p=>Array.isArray(p)&&isFinite(p[0])&&isFinite(p[1]));
+    if(allOK.length===1) map.setView(allOK[0],15);
+    else if(allOK.length) map.fitBounds(allOK,{padding:[40,40],maxZoom:17});
   }catch(e){ console.error('[MC mapa] enquadrar',e); try{toast('Aviso ao enquadrar o mapa: '+(e&&e.message||e));}catch(_){} }
   setTimeout(()=>{ try{ map.invalidateSize(); }catch(e){} },160);
   // Contorno das Unidades de Conservação dos pontos (busca ao vivo no IDE do
