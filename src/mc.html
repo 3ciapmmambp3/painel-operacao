@@ -478,60 +478,126 @@ function _carGeomList(d){
   if(!Array.isArray(g)) return [];
   return g.filter(x=>x && x.geometry && x.geometry.coordinates);
 }
+/* ── Geometria ambiental (APP / Reserva Legal / Embargo) p/ DESENHAR ──────
+   Puxa o polígono real dessas áreas no IDE-MG público (não só a bandeira
+   sim/não). Transitório: fica em d._ambGeom (não grava no banco — é rápido e
+   público). A Mata Atlântica fica fora: é bioma inteiro, grande demais. */
+const AMB_GEOM_CAMADAS = [
+  { key:'embargo', rotulo:'Área embargada (Sisema)',          layer:'IDE:ide_2304_mg_areas_embargadas_sisema_pol',                  cor:'#ff1744', kml:'ff4417ff', porCod:false },
+  { key:'rl',      rotulo:'Reserva Legal a recompor (CAR)',   layer:'IDE:ide_210602_mg_imoveis_recomp_res_legal_declarado_car_pol', cor:'#ffab00', kml:'ff00abff', porCod:true, ha:'rec_rl_ha' },
+  { key:'app',     rotulo:'APP a recompor (CAR)',             layer:'IDE:ide_210602_mg_imoveis_recomp_apps_declarado_car_pol',      cor:'#00e5ff', kml:'ffffe500', porCod:true, ha:'rec_app_ha' }
+];
+const AMB_GEOM_IX = AMB_GEOM_CAMADAS.reduce((o,c)=>(o[c.key]=c,o),{});
+const _ambGeom_legenda = { app:{cor:'#00e5ff',rot:'APP'}, rl:{cor:'#ffab00',rot:'Reserva Legal'}, embargo:{cor:'#ff1744',rot:'embargo'} };
+function _ambGeomList(d){ return Array.isArray(d && d._ambGeom) ? d._ambGeom : []; }
+function _codImovelList(d){
+  const arr=Array.isArray(d && d.car_dados)?d.car_dados:[];
+  return [...new Set(arr.map(c=>c&&c.cod_imovel).filter(Boolean))];
+}
+async function _ambGeomDe(d){
+  const flags=Array.isArray(d.amb_dados)?d.amb_dados:null;
+  const dentro=k=>!flags || flags.some(a=>a&&a.key===k&&a.dentro);   // já consultado → só o que deu "dentro"
+  const c=_coordOf(d), cods=_codImovelList(d), out=[];
+  for(const cam of AMB_GEOM_CAMADAS){
+    if(!dentro(cam.key)) continue;
+    let cql=null;
+    if(cam.porCod && cods.length) cql=`cod_imovel IN (${cods.map(x=>`'${String(x).replace(/'/g,'')}'`).join(',')})`;
+    else if(c) cql=`INTERSECTS(geom,POINT(${c.la} ${c.lo}))`;
+    if(!cql) continue;
+    try{
+      const url=`${UC_IDE_BASE}?service=WFS&version=1.1.0&request=GetFeature&typeName=${encodeURIComponent(cam.layer)}&outputFormat=application/json&CQL_FILTER=${encodeURIComponent(cql)}`;
+      const j=await (await fetch(url)).json();
+      const feats=(j.features||[]).filter(f=>f&&f.geometry);
+      if(feats.length) out.push({ key:cam.key, rotulo:cam.rotulo, cor:cam.cor, kml:cam.kml, ha:cam.ha, features:feats });
+    }catch(_){}
+  }
+  return out;
+}
+async function _garantirAmbGeom(ds){
+  const alvo=(ds||[]).filter(d=>d && d._ambGeom===undefined && _coordOf(d));
+  let n=0;
+  for(const d of alvo){
+    if(n++>=60){ d._ambGeom=[]; continue; }   // teto p/ seleção grande
+    try{ d._ambGeom=await _ambGeomDe(d); }catch(_){ d._ambGeom=[]; }
+  }
+}
+// GeoJSON geometry → <Polygon>/<MultiGeometry> do KML (reaproveitado no CAR e ambiental)
+function _gjRingKml(ring){ return '<outerBoundaryIs><LinearRing><coordinates>'+ring.map(pt=>pt[0]+','+pt[1]+',0').join(' ')+'</coordinates></LinearRing></outerBoundaryIs>'; }
+function _gjPolyKml(co){ return '<Polygon>'+_gjRingKml(co[0])+co.slice(1).map(h=>'<innerBoundaryIs><LinearRing><coordinates>'+h.map(pt=>pt[0]+','+pt[1]+',0').join(' ')+'</coordinates></LinearRing></innerBoundaryIs>').join('')+'</Polygon>'; }
+function _gjGeomKml(g){ if(!g) return ''; if(g.type==='Polygon') return _gjPolyKml(g.coordinates); if(g.type==='MultiPolygon') return '<MultiGeometry>'+g.coordinates.map(p=>_gjPolyKml(p)).join('')+'</MultiGeometry>'; return ''; }
 // Acha os dados do imóvel (proprietário, CAR, área…) p/ um cod_imovel
 function _carInfo(d, cod){
   const lista = Array.isArray(d && d.car_dados) ? d.car_dados : [];
   return lista.find(c=>c && c.cod_imovel===cod) || (lista.length===1 ? lista[0] : {}) || {};
 }
-// GeoJSON (FeatureCollection) dos imóveis do MC — abre em QGIS/Earth, vira shapefile
+// Soma APP/Reserva Legal (ha a recompor) e embargo p/ um imóvel (ou todos, cod=null)
+function _ambResumo(d, cod){
+  const r={ appHa:0, rlHa:0, hasApp:false, hasRl:false, emb:0 };
+  _ambGeomList(d).forEach(cam=>{
+    (cam.features||[]).forEach(f=>{
+      const p=f.properties||{};
+      if(cam.key==='app'){ if(!cod||p.cod_imovel===cod){ r.hasApp=true; r.appHa+=(+p.rec_app_ha||0); } }
+      else if(cam.key==='rl'){ if(!cod||p.cod_imovel===cod){ r.hasRl=true; r.rlHa+=(+p.rec_rl_ha||0); } }
+      else if(cam.key==='embargo'){ r.emb++; }
+    });
+  });
+  return r;
+}
+const _ha=v=>v?(Math.round(v*100)/100).toLocaleString('pt-BR')+' ha':'';
+// GeoJSON (FeatureCollection) dos imóveis do MC + áreas ambientais — QGIS/Earth
 function _carGeoJSON(d){
   const feats = _carGeomList(d).map(x=>{
-    const i=_carInfo(d, x.cod_imovel);
+    const i=_carInfo(d, x.cod_imovel), a=_ambResumo(d, x.cod_imovel);
     return { type:'Feature',
-      properties:{ cod_imovel:x.cod_imovel||'', mc:d.codigo||'', municipio:i.municipio||d.municipio||'',
+      properties:{ camada:'imovel_car', cod_imovel:x.cod_imovel||'', mc:d.codigo||'', municipio:i.municipio||d.municipio||'',
         proprietario:i.proprietario||'', cpf_cnpj:i.cpf||'', imovel:i.nome_imovel||'',
-        area_ha:i.area||'', mod_fiscais:i.mod_fiscal||'', condicao:i.status||'' },
+        area_ha:i.area||'', mod_fiscais:i.mod_fiscal||'', condicao:i.status||'',
+        app_recompor_ha:a.hasApp?Math.round(a.appHa*100)/100:'', rl_recompor_ha:a.hasRl?Math.round(a.rlHa*100)/100:'', embargo:a.emb>0?'sim':'' },
       geometry:x.geometry };
+  });
+  // polígonos das áreas ambientais (APP / Reserva Legal / Embargo)
+  _ambGeomList(d).forEach(cam=>{
+    (cam.features||[]).forEach(f=>feats.push({ type:'Feature',
+      properties:Object.assign({ camada:cam.key, rotulo:cam.rotulo, mc:d.codigo||'' }, f.properties||{}),
+      geometry:f.geometry }));
   });
   return JSON.stringify({ type:'FeatureCollection', name:'CAR_'+(d.codigo||''), features:feats }, null, 1);
 }
-// KML dos imóveis do MC (perímetro) — abre no Google Earth
+// KML dos imóveis do MC (perímetro) + áreas ambientais — abre no Google Earth
 function _carKML(d){
   const esc=s=>String(s==null?'':s).replace(/[<&>]/g,c=>c==='<'?'&lt;':c==='>'?'&gt;':'&amp;');
-  const ringKml=ring=>'<outerBoundaryIs><LinearRing><coordinates>'
-    +ring.map(pt=>pt[0]+','+pt[1]+',0').join(' ')+'</coordinates></LinearRing></outerBoundaryIs>';
-  // GeoJSON Polygon = [ring0(ext), ring1(buraco)…]; MultiPolygon = [ [rings], … ]
-  const polyKml=coords=>'<Polygon>'+ringKml(coords[0])
-    +coords.slice(1).map(h=>'<innerBoundaryIs><LinearRing><coordinates>'+h.map(pt=>pt[0]+','+pt[1]+',0').join(' ')+'</coordinates></LinearRing></innerBoundaryIs>').join('')+'</Polygon>';
+  const linha=(rot,val)=>val?('<b>'+esc(rot)+':</b> '+esc(val)+'<br/>'):'';
+  // perímetro do imóvel (CAR) — balão com proprietário + resumo APP/RL/embargo
   const pms=_carGeomList(d).map(x=>{
-    const gt=x.geometry.type, co=x.geometry.coordinates; let geo='';
-    if(gt==='Polygon') geo=polyKml(co);
-    else if(gt==='MultiPolygon') geo='<MultiGeometry>'+co.map(p=>polyKml(p)).join('')+'</MultiGeometry>';
-    else return '';
-    const i=_carInfo(d, x.cod_imovel);
-    const linha=(rot,val)=>val?('<b>'+esc(rot)+':</b> '+esc(val)+'<br/>'):'';
+    const geo=_gjGeomKml(x.geometry); if(!geo) return '';
+    const i=_carInfo(d, x.cod_imovel), a=_ambResumo(d, x.cod_imovel);
     const desc='<![CDATA['
-      +linha('MC', d.codigo)
-      +linha('Proprietário', i.proprietario)
-      +linha('CPF/CNPJ', i.cpf)
-      +linha('CAR', x.cod_imovel)
-      +linha('Imóvel', i.nome_imovel)
-      +linha('Município', i.municipio||d.municipio)
-      +linha('Área (ha)', i.area)
-      +linha('Mód. fiscais', i.mod_fiscal)
-      +linha('Condição', i.status)
-      +']]>';
-    const nome=i.proprietario || x.cod_imovel || 'Imóvel';
-    return '<Placemark><name>'+esc(nome)+'</name>'
-      +'<description>'+desc+'</description>'
-      +'<styleUrl>#carPoly</styleUrl>'+geo+'</Placemark>';
+      +linha('MC', d.codigo)+linha('Proprietário', i.proprietario)+linha('CPF/CNPJ', i.cpf)
+      +linha('CAR', x.cod_imovel)+linha('Imóvel', i.nome_imovel)+linha('Município', i.municipio||d.municipio)
+      +linha('Área do imóvel', _ha(+i.area)||i.area)+linha('Mód. fiscais', i.mod_fiscal)+linha('Condição', i.status)
+      +(a.hasApp?linha('APP a recompor', _ha(a.appHa)):'')+(a.hasRl?linha('Reserva Legal a recompor', _ha(a.rlHa)):'')
+      +(a.emb?linha('Embargo', 'SIM ('+a.emb+')'):'')+']]>';
+    return '<Placemark><name>'+esc(i.proprietario||x.cod_imovel||'Imóvel')+'</name>'
+      +'<description>'+desc+'</description><styleUrl>#carPoly</styleUrl>'+geo+'</Placemark>';
   }).filter(Boolean).join('');
+  // áreas ambientais (APP / Reserva Legal / Embargo)
+  const ambPms=_ambGeomList(d).map(cam=>(cam.features||[]).map(f=>{
+    const geo=_gjGeomKml(f.geometry); if(!geo) return '';
+    const p=f.properties||{};
+    let desc='<![CDATA['+linha('Área', cam.rotulo);
+    if(cam.key==='app') desc+=linha('A recompor', _ha(+p.rec_app_ha));
+    else if(cam.key==='rl') desc+=linha('A recompor', _ha(+p.rec_rl_ha));
+    else if(cam.key==='embargo'){ desc+=linha('Auto de Infração', p.num_ai)+linha('Atividade', p.atividade_)+linha('Data fisc.', p.data_fisca)+linha('Penalidade', p.penalidade); }
+    desc+=']]>';
+    return '<Placemark><name>'+esc(cam.rotulo)+'</name><description>'+desc+'</description><styleUrl>#amb_'+cam.key+'</styleUrl>'+geo+'</Placemark>';
+  }).filter(Boolean).join('')).join('');
+  const ambStyles=AMB_GEOM_CAMADAS.map(c=>'<Style id="amb_'+c.key+'"><LineStyle><color>'+c.kml+'</color><width>2.2</width></LineStyle><PolyStyle><color>5a'+c.kml.slice(2)+'</color></PolyStyle></Style>').join('');
   return '<?xml version="1.0" encoding="UTF-8"?>\n'
     +'<kml xmlns="http://www.opengis.net/kml/2.2"><Document>'
     +'<name>CAR '+esc(d.codigo||'')+'</name>'
     +'<Style id="carPoly"><LineStyle><color>ff3ba7f5</color><width>2.4</width></LineStyle>'
-    +'<PolyStyle><color>3c3ba7f5</color></PolyStyle></Style>'
-    +pms+'</Document></kml>';
+    +'<PolyStyle><color>3c3ba7f5</color></PolyStyle></Style>'+ambStyles
+    +pms+ambPms+'</Document></kml>';
 }
 function _baixarArq(nome, texto, mime){
   try{
@@ -544,7 +610,9 @@ async function mcBaixarCarGeom(id, fmt){
   const d=byId(id); if(!d) return;
   toast('Preparando o polígono…');
   await _garantirCarGeom([d]);
-  if(!_carGeomList(d).length) return toast('Sem polígono do imóvel para este GEOCOD. Rode o Importador do Harpia (ele traz o perímetro junto).');
+  try{ await _garantirAmbGeom([d]); }catch(_){}   // APP / Reserva Legal / Embargo
+  if(!_carGeomList(d).length && !_ambGeomList(d).some(c=>c.features&&c.features.length))
+    return toast('Sem polígono do imóvel para este GEOCOD. Rode o Importador do Harpia (ele traz o perímetro junto).');
   const base='CAR_'+String(d.codigo||'').replace(/[\\/:*?"<>|]/g,'-');
   if(fmt==='geojson') _baixarArq(base+'.geojson', _carGeoJSON(d), 'application/geo+json');
   else _baixarArq(base+'.kml', _carKML(d), 'application/vnd.google-earth.kml+xml');
@@ -1183,6 +1251,7 @@ async function mapaLoteSel(){
   toast('Abrindo o mapa…');
   await _garantirKml(ds);        // polígonos (KML) dos pontos
   try{ await _garantirCarGeom(ds); }catch(_){}   // polígono do imóvel (CAR)
+  try{ await _garantirAmbGeom(ds); }catch(_){}   // APP / Reserva Legal / Embargo
   _loadLeaflet(()=>_abrirMapaLote(ds));
 }
 // "Ver no mapa" da gaveta: abre EXATAMENTE o mesmo mapa da seleção, só que para
@@ -1193,11 +1262,17 @@ async function mcVerNoMapa(){
   toast('Abrindo o mapa…');
   try{ if(d.tem_kml && d.kml_content==null) await _garantirKml([d]); }catch(_){}
   try{ await _garantirCarGeom([d]); }catch(_){}
+  try{ await _garantirAmbGeom([d]); }catch(_){}   // APP / Reserva Legal / Embargo
   _loadLeaflet(()=>_abrirMapaLote([d]));
 }
 function _abrirMapaLote(ds){
   const old=document.getElementById('_mapaModal'); if(old) old.remove();
   const temCar=(ds||[]).some(d=>_carGeomList(d).length);
+  // quais camadas ambientais aparecem (p/ montar a legenda)
+  const ambKeys=new Set(); (ds||[]).forEach(d=>_ambGeomList(d).forEach(c=>{ if(c.features&&c.features.length) ambKeys.add(c.key); }));
+  const ambLeg=['app','rl','embargo'].filter(k=>ambKeys.has(k)).map(k=>{
+    const c=_ambGeom_legenda[k]; return ' · <span style="color:'+c.cor+';font-weight:800">▬</span> '+c.rot;
+  }).join('');
   const ov=document.createElement('div'); ov.id='_mapaModal';
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:1200;padding:14px';
   const box=document.createElement('div');
@@ -1205,7 +1280,7 @@ function _abrirMapaLote(ds){
   box.innerHTML=
     `<div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap">`+
       `<div style="font-size:14px;font-weight:800;color:var(--gold)">🗺️ ${ds.length} ponto(s) no mapa</div>`+
-      `<div style="font-size:11px;color:var(--text-hint)">clique num alfinete para ver as informações · <span style="color:#c62f2b;font-weight:800">●</span> pendente · <span style="color:#2e9e4f;font-weight:800">●</span> atendido${temCar?' · <span style="color:#3ba7f5;font-weight:800">▬</span> imóvel (CAR)':''}</div>`+
+      `<div style="font-size:11px;color:var(--text-hint)">clique num alfinete ou numa área para ver as informações · <span style="color:#c62f2b;font-weight:800">●</span> pendente · <span style="color:#2e9e4f;font-weight:800">●</span> atendido${temCar?' · <span style="color:#3ba7f5;font-weight:800">▬</span> imóvel (CAR)':''}${ambLeg}</div>`+
       `<a class="anxbtn rota" id="_mpRota" style="margin-left:auto;cursor:pointer">🧭 Rota no Google Maps</a>`+
       (ds.some(x=>x.tem_kml)?`<button class="anxbtn earth" id="_mpEarth" title="Baixa o KML dos pontos e abre o Google Earth (lá: Projetos → Importar arquivo KML).">🌍 Google Earth</button>`:``)+
       `<button id="_mpClose" title="Fechar" style="width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:var(--bg-input);color:var(--text-white);font-size:17px;font-weight:700;cursor:pointer;line-height:1;flex-shrink:0">✕</button>`+
@@ -1232,12 +1307,39 @@ function _abrirMapaLote(ds){
       L.polygon(ring,{color:corLinha,weight:2,opacity:.95,fill:true,fillColor:corLinha,fillOpacity:.12}).addTo(map);
       ring.forEach(p=>allLL.push(p));
     });
-    // polígono do imóvel (CAR), em azul, se já importado (car_geom)
+    // polígono do imóvel (CAR), em azul — CLICÁVEL: balão com dados + resumo ambiental
     _carGeomList(d).forEach(x=>{
       try{
-        const cl=L.geoJSON(x.geometry,{style:{color:'#3ba7f5',weight:2,fillColor:'#3ba7f5',fillOpacity:.08},interactive:false}).addTo(map);
+        const cl=L.geoJSON(x.geometry,{style:{color:'#3ba7f5',weight:2,fillColor:'#3ba7f5',fillOpacity:.08},interactive:true}).addTo(map);
+        const i=_carInfo(d, x.cod_imovel), a=_ambResumo(d, x.cod_imovel);
+        const lin=(r,v)=>v?('<b>'+r+':</b> '+v+'<br>'):'';
+        const html='<div style="font:12px/1.5 Arial;max-width:250px"><div style="font-weight:800;color:#1769c4;margin-bottom:3px">▬ Imóvel (CAR)</div>'
+          +lin('Proprietário', i.proprietario)+lin('CPF/CNPJ', i.cpf)+lin('CAR', x.cod_imovel)
+          +lin('Imóvel', i.nome_imovel)+lin('Município', i.municipio||d.municipio)
+          +lin('Área do imóvel', _ha(+i.area)||i.area)+lin('Mód. fiscais', i.mod_fiscal)+lin('Condição', i.status)
+          +(a.hasApp?lin('🟦 APP a recompor', _ha(a.appHa)):'')
+          +(a.hasRl?lin('🟧 Reserva Legal a recompor', _ha(a.rlHa)):'')
+          +(a.emb?lin('🟥 Embargo', 'SIM ('+a.emb+')'):'')
+          +'</div>';
+        cl.bindPopup(html);
         const b=cl.getBounds(); if(b&&b.isValid()){ allLL.push([b.getSouth(),b.getWest()],[b.getNorth(),b.getEast()]); }
       }catch(_){}
+    });
+    // áreas ambientais (APP ciano / Reserva Legal âmbar / Embargo vermelho), clicáveis
+    _ambGeomList(d).forEach(cam=>{
+      (cam.features||[]).forEach(f=>{
+        try{
+          const gl=L.geoJSON(f.geometry,{style:{color:cam.cor,weight:2,fillColor:cam.cor,fillOpacity:.16},interactive:true}).addTo(map);
+          const p=f.properties||{}, lin=(r,v)=>v?('<b>'+r+':</b> '+v+'<br>'):'';
+          let info='<div style="font:12px/1.5 Arial;max-width:250px"><div style="font-weight:800;color:'+cam.cor+';margin-bottom:3px">▬ '+cam.rotulo+'</div>';
+          if(cam.key==='app') info+=lin('A recompor', _ha(+p.rec_app_ha))+lin('Imóvel', p.cod_imovel)+lin('Município', p.municipio);
+          else if(cam.key==='rl') info+=lin('A recompor', _ha(+p.rec_rl_ha))+lin('Imóvel', p.cod_imovel)+lin('Município', p.municipio);
+          else if(cam.key==='embargo') info+=lin('Auto de Infração', p.num_ai)+lin('Atividade', p.atividade_)+lin('Data fisc.', p.data_fisca)+lin('Penalidade', p.penalidade)+lin('Valor multa', p.valor_mult);
+          info+='</div>';
+          gl.bindPopup(info);
+          const b=gl.getBounds(); if(b&&b.isValid()){ allLL.push([b.getSouth(),b.getWest()],[b.getNorth(),b.getEast()]); }
+        }catch(_){}
+      });
     });
     const icon=L.divIcon({html:'<div style="background:'+cor+';color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font:700 12px Arial;box-shadow:0 1px 4px rgba(0,0,0,.5)">'+n+'</div>',className:'',iconSize:[26,26],iconAnchor:[13,13]});
     const dir='https://www.google.com/maps/dir/?api=1&destination='+c.la+','+c.lo;
