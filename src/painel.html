@@ -1081,10 +1081,19 @@ window.addEventListener('load', function(){
         <tbody id="imp-preview-tbody"></tbody>
       </table>
     </div>
+    <div id="imp-prog" style="display:none;margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13px;margin-bottom:6px;">
+        <span style="color:var(--text-muted);">⏳ Enviando ao Supabase…</span>
+        <span id="imp-prog-num" style="font-weight:700;color:var(--gold);white-space:nowrap;">0 / 0</span>
+      </div>
+      <div style="height:8px;background:#222;border-radius:5px;overflow:hidden;">
+        <div id="imp-prog-bar" style="height:100%;width:0%;background:#2ea043;border-radius:5px;transition:width .2s;"></div>
+      </div>
+    </div>
     <div style="display:flex;gap:10px;">
       <button onclick="impVoltarStep1()" style="flex:1;padding:10px;background:#333;color:#ccc;font-weight:600;font-size:12px;border:none;border-radius:6px;cursor:pointer;">← Voltar</button>
       <button id="imp-btn-confirmar" onclick="impConfirmar()"
-              style="flex:2;padding:10px;background:#2ea043;color:#fff;font-weight:700;font-size:13px;border:none;border-radius:6px;cursor:pointer;">
+              style="flex:2;padding:10px;background:#2ea043;color:#fff;font-weight:700;font-size:13px;border:none;border-radius:6px;cursor:pointer;white-space:nowrap;">
         ✅ Confirmar importação
       </button>
     </div>
@@ -7142,7 +7151,7 @@ function impConfirmar(){
          trouxe coluna nova (ex.: SIGOp adicionou "semoventes"), PERGUNTA se quer criá-la no
          banco (texto) e já importa com ela. Se recusar, ignora (aviso laranja). Descobre as
          colunas por uma amostra da tabela; se não conseguir, segue sem filtrar. */
-      let _impIgnoradas = [], _impCriadas = [];
+      let _impIgnoradas = [], _impCriadas = [], _impFalhaCriar = [];
       const _impColsDe = async (tab) => {
         try{
           const r = await fetch(`${SB_URL}/rest/v1/${tab}?select=*&limit=1`, { headers:{ 'apikey':SB_KEY, 'Authorization':'Bearer '+SB_KEY } });
@@ -7173,8 +7182,13 @@ function impConfirmar(){
                 try{
                   const rr = await fetch(`${SB_URL}/rest/v1/rpc/bd_add_coluna`, { method:'POST', headers:{ 'apikey':SB_KEY, 'Authorization':'Bearer '+SB_KEY, 'Content-Type':'application/json' }, body: JSON.stringify({ p_tabela:tabela, p_coluna:c }) });
                   if(rr.ok){ _impCriadas.push(c); }
-                  else console.warn('[import] criar coluna '+c+' falhou: HTTP '+rr.status+' '+(await rr.text()));
-                }catch(e){ console.warn('[import] criar coluna '+c+' erro:', e); }
+                  else {
+                    let _msg = 'HTTP '+rr.status;
+                    try{ const _j = await rr.json(); _msg = _j.message || _j.hint || _j.details || JSON.stringify(_j); }catch(_){ try{ _msg = await rr.text(); }catch(__){} }
+                    console.warn('[import] criar coluna "'+c+'" falhou: '+_msg);
+                    _impFalhaCriar.push(c+' → '+_msg);
+                  }
+                }catch(e){ console.warn('[import] criar coluna "'+c+'" erro:', e); _impFalhaCriar.push(c+' → '+(e.message||e)); }
               }
               if(_impCriadas.length){
                 await _impEsperarCol(tabela, _impCriadas[0]);
@@ -7202,12 +7216,31 @@ function impConfirmar(){
         'bd_visitas':   'numero_bos',
       };
       const conflictCol = ON_CONFLICT[tabela] || '';
-      const LOTE = 200;
-      for(let i=0; i<registros.length; i+=LOTE){
-        btnConf.textContent = `⏳ ${Math.min(i+LOTE,registros.length)}/${registros.length}...`;
-        const url = conflictCol
-          ? `${SB_URL}/rest/v1/${tabela}?on_conflict=${conflictCol}`
-          : `${SB_URL}/rest/v1/${tabela}`;
+      const LOTE = 200;      // registros por requisição
+      const CONC = 4;        // lotes enviados em paralelo (acelera ~4x vs. em série)
+      const url = conflictCol
+        ? `${SB_URL}/rest/v1/${tabela}?on_conflict=${conflictCol}`
+        : `${SB_URL}/rest/v1/${tabela}`;
+      const total = registros.length;
+
+      // separa em lotes
+      const lotes = [];
+      for(let i=0; i<total; i+=LOTE) lotes.push(registros.slice(i,i+LOTE));
+
+      // barra de progresso (largura cheia — mostra a contagem por extenso)
+      const _progBox = document.getElementById('imp-prog');
+      const _progNum = document.getElementById('imp-prog-num');
+      const _progBar = document.getElementById('imp-prog-bar');
+      let _feitos = 0;
+      const _att = () => {
+        if(_progNum) _progNum.textContent = `${_feitos.toLocaleString('pt-BR')} / ${total.toLocaleString('pt-BR')}`;
+        if(_progBar) _progBar.style.width = (total? Math.round(_feitos/total*100):0)+'%';
+      };
+      if(_progBox) _progBox.style.display='block';
+      btnConf.textContent = '⏳ Importando…';
+      _att();
+
+      const _enviaLote = async (slice, idx) => {
         const res = await fetch(url, {
           method:'POST',
           headers:{
@@ -7216,10 +7249,16 @@ function impConfirmar(){
             'Content-Type': 'application/json',
             'Prefer': 'resolution=merge-duplicates,return=minimal'
           },
-          body: JSON.stringify(registros.slice(i,i+LOTE))
+          body: JSON.stringify(slice)
         });
-        if(!res.ok) throw new Error(`Lote ${Math.floor(i/LOTE)+1}: ${await res.text()}`);
-      }
+        if(!res.ok) throw new Error(`Lote ${idx+1}/${lotes.length}: ${await res.text()}`);
+        _feitos += slice.length; _att();
+      };
+
+      // pool de concorrência: CONC "operários" consomem a fila de lotes
+      let _prox = 0;
+      const _worker = async () => { while(_prox < lotes.length){ const k=_prox++; await _enviaLote(lotes[k], k); } };
+      await Promise.all(Array.from({length: Math.min(CONC, lotes.length)}, _worker));
 
       /* Chaves não são mais salvas no localStorage — Supabase é a fonte de verdade */
 
@@ -7277,6 +7316,7 @@ function impConfirmar(){
           <div style="font-size:11px;color:#2ea043;margin-top:8px;">✅ Todos os dados salvos no Supabase com campos completos!</div>
           ${_impCriadas && _impCriadas.length ? `<div style="font-size:11px;color:#2ea043;margin-top:8px;">🆕 Coluna(s) criada(s) no banco e já importada(s): <b>${_impCriadas.join(', ')}</b>.</div>` : ''}
           ${_impIgnoradas && _impIgnoradas.length ? `<div style="font-size:11px;color:#ff9800;margin-top:8px;">⚠ Colunas ignoradas (não existem na tabela <b>${tabela}</b>): <b>${_impIgnoradas.join(', ')}</b>.<br>Se quiser guardá-las, reimporte e confirme a criação quando perguntado.</div>` : ''}
+          ${_impFalhaCriar && _impFalhaCriar.length ? `<div style="font-size:11px;color:#ef5350;margin-top:8px;text-align:left;">❌ Não consegui criar no banco (o dado dessa coluna NÃO foi gravado):<br>${_impFalhaCriar.map(f=>'• '+String(f).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))).join('<br>')}</div>` : ''}
         </div>
         <div style="display:flex;gap:12px;justify-content:center;margin-top:8px;">
           <div class="imp-stat-box imp-stat-novos"><div class="n">${novos.length}</div><div class="l">Inseridos</div></div>
@@ -7289,6 +7329,7 @@ function impConfirmar(){
       /* Recarrega os dados no painel para atualizar os banners do cabeçalho */
       setTimeout(()=>{ recarregarTudo().catch(e=>console.warn('recarregarTudo pós-importação:',e)); }, 500);
     } catch(e) {
+      const _pb=document.getElementById('imp-prog'); if(_pb) _pb.style.display='none';
       btnConf.disabled=false;
       btnConf.textContent='❌ Erro — Tentar novamente';
       btnConf.style.opacity='1';
