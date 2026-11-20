@@ -478,11 +478,21 @@ function _carGeomList(d){
   if(!Array.isArray(g)) return [];
   return g.filter(x=>x && x.geometry && x.geometry.coordinates);
 }
+// Acha os dados do imóvel (proprietário, CAR, área…) p/ um cod_imovel
+function _carInfo(d, cod){
+  const lista = Array.isArray(d && d.car_dados) ? d.car_dados : [];
+  return lista.find(c=>c && c.cod_imovel===cod) || (lista.length===1 ? lista[0] : {}) || {};
+}
 // GeoJSON (FeatureCollection) dos imóveis do MC — abre em QGIS/Earth, vira shapefile
 function _carGeoJSON(d){
-  const feats = _carGeomList(d).map(x=>({ type:'Feature',
-    properties:{ cod_imovel:x.cod_imovel||'', geocod:d.codigo||'', municipio:d.municipio||'' },
-    geometry:x.geometry }));
+  const feats = _carGeomList(d).map(x=>{
+    const i=_carInfo(d, x.cod_imovel);
+    return { type:'Feature',
+      properties:{ cod_imovel:x.cod_imovel||'', mc:d.codigo||'', municipio:i.municipio||d.municipio||'',
+        proprietario:i.proprietario||'', cpf_cnpj:i.cpf||'', imovel:i.nome_imovel||'',
+        area_ha:i.area||'', mod_fiscais:i.mod_fiscal||'', condicao:i.status||'' },
+      geometry:x.geometry };
+  });
   return JSON.stringify({ type:'FeatureCollection', name:'CAR_'+(d.codigo||''), features:feats }, null, 1);
 }
 // KML dos imóveis do MC (perímetro) — abre no Google Earth
@@ -498,7 +508,22 @@ function _carKML(d){
     if(gt==='Polygon') geo=polyKml(co);
     else if(gt==='MultiPolygon') geo='<MultiGeometry>'+co.map(p=>polyKml(p)).join('')+'</MultiGeometry>';
     else return '';
-    return '<Placemark><name>'+esc(x.cod_imovel||'Imóvel')+'</name>'
+    const i=_carInfo(d, x.cod_imovel);
+    const linha=(rot,val)=>val?('<b>'+esc(rot)+':</b> '+esc(val)+'<br/>'):'';
+    const desc='<![CDATA['
+      +linha('MC', d.codigo)
+      +linha('Proprietário', i.proprietario)
+      +linha('CPF/CNPJ', i.cpf)
+      +linha('CAR', x.cod_imovel)
+      +linha('Imóvel', i.nome_imovel)
+      +linha('Município', i.municipio||d.municipio)
+      +linha('Área (ha)', i.area)
+      +linha('Mód. fiscais', i.mod_fiscal)
+      +linha('Condição', i.status)
+      +']]>';
+    const nome=i.proprietario || x.cod_imovel || 'Imóvel';
+    return '<Placemark><name>'+esc(nome)+'</name>'
+      +'<description>'+desc+'</description>'
       +'<styleUrl>#carPoly</styleUrl>'+geo+'</Placemark>';
   }).filter(Boolean).join('');
   return '<?xml version="1.0" encoding="UTF-8"?>\n'
