@@ -2372,6 +2372,7 @@ document.addEventListener('click', () => {
         <option value="validada">✅ Validada</option>
         <option value="indeferida">❌ Indeferida</option>
         <option value="corrigida">✔ Corrigida</option>
+        <option value="arquivada">📦 Arquivadas</option>
       </select>
       <div class="mes-dropdown-wrap" id="audit-ind-wrap" style="min-width:180px;">
         <button type="button" class="mes-dropdown-btn" id="audit-ind-btn" onclick="toggleIndDd('audit')" style="font-size:11px;padding:4px 8px;">
@@ -3319,6 +3320,7 @@ let dadosSituacoesCorr = {};  /* idem, mas da aba Correlação Op×Crime — tab
 let fichasIntel   = [];   /* fichas de inteligência (localStorage) */
 let missoes       = [];   /* missões (localStorage) */
 let auditoriasMap = {};   /* RAT → dados de auditoria */
+let _auditPag = 1, _auditFiltroSig = '';   /* paginação (15/pág) + assinatura dos filtros p/ resetar página */
 /* REDS marcados "fora da base do CGA" (db/183): saíram da base mas são mantidos
    por terem auditoria. Ficam visíveis, porém NÃO contam nos indicadores da GDO. */
 let foraBaseCgaSet = new Set();
@@ -12638,7 +12640,12 @@ function renderAuditoriasLista(){
 
   const filtroStatus = document.getElementById('audit-lista-filtro-status')?.value || '';
   const busca = (document.getElementById('audit-lista-busca')?.value || '').toLowerCase().trim();
-  const entradas = Object.values(auditoriasMap).filter(a => a && (a.motivo || a.justificativa));
+  const todas = Object.values(auditoriasMap).filter(a => a && (a.motivo || a.justificativa));
+  const verArquivadas = filtroStatus === 'arquivada';
+  /* A lista esconde as arquivadas (filtro "📦 Arquivadas" mostra só elas),
+     mas os cards de resumo contam TODAS p/ não perder o total. */
+  const entradas = todas.filter(a => verArquivadas ? a.arquivada : !a.arquivada);
+  const qtdArquivadas = todas.filter(a => a.arquivada).length;
 
   /* Filtros por grupamento e mês (dados vêm da ocorrência vinculada por BO) */
   const filtroGp  = document.getElementById('audit-lista-filtro-gp')?.value  || '';
@@ -12671,9 +12678,9 @@ function renderAuditoriasLista(){
     }
   })();
 
-  /* Cards de resumo */
+  /* Cards de resumo — contam TODAS as solicitações (inclusive as arquivadas) p/ não perder o total */
   const contagem = { aguardando:0, em_analise:0, validada:0, indeferida:0, corrigida:0 };
-  entradas.forEach(a => { const s = a.status||'aguardando'; if(s in contagem) contagem[s]++; });
+  todas.forEach(a => { const s = a.status||'aguardando'; if(s in contagem) contagem[s]++; });
   const cardDef = [
     { key:'aguardando', label:'Aguardando', cor:'#ff9800', icon:'⏳' },
     { key:'em_analise', label:'Em Análise',  cor:'#42a5f5', icon:'🔍' },
@@ -12682,14 +12689,23 @@ function renderAuditoriasLista(){
     { key:'corrigida',  label:'Corrigida',   cor:'#ab47bc', icon:'✔' },
   ];
   if(cardsEl) cardsEl.innerHTML = cardDef.map(c => `
-    <div style="background:var(--bg-card);border:1px solid ${c.cor}44;border-top:3px solid ${c.cor};border-radius:7px;padding:10px 16px;min-width:110px;cursor:pointer;text-align:center;"
-         onclick="document.getElementById('audit-lista-filtro-status').value='${c.key}';renderAuditoriasLista()">
+    <div style="background:var(--bg-card);border:1px solid ${c.cor}44;border-top:3px solid ${c.cor};border-radius:7px;padding:10px 16px;min-width:110px;cursor:pointer;text-align:center;${filtroStatus===c.key?'box-shadow:0 0 0 2px '+c.cor+'88;':''}"
+         onclick="document.getElementById('audit-lista-filtro-status').value='${filtroStatus===c.key?'':c.key}';renderAuditoriasLista()">
       <div style="font-size:20px;font-weight:700;color:${c.cor};">${contagem[c.key]}</div>
       <div style="font-size:10px;color:var(--text-muted);">${c.icon} ${c.label}</div>
-    </div>`).join('');
+    </div>`).join('')
+    + `<div title="Solicitações arquivadas — fora da lista ativa, mas ainda contabilizadas acima" style="background:var(--bg-card);border:1px solid #9e9e9e44;border-top:3px solid #9e9e9e;border-radius:7px;padding:10px 16px;min-width:110px;cursor:pointer;text-align:center;${verArquivadas?'box-shadow:0 0 0 2px #9e9e9e88;':''}"
+         onclick="document.getElementById('audit-lista-filtro-status').value='${verArquivadas?'':'arquivada'}';renderAuditoriasLista()">
+      <div style="font-size:20px;font-weight:700;color:#9e9e9e;">${qtdArquivadas}</div>
+      <div style="font-size:10px;color:var(--text-muted);">📦 Arquivadas</div>
+    </div>`;
+
+  /* Reseta p/ a 1ª página sempre que os filtros mudam (não ao navegar entre páginas) */
+  const _sig = JSON.stringify([filtroStatus, busca, filtroGp, filtroMes, filtroInd]);
+  if(_sig !== _auditFiltroSig){ _auditPag = 1; _auditFiltroSig = _sig; }
 
   let filtradas = entradas;
-  if(filtroStatus) filtradas = filtradas.filter(a => (a.status||'aguardando') === filtroStatus);
+  if(filtroStatus && filtroStatus !== 'arquivada') filtradas = filtradas.filter(a => (a.status||'aguardando') === filtroStatus);
   if(busca) filtradas = filtradas.filter(a =>
     (a.bo||'').toLowerCase().includes(busca) ||
     (a.solicitante||'').toLowerCase().includes(busca)
@@ -12699,7 +12715,7 @@ function renderAuditoriasLista(){
   if(filtroInd.length) filtradas = filtradas.filter(a => { const c=_crimeDe(a); return c && filtroInd.includes(c.indicador); });
 
   if(!filtradas.length){
-    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:30px;">Nenhuma solicitação encontrada.</div>';
+    container.innerHTML = '<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:30px;">'+(verArquivadas?'Nenhuma auditoria arquivada.':'Nenhuma solicitação encontrada.')+'</div>';
     return;
   }
 
@@ -12711,7 +12727,15 @@ function renderAuditoriasLista(){
     return (b.dataSolicitacao||'').localeCompare(a.dataSolicitacao||'');
   });
 
-  container.innerHTML = filtradas.map(a => {
+  /* ── Paginação: 15 por página ── */
+  const PER = 15;
+  const totalPag = Math.max(1, Math.ceil(filtradas.length / PER));
+  if(_auditPag > totalPag) _auditPag = totalPag;
+  if(_auditPag < 1) _auditPag = 1;
+  const _ini = (_auditPag - 1) * PER;
+  const _pagina = filtradas.slice(_ini, _ini + PER);
+
+  container.innerHTML = _pagina.map(a => {
     const crime = dadosCrimes.find(d => d.bo === a.bo);
     const status = a.status || 'aguardando';
     const cor = AUDIT_STATUS_COR[status] || '#aaa';
@@ -12723,10 +12747,15 @@ function renderAuditoriasLista(){
     const indBadge = ind
       ? `<span style="font-size:11px;font-weight:800;letter-spacing:.5px;color:${indCor};background:${indCor}22;border:1px solid ${indCor}66;border-radius:4px;padding:2px 8px;margin-left:8px;vertical-align:middle;">${ind}</span>`
       : `<span style="font-size:10px;font-weight:700;color:#888;background:#8882;border:1px solid #8886;border-radius:4px;padding:2px 8px;margin-left:8px;vertical-align:middle;">Indicador n/d</span>`;
+    const arqBtn = a.arquivada
+      ? `<button title="Reativar (desarquivar) — volta p/ a lista ativa" onclick="event.stopPropagation();_toggleArquivarAuditoria('${a.bo}',false)"
+          style="font-size:14px;padding:2px 7px;background:rgba(102,187,106,.15);border:1px solid rgba(102,187,106,.45);color:#66bb6a;border-radius:4px;cursor:pointer;line-height:1;">♻</button>`
+      : `<button title="Arquivar — tira da lista, mas mantém a contagem" onclick="event.stopPropagation();_toggleArquivarAuditoria('${a.bo}',true)"
+          style="font-size:14px;padding:2px 7px;background:rgba(158,158,158,.15);border:1px solid rgba(158,158,158,.45);color:#bbb;border-radius:4px;cursor:pointer;line-height:1;">📦</button>`;
     return `
-    <div style="background:var(--bg-card);border:1px solid var(--border);border-left:3px solid ${cor};border-radius:6px;padding:12px 14px;margin-bottom:8px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;">
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-left:3px solid ${a.arquivada?'#9e9e9e':cor};border-radius:6px;padding:12px 14px;margin-bottom:8px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;${a.arquivada?'opacity:.78;':''}">
       <div style="flex:1;min-width:200px;">
-        <div style="font-size:11px;font-weight:700;color:#fff;margin-bottom:4px;">BO ${a.bo} ${indBadge}</div>
+        <div style="font-size:11px;font-weight:700;color:#fff;margin-bottom:4px;">${a.arquivada?'📦 ':''}BO ${a.bo} ${indBadge}</div>
         <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px;">
           <span style="color:#aaa;">Grupamento:</span> ${gp} &nbsp;|&nbsp;
           <span style="color:#aaa;">UEOp:</span> <b style="color:var(--gold-light);">${ueop}</b> &nbsp;|&nbsp;
@@ -12738,19 +12767,54 @@ function renderAuditoriasLista(){
           <span style="color:#aaa;">Justificativa:</span> ${((a.justificativa||a.motivo)||'').slice(0,80)}${((a.justificativa||a.motivo)||'').length>80?'…':''}
         </div>
         ${a.resp ? `<div style="font-size:10px;color:#aaa;margin-top:3px;"><span>Avaliador:</span> ${a.resp} &nbsp;|&nbsp; ${a.dataDecisao||''}</div>` : ''}
+        ${a.arquivada ? `<div style="font-size:9px;color:#9e9e9e;margin-top:3px;font-weight:700;letter-spacing:.3px;">📦 ARQUIVADA — segue contabilizada nos cards acima</div>` : ''}
       </div>
       <div style="display:flex;align-items:center;gap:6px;">
         <span style="font-size:10px;font-weight:700;color:${cor};background:${cor}22;border:1px solid ${cor}55;border-radius:4px;padding:3px 8px;">${label}</span>
         <button class="btn-outline" style="font-size:10px;padding:3px 10px;" onclick="abrirAuditoria('${a.bo}')">📋 Abrir</button>
         <button title="PDF Modelo Oficial (BPM MAmb)" onclick="event.stopPropagation();_auditBoAtual='${a.bo}';gerarPDFAuditoriaBPM()"
           style="font-size:14px;padding:2px 7px;background:rgba(27,94,32,.2);border:1px solid rgba(27,94,32,.5);color:#66bb6a;border-radius:4px;cursor:pointer;line-height:1;">📄</button>
+        ${arqBtn}
         ${sessao?.nivel_acesso==='admin_geral'?`<button onclick="event.stopPropagation();_excluirAuditoriaLista('${a.bo}')"
           style="font-size:14px;padding:2px 7px;background:rgba(239,83,80,.15);border:1px solid rgba(239,83,80,.4);color:var(--danger);border-radius:4px;cursor:pointer;line-height:1;" title="Excluir auditoria">🗑</button>`:''}
       </div>
     </div>`;
-  }).join('');
+  }).join('')
+  + (totalPag > 1 ? `
+    <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-top:12px;flex-wrap:wrap;">
+      <button class="btn-outline" style="font-size:11px;padding:4px 12px;${_auditPag<=1?'opacity:.4;pointer-events:none;':''}" onclick="_auditIrPagina(${_auditPag-1})">← Anterior</button>
+      <span style="font-size:11px;color:var(--text-muted);">Página <b style="color:var(--gold-light);">${_auditPag}</b> de ${totalPag} &nbsp;·&nbsp; ${_ini+1}–${Math.min(_ini+PER, filtradas.length)} de ${filtradas.length}</span>
+      <button class="btn-outline" style="font-size:11px;padding:4px 12px;${_auditPag>=totalPag?'opacity:.4;pointer-events:none;':''}" onclick="_auditIrPagina(${_auditPag+1})">Próxima →</button>
+    </div>` : `<div style="text-align:center;font-size:10px;color:var(--text-muted);margin-top:8px;">${filtradas.length} ${filtradas.length===1?'solicitação':'solicitações'}</div>`);
 }
 
+
+/* Navega entre páginas da lista de auditorias sem resetar p/ a 1ª (mantém filtros) */
+function _auditIrPagina(n){ _auditPag = n; renderAuditoriasLista(); }
+
+/* Arquiva/desarquiva uma auditoria (flag 'arquivada' — preserva o status original).
+   Arquivada some da lista ativa mas continua contando nos cards de resumo. */
+async function _toggleArquivarAuditoria(bo, flag){
+  const r = auditoriasMap[bo]; if(!r) return;
+  r.arquivada = flag;                       /* otimista */
+  try{ _pset('ac_auditorias', JSON.stringify(auditoriasMap)); }catch(e){}
+  renderAuditoriasLista();
+  try{
+    const resp = await fetch(`${SB_URL}/rest/v1/auditorias?bo=eq.${encodeURIComponent(bo)}`, {
+      method:'PATCH', headers:_acHeaders({'Prefer':'return=minimal'}),
+      body: JSON.stringify({ arquivada: flag })
+    });
+    if(!resp.ok){ throw new Error(await resp.text()); }
+  }catch(e){
+    r.arquivada = !flag;                     /* reverte em caso de erro */
+    try{ _pset('ac_auditorias', JSON.stringify(auditoriasMap)); }catch(e2){}
+    renderAuditoriasLista();
+    const msg = /arquivada/i.test(e.message||'')
+      ? 'A coluna "arquivada" ainda não existe no banco.\n\nRode a migração db/206_auditoria_arquivar.sql no Supabase e tente de novo.'
+      : (e.message||'Erro desconhecido');
+    alert('Não foi possível '+(flag?'arquivar':'reativar')+' a auditoria.\n\n'+msg);
+  }
+}
 
 function _acHeaders(extra){
   return { 'Content-Type':'application/json', 'apikey': SB_KEY, 'Authorization': 'Bearer '+SB_KEY, ...(extra||{}) };
@@ -13049,6 +13113,7 @@ function _sincAuditoria(reg){
     resp:              reg.resp              || '',
     dataDecisao:       reg.data_decisao      || reg.dataDecisao      || '',
     conclusao:         reg.conclusao         || '',
+    arquivada:         !!reg.arquivada,
   };
   auditoriasMap[r.bo] = r;
   const crime = dadosCrimes.find(d => d.bo === r.bo || d.rat === r.bo);
