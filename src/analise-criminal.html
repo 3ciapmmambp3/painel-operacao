@@ -12985,22 +12985,19 @@ function _adbGroup(rows, keyFn){
   const m = {};
   rows.forEach(r=>{
     const k = keyFn(r) || '—';
-    if(!m[k]) m[k] = { nome:k, total:0, st:{aguardando:0,em_analise:0,validada:0,indeferida:0,corrigida:0}, gp:{}, pel:{} };
+    if(!m[k]) m[k] = { nome:k, total:0, st:{aguardando:0,em_analise:0,validada:0,indeferida:0,corrigida:0}, ueop:{} };
     m[k].total++; m[k].st[r.status] = (m[k].st[r.status]||0)+1;
-    if(r.grupamento && r.grupamento!=='—') m[k].gp[r.grupamento] = (m[k].gp[r.grupamento]||0)+1;
-    if(r.pel) { const pk = r.pel+'º Pel'; m[k].pel[pk] = (m[k].pel[pk]||0)+1; }
+    if(r.ueop && r.ueop!=='—') m[k].ueop[r.ueop] = (m[k].ueop[r.ueop]||0)+1;
   });
   return Object.values(m).sort((a,b)=> b.total-a.total || String(a.nome).localeCompare(String(b.nome)));
 }
 
-/* Rótulo do grupamento MAmb + pelotão responsável por um recorte (ex.: por UEOp) */
-function _adbRespLabel(g){
-  const gps = Object.keys(g.gp||{}).sort((a,b)=> g.gp[b]-g.gp[a]);
-  if(!gps.length) return '<span style="color:var(--text-hint);">—</span>';
-  const pels = Object.keys(g.pel||{}).sort((a,b)=> g.pel[b]-g.pel[a]);
-  const gpTxt = gps[0] + (gps.length>1 ? ` <span style="color:var(--text-hint);">+${gps.length-1}</span>` : '');
-  const pelTxt = pels.length ? ` · ${pels[0]}${pels.length>1?' <span style="color:var(--text-hint);">+'+(pels.length-1)+'</span>':''}` : '';
-  return gpTxt + pelTxt;
+/* Lista TODAS as chaves de um mapa de contagens (ex.: as UEOps que um grupamento
+   atende — pode ser mais de uma), ordenadas por quantidade, com o nº entre parênteses. */
+function _adbListLabel(obj){
+  const ks = Object.keys(obj||{}).sort((a,b)=> obj[b]-obj[a] || a.localeCompare(b));
+  if(!ks.length) return '<span style="color:var(--text-hint);">—</span>';
+  return ks.map(k=>`${k} <span style="color:var(--text-hint);">(${obj[k]})</span>`).join('<br>');
 }
 
 function _adbSbar(st, total){
@@ -13011,18 +13008,19 @@ function _adbSbar(st, total){
 
 function _adbTabela(grupos, rotulo, opts){
   opts = opts || {};
+  const hasExtra = !!opts.extraHead;
   if(!grupos.length) return `<div class="adb-empty">Sem dados.</div>`;
   const rows = grupos.map(g=>`
     <tr>
       <td class="nome">${g.nome}</td>
-      ${opts.resp ? `<td style="color:var(--text-white);font-size:11px;">${_adbRespLabel(g)}</td>` : ''}
-      <td style="width:${opts.resp?'40%':'55%'};">${_adbSbar(g.st, g.total)}</td>
+      ${hasExtra ? `<td style="color:var(--text-white);font-size:11px;white-space:normal;line-height:1.5;">${opts.extraFn(g)}</td>` : ''}
+      <td style="width:${hasExtra?'40%':'55%'};">${_adbSbar(g.st, g.total)}</td>
       <td class="n" style="color:#66bb6a;">${g.st.validada||0}</td>
       <td class="n" style="color:#ff9800;">${g.st.aguardando||0}</td>
       <td class="n" style="color:var(--gold-light);font-weight:800;">${g.total}</td>
     </tr>`).join('');
   return `<div style="overflow-x:auto;"><table class="adb-dt">
-    <thead><tr><th>${rotulo}</th>${opts.resp?'<th>Grupamento / Pel. responsável</th>':''}<th>Distribuição</th><th class="n" title="Validadas">✅</th><th class="n" title="Aguardando">⏳</th><th class="n">Total</th></tr></thead>
+    <thead><tr><th>${rotulo}</th>${hasExtra?`<th>${opts.extraHead}</th>`:''}<th>Distribuição</th><th class="n" title="Validadas">✅</th><th class="n" title="Aguardando">⏳</th><th class="n">Total</th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
 }
 
@@ -13167,11 +13165,11 @@ function renderAuditDashboard(){
     <div class="adb-panel"><h4>Evolução por mês <small>empilhado por status</small></h4>${_adbMeses(rows)}</div>
     <div class="adb-grid">
       <div class="adb-panel"><h4>Por pelotão${_recorte}</h4>${_adbTabela(_adbGroup(rv, r=> r.pel? r.pel+'º Pelotão':'Sem pelotão'),'Pelotão')}</div>
-      <div class="adb-panel"><h4>Por grupamento${_recorte}</h4>${_adbTabela(_adbGroup(rv, r=>r.grupamento).filter(g=>g.nome!=='—'),'Grupamento')}</div>
+      <div class="adb-panel"><h4>Por grupamento${_recorte}</h4>${_adbTabela(_adbGroup(rv, r=>r.grupamento).filter(g=>g.nome!=='—'),'Grupamento',{extraHead:'UEOp(s) atendida(s)', extraFn:g=>_adbListLabel(g.ueop)})}</div>
     </div>
     <div class="adb-grid">
       <div class="adb-panel"><h4>Por Unidade / Área${_recorte} <small>Nível 4</small></h4>${_adbTabela(_adbGroup(rv, r=>r.area).filter(g=>g.nome!=='—'),'Unidade / Área')}</div>
-      <div class="adb-panel"><h4>Por UEOp${_recorte} <small>Nível 5</small></h4>${_adbTabela(_adbGroup(rv, r=>r.ueop).filter(g=>g.nome!=='—'),'UEOp',{resp:true})}</div>
+      <div class="adb-panel"><h4>Por UEOp${_recorte} <small>Nível 5</small></h4>${_adbTabela(_adbGroup(rv, r=>r.ueop).filter(g=>g.nome!=='—'),'UEOp')}</div>
     </div>`;
 }
 window.renderAuditDashboard = renderAuditDashboard;
