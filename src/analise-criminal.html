@@ -2444,8 +2444,8 @@ document.addEventListener('click', () => {
   #tab-auditdash .adb-bar{display:grid;grid-template-columns:1fr auto;gap:3px 12px;align-items:center;margin-bottom:9px;}
   #tab-auditdash .adb-bar .bl{font-size:12px;color:var(--text-white);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   #tab-auditdash .adb-bar .bn{font-size:12px;color:var(--gold-light);font-weight:800;text-align:right;white-space:nowrap;}
-  #tab-auditdash .adb-bar .track{grid-column:1/3;height:7px;background:var(--bg-input);border-radius:5px;overflow:hidden;}
-  #tab-auditdash .adb-bar .fill{height:100%;border-radius:5px;}
+  #tab-auditdash .adb-bar .track{display:block;grid-column:1/3;height:8px;background:var(--bg-input);border-radius:5px;overflow:hidden;}
+  #tab-auditdash .adb-bar .fill{display:block;height:100%;border-radius:5px;background:var(--gold);}
   #tab-auditdash .adb-donut{display:flex;align-items:center;gap:26px;flex-wrap:wrap;justify-content:center;}
   #tab-auditdash .adb-donut svg{width:170px;height:170px;flex-shrink:0;}
   #tab-auditdash .adb-leg{display:flex;flex-direction:column;gap:9px;min-width:0;}
@@ -12938,6 +12938,7 @@ const ADB_ST = [
   {k:'corrigida',  l:'Corrigida',  c:'#ab47bc'},
 ];
 let _adbIndSel = new Set();   /* indicadores marcados (vazio = todos) */
+let _adbStatusSel = '';       /* drill-down por status via clique no KPI (''=todos) */
 
 /* Junta cada auditoria com a ocorrência (por BO) p/ obter grupamento/pel/UEOp/área/mês/indicador */
 function _adbBase(){
@@ -13010,7 +13011,7 @@ function _adbBarras(grupos, corFn){
   if(!grupos.length) return `<div class="adb-empty">Sem dados.</div>`;
   const max = Math.max(...grupos.map(g=>g.total), 1);
   return grupos.map(g=>{
-    const cor = (corFn && corFn(g.nome)) || 'linear-gradient(90deg,var(--gold-dark),var(--gold))';
+    const cor = (corFn && corFn(g.nome)) || 'var(--gold)';
     return `<div class="adb-bar">
       <span class="bl" title="${g.nome}">${g.nome}</span>
       <span class="bn">${g.total}</span>
@@ -13084,50 +13085,76 @@ function renderAuditDashboard(){
   const fMes = document.getElementById('adb-f-mes')?.value || '';
   const incArq = document.getElementById('adb-f-arq')?.checked !== false;
 
-  let rows = base;
-  if(_adbIndSel.size) rows = rows.filter(r=> _adbIndSel.has(r.indicador));
-  if(fPel) rows = rows.filter(r=> r.pel===fPel);
-  if(fGp)  rows = rows.filter(r=> r.grupamento===fGp);
-  if(fMes) rows = rows.filter(r=> r.mes===fMes);
-  if(!incArq) rows = rows.filter(r=> !r.arquivada);
+  /* Aplica tudo MENOS o indicador primeiro (p/ contar cada indicador no chip) */
+  let baseF = base;
+  if(fPel) baseF = baseF.filter(r=> r.pel===fPel);
+  if(fGp)  baseF = baseF.filter(r=> r.grupamento===fGp);
+  if(fMes) baseF = baseF.filter(r=> r.mes===fMes);
+  if(!incArq) baseF = baseF.filter(r=> !r.arquivada);
+  const rows = _adbIndSel.size ? baseF.filter(r=> _adbIndSel.has(r.indicador)) : baseF;
   _adbRows = rows;   /* guarda p/ exportar Excel */
+
+  /* Mostra a contagem em cada chip de indicador (0 = não há auditoria desse indicador) */
+  (function(){
+    const wrap = document.getElementById('adb-f-ind'); if(!wrap) return;
+    const cnt = {};
+    baseF.forEach(r=>{ cnt[r.indicador]=(cnt[r.indicador]||0)+1; });
+    wrap.querySelectorAll('.adb-chip').forEach(ch=>{
+      const v = ch.getAttribute('data-ind');
+      const base0 = (ch.getAttribute('data-base') || (ch.textContent.replace(/\s*\(\d+\)\s*$/,''))).trim();
+      ch.setAttribute('data-base', base0);
+      const q = v==='' ? baseF.length : (cnt[v]||0);
+      ch.textContent = base0 + ' (' + q + ')';
+    });
+  })();
 
   const esc = document.getElementById('adb-escopo');
   if(esc) esc.textContent = `${rows.length} solicitação(ões) · GDO Especializada / BPM MAmb`+(_adbIndSel.size?` · ${[..._adbIndSel].join(', ')}`:'');
 
-  /* KPIs */
+  /* KPIs (contam o conjunto filtrado por indicador/pel/gp/mês/arquivadas — ANTES do drill-down por status) */
   const cont = {aguardando:0,em_analise:0,validada:0,indeferida:0,corrigida:0};
   let arq=0; rows.forEach(r=>{ cont[r.status]=(cont[r.status]||0)+1; if(r.arquivada) arq++; });
   const taxaVal = (cont.validada+cont.indeferida) ? (cont.validada/(cont.validada+cont.indeferida)*100) : null;
-  const kpi = (v,l,c)=>`<div class="adb-kpi" style="${c?'--k:'+c:''}"><div class="v"${c?` style="color:${c};"`:''}>${v}</div><div class="l">${l}</div><div style="position:absolute;left:0;top:0;bottom:0;width:3px;background:${c||'var(--gold)'};"></div></div>`;
+  /* card clicável: key = status p/ drill-down (''=limpa; null=não clicável) */
+  const kpi = (v,l,c,key)=>{
+    const clk = key!==null && key!==undefined;
+    const on  = clk && ((key==='' && !_adbStatusSel) || (key!=='' && _adbStatusSel===key));
+    return `<div class="adb-kpi"${clk?` onclick="_adbSetStatus('${key}')" style="cursor:pointer;${on?'box-shadow:inset 0 0 0 2px '+c+';':''}" title="${key?'Filtrar por '+l:'Mostrar todos'}"`:''}>
+      <div class="v" style="color:${c};">${v}</div><div class="l">${l}</div>
+      <div style="position:absolute;left:0;top:0;bottom:0;width:3px;background:${c};"></div></div>`;
+  };
   if(kpisEl) kpisEl.innerHTML =
-      kpi(rows.length,'Total','var(--gold)')
-    + kpi(cont.aguardando,'Aguardando','#ff9800')
-    + kpi(cont.em_analise,'Em Análise','#42a5f5')
-    + kpi(cont.validada,'Validada','#66bb6a')
-    + kpi(cont.indeferida,'Indeferida','#ef5350')
-    + kpi(cont.corrigida,'Corrigida','#ab47bc')
-    + kpi(arq,'Arquivadas','#9e9e9e')
-    + kpi(taxaVal==null?'—':taxaVal.toFixed(0)+'%','Taxa validação','#26a69a');
+      kpi(rows.length,'Total','var(--gold)','')
+    + kpi(cont.aguardando,'Aguardando','#ff9800','aguardando')
+    + kpi(cont.em_analise,'Em Análise','#42a5f5','em_analise')
+    + kpi(cont.validada,'Validada','#66bb6a','validada')
+    + kpi(cont.indeferida,'Indeferida','#ef5350','indeferida')
+    + kpi(cont.corrigida,'Corrigida','#ab47bc','corrigida')
+    + kpi(arq,'Arquivadas','#9e9e9e',null)
+    + kpi(taxaVal==null?'—':taxaVal.toFixed(0)+'%','Taxa validação','#26a69a',null);
 
-  /* Painéis */
+  /* Drill-down: clicar num KPI de status filtra os painéis de recorte (a rosca mostra o todo) */
+  const rv = _adbStatusSel ? rows.filter(r=> r.status===_adbStatusSel) : rows;
   const corInd = n => (typeof CORES_INDICADOR!=='undefined' && CORES_INDICADOR[n]) ? CORES_INDICADOR[n] : null;
+  const _recorte = _adbStatusSel ? ` <small>· filtrado: ${(ADB_ST.find(s=>s.k===_adbStatusSel)||{}).l||_adbStatusSel}</small>` : '';
   bodyEl.innerHTML = `
     <div class="adb-grid">
-      <div class="adb-panel"><h4>Por status <small>distribuição</small></h4>${_adbDonut(rows)}</div>
-      <div class="adb-panel"><h4>Por indicador</h4>${_adbBarras(_adbGroup(rows, r=>r.indicador).filter(g=>g.nome!=='—'), corInd)}</div>
+      <div class="adb-panel"><h4>Por status <small>distribuição (clique nos KPIs p/ filtrar)</small></h4>${_adbDonut(rows)}</div>
+      <div class="adb-panel"><h4>Por indicador${_recorte}</h4>${_adbBarras(_adbGroup(rv, r=>r.indicador).filter(g=>g.nome!=='—'), corInd)}</div>
     </div>
     <div class="adb-panel"><h4>Evolução por mês <small>empilhado por status</small></h4>${_adbMeses(rows)}</div>
     <div class="adb-grid">
-      <div class="adb-panel"><h4>Por pelotão</h4>${_adbTabela(_adbGroup(rows, r=> r.pel? r.pel+'º Pelotão':'Sem pelotão'),'Pelotão')}</div>
-      <div class="adb-panel"><h4>Por grupamento</h4>${_adbTabela(_adbGroup(rows, r=>r.grupamento).filter(g=>g.nome!=='—'),'Grupamento')}</div>
+      <div class="adb-panel"><h4>Por pelotão${_recorte}</h4>${_adbTabela(_adbGroup(rv, r=> r.pel? r.pel+'º Pelotão':'Sem pelotão'),'Pelotão')}</div>
+      <div class="adb-panel"><h4>Por grupamento${_recorte}</h4>${_adbTabela(_adbGroup(rv, r=>r.grupamento).filter(g=>g.nome!=='—'),'Grupamento')}</div>
     </div>
     <div class="adb-grid">
-      <div class="adb-panel"><h4>Por UEOp <small>Unidade Área Nível 5</small></h4>${_adbTabela(_adbGroup(rows, r=>r.ueop).filter(g=>g.nome!=='—'),'UEOp')}</div>
-      <div class="adb-panel"><h4>Por Unidade / Área <small>Nível 4</small></h4>${_adbTabela(_adbGroup(rows, r=>r.area).filter(g=>g.nome!=='—'),'Unidade / Área')}</div>
+      <div class="adb-panel"><h4>Por Unidade / Área${_recorte} <small>Nível 4</small></h4>${_adbTabela(_adbGroup(rv, r=>r.area).filter(g=>g.nome!=='—'),'Unidade / Área')}</div>
+      <div class="adb-panel"><h4>Por UEOp${_recorte} <small>Nível 5</small></h4>${_adbTabela(_adbGroup(rv, r=>r.ueop).filter(g=>g.nome!=='—'),'UEOp')}</div>
     </div>`;
 }
 window.renderAuditDashboard = renderAuditDashboard;
+function _adbSetStatus(k){ _adbStatusSel = (_adbStatusSel===k ? '' : k); renderAuditDashboard(); }
+window._adbSetStatus = _adbSetStatus;
 
 let _adbRows = [];
 function _auditDashExcel(){
