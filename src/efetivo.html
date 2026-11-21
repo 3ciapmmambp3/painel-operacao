@@ -326,6 +326,8 @@ async function rpc(fn, body){
 function flash(m,ok){ const e=document.getElementById('msg'); e.textContent=m; e.className='msg '+(ok?'ok':'err'); if(ok) setTimeout(()=>{e.className='msg';},5000); }
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function fmtBR(d){ if(!d) return '—'; const p=String(d).slice(0,10).split('-'); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:d; }
+// data de hoje no fuso LOCAL (YYYY-MM-DD). NÃO usar toISOString() p/ comparar prazos: após ~21h BRT ela vira o dia seguinte em UTC e "vence" o prazo um dia antes.
+function hojeLocal(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function fechar(id){ document.getElementById(id).classList.remove('open'); }
 
 // cabeçalho usuário
@@ -521,7 +523,7 @@ function renderCampBody(){
       const base=_escopoCamp(CAMP.escopo_pel);
       const conf=base.filter(m=>m.dados_confirmados_campanha===CAMP.id).length;
       const escTxt=CAMP.escopo_pel?(CAMP.escopo_pel+'º Pelotão'):'Companhia inteira';
-      const hoje=new Date().toISOString().slice(0,10);
+      const hoje=hojeLocal();
       topo=`
       <div class="banner" style="border:1px solid var(--border);border-left:3px solid #ffb74d;background:rgba(255,183,77,.08);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--text-white);">
         Última solicitação <b>encerrada</b> · ${escTxt}${CAMP.prazo?` · prazo era <b>${fmtBR(CAMP.prazo)}</b>`:''} · <b style="color:var(--success)">${conf}</b> já confirmaram.
@@ -614,7 +616,7 @@ async function salvarCampanha(){
 }
 function _campPrazoVencido(){
   if(!CAMP || !CAMP.prazo) return false;
-  return new Date().toISOString().slice(0,10) > String(CAMP.prazo).slice(0,10);
+  return hojeLocal() > String(CAMP.prazo).slice(0,10);
 }
 async function estenderPrazo(inputId){
   const prazo=(document.getElementById(inputId)||{}).value||null;
@@ -985,7 +987,7 @@ function atualizarTempoServico(){
   const el=document.getElementById('e-tempo-serv');
   el.value = ing ? (tempoServico(ing)||'—') : '';
 }
-function cnhSituacao(val){ if(!val) return ''; const hoje=new Date().toISOString().slice(0,10); return String(val).slice(0,10)>=hoje ? '<span class="tag ativo">Válida</span>' : '<span class="tag transf">Vencida</span>'; }
+function cnhSituacao(val){ if(!val) return ''; const hoje=hojeLocal(); return String(val).slice(0,10)>=hoje ? '<span class="tag ativo">Válida</span>' : '<span class="tag transf">Vencida</span>'; }
 function detLinha(label,val){ if(val==null||val==='') return ''; return `<div style="display:flex;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);"><div style="min-width:160px;color:var(--text-hint);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;">${esc(label)}</div><div style="font-size:13px;color:var(--text-white);flex:1;">${val}</div></div>`; }
 function openDetalhe(id){
   const m=LISTA.find(x=>x.id===id); if(!m) return; curId=id;
