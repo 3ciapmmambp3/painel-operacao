@@ -2502,7 +2502,8 @@ document.addEventListener('click', () => {
     <div class="adb-noprint" style="display:flex;gap:8px;">
       <button class="btn-outline" onclick="_carregarAuditorias().then(()=>renderAuditDashboard())" style="font-size:11px;padding:6px 12px;">☰ Atualizar</button>
       <button class="btn-outline" onclick="_auditDashExcel()" style="font-size:11px;padding:6px 12px;">⬇ Baixar Excel</button>
-      <button class="btn-gold" onclick="window.print()" style="font-size:11px;padding:6px 12px;">🖨 Imprimir / PDF</button>
+      <button class="btn-outline" onclick="window.print()" style="font-size:11px;padding:6px 12px;" title="Impressão rápida da tela">🖨 Imprimir</button>
+      <button class="btn-gold" id="adb-btn-pdf" onclick="gerarPDFAuditDashboard()" style="font-size:11px;padding:6px 12px;">📄 Gerar PDF</button>
     </div>
   </div>
   <div class="adb-filters adb-noprint">
@@ -12983,6 +12984,33 @@ function _adbBase(){
     });
 }
 
+/* Lê os controles de filtro da tela */
+function _adbLerFiltros(){
+  return {
+    ano:   document.getElementById('adb-f-ano')?.value || '',
+    pel:   document.getElementById('adb-f-pel')?.value || '',
+    gp:    document.getElementById('adb-f-gp')?.value  || '',
+    mes:   document.getElementById('adb-f-mes')?.value || '',
+    incArq: document.getElementById('adb-f-arq')?.checked !== false,
+  };
+}
+/* Aplica os filtros (menos indicador) -> baseF; depois indicador -> rows */
+function _adbAplicar(base, f){
+  let x = base;
+  if(f.ano) x = x.filter(r=> r.ano===f.ano);
+  if(f.pel) x = x.filter(r=> r.pel===f.pel);
+  if(f.gp)  x = x.filter(r=> r.grupamento===f.gp);
+  if(f.mes) x = x.filter(r=> r.mes===f.mes);
+  if(!f.incArq) x = x.filter(r=> !r.arquivada);
+  const rows = _adbIndSel.size ? x.filter(r=> _adbIndSel.has(r.indicador)) : x;
+  return { baseF:x, rows };
+}
+/* Lista em TEXTO puro (p/ PDF/Excel) as chaves de um mapa de contagens */
+function _adbListText(obj){
+  const ks = Object.keys(obj||{}).sort((a,b)=> obj[b]-obj[a] || a.localeCompare(b));
+  return ks.length ? ks.map(k=>`${k} (${obj[k]})`).join(', ') : '—';
+}
+
 function _adbChip(el){
   const ind = el.getAttribute('data-ind');
   const wrap = document.getElementById('adb-f-ind');
@@ -13114,20 +13142,9 @@ function renderAuditDashboard(){
   _adbPopSelect('adb-f-mes', [...new Set(base.map(r=>r.mes).filter(x=>x&&x!=='—'))].sort((a,b)=>ORD.indexOf((a||'').toUpperCase())-ORD.indexOf((b||'').toUpperCase())));
   _adbPopSelect('adb-f-ano', [...new Set(base.map(r=>r.ano).filter(Boolean))].sort((a,b)=> String(b).localeCompare(String(a))));
 
-  const fAno = document.getElementById('adb-f-ano')?.value || '';
-  const fPel = document.getElementById('adb-f-pel')?.value || '';
-  const fGp  = document.getElementById('adb-f-gp')?.value  || '';
-  const fMes = document.getElementById('adb-f-mes')?.value || '';
-  const incArq = document.getElementById('adb-f-arq')?.checked !== false;
-
-  /* Aplica tudo MENOS o indicador primeiro (p/ contar cada indicador no chip) */
-  let baseF = base;
-  if(fAno) baseF = baseF.filter(r=> r.ano===fAno);
-  if(fPel) baseF = baseF.filter(r=> r.pel===fPel);
-  if(fGp)  baseF = baseF.filter(r=> r.grupamento===fGp);
-  if(fMes) baseF = baseF.filter(r=> r.mes===fMes);
-  if(!incArq) baseF = baseF.filter(r=> !r.arquivada);
-  const rows = _adbIndSel.size ? baseF.filter(r=> _adbIndSel.has(r.indicador)) : baseF;
+  const f = _adbLerFiltros();
+  const fAno=f.ano, fPel=f.pel, fGp=f.gp, fMes=f.mes;
+  const { baseF, rows } = _adbAplicar(base, f);
   _adbRows = rows;   /* guarda p/ exportar Excel */
 
   /* Mostra a contagem em cada chip de indicador (0 = não há auditoria desse indicador) */
@@ -13215,6 +13232,163 @@ function _auditDashExcel(){
   XLSX.writeFile(wb, 'dashboard_auditorias_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 window._auditDashExcel = _auditDashExcel;
+
+/* ── PDF institucional do Dashboard (mesmo layout do Relatório de Produtividade) ── */
+async function gerarPDFAuditDashboard(){
+  if(!window.jspdf){ alert('Biblioteca de PDF não carregada.'); return; }
+  const btn = document.getElementById('adb-btn-pdf');
+  if(btn){ btn.disabled=true; btn._t=btn.textContent; btn.textContent='⏳ Gerando...'; }
+  try{
+    const base = _adbBase();
+    const f = _adbLerFiltros();
+    const { rows: rowsAll } = _adbAplicar(base, f);           /* antes do drill-down por status */
+    const rows = _adbStatusSel ? rowsAll.filter(r=> r.status===_adbStatusSel) : rowsAll;
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+    const pageW = doc.internal.pageSize.getWidth(), pageH = doc.internal.pageSize.getHeight();
+    const MARGIN = 14, contentW = pageW - MARGIN*2;
+    const OURO=[155,138,92], OURO_CLARO=[212,185,104], ESCURO=[26,16,0];
+    const TXT=[40,32,20], MUTED=[120,110,90], LINHA=[225,220,205];
+    const TOP_TABELA=20, BOTTOM=14;
+    const hx = h => { h=String(h).replace('#',''); return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; };
+
+    const carregarImg_ = (src) => new Promise(res=>{ const img=new Image();
+      img.onload=()=>{ try{ const c=document.createElement('canvas'); c.width=img.naturalWidth; c.height=img.naturalHeight; c.getContext('2d').drawImage(img,0,0); res({dataURL:c.toDataURL('image/png'),w:img.naturalWidth,h:img.naturalHeight}); }catch(e){ res(null); } };
+      img.onerror=()=>res(null); img.src=src; });
+
+    let y=0;
+    const novaPagina_ = ()=>{ doc.addPage(); y=TOP_TABELA; };
+    const garantir_ = (h)=>{ if(y+h > pageH-BOTTOM) novaPagina_(); };
+    const tabela_ = (titulo, head, body, extra)=>{
+      if(!body.length) return;
+      garantir_(16);
+      doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...MUTED);
+      doc.text(titulo.toUpperCase(), MARGIN, y);
+      doc.autoTable(Object.assign({
+        startY: y+3, head:[head], body, theme:'striped',
+        styles:{ fontSize:7.5, cellPadding:1.8, textColor:TXT, lineColor:LINHA, lineWidth:0.1, overflow:'linebreak' },
+        headStyles:{ fillColor:ESCURO, textColor:OURO_CLARO, fontStyle:'bold', fontSize:7.5 },
+        alternateRowStyles:{ fillColor:[247,244,235] },
+        margin:{ top:TOP_TABELA, bottom:BOTTOM, left:MARGIN, right:MARGIN },
+      }, extra||{}));
+      y = doc.lastAutoTable.finalY + 7;
+    };
+
+    /* ── Cabeçalho institucional ── */
+    const [imgEsq, imgDir] = await Promise.all([ carregarImg_('assets/escudo-cpe.png'), carregarImg_('assets/brasao-bpmmamb.png') ]);
+    const bh=18;
+    if(imgEsq) doc.addImage(imgEsq.dataURL,'PNG',MARGIN,10,bh*(imgEsq.w/imgEsq.h),bh);
+    if(imgDir){ const w=bh*(imgDir.w/imgDir.h); doc.addImage(imgDir.dataURL,'PNG',pageW-MARGIN-w,10,w,bh); }
+    doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(30,24,14);
+    doc.text('Comando de Policiamento Especializado', pageW/2, 13, {align:'center'});
+    doc.text('Batalhão de Polícia Militar de Meio Ambiente', pageW/2, 17.5, {align:'center'});
+    doc.text('3ª Companhia de Polícia Militar de Meio Ambiente', pageW/2, 22, {align:'center'});
+    doc.setFontSize(16); doc.setTextColor(20,16,8);
+    doc.text('DASHBOARD DE AUDITORIAS — GDO ESPECIALIZADA', pageW/2, 30, {align:'center'});
+    doc.setDrawColor(...OURO); doc.setLineWidth(0.7); doc.line(MARGIN, 33, pageW-MARGIN, 33);
+
+    /* ── Filtros aplicados + data ── */
+    const fil = [ fAnoLbl(f.ano), f.pel&&(f.pel+'º Pelotão'), f.gp, f.mes,
+                  _adbIndSel.size&&('Indicador '+[..._adbIndSel].join('/')),
+                  _adbStatusSel&&('Status '+((ADB_ST.find(s=>s.k===_adbStatusSel)||{}).l||_adbStatusSel)),
+                  !f.incArq&&'sem arquivadas' ].filter(Boolean).join('   |   ');
+    let hy=39;
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(...OURO);
+    doc.text(fil?('FILTROS: '+fil.toUpperCase()):'TODAS AS SOLICITAÇÕES', pageW/2, hy, {align:'center'}); hy+=5;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...TXT);
+    doc.text(`${rows.length} solicitação(ões) de auditoria`, pageW/2, hy, {align:'center'}); hy+=4;
+    doc.setFontSize(7.5); doc.setTextColor(...MUTED);
+    doc.text(`Gerado em ${new Date().toLocaleString('pt-BR')}`, pageW/2, hy, {align:'center'}); hy+=3;
+    doc.setDrawColor(...LINHA); doc.setLineWidth(0.2); doc.line(MARGIN, hy, pageW-MARGIN, hy);
+    y = hy+7;
+
+    /* ── Cards (KPIs) — 2 linhas x 4 ── */
+    const cont={aguardando:0,em_analise:0,validada:0,indeferida:0,corrigida:0}; let arq=0;
+    rowsAll.forEach(r=>{ cont[r.status]=(cont[r.status]||0)+1; if(r.arquivada) arq++; });
+    const taxaVal=(cont.validada+cont.indeferida)?Math.round(cont.validada/(cont.validada+cont.indeferida)*100)+'%':'—';
+    const cards=[
+      ['Total', rowsAll.length, '#8a6a16'], ['Aguardando', cont.aguardando, '#c67800'],
+      ['Em análise', cont.em_analise, '#1565c0'], ['Validada', cont.validada, '#2e7d32'],
+      ['Indeferida', cont.indeferida, '#c62828'], ['Corrigida', cont.corrigida, '#7b1fa2'],
+      ['Arquivadas', arq, '#616161'], ['Taxa validação', taxaVal, '#00796b'],
+    ];
+    const perRow=4, cw=(contentW-(perRow-1)*4)/perRow, chh=15;
+    garantir_(chh*2+6);
+    cards.forEach((c,i)=>{
+      const col=i%perRow, rowi=Math.floor(i/perRow);
+      const x=MARGIN+col*(cw+4), cy=y+rowi*(chh+4);
+      doc.setFillColor(247,244,235); doc.setDrawColor(...LINHA); doc.setLineWidth(0.1);
+      doc.roundedRect(x,cy,cw,chh,1.5,1.5,'FD');
+      doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(...hx(c[2]));
+      doc.text(String(c[1]), x+cw/2, cy+7.5, {align:'center'});
+      doc.setFont('helvetica','normal'); doc.setFontSize(6.3); doc.setTextColor(...MUTED);
+      doc.text(String(c[0]).toUpperCase(), x+cw/2, cy+11.5, {align:'center'});
+    });
+    y += chh*2+4+8;
+
+    /* ── Gráfico de rosca: composição por status ── */
+    try{
+      if(window.Chart && rowsAll.length){
+        const labs=[], dts=[], cols=[];
+        ADB_ST.forEach(s=>{ if(cont[s.k]>0){ labs.push(s.l); dts.push(cont[s.k]); cols.push(s.c); } });
+        const cv=document.createElement('canvas'); cv.width=560; cv.height=300;
+        const ch=new Chart(cv.getContext('2d'),{ type:'doughnut',
+          data:{ labels:labs, datasets:[{ data:dts, backgroundColor:cols, borderColor:'#fff', borderWidth:2 }] },
+          options:{ responsive:false, animation:false, plugins:{ legend:{ position:'right', labels:{ color:'#222', font:{size:13} } },
+            title:{ display:true, text:'Composição por status', color:'#555', font:{size:13,weight:'bold'} } } } });
+        ch.update('none');
+        const url=cv.toDataURL('image/png'); ch.destroy();
+        const iw=contentW*0.72, ih=iw*(300/560);
+        garantir_(ih+4); doc.addImage(url,'PNG', MARGIN+(contentW-iw)/2, y, iw, ih); y+=ih+8;
+      }
+    }catch(e){ console.warn('[adb pdf] grafico falhou', e); }
+
+    /* ── Tabelas ── */
+    const HEAD=['Agu.','Em an.','Val.','Indef.','Corr.','Total'];
+    const linhasSt = g => [g.st.aguardando||0,g.st.em_analise||0,g.st.validada||0,g.st.indeferida||0,g.st.corrigida||0,g.total];
+    const numCols = n => { const o={}; for(let i=1;i<=n;i++) o[i]={halign:'right',cellWidth:13}; return o; };
+
+    tabela_('Por indicador', ['Indicador',...HEAD],
+      _adbGroup(rows,r=>r.indicador).filter(g=>g.nome!=='—').map(g=>[g.nome,...linhasSt(g)]),
+      { columnStyles: numCols(6) });
+
+    const ORDM=['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
+    tabela_('Por mês', ['Mês',...HEAD],
+      _adbGroup(rows,r=>r.mes).filter(g=>g.nome!=='—').sort((a,b)=>ORDM.indexOf((a.nome||'').toUpperCase())-ORDM.indexOf((b.nome||'').toUpperCase())).map(g=>[g.nome,...linhasSt(g)]),
+      { columnStyles: numCols(6) });
+
+    tabela_('Por pelotão', ['Pelotão',...HEAD],
+      _adbGroup(rows,r=> r.pel? r.pel+'º Pelotão':'Sem pelotão').map(g=>[g.nome,...linhasSt(g)]),
+      { columnStyles: numCols(6) });
+
+    tabela_('Por grupamento', ['Grupamento','UEOp(s) atendida(s)',...HEAD],
+      _adbGroup(rows,r=>r.grupamento).filter(g=>g.nome!=='—').map(g=>[g.nome, _adbListText(g.ueop), ...linhasSt(g)]),
+      { columnStyles: Object.assign({0:{cellWidth:40},1:{cellWidth:'auto'}}, (()=>{const o={};for(let i=2;i<=7;i++)o[i]={halign:'right',cellWidth:12};return o;})()) });
+
+    tabela_('Por UEOp', ['UEOp',...HEAD],
+      _adbGroup(rows,r=>r.ueop).filter(g=>g.nome!=='—').map(g=>[g.nome,...linhasSt(g)]),
+      { columnStyles: numCols(6) });
+
+    tabela_('Por Unidade / Área', ['Unidade / Área',...HEAD],
+      _adbGroup(rows,r=>r.area).filter(g=>g.nome!=='—').map(g=>[g.nome,...linhasSt(g)]),
+      { columnStyles: numCols(6) });
+
+    /* ── Rodapé com nº de página ── */
+    const n=doc.internal.getNumberOfPages();
+    for(let i=1;i<=n;i++){ doc.setPage(i); doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(...MUTED);
+      doc.text('Dashboard de Auditorias · 3ª Cia PM MAmb', MARGIN, pageH-8);
+      doc.text(`Página ${i} de ${n}`, pageW-MARGIN, pageH-8, {align:'right'}); }
+
+    doc.save('dashboard_auditorias_'+new Date().toISOString().slice(0,10)+'.pdf');
+  }catch(e){
+    console.error('[adb pdf]', e); alert('Erro ao gerar o PDF: '+(e.message||e));
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent=btn._t||'📄 Gerar PDF'; }
+  }
+}
+function fAnoLbl(a){ return a? ('Ano '+a) : ''; }
+window.gerarPDFAuditDashboard = gerarPDFAuditDashboard;
 
 function _acHeaders(extra){
   return { 'Content-Type':'application/json', 'apikey': SB_KEY, 'Authorization': 'Bearer '+SB_KEY, ...(extra||{}) };
