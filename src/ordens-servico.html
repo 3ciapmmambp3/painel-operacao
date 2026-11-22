@@ -66,6 +66,11 @@
     .sstat.cur{color:#f59e0b;}
     .sobs{font-size:12px;font-style:italic;color:var(--text-muted);margin-top:3px;}
     .sbtn{margin-top:8px;padding:6px 12px;font-size:12px;}
+    .fbox{margin-top:14px;display:flex;flex-direction:column;gap:11px;background:var(--bg-dark);border:1px solid var(--border);border-radius:8px;padding:12px 13px;}
+    .chk{display:flex;align-items:flex-start;gap:9px;cursor:pointer;}
+    .chk input{margin-top:2px;flex-shrink:0;width:16px;height:16px;}
+    .chk span{display:flex;flex-direction:column;font-size:13px;color:var(--text-white);line-height:1.3;}
+    .chk small{font-size:11.5px;color:var(--text-muted);font-weight:400;margin-top:2px;}
     .docrow{display:flex;align-items:center;gap:11px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:7px;text-decoration:none;}
     a.docrow:hover{border-color:var(--gold-border);}
     .docrow.off{opacity:.5;}
@@ -146,12 +151,15 @@ let FILTRO = '';
 function hojeLocal(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 // Sequência de etapas aplicável a ESTA OS (pula SDV sem diárias e PAF se não for do PAF).
 function sequencia(os){ return ETAPAS.filter(e=> (e.k!=='sdv'||os.com_diarias) && (e.k!=='paf'||os.is_paf) ).map(e=>e.k); }
-// Etapa EFETIVA: após o encaminhamento, "em execução"/"concluída" saem da DATA da operação.
+// Etapa EFETIVA: havendo período definido, "em execução"/"concluída" saem SEMPRE
+// da DATA da operação (a data manda, mesmo que a etapa guardada já esteja além).
 function etapaEfetiva(os){
-  if(os.etapa==='encaminhada' && os.data_operacao_inicio){
+  if(os.etapa==='cancelada') return 'cancelada';
+  if(os.data_operacao_inicio && ['encaminhada','execucao','concluida'].includes(os.etapa)){
     const hoje=hojeLocal(); const fim=os.data_operacao_fim||os.data_operacao_inicio;
     if(hoje>fim) return 'concluida';
     if(hoje>=os.data_operacao_inicio) return 'execucao';
+    return 'encaminhada';
   }
   return os.etapa;
 }
@@ -230,16 +238,17 @@ function modalOS(o){
     <div style="margin-top:10px;"><label class="lbl">Operação</label><input class="input" id="m-op" value="${esc(o.operacao||'')}" placeholder="Ex.: Operação Extraordinária em Pedra Azul"></div>
     <div style="margin-top:10px;"><label class="lbl">Grupamento de destino</label><input class="input" id="m-gp" value="${esc(o.grupamento||'')}" placeholder="Ex.: 5º Pelotão / 1º Gp MAmb"></div>
     <div style="margin-top:10px;"><label class="lbl">Descrição / observações</label><textarea class="input" id="m-desc" rows="2">${esc(o.descricao||'')}</textarea></div>
-    <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13.5px;color:var(--text-white);cursor:pointer;">
-      <input type="checkbox" id="m-diarias" ${o.com_diarias?'checked':''} onchange="document.getElementById('box-planilha').style.display=this.checked?'block':'none'"> Operação com <b>pagamento de diárias</b> (ativa a etapa do SDV / P1)
-    </label>
-    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13.5px;color:var(--text-white);cursor:pointer;">
-      <input type="checkbox" id="m-paf" ${o.is_paf?'checked':''}> Operação do <b>PAF</b> (ativa a etapa "Cadastrada a Op no PAF" antes do encaminhamento)
-    </label>
+    <div class="fbox">
+      <label class="chk"><input type="checkbox" id="m-diarias" ${o.com_diarias?'checked':''} onchange="document.getElementById('box-planilha').style.display=this.checked?'block':'none'">
+        <span><b>Operação com pagamento de diárias</b><small>Ativa a etapa do SDV (Auxiliar P1).</small></span></label>
+      <label class="chk"><input type="checkbox" id="m-paf" ${o.is_paf?'checked':''}>
+        <span><b>Operação do PAF</b><small>Ativa a etapa “Cadastrada a Op no PAF”, antes do encaminhamento.</small></span></label>
+    </div>
     <div class="row2" style="margin-top:12px;">
-      <div><label class="lbl">Início da operação <span style="font-weight:400;color:var(--text-hint)">(execução/conclusão automáticas)</span></label><input class="input" id="m-dini" type="date" value="${o.data_operacao_inicio||''}"></div>
+      <div><label class="lbl">Início da operação</label><input class="input" id="m-dini" type="date" value="${o.data_operacao_inicio||''}"></div>
       <div><label class="lbl">Fim da operação</label><input class="input" id="m-dfim" type="date" value="${o.data_operacao_fim||''}"></div>
     </div>
+    <div style="font-size:11px;color:var(--text-hint);margin-top:5px;">Com o período preenchido, a <b>execução</b> e a <b>conclusão</b> ficam automáticas pela data.</div>
     <div style="margin-top:12px;"><label class="lbl">📎 Documento de origem <span style="font-weight:400;color:var(--text-hint)">(opcional — ofício/requisição que deu causa à OS)</span></label>
       <input type="file" id="m-dc-file" accept="application/pdf,image/*,.doc,.docx" onchange="subir(this,'origem')" style="font-size:12px;">
       <div id="m-dc-lista"></div>
@@ -316,8 +325,7 @@ async function abrirDetalhe(id){
   const hbe = {}; hist.forEach(h=>{ hbe[h.etapa]=h; });
   const seq = sequencia(o);                       // etapas aplicáveis a ESTA OS
   const efet = etapaEfetiva(o);                   // etapa considerando a data da operação
-  const finalStored = (o.etapa==='concluida' || o.etapa==='cancelada');  // trava botões
-  const finalEf = (efet==='concluida' || efet==='cancelada');            // exibição
+  const finalEf = (efet==='concluida' || efet==='cancelada');            // trava botões e exibição
   const ant = antEtapa(o), prox = proxEtapa(o);   // prox = próxima etapa MANUAL (null se a próxima é por data)
   const ini = o.data_operacao_inicio, dfim = o.data_operacao_fim;
 
@@ -339,7 +347,7 @@ async function abrirDetalhe(id){
     else if(st==='cancel') sttxt='Cancelada nesta etapa';
     else sttxt = et.auto? 'Automático pela data' : 'Aguardando etapa anterior';
     const dot = st==='done'?`<span class="sdot done">✓</span>` : st==='cur'?`<span class="sdot cur" style="--c:${et.c}">●</span>` : st==='cancel'?`<span class="sdot cancel">✖</span>`:`<span class="sdot"></span>`;
-    const btn = (st==='cur' && !finalStored && prox) ? `<button class="btn btn-gold sbtn" onclick="avancar('${o.id}','${prox}')">✓ Concluir — ir para ${EINFO[prox].t||EINFO[prox].l}</button>` : '';
+    const btn = (st==='cur' && !finalEf && prox) ? `<button class="btn btn-gold sbtn" onclick="avancar('${o.id}','${prox}')">✓ Concluir — ir para ${EINFO[prox].t||EINFO[prox].l}</button>` : '';
     return `<div class="step ${st}">${dot}<div class="sbody">
         <div class="stit">${et.t||et.l}</div>
         <div class="sdesc">${desc}</div>
@@ -381,10 +389,10 @@ async function abrirDetalhe(id){
     </div>
 
     <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;">
-      ${(!finalStored && ant)?`<button class="btn btn-outline" onclick="avancar('${o.id}','${ant}')">↩ Voltar etapa</button>`:''}
-      ${(!finalStored && !prox && efet!=='concluida')?`<button class="btn btn-gold" onclick="avancar('${o.id}','concluida')">🏁 Concluir agora</button>`:''}
-      ${!finalStored?`<button class="btn btn-outline" style="color:#ef4444;border-color:rgba(239,68,68,.4);" onclick="avancar('${o.id}','cancelada')">✖ Cancelar OS</button>`:''}
-      ${finalStored?`<button class="btn btn-outline" onclick="avancar('${o.id}','encaminhada')">↩ Reabrir</button>`:''}
+      ${(!finalEf && ant)?`<button class="btn btn-outline" onclick="avancar('${o.id}','${ant}')">↩ Voltar etapa</button>`:''}
+      ${(!finalEf && !prox && !o.data_operacao_inicio)?`<button class="btn btn-gold" onclick="avancar('${o.id}','concluida')">🏁 Concluir agora</button>`:''}
+      ${!finalEf?`<button class="btn btn-outline" style="color:#ef4444;border-color:rgba(239,68,68,.4);" onclick="avancar('${o.id}','cancelada')">✖ Cancelar OS</button>`:''}
+      ${finalEf?`<button class="btn btn-outline" onclick="avancar('${o.id}','encaminhada')">↩ Reabrir</button>`:''}
       <button class="btn btn-outline" onclick="abrirEditar(OS.find(x=>x.id==='${o.id}'))">✎ Editar</button>
       <button class="btn btn-danger" onclick="excluir('${o.id}')">🗑 Excluir</button>
     </div>
