@@ -29,6 +29,8 @@
     .rchip .c{background:var(--bg-dark);padding:0 7px;border-radius:20px;font-weight:800;color:var(--text-white);font-size:12px;}
     .rchip .d{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
     .lista{display:flex;flex-direction:column;gap:8px;}
+    .paginacao{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:16px;flex-wrap:wrap;}
+    .btn:disabled{opacity:.4;cursor:default;}
     .osrow{display:flex;align-items:center;gap:12px;background:var(--bg-card);border:1px solid var(--border);border-radius:9px;padding:11px 14px;cursor:pointer;flex-wrap:wrap;}
     .osrow:hover{border-color:var(--gold-border);}
     .osrow .et{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;}
@@ -107,13 +109,14 @@
       <div class="ic">📋</div>
       <div><h1>Controle de Ordens de Serviço</h1><div class="sub">Acompanhe a tramitação de cada OS — da elaboração à execução.</div></div>
       <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;">
-        <select id="f-ano" class="input" style="width:auto;" onchange="render()"></select>
+        <select id="f-ano" class="input" style="width:auto;" onchange="PAGINA=1;render()"></select>
         <button class="btn btn-outline" onclick="carregar()">☰ Atualizar</button>
         <button class="btn btn-gold" onclick="abrirNova()">＋ Nova OS</button>
       </div>
     </div>
     <div id="resumo" class="resumo"></div>
     <div id="lista" class="lista"></div>
+    <div id="paginacao" class="paginacao"></div>
   </div>
   <div id="semacesso" class="noacc" style="display:none;">
     <div style="font-size:40px;">🔒</div>
@@ -147,6 +150,8 @@ const ULTIMA_MANUAL = 'encaminhada';
 
 let OS = [];
 let FILTRO = '';
+let PAGINA = 1;
+const POR_PAGINA = 10;
 
 function hojeLocal(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 // Sequência de etapas aplicável a ESTA OS (pula SDV sem diárias e PAF se não for do PAF).
@@ -195,10 +200,21 @@ function render(){
   if(FILTRO==='_fim') fl = lista.filter(o=> ef(o)==='concluida' || ef(o)==='cancelada');
   else if(FILTRO) fl = lista.filter(o=> ef(o)===FILTRO);
   fl = fl.slice().sort((a,b)=> ((ord[ef(a)]??9)-(ord[ef(b)]??9)) || (b.numero-a.numero));
+
+  const total=fl.length, totalPag=Math.max(1, Math.ceil(total/POR_PAGINA));
+  if(PAGINA>totalPag) PAGINA=totalPag; if(PAGINA<1) PAGINA=1;
+  const pag = fl.slice((PAGINA-1)*POR_PAGINA, PAGINA*POR_PAGINA);
   const el=document.getElementById('lista');
-  el.innerHTML = fl.length ? fl.map(rowHtml).join('') : '<div style="padding:22px;color:var(--text-hint);text-align:center;">Nenhuma OS nesta visão.</div>';
+  el.innerHTML = total ? pag.map(rowHtml).join('') : '<div style="padding:22px;color:var(--text-hint);text-align:center;">Nenhuma OS nesta visão.</div>';
+
+  const pg=document.getElementById('paginacao');
+  pg.innerHTML = total>POR_PAGINA ? `
+    <button class="btn btn-outline" ${PAGINA<=1?'disabled':''} onclick="irPagina(${PAGINA-1})">‹ Anterior</button>
+    <span style="font-size:12.5px;color:var(--text-muted);">Página ${PAGINA} de ${totalPag} · ${total} OS</span>
+    <button class="btn btn-outline" ${PAGINA>=totalPag?'disabled':''} onclick="irPagina(${PAGINA+1})">Próxima ›</button>` : '';
 }
-function setFiltro(k){ FILTRO=k; render(); }
+function irPagina(p){ PAGINA=p; render(); try{ document.getElementById('lista').scrollIntoView({behavior:'smooth',block:'start'}); }catch(e){} }
+function setFiltro(k){ FILTRO=k; PAGINA=1; render(); }
 
 function rowHtml(o){
   const ek=etapaEfetiva(o); const e=EINFO[ek]||{}; const dias=diasNa(o);
