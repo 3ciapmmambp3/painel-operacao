@@ -65,6 +65,7 @@
     .sstat.done{color:#10b981;}
     .sstat.cur{color:#f59e0b;}
     .sobs{font-size:12px;font-style:italic;color:var(--text-muted);margin-top:3px;}
+    .sbtn{margin-top:8px;padding:6px 12px;font-size:12px;}
     .docrow{display:flex;align-items:center;gap:11px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:7px;text-decoration:none;}
     a.docrow:hover{border-color:var(--gold-border);}
     .docrow.off{opacity:.5;}
@@ -130,18 +131,32 @@ const ETAPAS = [
   {k:'aguardando_autorizacao', l:'Aguardando autorização', t:'P3/BPM MAmb — Autorização', d:'Aguardando autorização da operação', c:'#f59e0b', ic:'⏳'},
   {k:'autorizada', l:'Autorizada', t:'Autorizada', d:'Operação autorizada pela P3/BPM MAmb.', c:'#3b82f6', ic:'✅'},
   {k:'sdv', l:'Aguardando SDV', t:'Auxiliar P1 — Lançamento no SDV', d:'Lançamento das diárias no SDV.', c:'#a855f7', ic:'💰'},
+  {k:'paf', l:'Cadastro no PAF', t:'Cadastrada a Op no PAF', d:'Operação cadastrada no Plano Anual de Fiscalização.', c:'#14b8a6', ic:'🌲'},
   {k:'encaminhada', l:'Aguardando encaminhamento', t:'Encaminhamento ao Grupamento', d:'OS encaminhada ao Grupamento responsável.', c:'#06b6d4', ic:'📨'},
-  {k:'execucao', l:'Em execução', t:'Execução da operação', d:'Grupamento executando a operação.', c:'#10b981', ic:'🚔'},
+  {k:'execucao', l:'Em execução', t:'Execução da operação', d:'Grupamento executando a operação.', c:'#10b981', ic:'🚔', auto:true},
 ];
 const EINFO = Object.fromEntries(ETAPAS.map(e=>[e.k,e]));
-EINFO.concluida={k:'concluida',l:'Concluída',c:'#6b7280',ic:'🏁'}; EINFO.cancelada={k:'cancelada',l:'Cancelada',c:'#ef4444',ic:'✖'};
+EINFO.concluida={k:'concluida',l:'Concluída',t:'Concluída',d:'Operação finalizada.',c:'#6b7280',ic:'🏁',auto:true}; EINFO.cancelada={k:'cancelada',l:'Cancelada',c:'#ef4444',ic:'✖'};
+// Última etapa que o Aux P3 conclui MANUALMENTE (daqui pra frente é pela data).
+const ULTIMA_MANUAL = 'encaminhada';
 
 let OS = [];
 let FILTRO = '';
 
-function sequencia(comDiarias){ return ETAPAS.filter(e=> e.k!=='sdv' || comDiarias).map(e=>e.k); }
-function proxEtapa(os){ const seq=sequencia(os.com_diarias); const i=seq.indexOf(os.etapa); return (i>=0 && i<seq.length-1)? seq[i+1] : null; }
-function antEtapa(os){ const seq=sequencia(os.com_diarias); const i=seq.indexOf(os.etapa); return i>0? seq[i-1] : null; }
+function hojeLocal(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+// Sequência de etapas aplicável a ESTA OS (pula SDV sem diárias e PAF se não for do PAF).
+function sequencia(os){ return ETAPAS.filter(e=> (e.k!=='sdv'||os.com_diarias) && (e.k!=='paf'||os.is_paf) ).map(e=>e.k); }
+// Etapa EFETIVA: após o encaminhamento, "em execução"/"concluída" saem da DATA da operação.
+function etapaEfetiva(os){
+  if(os.etapa==='encaminhada' && os.data_operacao_inicio){
+    const hoje=hojeLocal(); const fim=os.data_operacao_fim||os.data_operacao_inicio;
+    if(hoje>fim) return 'concluida';
+    if(hoje>=os.data_operacao_inicio) return 'execucao';
+  }
+  return os.etapa;
+}
+function proxEtapa(os){ const seq=sequencia(os); const i=seq.indexOf(os.etapa); if(i<0||i>=seq.length-1) return null; const nx=seq[i+1]; return (EINFO[nx] && EINFO[nx].auto)? null : nx; }
+function antEtapa(os){ const seq=sequencia(os); const i=seq.indexOf(os.etapa); return i>0? seq[i-1] : null; }
 function diasNa(os){ const d=os.atualizado_em? Math.floor((Date.now()-new Date(os.atualizado_em))/86400000):0; return d; }
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
@@ -160,26 +175,27 @@ async function carregar(){
 function render(){
   const ano = +document.getElementById('f-ano').value;
   const lista = OS.filter(o=> o.ano===ano);
+  const ef = o => etapaEfetiva(o);
   const res=document.getElementById('resumo');
-  const fin = lista.filter(o=> o.etapa==='concluida' || o.etapa==='cancelada').length;
+  const fin = lista.filter(o=> ef(o)==='concluida' || ef(o)==='cancelada').length;
   res.innerHTML = `<div class="rchip ${FILTRO===''?'on':''}" onclick="setFiltro('')">Todas <span class="c">${lista.length}</span></div>`
-    + ETAPAS.map(et=>{ const n=lista.filter(o=>o.etapa===et.k).length; return `<div class="rchip ${FILTRO===et.k?'on':''}" onclick="setFiltro('${et.k}')"><span class="d" style="background:${et.c}"></span>${et.l} <span class="c">${n}</span></div>`; }).join('')
+    + ETAPAS.map(et=>{ const n=lista.filter(o=>ef(o)===et.k).length; return `<div class="rchip ${FILTRO===et.k?'on':''}" onclick="setFiltro('${et.k}')"><span class="d" style="background:${et.c}"></span>${et.l} <span class="c">${n}</span></div>`; }).join('')
     + (fin? `<div class="rchip ${FILTRO==='_fim'?'on':''}" onclick="setFiltro('_fim')">🏁 Finalizadas <span class="c">${fin}</span></div>`:'');
 
   const ord = Object.fromEntries([...ETAPAS,EINFO.concluida,EINFO.cancelada].map((e,i)=>[e.k,i]));
   let fl = lista;
-  if(FILTRO==='_fim') fl = lista.filter(o=> o.etapa==='concluida' || o.etapa==='cancelada');
-  else if(FILTRO) fl = lista.filter(o=> o.etapa===FILTRO);
-  fl = fl.slice().sort((a,b)=> ((ord[a.etapa]??9)-(ord[b.etapa]??9)) || (b.numero-a.numero));
+  if(FILTRO==='_fim') fl = lista.filter(o=> ef(o)==='concluida' || ef(o)==='cancelada');
+  else if(FILTRO) fl = lista.filter(o=> ef(o)===FILTRO);
+  fl = fl.slice().sort((a,b)=> ((ord[ef(a)]??9)-(ord[ef(b)]??9)) || (b.numero-a.numero));
   const el=document.getElementById('lista');
   el.innerHTML = fl.length ? fl.map(rowHtml).join('') : '<div style="padding:22px;color:var(--text-hint);text-align:center;">Nenhuma OS nesta visão.</div>';
 }
 function setFiltro(k){ FILTRO=k; render(); }
 
 function rowHtml(o){
-  const e=EINFO[o.etapa]||{}; const dias=diasNa(o);
+  const ek=etapaEfetiva(o); const e=EINFO[ek]||{}; const dias=diasNa(o);
   return `<div class="osrow" onclick="abrirDetalhe('${o.id}')">
-    <span class="et" style="background:${e.c}22;color:${e.c};border:1px solid ${e.c}55;">${e.ic||''} ${e.l||o.etapa}</span>
+    <span class="et" style="background:${e.c}22;color:${e.c};border:1px solid ${e.c}55;">${e.ic||''} ${e.l||ek}</span>
     <div class="osrow-main">
       <div class="num">OS ${String(o.numero).padStart(3,'0')}.3/${o.ano}</div>
       <div class="op">${esc(o.operacao||'(sem nome)')}${o.grupamento?' · <span style="color:var(--text-hint)">'+esc(o.grupamento)+'</span>':''}</div>
@@ -217,6 +233,13 @@ function modalOS(o){
     <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13.5px;color:var(--text-white);cursor:pointer;">
       <input type="checkbox" id="m-diarias" ${o.com_diarias?'checked':''} onchange="document.getElementById('box-planilha').style.display=this.checked?'block':'none'"> Operação com <b>pagamento de diárias</b> (ativa a etapa do SDV / P1)
     </label>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13.5px;color:var(--text-white);cursor:pointer;">
+      <input type="checkbox" id="m-paf" ${o.is_paf?'checked':''}> Operação do <b>PAF</b> (ativa a etapa "Cadastrada a Op no PAF" antes do encaminhamento)
+    </label>
+    <div class="row2" style="margin-top:12px;">
+      <div><label class="lbl">Início da operação <span style="font-weight:400;color:var(--text-hint)">(execução/conclusão automáticas)</span></label><input class="input" id="m-dini" type="date" value="${o.data_operacao_inicio||''}"></div>
+      <div><label class="lbl">Fim da operação</label><input class="input" id="m-dfim" type="date" value="${o.data_operacao_fim||''}"></div>
+    </div>
     <div style="margin-top:12px;"><label class="lbl">📎 Documento de origem <span style="font-weight:400;color:var(--text-hint)">(opcional — ofício/requisição que deu causa à OS)</span></label>
       <input type="file" id="m-dc-file" accept="application/pdf,image/*,.doc,.docx" onchange="subir(this,'origem')" style="font-size:12px;">
       <div id="m-dc-lista"></div>
@@ -272,6 +295,9 @@ async function salvarOS(id){
     grupamento: document.getElementById('m-gp').value.trim(),
     descricao: document.getElementById('m-desc').value.trim(),
     com_diarias: document.getElementById('m-diarias').checked,
+    is_paf: document.getElementById('m-paf').checked,
+    data_operacao_inicio: document.getElementById('m-dini').value || '',
+    data_operacao_fim: document.getElementById('m-dfim').value || '',
     os_url:_anx.os_url, os_arquivo:_anx.os_arquivo, planilha_url:_anx.planilha_url, planilha_arquivo:_anx.planilha_arquivo,
     doc_origem_url:_anx.doc_origem_url, doc_origem_arquivo:_anx.doc_origem_arquivo
   };
@@ -285,33 +311,54 @@ function fecharModal(){ document.getElementById('modais').innerHTML=''; }
 async function abrirDetalhe(id){
   const o = OS.find(x=>x.id===id); if(!o) return;
   let hist=[]; try{ hist = await _sbRpc('os_historico', { p_token:S.token, p_id:id }) || []; }catch(e){}
-  const prox = proxEtapa(o), ant = antEtapa(o);
   const fmt = d => d? new Date(d+'T00:00').toLocaleDateString('pt-BR') : '';
   const hbe = {}; hist.forEach(h=>{ hbe[h.etapa]=h; });
-  const seq = sequencia(o.com_diarias);
-  const final = (o.etapa==='concluida' || o.etapa==='cancelada');
-  let cur = seq.indexOf(o.etapa);
-  if(cur<0){ const idxs=hist.map(h=>seq.indexOf(h.etapa)).filter(i=>i>=0); cur = o.etapa==='concluida'? seq.length : (idxs.length?Math.max(...idxs):0); }
+  const seq = sequencia(o);                       // etapas aplicáveis a ESTA OS
+  const efet = etapaEfetiva(o);                   // etapa considerando a data da operação
+  const finalStored = (o.etapa==='concluida' || o.etapa==='cancelada');  // trava botões
+  const finalEf = (efet==='concluida' || efet==='cancelada');            // exibição
+  const ant = antEtapa(o), prox = proxEtapa(o);   // prox = próxima etapa MANUAL (null se a próxima é por data)
+  const ini = o.data_operacao_inicio, dfim = o.data_operacao_fim;
+
+  let cur;
+  if(efet==='concluida') cur = seq.length;
+  else if(efet==='cancelada'){ const idxs=hist.map(h=>seq.indexOf(h.etapa)).filter(i=>i>=0); cur=idxs.length?Math.max(...idxs):0; }
+  else cur = Math.max(0, seq.indexOf(efet));
 
   const stepper = seq.map((k,i)=>{
     const et=EINFO[k];
-    const st = i<cur ? 'done' : (i===cur && o.etapa==='cancelada') ? 'cancel' : (i===cur && !final) ? 'cur' : 'pend';
+    const st = i<cur ? 'done' : (i===cur && efet==='cancelada') ? 'cancel' : (i===cur && !finalEf) ? 'cur' : 'pend';
     const h = hbe[k];
-    let desc = et.d; if(k==='aguardando_autorizacao' && o.com_diarias) desc='Aguardando autorização da operação e das diárias.';
-    const sttxt = st==='done' ? (h&&h.data?('Concluído · '+fmt(h.data)):'Concluído') : st==='cur' ? 'Etapa atual' : st==='cancel' ? 'Cancelada nesta etapa' : 'Aguardando etapa anterior';
+    let desc = et.d;
+    if(k==='aguardando_autorizacao' && o.com_diarias) desc='Aguardando autorização da operação e das diárias.';
+    if(k==='execucao') desc = ini ? ('Início em '+fmt(ini)+(dfim?(' · término em '+fmt(dfim)):'')+' — automático pela data.') : 'Defina o período da operação para ativar automaticamente.';
+    let sttxt;
+    if(st==='done') sttxt = (h&&h.data?('Concluído · '+fmt(h.data)):'Concluído');
+    else if(st==='cur') sttxt = (k==='encaminhada') ? (ini?'Encaminhada · aguardando a data da operação':'Encaminhada · defina o período') : 'Etapa atual';
+    else if(st==='cancel') sttxt='Cancelada nesta etapa';
+    else sttxt = et.auto? 'Automático pela data' : 'Aguardando etapa anterior';
     const dot = st==='done'?`<span class="sdot done">✓</span>` : st==='cur'?`<span class="sdot cur" style="--c:${et.c}">●</span>` : st==='cancel'?`<span class="sdot cancel">✖</span>`:`<span class="sdot"></span>`;
+    const btn = (st==='cur' && !finalStored && prox) ? `<button class="btn btn-gold sbtn" onclick="avancar('${o.id}','${prox}')">✓ Concluir — ir para ${EINFO[prox].t||EINFO[prox].l}</button>` : '';
     return `<div class="step ${st}">${dot}<div class="sbody">
         <div class="stit">${et.t||et.l}</div>
         <div class="sdesc">${desc}</div>
         <div class="sstat ${st}">${sttxt}${(st==='done'&&h&&h.responsavel)?' · '+esc(h.responsavel):''}</div>
         ${(h&&h.obs)?'<div class="sobs">“'+esc(h.obs)+'”</div>':''}
+        ${btn}
       </div></div>`;
   }).join('');
+
+  const finalNode = efet==='concluida'
+    ? `<div class="step done"><span class="sdot done">🏁</span><div class="sbody"><div class="stit">Concluída</div><div class="sdesc">Operação finalizada${dfim?(' em '+fmt(dfim)):''}.</div><div class="sstat done">${o.etapa==='concluida'?'Concluído':'Automático pela data'}</div></div></div>`
+    : efet==='cancelada'
+    ? `<div class="step cancel"><span class="sdot cancel">✖</span><div class="sbody"><div class="stit" style="color:#ef4444">OS cancelada</div></div></div>`
+    : `<div class="step pend"><span class="sdot"></span><div class="sbody"><div class="stit" style="color:var(--text-muted)">Concluída</div><div class="sstat">${dfim?('Automático após '+fmt(dfim)):'Automático pela data'}</div></div></div>`;
 
   const docItem = (url,arq,ic,rot) => url
     ? `<a class="docrow" href="${esc(url)}" target="_blank"><span class="dic">${ic}</span><span class="dinfo"><b>${esc(arq||rot)}</b><small>Google Drive</small></span><span class="dgo">↗</span></a>`
     : `<div class="docrow off"><span class="dic">${ic}</span><span class="dinfo"><b>${rot}</b><small>não anexado</small></span></div>`;
 
+  const cEf = EINFO[efet]||{};
   document.getElementById('modais').innerHTML = `
   <div class="modal-bg" onclick="fecharModal()"></div>
   <div class="drawer">
@@ -319,14 +366,12 @@ async function abrirDetalhe(id){
     <div style="font-weight:700;color:var(--text-white);font-size:15px;line-height:1.3;">${esc(o.operacao||'(sem nome)')}</div>
     <div style="font-size:12px;color:var(--text-muted);margin:4px 0 8px;">${o.grupamento?('Destino: '+esc(o.grupamento)):''}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;">
-      <span class="chip" style="background:${EINFO[o.etapa]?.c}22;color:${EINFO[o.etapa]?.c};">${EINFO[o.etapa]?.ic} ${EINFO[o.etapa]?.l}</span>
-      ${o.com_diarias?'<span class="chip" style="background:rgba(168,85,247,.15);color:#c084fc;">💰 Com diárias</span>':'<span class="chip" style="background:var(--bg-dark);color:var(--text-hint);">Sem diárias</span>'}
+      <span class="chip" style="background:${cEf.c}22;color:${cEf.c};">${cEf.ic||''} ${cEf.l||efet}</span>
+      ${o.com_diarias?'<span class="chip" style="background:rgba(168,85,247,.15);color:#c084fc;">💰 Com diárias</span>':''}
+      ${o.is_paf?'<span class="chip" style="background:rgba(20,184,166,.15);color:#2dd4bf;">🌲 PAF</span>':''}
     </div>
 
-    <div class="stepper">${stepper}
-      ${o.etapa==='concluida'?'<div class="step done"><span class="sdot done">🏁</span><div class="sbody"><div class="stit">Concluída</div><div class="sstat done">Operação finalizada</div></div></div>':''}
-      ${o.etapa==='cancelada'?'<div class="step cancel"><span class="sdot cancel">✖</span><div class="sbody"><div class="stit" style="color:#ef4444">OS cancelada</div></div></div>':''}
-    </div>
+    <div class="stepper">${stepper}${finalNode}</div>
 
     <div style="margin-top:14px;"><div class="lbl">Documentos vinculados</div>
       ${docItem(o.doc_origem_url,o.doc_origem_arquivo,'📎','Documento de origem')}
@@ -335,11 +380,10 @@ async function abrirDetalhe(id){
     </div>
 
     <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;">
-      ${(!final && prox)?`<button class="btn btn-gold" onclick="avancar('${o.id}','${prox}')">➜ ${EINFO[prox].t||EINFO[prox].l}</button>`:''}
-      ${(!final && !prox)?`<button class="btn btn-gold" onclick="avancar('${o.id}','concluida')">🏁 Concluir</button>`:''}
-      ${(!final && ant)?`<button class="btn btn-outline" onclick="avancar('${o.id}','${ant}')">↩ Voltar</button>`:''}
-      ${!final?`<button class="btn btn-outline" style="color:#ef4444;border-color:rgba(239,68,68,.4);" onclick="avancar('${o.id}','cancelada')">✖ Cancelar OS</button>`:''}
-      ${final?`<button class="btn btn-outline" onclick="avancar('${o.id}','execucao')">↩ Reabrir</button>`:''}
+      ${(!finalStored && ant)?`<button class="btn btn-outline" onclick="avancar('${o.id}','${ant}')">↩ Voltar etapa</button>`:''}
+      ${(!finalStored && !prox && efet!=='concluida')?`<button class="btn btn-gold" onclick="avancar('${o.id}','concluida')">🏁 Concluir agora</button>`:''}
+      ${!finalStored?`<button class="btn btn-outline" style="color:#ef4444;border-color:rgba(239,68,68,.4);" onclick="avancar('${o.id}','cancelada')">✖ Cancelar OS</button>`:''}
+      ${finalStored?`<button class="btn btn-outline" onclick="avancar('${o.id}','encaminhada')">↩ Reabrir</button>`:''}
       <button class="btn btn-outline" onclick="abrirEditar(OS.find(x=>x.id==='${o.id}'))">✎ Editar</button>
       <button class="btn btn-danger" onclick="excluir('${o.id}')">🗑 Excluir</button>
     </div>
@@ -348,11 +392,17 @@ async function abrirDetalhe(id){
       <div class="hist">${hist.slice().reverse().map(h=>`<div class="it"><div style="font-size:13px;color:var(--text-white);font-weight:600;">${EINFO[h.etapa]?.ic||'•'} ${EINFO[h.etapa]?.l||h.etapa}</div><div style="font-size:11px;color:var(--text-hint);">${fmt(h.data)} · ${esc(h.responsavel||'')}${h.obs?' — '+esc(h.obs):''}</div></div>`).join('') || '<div style="font-size:12px;color:var(--text-hint);">—</div>'}</div>
     </div>
   </div>`;
+  // Posiciona o drawer ABAIXO do cabeçalho + topnav (evita sobreposição).
+  requestAnimationFrame(()=>{ const d=document.querySelector('.drawer'); if(!d) return; let off=0;
+    const hd=document.querySelector('header.header')||document.querySelector('.header'); const tn=document.querySelector('.topnav');
+    if(hd) off=Math.max(off, hd.getBoundingClientRect().bottom);
+    if(tn) off=Math.max(off, tn.getBoundingClientRect().bottom);
+    d.style.top=Math.round(Math.max(0,off))+'px'; });
 }
 async function avancar(id, etapa){
   const obs = prompt('Observação desta etapa (opcional):','');
   if(obs===null) return;
-  try{ await _sbRpc('os_mudar_etapa', { p_token:S.token, p_id:id, p_dados:{ etapa, data:new Date().toISOString().slice(0,10), responsavel:MATR, obs:obs||null } }); await carregar(); abrirDetalhe(id); }
+  try{ await _sbRpc('os_mudar_etapa', { p_token:S.token, p_id:id, p_dados:{ etapa, data:hojeLocal(), responsavel:MATR, obs:obs||null } }); await carregar(); abrirDetalhe(id); }
   catch(e){ alert('Erro: '+e.message); }
 }
 async function excluir(id){
