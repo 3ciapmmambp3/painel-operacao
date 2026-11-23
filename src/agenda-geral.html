@@ -139,7 +139,7 @@
     <div class="ag-selo">📅</div>
     <div style="flex:1;min-width:0;">
       <h1>Minha Agenda</h1>
-      <div class="sub">Tarefas, lembretes, prazos de demandas e instruções — num lugar só</div>
+      <div class="sub">Suas tarefas, lembretes e instruções — num lugar só</div>
     </div>
     <a href="inicio.html" class="btn-outline" style="font-size:12px;text-decoration:none;">← Meu Dia</a>
   </div>
@@ -210,12 +210,14 @@
 </div>
 
 <script>
-/* ════════════════ Minha Agenda — agregador (100% leitura do que já existe) ════════════════
+/* ════════════════ Minha Agenda — agregador PESSOAL (100% leitura do que já existe) ════════════════
    Fontes:
      • minhas_tarefas_listar  → tarefas de seção atribuídas a mim + lembretes pessoais
-     • denuncias (PostgREST)  → prazos de demandas/denúncias/requisições no meu escopo
-     • instrucao_listar       → instruções/chamadas no meu escopo
+     • instrucao_listar       → instruções/chamadas/reuniões no meu escopo
    Lembrete livre = agenda_pessoal (CRUD via agenda_pessoal_salvar/status/excluir).
+   ⚠️ DEMANDAS/DENÚNCIAS NÃO entram automático (agenda é pessoal). A função
+      carregarDemandas() segue abaixo DESATIVADA — só é usada se o militar
+      criar um lembrete próprio p/ atender a demanda.
    ⚠️ Comparação de dia/prazo SEMPRE em data LOCAL (BRT) — nunca toISOString p/ comparar. */
 
 const sessao = (function(){
@@ -253,13 +255,12 @@ const toLocalInput = d => d ? `${d.getFullYear()}-${_p2(d.getMonth()+1)}-${_p2(d
 const TIPOS = {
   lembrete:  {cor:'#9b8a5c', ic:'🔔', label:'Lembrete'},
   tarefa:    {cor:'#42a5f5', ic:'✅', label:'Tarefa'},
-  demanda:   {cor:'#ef7d5a', ic:'⚖️', label:'Demanda'},
   instrucao: {cor:'#9184c9', ic:'📚', label:'Instrução'}
 };
 const PR_LABEL = {alta:'Alta', media:'Média', baixa:'Baixa'};
 
 let EVENTOS = [];                  // normalizados
-let FILTROS = {lembrete:true, tarefa:true, demanda:true, instrucao:true, concluidas:false};
+let FILTROS = {lembrete:true, tarefa:true, instrucao:true, concluidas:false};
 let VIEW = (window.matchMedia && window.matchMedia('(max-width:720px)').matches) ? 'lista' : 'mes';
 let curY, curM;                    // mês exibido (local)
 
@@ -272,7 +273,7 @@ function initHeaderSessao(){
 async function carregar(){
   const n = hojeD(); curY=n.getFullYear(); curM=n.getMonth();
   const evs = [];
-  const res = await Promise.allSettled([ carregarTarefasELembretes(), carregarDemandas(), carregarInstrucoes() ]);
+  const res = await Promise.allSettled([ carregarTarefasELembretes(), carregarInstrucoes() ]);
   res.forEach(r=>{ if(r.status==='fulfilled' && Array.isArray(r.value)) evs.push(...r.value); });
   EVENTOS = evs;
   document.getElementById('box-carregando').style.display='none';
@@ -297,6 +298,8 @@ async function carregarTarefasELembretes(){
   return out;
 }
 
+// DESATIVADA (agenda é pessoal): não é chamada em carregar(). Mantida caso se
+// queira, no futuro, um filtro opcional de prazos de demandas (opt-in).
 async function carregarDemandas(){
   // escopo de grupamentos (mesma regra do Controle de Demandas)
   const nivel=sessao.nivel_acesso;
