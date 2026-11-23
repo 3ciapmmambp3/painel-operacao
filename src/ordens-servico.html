@@ -134,13 +134,14 @@ const PODE = S && (S.nivel_acesso==='admin_geral' || (S.funcao||'').toLowerCase(
 const MATR = S ? (S.nome_guerra || S.nome_completo || S.matricula || '') : '';
 (function initUser(){ try{ const n=document.getElementById('user-nome'); if(n) n.textContent = S.nome_guerra||S.nome_completo||'—'; const a=document.getElementById('user-avatar'); if(a) a.textContent=(S.nome_guerra||S.nome_completo||'?').trim().charAt(0).toUpperCase(); }catch(e){} })();
 
+// cta = rótulo do botão que CONCLUI este passo (descreve a AÇÃO, não o próximo passo).
 const ETAPAS = [
-  {k:'elaboracao', l:'Elaboração', t:'OS cadastrada', d:'Ordem de Serviço elaborada e cadastrada.', c:'#9e9e9e', ic:'📝'},
-  {k:'aguardando_autorizacao', l:'Aguardando autorização', t:'P3/BPM MAmb — Autorização', d:'Aguardando autorização da operação', c:'#f59e0b', ic:'⏳'},
-  {k:'autorizada', l:'Autorizada', t:'Autorizada', d:'Operação autorizada pela P3/BPM MAmb.', c:'#3b82f6', ic:'✅'},
-  {k:'sdv', l:'Aguardando SDV', t:'Auxiliar P1 — Lançamento no SDV', d:'Lançamento das diárias no SDV.', c:'#a855f7', ic:'💰'},
-  {k:'paf', l:'Cadastro no PAF', t:'Cadastrada a Op no PAF', d:'Operação cadastrada no Plano Anual de Fiscalização.', c:'#14b8a6', ic:'🌲'},
-  {k:'encaminhada', l:'Aguardando encaminhamento', t:'Encaminhamento ao Grupamento', d:'OS encaminhada ao Grupamento responsável.', c:'#06b6d4', ic:'📨'},
+  {k:'elaboracao', l:'Elaboração', t:'OS cadastrada', d:'Ordem de Serviço elaborada e cadastrada.', c:'#9e9e9e', ic:'📝', cta:'📨 Enviar para autorização (P3/BPM MAmb)'},
+  {k:'aguardando_autorizacao', l:'Aguardando autorização', t:'P3/BPM MAmb — Autorização', d:'Enviada à P3/BPM MAmb — aguardando autorização.', c:'#f59e0b', ic:'⏳', cta:'✅ Marcar como autorizada'},
+  {k:'autorizada', l:'Autorizada', t:'Autorizada', d:'Operação autorizada pela P3/BPM MAmb.', c:'#3b82f6', ic:'✅', cta:'✓ Concluir — próxima etapa'},
+  {k:'sdv', l:'Aguardando SDV', t:'Auxiliar P1 — Lançamento no SDV', d:'Lançamento das diárias no SDV.', c:'#a855f7', ic:'💰', cta:'💰 Marcar diárias lançadas (SDV)'},
+  {k:'paf', l:'Cadastro no PAF', t:'Cadastrada a Op no PAF', d:'Operação cadastrada no Plano Anual de Fiscalização.', c:'#14b8a6', ic:'🌲', cta:'🌲 Marcar cadastro no PAF'},
+  {k:'encaminhada', l:'Aguardando encaminhamento', t:'Encaminhamento ao Grupamento', d:'OS encaminhada ao Grupamento responsável.', c:'#06b6d4', ic:'📨', cta:'📨 Marcar como encaminhada ao Grupamento'},
   {k:'execucao', l:'Em execução', t:'Execução da operação', d:'Grupamento executando a operação.', c:'#10b981', ic:'🚔', auto:true},
 ];
 const EINFO = Object.fromEntries(ETAPAS.map(e=>[e.k,e]));
@@ -201,11 +202,11 @@ function render(){
     + ETAPAS.map(et=>{ const n=lista.filter(o=>ef(o)===et.k).length; return `<div class="rchip ${FILTRO===et.k?'on':''}" onclick="setFiltro('${et.k}')"><span class="d" style="background:${et.c}"></span>${et.l} <span class="c">${n}</span></div>`; }).join('')
     + (fin? `<div class="rchip ${FILTRO==='_fim'?'on':''}" onclick="setFiltro('_fim')">🏁 Finalizadas <span class="c">${fin}</span></div>`:'');
 
-  const ord = Object.fromEntries([...ETAPAS,EINFO.concluida,EINFO.cancelada].map((e,i)=>[e.k,i]));
   let fl = lista;
   if(FILTRO==='_fim') fl = lista.filter(o=> ef(o)==='concluida' || ef(o)==='cancelada');
   else if(FILTRO) fl = lista.filter(o=> ef(o)===FILTRO);
-  fl = fl.slice().sort((a,b)=> ((ord[ef(a)]??9)-(ord[ef(b)]??9)) || (b.numero-a.numero));
+  // Ordem de NUMERAÇÃO (mais recente no topo), independente da etapa.
+  fl = fl.slice().sort((a,b)=> (b.numero-a.numero));
 
   const total=fl.length, totalPag=Math.max(1, Math.ceil(total/POR_PAGINA));
   if(PAGINA>totalPag) PAGINA=totalPag; if(PAGINA<1) PAGINA=1;
@@ -383,8 +384,8 @@ async function abrirDetalhe(id){
     const dot = st==='done'?`<span class="sdot done">✓</span>` : st==='cur'?`<span class="sdot cur" style="--c:${et.c}">●</span>` : st==='cancel'?`<span class="sdot cancel">✖</span>`:`<span class="sdot"></span>`;
     let btn='';
     if(st==='cur' && !finalEf){
-      if(k==='encaminhada') btn=`<button class="btn btn-gold sbtn" onclick="avancar('${o.id}','execucao')">📨 Marcar como encaminhada ao Grupamento</button>`;
-      else if(prox) btn=`<button class="btn btn-gold sbtn" onclick="avancar('${o.id}','${prox}')">✓ Concluir — ir para ${EINFO[prox].t||EINFO[prox].l}</button>`;
+      if(k==='encaminhada') btn=`<button class="btn btn-gold sbtn" onclick="avancar('${o.id}','execucao')">${et.cta}</button>`;
+      else if(prox) btn=`<button class="btn btn-gold sbtn" onclick="avancar('${o.id}','${prox}')">${et.cta||('✓ Concluir — ir para '+(EINFO[prox].t||EINFO[prox].l))}</button>`;
     }
     return `<div class="step ${st}">${dot}<div class="sbody">
         <div class="stit">${et.t||et.l}</div>
