@@ -155,28 +155,48 @@ let PAGINA = 1;
 const POR_PAGINA = 10;
 
 function hojeLocal(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
-// Sequência de etapas aplicável a ESTA OS (pula SDV sem diárias e PAF se não for do PAF).
+// ─── Modelo: `etapa` guardada = ÚLTIMO passo manual CONCLUÍDO (fica verde). ───
+// Cada passo manual é um botão com o nome DELE; ao clicar, aquele passo fica
+// verde e o de baixo vira o atual. Elaboração já nasce concluída (OS cadastrada).
+// Sequência aplicável a ESTA OS (pula SDV sem diárias e PAF se não for do PAF). Inclui 'execucao' (passo automático por data) p/ exibição.
 function sequencia(os){ return ETAPAS.filter(e=> (e.k!=='sdv'||os.com_diarias) && (e.k!=='paf'||os.is_paf) ).map(e=>e.k); }
-// Etapa EFETIVA: havendo período definido, "em execução"/"concluída" saem SEMPRE
-// da DATA da operação (a data manda, mesmo que a etapa guardada já esteja além).
-function etapaEfetiva(os){
+// Só os passos MANUAIS (clicáveis), na ordem.
+function seqManual(os){ return sequencia(os).filter(k=> !(EINFO[k]&&EINFO[k].auto)); }
+// Legado 'execucao' guardado = encaminhamento concluído (= 'encaminhada').
+function ultimoConcluido(os){ return os.etapa==='execucao' ? 'encaminhada' : os.etapa; }
+// Próximo passo manual a marcar (null quando o encaminhamento já está concluído).
+function proxManual(os){ const seq=seqManual(os); const i=seq.indexOf(ultimoConcluido(os)); return (i>=0 && i<seq.length-1)? seq[i+1] : null; }
+// Passo manual anterior (para "Voltar etapa").
+function antManual(os){ const seq=seqManual(os); const i=seq.indexOf(ultimoConcluido(os)); return i>0? seq[i-1] : null; }
+
+// STATUS (rótulo da LISTA/chips) — o que a OS aguarda agora.
+const STATUS=[
+  {k:'elaboracao', l:'Em elaboração', c:'#9e9e9e', ic:'📝'},
+  {k:'aguardando_autorizacao', l:'Aguardando autorização', c:'#f59e0b', ic:'⏳'},
+  {k:'autorizada', l:'Autorizada', c:'#3b82f6', ic:'✅'},
+  {k:'aguardando_encaminhamento', l:'Aguardando encaminhamento', c:'#06b6d4', ic:'📨'},
+  {k:'aguardando_execucao', l:'Aguardando execução', c:'#0ea5e9', ic:'🗓️'},
+  {k:'execucao', l:'Em execução', c:'#10b981', ic:'🚔'},
+];
+const SINFO=Object.fromEntries(STATUS.map(s=>[s.k,s]));
+SINFO.concluida={k:'concluida',l:'Concluída',c:'#6b7280',ic:'🏁'}; SINFO.cancelada={k:'cancelada',l:'Cancelada',c:'#ef4444',ic:'✖'};
+function statusKey(os){
   if(os.etapa==='cancelada') return 'cancelada';
   if(os.etapa==='concluida') return 'concluida';
-  // 'execucao' guardada = encaminhamento JÁ CONFIRMADO pelo Aux P3. A partir daí
-  // a DATA da operação governa (aguardando início → execução → conclusão).
-  if(os.etapa==='execucao'){
+  const uc=ultimoConcluido(os);
+  if(uc==='encaminhada'){
     if(os.data_operacao_inicio){
-      const fim=os.data_operacao_fim||os.data_operacao_inicio;
-      if(hojeLocal()>fim) return 'concluida';
+      const hoje=hojeLocal(), fim=os.data_operacao_fim||os.data_operacao_inicio;
+      if(hoje>fim) return 'concluida';
+      if(hoje>=os.data_operacao_inicio) return 'execucao';
+      return 'aguardando_execucao';
     }
     return 'execucao';
   }
-  // 'encaminhada' guardada = chegou ao passo de envio, mas o Aux P3 ainda NÃO
-  // marcou o encaminhamento ao Grupamento (ação manual pendente).
-  return os.etapa;
+  if(uc==='autorizada') return 'autorizada';
+  if(uc==='sdv'||uc==='paf') return 'aguardando_encaminhamento';
+  return uc; // elaboracao | aguardando_autorizacao
 }
-function proxEtapa(os){ const seq=sequencia(os); const i=seq.indexOf(os.etapa); if(i<0||i>=seq.length-1) return null; const nx=seq[i+1]; return (EINFO[nx] && EINFO[nx].auto)? null : nx; }
-function antEtapa(os){ const seq=sequencia(os); const i=seq.indexOf(os.etapa); return i>0? seq[i-1] : null; }
 function diasNa(os){ const d=os.atualizado_em? Math.floor((Date.now()-new Date(os.atualizado_em))/86400000):0; return d; }
 const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
@@ -195,11 +215,11 @@ async function carregar(){
 function render(){
   const ano = +document.getElementById('f-ano').value;
   const lista = OS.filter(o=> o.ano===ano);
-  const ef = o => etapaEfetiva(o);
+  const ef = o => statusKey(o);
   const res=document.getElementById('resumo');
   const fin = lista.filter(o=> ef(o)==='concluida' || ef(o)==='cancelada').length;
   res.innerHTML = `<div class="rchip ${FILTRO===''?'on':''}" onclick="setFiltro('')">Todas <span class="c">${lista.length}</span></div>`
-    + ETAPAS.map(et=>{ const n=lista.filter(o=>ef(o)===et.k).length; return `<div class="rchip ${FILTRO===et.k?'on':''}" onclick="setFiltro('${et.k}')"><span class="d" style="background:${et.c}"></span>${et.l} <span class="c">${n}</span></div>`; }).join('')
+    + STATUS.map(et=>{ const n=lista.filter(o=>ef(o)===et.k).length; return `<div class="rchip ${FILTRO===et.k?'on':''}" onclick="setFiltro('${et.k}')"><span class="d" style="background:${et.c}"></span>${et.l} <span class="c">${n}</span></div>`; }).join('')
     + (fin? `<div class="rchip ${FILTRO==='_fim'?'on':''}" onclick="setFiltro('_fim')">🏁 Finalizadas <span class="c">${fin}</span></div>`:'');
 
   let fl = lista;
@@ -224,9 +244,8 @@ function irPagina(p){ PAGINA=p; render(); try{ document.getElementById('lista').
 function setFiltro(k){ FILTRO=k; PAGINA=1; render(); }
 
 function rowHtml(o){
-  const ek=etapaEfetiva(o); const e=EINFO[ek]||{}; const dias=diasNa(o);
-  let lbl=e.l||ek, lc=e.c, lic=e.ic||'';
-  if(ek==='execucao' && o.data_operacao_inicio && hojeLocal()<o.data_operacao_inicio){ lbl='Aguardando execução'; lc='#06b6d4'; lic='📨'; }
+  const sk=statusKey(o); const e=SINFO[sk]||{}; const dias=diasNa(o);
+  const lbl=e.l||sk, lc=e.c||'#9e9e9e', lic=e.ic||'';
   return `<div class="osrow" onclick="abrirDetalhe('${o.id}')">
     <span class="et" style="background:${lc}22;color:${lc};border:1px solid ${lc}55;">${lic} ${lbl}</span>
     <div class="osrow-main">
@@ -348,44 +367,58 @@ async function abrirDetalhe(id){
   const fmt = d => d? new Date(d+'T00:00').toLocaleDateString('pt-BR') : '';
   const fmtDT = ts => { if(!ts) return ''; const d=new Date(ts); return d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); };
   const hbe = {}; hist.forEach(h=>{ hbe[h.etapa]=h; });
-  const seq = sequencia(o);                       // etapas aplicáveis a ESTA OS
-  const efet = etapaEfetiva(o);                   // etapa considerando a data da operação
-  const finalEf = (efet==='concluida' || efet==='cancelada');            // trava botões e exibição
-  const ant = antEtapa(o), prox = proxEtapa(o);   // prox = próxima etapa MANUAL (null se a próxima é por data)
+  const seq = sequencia(o);                       // etapas aplicáveis (inclui 'execucao')
+  const sk = statusKey(o);                        // status efetivo (lista/chip)
+  const uc = ultimoConcluido(o);                  // último passo manual concluído (verde)
+  const concl = (o.etapa==='concluida' || sk==='concluida');
+  const canc  = (o.etapa==='cancelada');
+  let ucIdx = seq.indexOf(uc);
+  if(canc){ const idxs=hist.map(h=>seq.indexOf(h.etapa)).filter(i=>i>=0); ucIdx = idxs.length?Math.max(...idxs):-1; }
+  const finalEf = concl || canc;                  // trava os botões de ação
+  const prox = finalEf ? null : proxManual(o);    // próximo passo manual a marcar
+  const ant  = antManual(o);                      // passo manual anterior (voltar)
+  const encDone = (uc==='encaminhada');           // encaminhamento já concluído
   const ini = o.data_operacao_inicio, dfim = o.data_operacao_fim;
-  const confirmado = (o.etapa==='execucao' || o.etapa==='concluida'); // encaminhamento ao Grupamento já marcado
   const hoje = hojeLocal();
-
-  let cur;
-  if(efet==='concluida') cur = seq.length;
-  else if(efet==='cancelada'){ const idxs=hist.map(h=>seq.indexOf(h.etapa)).filter(i=>i>=0); cur=idxs.length?Math.max(...idxs):0; }
-  else cur = Math.max(0, seq.indexOf(efet));
+  // Prompt do passo ATUAL (o que você precisa fazer antes de marcá-lo).
+  const PROMPT_CUR={
+    aguardando_autorizacao:'Envie a OS à P3/BPM e marque aqui quando enviada.',
+    autorizada:'Aguardando a autorização da P3/BPM MAmb.',
+    sdv:'Aguardando o lançamento das diárias no SDV (Aux P1).',
+    paf:'Aguardando o cadastro da operação no PAF.',
+    encaminhada:'Encaminhe a OS ao Grupamento e marque aqui.',
+  };
 
   const stepper = seq.map((k,i)=>{
-    const et=EINFO[k];
-    const st = i<cur ? 'done' : (i===cur && efet==='cancelada') ? 'cancel' : (i===cur && !finalEf) ? 'cur' : 'pend';
+    const et=EINFO[k]; const auto=!!et.auto;   // auto = 'execucao' (por data)
+    let st;
+    if(canc) st = (i<=ucIdx)?'done':(i===ucIdx+1?'cancel':'pend');
+    else if(concl) st='done';
+    else if(i<=ucIdx) st='done';
+    else if(auto) st = encDone ? 'cur' : 'pend';         // execução ativa só após encaminhada
+    else if(prox && k===prox) st='cur';                  // próximo passo manual a marcar
+    else st='pend';
     const h = hbe[k];
     let desc = et.d;
-    if(k==='aguardando_autorizacao' && o.com_diarias) desc='Aguardando autorização da operação e das diárias.';
+    if(k==='aguardando_autorizacao' && o.com_diarias) desc='Autorização da operação e das diárias.';
     if(k==='execucao') desc = ini ? ('Início em '+fmt(ini)+(dfim?(' · término em '+fmt(dfim)):'')+' — automático pela data.') : 'Em execução pelo Grupamento.';
     let sttxt;
     if(st==='done'){
-      if(k==='encaminhada'){ const t=(hbe['execucao']&&hbe['execucao'].criado_em)||(h&&h.criado_em); sttxt = t?('Encaminhada · '+fmtDT(t)):'Encaminhada ao Grupamento'; }
-      else if(k==='execucao'){ sttxt = ini?('Executada · '+fmt(ini)+(dfim?('–'+fmt(dfim)):'')):'Executada'; }
-      else sttxt = (h&&h.criado_em?('Concluído · '+fmtDT(h.criado_em)):'Concluído');
+      if(k==='elaboracao') sttxt=(h&&h.criado_em)?('Cadastrada · '+fmtDT(h.criado_em)):'OS cadastrada';
+      else if(k==='encaminhada') sttxt=(h&&h.criado_em)?('Encaminhada · '+fmtDT(h.criado_em)):'Encaminhada ao Grupamento';
+      else if(k==='execucao') sttxt=ini?('Executada · '+fmt(ini)+(dfim?('–'+fmt(dfim)):'')):'Executada';
+      else sttxt=(h&&h.criado_em)?('Concluído · '+fmtDT(h.criado_em)):'Concluído';
     }
     else if(st==='cur'){
-      if(k==='encaminhada') sttxt='Aguardando você marcar o encaminhamento ao Grupamento';
-      else if(k==='execucao') sttxt=(ini && hoje<ini)?('Aguardando execução · início em '+fmt(ini)):'Em execução';
-      else sttxt='Etapa atual';
+      if(k==='execucao') sttxt=(ini && hoje<ini)?('Aguardando execução · início em '+fmt(ini)):'Em execução';
+      else sttxt = PROMPT_CUR[k] || 'Clique ao concluir esta etapa';
     }
     else if(st==='cancel') sttxt='Cancelada nesta etapa';
-    else sttxt = et.auto? ((k==='execucao'&&!ini)?'Aguardando encaminhamento':'Automático pela data') : 'Aguardando etapa anterior';
+    else sttxt = auto? (encDone?'Automático pela data':'Aguardando encaminhamento') : 'Aguardando etapa anterior';
     const dot = st==='done'?`<span class="sdot done">✓</span>` : st==='cur'?`<span class="sdot cur" style="--c:${et.c}">●</span>` : st==='cancel'?`<span class="sdot cancel">✖</span>`:`<span class="sdot"></span>`;
     let btn='';
-    if(st==='cur' && !finalEf){
-      if(k==='encaminhada') btn=`<button class="btn btn-gold sbtn" onclick="avancar('${o.id}','execucao')">${et.cta}</button>`;
-      else if(prox) btn=`<button class="btn btn-gold sbtn" onclick="avancar('${o.id}','${prox}')">${et.cta||('✓ Concluir — ir para '+(EINFO[prox].t||EINFO[prox].l))}</button>`;
+    if(st==='cur' && !auto && !finalEf){
+      btn=`<button class="btn btn-gold sbtn" onclick="avancar('${o.id}','${k}')">${et.ic||'✓'} ${et.t||et.l}</button>`;
     }
     return `<div class="step ${st}">${dot}<div class="sbody">
         <div class="stit">${et.t||et.l}</div>
@@ -396,9 +429,9 @@ async function abrirDetalhe(id){
       </div></div>`;
   }).join('');
 
-  const finalNode = efet==='concluida'
+  const finalNode = concl
     ? `<div class="step done"><span class="sdot done">🏁</span><div class="sbody"><div class="stit">Concluída</div><div class="sdesc">Operação finalizada${dfim?(' em '+fmt(dfim)):''}.</div><div class="sstat done">${o.etapa==='concluida'?'Concluído':'Automático pela data'}</div></div></div>`
-    : efet==='cancelada'
+    : canc
     ? `<div class="step cancel"><span class="sdot cancel">✖</span><div class="sbody"><div class="stit" style="color:#ef4444">OS cancelada</div></div></div>`
     : `<div class="step pend"><span class="sdot"></span><div class="sbody"><div class="stit" style="color:var(--text-muted)">Concluída</div><div class="sstat">${dfim?('Automático após '+fmt(dfim)):'Automático pela data'}</div></div></div>`;
 
@@ -406,7 +439,7 @@ async function abrirDetalhe(id){
     ? `<a class="docrow" href="${esc(url)}" target="_blank"><span class="dic">${ic}</span><span class="dinfo"><b>${esc(arq||rot)}</b><small>Google Drive</small></span><span class="dgo">↗</span></a>`
     : `<div class="docrow off"><span class="dic">${ic}</span><span class="dinfo"><b>${rot}</b><small>não anexado</small></span></div>`;
 
-  const cEf = EINFO[efet]||{};
+  const cEf = SINFO[sk]||{};
   document.getElementById('modais').innerHTML = `
   <div class="modal-bg" onclick="fecharModal()"></div>
   <div class="drawer">
@@ -429,9 +462,9 @@ async function abrirDetalhe(id){
 
     <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;">
       ${(!finalEf && ant)?`<button class="btn btn-outline" onclick="avancar('${o.id}','${ant}')">↩ Voltar etapa</button>`:''}
-      ${(!finalEf && confirmado && !o.data_operacao_inicio)?`<button class="btn btn-gold" onclick="avancar('${o.id}','concluida')">🏁 Concluir agora</button>`:''}
+      ${(!finalEf && encDone && !o.data_operacao_inicio)?`<button class="btn btn-gold" onclick="avancar('${o.id}','concluida')">🏁 Concluir agora</button>`:''}
       ${!finalEf?`<button class="btn btn-outline" style="color:#ef4444;border-color:rgba(239,68,68,.4);" onclick="avancar('${o.id}','cancelada')">✖ Cancelar OS</button>`:''}
-      ${finalEf?`<button class="btn btn-outline" onclick="avancar('${o.id}','encaminhada')">↩ Reabrir</button>`:''}
+      ${finalEf?`<button class="btn btn-outline" onclick="avancar('${o.id}','${canc?'elaboracao':'encaminhada'}')">↩ Reabrir</button>`:''}
       <button class="btn btn-outline" onclick="abrirEditar(OS.find(x=>x.id==='${o.id}'))">✎ Editar</button>
       <button class="btn btn-danger" onclick="excluir('${o.id}')">🗑 Excluir</button>
     </div>
