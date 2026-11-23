@@ -150,7 +150,8 @@
       <button id="vb-lista" onclick="setView('lista')">📋 Lista</button>
     </div>
     <div class="ag-filtros" id="ag-filtros"></div>
-    <button class="btn-gold ag-new" onclick="abrirModal()">+ Novo lembrete</button>
+    <button class="btn-outline ag-new" onclick="abrirSync()" style="font-size:12px;">🔗 Google Agenda</button>
+    <button class="btn-gold" onclick="abrirModal()">+ Novo lembrete</button>
   </div>
 
   <div id="box-carregando" class="ag-empty">Carregando sua agenda…</div>
@@ -194,6 +195,15 @@
       <button class="btn-outline" onclick="fecharModal()">Cancelar</button>
       <button class="btn-gold" id="f-salvar" onclick="salvar()">Salvar</button>
     </div>
+  </div>
+</div>
+
+<!-- Modal sincronização com Google Agenda -->
+<div class="ov" id="ov-sync" onclick="if(event.target===this)fecharSync()">
+  <div class="mdl" style="max-width:700px;">
+    <h2>🔗 Sincronizar com a Google Agenda</h2>
+    <div id="sync-body"></div>
+    <div class="mdl-acoes"><button class="btn-outline" onclick="fecharSync()">Fechar</button></div>
   </div>
 </div>
 
@@ -520,6 +530,121 @@ async function excluirId(id){
   catch(e){ alert(e.message); }
 }
 function excluirLembrete(){ const id=document.getElementById('f-id').value; if(id){ fecharModal(); excluirId(id); } }
+
+/* ════════════════ sync com Google Agenda (Apps Script na conta do militar) ════════════════ */
+let SYNC_TOK = '';
+function abrirSync(){ document.getElementById('ov-sync').classList.add('show'); renderSync(); }
+function fecharSync(){ document.getElementById('ov-sync').classList.remove('show'); }
+function renderSync(){
+  const b=document.getElementById('sync-body');
+  if(!SYNC_TOK){
+    b.innerHTML = `<p style="font-size:13px;color:var(--text-muted);line-height:1.65;">
+      Gere seu <b>link pessoal</b> para que um pequeno script na <b>sua conta Google</b> leve
+      seus lembretes do painel para a sua <b>Google Agenda</b> — o celular passa a notificar
+      sozinho. O link é secreto e <b>não usa a sua senha</b>. Só sincroniza os
+      <b>seus lembretes</b> com data.</p>
+      <button class="btn-gold" onclick="gerarToken(false)">Gerar meu link de sincronização</button>`;
+    return;
+  }
+  const feed = API + '/rest/v1/rpc/agenda_sync_feed';
+  const code = GAS_CODE(SYNC_TOK, feed);
+  b.innerHTML = `
+    <div class="fg"><label>Seu token de sincronização (secreto — não compartilhe)</label>
+      <input id="sync-tok" readonly value="${esc(SYNC_TOK)}" onclick="this.select()"></div>
+    <ol style="font-size:13px;color:var(--text-muted);line-height:1.75;padding-left:18px;margin:4px 0 12px;">
+      <li>Abra <b>script.google.com</b> (logado na sua conta) e clique em <b>Novo projeto</b>.</li>
+      <li>Apague o conteúdo do editor e <b>cole o código</b> abaixo (já vem com o seu token).</li>
+      <li>No topo, selecione a função <b>criarGatilho</b> e clique em <b>▶ Executar</b>.</li>
+      <li><b>Autorize</b> o acesso à sua Agenda (é a sua própria conta Google).</li>
+      <li>Pronto! A cada ~15 min seus lembretes aparecem na sua Google Agenda e o celular notifica.</li>
+    </ol>
+    <div class="fg"><label>Código do Apps Script (copie tudo)</label>
+      <textarea id="sync-code" readonly style="min-height:200px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;white-space:pre;" onclick="this.select()">${esc(code)}</textarea></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn-gold" onclick="copiarCode()">📋 Copiar código</button>
+      <button class="btn-outline" onclick="if(confirm('Gerar um link novo revoga o atual — você precisará atualizar o token no Apps Script. Continuar?'))gerarToken(true)">Gerar link novo (revoga o atual)</button>
+    </div>
+    <p style="font-size:11.5px;color:var(--text-hint);margin-top:10px;line-height:1.5;">
+      Dica: lembrete <b>concluído</b> ou <b>excluído</b> some da Google Agenda na próxima sincronização.
+      Para notificação no celular, deixe as notificações do app Google Agenda ligadas.</p>`;
+}
+async function gerarToken(novo){
+  const b=document.getElementById('sync-body');
+  try{
+    const r = await rpc('agenda_sync_token', {p_token: sessao.token, p_novo: !!novo});
+    SYNC_TOK = (r && r.sync_token) || '';
+    if(!SYNC_TOK) throw new Error('Não foi possível gerar o token.');
+    renderSync();
+  }catch(e){
+    if(/Could not find the function|does not exist|schema cache/i.test(e.message||'')){
+      alert('A sincronização ainda não está ativa no servidor (falta aplicar a migração db/212). Avise o administrador.');
+    } else { alert('Erro: '+e.message); }
+  }
+}
+function copiarCode(){
+  const t=document.getElementById('sync-code'); if(!t) return; t.select();
+  try{ navigator.clipboard.writeText(t.value); }catch(e){ document.execCommand('copy'); }
+  const btn=event&&event.target; if(btn){ const o=btn.textContent; btn.textContent='✓ Copiado'; setTimeout(()=>btn.textContent=o,1500); }
+}
+function GAS_CODE(tok, feed){
+  return [
+    "/** Painel 3a Cia PM MAmb  ->  Google Agenda (sincroniza os seus lembretes). */",
+    "var FEED_URL   = '"+feed+"';",
+    "var ANON_KEY   = '"+SB_AUTH_KEY+"';",
+    "var SYNC_TOKEN = '"+tok+"';",
+    "var TAG = 'painelAgendaId';",
+    "",
+    "// Rode ESTA função uma vez (autoriza + cria o gatilho de 15 min).",
+    "function criarGatilho(){",
+    "  ScriptApp.getProjectTriggers().forEach(function(t){ ScriptApp.deleteTrigger(t); });",
+    "  ScriptApp.newTrigger('sincronizarAgenda').timeBased().everyMinutes(15).create();",
+    "  sincronizarAgenda();",
+    "}",
+    "",
+    "function sincronizarAgenda(){",
+    "  var items = buscarFeed();",
+    "  var cal = CalendarApp.getDefaultCalendar();",
+    "  var agora = new Date();",
+    "  var ini = new Date(agora.getTime() - 8*864e5);",
+    "  var fim = new Date(agora.getTime() + 370*864e5);",
+    "  var existentes = {};",
+    "  cal.getEvents(ini, fim).forEach(function(ev){ var t=ev.getTag(TAG); if(t) existentes[t]=ev; });",
+    "  var vistos = {};",
+    "  items.forEach(function(it){",
+    "    if(!it.inicio) return;",
+    "    var id = String(it.id); vistos[id] = true;",
+    "    var inicio = new Date(it.inicio);",
+    "    var fimEv = new Date(inicio.getTime() + 30*60000);",
+    "    var titulo = it.titulo || 'Lembrete';",
+    "    var desc = (it.observacao||'') + '\\n\\n-- Painel 3a Cia PM MAmb';",
+    "    var ev = existentes[id];",
+    "    if(ev){",
+    "      if(ev.getTitle() !== titulo) ev.setTitle(titulo);",
+    "      if(ev.getStartTime().getTime() !== inicio.getTime()) ev.setTime(inicio, fimEv);",
+    "      if((ev.getDescription()||'') !== desc) ev.setDescription(desc);",
+    "    } else {",
+    "      ev = cal.createEvent(titulo, inicio, fimEv, {description: desc});",
+    "      ev.setTag(TAG, id);",
+    "      ev.removeAllReminders();",
+    "      ev.addPopupReminder(30);",
+    "      ev.addPopupReminder(0);",
+    "    }",
+    "  });",
+    "  Object.keys(existentes).forEach(function(id){ if(!vistos[id]) existentes[id].deleteEvent(); });",
+    "}",
+    "",
+    "function buscarFeed(){",
+    "  var res = UrlFetchApp.fetch(FEED_URL, {",
+    "    method: 'post', contentType: 'application/json',",
+    "    headers: { apikey: ANON_KEY, Authorization: 'Bearer ' + ANON_KEY },",
+    "    payload: JSON.stringify({ p_sync: SYNC_TOKEN }), muteHttpExceptions: true",
+    "  });",
+    "  if(res.getResponseCode() !== 200) throw new Error('Feed ' + res.getResponseCode() + ': ' + res.getContentText());",
+    "  var data = JSON.parse(res.getContentText() || '[]');",
+    "  return (data && data.length) ? data : [];",
+    "}"
+  ].join("\n");
+}
 
 /* ════════════════ boot ════════════════ */
 (function boot(){
