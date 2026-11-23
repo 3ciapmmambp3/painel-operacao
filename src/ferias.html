@@ -332,6 +332,11 @@
           <button class="ct-chip"        data-g="sem"   onclick="pmSetG('sem')">🚫 Sem interesse <span class="miut" id="pm-n-sem"></span></button>
           <button class="ct-chip"        data-g="falta" onclick="pmSetG('falta')">⏳ Falta manifestar <span class="miut" id="pm-n-falta"></span></button>
         </div>
+        <div class="grid" style="margin:12px 0;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
+          <div class="fld"><label>Pelotão</label><select id="pm-fl-pel" onchange="pmRender()"><option value="">Todos os pelotões</option></select></div>
+          <div class="fld"><label>Grupamento</label><select id="pm-fl-gp" onchange="pmRender()"><option value="">Todos os grupamentos</option></select></div>
+          <div class="fld" style="display:flex;align-items:flex-end;"><button class="btn-outline" onclick="pmExportarExcel()" style="width:100%;">⬇ Exportar Excel (conferência)</button></div>
+        </div>
         <div style="overflow-x:auto;">
           <table>
             <thead><tr>
@@ -2205,11 +2210,13 @@ function premioTag(sit){
   const t=m[sit]||['','—']; return '<span class="tag '+t[0]+'">'+t[1]+'</span>';
 }
 function pmRender(){
+  pmPopularFiltros();
   const isP1=podeP1();
-  const com=PM_LIST.filter(p=>p.interesse===true);
-  const sem=PM_LIST.filter(p=>p.interesse===false);
+  let com=PM_LIST.filter(p=>p.interesse===true);
+  let sem=PM_LIST.filter(p=>p.interesse===false);
   const temSet=new Set(); PM_LIST.forEach(p=>{ if(p.militar_id) temSet.add(String(p.militar_id)); if(p.militar&&p.militar.matricula) temSet.add('m:'+p.militar.matricula); });
-  const falta=(PM_ROSTER||[]).filter(m=>!temSet.has(String(m.id))&&!temSet.has('m:'+(m.matricula||'')));
+  let falta=(PM_ROSTER||[]).filter(m=>!temSet.has(String(m.id))&&!temSet.has('m:'+(m.matricula||'')));
+  com=pmFiltra(com); sem=pmFiltra(sem); falta=pmFiltra(falta);
   document.getElementById('pm-n-com').textContent='('+com.length+')';
   document.getElementById('pm-n-sem').textContent='('+sem.length+')';
   document.getElementById('pm-n-falta').textContent='('+falta.length+')';
@@ -2238,6 +2245,58 @@ function pmRender(){
       +`<td>${datas}</td><td>${anexo}</td><td>${sit}</td>`
       +`<td style="text-align:right;white-space:nowrap;">${acoes}</td></tr>`;
   }).join('') || '<tr><td colspan="9"><div class="empty">Ninguém neste grupo ainda.</div></td></tr>';
+}
+// ── Filtros Pelotão/Grupamento da aba Prêmio — Manifestação (padrão dos demais filtros) ──
+function pmFiltra(arr){
+  const fp=(document.getElementById('pm-fl-pel')||{}).value||'';
+  const fg=(document.getElementById('pm-fl-gp')||{}).value||'';
+  return (arr||[]).filter(r=>{
+    if(fp && String(r.pelotao)!==fp) return false;
+    if(fg && String(r.grupamento_id)!==fg) return false;
+    return true;
+  });
+}
+function pmPopularFiltros(){
+  const selP=document.getElementById('pm-fl-pel'), selG=document.getElementById('pm-fl-gp'); if(!selP||!selG) return;
+  const rows=[...(PM_LIST||[]), ...(PM_ROSTER||[])];
+  if(selP.options.length<=1){
+    const pels=[...new Set(rows.map(r=>r.pelotao).filter(x=>x!=null&&x!==''))]
+      .sort((a,b)=>{const na=/^\d+$/.test(String(a))?+a:999,nb=/^\d+$/.test(String(b))?+b:999;return na-nb||String(a).localeCompare(String(b),'pt');});
+    selP.innerHTML='<option value="">Todos os pelotões</option>'+pels.map(p=>`<option value="${esc(p)}">${esc(_pelRot(p))}</option>`).join('');
+  }
+  const curG=selG.value;
+  selG.innerHTML='<option value="">Todos os grupamentos</option>'+_grpOptgroups(rows,'grupamento_id',selP.value);
+  selG.value=curG; if(selG.value!==curG) selG.value='';
+}
+function _pmDatasTexto(p){
+  const parc=(p.parcelas||[]).find(x=>x.parcela==='PREMIO');
+  if(parc) return fmtBR(parc.ini)+' a '+fmtBR(parc.fim);
+  const pr=p.premio||{};
+  return (pr.opcoes||[]).map((o,k)=>{ const f=_premioFim(o.ini,pr.etapas); return 'Op'+(k+1)+': '+(o.ini?fmtBR(o.ini):'—')+(f?(' a '+fmtBR(f)):''); }).join(' | ')||'—';
+}
+// Exporta a conferência da manifestação (todos os grupos: com / sem / falta), respeitando os filtros Pel/GP.
+function pmExportarExcel(){
+  const temSet=new Set(); (PM_LIST||[]).forEach(p=>{ if(p.militar_id) temSet.add(String(p.militar_id)); if(p.militar&&p.militar.matricula) temSet.add('m:'+p.militar.matricula); });
+  const com  =pmFiltra((PM_LIST||[]).filter(p=>p.interesse===true)).map(p=>({p,manif:'Com interesse'}));
+  const sem  =pmFiltra((PM_LIST||[]).filter(p=>p.interesse===false)).map(p=>({p,manif:'Sem interesse'}));
+  const falta=pmFiltra((PM_ROSTER||[]).filter(m=>!temSet.has(String(m.id))&&!temSet.has('m:'+(m.matricula||'')))).map(m=>({m,manif:'Falta manifestar'}));
+  const linhas=[...com,...sem,...falta];
+  if(!linhas.length){ flash('Nada para exportar com esses filtros.',false); return; }
+  const situ={PENDENTE:'Pendente (aguarda Pelotão/P1)',APROVADO_PEL:'Validado pelo Pelotão',VALIDADO:'Autorizado (P1)',REJEITADO:'Rejeitado'};
+  const aoa=[['Nº PM','Posto/Grad','Nome','Pelotão','Grupamento','Manifestação','Lustro','Etapas','Exercício','Opções / Período','Requerim.','Situação']];
+  linhas.forEach(it=>{
+    if(it.m){ const m=it.m;
+      aoa.push([m.matricula||'', m.posto_graduacao||'', m.nome_guerra||m.nome_completo||'', _pelRot(m.pelotao||''), m.grupamento_id||'', it.manif, '','','','','','']);
+    } else { const p=it.p, mm=p.militar||{}, pr=p.premio||{};
+      const req=(p.anexo_requerimento||[]).length?'Sim':'Não';
+      const situacao=p.interesse?(situ[p.situacao]||p.situacao||''):'Sem interesse';
+      aoa.push([mm.matricula||'', mm.pg||'', mm.nome||'', _pelRot(p.pelotao||''), p.grupamento_id||'', it.manif,
+                pr.lustro||'', pr.etapas||'', String(pr.exercicio||p.exercicio||''), _pmDatasTexto(p), req, situacao]);
+    }
+  });
+  const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=aoa[0].map((h,i)=>({wch:i===9?30:Math.max(10,h.length+2)}));
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, ('Prêmio '+(pmAnoGozo||anoSel)).toString().slice(0,28));
+  XLSX.writeFile(wb, 'FeriasPremio_Manifestacao_'+(pmAnoGozo||anoSel)+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 async function premioMover(id,interesse){
   try{ await rpc('ferias_premio_mover',{p_token:sessao.token,p_id:id,p_interesse:interesse}); flash('Manifestação movida.',true); carregarPremioManif(); }
