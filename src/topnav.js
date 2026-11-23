@@ -91,6 +91,7 @@
       {ic:'🏘️', t:'Reunião Comunitária Rural', h:'analise-criminal.html?sub=rcr'},
       // "Gestão e Cadastros" — no hub-p3 só aparecem p/ Aux P3 ou Admin Geral.
       // O menu espelha essa regra (req:'gestP3').
+      {ic:'📋', t:'Controle de OS', h:'ordens-servico.html', req:'gestP3'},
       {ic:'📊', t:'Metas', h:'admin.html?tab=metas', req:'gestP3'},
       {ic:'🎯', t:'Cadastro de Operações', h:'admin.html?tab=operacoes', req:'gestP3'},
       {ic:'🌲', t:'PAF', h:'admin.html?tab=paf', req:'gestP3'},

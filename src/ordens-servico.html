@@ -160,12 +160,18 @@ function sequencia(os){ return ETAPAS.filter(e=> (e.k!=='sdv'||os.com_diarias) &
 // da DATA da operação (a data manda, mesmo que a etapa guardada já esteja além).
 function etapaEfetiva(os){
   if(os.etapa==='cancelada') return 'cancelada';
-  if(os.data_operacao_inicio && ['encaminhada','execucao','concluida'].includes(os.etapa)){
-    const hoje=hojeLocal(); const fim=os.data_operacao_fim||os.data_operacao_inicio;
-    if(hoje>fim) return 'concluida';
-    if(hoje>=os.data_operacao_inicio) return 'execucao';
-    return 'encaminhada';
+  if(os.etapa==='concluida') return 'concluida';
+  // 'execucao' guardada = encaminhamento JÁ CONFIRMADO pelo Aux P3. A partir daí
+  // a DATA da operação governa (aguardando início → execução → conclusão).
+  if(os.etapa==='execucao'){
+    if(os.data_operacao_inicio){
+      const fim=os.data_operacao_fim||os.data_operacao_inicio;
+      if(hojeLocal()>fim) return 'concluida';
+    }
+    return 'execucao';
   }
+  // 'encaminhada' guardada = chegou ao passo de envio, mas o Aux P3 ainda NÃO
+  // marcou o encaminhamento ao Grupamento (ação manual pendente).
   return os.etapa;
 }
 function proxEtapa(os){ const seq=sequencia(os); const i=seq.indexOf(os.etapa); if(i<0||i>=seq.length-1) return null; const nx=seq[i+1]; return (EINFO[nx] && EINFO[nx].auto)? null : nx; }
@@ -218,8 +224,10 @@ function setFiltro(k){ FILTRO=k; PAGINA=1; render(); }
 
 function rowHtml(o){
   const ek=etapaEfetiva(o); const e=EINFO[ek]||{}; const dias=diasNa(o);
+  let lbl=e.l||ek, lc=e.c, lic=e.ic||'';
+  if(ek==='execucao' && o.data_operacao_inicio && hojeLocal()<o.data_operacao_inicio){ lbl='Aguardando execução'; lc='#06b6d4'; lic='📨'; }
   return `<div class="osrow" onclick="abrirDetalhe('${o.id}')">
-    <span class="et" style="background:${e.c}22;color:${e.c};border:1px solid ${e.c}55;">${e.ic||''} ${e.l||ek}</span>
+    <span class="et" style="background:${lc}22;color:${lc};border:1px solid ${lc}55;">${lic} ${lbl}</span>
     <div class="osrow-main">
       <div class="num">OS ${String(o.numero).padStart(3,'0')}.3/${o.ano}</div>
       <div class="op">${esc(o.operacao||'(sem nome)')}${o.grupamento?' · <span style="color:var(--text-hint)">'+esc(o.grupamento)+'</span>':''}</div>
@@ -344,6 +352,8 @@ async function abrirDetalhe(id){
   const finalEf = (efet==='concluida' || efet==='cancelada');            // trava botões e exibição
   const ant = antEtapa(o), prox = proxEtapa(o);   // prox = próxima etapa MANUAL (null se a próxima é por data)
   const ini = o.data_operacao_inicio, dfim = o.data_operacao_fim;
+  const confirmado = (o.etapa==='execucao' || o.etapa==='concluida'); // encaminhamento ao Grupamento já marcado
+  const hoje = hojeLocal();
 
   let cur;
   if(efet==='concluida') cur = seq.length;
@@ -356,14 +366,26 @@ async function abrirDetalhe(id){
     const h = hbe[k];
     let desc = et.d;
     if(k==='aguardando_autorizacao' && o.com_diarias) desc='Aguardando autorização da operação e das diárias.';
-    if(k==='execucao') desc = ini ? ('Início em '+fmt(ini)+(dfim?(' · término em '+fmt(dfim)):'')+' — automático pela data.') : 'Defina o período da operação para ativar automaticamente.';
+    if(k==='execucao') desc = ini ? ('Início em '+fmt(ini)+(dfim?(' · término em '+fmt(dfim)):'')+' — automático pela data.') : 'Em execução pelo Grupamento.';
     let sttxt;
-    if(st==='done') sttxt = (h&&h.criado_em?('Concluído · '+fmtDT(h.criado_em)):'Concluído');
-    else if(st==='cur') sttxt = (k==='encaminhada') ? (ini?'Encaminhada · aguardando a data da operação':'Encaminhada · defina o período') : 'Etapa atual';
+    if(st==='done'){
+      if(k==='encaminhada'){ const t=(hbe['execucao']&&hbe['execucao'].criado_em)||(h&&h.criado_em); sttxt = t?('Encaminhada · '+fmtDT(t)):'Encaminhada ao Grupamento'; }
+      else if(k==='execucao'){ sttxt = ini?('Executada · '+fmt(ini)+(dfim?('–'+fmt(dfim)):'')):'Executada'; }
+      else sttxt = (h&&h.criado_em?('Concluído · '+fmtDT(h.criado_em)):'Concluído');
+    }
+    else if(st==='cur'){
+      if(k==='encaminhada') sttxt='Aguardando você marcar o encaminhamento ao Grupamento';
+      else if(k==='execucao') sttxt=(ini && hoje<ini)?('Aguardando execução · início em '+fmt(ini)):'Em execução';
+      else sttxt='Etapa atual';
+    }
     else if(st==='cancel') sttxt='Cancelada nesta etapa';
-    else sttxt = et.auto? 'Automático pela data' : 'Aguardando etapa anterior';
+    else sttxt = et.auto? ((k==='execucao'&&!ini)?'Aguardando encaminhamento':'Automático pela data') : 'Aguardando etapa anterior';
     const dot = st==='done'?`<span class="sdot done">✓</span>` : st==='cur'?`<span class="sdot cur" style="--c:${et.c}">●</span>` : st==='cancel'?`<span class="sdot cancel">✖</span>`:`<span class="sdot"></span>`;
-    const btn = (st==='cur' && !finalEf && prox) ? `<button class="btn btn-gold sbtn" onclick="avancar('${o.id}','${prox}')">✓ Concluir — ir para ${EINFO[prox].t||EINFO[prox].l}</button>` : '';
+    let btn='';
+    if(st==='cur' && !finalEf){
+      if(k==='encaminhada') btn=`<button class="btn btn-gold sbtn" onclick="avancar('${o.id}','execucao')">📨 Marcar como encaminhada ao Grupamento</button>`;
+      else if(prox) btn=`<button class="btn btn-gold sbtn" onclick="avancar('${o.id}','${prox}')">✓ Concluir — ir para ${EINFO[prox].t||EINFO[prox].l}</button>`;
+    }
     return `<div class="step ${st}">${dot}<div class="sbody">
         <div class="stit">${et.t||et.l}</div>
         <div class="sdesc">${desc}</div>
@@ -406,7 +428,7 @@ async function abrirDetalhe(id){
 
     <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;">
       ${(!finalEf && ant)?`<button class="btn btn-outline" onclick="avancar('${o.id}','${ant}')">↩ Voltar etapa</button>`:''}
-      ${(!finalEf && !prox && !o.data_operacao_inicio)?`<button class="btn btn-gold" onclick="avancar('${o.id}','concluida')">🏁 Concluir agora</button>`:''}
+      ${(!finalEf && confirmado && !o.data_operacao_inicio)?`<button class="btn btn-gold" onclick="avancar('${o.id}','concluida')">🏁 Concluir agora</button>`:''}
       ${!finalEf?`<button class="btn btn-outline" style="color:#ef4444;border-color:rgba(239,68,68,.4);" onclick="avancar('${o.id}','cancelada')">✖ Cancelar OS</button>`:''}
       ${finalEf?`<button class="btn btn-outline" onclick="avancar('${o.id}','encaminhada')">↩ Reabrir</button>`:''}
       <button class="btn btn-outline" onclick="abrirEditar(OS.find(x=>x.id==='${o.id}'))">✎ Editar</button>
@@ -414,7 +436,7 @@ async function abrirDetalhe(id){
     </div>
 
     <div style="margin-top:20px;"><div class="lbl">Histórico completo</div>
-      <div class="hist">${hist.slice().reverse().map(h=>`<div class="it"><div style="font-size:13px;color:var(--text-white);font-weight:600;">${EINFO[h.etapa]?.ic||'•'} ${EINFO[h.etapa]?.l||h.etapa}</div><div style="font-size:11px;color:var(--text-hint);">${fmtDT(h.criado_em)} · ${esc(h.responsavel||'')}${h.obs?' — '+esc(h.obs):''}</div></div>`).join('') || '<div style="font-size:12px;color:var(--text-hint);">—</div>'}</div>
+      <div class="hist">${hist.slice().reverse().map(h=>`<div class="it"><div style="font-size:13px;color:var(--text-white);font-weight:600;">${h.etapa==='execucao' ? '📨 Encaminhada ao Grupamento' : ((EINFO[h.etapa]?.ic||'•')+' '+(EINFO[h.etapa]?.l||h.etapa))}</div><div style="font-size:11px;color:var(--text-hint);">${fmtDT(h.criado_em)} · ${esc(h.responsavel||'')}${h.obs?' — '+esc(h.obs):''}</div></div>`).join('') || '<div style="font-size:12px;color:var(--text-hint);">—</div>'}</div>
     </div>
   </div>`;
   // Posiciona o drawer ABAIXO do cabeçalho + topnav (evita sobreposição).
