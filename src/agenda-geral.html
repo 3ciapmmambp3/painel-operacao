@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<script>
+(function(){
+  var saved; try{ saved=localStorage.getItem('poe_theme'); }catch(e){}
+  if(!saved) saved='dark';
+  document.documentElement.setAttribute('data-theme', saved);
+})();
+</script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minha Agenda — 3ª Cia PM MAmb</title>
+  <link rel="stylesheet" href="styles/global.css">
+  <script src="auth.js"></script>
+  <style>
+    body{display:flex;flex-direction:column;min-height:100vh;}
+    .wrap{width:100%;max-width:1100px;margin:0 auto;padding:22px 22px 60px;flex:1;}
+
+    .ag-hero{display:flex;align-items:center;gap:14px;border:1px solid var(--border);border-radius:14px;
+      padding:16px 20px;margin-bottom:18px;background:var(--bg-card);}
+    .ag-selo{width:46px;height:46px;border-radius:11px;display:grid;place-items:center;font-size:22px;
+      background:var(--gold-bg);border:1px solid var(--gold-border);flex-shrink:0;}
+    .ag-hero h1{font-size:20px;color:var(--text-white);}
+    .ag-hero .sub{font-size:12.5px;color:var(--text-muted);margin-top:2px;}
+
+    .ag-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:14px;}
+    .seg{display:inline-flex;border:1px solid var(--border);border-radius:9px;overflow:hidden;}
+    .seg button{background:transparent;border:none;color:var(--text-muted);font-size:12.5px;font-weight:600;
+      padding:8px 14px;cursor:pointer;}
+    .seg button.on{background:var(--gold-bg);color:var(--gold-light);}
+    .ag-filtros{display:flex;flex-wrap:wrap;gap:6px;}
+    .fchip{font-size:12px;font-weight:600;color:var(--text-muted);background:var(--bg-card);border:1px solid var(--border);
+      border-radius:20px;padding:6px 12px;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px;}
+    .fchip:hover{border-color:var(--border-hover);}
+    .fchip .dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+    .fchip.off{opacity:.42;text-decoration:line-through;}
+    .fchip .cnt{opacity:.7;font-weight:700;}
+    .ag-new{margin-left:auto;}
+
+    /* ── Calendário ── */
+    .cal-head{display:flex;align-items:center;gap:12px;margin-bottom:10px;}
+    .cal-head h2{font-size:16px;color:var(--text-white);text-transform:capitalize;flex:1;}
+    .cal-nav{display:inline-flex;gap:6px;}
+    .cal-nav button{background:var(--bg-card);border:1px solid var(--border);color:var(--text-white);
+      width:34px;height:34px;border-radius:8px;cursor:pointer;font-size:15px;}
+    .cal-nav button:hover{border-color:var(--gold-border);}
+    .cal-nav .hoje{width:auto;padding:0 12px;font-size:12.5px;font-weight:600;}
+    .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;}
+    .cal-wd{font-size:10.5px;font-weight:800;letter-spacing:.5px;color:var(--text-hint);text-transform:uppercase;
+      text-align:center;padding:4px 0;}
+    .cal-cell{min-height:104px;border:1px solid var(--border);border-radius:9px;background:var(--bg-card);
+      padding:6px;display:flex;flex-direction:column;gap:3px;cursor:pointer;transition:border-color .12s;overflow:hidden;}
+    .cal-cell:hover{border-color:var(--gold-border);}
+    .cal-cell.fora{opacity:.4;}
+    .cal-cell.hoje{border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold-border);}
+    .cal-dn{font-size:12px;font-weight:700;color:var(--text-muted);align-self:flex-end;}
+    .cal-cell.hoje .cal-dn{color:var(--gold-light);}
+    .pill{font-size:10.5px;line-height:1.3;color:#fff;border-radius:5px;padding:2px 6px;white-space:nowrap;
+      overflow:hidden;text-overflow:ellipsis;cursor:pointer;border-left:3px solid rgba(0,0,0,.25);}
+    .pill.done{opacity:.55;text-decoration:line-through;}
+    .pill .ph{font-weight:700;opacity:.9;margin-right:3px;}
+    .cal-mais{font-size:10px;color:var(--text-muted);padding:1px 4px;}
+    @media(max-width:720px){
+      .cal-cell{min-height:62px;padding:4px;}
+      .pill{font-size:0;padding:3px;height:7px;border-radius:3px;}
+      .pill .ph{font-size:0;}
+      .cal-mais{font-size:9px;}
+    }
+
+    /* ── Lista ── */
+    .ag-list{display:flex;flex-direction:column;gap:18px;}
+    .lgrp-tit{font-size:12px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);
+      margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+    .lgrp-tit .n{background:var(--bg-card);border:1px solid var(--border);border-radius:20px;padding:1px 9px;font-size:11px;color:var(--text-hint);}
+    .lgrp.venc .lgrp-tit{color:#ef5350;}
+    .ev{border:1px solid var(--border);border-left:4px solid var(--border);border-radius:11px;background:var(--bg-card);
+      padding:12px 14px;display:flex;align-items:flex-start;gap:12px;}
+    .ev .ic{font-size:18px;flex-shrink:0;line-height:1.3;}
+    .ev .bd{flex:1;min-width:0;}
+    .ev .tt{font-size:14px;font-weight:700;color:var(--text-white);}
+    .ev.done .tt{text-decoration:line-through;color:var(--text-muted);}
+    .ev .mt{font-size:11.5px;color:var(--text-muted);margin-top:4px;display:flex;flex-wrap:wrap;gap:10px;}
+    .ev .mt .atras{color:#ef5350;font-weight:700;}
+    .ev .acoes{display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;}
+    .evb{font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:7px;border:1px solid var(--border);
+      background:transparent;color:var(--text-muted);cursor:pointer;transition:all .15s;text-decoration:none;}
+    .evb:hover{border-color:var(--border-hover);color:var(--text-white);}
+    .evb.go{border-color:var(--gold-border);color:var(--gold-light);background:var(--gold-bg);}
+    .evb.del:hover{border-color:rgba(239,83,80,.5);color:#ef5350;}
+    .tpill{font-size:9.5px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;padding:2px 7px;border-radius:5px;color:#fff;}
+    .ag-empty{padding:40px 18px;text-align:center;color:var(--text-muted);font-size:13.5px;border:1px dashed var(--border);border-radius:12px;}
+
+    /* modal */
+    .ov{position:fixed;inset:0;background:rgba(0,0,0,.62);display:none;align-items:flex-start;justify-content:center;z-index:1000;padding:36px 16px;overflow:auto;}
+    .ov.show{display:flex;}
+    .mdl{width:100%;max-width:520px;margin:auto;background:var(--bg-dark,#151515);border:1px solid var(--gold-border);border-radius:14px;padding:22px;}
+    .mdl h2{font-size:16px;color:var(--gold-light);margin-bottom:16px;}
+    .fg{margin-bottom:13px;}
+    .fg label{display:block;font-size:11.5px;font-weight:600;color:var(--text-muted);margin-bottom:5px;}
+    .fg input,.fg select,.fg textarea{width:100%;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;
+      color:var(--text-white);font-size:13.5px;padding:9px 11px;font-family:inherit;}
+    .fg textarea{min-height:64px;resize:vertical;}
+    .frow{display:grid;grid-template-columns:1fr 1fr;gap:11px;}
+    .mdl-acoes{display:flex;gap:10px;justify-content:flex-end;margin-top:8px;}
+    .mmsg{font-size:12px;margin-bottom:10px;display:none;}
+    .mmsg.err{display:block;color:#ef5350;}
+    .day-ev{display:flex;align-items:center;gap:10px;padding:9px 6px;border-bottom:1px solid var(--border);cursor:pointer;}
+    .day-ev:last-child{border-bottom:none;}
+    .day-ev .d{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+    .day-ev .t{flex:1;min-width:0;font-size:13px;color:var(--text-white);}
+    .day-ev .h{font-size:11.5px;color:var(--text-muted);}
+    @media(max-width:560px){ .frow{grid-template-columns:1fr;} .ev{flex-wrap:wrap;} .ev .acoes{width:100%;} }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <div class="header-shields"><img src="assets/escudo-cpe.png" alt="CPE" onerror="this.style.display='none'"><img src="assets/escudo-pmmg.png" alt="PMMG" onerror="this.style.display='none'"><img src="assets/brasao-bpmmamb.png" alt="BPM MAMB" onerror="this.style.display='none'"></div><div class="header-div"></div>
+    <div class="header-title"><div class="header-kicker">CPE · BPM MAmb · 3ª Cia PM MAmb</div>
+      <h1>PAINEL DE GESTÃO OPERACIONAL</h1>
+      <p>3ª Cia PM MAmb — Acompanhamento 2026</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <div id="user-info" style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);cursor:pointer;padding:5px 10px;border:1px solid var(--border);border-radius:5px;" onclick="window.location.href='perfil.html'" title="Meu Perfil">
+      <span id="user-avatar" style="width:22px;height:22px;border-radius:50%;background:var(--gold);color:#1a1000;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">?</span>
+      <span id="user-nome">—</span>
+    </div>
+    <button class="btn-outline" onclick="localStorage.removeItem('poe_sessao_v2');sessionStorage.removeItem('poe_sessao_v2');localStorage.removeItem('poe_sessao');window.location.href='index.html'">Sair</button>
+  </div>
+</header>
+
+<script src="topnav.js" id="topnav-script"></script>
+
+<div class="wrap">
+  <div class="ag-hero">
+    <div class="ag-selo">📅</div>
+    <div style="flex:1;min-width:0;">
+      <h1>Minha Agenda</h1>
+      <div class="sub">Tarefas, lembretes, prazos de demandas e instruções — num lugar só</div>
+    </div>
+    <a href="inicio.html" class="btn-outline" style="font-size:12px;text-decoration:none;">← Meu Dia</a>
+  </div>
+
+  <div class="ag-toolbar">
+    <div class="seg">
+      <button id="vb-mes" class="on" onclick="setView('mes')">📅 Mês</button>
+      <button id="vb-lista" onclick="setView('lista')">📋 Lista</button>
+    </div>
+    <div class="ag-filtros" id="ag-filtros"></div>
+    <button class="btn-gold ag-new" onclick="abrirModal()">+ Novo lembrete</button>
+  </div>
+
+  <div id="box-carregando" class="ag-empty">Carregando sua agenda…</div>
+
+  <!-- Vista Mês -->
+  <div id="view-mes" style="display:none;">
+    <div class="cal-head">
+      <div class="cal-nav">
+        <button onclick="navMes(-1)" title="Mês anterior">‹</button>
+        <button class="hoje" onclick="navHoje()">Hoje</button>
+        <button onclick="navMes(1)" title="Próximo mês">›</button>
+      </div>
+      <h2 id="cal-titulo"></h2>
+    </div>
+    <div class="cal-grid" id="cal-wds"></div>
+    <div class="cal-grid" id="cal-grid" style="margin-top:6px;"></div>
+  </div>
+
+  <!-- Vista Lista -->
+  <div id="view-lista" style="display:none;">
+    <div class="ag-list" id="ag-list"></div>
+  </div>
+</div>
+
+<!-- Modal Novo/Editar lembrete (agenda_pessoal) -->
+<div class="ov" id="ov" onclick="if(event.target===this)fecharModal()">
+  <div class="mdl">
+    <h2 id="mdl-titulo">Novo lembrete</h2>
+    <div class="mmsg" id="mmsg"></div>
+    <input type="hidden" id="f-id">
+    <div class="fg"><label>O que você quer lembrar? *</label><input id="f-titulo" maxlength="180" placeholder="Ex.: Reunião com o comando"></div>
+    <div class="frow">
+      <div class="fg"><label>Quando (data e hora)</label><input type="datetime-local" id="f-prazo"></div>
+      <div class="fg"><label>Prioridade</label>
+        <select id="f-prioridade"><option value="alta">Alta</option><option value="media" selected>Média</option><option value="baixa">Baixa</option></select>
+      </div>
+    </div>
+    <div class="fg"><label>Observação</label><textarea id="f-observacao" placeholder="Detalhes (opcional)"></textarea></div>
+    <div class="mdl-acoes">
+      <button class="btn-outline" id="f-excluir" onclick="excluirLembrete()" style="margin-right:auto;display:none;color:#ef5350;border-color:rgba(239,83,80,.4);">🗑 Excluir</button>
+      <button class="btn-outline" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-gold" id="f-salvar" onclick="salvar()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal detalhe do dia -->
+<div class="ov" id="ov-dia" onclick="if(event.target===this)fecharDia()">
+  <div class="mdl">
+    <h2 id="dia-titulo">Dia</h2>
+    <div id="dia-lista"></div>
+    <div class="mdl-acoes">
+      <button class="btn-outline" onclick="fecharDia()">Fechar</button>
+      <button class="btn-gold" id="dia-add" onclick="novoNoDia()">+ Lembrete neste dia</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ════════════════ Minha Agenda — agregador (100% leitura do que já existe) ════════════════
+   Fontes:
+     • minhas_tarefas_listar  → tarefas de seção atribuídas a mim + lembretes pessoais
+     • denuncias (PostgREST)  → prazos de demandas/denúncias/requisições no meu escopo
+     • instrucao_listar       → instruções/chamadas no meu escopo
+   Lembrete livre = agenda_pessoal (CRUD via agenda_pessoal_salvar/status/excluir).
+   ⚠️ Comparação de dia/prazo SEMPRE em data LOCAL (BRT) — nunca toISOString p/ comparar. */
+
+const sessao = (function(){
+  const raw = sessionStorage.getItem('poe_sessao_v2');
+  if(!raw){ window.location.href='index.html'; return null; }
+  try{ const s = JSON.parse(raw); if(!s||!s.id){ window.location.href='index.html'; return null; } return s; }
+  catch(e){ window.location.href='index.html'; return null; }
+})();
+const API = SB_AUTH_URL;
+const H = { 'apikey':SB_AUTH_KEY, 'Authorization':`Bearer ${SB_AUTH_KEY}`, 'Content-Type':'application/json' };
+const esc = s => (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function rpc(fn, body){
+  const r = await fetch(`${API}/rest/v1/rpc/${fn}`,{method:'POST',headers:H,body:JSON.stringify(body)});
+  const txt = await r.text(); let data; try{ data=txt?JSON.parse(txt):null; }catch(e){ data=txt; }
+  if(!r.ok){ throw new Error((data && (data.message||data.hint)) || 'Falha na operação.'); }
+  return data;
+}
+
+/* ── datas LOCAIS (BRT) ── */
+const _p2 = n => String(n).padStart(2,'0');
+const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+const WD = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+function parseData(s){                                  // date-only → LOCAL (evita recuo de 1 dia); timestamptz → instante
+  if(!s) return null;
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)){ const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); }
+  const d=new Date(s); return isNaN(d)?null:d;
+}
+const ymd = d => `${d.getFullYear()}-${_p2(d.getMonth()+1)}-${_p2(d.getDate())}`;
+const hojeD = () => { const n=new Date(); return new Date(n.getFullYear(),n.getMonth(),n.getDate()); };
+const fmtData = d => d ? `${_p2(d.getDate())}/${_p2(d.getMonth()+1)}/${d.getFullYear()}` : '';
+const fmtHora = d => `${_p2(d.getHours())}:${_p2(d.getMinutes())}`;
+const toLocalInput = d => d ? `${d.getFullYear()}-${_p2(d.getMonth()+1)}-${_p2(d.getDate())}T${_p2(d.getHours())}:${_p2(d.getMinutes())}` : '';
+
+/* ── tipos / cores ── */
+const TIPOS = {
+  lembrete:  {cor:'#9b8a5c', ic:'🔔', label:'Lembrete'},
+  tarefa:    {cor:'#42a5f5', ic:'✅', label:'Tarefa'},
+  demanda:   {cor:'#ef7d5a', ic:'⚖️', label:'Demanda'},
+  instrucao: {cor:'#9184c9', ic:'📚', label:'Instrução'}
+};
+const PR_LABEL = {alta:'Alta', media:'Média', baixa:'Baixa'};
+
+let EVENTOS = [];                  // normalizados
+let FILTROS = {lembrete:true, tarefa:true, demanda:true, instrucao:true, concluidas:false};
+let VIEW = (window.matchMedia && window.matchMedia('(max-width:720px)').matches) ? 'lista' : 'mes';
+let curY, curM;                    // mês exibido (local)
+
+function initHeaderSessao(){
+  document.getElementById('user-nome').textContent = sessao.nome || sessao.matricula;
+  document.getElementById('user-avatar').textContent = (sessao.nome||'U').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+}
+
+/* ════════════════ carregar fontes ════════════════ */
+async function carregar(){
+  const n = hojeD(); curY=n.getFullYear(); curM=n.getMonth();
+  const evs = [];
+  const res = await Promise.allSettled([ carregarTarefasELembretes(), carregarDemandas(), carregarInstrucoes() ]);
+  res.forEach(r=>{ if(r.status==='fulfilled' && Array.isArray(r.value)) evs.push(...r.value); });
+  EVENTOS = evs;
+  document.getElementById('box-carregando').style.display='none';
+  render();
+}
+
+async function carregarTarefasELembretes(){
+  const out=[];
+  let r; try{ r = await rpc('minhas_tarefas_listar', {p_token: sessao.token}); }catch(e){ return out; }
+  (r && r.atribuidas || []).forEach(t=>{
+    out.push({ key:'t_'+t.id, tipo:'tarefa', id:t.id, titulo:t.titulo,
+      sub:['Seção '+(t.secao||'').toUpperCase(), t.descricao].filter(Boolean).join(' · '),
+      quando:parseData(t.prazo), temHora:!!t.prazo, status:t.status,
+      link:'agenda.html?secao='+encodeURIComponent(t.secao||''), editavel:false, raw:t });
+  });
+  (r && r.pessoais || []).forEach(p=>{
+    out.push({ key:'p_'+p.id, tipo:'lembrete', id:p.id, titulo:p.titulo,
+      sub:[ (p.sou_dono?'':'de '+(p.criador_nome||'')), p.observacao ].filter(Boolean).join(' · '),
+      quando:parseData(p.prazo), temHora:!!p.prazo, status:p.status, prioridade:p.prioridade,
+      link:null, editavel:!!p.sou_dono, raw:p });
+  });
+  return out;
+}
+
+async function carregarDemandas(){
+  // escopo de grupamentos (mesma regra do Controle de Demandas)
+  const nivel=sessao.nivel_acesso;
+  const gpNum  = s => { const m=(s||'').match(/(\d+)\s*GP/i);  return m?+m[1]:null; };
+  const pelNum = s => { const m=(s||'').match(/(\d+)\s*PEL/i); return m?+m[1]:null; };
+  let GRUPOS=[]; try{
+    const r=await fetch(`${API}/rest/v1/grupos?select=gp_responsavel,grupamento_completo&order=grupamento_completo`,{headers:H});
+    GRUPOS=(await r.json()).map(g=>({gpr:g.gp_responsavel,comp:g.grupamento_completo,gp:gpNum(g.grupamento_completo),pel:pelNum(g.grupamento_completo)}));
+  }catch(e){ return []; }
+  const meuGp=gpNum(sessao.grupamento_id), meuPel=pelNum(sessao.grupamento_id);
+  let ALLOWED;
+  if(nivel==='admin'||nivel==='admin_geral') ALLOWED=GRUPOS.slice();
+  else if(nivel==='admin_pelotao') ALLOWED=GRUPOS.filter(g=>g.pel===meuPel);
+  else{ ALLOWED=GRUPOS.filter(g=>g.gp===meuGp&&g.pel===meuPel);
+    if(!ALLOWED.length) ALLOWED=GRUPOS.filter(g=>(sessao.grupamento_id||'').toUpperCase().includes((g.gpr||'').replace('GP ',''))); }
+  const gprs=[...new Set(ALLOWED.map(g=>g.gpr))];
+  if(!gprs.length) return [];
+  const inList='('+gprs.map(v=>`"${String(v).replace(/"/g,'')}"`).join(',')+')';
+  let rows; try{
+    const url=`${API}/rest/v1/denuncias?select=id,numero,tipo,tema,municipio,prazo,situacao&prazo=not.is.null&situacao=in.(PENDENTE,%22EM%20ANDAMENTO%22,CONCLUIDA)&gp_responsavel=in.${encodeURIComponent(inList)}&order=prazo.asc&limit=2000`;
+    const r=await fetch(url,{headers:H}); if(!r.ok) throw 0; rows=await r.json();
+  }catch(e){ return []; }
+  const LBL={denuncia:'Denúncia', requisicao:'Requisição'};
+  return (rows||[]).map(d=>({
+    key:'d_'+d.id, tipo:'demanda', id:d.id, titulo:`${LBL[d.tipo]||'Demanda'} ${d.numero}`,
+    sub:[d.tema, d.municipio].filter(Boolean).join(' · '),
+    quando:parseData(d.prazo), temHora:false, status:(d.situacao==='CONCLUIDA'?'concluida':'pendente'),
+    link:'denuncias.html', editavel:false, raw:d }));
+}
+
+async function carregarInstrucoes(){
+  let rows; try{ rows = await rpc('instrucao_listar', {p_token: sessao.token}); }catch(e){ return []; }
+  return (rows||[]).filter(i=>i && i.data).map(i=>({
+    key:'i_'+(i.id||i.data+i.assunto), tipo:'instrucao', id:i.id, titulo:i.assunto||'Instrução',
+    sub:[i.responsavel_instrucao?('Resp.: '+i.responsavel_instrucao):'', i.ativa?'ativa':''].filter(Boolean).join(' · '),
+    quando:parseData(i.data), temHora:false, status:'pendente',
+    link:'chamada-instrucao.html', editavel:false, raw:i }));
+}
+
+/* ════════════════ filtros + contagens ════════════════ */
+function eventosVisiveis(){
+  return EVENTOS.filter(e=>{
+    if(!FILTROS[e.tipo]) return false;
+    if(!FILTROS.concluidas && e.status==='concluida') return false;
+    return true;
+  });
+}
+function renderFiltros(){
+  const cont={}; Object.keys(TIPOS).forEach(k=>cont[k]=0);
+  EVENTOS.forEach(e=>{ if(FILTROS.concluidas || e.status!=='concluida') cont[e.tipo]=(cont[e.tipo]||0)+1; });
+  const chips = Object.keys(TIPOS).map(k=>
+    `<span class="fchip ${FILTROS[k]?'':'off'}" onclick="toggleTipo('${k}')">
+       <span class="dot" style="background:${TIPOS[k].cor}"></span>${TIPOS[k].label}<span class="cnt">${cont[k]||0}</span></span>`).join('');
+  const conc = `<span class="fchip ${FILTROS.concluidas?'':'off'}" onclick="toggleConcluidas()">✓ Concluídas</span>`;
+  document.getElementById('ag-filtros').innerHTML = chips + conc;
+}
+function toggleTipo(k){ FILTROS[k]=!FILTROS[k]; render(); }
+function toggleConcluidas(){ FILTROS.concluidas=!FILTROS.concluidas; render(); }
+
+/* ════════════════ render ════════════════ */
+function setView(v){
+  VIEW=v;
+  document.getElementById('vb-mes').classList.toggle('on', v==='mes');
+  document.getElementById('vb-lista').classList.toggle('on', v==='lista');
+  render();
+}
+function render(){
+  renderFiltros();
+  document.getElementById('view-mes').style.display = VIEW==='mes' ? '' : 'none';
+  document.getElementById('view-lista').style.display = VIEW==='lista' ? '' : 'none';
+  if(VIEW==='mes') renderMes(); else renderLista();
+}
+
+/* —— Mês —— */
+function navMes(d){ curM+=d; if(curM<0){curM=11;curY--;} if(curM>11){curM=0;curY++;} renderMes(); }
+function navHoje(){ const n=hojeD(); curY=n.getFullYear(); curM=n.getMonth(); renderMes(); }
+function eventosPorDia(){
+  const map={}; eventosVisiveis().forEach(e=>{ if(!e.quando) return; (map[ymd(e.quando)]=map[ymd(e.quando)]||[]).push(e); });
+  return map;
+}
+function renderMes(){
+  document.getElementById('cal-titulo').textContent = `${MESES[curM]} de ${curY}`;
+  document.getElementById('cal-wds').innerHTML = WD.map(w=>`<div class="cal-wd">${w}</div>`).join('');
+  const prim=new Date(curY,curM,1), ini=prim.getDay();
+  const porDia=eventosPorDia(), hojeStr=ymd(hojeD());
+  let html='';
+  for(let i=0;i<42;i++){
+    const dia=new Date(curY,curM,1-ini+i), k=ymd(dia), fora=dia.getMonth()!==curM;
+    const evs=(porDia[k]||[]).sort((a,b)=>(a.temHora?a.quando-b.quando:0));
+    const vis=evs.slice(0,3).map(e=>pill(e)).join('');
+    const mais=evs.length>3?`<div class="cal-mais">+${evs.length-3} mais</div>`:'';
+    html+=`<div class="cal-cell ${fora?'fora':''} ${k===hojeStr?'hoje':''}" onclick="abrirDia('${k}')">
+      <div class="cal-dn">${dia.getDate()}</div>${vis}${mais}</div>`;
+  }
+  document.getElementById('cal-grid').innerHTML = html;
+}
+function pill(e){
+  const h = e.temHora && e.quando ? `<span class="ph">${fmtHora(e.quando)}</span>` : `<span class="ph">${TIPOS[e.tipo].ic}</span>`;
+  return `<div class="pill ${e.status==='concluida'?'done':''}" style="background:${TIPOS[e.tipo].cor}"
+      onclick="event.stopPropagation();onEvento('${e.key}')" title="${esc(e.titulo)}">${h}${esc(e.titulo)}</div>`;
+}
+
+/* —— Lista —— */
+function renderLista(){
+  const hoje=hojeD(), em7=new Date(hoje); em7.setDate(em7.getDate()+7);
+  const buckets={venc:[],hoje:[],sem:[],s7:[],dep:[]};
+  eventosVisiveis().forEach(e=>{
+    if(!e.quando){ buckets.sem.push(e); return; }
+    const d=new Date(e.quando.getFullYear(),e.quando.getMonth(),e.quando.getDate());
+    if(d<hoje){ (e.status==='concluida'?buckets.dep:buckets.venc).push(e); }
+    else if(d.getTime()===hoje.getTime()) buckets.hoje.push(e);
+    else if(d<=em7) buckets.s7.push(e);
+    else buckets.dep.push(e);
+  });
+  Object.values(buckets).forEach(a=>a.sort((x,y)=>(x.quando?x.quando:0)-(y.quando?y.quando:0)));
+  const defs=[['venc','⚠️ Vencidos',' venc'],['hoje','Hoje',''],['s7','Próximos 7 dias',''],['dep','Mais adiante',''],['sem','Sem data','']];
+  let html='';
+  defs.forEach(([k,tit,cls])=>{
+    if(!buckets[k].length) return;
+    html+=`<div class="lgrp${cls}"><div class="lgrp-tit">${tit}<span class="n">${buckets[k].length}</span></div>
+      ${buckets[k].map(evCard).join('')}</div>`;
+  });
+  document.getElementById('ag-list').innerHTML = html || `<div class="ag-empty">Nada na sua agenda com os filtros atuais.<br><br><button class="btn-gold" onclick="abrirModal()">+ Novo lembrete</button></div>`;
+}
+function evCard(e){
+  const T=TIPOS[e.tipo];
+  const hoje=hojeD();
+  const atras = e.quando && e.status!=='concluida' && new Date(e.quando.getFullYear(),e.quando.getMonth(),e.quando.getDate())<hoje;
+  const quando = e.quando ? (fmtData(e.quando)+(e.temHora?' '+fmtHora(e.quando):'')) : 'sem data';
+  const mt=[`<span class="${atras?'atras':''}">📅 ${quando}${atras?' (vencido)':''}</span>`];
+  if(e.sub) mt.push(`<span>${esc(e.sub)}</span>`);
+  if(e.prioridade && e.tipo==='lembrete') mt.push(`<span>Prioridade: ${PR_LABEL[e.prioridade]||e.prioridade}</span>`);
+  let acoes='';
+  if(e.tipo==='lembrete' && e.editavel){
+    if(e.status!=='concluida') acoes+=`<button class="evb go" onclick="concluir('${e.id}')">✔ Concluir</button>`;
+    acoes+=`<button class="evb" onclick="onEvento('${e.key}')">✎ Editar</button>`;
+    acoes+=`<button class="evb del" onclick="excluirId('${e.id}')">🗑</button>`;
+  } else if(e.link){
+    acoes+=`<a class="evb" href="${e.link}">abrir ↗</a>`;
+  }
+  return `<div class="ev ${e.status==='concluida'?'done':''}" style="border-left-color:${T.cor}">
+    <div class="ic">${T.ic}</div>
+    <div class="bd">
+      <div class="tt">${esc(e.titulo)} <span class="tpill" style="background:${T.cor}">${T.label}</span></div>
+      <div class="mt">${mt.join('')}</div>
+    </div>
+    <div class="acoes">${acoes}</div>
+  </div>`;
+}
+
+function onEvento(key){
+  const e=EVENTOS.find(x=>x.key===key); if(!e) return;
+  if(e.tipo==='lembrete' && e.editavel){ abrirModal(e.raw); return; }
+  if(e.link) window.location.href=e.link;
+}
+
+/* —— detalhe do dia (calendário) —— */
+let DIA_SEL=null;
+function abrirDia(k){
+  DIA_SEL=k;
+  const [y,m,d]=k.split('-').map(Number);
+  const evs=(eventosPorDia()[k]||[]).sort((a,b)=>(a.temHora?a.quando-b.quando:0));
+  document.getElementById('dia-titulo').textContent = `${d} de ${MESES[m-1]}`;
+  document.getElementById('dia-lista').innerHTML = evs.length ? evs.map(e=>{
+    const T=TIPOS[e.tipo];
+    const h = e.temHora && e.quando ? fmtHora(e.quando) : T.label;
+    return `<div class="day-ev ${e.status==='concluida'?'done':''}" onclick="fecharDia();onEvento('${e.key}')">
+      <span class="d" style="background:${T.cor}"></span>
+      <span class="t">${esc(e.titulo)}</span><span class="h">${h}</span></div>`;
+  }).join('') : `<div style="color:var(--text-muted);font-size:13px;padding:8px 0;">Nenhum compromisso neste dia.</div>`;
+  document.getElementById('ov-dia').classList.add('show');
+}
+function fecharDia(){ document.getElementById('ov-dia').classList.remove('show'); }
+function novoNoDia(){ const k=DIA_SEL; fecharDia(); abrirModal(null, k); }
+
+/* ════════════════ CRUD lembrete (agenda_pessoal) ════════════════ */
+function abrirModal(raw, diaStr){
+  const ed = raw && raw.id;
+  document.getElementById('mdl-titulo').textContent = ed ? 'Editar lembrete' : 'Novo lembrete';
+  document.getElementById('f-id').value = ed ? raw.id : '';
+  document.getElementById('f-titulo').value = ed ? (raw.titulo||'') : '';
+  document.getElementById('f-prioridade').value = ed ? (raw.prioridade||'media') : 'media';
+  document.getElementById('f-observacao').value = ed ? (raw.observacao||'') : '';
+  let prazoVal='';
+  if(ed && raw.prazo) prazoVal = toLocalInput(parseData(raw.prazo));
+  else if(diaStr){ prazoVal = diaStr+'T08:00'; }
+  document.getElementById('f-prazo').value = prazoVal;
+  document.getElementById('f-excluir').style.display = ed ? '' : 'none';
+  const m=document.getElementById('mmsg'); m.className='mmsg'; m.textContent='';
+  document.getElementById('ov').classList.add('show');
+  setTimeout(()=>document.getElementById('f-titulo').focus(),50);
+}
+function fecharModal(){ document.getElementById('ov').classList.remove('show'); }
+async function salvar(){
+  const titulo=document.getElementById('f-titulo').value.trim();
+  const msg=document.getElementById('mmsg');
+  if(!titulo){ msg.className='mmsg err'; msg.textContent='Informe o que você quer lembrar.'; return; }
+  const v=document.getElementById('f-prazo').value;
+  const dados={
+    id: document.getElementById('f-id').value || '',
+    titulo,
+    prioridade: document.getElementById('f-prioridade').value,
+    prazo: v ? new Date(v).toISOString() : '',
+    observacao: document.getElementById('f-observacao').value.trim()
+  };
+  const btn=document.getElementById('f-salvar'); btn.disabled=true; btn.textContent='Salvando…';
+  try{ await rpc('agenda_pessoal_salvar', {p_token: sessao.token, p_dados: dados}); fecharModal(); await carregar(); }
+  catch(e){ msg.className='mmsg err'; msg.textContent=e.message; }
+  finally{ btn.disabled=false; btn.textContent='Salvar'; }
+}
+async function concluir(id){
+  try{ await rpc('agenda_pessoal_status', {p_token: sessao.token, p_id:id, p_status:'concluida'}); await carregar(); }
+  catch(e){ alert(e.message); }
+}
+async function excluirId(id){
+  if(!confirm('Excluir este lembrete? Esta ação não pode ser desfeita.')) return;
+  try{ await rpc('agenda_pessoal_excluir', {p_token: sessao.token, p_id:id}); await carregar(); }
+  catch(e){ alert(e.message); }
+}
+function excluirLembrete(){ const id=document.getElementById('f-id').value; if(id){ fecharModal(); excluirId(id); } }
+
+/* ════════════════ boot ════════════════ */
+(function boot(){
+  if(!sessao) return;
+  initHeaderSessao();
+  carregar();
+})();
+</script>
+</body>
+</html>
