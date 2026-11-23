@@ -327,15 +327,19 @@
         <div class="miut" style="margin-top:8px;">O <b>Ano de gozo</b> definido aqui fica <b>fixo para o militar</b> — ele manifesta exatamente nesse ano (não depende do seletor do topo, evitando erro). Enquanto <b>Aberto</b> (e dentro do prazo), todo militar manifesta interesse <b>ou</b> não-interesse e anexa o requerimento assinado. A <b>aprovação</b> dos que têm interesse respeita o mesmo teto de % das anuais (15% da Cia + limite da fração).</div>
       </div>
       <div class="card">
-        <div class="ct-chips" id="pm-chips">
-          <button class="ct-chip active" data-g="com"   onclick="pmSetG('com')">✅ Com interesse <span class="miut" id="pm-n-com"></span></button>
-          <button class="ct-chip"        data-g="sem"   onclick="pmSetG('sem')">🚫 Sem interesse <span class="miut" id="pm-n-sem"></span></button>
-          <button class="ct-chip"        data-g="falta" onclick="pmSetG('falta')">⏳ Falta manifestar <span class="miut" id="pm-n-falta"></span></button>
+        <div class="row-actions" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px;">
+          <div class="ct-chips" id="pm-chips" style="margin:0;">
+            <button class="ct-chip active" data-g="com"   onclick="pmSetG('com')">✅ Com interesse <span class="miut" id="pm-n-com"></span></button>
+            <button class="ct-chip"        data-g="sem"   onclick="pmSetG('sem')">🚫 Sem interesse <span class="miut" id="pm-n-sem"></span></button>
+            <button class="ct-chip"        data-g="falta" onclick="pmSetG('falta')">⏳ Falta manifestar <span class="miut" id="pm-n-falta"></span></button>
+          </div>
+          <button class="btn-outline" onclick="pmExportarExcel()">⬇ Exportar Excel (conferência)</button>
         </div>
-        <div class="grid" style="margin:12px 0;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
+        <div class="grid" style="margin:0 0 12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
           <div class="fld"><label>Pelotão</label><select id="pm-fl-pel" onchange="pmRender()"><option value="">Todos os pelotões</option></select></div>
           <div class="fld"><label>Grupamento</label><select id="pm-fl-gp" onchange="pmRender()"><option value="">Todos os grupamentos</option></select></div>
-          <div class="fld"><label style="visibility:hidden;">Exportar</label><button class="btn-outline" onclick="pmExportarExcel()" style="width:100%;">⬇ Exportar Excel (conferência)</button></div>
+          <div class="fld"><label>Lustro</label><select id="pm-fl-lustro" onchange="pmRender()"><option value="">Todos</option></select></div>
+          <div class="fld"><label>Busca (nome/Nº)</label><input id="pm-fl-busca" oninput="pmRender()" placeholder="Nome ou Nº PM" autocomplete="off"></div>
         </div>
         <div style="overflow-x:auto;">
           <table>
@@ -2248,11 +2252,22 @@ function pmRender(){
 }
 // ── Filtros Pelotão/Grupamento da aba Prêmio — Manifestação (padrão dos demais filtros) ──
 function pmFiltra(arr){
-  const fp=(document.getElementById('pm-fl-pel')||{}).value||'';
-  const fg=(document.getElementById('pm-fl-gp')||{}).value||'';
+  const g=id=>{ const e=document.getElementById(id); return e?e.value:''; };
+  const fp=g('pm-fl-pel'), fg=g('pm-fl-gp'), fl=g('pm-fl-lustro');
+  const fb=(g('pm-fl-busca')||'').trim().toLowerCase(); const fbd=fb.replace(/\D/g,'');
   return (arr||[]).filter(r=>{
     if(fp && String(r.pelotao)!==fp) return false;
     if(fg && String(r.grupamento_id)!==fg) return false;
+    // Lustro só se aplica a quem manifestou (linhas de pedido têm r.premio); roster (falta) passa.
+    if(fl && r.premio){ if(String((r.premio&&r.premio.lustro)||'')!==fl) return false; }
+    if(fb){
+      const mm=r.militar||{};
+      const nome=String(mm.nome||r.nome_completo||r.nome_guerra||'').toLowerCase();
+      const mat=String(mm.matricula||r.matricula||'');
+      const okTxt=(nome+' '+mat.toLowerCase()).includes(fb);
+      const okNum=fbd && mat.replace(/\D/g,'').includes(fbd);
+      if(!(okTxt||okNum)) return false;
+    }
     return true;
   });
 }
@@ -2267,6 +2282,12 @@ function pmPopularFiltros(){
   const curG=selG.value;
   selG.innerHTML='<option value="">Todos os grupamentos</option>'+_grpOptgroups(rows,'grupamento_id',selP.value);
   selG.value=curG; if(selG.value!==curG) selG.value='';
+  const selL=document.getElementById('pm-fl-lustro');
+  if(selL && selL.options.length<=1){
+    const lus=[...new Set((PM_LIST||[]).map(p=>String((p.premio&&p.premio.lustro)||'')).filter(Boolean))]
+      .sort((a,b)=>a.localeCompare(b,'pt',{numeric:true}));
+    selL.innerHTML='<option value="">Todos</option>'+lus.map(l=>`<option value="${esc(l)}">${esc(l)}</option>`).join('');
+  }
 }
 function _pmDatasTexto(p){
   const parc=(p.parcelas||[]).find(x=>x.parcela==='PREMIO');
