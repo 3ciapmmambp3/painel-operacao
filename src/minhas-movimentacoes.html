@@ -121,8 +121,8 @@
         <label class="gf">Grupamento
           <select id="f-grup" onchange="render()"><option value="">Todos os grupamentos</option></select>
         </label>
-        <label class="gf">De <input type="date" id="f-de" onchange="render()"></label>
-        <label class="gf">Até <input type="date" id="f-ate" onchange="render()"></label>
+        <label class="gf">De <input type="date" id="f-de" onchange="recarregarPeriodo()"></label>
+        <label class="gf">Até <input type="date" id="f-ate" onchange="recarregarPeriodo()"></label>
         <button type="button" class="chip" onclick="limparFiltrosGestor()">Limpar filtros</button>
       </div>
 
@@ -330,7 +330,30 @@ function onPelChangeMov(){
 }
 function limparFiltrosGestor(){
   ['f-pel','f-grup','f-de','f-ate'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
-  render();
+  carregar();   // volta ao carregamento padrão (500 mais recentes) sem recorte de período
+}
+
+// Período escolhido pelo gestor → re-busca no servidor (não dá p/ filtrar por mês
+// antigo em cima das 500 fichas mais recentes; há ~2 mil ativas). Ver carregar().
+function recarregarPeriodo(){ carregar(); }
+
+// Soma n dias a uma data YYYY-MM-DD (meio-dia p/ não escorregar no fuso).
+function _addDiasISO(iso, n){
+  const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0,10);
+}
+// Filtro PostgREST por período, p/ a busca no servidor. Alarga ±1 dia (o recorte
+// exato por data LOCAL continua no render); assim nenhuma ficha de borda some por
+// causa do fuso. Fichas sem `inicio` caem pelo `criado_em`. Vazio = sem filtro.
+function _rangeServidorMov(){
+  const de  = (document.getElementById('f-de') ||{}).value || '';
+  const ate = (document.getElementById('f-ate')||{}).value || '';
+  if (!de && !ate) return '';
+  const gte = de  ? `${_addDiasISO(de,-1)}T00:00:00Z` : null;
+  const lte = ate ? `${_addDiasISO(ate, 1)}T23:59:59Z` : null;
+  const ini = []; if (gte) ini.push(`inicio.gte.${gte}`); if (lte) ini.push(`inicio.lte.${lte}`);
+  const cri = ['inicio.is.null']; if (gte) cri.push(`criado_em.gte.${gte}`); if (lte) cri.push(`criado_em.lte.${lte}`);
+  return `&or=(and(${ini.join(',')}),and(${cri.join(',')}))`;
 }
 
 function render(){
@@ -466,7 +489,13 @@ async function carregar(){
     const cols = 'id,prefixo,placa,motorista_matricula,motorista_nome,lotacao_motorista,local_utilizacao,'
                + 'km_inicial,km_final,km_rodados,inicio,termino,gp_responsavel,grupamento_completo,'
                + 'criado_por_matricula,criado_em,tem_abastecimento,tem_acidente,tem_manutencao';
-    const url = `${SB_AUTH_URL}/rest/v1/mov_viaturas?select=${cols}&ativo=eq.true&order=criado_em.desc&limit=500`;
+    // Sem período escolhido: as 500 fichas mais recentes (view "recentes").
+    // Com período (gestor): busca NO SERVIDOR só aquela janela, com teto alto —
+    // há ~2 mil fichas ativas, então filtrar mês antigo em cima das 500 recentes
+    // dava "nenhuma movimentação" mesmo existindo (bug corrigido 2026-11-24).
+    const range = (typeof VE_CIA!=='undefined' && VE_CIA) ? _rangeServidorMov() : '';
+    const limite = range ? 5000 : 500;
+    const url = `${SB_AUTH_URL}/rest/v1/mov_viaturas?select=${cols}&ativo=eq.true${range}&order=criado_em.desc&limit=${limite}`;
     const res = await fetch(url,{headers:H});
     if (!res.ok) throw new Error('HTTP '+res.status);
     const data = await res.json();
