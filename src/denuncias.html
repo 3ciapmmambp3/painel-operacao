@@ -497,6 +497,26 @@ function _abrirMod(d){
   document.getElementById('ov').classList.add('show'); document.body.style.overflow='hidden';
 }
 
+// Busca TODAS as linhas de uma URL base, paginando de 1000 em 1000. O PostgREST
+// deste projeto corta cada resposta em 1000 linhas (db-max-rows), então um
+// `limit` maior NÃO basta: sem paginar, denúncias antigas somem quando a tabela
+// passa de 1000 (blindagem 2026-11-24). base = URL sem limit/offset.
+async function _fetchPaginado(base, headers){
+  const PAG = 1000; let off = 0, out = [];
+  for(;;){
+    const sep = base.indexOf('?')>=0 ? '&' : '?';
+    const r = await fetch(`${base}${sep}limit=${PAG}&offset=${off}`, { headers });
+    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+    const d = await r.json();
+    if (!Array.isArray(d) || !d.length) break;
+    out = out.concat(d);
+    if (d.length < PAG) break;
+    off += PAG;
+    if (off > 200000) break;   // guarda de segurança
+  }
+  return out;
+}
+
 async function carregar(){
   const gprs = gprEscopo();
   document.getElementById('scope-txt').innerHTML = gprs.length===1
@@ -507,10 +527,8 @@ async function carregar(){
   try {
     if (!gprs.length){ DADOS=[]; render(); kpis(); return; }
     const inList = '(' + gprs.map(v=>`"${v.replace(/"/g,'')}"`).join(',') + ')';
-    const url = `${API}/rest/v1/denuncias?select=*&gp_responsavel=in.${encodeURIComponent(inList)}&order=created_at.desc&limit=2000`;
-    const r = await fetch(url, { headers:H });
-    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-    DADOS = await r.json();
+    const url = `${API}/rest/v1/denuncias?select=*&gp_responsavel=in.${encodeURIComponent(inList)}&order=created_at.desc`;
+    DADOS = await _fetchPaginado(url, H);   // pagina tudo (o servidor corta em 1000/resposta)
     const _abertas = ABA_TODOS && _adminFull();   // admin vendo TUDO: só pendentes (desempenho)
     if (ABA_TODOS){
       try{ DADOS = DADOS.concat(await _carregarModulos(inList, _abertas)); }catch(e){ console.error('todos-merge',e); }

@@ -425,11 +425,15 @@ async function demandasPendentesDoMeuGrupamento(){
     const gprs = [...new Set(ALLOWED.map(g=>g.gpr))];
     if(!gprs.length) return 0;
     const inList = '(' + gprs.map(v=>`"${v.replace(/"/g,'')}"`).join(',') + ')';
-    const url = `${SB_AUTH_URL}/rest/v1/denuncias?select=id&ativo=eq.true&situacao=in.(PENDENTE,%22EM%20ANDAMENTO%22)&gp_responsavel=in.${encodeURIComponent(inList)}&limit=5000`;
-    const rd = await fetch(url, { headers:H });
+    // Conta pelo cabeçalho (count=exact) em vez de baixar as linhas: o servidor
+    // corta cada resposta em 1000, então contar `arr.length` subcontaria quando
+    // passasse de 1000 pendentes (blindagem 2026-11-24).
+    const url = `${SB_AUTH_URL}/rest/v1/denuncias?select=id&ativo=eq.true&situacao=in.(PENDENTE,%22EM%20ANDAMENTO%22)&gp_responsavel=in.${encodeURIComponent(inList)}`;
+    const rd = await fetch(url, { headers:{...H,'Prefer':'count=exact','Range-Unit':'items','Range':'0-0'} });
     if(!rd.ok) return 0;
-    const arr = await rd.json();
-    return Array.isArray(arr) ? arr.length : 0;
+    const cr = rd.headers.get('content-range') || '';   // "0-0/<total>"
+    const tot = parseInt((cr.split('/')[1]||'0'), 10);
+    return isNaN(tot) ? 0 : tot;
   }catch(e){ console.error('demandasPendentesDoMeuGrupamento', e); return 0; }
 }
 

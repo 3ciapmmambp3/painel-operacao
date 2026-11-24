@@ -313,6 +313,24 @@ async function carregarTarefasELembretes(){
 
 // DESATIVADA (agenda é pessoal): não é chamada em carregar(). Mantida caso se
 // queira, no futuro, um filtro opcional de prazos de demandas (opt-in).
+// Pagina de 1000 em 1000 (o PostgREST corta cada resposta em 1000 linhas).
+// base = URL sem limit/offset. Blindagem 2026-11-24 (denúncias crescendo).
+async function _fetchPaginado(base, headers){
+  const PAG=1000; let off=0, out=[];
+  for(;;){
+    const sep = base.indexOf('?')>=0 ? '&' : '?';
+    const r = await fetch(`${base}${sep}limit=${PAG}&offset=${off}`, { headers });
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d = await r.json();
+    if(!Array.isArray(d) || !d.length) break;
+    out = out.concat(d);
+    if(d.length < PAG) break;
+    off += PAG;
+    if(off > 200000) break;
+  }
+  return out;
+}
+
 async function carregarDemandas(){
   // escopo de grupamentos (mesma regra do Controle de Demandas)
   const nivel=sessao.nivel_acesso;
@@ -332,8 +350,8 @@ async function carregarDemandas(){
   if(!gprs.length) return [];
   const inList='('+gprs.map(v=>`"${String(v).replace(/"/g,'')}"`).join(',')+')';
   let rows; try{
-    const url=`${API}/rest/v1/denuncias?select=id,numero,tipo,tema,municipio,prazo,situacao&prazo=not.is.null&situacao=in.(PENDENTE,%22EM%20ANDAMENTO%22,CONCLUIDA)&gp_responsavel=in.${encodeURIComponent(inList)}&order=prazo.asc&limit=2000`;
-    const r=await fetch(url,{headers:H}); if(!r.ok) throw 0; rows=await r.json();
+    const url=`${API}/rest/v1/denuncias?select=id,numero,tipo,tema,municipio,prazo,situacao&prazo=not.is.null&situacao=in.(PENDENTE,%22EM%20ANDAMENTO%22,CONCLUIDA)&gp_responsavel=in.${encodeURIComponent(inList)}&order=prazo.asc`;
+    rows=await _fetchPaginado(url,H);   // pagina tudo (servidor corta em 1000/resposta)
   }catch(e){ return []; }
   const LBL={denuncia:'Denúncia', requisicao:'Requisição'};
   return (rows||[]).map(d=>({
