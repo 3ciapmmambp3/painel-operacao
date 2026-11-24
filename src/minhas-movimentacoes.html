@@ -355,6 +355,23 @@ function _rangeServidorMov(){
   const cri = ['inicio.is.null']; if (gte) cri.push(`criado_em.gte.${gte}`); if (lte) cri.push(`criado_em.lte.${lte}`);
   return `&or=(and(${ini.join(',')}),and(${cri.join(',')}))`;
 }
+// Busca TODAS as linhas de uma URL base, paginando de 1000 em 1000 (o PostgREST
+// corta cada resposta em 1000 linhas, mesmo com limit maior). Usado p/ o recorte
+// por período, que pode passar de 1000 fichas num intervalo longo.
+async function _fetchTodasMov(base, H){
+  const PAG = 1000; let off = 0, out = [];
+  for(;;){
+    const r = await fetch(`${base}&limit=${PAG}&offset=${off}`, { headers:H });
+    if (!r.ok) throw new Error('HTTP '+r.status);
+    const d = await r.json();
+    if (!Array.isArray(d) || !d.length) break;
+    out = out.concat(d);
+    if (d.length < PAG) break;         // última página
+    off += PAG;
+    if (off > 100000) break;           // guarda de segurança
+  }
+  return out;
+}
 
 function render(){
   const q = (document.getElementById('busca').value||'').toLowerCase().trim();
@@ -490,15 +507,20 @@ async function carregar(){
                + 'km_inicial,km_final,km_rodados,inicio,termino,gp_responsavel,grupamento_completo,'
                + 'criado_por_matricula,criado_em,tem_abastecimento,tem_acidente,tem_manutencao';
     // Sem período escolhido: as 500 fichas mais recentes (view "recentes").
-    // Com período (gestor): busca NO SERVIDOR só aquela janela, com teto alto —
-    // há ~2 mil fichas ativas, então filtrar mês antigo em cima das 500 recentes
-    // dava "nenhuma movimentação" mesmo existindo (bug corrigido 2026-11-24).
+    // Com período (gestor): busca NO SERVIDOR só aquela janela, PAGINANDO tudo —
+    // há ~2 mil fichas ativas e o servidor corta em 1000/resposta, então filtrar
+    // mês antigo em cima das 500 recentes dava "nenhuma movimentação" mesmo
+    // existindo (bug corrigido 2026-11-24).
     const range = (typeof VE_CIA!=='undefined' && VE_CIA) ? _rangeServidorMov() : '';
-    const limite = range ? 5000 : 500;
-    const url = `${SB_AUTH_URL}/rest/v1/mov_viaturas?select=${cols}&ativo=eq.true${range}&order=criado_em.desc&limit=${limite}`;
-    const res = await fetch(url,{headers:H});
-    if (!res.ok) throw new Error('HTTP '+res.status);
-    const data = await res.json();
+    const base = `${SB_AUTH_URL}/rest/v1/mov_viaturas?select=${cols}&ativo=eq.true${range}&order=criado_em.desc`;
+    let data;
+    if (range){
+      data = await _fetchTodasMov(base, H);   // período: TODAS as fichas da janela (paginado)
+    } else {
+      const res = await fetch(`${base}&limit=500`,{headers:H});
+      if (!res.ok) throw new Error('HTTP '+res.status);
+      data = await res.json();
+    }
     await carregarMinhasEquipesTTA();   // prepara os conjuntos da "equipe que comandei" (militar comum)
     await carregarPendenciasComandante();   // fichas em que sou o comandante da equipe (ver + editar)
     await carregarPostos();             // mapa matrícula→posto p/ prefixar o nome do motorista
