@@ -342,11 +342,14 @@ async function carregarDemandas(){
 
 async function carregarInstrucoes(){
   let rows; try{ rows = await rpc('instrucao_listar', {p_token: sessao.token}); }catch(e){ return []; }
+  const hoje = hojeD();
   return (rows||[]).filter(i=>i && i.data).map(i=>({
     key:'i_'+(i.id||i.data+i.assunto), tipo:'instrucao', id:i.id, titulo:i.assunto||'Instrução',
     sub:[i.responsavel_instrucao?('Resp.: '+i.responsavel_instrucao):'', i.ativa?'ativa':''].filter(Boolean).join(' · '),
     quando:parseData(i.data), temHora:false, status:'pendente',
-    link:'chamada-instrucao.html', editavel:false, raw:i }));
+    link:'chamada-instrucao.html', editavel:false, raw:i }))
+  // Instrução é EVENTO: depois da data já aconteceu — não vira "vencido". Só hoje/futuro.
+  .filter(e=>{ if(!e.quando) return false; const d=new Date(e.quando.getFullYear(),e.quando.getMonth(),e.quando.getDate()); return d>=hoje; });
 }
 
 /* ════════════════ filtros + contagens ════════════════ */
