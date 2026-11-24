@@ -638,7 +638,8 @@
       <div class="fld" id="mpg-motivo-fld" style="display:none;margin-top:8px;"><label>Motivo da rejeição</label><input id="mpg-motivo"></div>
     </div>
     <div class="miut" id="mpg-rollup" style="margin-top:10px;"></div>
-    <div class="row-actions" style="justify-content:flex-end;margin-top:14px;">
+    <div class="row-actions" style="justify-content:flex-end;margin-top:14px;flex-wrap:wrap;gap:8px;">
+      <button class="btn-outline" onclick="premioBaixarValidadoModal()" title="Baixar o requerimento com as datas definidas aqui, para o militar assinar">⬇ Baixar requerimento (datas definidas)</button>
       <button class="btn-outline" onclick="fecharModalPremio()">Cancelar</button>
       <button class="btn-gold" onclick="salvarPremioGerir()">Salvar</button>
     </div>
@@ -2119,15 +2120,16 @@ async function _loadRawlineInto(doc){
   doc.addFileToVFS('rawline-700.ttf',_rawlineB64.bold); doc.addFont('rawline-700.ttf','Rawline','bold');
   doc.addFileToVFS('rawline-900.ttf',_rawlineB64.black);doc.addFont('rawline-900.ttf','RawlineBlack','normal');
 }
-// ── MILITAR: gera o requerimento pré-preenchido (jsPDF) ──
-async function premGerarPDF(final){
+// ── gera o requerimento (jsPDF) ──
+// final: datas DEFINIDAS pelo comando (pós-validação) p/ reassinar.
+// ped:  pedido específico (gestão P1/CMT baixa o de OUTRO militar); sem ped usa o do próprio militar logado.
+async function premGerarPDF(final, ped){
   const jsPDF=(window.jspdf||{}).jsPDF; if(!jsPDF) return flash('Gerador de PDF indisponível.',false);
-  // modo "final": requerimento com as DATAS DEFINIDAS pelo comando (pós-validação) p/ reassinar;
-  // modo normal: pré-preenchido com o que o militar informou no form.
-  let d, pers;
-  if(final && MP_PED){
-    const pr=MP_PED.premio||{};
-    d={interesse:!!MP_PED.interesse, lustro:pr.lustro||null, exercicio:pr.exercicio||MP_PED.exercicio||null, justificativa:pr.justificativa||null};
+  const SRC = ped || MP_PED;
+  let d, pers, reqMat, reqPg, reqNome;
+  if((final||ped) && SRC){
+    const pr=SRC.premio||{};
+    d={interesse:!!SRC.interesse, lustro:pr.lustro||null, exercicio:pr.exercicio||SRC.exercicio||null, justificativa:pr.justificativa||null};
     pers=(pr.periodos||[]).map(p=>({etapa:p.etapa, ini:(p.ini_def||p.ini), fim:(p.fim_def||_premioFim(p.ini_def||p.ini,p.etapa))}));
   } else {
     const intv=(document.querySelector('input[name=mp-int]:checked')||{}).value;
@@ -2135,6 +2137,8 @@ async function premGerarPDF(final){
     d=premColeta();
     pers=(d.periodos||[]).map(p=>({etapa:p.etapa, ini:p.ini, fim:_premioFim(p.ini,p.etapa)}));
   }
+  if(ped){ reqMat=(SRC.militar&&SRC.militar.matricula)||''; reqPg=(SRC.militar&&SRC.militar.pg)||''; reqNome=(SRC.militar&&SRC.militar.nome)||''; }
+  else   { reqMat=sessao.matricula||''; reqPg=(MP_PED&&MP_PED.militar&&MP_PED.militar.pg)||''; reqNome=sessao.nome||''; }
   const doc=new jsPDF({unit:'mm',format:'a4'});
   let FAM='helvetica', BLACK='helvetica';
   try{ await _loadRawlineInto(doc); FAM='Rawline'; BLACK='RawlineBlack'; }catch(e){ /* fallback Helvetica se a fonte não carregar */ }
@@ -2169,11 +2173,10 @@ async function premGerarPDF(final){
   const tit=doc.splitTextToSize('FORMULÁRIO DE REQUERIMENTO OU MANIFESTAÇÃO DE NÃO INTERESSE PARA GOZO DE FÉRIAS-PRÊMIO',W);
   doc.text(tit,105,y,{align:'center'}); y+=tit.length*LH+5;
   // ── corpo ──
-  const pg=(MP_PED&&MP_PED.militar&&MP_PED.militar.pg)||'';
   // REQUERENTE — rótulo em NEGRITO + valor normal, na mesma linha
   doc.setFontSize(SZ); doc.setFont(FAM,'bold'); doc.text('REQUERENTE (Nr./PG/NOME): ',L,y);
   const reqW=doc.getTextWidth('REQUERENTE (Nr./PG/NOME): ');
-  doc.setFont(FAM,'normal'); doc.text((sessao.matricula||'')+'  '+(pg?pg+' ':'')+(sessao.nome||''),L+reqW,y);
+  doc.setFont(FAM,'normal'); doc.text((reqMat||'')+'  '+(reqPg?reqPg+' ':'')+(reqNome||''),L+reqW,y);
   y+=LH+1;
   // UNIDADE — rótulo em NEGRITO + valor normal
   doc.setFontSize(SZ); doc.setFont(FAM,'bold'); doc.text('UNIDADE: ',L,y);
@@ -2220,7 +2223,7 @@ async function premGerarPDF(final){
   ln('Justificativa (em caso de indeferimento): '+'________________________________',false,0);
   ln(UND,false,2);
   sign('Em, na data da assinatura digital','Assinatura e posto/graduação do Comandante:');
-  const fn='Requerimento_Ferias_Premio_'+(sessao.matricula||'militar')+'_'+(MP_ANO||anoSel)+'.pdf';
+  const fn='Requerimento_Ferias_Premio_'+(reqMat||'militar')+(final?'_VALIDADO':'')+'_'+((ped?(SRC.ano||pmAnoGozo):MP_ANO)||anoSel)+'.pdf';
   doc.save(fn);
 }
 
@@ -2284,11 +2287,16 @@ function pmRender(){
     const pr=p.premio||{}; const pg=(p.militar&&p.militar.pg)||''; const nome=(p.militar&&p.militar.nome)||'';
     const datas=_premioDatasHTML(p);
     const a=(p.anexo_requerimento||[]);
-    const anexo=a.length?('<a href="'+esc(a[0].link)+'" target="_blank" rel="noopener" style="color:var(--acc);">📎 ver</a>'):'<span class="miut">—</span>';
+    let anexo=a.length?('<a href="'+esc(a[0].link)+'" target="_blank" rel="noopener" style="color:var(--acc);">📎 ver</a>'):'<span class="miut">—</span>';
+    const af=(p.anexo_requerimento_final||[]);
+    if(af.length) anexo+='<div style="margin-top:2px;"><a href="'+esc(af[0].link)+'" target="_blank" rel="noopener" style="color:#66bb6a;">📎 validado</a></div>';
     const sit = p.interesse? premioTag(p.situacao) : premioTag('SEM_INTERESSE');
+    // tem período já validado/autorizado com datas definidas?
+    const temValid = p.interesse && (p.premio&&p.premio.periodos||[]).some(x=>['APROVADO_PEL','VALIDADO'].includes(x.status)&&(x.ini_def||x.fim_def));
     let acoes='';
     acoes+='<button class="minibtn ico" title="Editar" onclick="premioGerirAbrir(\''+p.id+'\',\'editar\')">✏️</button> ';
     if(p.interesse) acoes+='<button class="minibtn ico" title="Validar / autorizar" onclick="premioGerirAbrir(\''+p.id+'\',\'validar\')">✔️</button> ';
+    if(temValid) acoes+='<button class="minibtn ico" title="Baixar requerimento com as datas validadas (p/ o militar assinar)" onclick="premioBaixarValidado(\''+p.id+'\')">⬇</button> ';
     if(isP1) acoes+='<button class="minibtn ico del" title="Excluir" onclick="premioExcluir(\''+p.id+'\')">🗑️</button>';
     return `<tr><td>${i+1}</td><td>${esc((pg+' '+nome).trim())}</td><td>${esc(apRot(p.pelotao||'—'))}</td>`
       +`<td>${esc(pr.lustro||'—')} / ${esc(_premioEtapaCol(p))}</td><td>${esc(String(pr.exercicio||p.exercicio||'—'))}</td>`
@@ -2550,6 +2558,23 @@ async function salvarPremioGerir(){
   try{ await rpc('ferias_premio_gerir',{p_token:sessao.token,p_id:MPG_ID,p_dados:dados});
     flash('Manifestação salva.',true); fecharModalPremio(); carregarPremioManif(); }
   catch(e){ flash(e.message||'Erro ao salvar.',false); }
+}
+// baixa o requerimento com as datas VALIDADAS de um pedido salvo (gestão P1/CMT)
+function premioBaixarValidado(id){
+  const p=(PM_LIST||[]).find(x=>String(x.id)===String(id));
+  if(!p) return flash('Pedido não encontrado.',false);
+  premGerarPDF(true, p);
+}
+// baixa com o estado ATUAL do modal (datas que o comando acabou de ajustar, antes de salvar)
+function premioBaixarValidadoModal(){
+  const p=(PM_LIST||[]).find(x=>String(x.id)===String(MPG_ID))||{};
+  const periodos=_mpgColeta();
+  const exerc=parseInt(document.getElementById('mpg-exerc').value,10)||null;
+  const ped={militar:p.militar, ano:p.ano,
+    interesse:document.getElementById('mpg-interesse').value==='true', exercicio:exerc,
+    premio:{lustro:document.getElementById('mpg-lustro').value.trim()||null, exercicio:exerc,
+            justificativa:document.getElementById('mpg-just').value.trim()||null, periodos}};
+  premGerarPDF(true, ped);
 }
 async function premioExcluir(id){
   if(!confirm('Excluir esta manifestação de férias-prêmio?')) return;
