@@ -2428,7 +2428,15 @@ function premioGerirAbrir(id, modo){
   document.getElementById('mpg-rejeitar').checked=(p.situacao==='REJEITADO');
   document.getElementById('mpg-motivo').value=p.motivo_rejeicao||'';
   document.getElementById('mpg-titulo').textContent=(modo==='validar'?(isP1?'Autorizar (P1)':'Validar (Pelotão)'):'Editar')+' — Férias-Prêmio';
-  renderMpgPeriodos(p, modo, isP1);
+  // monta o estado dos períodos (militar) + sobe 1 nível no modo "validar"
+  MPG_PERS=_mpgPeriodos(p).map(pe=>{
+    let st=pe.status||'PENDENTE';
+    if(modo==='validar'){ if(st==='PENDENTE') st=isP1?'VALIDADO':'APROVADO_PEL'; else if(st==='APROVADO_PEL'&&isP1) st='VALIDADO'; }
+    const ini_def=(pe.ini_def||pe.ini)?String(pe.ini_def||pe.ini).slice(0,10):'';
+    const fim_def=pe.fim_def?String(pe.fim_def).slice(0,10):(ini_def?(_premioFim(ini_def,pe.etapa)||''):'');
+    return {etapa:pe.etapa||'', ini:(pe.ini?String(pe.ini).slice(0,10):''), status:st, ini_def, fim_def, add:false};
+  });
+  mpgRenderPers();
   mpgSitChange();
   document.getElementById('modal-premio').classList.add('open');
 }
@@ -2443,46 +2451,64 @@ function _mpgPeriodos(p){
   if(parc) return [{ordem:1,etapa:pr.etapas,ini:parc.ini,status:p.situacao,ini_def:parc.ini,fim_def:parc.fim}];
   return [];
 }
-function renderMpgPeriodos(p, modo, isP1){
-  const pers=_mpgPeriodos(p);
-  const box=document.getElementById('mpg-periodos');
-  if(!pers.length){ box.innerHTML='<div class="miut">Este militar não informou períodos.</div>'; return; }
-  box.innerHTML=pers.map((pe,i)=>{
-    const n=i+1, dias=_premioDias(pe.etapa);
-    const iniDefV=(pe.ini_def||pe.ini)?String(pe.ini_def||pe.ini).slice(0,10):'';
-    const fimDefV=pe.fim_def?String(pe.fim_def).slice(0,10):(iniDefV?(_premioFim(iniDefV,pe.etapa)||''):'');
-    // ao abrir em "validar", sobe o status 1 nível para os ainda não autorizados
-    let st=pe.status||'PENDENTE';
-    if(modo==='validar'){ if(st==='PENDENTE') st=isP1?'VALIDADO':'APROVADO_PEL'; else if(st==='APROVADO_PEL'&&isP1) st='VALIDADO'; }
-    const opts=[['PENDENTE','Pendente'],['APROVADO_PEL','Validado pelo Pelotão']].concat(isP1?[['VALIDADO','Autorizado (P1 / Cmt Cia)']]:[]);
-    return '<div class="card" style="background:var(--bg-dark);margin-bottom:8px;">'
-      +'<div style="font-weight:600;color:var(--gold-light);">Período '+n+' <span class="miut" style="font-weight:400;">· pedido do militar: '+esc(pe.etapa||'—')+(pe.ini?(' · início pretendido '+fmtBR(pe.ini)):'')+'</span></div>'
-      +'<div class="grid" style="margin-top:6px;">'
-      +'<div class="fld"><label>Início definido</label><input type="date" class="mpg-pini" data-i="'+n+'" data-dias="'+(dias||'')+'" value="'+iniDefV+'" onchange="mpgPerRecalc('+n+')"></div>'
-      +'<div class="fld"><label>Término</label><input type="date" class="mpg-pfim" data-i="'+n+'" value="'+fimDefV+'" onchange="mpgRollup()"></div>'
-      +'</div>'
-      +'<div class="fld" style="margin-top:6px;max-width:320px;"><label>Validação deste período</label>'
-      +'<select class="mpg-pst" data-i="'+n+'" onchange="mpgRollup()">'+opts.map(o=>'<option value="'+o[0]+'"'+(o[0]===st?' selected':'')+'>'+o[1]+'</option>').join('')+'</select></div>'
-      +'<input type="hidden" class="mpg-petapa" data-i="'+n+'" value="'+esc(pe.etapa||'')+'">'
-      +'<input type="hidden" class="mpg-piniq" data-i="'+n+'" value="'+(pe.ini?String(pe.ini).slice(0,10):'')+'">'
-      +'</div>';
-  }).join('');
+let MPG_PERS=[];
+function _mpgCardHTML(pe, i, isP1){
+  const durOpts=['1 mês','2 meses','3 meses'].slice(); if(pe.etapa && !durOpts.includes(pe.etapa)) durOpts.push(pe.etapa);
+  const opts=[['PENDENTE','Pendente'],['APROVADO_PEL','Validado pelo Pelotão']].concat(isP1?[['VALIDADO','Autorizado (P1 / Cmt Cia)']]:[]);
+  const cab = pe.add
+    ? '<span class="miut" style="font-weight:400;">· lançado pelo comando</span>'
+    : '<span class="miut" style="font-weight:400;">· pedido do militar: '+esc(pe.etapa||'—')+(pe.ini?(' · início pretendido '+fmtBR(pe.ini)):'')+'</span>';
+  return '<div class="card mpg-pcard" data-i="'+i+'" data-add="'+(pe.add?'1':'0')+'" style="background:var(--bg-dark);margin-bottom:8px;">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+    +'<div style="font-weight:600;color:var(--gold-light);">Período '+(i+1)+' '+cab+'</div>'
+    +'<button class="minibtn ico del" title="Remover período" onclick="mpgRemovePeriodo('+i+')">🗑️</button></div>'
+    +'<div class="grid" style="margin-top:6px;">'
+    +'<div class="fld"><label>Duração</label><select class="mpg-pdur" data-i="'+i+'" onchange="mpgPerRecalc('+i+')"><option value="">— selecione —</option>'+durOpts.map(o=>'<option'+(o===pe.etapa?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select></div>'
+    +'<div class="fld"><label>Início definido</label><input type="date" class="mpg-pini" data-i="'+i+'" value="'+(pe.ini_def||'')+'" onchange="mpgPerRecalc('+i+')"></div>'
+    +'</div>'
+    +'<div class="grid" style="margin-top:6px;">'
+    +'<div class="fld"><label>Término</label><input type="date" class="mpg-pfim" data-i="'+i+'" value="'+(pe.fim_def||'')+'" onchange="mpgRollup()"></div>'
+    +'<div class="fld"><label>Validação deste período</label><select class="mpg-pst" data-i="'+i+'" onchange="mpgRollup()">'+opts.map(o=>'<option value="'+o[0]+'"'+(o[0]===pe.status?' selected':'')+'>'+o[1]+'</option>').join('')+'</select></div>'
+    +'</div>'
+    +'<input type="hidden" class="mpg-piniq" data-i="'+i+'" value="'+(pe.ini||'')+'">'
+    +'</div>';
+}
+function mpgRenderPers(){
+  const box=document.getElementById('mpg-periodos'); const isP1=MPG_ISP1;
+  let html = MPG_PERS.length
+    ? MPG_PERS.map((pe,i)=>_mpgCardHTML(pe,i,isP1)).join('')
+    : '<div class="miut" style="margin-bottom:8px;">O militar não informou períodos — você pode lançá-los aqui.</div>';
+  if(MPG_PERS.length<3) html += '<button class="btn-outline" onclick="mpgAddPeriodo()" style="margin-top:2px;">➕ Adicionar período</button>';
+  box.innerHTML=html;
   mpgRollup();
 }
-function mpgPerRecalc(n){
-  const ini=document.querySelector('.mpg-pini[data-i="'+n+'"]'), fim=document.querySelector('.mpg-pfim[data-i="'+n+'"]');
-  if(ini&&fim&&ini.value){ const dias=parseInt(ini.getAttribute('data-dias'),10); if(dias) fim.value=_isoAddDia(ini.value,dias-1); }
+// lê o DOM de volta p/ MPG_PERS (preserva edições antes de add/remover)
+function _mpgSync(){
+  const arr=[];
+  document.querySelectorAll('#mpg-periodos .mpg-pcard').forEach(card=>{
+    const q=s=>card.querySelector(s);
+    arr.push({etapa:(q('.mpg-pdur')||{}).value||'', ini:(q('.mpg-piniq')||{}).value||'',
+      status:(q('.mpg-pst')||{}).value||'PENDENTE', ini_def:(q('.mpg-pini')||{}).value||'',
+      fim_def:(q('.mpg-pfim')||{}).value||'', add:card.getAttribute('data-add')==='1'});
+  });
+  MPG_PERS=arr;
+}
+function mpgAddPeriodo(){ _mpgSync(); if(MPG_PERS.length>=3) return flash('Máximo de 3 períodos.',false);
+  MPG_PERS.push({etapa:'',ini:'',status:'PENDENTE',ini_def:'',fim_def:'',add:true}); mpgRenderPers(); }
+function mpgRemovePeriodo(i){ _mpgSync(); MPG_PERS.splice(i,1); mpgRenderPers(); }
+function mpgPerRecalc(i){
+  const dur=document.querySelector('.mpg-pdur[data-i="'+i+'"]'), ini=document.querySelector('.mpg-pini[data-i="'+i+'"]'), fim=document.querySelector('.mpg-pfim[data-i="'+i+'"]');
+  if(dur&&ini&&fim&&ini.value){ const dias=_premioDias(dur.value); if(dias) fim.value=_isoAddDia(ini.value,dias-1); }
   mpgRollup();
 }
 function _mpgColeta(){
   const out=[];
-  document.querySelectorAll('.mpg-pst').forEach(sel=>{
-    const n=sel.getAttribute('data-i');
-    const q=s=>document.querySelector(s+'[data-i="'+n+'"]');
-    out.push({ordem:parseInt(n,10),
-      etapa:(q('.mpg-petapa')||{}).value||null,
+  document.querySelectorAll('#mpg-periodos .mpg-pcard').forEach(card=>{
+    const q=s=>card.querySelector(s);
+    out.push({ordem:out.length+1,
+      etapa:(q('.mpg-pdur')||{}).value||null,
       ini:(q('.mpg-piniq')||{}).value||null,
-      status:sel.value,
+      status:(q('.mpg-pst')||{}).value||'PENDENTE',
       ini_def:(q('.mpg-pini')||{}).value||null,
       fim_def:(q('.mpg-pfim')||{}).value||null});
   });
@@ -2509,9 +2535,13 @@ async function salvarPremioGerir(){
   const periodos=_mpgColeta();
   if(interesse && !rej){
     for(const pe of periodos){
-      if(['APROVADO_PEL','VALIDADO'].includes(pe.status) && (!pe.ini_def||!pe.fim_def))
-        return flash('Para validar/autorizar o Período '+pe.ordem+', informe o início e o término definidos.',false);
+      if(['APROVADO_PEL','VALIDADO'].includes(pe.status)){
+        if(!pe.etapa) return flash('Informe a duração do Período '+pe.ordem+' para validar/autorizar.',false);
+        if(!pe.ini_def||!pe.fim_def) return flash('Para validar/autorizar o Período '+pe.ordem+', informe o início e o término definidos.',false);
+      }
     }
+    const soma=periodos.reduce((s,pe)=>s+(_premioDias(pe.etapa)||0),0);
+    if(soma>90) return flash('A soma dos períodos ('+soma+' dias) passa do direito de 90 dias (3 meses).',false);
   }
   const dados={interesse, exercicio:exerc,
     premio:{lustro,exercicio:exerc,justificativa:just,periodos},
