@@ -151,7 +151,7 @@
     </div>
     <div class="ag-filtros" id="ag-filtros"></div>
     <button class="btn-outline ag-new" onclick="abrirSync()" style="font-size:12px;">🔗 Google Agenda</button>
-    <button class="btn-gold" onclick="abrirModal()">+ Novo lembrete</button>
+    <button class="btn-gold" onclick="abrirModal()">+ Novo</button>
   </div>
 
   <div id="box-carregando" class="ag-empty">Carregando sua agenda…</div>
@@ -179,16 +179,19 @@
 <!-- Modal Novo/Editar lembrete (agenda_pessoal) -->
 <div class="ov" id="ov" onclick="if(event.target===this)fecharModal()">
   <div class="mdl">
-    <h2 id="mdl-titulo">Novo lembrete</h2>
+    <h2 id="mdl-titulo">Novo item</h2>
     <div class="mmsg" id="mmsg"></div>
     <input type="hidden" id="f-id">
-    <div class="fg"><label>O que você quer lembrar? *</label><input id="f-titulo" maxlength="180" placeholder="Ex.: Reunião com o comando"></div>
+    <div class="fg"><label>O que você quer? *</label><input id="f-titulo" maxlength="180" placeholder="Ex.: Preencher a lista de férias"></div>
     <div class="frow">
-      <div class="fg"><label>Quando (data e hora)</label><input type="datetime-local" id="f-prazo"></div>
+      <div class="fg"><label>Tipo</label>
+        <select id="f-tipo"><option value="lembrete">🔔 Lembrete</option><option value="tarefa">✅ Tarefa</option></select>
+      </div>
       <div class="fg"><label>Prioridade</label>
         <select id="f-prioridade"><option value="alta">Alta</option><option value="media" selected>Média</option><option value="baixa">Baixa</option></select>
       </div>
     </div>
+    <div class="fg"><label>Quando (data e hora)</label><input type="datetime-local" id="f-prazo"></div>
     <div class="fg"><label>Observação</label><textarea id="f-observacao" placeholder="Detalhes (opcional)"></textarea></div>
     <div class="mdl-acoes">
       <button class="btn-outline" id="f-excluir" onclick="excluirLembrete()" style="margin-right:auto;display:none;color:#ef5350;border-color:rgba(239,83,80,.4);">🗑 Excluir</button>
@@ -214,7 +217,7 @@
     <div id="dia-lista"></div>
     <div class="mdl-acoes">
       <button class="btn-outline" onclick="fecharDia()">Fechar</button>
-      <button class="btn-gold" id="dia-add" onclick="novoNoDia()">+ Lembrete neste dia</button>
+      <button class="btn-gold" id="dia-add" onclick="novoNoDia()">+ Novo neste dia</button>
     </div>
   </div>
 </div>
@@ -300,7 +303,7 @@ async function carregarTarefasELembretes(){
       link:'agenda.html?secao='+encodeURIComponent(t.secao||''), editavel:false, raw:t });
   });
   (r && r.pessoais || []).forEach(p=>{
-    out.push({ key:'p_'+p.id, tipo:'lembrete', id:p.id, titulo:p.titulo,
+    out.push({ key:'p_'+p.id, tipo:(p.tipo==='tarefa'?'tarefa':'lembrete'), id:p.id, titulo:p.titulo,
       sub:[ (p.sou_dono?'':'de '+(p.criador_nome||'')), p.observacao ].filter(Boolean).join(' · '),
       quando:parseData(p.prazo), temHora:!!p.prazo, status:p.status, prioridade:p.prioridade,
       link:null, editavel:!!p.sou_dono, raw:p });
@@ -435,7 +438,7 @@ function renderLista(){
     html+=`<div class="lgrp${cls}"><div class="lgrp-tit">${tit}<span class="n">${buckets[k].length}</span></div>
       ${buckets[k].map(evCard).join('')}</div>`;
   });
-  document.getElementById('ag-list').innerHTML = html || `<div class="ag-empty">Nada na sua agenda com os filtros atuais.<br><br><button class="btn-gold" onclick="abrirModal()">+ Novo lembrete</button></div>`;
+  document.getElementById('ag-list').innerHTML = html || `<div class="ag-empty">Nada na sua agenda com os filtros atuais.<br><br><button class="btn-gold" onclick="abrirModal()">+ Novo</button></div>`;
 }
 function evCard(e){
   const T=TIPOS[e.tipo];
@@ -444,9 +447,9 @@ function evCard(e){
   const quando = e.quando ? (fmtData(e.quando)+(e.temHora?' '+fmtHora(e.quando):'')) : 'sem data';
   const mt=[`<span class="${atras?'atras':''}">📅 ${quando}${atras?' (vencido)':''}</span>`];
   if(e.sub) mt.push(`<span>${esc(e.sub)}</span>`);
-  if(e.prioridade && e.tipo==='lembrete') mt.push(`<span>Prioridade: ${PR_LABEL[e.prioridade]||e.prioridade}</span>`);
+  if(e.prioridade && e.editavel) mt.push(`<span>Prioridade: ${PR_LABEL[e.prioridade]||e.prioridade}</span>`);
   let acoes='';
-  if(e.tipo==='lembrete' && e.editavel){
+  if(e.editavel){
     if(e.status!=='concluida') acoes+=`<button class="evb go" onclick="concluir('${e.id}')">✔ Concluir</button>`;
     acoes+=`<button class="evb" onclick="onEvento('${e.key}')">✎ Editar</button>`;
     acoes+=`<button class="evb del" onclick="excluirId('${e.id}')">🗑</button>`;
@@ -465,7 +468,7 @@ function evCard(e){
 
 function onEvento(key){
   const e=EVENTOS.find(x=>x.key===key); if(!e) return;
-  if(e.tipo==='lembrete' && e.editavel){ abrirModal(e.raw); return; }
+  if(e.editavel){ abrirModal(e.raw); return; }
   if(e.link) window.location.href=e.link;
 }
 
@@ -491,9 +494,10 @@ function novoNoDia(){ const k=DIA_SEL; fecharDia(); abrirModal(null, k); }
 /* ════════════════ CRUD lembrete (agenda_pessoal) ════════════════ */
 function abrirModal(raw, diaStr){
   const ed = raw && raw.id;
-  document.getElementById('mdl-titulo').textContent = ed ? 'Editar lembrete' : 'Novo lembrete';
+  document.getElementById('mdl-titulo').textContent = ed ? 'Editar item' : 'Novo item';
   document.getElementById('f-id').value = ed ? raw.id : '';
   document.getElementById('f-titulo').value = ed ? (raw.titulo||'') : '';
+  document.getElementById('f-tipo').value = ed ? (raw.tipo||'lembrete') : 'lembrete';
   document.getElementById('f-prioridade').value = ed ? (raw.prioridade||'media') : 'media';
   document.getElementById('f-observacao').value = ed ? (raw.observacao||'') : '';
   let prazoVal='';
@@ -514,6 +518,7 @@ async function salvar(){
   const dados={
     id: document.getElementById('f-id').value || '',
     titulo,
+    tipo: document.getElementById('f-tipo').value,
     prioridade: document.getElementById('f-prioridade').value,
     prazo: v ? new Date(v).toISOString() : '',
     observacao: document.getElementById('f-observacao').value.trim()
