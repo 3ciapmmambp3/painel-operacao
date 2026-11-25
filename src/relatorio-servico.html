@@ -1986,7 +1986,7 @@ async function carregarControleSupabase(tabela, sourceKey){
   // Pagina TODAS as pendentes do escopo. O antigo limit=3000 truncava (MC passou de
   // 6000): as cortadas (por vencimento) ficavam sem o contexto "— município" e o
   // dropdown mostrava só-número. Agora busca em páginas até esgotar.
-  const baseUrl = `${SB_AUTH_URL}/rest/v1/${tabela}?select=codigo,municipio,natureza,fracao_responsavel,grupamento_completo,gp_responsavel`
+  const baseUrl = `${SB_AUTH_URL}/rest/v1/${tabela}?select=codigo,municipio,natureza,fracao_responsavel,grupamento_completo,gp_responsavel,lote`
             + `&gp_responsavel=in.${encodeURIComponent(inList)}&situacao=${encodeURIComponent(sit)}&ativo=eq.true`
             + `&data_atendimento=is.null&order=data_vencimento.asc.nullslast`;
   let rows = []; const PG = 1000;
@@ -2002,6 +2002,9 @@ async function carregarControleSupabase(tabela, sourceKey){
   // no dropdown (ajuda o militar a não errar e a preencher). NUDEN/DDU antes eram só-número.
   // O corte p/ só-número é feito no ENVIO à planilha (filtrarPayloadParaPlanilha/_soCodigo),
   // porque a baixa cai noutra planilha que casa por número — então a baixa não quebra.
+  // selo de OPERAÇÃO: lote nomeado (não o padrão mensal "N CIA AAAA-MM-DD").
+  // Só é anexado quando há " — " (extras), p/ não quebrar o _soCodigo da baixa.
+  const _ehOperacao = l => l && !/^\s*\d+\s*CIA\s*\d{4}-\d{2}-\d{2}\s*$/i.test(l);
   const itens = rows.map(d => {
     const extras = [d.municipio, d.natureza].filter(Boolean).join(' · ');
     // fração p/ o filtro por Fração de Atuação. Se o grupamento_completo vier
@@ -2009,7 +2012,8 @@ async function carregarControleSupabase(tabela, sourceKey){
     // a demanda some do dropdown mesmo estando pendente (db/203).
     let frac = d.grupamento_completo || '';
     if (!/\s\/\s/.test(frac) && gprToGrup[d.gp_responsavel]) frac = gprToGrup[d.gp_responsavel];
-    return { value: extras ? `${d.codigo} — ${extras}` : `${d.codigo}`, fracao: frac || d.fracao_responsavel || '' };
+    const selo = (extras && _ehOperacao(d.lote)) ? ` · [${String(d.lote).trim()}]` : '';
+    return { value: (extras ? `${d.codigo} — ${extras}` : `${d.codigo}`) + selo, fracao: frac || d.fracao_responsavel || '' };
   });
   const atual = Array.isArray(referenceCache[sourceKey]) ? referenceCache[sourceKey] : [];
   // Dedup pelo CÓDIGO base (parte antes do "— município · bioma"), não pelo texto

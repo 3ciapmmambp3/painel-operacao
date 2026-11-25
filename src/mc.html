@@ -186,6 +186,7 @@
       <input id="busca" placeholder="Buscar por GEOCOD, município, bioma, grupamento, REDS, SISFIS…" oninput="render()"></div>
     <select id="muni" class="yearsel" onchange="render()"><option value="">Todos os municípios</option></select>
     <select id="ano" class="yearsel" onchange="render()"><option value="all">Todos os anos</option></select>
+    <select id="op" class="yearsel" onchange="render()" title="Filtra por Operação (lote nomeado, ex.: ADSUMUS IV 51.3). 'Todas' mostra tudo."><option value="">Todas as operações</option></select>
     <span id="ger-tools" style="display:none;gap:8px;margin-left:auto">
       <button id="ger-semgp" class="gerbtn" onclick="toggleGer('sem-gp')">Sem grupamento</button>
       <button id="ger-reproc" class="gerbtn" onclick="reprocessarGrupamentos()" title="Preenche o grupamento das demandas que ficaram SEM grupamento, casando o município (reconhece grafias como FELIZBURGO/FELISBURGO, ITABIRINHA DE MANTENA/ITABIRINHA, SEM-PEIXE/SEM PEIXE, ABRE-CAMPO/ABRE CAMPO). Não altera grupamento já definido à mão.">↻ Reprocessar grupamento</button>
@@ -688,6 +689,15 @@ function popularAnos(){
     ms.innerHTML='<option value="">Todos os municípios</option>'+itens.map(it=>`<option value="${it.k}">${it.label}</option>`).join('');
     if(itens.some(it=>it.k===mv)) ms.value=mv;
   }
+  // Operações = lotes nomeados (não o padrão mensal "N CIA AAAA-MM-DD")
+  const opEl=document.getElementById('op');
+  if(opEl){
+    const ov=opEl.value;
+    const isMensal=l=>/^\s*\d+\s*CIA\s*\d{4}-\d{2}-\d{2}\s*$/i.test(l||'');
+    const ops=[...new Set(DADOS.map(d=>(d.lote||'').trim()).filter(l=>l && !isMensal(l)))].sort((a,b)=>a.localeCompare(b,'pt'));
+    opEl.innerHTML='<option value="">Todas as operações</option>'+ops.map(o=>`<option value="${o.replace(/"/g,'&quot;')}">${o}</option>`).join('');
+    if(ops.includes(ov)) opEl.value=ov;
+  }
 }
 // proximidade por RAIO: +N = 500 m (laranja), ↔N = 5 km (roxo). Clicar isola as
 // demandas MC dentro do raio a partir da âncora (a própria linha clicada).
@@ -718,6 +728,7 @@ function baseScope(d){
   const _mu=(document.getElementById('muni')||{}).value||''; if (_mu && _chaveMuni(d.municipio)!==_mu) return false;
   const ano=document.getElementById('ano').value;
   if (ano!=='all' && String(anoDe(d))!==String(ano)) return false;
+  const _op=(document.getElementById('op')||{}).value||''; if (_op && (d.lote||'').trim()!==_op) return false;
   const q=document.getElementById('busca').value.trim().toLowerCase();
   if (q){ const hay=`${d.codigo} ${d.municipio||''} ${d.natureza||''} ${d.bioma||''} ${d.fracao_responsavel||''} ${d.numero_reds||''} ${d.numero_gaia||''}`.toLowerCase(); if(!hay.includes(q)) return false; }
   return true;
@@ -767,7 +778,7 @@ function render(){
     return String(b.data_gerada||'').localeCompare(String(a.data_gerada||''));
   });
   const gel=id=>document.getElementById(id)||{};
-  const sig=[filtro, gel('busca').value, gel('ano').value, _selVal('sel-pel'), _selVal('sel-grp')].join('|');
+  const sig=[filtro, gel('busca').value, gel('ano').value, gel('op').value, _selVal('sel-pel'), _selVal('sel-grp')].join('|');
   if(sig!==_sig){ PAGE=1; _sig=sig; _nearAnchor=null; }
   _renderNearBar();
   // Selecionadas escondidas pelo filtro/busca atual → fixadas no TOPO, sempre
