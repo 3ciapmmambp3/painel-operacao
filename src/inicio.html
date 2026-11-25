@@ -650,6 +650,28 @@ async function carregarAvisosMeuDia(){
         }
       }
     }
+    /* 3b) Novidades na base criminal da área do militar (IMV/CVPE/CVPA/IF).
+       Aparece por 7 dias a cada registro NOVO importado (regra no servidor,
+       crimes_avisos_get). Colaborador não-militar não recebe (não é operacional). */
+    if(!(sessao && sessao.categoria==='colaborador')){
+      try{
+        const rc=await fetch(`${SB_AUTH_URL}/rest/v1/rpc/crimes_avisos_get`,{method:'POST',headers:{...H,'Content-Type':'application/json'},body:JSON.stringify({p_token:sessao.token})});
+        if(rc.ok){ const c=await rc.json();
+          if(c && c.tem){
+            const INDLBL={IMV:'💀 IMV',CVPE:'👤 CVPE',CVPA:'🏠 CVPA',IF:'🌳 IF'};
+            const INDCOR={IMV:'#ff6b6b',CVPE:'#ff6b6b',CVPA:'#ff6b6b',IF:'var(--text-muted)'};
+            const partes=[]; if(c.imv) partes.push(`${c.imv} IMV`); if(c.cvpe) partes.push(`${c.cvpe} CVPE`); if(c.cvpa) partes.push(`${c.cvpa} CVPA`); if(c.if) partes.push(`${c.if} IF`);
+            const teasers=(Array.isArray(c.teasers)?c.teasers:[]).map(t=>{
+              const ind=t.ind||''; const cor=INDCOR[ind]||'var(--text-muted)'; const lbl=(INDLBL[ind]||ind);
+              const linha=[t.reds?('BO '+_esc(t.reds)):'',`<b style="color:${cor};">${_esc(lbl)}</b>`,t.natureza?_esc(t.natureza):'',_esc(t.municipio||''),_fmtD(t.data)].filter(Boolean).join(' · ');
+              return `<div onclick="try{sessionStorage.setItem('ac_abrir_subtab','crimes')}catch(e){};window.location.href='analise-criminal.html?sub=crimes'" style="cursor:pointer;font-size:11.5px;color:var(--text-muted);padding:6px 0 6px 29px;border-top:1px dashed var(--border);">${linha||'ocorrência'}</div>`;
+            }).join('');
+            const mais=c.total>3?`<div style="font-size:11px;color:var(--text-hint);padding:6px 0 2px 29px;">+${c.total-3} outra(s)…</div>`:'';
+            avisos.push({crime:true, ve_todas:!!c.ve_todas, total:c.total, breakdown:partes.join(' · '), violento:!!c.violento, teasers, mais});
+          }
+        }
+      }catch(e){ /* silencioso */ }
+    }
     /* 4) Instrução(ões) próxima(s) — Chamada de Instrução.
        Aparece a partir de 8 dias antes e some quando o dia da instrução passa
        (o filtro por grupamento do militar é feito no servidor). */
@@ -777,6 +799,15 @@ async function carregarAvisosMeuDia(){
               <span style="font-size:17px;flex-shrink:0;">${a.ic}</span>
               <span style="flex:1;min-width:0;">${a.txt}</span>
             </div>${a.linha2?`<div style="font-size:11px;color:var(--text-hint);padding:5px 0 0 29px;">${a.linha2}</div>`:''}
+          </div>`;
+        }
+        if(a.crime){
+          return `<div style="padding:12px 16px;border-bottom:1px solid var(--border);">
+            <div style="display:flex;align-items:center;gap:12px;font-size:13px;color:var(--text-white);">
+              <span style="font-size:17px;flex-shrink:0;">${a.violento?'🚨':'📊'}</span>
+              <span style="flex:1;min-width:0;"><b>${a.total} novo(s) registro(s) criminal(is)</b> ${a.ve_todas?'na Companhia':'na sua área'}${a.breakdown?` — <span style="color:var(--text-muted);">${a.breakdown}</span>`:''}</span>
+              <a href="analise-criminal.html?sub=crimes" onclick="try{sessionStorage.setItem('ac_abrir_subtab','crimes')}catch(e){}" style="color:var(--gold);font-weight:700;font-size:12px;white-space:nowrap;text-decoration:none;">Ver na Análise →</a>
+            </div>${a.teasers}${a.mais}
           </div>`;
         }
         if(a.instr){
