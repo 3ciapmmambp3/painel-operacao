@@ -2042,13 +2042,30 @@ async function carregarDemandasAndamento(){
   const r = await fetch(`${SB_AUTH_URL}/rest/v1/rpc/demanda_andamento_listar`, { method:'POST', headers:H, body: JSON.stringify({ p_token: S.token }) });
   if (!r.ok) throw new Error(`andamento ${r.status} ${await r.text()}`);
   const rows = await r.json() || [];
+  // Dedup pelo CÓDIGO base (não pela string inteira). Uma mesma demanda podia
+  // estar no cache já RICA ("CÓDIGO — município · natureza", vinda do Supabase)
+  // e, ao mesmo tempo, em andamento com identificador SÓ-NÚMERO (lançado antes da
+  // padronização de 12/11). Comparar strings inteiras (_identNorm) NÃO casava os
+  // dois formatos → a versão rica sobrevivia e a de andamento era injetada à parte,
+  // DUPLICANDO a demanda no dropdown (e a "só-número" não dava baixa). Casando por
+  // CÓDIGO, a de andamento SEMPRE substitui a existente — e preservamos o rótulo
+  // mais rico disponível para o militar não errar.
+  const _val = it => (it && typeof it === 'object') ? (it.value || '') : (it || '');
+  const _codBase = v => _stripAndamento(String(v)).split(/\s+—\s+/)[0].replace(/\s+/g, ' ').trim();
   rows.forEach(d => {
     const sk = d.source_key; if (!sk) return;
-    const base = _identNorm(d.identificador);
-    const valor = _stripAndamento(d.rotulo || d.identificador) + AND_MARK;
-    const item = { value: valor, fracao: d.fracao || d.gp_responsavel || '' };
+    const baseCod = _codBase(d.identificador);
+    if (!baseCod) return;
     let arr = Array.isArray(referenceCache[sk]) ? referenceCache[sk] : [];
-    arr = arr.filter(it => { const v = (it && typeof it === 'object') ? it.value : it; return _identNorm(v) !== base; });
+    // rótulo mais rico já conhecido p/ esse código (preserva contexto município·natureza)
+    const existente = arr.find(it => _codBase(_val(it)) === baseCod);
+    const existeVal = existente ? _stripAndamento(_val(existente)) : '';
+    const rotuloRpc = _stripAndamento(d.rotulo || '');
+    const baseLabel = /\s—\s/.test(rotuloRpc) ? rotuloRpc
+                      : (/\s—\s/.test(existeVal) ? existeVal
+                         : (rotuloRpc || _stripAndamento(d.identificador)));
+    const item = { value: baseLabel + AND_MARK, fracao: d.fracao || d.gp_responsavel || (existente && existente.fracao) || '' };
+    arr = arr.filter(it => _codBase(_val(it)) !== baseCod);
     arr.push(item);
     referenceCache[sk] = arr;
   });
