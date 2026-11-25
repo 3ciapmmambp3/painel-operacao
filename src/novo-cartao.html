@@ -493,7 +493,7 @@ async function carregarPendentes(){
       try{
         let off=0; const PG=1000;
         for(;;){
-          const sel='id,codigo,municipio,endereco,situacao,anexos'+(tb==='mc_demandas'?',kml_content,coord_x,coord_y,car_imovel,lote':'');   // MC: KML + coordenada + nº do CAR + lote/operação (p/ rota, CAR e selo no cartão)
+          const sel='id,codigo,municipio,endereco,situacao,anexos'+(tb==='mc_demandas'?',kml_content,coord_x,coord_y,car_imovel,operacao':'');   // MC: KML + coordenada + nº do CAR + operação (p/ rota, CAR e selo no cartão)
           const q=`${API}/rest/v1/${tb}?select=${sel}&gp_responsavel=in.(${inVal2})&ativo=is.true&data_atendimento=is.null&order=data_vencimento.asc.nullslast`;
           const r=await fetch(q,{headers:Object.assign({},H,{'Range-Unit':'items','Range':off+'-'+(off+PG-1)})});
           if(!r.ok) break;
@@ -503,8 +503,8 @@ async function carregarPendentes(){
             const key=cfg.tipo+'|'+num.replace(/\s/g,'');
             const anx=(Array.isArray(d.anexos)?d.anexos:[]).map(a=>({nome:a.nome||'anexo',link:a.link||a.web_view_link||null,status:'ok'})).filter(a=>a.link);
             if(d.kml_content){ const u=_kmlDataUrl(d.kml_content); if(u) anx.push({nome:(num||d.codigo||'geocod')+'.kml', link:u, kml:true, status:'ok'}); }   // KML do GEOCOD (banco) como anexo baixável
-            // selo de OPERAÇÃO: lote nomeado (não o padrão mensal "N CIA AAAA-MM-DD")
-            const _op=(d.lote && !/^\s*\d+\s*CIA\s*\d{4}-\d{2}-\d{2}\s*$/i.test(d.lote))?String(d.lote).trim():'';
+            // selo de OPERAÇÃO (campo `operacao`, db/219)
+            const _op=(d.operacao||'').trim();
             const ex=byKey.get(key);
             if(ex){   // já veio da planilha (sem anexos): enriquece com os anexos/dados do banco
               if(anx.length){ ex.anexos=ex.anexos||[]; const have=new Set(ex.anexos.map(a=>a.link)); anx.forEach(a=>{ if(!have.has(a.link)) ex.anexos.push(a); }); }

@@ -241,6 +241,10 @@
       <div class="fld full"><label>Lote (pasta no Drive MC) <span class="req">*</span></label>
         <select id="f-lote"><option value="">Carregando pastas…</option></select>
         <div class="hint">ordenados por data (mais recente primeiro) · ✓ = já carregado · reexecutar é seguro (não duplica)</div></div>
+      <div class="fld full"><label>Operação <span style="color:var(--text-hint);font-weight:400">— preencha só se esta carga faz parte de uma operação (ex.: Adsumus)</span></label>
+        <input id="f-operacao" list="op-datalist" placeholder="Ex.: ADSUMUS IV 51.3 · deixe vazio se não for operação" autocomplete="off" style="width:100%;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:6px;padding:8px 10px;color:var(--text-white);font-family:inherit">
+        <datalist id="op-datalist"></datalist>
+        <div class="hint">marca as demandas deste lote como da operação (filtro "Operação" + selo no Relatório/Cartão).</div></div>
       <div id="lote-prog" style="display:none;margin-top:16px">
         <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px"><span id="lp-txt">Processando…</span></div>
         <div style="height:10px;background:var(--bg-input);border:1px solid var(--border-mid);border-radius:6px;overflow:hidden"><div id="lp-bar" style="height:100%;width:0;background:var(--gold);transition:width .3s"></div></div>
@@ -385,7 +389,7 @@ function verTudoSemFiltro(){
 // Colunas da LISTA — tudo menos kml_content (o KML pesa ~2,7 KB/linha e a lista
 // só precisa saber SE existe, não o conteúdo). O conteúdo é carregado sob demanda
 // (mapa / Google Earth / baixar KML / Excel) via _garantirKml().
-const SEL_LEVE = 'id,codigo,tipo_demanda,data_gerada,natureza,municipio,endereco,fracao_responsavel,gp_responsavel,grupamento_completo,data_envio,data_vencimento,status_prazo,data_atendimento,numero_gaia,numero_reds,resultado,status_atendimento,info_complementares,numero_auto_infracao,equipe,viatura,hectares,data_inic,data_final,mes_ref,ano_ref,coord_x,coord_y,regional,bioma,id_semad,id_evolucao,lote,kml_link,anexos,situacao,atendido_por_matricula,atendido_por_nome,observacoes_resposta,fonte_aba,raw,versao,synced_at,ativo,inativado_por_matricula,inativado_por_nome,motivo_inativacao,inativado_em,created_at,updated_at,gp_manual_at,gp_manual_por,car_imovel,car_qtd,car_dados,car_consultado_em,uc_dados,uc_consultado_em,amb_dados,amb_consultado_em';
+const SEL_LEVE = 'id,codigo,tipo_demanda,data_gerada,natureza,municipio,endereco,fracao_responsavel,gp_responsavel,grupamento_completo,data_envio,data_vencimento,status_prazo,data_atendimento,numero_gaia,numero_reds,resultado,status_atendimento,info_complementares,numero_auto_infracao,equipe,viatura,hectares,data_inic,data_final,mes_ref,ano_ref,coord_x,coord_y,regional,bioma,id_semad,id_evolucao,lote,operacao,kml_link,anexos,situacao,atendido_por_matricula,atendido_por_nome,observacoes_resposta,fonte_aba,raw,versao,synced_at,ativo,inativado_por_matricula,inativado_por_nome,motivo_inativacao,inativado_em,created_at,updated_at,gp_manual_at,gp_manual_por,car_imovel,car_qtd,car_dados,car_consultado_em,uc_dados,uc_consultado_em,amb_dados,amb_consultado_em';
 
 async function carregar(){
   const gprs = gprEscopo();
@@ -689,14 +693,16 @@ function popularAnos(){
     ms.innerHTML='<option value="">Todos os municípios</option>'+itens.map(it=>`<option value="${it.k}">${it.label}</option>`).join('');
     if(itens.some(it=>it.k===mv)) ms.value=mv;
   }
-  // Operações = lotes nomeados (não o padrão mensal "N CIA AAAA-MM-DD")
+  // Operações = campo `operacao` (marcado na carga do lote ou pela ferramenta)
   const opEl=document.getElementById('op');
   if(opEl){
     const ov=opEl.value;
-    const isMensal=l=>/^\s*\d+\s*CIA\s*\d{4}-\d{2}-\d{2}\s*$/i.test(l||'');
-    const ops=[...new Set(DADOS.map(d=>(d.lote||'').trim()).filter(l=>l && !isMensal(l)))].sort((a,b)=>a.localeCompare(b,'pt'));
+    const ops=[...new Set(DADOS.map(d=>(d.operacao||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt'));
     opEl.innerHTML='<option value="">Todas as operações</option>'+ops.map(o=>`<option value="${o.replace(/"/g,'&quot;')}">${o}</option>`).join('');
     if(ops.includes(ov)) opEl.value=ov;
+    // datalist do modal de carga (sugestões de operações já existentes)
+    const dl=document.getElementById('op-datalist');
+    if(dl) dl.innerHTML=ops.map(o=>`<option value="${o.replace(/"/g,'&quot;')}"></option>`).join('');
   }
 }
 // proximidade por RAIO: +N = 500 m (laranja), ↔N = 5 km (roxo). Clicar isola as
@@ -728,7 +734,7 @@ function baseScope(d){
   const _mu=(document.getElementById('muni')||{}).value||''; if (_mu && _chaveMuni(d.municipio)!==_mu) return false;
   const ano=document.getElementById('ano').value;
   if (ano!=='all' && String(anoDe(d))!==String(ano)) return false;
-  const _op=(document.getElementById('op')||{}).value||''; if (_op && (d.lote||'').trim()!==_op) return false;
+  const _op=(document.getElementById('op')||{}).value||''; if (_op && (d.operacao||'').trim()!==_op) return false;
   const q=document.getElementById('busca').value.trim().toLowerCase();
   if (q){ const hay=`${d.codigo} ${d.municipio||''} ${d.natureza||''} ${d.bioma||''} ${d.fracao_responsavel||''} ${d.numero_reds||''} ${d.numero_gaia||''}`.toLowerCase(); if(!hay.includes(q)) return false; }
   return true;
@@ -2253,6 +2259,18 @@ async function carregarLote(){
     bar.style.width='100%';
     txt.textContent=`Concluído: ${total} GEOCOD (novos ${ins} · atualizados ${upd}).`+(falhas?` ${falhas} página(s) falharam — carregue de novo p/ completar.`:'');
     toast('Lote carregado: '+total+' GEOCOD.'+(falhas?` ${falhas} a refazer.`:''));
+    // OPERAÇÃO: se o usuário informou, marca as demandas deste lote (db/219).
+    // Feito aqui no painel (update anon) — não depende do Apps Script.
+    try{
+      const _op=(document.getElementById('f-operacao')||{}).value||'';
+      const op=_op.trim();
+      if(op && loteNome){
+        const r=await fetch(`${API}/rest/v1/${TBL}?lote=eq.${encodeURIComponent(loteNome)}`,
+          { method:'PATCH', headers:Object.assign({'Content-Type':'application/json',Prefer:'return=minimal'},H), body:JSON.stringify({ operacao: op }) });
+        if(r.ok) toast('Operação marcada: '+op);
+        else toast('Lote carregado, mas falhou marcar a operação (confira a migração db/219).');
+      }
+    }catch(_e){ console.warn('[operacao]', _e); }
     await carregar();
     // Aviso: quantos MC ativos (com coordenada) ainda estão SEM proprietário/CPF
     // do CAR — ou seja, precisam do "🦅 Importar CAR do Harpia" (que traz só os
@@ -2283,7 +2301,7 @@ function exportarExcel(){
     'Recebido':fmtData(d.data_gerada), 'Vencimento':fmtData(d.data_vencimento),
     'Status do prazo':d.status_prazo||prazoInfo(d).txt, 'Situação':SIT_LBL[d.situacao]||d.situacao,
     'Data fiscalização':fmtData(d.data_atendimento), 'Nº REDS':d.numero_reds, 'ID SISFIS':d.numero_gaia,
-    'Resultado':d.resultado, 'Lote':d.lote
+    'Resultado':d.resultado, 'Lote':d.lote, 'Operação':d.operacao||''
   }));
   if(!rows.length) return toast('Nada para exportar neste filtro.');
   const ws=XLSX.utils.json_to_sheet(rows); const wb=XLSX.utils.book_new();
