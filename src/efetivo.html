@@ -266,7 +266,7 @@
         <div class="miut" style="margin-top:4px;">Marcado: ele <b>não consegue logar</b> no painel. Desmarcado: mantém o acesso. Em ambos os casos, <b>continua contando no efetivo (RH)</b>.</div>
       </div>
       <div class="fld" id="b-oj-nota" style="grid-column:1/-1;display:none;">
-        <div class="miut" style="padding:9px 11px;border:1px solid rgba(239,83,80,.4);border-radius:7px;background:rgba(239,83,80,.08);">⚖️ <b>Ordem judicial:</b> o acesso ao painel é <b>sempre suspenso</b> (ele não consegue logar), mas <b>continua contando no efetivo (RH)</b> — igual ao hipotecado. O badge na aba Efetivo fica <b>"Ordem judicial · sem acesso"</b>.</div>
+        <div class="miut" style="padding:9px 11px;border:1px solid rgba(239,83,80,.4);border-radius:7px;background:rgba(239,83,80,.08);">⚖️ <b>Ordem judicial:</b> ele <b>continua ATIVO</b> (em atividade) e aparece na aba <b>Efetivo ativo</b>, contando normalmente — só <b>não consegue logar</b> no painel. <b>Não</b> é hipotecado. Badge: <b>"Ativo · ⚖️ sem acesso"</b>. Reversível (reativar acesso quando a ordem cessar).</div>
       </div>
       <div class="fld"><label>Destino / para onde foi</label><input id="b-destino" placeholder="ex.: 8ª Cia PM MAmb"></div>
       <div class="fld"><label>Pasta funcional entregue?</label>
@@ -642,11 +642,14 @@ async function encerrarCampanha(){
 function tagSit(m){
   if(ehHipotecado(m)){
     const semAcesso = (m.integrante_ativo??m.ativo) ? '' : ' · sem acesso';
-    if((m.afastamento_motivo||'').toUpperCase()==='ORDEM_JUDICIAL')
-      return '<span class="tag" style="background:rgba(239,83,80,.15);color:#ef5350;border:1px solid rgba(239,83,80,.4)" title="Afastado por ordem judicial — continua contando no RH">Ordem judicial'+semAcesso+'</span>';
     return '<span class="tag" style="background:rgba(255,152,0,.15);color:#ffa726;border:1px solid rgba(255,152,0,.4)">Hipotecado'+semAcesso+'</span>';
   }
-  if(m.integrante_ativo??m.ativo) return '<span class="tag ativo">Ativo</span>';
+  // Ordem judicial: continua ATIVO (em atividade), só SEM acesso ao painel
+  const _oj = (m.afastamento_motivo||'').toUpperCase()==='ORDEM_JUDICIAL' || m.acesso_suspenso;
+  if(m.integrante_ativo??m.ativo){
+    if(_oj) return '<span class="tag ativo">Ativo</span> <span class="tag" style="background:rgba(239,83,80,.15);color:#ef5350;border:1px solid rgba(239,83,80,.4)" title="Em atividade, porém sem acesso ao painel por ordem judicial">⚖️ sem acesso</span>';
+    return '<span class="tag ativo">Ativo</span>';
+  }
   const s=(m.situacao_efetivo||'').toUpperCase();
   if(s==='TRANSFERIDO') return '<span class="tag transf">Transferido</span>';
   if(s==='RESERVA') return '<span class="tag vet">Reserva</span>';
@@ -915,7 +918,7 @@ function render(){
       ${ehHipotecado(m)
           ? `<button class="minibtn ico" title="Voltar ao efetivo ativo" onclick="reativar('${m.id}')">↩️</button>`
           : ((m.integrante_ativo??m.ativo)
-              ? `<button class="minibtn ico" title="Inativar / transferir / hipotecar" onclick="abrirBaixa('${m.id}')">⏸️</button>`
+              ? `${(m.acesso_suspenso||(m.afastamento_motivo||'').toUpperCase()==='ORDEM_JUDICIAL')?`<button class="minibtn ico" title="Reativar acesso ao painel (ordem judicial cessada)" onclick="reativarAcesso('${m.id}')">⚖️↩️</button> `:''}<button class="minibtn ico" title="Inativar / transferir / hipotecar / afastar" onclick="abrirBaixa('${m.id}')">⏸️</button>`
               : `<button class="minibtn ico" title="Editar dados da baixa / transferência" onclick="abrirBaixa('${m.id}')">📝</button>
                  <button class="minibtn ico" title="Reativar" onclick="reativar('${m.id}')">↩️</button>`)}
       <button class="minibtn ico del" title="Excluir definitivamente" onclick="excluirDefinitivo('${m.id}')">🗑️</button>`}
@@ -1160,9 +1163,9 @@ async function salvarBaixa(){
       return;
     }
     if(g('b-sit')==='ORDEM_JUDICIAL'){
-      // ordem judicial = igual hipotecado (conta no RH), acesso SEMPRE suspenso, motivo diferente
-      await rpc('efetivo_hipotecar',{p_token:sessao.token,p_id:curId,p_suspender_acesso:true,p_motivo:'ORDEM_JUDICIAL'});
-      fechar('modal-baixa'); flash('Militar afastado por ordem judicial (sem acesso · continua no RH).',true); carregar();
+      // ordem judicial = continua ATIVO (em atividade, aba Efetivo ativo), só SEM acesso ao painel
+      await rpc('efetivo_afastar_judicial',{p_token:sessao.token,p_id:curId,p_afastar:true});
+      fechar('modal-baixa'); flash('Afastado por ordem judicial: continua ATIVO (em atividade), porém SEM acesso ao painel.',true); carregar();
       return;
     }
     const dados={ situacao_efetivo:g('b-sit'), transf_destino:g('b-destino').trim()||null,
@@ -1176,6 +1179,11 @@ async function salvarBaixa(){
 async function reativar(id){
   if(!confirm('Reativar este militar no efetivo ativo da Cia?')) return;
   try{ await rpc('efetivo_reativar',{p_token:sessao.token,p_id:id}); flash('Reativado no efetivo.',true); carregar(); }
+  catch(e){ flash(e.message||'Erro.',false); }
+}
+async function reativarAcesso(id){
+  if(!confirm('Reativar o ACESSO ao painel deste militar (ordem judicial cessada)? Ele volta a conseguir logar.')) return;
+  try{ await rpc('efetivo_afastar_judicial',{p_token:sessao.token,p_id:id,p_afastar:false}); flash('Acesso reativado.',true); carregar(); }
   catch(e){ flash(e.message||'Erro.',false); }
 }
 async function excluirDefinitivo(id){
