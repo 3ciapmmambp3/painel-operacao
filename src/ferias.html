@@ -646,6 +646,42 @@
   </div>
 </div>
 
+<!-- ══ MODAL: Aux P1 lança a manifestação POR OUTRO militar (sem acesso) ══ -->
+<div class="modal-bg" id="modal-prem-proc">
+  <div class="modal">
+    <h2>🖊️ Lançar manifestação por outro militar</h2>
+    <div class="miut" id="pp-quem" style="margin-bottom:8px;"></div>
+    <div class="miut" style="margin-bottom:12px;padding:9px 11px;border:1px solid var(--gold-border);border-radius:7px;background:var(--gold-bg);">Para militar <b>sem acesso</b> ao painel. Preencha, <b>baixe o requerimento</b> (sai com o nome dele), envie para ele assinar e depois <b>anexe o PDF assinado</b> (botão 📎 na lista). Pode salvar <b>sem</b> o assinado.</div>
+    <div class="fld"><label>Manifestação de interesse</label>
+      <div style="display:flex;gap:18px;margin-top:4px;">
+        <label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="radio" name="pp-int" value="sim" style="width:auto;" onchange="ppIntToggle()"> Tem interesse</label>
+        <label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="radio" name="pp-int" value="nao" style="width:auto;" onchange="ppIntToggle()"> Não tem interesse</label>
+      </div>
+    </div>
+    <div id="pp-box-int" style="display:none;">
+      <div class="fld" style="max-width:220px;margin-top:10px;"><label>Exercício (ano a que se refere)</label><input type="number" id="pp-exerc" min="2020" max="2035"></div>
+      <div class="miut" style="margin:10px 0 4px;">Até <b>90 dias</b>. Pode fracionar em até 3 períodos (duração + data de início).</div>
+      <div class="grid"><div class="fld"><label>Período 1 — duração</label>
+        <select id="pp-dur1"><option value="">— selecione —</option><option value="1 mês">1 mês (30 dias)</option><option value="2 meses">2 meses (60 dias)</option><option value="3 meses">3 meses (90 dias)</option></select></div>
+        <div class="fld"><label>Período 1 — início</label><input type="date" id="pp-ini1"></div></div>
+      <div class="grid"><div class="fld"><label>Período 2 — duração (opcional)</label>
+        <select id="pp-dur2"><option value="">— nenhum —</option><option value="1 mês">1 mês (30 dias)</option><option value="2 meses">2 meses (60 dias)</option><option value="3 meses">3 meses (90 dias)</option></select></div>
+        <div class="fld"><label>Período 2 — início</label><input type="date" id="pp-ini2"></div></div>
+      <div class="grid"><div class="fld"><label>Período 3 — duração (opcional)</label>
+        <select id="pp-dur3"><option value="">— nenhum —</option><option value="1 mês">1 mês (30 dias)</option><option value="2 meses">2 meses (60 dias)</option><option value="3 meses">3 meses (90 dias)</option></select></div>
+        <div class="fld"><label>Período 3 — início</label><input type="date" id="pp-ini3"></div></div>
+      <div class="fld" style="margin-top:10px;"><label>Justificativa (opcional)</label><textarea id="pp-just" rows="2"></textarea></div>
+    </div>
+    <div class="miut" id="pp-msg" style="display:none;margin-top:10px;"></div>
+    <div class="row-actions" style="justify-content:flex-end;margin-top:14px;flex-wrap:wrap;gap:8px;">
+      <button class="btn-outline" onclick="ppBaixar()" title="Baixa o requerimento com o nome do militar, para ele assinar">⬇ Baixar requerimento</button>
+      <button class="btn-outline" onclick="fechar('modal-prem-proc')">Fechar</button>
+      <button class="btn-gold" onclick="ppSalvar()">Salvar manifestação</button>
+    </div>
+  </div>
+</div>
+<input type="file" id="pp-anexo-input" accept="application/pdf" style="display:none;" onchange="ppAnexoEscolhido()">
+
 <script>
 const sessao = (function(){
   const raw = sessionStorage.getItem('poe_sessao_v2');
@@ -2281,7 +2317,7 @@ function pmRender(){
   document.getElementById('pm-n-falta').textContent='('+falta.length+')';
   const tb=document.getElementById('pm-tbody');
   if(pmG==='falta'){
-    tb.innerHTML=falta.map((m,i)=>`<tr><td>${i+1}</td><td>${esc(_rNome(m))}</td><td>${esc(apRot(m.pelotao||'—'))}</td><td colspan="5"><span class="miut">Ainda não manifestou</span></td><td></td></tr>`).join('')
+    tb.innerHTML=falta.map((m,i)=>`<tr><td>${i+1}</td><td>${esc(_rNome(m))}</td><td>${esc(apRot(m.pelotao||'—'))}</td><td colspan="5"><span class="miut">Ainda não manifestou</span></td><td style="text-align:right;white-space:nowrap;">${isP1?`<button class="minibtn" title="Lançar a manifestação por este militar (sem acesso)" onclick="premLancarPorEle('${m.id}')">🖊️ Lançar por ele</button>`:''}</td></tr>`).join('')
       || '<tr><td colspan="9"><div class="empty">Todos do seu escopo já manifestaram.</div></td></tr>';
     return;
   }
@@ -2300,12 +2336,82 @@ function pmRender(){
     acoes+='<button class="minibtn ico" title="Editar" onclick="premioGerirAbrir(\''+p.id+'\',\'editar\')">✏️</button> ';
     if(p.interesse) acoes+='<button class="minibtn ico" title="Validar / autorizar" onclick="premioGerirAbrir(\''+p.id+'\',\'validar\')">✔️</button> ';
     if(temValid) acoes+='<button class="minibtn ico" title="Baixar requerimento com as datas validadas (p/ o militar assinar)" onclick="premioBaixarValidado(\''+p.id+'\')">⬇</button> ';
+    if(isP1) acoes+='<button class="minibtn ico" title="Anexar o requerimento ASSINADO (p/ militar sem acesso)" onclick="premAnexarAssinado(\''+p.id+'\')">📎</button> ';
     if(isP1) acoes+='<button class="minibtn ico del" title="Excluir" onclick="premioExcluir(\''+p.id+'\')">🗑️</button>';
     return `<tr><td>${i+1}</td><td>${esc((pg+' '+nome).trim())}</td><td>${esc(apRot(p.pelotao||'—'))}</td>`
       +`<td>${esc(pr.lustro||'—')} / ${esc(_premioEtapaCol(p))}</td><td>${esc(String(pr.exercicio||p.exercicio||'—'))}</td>`
       +`<td>${datas}</td><td>${anexo}</td><td>${sit}</td>`
       +`<td style="text-align:right;white-space:nowrap;">${acoes}</td></tr>`;
   }).join('') || '<tr><td colspan="9"><div class="empty">Ninguém neste grupo ainda.</div></td></tr>';
+}
+// ══ Aux P1 lança a manifestação POR OUTRO militar (sem acesso) ══
+let PP_TARGET=null;
+function ppMsg(t,ok){ const e=document.getElementById('pp-msg'); if(!e) return; e.style.display=t?'block':'none'; e.innerHTML=t||''; e.style.color=ok?'#66bb6a':'var(--danger)'; }
+function ppIntToggle(){ const v=(document.querySelector('input[name=pp-int]:checked')||{}).value; const box=document.getElementById('pp-box-int'); if(box) box.style.display=(v==='sim')?'':'none'; }
+function premLancarPorEle(id){
+  const m=(PM_ROSTER||[]).find(x=>String(x.id)===String(id)); if(!m) return flash('Militar não encontrado.',false);
+  PP_TARGET={ id:m.id, matricula:m.matricula||'', pg:m.posto_graduacao||'', nome:m.nome_completo||m.nome_guerra||_rNome(m) };
+  document.getElementById('pp-quem').innerHTML='Militar: <b>'+esc(_rNome(m))+'</b> · '+esc(apRot(m.pelotao||'—'))+' · ano de gozo <b>'+esc(String(pmAnoGozo||'—'))+'</b>';
+  document.querySelectorAll('input[name=pp-int]').forEach(r=>{ r.checked=false; });
+  const g=id=>document.getElementById(id); g('pp-exerc').value=''; g('pp-just').value='';
+  [1,2,3].forEach(i=>{ g('pp-dur'+i).value=''; g('pp-ini'+i).value=''; });
+  ppMsg(''); ppIntToggle();
+  document.getElementById('modal-prem-proc').classList.add('open');
+}
+function ppColeta(){
+  const intv=(document.querySelector('input[name=pp-int]:checked')||{}).value;
+  const exerc=parseInt(document.getElementById('pp-exerc').value,10)||null;
+  const periodos=[];
+  [1,2,3].forEach(i=>{ const dur=document.getElementById('pp-dur'+i).value; const ini=document.getElementById('pp-ini'+i).value; if(dur&&ini) periodos.push({ordem:i,etapa:dur,ini:ini}); });
+  return { interesse: intv==='sim', exercicio:exerc, justificativa:(document.getElementById('pp-just').value||'').trim()||null, periodos };
+}
+function _ppPedSintetico(){
+  const d=ppColeta();
+  return { interesse:d.interesse, exercicio:d.exercicio,
+    militar:{matricula:PP_TARGET.matricula, pg:PP_TARGET.pg, nome:PP_TARGET.nome},
+    premio:{lustro:null, exercicio:d.exercicio, justificativa:d.justificativa, periodos:d.periodos.map(p=>({etapa:p.etapa, ini:p.ini}))} };
+}
+async function ppBaixar(){
+  if(!PP_TARGET) return;
+  const intv=(document.querySelector('input[name=pp-int]:checked')||{}).value;
+  if(!intv) return ppMsg('Marque se tem ou não interesse antes de baixar.',false);
+  try{ await premGerarPDF(false, _ppPedSintetico()); ppMsg('Requerimento baixado. Envie para o militar assinar e depois anexe o PDF assinado (📎 na lista).',true); }
+  catch(e){ ppMsg('Erro ao gerar o requerimento: '+(e.message||e),false); }
+}
+async function ppSalvar(){
+  if(!PP_TARGET) return;
+  const intv=(document.querySelector('input[name=pp-int]:checked')||{}).value;
+  if(!intv) return ppMsg('Marque se tem ou não interesse.',false);
+  const d=ppColeta();
+  if(d.interesse){
+    if(!d.exercicio) return ppMsg('Informe o exercício (ano a que se refere).',false);
+    if(!d.periodos.length) return ppMsg('Informe ao menos o 1º período (duração e data de início).',false);
+    const soma=d.periodos.reduce((s,p)=>s+(_premioDias(p.etapa)||0),0);
+    if(soma>90) return ppMsg('A soma dos períodos ('+soma+' dias) passa do direito de 90 dias.',false);
+  }
+  try{
+    ppMsg('Salvando…',true);
+    await rpc('ferias_premio_manifestar',{p_token:sessao.token,p_dados:Object.assign({ano:pmAnoGozo||anoSel},d),p_militar_id:PP_TARGET.id});
+    flash('Manifestação lançada por '+(PP_TARGET.nome||'militar')+'.',true);
+    fechar('modal-prem-proc');
+    carregarPremioManif();
+  }catch(e){ ppMsg(e.message||'Erro ao salvar.',false); }
+}
+// anexar o requerimento ASSINADO num pedido (Aux P1), a partir da lista
+let PP_ANEXO_PEDIDO=null;
+function premAnexarAssinado(pedidoId){ PP_ANEXO_PEDIDO=pedidoId; const inp=document.getElementById('pp-anexo-input'); if(inp){ inp.value=''; inp.click(); } }
+async function ppAnexoEscolhido(){
+  const inp=document.getElementById('pp-anexo-input'); const f=(inp&&inp.files||[])[0];
+  if(!f || !PP_ANEXO_PEDIDO) return;
+  if(f.size>15*1024*1024) return flash('Arquivo acima de 15 MB.',false);
+  try{
+    flash('Enviando requerimento assinado…',true);
+    let res; if(DRIVE_URL){ try{ res=await subirDrivePdf(f,'ferias-premio'); }catch(e){ res=await subirStoragePdf(f,'ferias-premio'); } } else res=await subirStoragePdf(f,'ferias-premio');
+    const anexo=[{path:res.path||null,nome:f.name,tamanho:f.size,mime:f.type||'application/pdf',link:res.link}];
+    await rpc('ferias_premio_anexar',{p_token:sessao.token,p_id:PP_ANEXO_PEDIDO,p_anexo:anexo,p_fase:'req'});
+    flash('Requerimento assinado anexado.',true); carregarPremioManif();
+  }catch(e){ flash(e.message||'Erro ao anexar.',false); }
+  finally{ PP_ANEXO_PEDIDO=null; }
 }
 // ── Filtros Pelotão/Grupamento da aba Prêmio — Manifestação (padrão dos demais filtros) ──
 function pmFiltra(arr){
