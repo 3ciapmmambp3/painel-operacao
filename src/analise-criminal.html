@@ -1533,10 +1533,6 @@ document.addEventListener('click', () => {
         <input type="number" id="cx-raio" value="5" min="1" max="100" oninput="renderCruzamento()">
       </div>
       <div class="fg">
-        <label>Período (dias antes/depois)</label>
-        <input type="number" id="cx-dias" value="30" min="1" max="60" oninput="renderCruzamento()">
-      </div>
-      <div class="fg">
         <label>Indicador</label>
         <div class="mes-dropdown-wrap" id="cx-ind-wrap">
           <button type="button" class="mes-dropdown-btn" id="cx-ind-btn" onclick="toggleIndDd('cx')">
@@ -5250,7 +5246,6 @@ function toggleDivOutro(cb){
 function limparFiltrosCruzamento(){
   mesDdSetAtual('cx');
   const raio=document.getElementById('cx-raio'); if(raio) raio.value='5';
-  const dias=document.getElementById('cx-dias'); if(dias) dias.value='30';
   ['cx-pel','cx-gp','cx-status','cx-municipio'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   setIndDd('cx', []);
   const b=document.getElementById('cx-busca'); if(b) b.value='';
@@ -7491,6 +7486,7 @@ function mostrarTooltipCrz(btn, idx){
         <th style="padding:4px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;">Descrição</th>
         <th style="padding:4px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;">Data</th>
         <th style="padding:4px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;">Dist.</th>
+        <th style="padding:4px 10px;text-align:left;color:var(--text-muted);font-size:10px;text-transform:uppercase;" title="Dias entre a data do crime e a data da operação">Dias (crime→op)</th>
       </tr></thead>
       <tbody>${ops.map(op => `
         <tr style="border-bottom:1px solid #2a2a2a;">
@@ -7504,6 +7500,7 @@ function mostrarTooltipCrz(btn, idx){
           <td style="padding:5px 10px;color:#bbb;font-size:11px;">${op.label}</td>
           <td style="padding:5px 10px;color:#aaa;white-space:nowrap;font-size:11px;">${op.data}</td>
           <td style="padding:5px 10px;font-weight:700;font-size:11px;color:${op.dist==='—'?'var(--text-muted)':parseFloat(op.dist)<5?'var(--success)':parseFloat(op.dist)<10?'#ff9800':'var(--danger)'};">${op.dist} km</td>
+          <td style="padding:5px 10px;font-size:11px;color:#aaa;white-space:nowrap;">${op.dias==null?'—':(op.dias===0?'mesmo dia':(op.dias+' dia'+(op.dias!==1?'s':'')))}</td>
         </tr>`).join('')}
       </tbody>
     </table>
@@ -8734,7 +8731,7 @@ function _gdoMotivoInvalido(op) {
 /* Visitas tranquilizadoras vinculadas a um crime — vínculo direto (boRefs) ou
    por raio fixo 200m + natureza compatível + período. Usada tanto na renderização
    (tooltip/resumo) quanto na busca por Nº BOS na aba Correlação OP x Crime. */
-function _crzVisitasVinculadas(crime, dias){
+function _crzVisitasVinculadas(crime){
   if(!crime.lat || !crime.lng) return [];
   const RAIO_VISITA_CRZ = 0.2;
   const dataCrimeVt = parseDataDDMMAAAA(crime.data||'');
@@ -8750,12 +8747,12 @@ function _crzVisitasVinculadas(crime, dias){
     if(v.natCode !== natEsperada) return false;
     /* Raio fixo 200m */
     if(distanciaKm(crime.lat, crime.lng, v.lat, v.lng) > RAIO_VISITA_CRZ) return false;
-    /* Período: visita deve ocorrer APÓS o crime (até dias*2 dias depois) */
+    /* Visita deve ocorrer na data do crime ou APÓS (resposta) — sem janela máxima */
     if(dataCrimeVt){
       const dataVt = parseDataDDMMAAAA(v.data||'');
       if(dataVt){
         const diff = (dataVt - dataCrimeVt) / (1000*60*60*24);
-        if(diff < 0 || diff > dias*2) return false;
+        if(diff < 0) return false;
       }
     }
     return true;
@@ -8771,7 +8768,6 @@ function renderCruzamento(){
   const _mesCx = getMesDd('cx');
   const mes   = _mesCx.length===1?_mesCx[0]:'';
   const raio  = parseFloat(document.getElementById('cx-raio').value) || 10;
-  const dias  = parseInt(document.getElementById('cx-dias').value) || 30;
   const ind   = getIndDd('cx');
 
   const cxPel = document.getElementById('cx-pel')?.value || '';
@@ -8795,40 +8791,24 @@ function renderCruzamento(){
   const resultados = crimes.map(crime => {
     const dataCrime = parseDataDDMMAAAA(crime.data||'');
     /* Busca operações no raio e período + vínculos diretos */
-    /* Ops no raio+período para contabilização */
+    /* Ops no raio — vínculo por PROXIMIDADE (sem janela de dias). A operação conta
+       se estiver dentro do raio e na data do crime ou DEPOIS (resposta ao fato).
+       Os dias entre crime e op viram apenas INFORMAÇÃO (coluna em Ver detalhes). */
     const opsProximas = dadosGdoRural.filter(op => {
       /* Vínculo direto: sempre inclui */
       if(op.ratRefs && op.ratRefs.includes(crime.bo || crime.rat || '')) return true;
       if(!op.lat||!op.lng) return false;
-      const dist = distanciaKm(crime.lat, crime.lng, op.lat, op.lng);
-      if(dist > raio) return false;
+      if(distanciaKm(crime.lat, crime.lng, op.lat, op.lng) > raio) return false;
       if(dataCrime){
         const dataOp = parseDataDDMMAAAA(op.data||'');
-        if(dataOp){
-          const diffDias = Math.abs((dataCrime-dataOp)/(1000*60*60*24));
-          if(diffDias > dias) return false;
-        }
+        if(dataOp && dataOp < dataCrime) return false;   /* op antes do crime não é resposta */
       }
       return true;
     });
 
-    /* Ops inválidas no raio (sem restrição de período — para informação) */
-    const opsInvalidasRaio = dadosGdoRural.filter(op => {
-      if(opsProximas.includes(op)) return false; /* já está em opsProximas */
-      if(op.ratRefs && op.ratRefs.includes(crime.bo || crime.rat || '')) return false;
-      if(!op.lat||!op.lng) return false;
-      if(distanciaKm(crime.lat, crime.lng, op.lat, op.lng) > raio) return false;
-      /* Apenas ops realizadas APÓS a data do crime */
-      if(dataCrime) {
-        const dataOp = parseDataDDMMAAAA(op.data||'');
-        if(dataOp && dataOp < dataCrime) return false;
-      }
-      return !_gdoValidaOp(op); /* só as inválidas */
-    });
-
     /* Separa ops válidas (passam critérios GDO) das inválidas */
     const opsValidas   = opsProximas.filter(op => _gdoValidaOp(op));
-    const opsInvalidas = [...opsProximas.filter(op => !_gdoValidaOp(op)), ...opsInvalidasRaio];
+    const opsInvalidas = opsProximas.filter(op => !_gdoValidaOp(op));
 
     const distMin = opsValidas.length
       ? Math.min(...opsValidas.map(op=>distanciaKm(crime.lat,crime.lng,op.lat,op.lng)))
@@ -8845,7 +8825,7 @@ function renderCruzamento(){
       if(distanciaKm(crime.lat, crime.lng, v.lat, v.lng) > 0.2) return false;
       if(dataCrime){
         const dataVt = parseDataDDMMAAAA(v.data||'');
-        if(dataVt){ const diff=(dataVt-dataCrime)/(1000*60*60*24); if(diff<0||diff>dias*2) return false; }
+        if(dataVt){ const diff=(dataVt-dataCrime)/(1000*60*60*24); if(diff<0) return false; }
       }
       return true;
     });
@@ -8881,7 +8861,7 @@ function renderCruzamento(){
   if(cxBusca) resultadosFiltrados = resultadosFiltrados.filter(r =>
     norm(r.crime.bo||r.crime.rat||'').includes(cxBusca) ||
     [...r.opsProximas, ...r.opsInvalidas].some(op => norm(op.rat||'').includes(cxBusca)) ||
-    _crzVisitasVinculadas(r.crime, dias).some(v => norm(v.bo||'').includes(cxBusca))
+    _crzVisitasVinculadas(r.crime).some(v => norm(v.bo||'').includes(cxBusca))
   );
 
   if(munsSemOp.length){
@@ -8909,7 +8889,7 @@ function renderCruzamento(){
           : `<span style="background:rgba(255,152,0,.12);color:#ff9800;border:1px solid rgba(255,152,0,.3);padding:2px 7px;border-radius:3px;font-size:10px;font-weight:700;">OP. PRÓXIMA</span>`;
 
     /* Visitas próximas ao crime — raio fixo 200m (independente do raio de operações) */
-    const visitasVinc = _crzVisitasVinculadas(r.crime, dias);
+    const visitasVinc = _crzVisitasVinculadas(r.crime);
 
     /* Guarda dados das ops + visitas para o tooltip */
     window._crzTooltipData[idx] = {
@@ -8921,6 +8901,7 @@ function renderCruzamento(){
         cor:       COR_NAT_OPS_CRZ[op.natureza]   || '#4caf50',
         data:      op.data || '—',
         dist:      (op.lat && op.lng) ? distanciaKm(r.crime.lat, r.crime.lng, op.lat, op.lng).toFixed(1) : '—',
+        dias:      (function(){ const dc=parseDataDDMMAAAA(r.crime.data||''), dop=parseDataDDMMAAAA(op.data||''); return (dc&&dop)?Math.round((dop-dc)/(1000*60*60*24)):null; })(),
         isDireto:  op.ratRefs && op.ratRefs.includes(r.crime.bo || r.crime.rat || ''),
         validada:  _gdoValidaOp(op),
         motivos:   _gdoValidaOp(op) ? [] : _gdoMotivoInvalido(op),
