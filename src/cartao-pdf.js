@@ -81,8 +81,13 @@
       const anexoCell=anx.length?anx.map(a=>{
         const isKml=(a.kml||/\.kml(\?|$)/i.test(a.nome||'')||/vnd\.google-earth/i.test(a.link||''));
         if(isKml){
-          // O PDF não pode embutir o KML (é data: URL, bloqueado em leitores de PDF).
-          // Linka p/ a página pública do cartão COM ?kml=<ordem> → lá o download do KML
+          // Se o KML já está HOSPEDADO (http — via _hospedarKmls no Storage), linka
+          // DIRETO: o leitor de PDF baixa o arquivo ao clicar, sem passar pela página.
+          if(/^https?:\/\//i.test(a.link||'')){
+            return `🛰️ <a href="${String(a.link).replace(/"/g,'&quot;')}" target="_blank" rel="noopener" download="${E(a.nome||'arquivo.kml')}">${E(a.nome||'KML')} — baixar</a>`;
+          }
+          // Fallback (KML ainda como data: URL — leitores de PDF bloqueiam data:):
+          // linka p/ a página pública do cartão COM ?kml=<ordem> → lá o download
           // dispara sozinho ao abrir (ver cartao-publico.html → _kmlAuto).
           const kmlLink = pubCartao ? (pubCartao+'&kml='+encodeURIComponent(ord)) : '';
           return kmlLink
@@ -202,21 +207,61 @@
     </body></html>`;
   }
 
+  // Hospeda no Storage (Supabase) os KMLs que ainda estão como data: URL e troca o
+  // link do anexo pela URL pública (http). Assim o PDF linka o KML DIRETO (leitores
+  // de PDF bloqueiam data:). Idempotente (upsert por cartão/ordem). sb = {url,key}.
+  // Se falhar, mantém o data: URL → cai no fallback (link p/ a página do cartão).
+  async function _hospedarKmls(cartao, sb){
+    try{
+      if(!sb || !sb.url || !sb.key || !cartao) return cartao;
+      const base = String(sb.url).replace(/\/+$/,'');
+      const id = encodeURIComponent(String(cartao.id||cartao.numero||'cartao').replace(/[^\w.-]/g,'_'));
+      const dems = Array.isArray(cartao.demandas)?cartao.demandas:[];
+      for(const d of dems){
+        const anx = Array.isArray(d.anexos)?d.anexos:[];
+        for(const a of anx){
+          const isKml = a && (a.kml || /\.kml(\?|$)/i.test(a.nome||'') || /vnd\.google-earth/i.test(a.link||''));
+          if(!isKml || !/^data:/i.test(a.link||'')) continue;
+          try{
+            const blob = await (await fetch(a.link)).blob();
+            const ord = encodeURIComponent(String(d.ordem||'x').replace(/[^\w.-]/g,'_'));
+            const path = 'cartoes-kml/'+id+'/'+ord+'.kml';
+            const up = await fetch(base+'/storage/v1/object/anexos-operacionais/'+path, {
+              method:'POST',
+              headers:{ apikey:sb.key, 'Authorization':'Bearer '+sb.key, 'Content-Type':'application/vnd.google-earth.kml+xml', 'x-upsert':'true' },
+              body: blob });
+            // ?download=<nome> → Supabase força Content-Disposition: attachment
+            // (o navegador BAIXA o .kml em vez de tentar exibir o XML).
+            if(up.ok) a.link = base+'/storage/v1/object/public/anexos-operacionais/'+path
+              +'?download='+encodeURIComponent(a.nome||'arquivo.kml');
+          }catch(e){ /* mantém data: → fallback */ }
+        }
+      }
+    }catch(e){ /* ignora: fallback */ }
+    return cartao;
+  }
+
   // Abre a visualização (nova janela) p/ conferir e imprimir/salvar.
-  function imprimir(cartao){
+  async function imprimir(cartao, sb){
     const w=global.open('', '_blank');
     if(!w){ alert('Permita pop-ups para visualizar/imprimir o cartão.'); return false; }
+    try{ w.document.write('<!doctype html><meta charset="utf-8"><body style="font:16px system-ui,sans-serif;padding:28px;color:#333">Preparando o cartão…</body>'); }catch(e){}
+    if(sb) await _hospedarKmls(cartao, sb);
+    try{ w.document.open(); }catch(e){}
     w.document.write(html(cartao, false)); w.document.close();
     return true;
   }
 
   // Gera o PDF abrindo a visualização e disparando a impressão automaticamente.
   // Usa window.print (Salvar como PDF do Chrome), que PRESERVA os hiperlinks
-  // (KML → página do cartão, Drive, Maps) — o html2pdf rasterizava e perdia os
-  // links. A barra com "Imprimir / PDF" continua como reserva se o usuário cancelar.
-  function baixar(cartao){
+  // (KML → Storage/página, Drive, Maps) — o html2pdf rasterizava e perdia os links.
+  // Abre a janela ANTES de hospedar os KMLs (async) p/ não ser bloqueado como pop-up.
+  async function baixar(cartao, sb){
     const w=global.open('', '_blank');
     if(!w){ alert('Permita pop-ups para gerar o PDF do cartão.'); return false; }
+    try{ w.document.write('<!doctype html><meta charset="utf-8"><body style="font:16px system-ui,sans-serif;padding:28px;color:#333">Preparando o cartão…</body>'); }catch(e){}
+    if(sb) await _hospedarKmls(cartao, sb);
+    try{ w.document.open(); }catch(e){}
     w.document.write(html(cartao, false, true)); w.document.close();
     return true;
   }
