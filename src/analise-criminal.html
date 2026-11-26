@@ -15843,10 +15843,34 @@ async function idExportarPDF(){
     y += h;
   };
 
-  /* block: label em linha própria, texto abaixo justificado.
-     Justifica TODAS as linhas MENOS a última de CADA parágrafo (quebra \n).
-     Antes só a última linha do bloco inteiro ficava sem justificar → a última
-     linha de parágrafos intermediários (curta) era esticada pela largura toda. */
+  /* drawJust: renderiza texto (com \n) JUSTIFICADO a partir de x0, largura w.
+     Justifica TODAS as linhas MENOS a última de CADA parágrafo (quebra \n) — a
+     última linha do parágrafo sai natural (esquerda). Avança y. Reutilizado em
+     block(), ENVOLVIDOS e Facção. A fonte/cor deve ser definida pelo chamador. */
+  const drawJust = (text, x0, w) => {
+    const paras = String(text).split(/\r?\n/);
+    for(let p=0; p<paras.length; p++){
+      const para = paras[p];
+      if(para.trim()===''){ y+=5.2; continue; }   /* linha em branco entre parágrafos */
+      const lines = doc.splitTextToSize(para, w);
+      for(let li=0; li<lines.length; li++){
+        chk(5.5);
+        const isLast = li === lines.length-1;
+        const words = lines[li].split(' ').filter(ww=>ww.length>0);
+        if(!isLast && words.length > 1 && lines[li].trim().length > 5){
+          const totalW = doc.getTextWidth(lines[li].replace(/\s+/g,''));
+          const spaceW = (w - totalW) / (words.length-1);
+          let wx = x0;
+          words.forEach(ww=>{ doc.text(ww,wx,y); wx+=doc.getTextWidth(ww)+spaceW; });
+        } else {
+          doc.text(lines[li], x0, y);
+        }
+        y+=5.2;
+      }
+    }
+  };
+
+  /* block: label em linha própria, texto abaixo justificado. */
   const block = (label, val) => {
     if(!val) return;
     if(label){
@@ -15855,27 +15879,7 @@ async function idExportarPDF(){
       doc.text(label+':', ML, y); y+=5;
     }
     doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(30,30,30);
-    const paras = String(val).split(/\r?\n/);
-    for(let p=0; p<paras.length; p++){
-      const para = paras[p];
-      if(para.trim()===''){ y+=5.2; continue; }   /* linha em branco entre parágrafos */
-      const lines = doc.splitTextToSize(para, TW);
-      for(let li=0; li<lines.length; li++){
-        chk(5.5);
-        const isLastDoParagrafo = li === lines.length-1;
-        const words = lines[li].split(' ').filter(w=>w.length>0);
-        if(!isLastDoParagrafo && words.length > 1 && lines[li].trim().length > 5){
-          /* Justifica: distribui o espaço extra entre as palavras */
-          const totalW = doc.getTextWidth(lines[li].replace(/\s+/g,''));
-          const spaceW = (TW - totalW) / (words.length-1);
-          let wx = ML;
-          words.forEach(w=>{ doc.text(w,wx,y); wx+=doc.getTextWidth(w)+spaceW; });
-        } else {
-          doc.text(lines[li], ML, y);   /* última linha do parágrafo = natural (esquerda) */
-        }
-        y+=5.2;
-      }
-    }
+    drawJust(val, ML, TW);
     y+=2;
   };
 
@@ -15913,12 +15917,17 @@ async function idExportarPDF(){
         doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(255,255,255);
         doc.text(role, ML+2, y);
         doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(30,30,30);
-        const nomeLines = doc.splitTextToSize(nome, TW-rw-4);
-        doc.text(nomeLines, ML+rw+4, y);
-        y += Math.max(nomeLines.length*5, 5)+2;
+        drawJust(nome, ML+rw+4, TW-rw-4);   /* texto do envolvido justificado */
+        y += 2;
       });
     }
-    if(f.facao){ y+=2; row('Facção / Vínculo', f.facao); }
+    if(f.facao){
+      y+=2; chk(6);
+      doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(100,100,100);
+      doc.text('Facção / Vínculo:', ML, y);
+      doc.setFont('helvetica','normal'); doc.setTextColor(30,30,30);
+      drawJust(f.facao, ML+LW, TW-LW);   /* valor justificado */
+    }
     y+=4;
   }
 
@@ -15957,21 +15966,28 @@ async function idExportarPDF(){
   /* ── Seção 7: Arquivos / Fotos ── */
   if(fotasOk.length){
     sec('7. ARQUIVOS FOTOGRÁFICOS');
-    /* Cada imagem: largura = 80% da área, centrada, uma por vez com verificação de página */
-    const IMG_W = Math.round(TW * 0.80);
-    const IX    = ML + Math.round((TW - IMG_W) / 2);
+    /* largura MÁXIMA = 80% da área, centrada, uma por vez com verificação de página */
+    const IMG_W_MAX = Math.round(TW * 0.80);
 
     for(const ft of fotasOk){
-      /* Calcula altura mantendo proporção original via um canvas temporário */
-      let IMG_H = Math.round(IMG_W * 0.68); /* fallback proporcional */
+      /* Tamanho de exibição: mantém proporção e NÃO amplia além do que a resolução
+         da imagem aguenta (~90 dpi). Foto de baixa resolução sai MENOR, porém
+         NÍTIDA, em vez de um borrão esticado na largura toda. Piso de 45mm p/ não
+         ficar minúscula. Fotos grandes continuam preenchendo a largura. */
+      let natW=0, natH=0;
       try{
         const tmp = new Image();
         await new Promise(res=>{ tmp.onload=res; tmp.onerror=res; tmp.src=ft.b64; });
-        if(tmp.naturalWidth && tmp.naturalHeight){
-          IMG_H = Math.round(IMG_W * (tmp.naturalHeight / tmp.naturalWidth));
-          IMG_H = Math.min(IMG_H, 160); /* máximo 160mm para não ultrapassar página */
-        }
+        natW = tmp.naturalWidth||0; natH = tmp.naturalHeight||0;
       }catch(e){}
+      let IMG_W = IMG_W_MAX;
+      if(natW && natH){
+        const maxPorResolucao = Math.round(natW / 90 * 25.4);   /* 90 dpi */
+        IMG_W = Math.max(45, Math.min(IMG_W_MAX, maxPorResolucao));
+      }
+      let IMG_H = Math.round(IMG_W * ((natW&&natH) ? (natH/natW) : 0.68));
+      IMG_H = Math.min(IMG_H, 160); /* máximo 160mm para não ultrapassar página */
+      const IX = ML + Math.round((TW - IMG_W) / 2);
 
       const LEG_H = 8;
       const BLOCO = IMG_H + LEG_H + 6;
