@@ -15770,7 +15770,11 @@ async function idExportarPDF(){
     if(!tipo.startsWith('image')) return null;
     const src = a.storage_url||a.base64||'';
     if(!src) return null;
-    const b64 = src.startsWith('data:') ? src : await imgToB64(_imgSrc(src));
+    /* Alta resolução p/ não sair desfocado: o lh3 (Drive) sem tamanho devolve uma
+       versão reduzida; pedimos =s1600 (nítido ao imprimir ~13cm de largura). */
+    let imgUrl = _imgSrc(src);
+    if(/lh3\.googleusercontent\.com\/d\//.test(imgUrl)) imgUrl = imgUrl.replace(/=s\d+[^/]*$/,'') + '=s1600';
+    const b64 = src.startsWith('data:') ? src : await imgToB64(imgUrl);
     return b64 ? { b64, nome: a.nome||'', tipo, url: a.storage_url||'' } : null;
   }));
   const fotasOk = fotosImg.filter(Boolean);
@@ -15839,31 +15843,38 @@ async function idExportarPDF(){
     y += h;
   };
 
-  /* block: label em linha própria, texto abaixo justificado */
+  /* block: label em linha própria, texto abaixo justificado.
+     Justifica TODAS as linhas MENOS a última de CADA parágrafo (quebra \n).
+     Antes só a última linha do bloco inteiro ficava sem justificar → a última
+     linha de parágrafos intermediários (curta) era esticada pela largura toda. */
   const block = (label, val) => {
     if(!val) return;
-    const txtLines = doc.splitTextToSize(String(val), TW);
-    const h = (label ? 5 : 0) + txtLines.length*5.2 + 3;
-    chk(h);
     if(label){
+      chk(5);
       doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(100,100,100);
       doc.text(label+':', ML, y); y+=5;
     }
     doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(30,30,30);
-    for(let li=0; li<txtLines.length; li++){
-      chk(5.5);
-      const isLast = li === txtLines.length-1;
-      if(!isLast && txtLines[li].trim().length > 5){
-        /* Justifica: distribui espaço extra entre palavras */
-        const words = txtLines[li].split(' ').filter(w=>w.length>0);
-        if(words.length > 1){
-          const totalW = doc.getTextWidth(txtLines[li].replace(/\s+/g,''));
+    const paras = String(val).split(/\r?\n/);
+    for(let p=0; p<paras.length; p++){
+      const para = paras[p];
+      if(para.trim()===''){ y+=5.2; continue; }   /* linha em branco entre parágrafos */
+      const lines = doc.splitTextToSize(para, TW);
+      for(let li=0; li<lines.length; li++){
+        chk(5.5);
+        const isLastDoParagrafo = li === lines.length-1;
+        const words = lines[li].split(' ').filter(w=>w.length>0);
+        if(!isLastDoParagrafo && words.length > 1 && lines[li].trim().length > 5){
+          /* Justifica: distribui o espaço extra entre as palavras */
+          const totalW = doc.getTextWidth(lines[li].replace(/\s+/g,''));
           const spaceW = (TW - totalW) / (words.length-1);
           let wx = ML;
-          words.forEach((w,wi)=>{ doc.text(w,wx,y); wx+=doc.getTextWidth(w)+spaceW; });
-        } else { doc.text(txtLines[li], ML, y); }
-      } else { doc.text(txtLines[li], ML, y); }
-      y+=5.2;
+          words.forEach(w=>{ doc.text(w,wx,y); wx+=doc.getTextWidth(w)+spaceW; });
+        } else {
+          doc.text(lines[li], ML, y);   /* última linha do parágrafo = natural (esquerda) */
+        }
+        y+=5.2;
+      }
     }
     y+=2;
   };
