@@ -819,13 +819,22 @@ function renderDemandas(){
 }
 // KML (texto do banco) → data URL baixável, sem precisar de arquivo no Drive.
 function _kmlDataUrl(txt){ try{ return 'data:application/vnd.google-earth.kml+xml;charset=utf-8;base64,'+btoa(unescape(encodeURIComponent(String(txt||'')))); }catch(e){ return ''; } }
+// KML: baixar via Blob (data: URL com download trava no celular). Ver cartao-programa.html.
+function _baixarKmlBlob(href, nome){
+  fetch(href).then(r=>r.blob()).then(b=>{ const u=URL.createObjectURL(b); const t=document.createElement('a'); t.href=u; t.download=nome||'arquivo.kml'; document.body.appendChild(t); t.click(); t.remove(); setTimeout(()=>URL.revokeObjectURL(u),5000); }).catch(()=>{ try{ window.open(href,'_blank'); }catch(e){} });
+}
+document.addEventListener('click', function(ev){
+  const a=(ev.target&&ev.target.closest)?ev.target.closest('a.kmldl'):null; if(!a) return;
+  const href=a.getAttribute('href')||''; if(!/^data:/i.test(href)) return;
+  ev.preventDefault(); _baixarKmlBlob(href, a.getAttribute('download')||'arquivo.kml');
+});
 // Nome do anexo da ficha (ex.: "DENÚNCIA Nº 1140/2026") — a página pública abre
 // a ficha idêntica à do painel e salva o PDF com esse nome.
 function _nomeFicha(p){ return (p.tipo==='denuncia'?'DENÚNCIA':'REQUISIÇÃO')+' Nº '+(p.numero||''); }
 function renderAnx(anexos,di){
   return (anexos||[]).map((a,ai)=>{
     const st=a.status==='up'?'<span class="st up">enviando…</span>':a.status==='err'?`<span class="st err">erro</span>`:'<span class="st ok">ok</span>';
-    const nome=a.link&&a.status!=='up'?`<a href="${_esc(a.link)}" ${a.kml?`download="${_esc(a.nome||'arquivo.kml')}"`:'target="_blank"'} style="color:var(--gold-light)">${a.kml?'🛰️ ':''}${_esc(a.nome||'anexo')}</a>`:_esc(a.nome||'anexo');
+    const nome=a.link&&a.status!=='up'?`<a href="${_esc(a.link)}" ${a.kml?`download="${_esc(a.nome||'arquivo.kml')}" class="kmldl"`:'target="_blank"'} style="color:var(--gold-light)">${a.kml?'🛰️ ':''}${_esc(a.nome||'anexo')}</a>`:_esc(a.nome||'anexo');
     return `<div class="anx-item">${a.kml?'🛰️':'📄'} ${nome} ${st}<button type="button" class="x" onclick="rmAnx(${di},${ai})">✕</button></div>`;
   }).join('');
 }
